@@ -55,16 +55,12 @@ impl ServerHandler for SpikeServer {
 
 /// Start the spike MCP server on stdio transport.
 ///
-/// Initializes tracing to stderr, then serves JSON-RPC on stdin/stdout
-/// until the transport closes.
+/// Serves JSON-RPC on stdin/stdout until the transport closes.
+/// Caller must initialize tracing before calling this function.
 pub async fn serve() -> Result<(), Box<dyn std::error::Error>> {
-    super::logging::init();
-
     tracing::info!("Starting assay MCP server");
 
-    let service = SpikeServer::new().serve(stdio()).await.inspect_err(|e| {
-        tracing::error!("MCP serve error: {:?}", e);
-    })?;
+    let service = SpikeServer::new().serve(stdio()).await?;
 
     service.waiting().await?;
     Ok(())
