@@ -91,7 +91,48 @@
 
 ## Traceability
 
-<!-- Populated by roadmapper -->
-
 | REQ-ID | Phase | Status |
 |--------|-------|--------|
+| FND-01 | 1 — Workspace Prerequisites | Not Started |
+| FND-02 | 3 — Error Types and Domain Model | Not Started |
+| FND-03 | 3 — Error Types and Domain Model | Not Started |
+| FND-04 | 3 — Error Types and Domain Model | Not Started |
+| FND-05 | 3 — Error Types and Domain Model | Not Started |
+| FND-06 | 3 — Error Types and Domain Model | Not Started |
+| FND-07 | 4 — Schema Generation | Not Started |
+| FND-08 | 1 — Workspace Prerequisites | Not Started |
+| CFG-01 | 5 — Config and Initialization | Not Started |
+| CFG-02 | 5 — Config and Initialization | Not Started |
+| CFG-03 | 5 — Config and Initialization | Not Started |
+| CFG-04 | 5 — Config and Initialization | Not Started |
+| CFG-05 | 5 — Config and Initialization | Not Started |
+| CFG-06 | 5 — Config and Initialization | Not Started |
+| SPEC-01 | 6 — Spec Files | Not Started |
+| SPEC-02 | 6 — Spec Files | Not Started |
+| SPEC-03 | 6 — Spec Files | Not Started |
+| SPEC-04 | 6 — Spec Files | Not Started |
+| SPEC-05 | 6 — Spec Files | Not Started |
+| SPEC-06 | 6 — Spec Files | Not Started |
+| GATE-01 | 7 — Gate Evaluation | Not Started |
+| GATE-02 | 7 — Gate Evaluation | Not Started |
+| GATE-03 | 7 — Gate Evaluation | Not Started |
+| GATE-04 | 7 — Gate Evaluation | Not Started |
+| GATE-05 | 7 — Gate Evaluation | Not Started |
+| GATE-06 | 7 — Gate Evaluation | Not Started |
+| GATE-07 | 7 — Gate Evaluation | Not Started |
+| GATE-08 | 7 — Gate Evaluation | Not Started |
+| MCP-01 | 2 — MCP Spike | Not Started |
+| MCP-02 | 8 — MCP Server Tools | Not Started |
+| MCP-03 | 8 — MCP Server Tools | Not Started |
+| MCP-04 | 8 — MCP Server Tools | Not Started |
+| MCP-05 | 8 — MCP Server Tools | Not Started |
+| MCP-06 | 2 — MCP Spike | Not Started |
+| MCP-07 | 8 — MCP Server Tools | Not Started |
+| MCP-08 | 8 — MCP Server Tools | Not Started |
+| PLG-01 | 9 — CLI Surface Completion | Not Started |
+| PLG-02 | 10 — Claude Code Plugin | Not Started |
+| PLG-03 | 10 — Claude Code Plugin | Not Started |
+| PLG-04 | 10 — Claude Code Plugin | Not Started |
+| PLG-05 | 10 — Claude Code Plugin | Not Started |
+| PLG-06 | 10 — Claude Code Plugin | Not Started |
+| PLG-07 | 10 — Claude Code Plugin | Not Started |
