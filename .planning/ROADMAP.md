@@ -102,6 +102,10 @@ Plans:
 2. Generated schemas reflect schemars 1.x output and validate against sample TOML-converted-to-JSON input
 3. Schema files are deterministic (re-running produces identical output)
 
+**Plans:** 1 plan
+Plans:
+- [ ] 04-01-PLAN.md — Schema registry, generator binary, just recipes, roundtrip + snapshot tests
+
 ---
 
 #### Phase 5: Config and Initialization
