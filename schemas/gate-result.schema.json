@@ -1,0 +1,88 @@
+{
+  "$id": "https://assay.dev/schemas/gate-result.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "GateResult",
+  "description": "The result of evaluating a gate.\n\nCaptures whether the gate passed, the command output (if any), timing,\nand which kind of gate produced this result (self-describing via `kind`).",
+  "type": "object",
+  "properties": {
+    "duration_ms": {
+      "description": "How long the gate took to evaluate, in milliseconds.",
+      "type": "integer",
+      "format": "uint64",
+      "minimum": 0
+    },
+    "exit_code": {
+      "description": "Exit code from the gate command, if applicable.\nOmitted from serialized output when `None` (e.g., for `AlwaysPass` gates).",
+      "type": [
+        "integer",
+        "null"
+      ],
+      "format": "int32"
+    },
+    "kind": {
+      "description": "Which gate kind produced this result.",
+      "$ref": "#/$defs/GateKind"
+    },
+    "passed": {
+      "description": "Whether the gate passed.",
+      "type": "boolean"
+    },
+    "stderr": {
+      "description": "Standard error captured from the gate command.\nOmitted from serialized output when empty.",
+      "type": "string"
+    },
+    "stdout": {
+      "description": "Standard output captured from the gate command.\nOmitted from serialized output when empty.",
+      "type": "string"
+    },
+    "timestamp": {
+      "description": "When the gate evaluation completed.",
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "passed",
+    "kind",
+    "duration_ms",
+    "timestamp"
+  ],
+  "$defs": {
+    "GateKind": {
+      "description": "The kind of gate to evaluate.\n\nUses internal tagging (`#[serde(tag = \"kind\")]`) so TOML output includes\na `kind = \"Command\"` or `kind = \"AlwaysPass\"` discriminator field.",
+      "oneOf": [
+        {
+          "description": "A gate that runs a shell command and checks its exit code.",
+          "type": "object",
+          "properties": {
+            "cmd": {
+              "description": "The shell command to execute.",
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "const": "Command"
+            }
+          },
+          "required": [
+            "kind",
+            "cmd"
+          ]
+        },
+        {
+          "description": "A gate that always passes — useful for placeholder or manual gates.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "AlwaysPass"
+            }
+          },
+          "required": [
+            "kind"
+          ]
+        }
+      ]
+    }
+  }
+}

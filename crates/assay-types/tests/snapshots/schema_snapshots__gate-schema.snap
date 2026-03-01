@@ -1,0 +1,22 @@
+---
+source: crates/assay-types/tests/schema_snapshots.rs
+expression: schema.to_value()
+---
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "A quality gate that must pass before work proceeds.",
+  "properties": {
+    "name": {
+      "type": "string"
+    },
+    "passed": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "name",
+    "passed"
+  ],
+  "title": "Gate",
+  "type": "object"
+}
