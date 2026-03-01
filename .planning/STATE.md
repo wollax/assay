@@ -3,21 +3,23 @@
 ## Current Position
 
 Phase: 1 of 10 — Workspace Prerequisites
-Plan: v0.1.0 Proof of Concept (10 phases, 43 requirements)
-Status: Ready to begin Phase 1
-Last activity: 2026-02-28 — Roadmap created
+Plan: 01-01 complete, 1 of 1 plans in phase
+Status: In progress
+Last activity: 2026-03-01 — Completed 01-01-PLAN.md (schemars upgrade + assay-mcp scaffold)
+
+Progress: [█░░░░░░░░░] ~10%
 
 ## Milestone Progress
 
 | Milestone | Phases | Requirements | Complete |
 |-----------|--------|--------------|----------|
-| v0.1.0 | 10 | 43 | 0% |
+| v0.1.0 | 10 | 43 | ~2% |
 
 ## Phase Status
 
 | Phase | Name | Status |
 |-------|------|--------|
-| 1 | Workspace Prerequisites | Not Started |
+| 1 | Workspace Prerequisites | In Progress (01-01 complete) |
 | 2 | MCP Spike | Not Started |
 | 3 | Error Types and Domain Model | Not Started |
 | 4 | Schema Generation | Not Started |
@@ -44,6 +46,8 @@ Last activity: 2026-02-28 — Roadmap created
 - `Command::output()` for gate execution (not spawn+wait) to avoid pipe buffer deadlock
 - `spawn_blocking` for sync gate evaluation in async MCP handlers
 - `#[serde(tag = "kind")]` internal tagging on GateKind for TOML compatibility
+- schemars uses caret range `"1"` (not exact pin) — matches rmcp's own declaration, picks up semver patches
+- deny.toml required no changes for rmcp transitive deps — all licenses already in allow-list
 
 ### Blockers
 
@@ -51,7 +55,11 @@ None.
 
 ### Next Actions
 
-1. Upgrade schemars 0.8 -> 1.x in workspace Cargo.toml
-2. Add workspace deps: rmcp, toml, tracing, tracing-subscriber
-3. Create `crates/assay-mcp/` crate scaffold
-4. Run `just ready` to confirm clean build
+1. Continue with remaining Phase 1 plans (if any exist)
+2. Begin Phase 2 (MCP Spike) — rmcp and assay-mcp scaffold are ready
+
+### Session Continuity
+
+Last session: 2026-03-01T04:10:23Z
+Stopped at: Completed 01-01-PLAN.md
+Resume file: None
