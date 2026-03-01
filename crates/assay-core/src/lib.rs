@@ -1,3 +1,8 @@
+/// Error types for Assay operations.
+pub mod error;
+
+pub use error::{AssayError, Result};
+
 /// Spec authoring and validation.
 pub mod spec;
 

@@ -81,6 +81,11 @@
 4. `AssayError` variants include contextual information (file paths, operation descriptions), not bare passthrough wrappers
 5. `just ready` passes with all new types derived for `Serialize`, `Deserialize`, `JsonSchema`
 
+**Plans:** 2 plans
+Plans:
+- [ ] 03-01-PLAN.md — Domain types (GateKind, GateResult, Criterion) in assay-types with serde roundtrip tests
+- [ ] 03-02-PLAN.md — AssayError enum and Result alias in assay-core with context-rich error handling
+
 ---
 
 #### Phase 4: Schema Generation
@@ -258,7 +263,7 @@
 |-------|------|--------|--------------|-----------|
 | 1 | Workspace Prerequisites | Complete | 2 | 2 |
 | 2 | MCP Spike | Complete | 2 | 2 |
-| 3 | Error Types and Domain Model | Not Started | 5 | 0 |
+| 3 | Error Types and Domain Model | Complete | 5 | 5 |
 | 4 | Schema Generation | Not Started | 1 | 0 |
 | 5 | Config and Initialization | Not Started | 6 | 0 |
 | 6 | Spec Files | Not Started | 6 | 0 |
@@ -267,7 +272,7 @@
 | 9 | CLI Surface Completion | Not Started | 1 | 0 |
 | 10 | Claude Code Plugin | Not Started | 6 | 0 |
 
-**Overall:** 4/43 requirements complete (9%)
+**Overall:** 9/43 requirements complete (21%)
 
 ---
 
