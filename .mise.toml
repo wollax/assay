@@ -1,0 +1,8 @@
+[tools]
+rust = "stable"
+just = "latest"
+node = "24"
+"cargo:cargo-deny" = "latest"
+
+[env]
+RUST_BACKTRACE = "1"
