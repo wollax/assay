@@ -1,0 +1,97 @@
+# Requirements — v0.1.0 Proof of Concept
+
+## Foundation
+
+- [ ] **FND-01**: Upgrade schemars from 0.8 to 1.x across the workspace (required by rmcp)
+- [ ] **FND-02**: Unified `AssayError` enum with thiserror and `#[non_exhaustive]`, starting with `Io` variant
+- [ ] **FND-03**: Result type alias `pub type Result<T> = std::result::Result<T, AssayError>`
+- [ ] **FND-04**: `GateKind` enum with `#[serde(tag = "kind")]` — `Command { cmd }` and `AlwaysPass` variants
+- [ ] **FND-05**: `GateResult` struct with `passed`, `stdout`, `stderr`, `exit_code`, `duration_ms`, `timestamp` fields
+- [ ] **FND-06**: `Criterion` struct with `name`, `description`, optional `cmd` field (forward-compatible with `prompt`)
+- [ ] **FND-07**: Schema generation binary (`assay-types/examples/generate-schemas.rs`) + `just schemas` recipe
+- [ ] **FND-08**: New `assay-mcp` crate added to workspace (library crate for MCP server)
+
+## Config & Initialization
+
+- [ ] **CFG-01**: `assay init` creates `.assay/` directory with `config.toml` and `specs/` subdirectory
+- [ ] **CFG-02**: Template-based `config.toml` generation with project name (inferred from directory) and sensible defaults
+- [ ] **CFG-03**: Example spec file created in `.assay/specs/` during init
+- [ ] **CFG-04**: Idempotent init — refuse to overwrite existing `.assay/` directory
+- [ ] **CFG-05**: Config loading via `assay_core::config::load()` and `from_str()` free functions
+- [ ] **CFG-06**: Config validation via `assay_core::config::validate()` with structured error reporting
+
+## Spec Files
+
+- [ ] **SPEC-01**: TOML spec file parsing via `assay_core::spec::load()` and `from_str()` free functions
+- [ ] **SPEC-02**: Spec struct with `name`, `description`, `criteria: Vec<Criterion>`
+- [ ] **SPEC-03**: Criteria with optional `cmd` field — present = executable, absent = descriptive
+- [ ] **SPEC-04**: Spec validation — name required, non-empty after trim, unique criteria names
+- [ ] **SPEC-05**: Spec directory scanning — find all `.toml` files in `.assay/specs/`
+- [ ] **SPEC-06**: `assay spec show <name>` CLI command displaying parsed spec
+
+## Gate Evaluation
+
+- [ ] **GATE-01**: Command gate execution via `std::process::Command` with exit code evaluation
+- [ ] **GATE-02**: Structured `GateResult` with stdout/stderr evidence capture
+- [ ] **GATE-03**: Timeout enforcement on gate commands with configurable default (300s)
+- [ ] **GATE-04**: Explicit `working_dir` parameter on `gate::evaluate()` — never inherit
+- [ ] **GATE-05**: `assay gate run <spec>` CLI command running all executable criteria
+- [ ] **GATE-06**: `GateKind::FileExists { path }` variant for file existence checks
+- [ ] **GATE-07**: Aggregate gate results — summary showing "N/M criteria passed" per spec
+- [ ] **GATE-08**: Gate evaluation is sync with documented async guidance (`spawn_blocking`)
+
+## MCP Server
+
+- [ ] **MCP-01**: MCP server with stdio transport via rmcp in `assay-mcp` crate
+- [ ] **MCP-02**: `spec_get` tool — retrieve parsed spec by name, return as structured JSON
+- [ ] **MCP-03**: `gate_run` tool — execute all command criteria for a spec, return `Vec<GateResult>`
+- [ ] **MCP-04**: `spec_list` tool — enumerate available specs in the project
+- [ ] **MCP-05**: `assay mcp serve` CLI subcommand starting the MCP server
+- [ ] **MCP-06**: tracing-subscriber initialized to stderr (stdout reserved for JSON-RPC protocol)
+- [ ] **MCP-07**: `spawn_blocking` bridge for sync gate evaluation in async tool handlers
+- [ ] **MCP-08**: Tool descriptions clear enough for agent discovery without additional prompting
+
+## Claude Code Plugin
+
+- [ ] **PLG-01**: `plugin.json` manifest with name, version, description, author
+- [ ] **PLG-02**: `.mcp.json` pointing to `assay mcp serve` (stdio transport)
+- [ ] **PLG-03**: `/gate-check` skill — run gates for current spec and report results
+- [ ] **PLG-04**: `/spec-show` skill — display current spec via MCP
+- [ ] **PLG-05**: CLAUDE.md workflow snippet for project-level agent instructions
+- [ ] **PLG-06**: PostToolUse hook — auto-trigger gate evaluation after Write/Edit tool use
+- [ ] **PLG-07**: Stop hook — prevent agent completion without passing gates
+
+---
+
+## Future Requirements (v0.2+)
+
+- Agent-evaluated criteria (`prompt` field on Criterion, subprocess invocation)
+- Markdown spec bodies (TOML frontmatter + Markdown content)
+- Spec lifecycle/status tracking (Draft/Active/Implementing/Review/Done)
+- Spec dependencies and versioning
+- Composite gates (AND/OR logic)
+- Threshold gates (e.g., coverage >= 80%)
+- Parallel gate execution
+- Workflow state machine
+- Structured review system
+- Global config (`~/.config/assay/`)
+- Additional MCP tools beyond the initial 3
+- Codex/OpenCode plugins
+- TUI dashboard features
+
+## Out of Scope
+
+- Interactive init wizard — agent-first tool, non-interactive by default
+- Markdown-only spec format — Assay is structured TOML-first
+- Gate caching/memoization — gates must re-evaluate fresh
+- SSE/HTTP MCP transport — v0.1 is local-only
+- Plugin marketplace publishing — need working product first
+- Custom spec DSL — agents + shell commands replace the need
+- Agent marketplace or capability routing — YAGNI
+
+## Traceability
+
+<!-- Populated by roadmapper -->
+
+| REQ-ID | Phase | Status |
+|--------|-------|--------|
