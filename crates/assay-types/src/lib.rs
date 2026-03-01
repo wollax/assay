@@ -1,3 +1,9 @@
+pub mod criterion;
+pub mod gate;
+
+pub use criterion::Criterion;
+pub use gate::{GateKind, GateResult};
+
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 

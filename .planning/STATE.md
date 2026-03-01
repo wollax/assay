@@ -2,17 +2,18 @@
 
 ## Current Position
 
-Phase: 2 of 10 — MCP Spike
-Status: Phase 2 Complete (GO — proceed with v0.1 architecture)
-Last activity: 2026-03-01 — Phase 2 verified and completed
+Phase: 3 of 10 — Error Types and Domain Model
+Plan: 02 of 02
+Status: Phase 3 Complete
+Last activity: 2026-03-01 — Completed 03-02-PLAN.md (error types)
 
-Progress: [██░░░░░░░░] 9% (4/43 requirements)
+Progress: [██░░░░░░░░] 21% (9/43 requirements)
 
 ## Milestone Progress
 
 | Milestone | Phases | Requirements | Complete |
 |-----------|--------|--------------|----------|
-| v0.1.0 | 10 | 43 | 9% |
+| v0.1.0 | 10 | 43 | 21% |
 
 ## Phase Status
 
@@ -20,7 +21,7 @@ Progress: [██░░░░░░░░] 9% (4/43 requirements)
 |-------|------|--------|
 | 1 | Workspace Prerequisites | Complete |
 | 2 | MCP Spike | Complete (GO) |
-| 3 | Error Types and Domain Model | Not Started |
+| 3 | Error Types and Domain Model | Complete |
 | 4 | Schema Generation | Not Started |
 | 5 | Config and Initialization | Not Started |
 | 6 | Spec Files | Not Started |
@@ -52,6 +53,12 @@ Progress: [██░░░░░░░░] 9% (4/43 requirements)
 - `tracing-subscriber` stderr-only writer keeps stdout clean for JSON-RPC (no byte leakage)
 - `Implementation::from_build_env()` populates server info from Cargo.toml automatically
 - Spike code remains as working reference until Phase 8 replaces with real tools
+- GateResult does not derive PartialEq — DateTime equality is semantically questionable
+- serde_json moved to dev-dependencies in assay-types (source files don't use it)
+- schemars chrono04 feature enabled at workspace level for DateTime<Utc> JsonSchema support
+- AssayError::Io carries structured fields (PathBuf, String), no #[from] — context required at call sites
+- #[non_exhaustive] on AssayError — new variants are non-breaking additions
+- Result<T> alias for std::result::Result<T, AssayError> re-exported from assay-core root
 
 ### Blockers
 
@@ -59,11 +66,11 @@ None.
 
 ### Next Actions
 
-1. Begin Phase 3 (Error Types and Domain Model) — unblocked
-2. Phases 3-10 proceed on confirmed rmcp architecture
+1. Begin Phase 4 (Schema Generation) — unblocked
+2. Phases 4-10 proceed on confirmed architecture
 
 ### Session Continuity
 
 Last session: 2026-03-01
-Stopped at: Phase 2 complete
+Stopped at: Phase 3 complete
 Resume file: None
