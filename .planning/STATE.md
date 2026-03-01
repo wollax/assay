@@ -3,17 +3,17 @@
 ## Current Position
 
 Phase: 3 of 10 — Error Types and Domain Model
-Plan: 01 of 02
-Status: In progress
-Last activity: 2026-03-01 — Completed 03-01-PLAN.md (domain types)
+Plan: 02 of 02
+Status: Phase 3 Complete
+Last activity: 2026-03-01 — Completed 03-02-PLAN.md (error types)
 
-Progress: [██░░░░░░░░] 9% (4/43 requirements)
+Progress: [██░░░░░░░░] 14% (6/43 requirements)
 
 ## Milestone Progress
 
 | Milestone | Phases | Requirements | Complete |
 |-----------|--------|--------------|----------|
-| v0.1.0 | 10 | 43 | 9% |
+| v0.1.0 | 10 | 43 | 14% |
 
 ## Phase Status
 
@@ -21,7 +21,7 @@ Progress: [██░░░░░░░░] 9% (4/43 requirements)
 |-------|------|--------|
 | 1 | Workspace Prerequisites | Complete |
 | 2 | MCP Spike | Complete (GO) |
-| 3 | Error Types and Domain Model | In Progress (Plan 01 complete) |
+| 3 | Error Types and Domain Model | Complete |
 | 4 | Schema Generation | Not Started |
 | 5 | Config and Initialization | Not Started |
 | 6 | Spec Files | Not Started |
@@ -56,6 +56,9 @@ Progress: [██░░░░░░░░] 9% (4/43 requirements)
 - GateResult does not derive PartialEq — DateTime equality is semantically questionable
 - serde_json moved to dev-dependencies in assay-types (source files don't use it)
 - schemars chrono04 feature enabled at workspace level for DateTime<Utc> JsonSchema support
+- AssayError::Io carries structured fields (PathBuf, String), no #[from] — context required at call sites
+- #[non_exhaustive] on AssayError — new variants are non-breaking additions
+- Result<T> alias for std::result::Result<T, AssayError> re-exported from assay-core root
 
 ### Blockers
 
@@ -63,11 +66,11 @@ None.
 
 ### Next Actions
 
-1. Execute Phase 3 Plan 02 (error types in assay-core) — unblocked
+1. Begin Phase 4 (Schema Generation) — unblocked
 2. Phases 4-10 proceed on confirmed architecture
 
 ### Session Continuity
 
 Last session: 2026-03-01
-Stopped at: Phase 3, Plan 01 complete
-Resume file: .planning/phases/active/03-error-types-and-domain-model/03-01-SUMMARY.md
+Stopped at: Phase 3 complete
+Resume file: .planning/phases/active/03-error-types-and-domain-model/03-02-SUMMARY.md
