@@ -2,14 +2,14 @@
 
 ## Foundation
 
-- [ ] **FND-01**: Upgrade schemars from 0.8 to 1.x across the workspace (required by rmcp)
+- [x] **FND-01**: Upgrade schemars from 0.8 to 1.x across the workspace (required by rmcp)
 - [ ] **FND-02**: Unified `AssayError` enum with thiserror and `#[non_exhaustive]`, starting with `Io` variant
 - [ ] **FND-03**: Result type alias `pub type Result<T> = std::result::Result<T, AssayError>`
 - [ ] **FND-04**: `GateKind` enum with `#[serde(tag = "kind")]` — `Command { cmd }` and `AlwaysPass` variants
 - [ ] **FND-05**: `GateResult` struct with `passed`, `stdout`, `stderr`, `exit_code`, `duration_ms`, `timestamp` fields
 - [ ] **FND-06**: `Criterion` struct with `name`, `description`, optional `cmd` field (forward-compatible with `prompt`)
 - [ ] **FND-07**: Schema generation binary (`assay-types/examples/generate-schemas.rs`) + `just schemas` recipe
-- [ ] **FND-08**: New `assay-mcp` crate added to workspace (library crate for MCP server)
+- [x] **FND-08**: New `assay-mcp` crate added to workspace (library crate for MCP server)
 
 ## Config & Initialization
 
@@ -93,14 +93,14 @@
 
 | REQ-ID | Phase | Status |
 |--------|-------|--------|
-| FND-01 | 1 — Workspace Prerequisites | Not Started |
+| FND-01 | 1 — Workspace Prerequisites | Complete |
 | FND-02 | 3 — Error Types and Domain Model | Not Started |
 | FND-03 | 3 — Error Types and Domain Model | Not Started |
 | FND-04 | 3 — Error Types and Domain Model | Not Started |
 | FND-05 | 3 — Error Types and Domain Model | Not Started |
 | FND-06 | 3 — Error Types and Domain Model | Not Started |
 | FND-07 | 4 — Schema Generation | Not Started |
-| FND-08 | 1 — Workspace Prerequisites | Not Started |
+| FND-08 | 1 — Workspace Prerequisites | Complete |
 | CFG-01 | 5 — Config and Initialization | Not Started |
 | CFG-02 | 5 — Config and Initialization | Not Started |
 | CFG-03 | 5 — Config and Initialization | Not Started |
