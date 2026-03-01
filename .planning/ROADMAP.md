@@ -54,6 +54,11 @@
 3. Claude Code can discover and call the spike tool when the plugin is installed locally
 4. Spike result documented as GO (proceed) or NO-GO (pivot architecture)
 
+**Plans:**
+| Plan | Wave | Objective | Tasks | Autonomous |
+|------|------|-----------|-------|------------|
+| 02-01 | 1 | Implement spike server, wire CLI, validate protocol roundtrip | 2 | Task 1: yes, Task 2: human-verify |
+
 ---
 
 #### Phase 3: Error Types and Domain Model
