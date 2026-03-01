@@ -20,5 +20,7 @@ tokio = { version = "1", features = ["full"] }
 clap = { version = "4", features = ["derive"] }
 ratatui = "0.30"
 crossterm = "0.28"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
 thiserror = "2"
 color-eyre = "0.6"

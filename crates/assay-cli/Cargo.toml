@@ -8,4 +8,6 @@ description = "Assay command-line interface"
 
 [dependencies]
 assay-core.workspace = true
+assay-mcp.workspace = true
 clap.workspace = true
+tokio.workspace = true
