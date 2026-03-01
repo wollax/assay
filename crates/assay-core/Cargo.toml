@@ -1,0 +1,11 @@
+[package]
+name = "assay-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Domain logic for Assay: specs, gates, reviews, and workflows"
+
+[dependencies]
+assay-types.workspace = true
+thiserror.workspace = true
