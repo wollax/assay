@@ -263,7 +263,7 @@ Plans:
 |-------|------|--------|--------------|-----------|
 | 1 | Workspace Prerequisites | Complete | 2 | 2 |
 | 2 | MCP Spike | Complete | 2 | 2 |
-| 3 | Error Types and Domain Model | Not Started | 5 | 0 |
+| 3 | Error Types and Domain Model | Complete | 5 | 5 |
 | 4 | Schema Generation | Not Started | 1 | 0 |
 | 5 | Config and Initialization | Not Started | 6 | 0 |
 | 6 | Spec Files | Not Started | 6 | 0 |
@@ -272,7 +272,7 @@ Plans:
 | 9 | CLI Surface Completion | Not Started | 1 | 0 |
 | 10 | Claude Code Plugin | Not Started | 6 | 0 |
 
-**Overall:** 4/43 requirements complete (9%)
+**Overall:** 9/43 requirements complete (21%)
 
 ---
 
