@@ -1,0 +1,6 @@
+{
+  "name": "assay",
+  "version": "0.1.0",
+  "description": "Assay plugin for Claude Code — spec-driven workflows with gated quality checks",
+  "author": "wollax"
+}
