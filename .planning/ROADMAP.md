@@ -81,6 +81,11 @@
 4. `AssayError` variants include contextual information (file paths, operation descriptions), not bare passthrough wrappers
 5. `just ready` passes with all new types derived for `Serialize`, `Deserialize`, `JsonSchema`
 
+**Plans:** 2 plans
+Plans:
+- [ ] 03-01-PLAN.md — Domain types (GateKind, GateResult, Criterion) in assay-types with serde roundtrip tests
+- [ ] 03-02-PLAN.md — AssayError enum and Result alias in assay-core with context-rich error handling
+
 ---
 
 #### Phase 4: Schema Generation
