@@ -105,6 +105,7 @@ dependencies = [
  "assay-mcp",
  "clap",
  "tokio",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -126,7 +127,6 @@ dependencies = [
  "serde_json",
  "tokio",
  "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]
