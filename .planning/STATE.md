@@ -2,18 +2,18 @@
 
 ## Current Position
 
-Phase: 3 of 10 — Error Types and Domain Model
-Plan: 02 of 02
-Status: Phase 3 Complete
-Last activity: 2026-03-01 — Completed 03-02-PLAN.md (error types)
+Phase: 4 of 10 — Schema Generation
+Plan: 01 of 01
+Status: Phase 4 Complete
+Last activity: 2026-03-01 — Completed 04-01-PLAN.md (schema generation pipeline)
 
-Progress: [██░░░░░░░░] 21% (9/43 requirements)
+Progress: [██░░░░░░░░] 23% (10/43 requirements)
 
 ## Milestone Progress
 
 | Milestone | Phases | Requirements | Complete |
 |-----------|--------|--------------|----------|
-| v0.1.0 | 10 | 43 | 21% |
+| v0.1.0 | 10 | 43 | 23% |
 
 ## Phase Status
 
@@ -22,7 +22,7 @@ Progress: [██░░░░░░░░] 21% (9/43 requirements)
 | 1 | Workspace Prerequisites | Complete |
 | 2 | MCP Spike | Complete (GO) |
 | 3 | Error Types and Domain Model | Complete |
-| 4 | Schema Generation | Not Started |
+| 4 | Schema Generation | Complete |
 | 5 | Config and Initialization | Not Started |
 | 6 | Spec Files | Not Started |
 | 7 | Gate Evaluation | Not Started |
@@ -59,6 +59,13 @@ Progress: [██░░░░░░░░] 21% (9/43 requirements)
 - AssayError::Io carries structured fields (PathBuf, String), no #[from] — context required at call sites
 - #[non_exhaustive] on AssayError — new variants are non-breaking additions
 - Result<T> alias for std::result::Result<T, AssayError> re-exported from assay-core root
+- inventory::iter returns IntoIterator, not Iterator — all_entries() calls .into_iter()
+- Rust cargo examples CAN access dev-dependencies — serde_json stays as dev-dep
+- schemas-check NOT added to `just ready` to avoid circular dependency during development
+- All 8 public types get individual schema files (not just top-level Config)
+- Schema $id uses https://assay.dev/schemas/{name}.schema.json (aspirational URL convention)
+- Generated schemas committed to git for IDE/consumer access without building
+- Convention: every JsonSchema-derived type MUST have inventory::submit! immediately after definition
 
 ### Blockers
 
@@ -66,11 +73,11 @@ None.
 
 ### Next Actions
 
-1. Begin Phase 4 (Schema Generation) — unblocked
+1. Begin Phase 5 (Config and Initialization) — unblocked
 2. Phases 4-10 proceed on confirmed architecture
 
 ### Session Continuity
 
 Last session: 2026-03-01
-Stopped at: Phase 3 complete
+Stopped at: Phase 4 complete
 Resume file: None
