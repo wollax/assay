@@ -22,3 +22,6 @@ Thumbs.db
 .env
 .env.local
 .env.*.local
+
+# MCP config (local dev convenience, not committed)
+.mcp.json
