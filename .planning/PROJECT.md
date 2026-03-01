@@ -114,6 +114,22 @@ Future crates may include `assay-mcp` (MCP server library) and `assay-daemon` (o
 - Binary crates are thin wrappers that delegate to `assay-core`
 - Run `just ready` before considering work complete
 
+## Current Milestone: v0.1.0 Proof of Concept
+
+**Goal:** Prove Assay's dual-track gate differentiator through a thin vertical slice — foundation types, spec-driven gates, MCP server, and Claude Code plugin — with parallel plugin research to learn agent interaction patterns.
+
+**Target features:**
+
+- Unified error types with thiserror
+- Domain model hardening (GateKind enum, GateResult with evidence)
+- Config loading (TOML) and project initialization (`assay init`)
+- Spec files (TOML with criteria, optional `cmd` field)
+- Command gate evaluation with structured results
+- MCP server (stdio, 2 tools: `spec/get` + `gate/run`)
+- Claude Code plugin (`.mcp.json` + CLAUDE.md snippet)
+- Schema generation pipeline
+- Plugin research track (agent UX pattern discovery)
+
 ## Requirements
 
 ### Validated
@@ -124,24 +140,31 @@ Future crates may include `assay-mcp` (MCP server library) and `assay-daemon` (o
 - ✓ Clap CLI skeleton — existing
 - ✓ Ratatui TUI skeleton — existing
 
-### Active
+### Active (v0.1.0)
 
-- [ ] Domain model redesign: GateKind enum, GateResult with evidence, spec provider trait, workflow phases
-- [ ] Error type foundation: unified AssayError with thiserror
+- [ ] Error type foundation: unified AssayError with thiserror, `#[non_exhaustive]`
+- [ ] Domain model hardening: GateKind enum, GateResult with stdout/stderr evidence, types as pub DTOs
+- [ ] Schema generation pipeline: standalone binary + `just schemas`
+- [ ] Config loading: free functions in assay-core, TOML only
+- [ ] Spec + config validation: free functions in assay-core, trim-then-validate
+- [ ] Gate evaluation: command gates, sync, explicit working_dir, structured GateResult
+- [ ] CLI subcommands: `init` + `validate` + `gate run` + `spec show` + `mcp serve`
+- [ ] MCP server: stdio via rmcp, 2 tools (spec/get, gate/run)
+- [ ] Claude Code plugin: `.mcp.json` + CLAUDE.md snippet
+- [ ] Plugin research: agent UX pattern discovery via prototype
+
+### Future
+
+- [ ] Domain model redesign: spec provider trait, workflow phases
 - [ ] Pluggable spec provider interface with built-in default implementation
-- [ ] Programmable gate framework: command, file, threshold, composite, agent-evaluated
-- [ ] Dual-track criteria: deterministic + agent-evaluated
-- [ ] Config loading (TOML) and project initialization
+- [ ] Programmable gate framework: file, threshold, composite, agent-evaluated
+- [ ] Dual-track criteria: agent-evaluated track (production)
 - [ ] Per-agent worktree management (create, isolate, clean up)
 - [ ] tmux session/pane management for agent lifecycle
 - [ ] Orchestrator/daemon managing concurrent sessions
 - [ ] Merge-back workflow: feature branch creation, conflict resolution, gate enforcement
 - [ ] Branch strategy configuration
-- [ ] CLI commands for project, spec, gate, workflow, and session management
 - [ ] TUI dashboard for multi-session supervision
-- [ ] MCP server for agent-facing protocol
-- [ ] Claude Code plugin integration
-- [ ] Schema generation pipeline
 
 ### Out of Scope
 
@@ -168,7 +191,8 @@ Future crates may include `assay-mcp` (MCP server library) and `assay-daemon` (o
 ## Reference Material
 
 - [agtx](https://github.com/fynnfluegge/agtx) — Reference architecture for agent orchestration with worktrees/tmux
-- Brainstorm session: `.planning/brainstorms/2026-02-28T16-37-brainstorm/SUMMARY.md`
+- Brainstorm session 1: `.planning/brainstorms/2026-02-28T16-37-brainstorm/SUMMARY.md`
+- Brainstorm session 2: `.planning/brainstorms/2026-02-28T17-45-brainstorm/SUMMARY.md`
 
 ---
-*Last updated: 2026-02-28 after initialization*
+*Last updated: 2026-02-28 — Milestone v0.1.0 started*
