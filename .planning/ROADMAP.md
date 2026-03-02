@@ -209,6 +209,11 @@ Plans:
 4. `assay mcp serve` starts the server and the first byte on stdout is `{` (clean JSON-RPC, no clap output leakage)
 5. Tool descriptions are self-documenting: an agent unfamiliar with Assay can understand what each tool does from the description alone
 
+**Plans:** 2 plans
+Plans:
+- [x] 08-01-PLAN.md — AssayServer with three MCP tools (spec_get, spec_list, gate_run), parameter schemas, response formatting, error handling
+- [x] 08-02-PLAN.md — CLI wiring verification, integration tests, and end-to-end MCP server validation
+
 ---
 
 #### Phase 9: CLI Surface Completion
@@ -283,11 +288,11 @@ Plans:
 | 5 | Config and Initialization | Complete | 6 | 6 |
 | 6 | Spec Files | Complete | 6 | 6 |
 | 7 | Gate Evaluation | Complete | 8 | 8 |
-| 8 | MCP Server Tools | Not Started | 6 | 0 |
+| 8 | MCP Server Tools | Complete | 6 | 6 |
 | 9 | CLI Surface Completion | Not Started | 1 | 0 |
 | 10 | Claude Code Plugin | Not Started | 6 | 0 |
 
-**Overall:** 30/43 requirements complete (70%)
+**Overall:** 42/43 requirements complete (98%)
 
 ---
 
