@@ -3,11 +3,11 @@
 ## Current Position
 
 Phase: 5 of 10 — Config and Initialization
-Plan: 01 of 03
+Plan: 02 of 03
 Status: In progress
-Last activity: 2026-03-02 — Completed 05-01-PLAN.md (config type redesign and error variants)
+Last activity: 2026-03-02 — Completed 05-02-PLAN.md (config loading and validation via TDD)
 
-Progress: [██░░░░░░░░] 23% (10/43 requirements)
+Progress: [███░░░░░░░] 30% (13/43 requirements)
 
 ## Milestone Progress
 
@@ -23,7 +23,7 @@ Progress: [██░░░░░░░░] 23% (10/43 requirements)
 | 2 | MCP Spike | Complete (GO) |
 | 3 | Error Types and Domain Model | Complete |
 | 4 | Schema Generation | Complete |
-| 5 | Config and Initialization | In Progress (Plan 1/3 complete) |
+| 5 | Config and Initialization | In Progress (Plan 2/3 complete) |
 | 6 | Spec Files | Not Started |
 | 7 | Gate Evaluation | Not Started |
 | 8 | MCP Server Tools | Not Started |
@@ -69,6 +69,10 @@ Progress: [██░░░░░░░░] 23% (10/43 requirements)
 - ConfigError in config/mod.rs, not error.rs — config-specific validation output stays with config concerns
 - toml dep added to assay-core for config loading (Plan 02)
 - Existing Workflow/Gate types left untouched — only Config replaced; placeholders revisited later
+- from_str() returns toml::de::Error (not AssayError) for composability — raw parse details for tests/tools
+- validate() returns Vec<ConfigError> (not AssayError) — separates collection from reporting
+- load() composes from_str + validate, wraps errors with file path context
+- tempfile added as workspace dev-dependency for filesystem test isolation
 
 ### Blockers
 
@@ -76,11 +80,10 @@ None.
 
 ### Next Actions
 
-1. Execute 05-02-PLAN.md — Config loading and validation via TDD (from_str, load, validate)
-2. Execute 05-03-PLAN.md — Init logic in assay-core and CLI init subcommand
+1. Execute 05-03-PLAN.md — Init logic in assay-core and CLI init subcommand
 
 ### Session Continuity
 
 Last session: 2026-03-02
-Stopped at: Completed 05-01-PLAN.md
+Stopped at: Completed 05-02-PLAN.md
 Resume file: None
