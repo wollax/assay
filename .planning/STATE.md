@@ -2,18 +2,18 @@
 
 ## Current Position
 
-Phase: 6 of 10 — Spec Files
-Plan: 02 of 02
-Status: Complete
-Last activity: 2026-03-02 — Completed 06-02-PLAN.md
+Phase: 7 of 10 — Gate Evaluation
+Plan: 01 of 02
+Status: In progress
+Last activity: 2026-03-02 — Completed 07-01-PLAN.md
 
-Progress: [██████░░░░] 65% (28/43 requirements)
+Progress: [████████░░] 81% (35/43 requirements)
 
 ## Milestone Progress
 
 | Milestone | Phases | Requirements | Complete |
 |-----------|--------|--------------|----------|
-| v0.1.0 | 10 | 43 | 65% |
+| v0.1.0 | 10 | 43 | 81% |
 
 ## Phase Status
 
@@ -25,7 +25,7 @@ Progress: [██████░░░░] 65% (28/43 requirements)
 | 4 | Schema Generation | Complete |
 | 5 | Config and Initialization | Complete (3/3 plans) |
 | 6 | Spec Files | Complete (2/2 plans) |
-| 7 | Gate Evaluation | Not Started |
+| 7 | Gate Evaluation | In Progress (1/2 plans) |
 | 8 | MCP Server Tools | Not Started |
 | 9 | CLI Surface Completion | Not Started |
 | 10 | Claude Code Plugin | Not Started |
@@ -43,7 +43,7 @@ Progress: [██████░░░░] 65% (28/43 requirements)
 - M1 = foundation/proof of concept; M2 = launch/external demo
 - schemars 0.8 -> 1.x is mandatory prerequisite (rmcp requires it)
 - assay-mcp is a library crate, not a binary — single `assay` binary for all surfaces
-- `Command::output()` for gate execution (not spawn+wait) to avoid pipe buffer deadlock
+- ~~`Command::output()` for gate execution~~ → superseded: `spawn()` + reader threads + `try_wait` polling for timeout support
 - `spawn_blocking` for sync gate evaluation in async MCP handlers
 - `#[serde(tag = "kind")]` internal tagging on GateKind for TOML compatibility
 - schemars uses caret range `"1"` (not exact pin) — matches rmcp's own declaration, picks up semver patches
@@ -82,6 +82,11 @@ Progress: [██████░░░░] 65% (28/43 requirements)
 - ANSI escape codes for CLI colors (no external color dependency), NO_COLOR env var respected per no-color.org
 - println!-based table formatting (no external table library), dynamic column widths from data
 - serde_json wired to assay-cli for --json output; both spec commands resolve specs_dir from config::load()
+- serde added to assay-core dependencies for GateRunSummary/CriterionResult Serialize derive
+- Truncation uses str::ceil_char_boundary for safe UTF-8 slicing on tail-biased truncation
+- GateRunSummary and CriterionResult live in assay-core::gate (computed summaries, not DTOs)
+- evaluate_file_exists is a standalone public function, not derived from Criterion (future phases add file-check criteria)
+- Minimum timeout floor of 1 second enforced by resolve_timeout
 
 ### Blockers
 
@@ -89,10 +94,10 @@ None.
 
 ### Next Actions
 
-1. Execute Phase 7 — Gate Evaluation
+1. Execute Phase 7 Plan 02 — CLI gate run command
 
 ### Session Continuity
 
 Last session: 2026-03-02
-Stopped at: Completed 06-02-PLAN.md (CLI spec show/list subcommands)
+Stopped at: Completed 07-01-PLAN.md (gate evaluation engine)
 Resume file: None
