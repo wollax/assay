@@ -21,6 +21,13 @@ pub enum GateKind {
     AlwaysPass,
 }
 
+inventory::submit! {
+    crate::schema_registry::SchemaEntry {
+        name: "gate-kind",
+        generate: || schemars::schema_for!(GateKind),
+    }
+}
+
 /// The result of evaluating a gate.
 ///
 /// Captures whether the gate passed, the command output (if any), timing,
@@ -53,6 +60,13 @@ pub struct GateResult {
 
     /// When the gate evaluation completed.
     pub timestamp: DateTime<Utc>,
+}
+
+inventory::submit! {
+    crate::schema_registry::SchemaEntry {
+        name: "gate-result",
+        generate: || schemars::schema_for!(GateResult),
+    }
 }
 
 #[cfg(test)]

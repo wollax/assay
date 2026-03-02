@@ -23,6 +23,13 @@ pub struct Criterion {
     pub cmd: Option<String>,
 }
 
+inventory::submit! {
+    crate::schema_registry::SchemaEntry {
+        name: "criterion",
+        generate: || schemars::schema_for!(Criterion),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

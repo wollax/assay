@@ -1,0 +1,19 @@
+{
+  "$id": "https://assay.dev/schemas/spec.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Spec",
+  "description": "A specification that defines what should be built and its acceptance criteria.",
+  "type": "object",
+  "properties": {
+    "description": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "name",
+    "description"
+  ]
+}

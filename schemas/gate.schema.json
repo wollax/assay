@@ -1,0 +1,19 @@
+{
+  "$id": "https://assay.dev/schemas/gate.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Gate",
+  "description": "A quality gate that must pass before work proceeds.",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string"
+    },
+    "passed": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "name",
+    "passed"
+  ]
+}
