@@ -7,13 +7,13 @@ Plan: 03 of 03
 Status: Phase 5 complete
 Last activity: 2026-03-02 — Completed 05-03-PLAN.md (init logic and CLI subcommand)
 
-Progress: [███░░░░░░░] 30% (13/43 requirements)
+Progress: [████░░░░░░] 37% (16/43 requirements)
 
 ## Milestone Progress
 
 | Milestone | Phases | Requirements | Complete |
 |-----------|--------|--------------|----------|
-| v0.1.0 | 10 | 43 | 30% |
+| v0.1.0 | 10 | 43 | 37% |
 
 ## Phase Status
 

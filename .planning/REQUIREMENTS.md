@@ -13,12 +13,12 @@
 
 ## Config & Initialization
 
-- [ ] **CFG-01**: `assay init` creates `.assay/` directory with `config.toml` and `specs/` subdirectory
-- [ ] **CFG-02**: Template-based `config.toml` generation with project name (inferred from directory) and sensible defaults
-- [ ] **CFG-03**: Example spec file created in `.assay/specs/` during init
-- [ ] **CFG-04**: Idempotent init — refuse to overwrite existing `.assay/` directory
-- [ ] **CFG-05**: Config loading via `assay_core::config::load()` and `from_str()` free functions
-- [ ] **CFG-06**: Config validation via `assay_core::config::validate()` with structured error reporting
+- [x] **CFG-01**: `assay init` creates `.assay/` directory with `config.toml` and `specs/` subdirectory
+- [x] **CFG-02**: Template-based `config.toml` generation with project name (inferred from directory) and sensible defaults
+- [x] **CFG-03**: Example spec file created in `.assay/specs/` during init
+- [x] **CFG-04**: Idempotent init — refuse to overwrite existing `.assay/` directory
+- [x] **CFG-05**: Config loading via `assay_core::config::load()` and `from_str()` free functions
+- [x] **CFG-06**: Config validation via `assay_core::config::validate()` with structured error reporting
 
 ## Spec Files
 
@@ -101,12 +101,12 @@
 | FND-06 | 3 — Error Types and Domain Model | Complete |
 | FND-07 | 4 — Schema Generation | Complete |
 | FND-08 | 1 — Workspace Prerequisites | Complete |
-| CFG-01 | 5 — Config and Initialization | Not Started |
-| CFG-02 | 5 — Config and Initialization | Not Started |
-| CFG-03 | 5 — Config and Initialization | Not Started |
-| CFG-04 | 5 — Config and Initialization | Not Started |
-| CFG-05 | 5 — Config and Initialization | Not Started |
-| CFG-06 | 5 — Config and Initialization | Not Started |
+| CFG-01 | 5 — Config and Initialization | Complete |
+| CFG-02 | 5 — Config and Initialization | Complete |
+| CFG-03 | 5 — Config and Initialization | Complete |
+| CFG-04 | 5 — Config and Initialization | Complete |
+| CFG-05 | 5 — Config and Initialization | Complete |
+| CFG-06 | 5 — Config and Initialization | Complete |
 | SPEC-01 | 6 — Spec Files | Not Started |
 | SPEC-02 | 6 — Spec Files | Not Started |
 | SPEC-03 | 6 — Spec Files | Not Started |
