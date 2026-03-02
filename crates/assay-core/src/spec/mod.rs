@@ -1,6 +1,6 @@
-//! Spec authoring and validation.
+//! Spec parsing, validation, and directory scanning.
 //!
-//! Handles creating, parsing, and validating specifications
+//! Handles loading, parsing, and validating specifications
 //! that define what should be built and their acceptance criteria.
 
 use std::collections::HashSet;
@@ -29,16 +29,19 @@ impl fmt::Display for SpecError {
 /// Result of scanning a directory for spec files.
 #[derive(Debug)]
 pub struct ScanResult {
-    /// Successfully parsed and validated specs, sorted by filename slug.
+    /// Successfully parsed and validated specs, sorted by filename.
+    /// Each entry is `(slug, spec)` where slug is the filename without extension.
+    /// Specs with duplicate `name` fields are removed and reported in `errors`.
     pub specs: Vec<(String, Spec)>,
-    /// Errors from files that failed to parse or validate.
+    /// Errors from files that failed to parse, validate, or read.
     pub errors: Vec<AssayError>,
 }
 
 /// Parse a spec from a TOML string without validation.
 ///
 /// Returns the raw `toml::de::Error` on failure, preserving line/column
-/// information. Callers that need validation should use [`load()`] instead.
+/// information. For file-based loading with automatic validation, see
+/// [`load()`] which reads from disk and calls [`validate()`].
 pub fn from_str(s: &str) -> std::result::Result<Spec, toml::de::Error> {
     toml::from_str(s)
 }
@@ -126,24 +129,43 @@ pub fn scan(specs_dir: &Path) -> Result<ScanResult> {
     })?;
 
     // Collect and sort directory entries by filename
+    let mut entry_errors = Vec::new();
     let mut paths: Vec<_> = entries
-        .filter_map(|entry| entry.ok())
-        .map(|entry| entry.path())
+        .filter_map(|entry| match entry {
+            Ok(e) => Some(e.path()),
+            Err(source) => {
+                entry_errors.push(AssayError::Io {
+                    operation: "reading directory entry".into(),
+                    path: specs_dir.to_path_buf(),
+                    source,
+                });
+                None
+            }
+        })
         .filter(|path| path.extension().is_some_and(|ext| ext == "toml"))
         .collect();
     paths.sort();
 
     let mut specs = Vec::new();
-    let mut errors = Vec::new();
+    let mut errors = entry_errors;
 
     for path in &paths {
         match load(path) {
             Ok(spec) => {
-                let slug = path
-                    .file_stem()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or("")
-                    .to_string();
+                let slug = match path.file_stem().and_then(|s| s.to_str()) {
+                    Some(s) if !s.is_empty() => s.to_string(),
+                    _ => {
+                        errors.push(AssayError::Io {
+                            operation: "extracting filename stem".into(),
+                            path: path.clone(),
+                            source: std::io::Error::new(
+                                std::io::ErrorKind::InvalidData,
+                                "file has no valid stem",
+                            ),
+                        });
+                        continue;
+                    }
+                };
                 specs.push((slug, spec));
             }
             Err(err) => {
