@@ -55,13 +55,13 @@ pub fn validate(config: &Config) -> std::result::Result<(), Vec<ConfigError>> {
         });
     }
 
-    if let Some(gates) = &config.gates {
-        if gates.default_timeout == 0 {
-            errors.push(ConfigError {
-                field: "[gates].default_timeout".into(),
-                message: "must be a positive integer".into(),
-            });
-        }
+    if let Some(gates) = &config.gates
+        && gates.default_timeout == 0
+    {
+        errors.push(ConfigError {
+            field: "[gates].default_timeout".into(),
+            message: "must be a positive integer".into(),
+        });
     }
 
     if errors.is_empty() {

@@ -127,6 +127,7 @@ name = "assay-core"
 version = "0.1.0"
 dependencies = [
  "assay-types",
+ "tempfile",
  "thiserror 2.0.18",
  "toml",
 ]

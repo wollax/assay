@@ -176,7 +176,8 @@ mod tests {
 
     /// Create a unique temporary directory for test isolation.
     fn test_dir(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("assay-init-test-{name}-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("assay-init-test-{name}-{}", std::process::id()));
         // Clean up any previous run
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir(&dir).expect("failed to create test dir");
