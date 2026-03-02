@@ -22,6 +22,11 @@ pub struct Criterion {
     // Forward-compatible: a future `prompt` field will support agent-based evaluation.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub cmd: Option<String>,
+
+    /// Optional timeout in seconds for this criterion's command.
+    /// Overrides the global default but is overridden by CLI `--timeout`.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub timeout: Option<u64>,
 }
 
 inventory::submit! {
@@ -41,12 +46,17 @@ mod tests {
             name: "builds cleanly".to_string(),
             description: "The project compiles without warnings".to_string(),
             cmd: None,
+            timeout: None,
         };
 
         let toml_str = toml::to_string(&criterion).expect("serialize to TOML");
         assert!(
             !toml_str.contains("cmd"),
             "TOML should omit absent cmd, got:\n{toml_str}"
+        );
+        assert!(
+            !toml_str.contains("timeout"),
+            "TOML should omit absent timeout, got:\n{toml_str}"
         );
 
         let roundtripped: Criterion = toml::from_str(&toml_str).expect("deserialize from TOML");
@@ -59,12 +69,32 @@ mod tests {
             name: "tests pass".to_string(),
             description: "All unit tests pass".to_string(),
             cmd: Some("cargo test".to_string()),
+            timeout: None,
         };
 
         let toml_str = toml::to_string(&criterion).expect("serialize to TOML");
         assert!(
             toml_str.contains(r#"cmd = "cargo test""#),
             "TOML should include cmd, got:\n{toml_str}"
+        );
+
+        let roundtripped: Criterion = toml::from_str(&toml_str).expect("deserialize from TOML");
+        assert_eq!(criterion, roundtripped);
+    }
+
+    #[test]
+    fn criterion_with_timeout_toml_roundtrip() {
+        let criterion = Criterion {
+            name: "long test".to_string(),
+            description: "A slow integration test".to_string(),
+            cmd: Some("cargo test -- --ignored".to_string()),
+            timeout: Some(60),
+        };
+
+        let toml_str = toml::to_string(&criterion).expect("serialize to TOML");
+        assert!(
+            toml_str.contains("timeout = 60"),
+            "TOML should include timeout, got:\n{toml_str}"
         );
 
         let roundtripped: Criterion = toml::from_str(&toml_str).expect("deserialize from TOML");
