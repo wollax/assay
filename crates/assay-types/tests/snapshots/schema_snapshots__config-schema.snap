@@ -1,84 +1,59 @@
 ---
 source: crates/assay-types/tests/schema_snapshots.rs
+assertion_line: 35
 expression: schema.to_value()
 ---
 {
   "$defs": {
-    "Gate": {
-      "description": "A quality gate that must pass before work proceeds.",
+    "GatesConfig": {
+      "additionalProperties": false,
+      "description": "Gate execution configuration.",
       "properties": {
-        "name": {
-          "type": "string"
+        "default_timeout": {
+          "default": 300,
+          "description": "Default timeout for gate commands in seconds. Defaults to 300.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
         },
-        "passed": {
-          "type": "boolean"
+        "working_dir": {
+          "description": "Working directory for gate execution.",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
-      "required": [
-        "name",
-        "passed"
-      ],
-      "type": "object"
-    },
-    "Spec": {
-      "description": "A specification that defines what should be built and its acceptance criteria.",
-      "properties": {
-        "description": {
-          "type": "string"
-        },
-        "name": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "name",
-        "description"
-      ],
-      "type": "object"
-    },
-    "Workflow": {
-      "description": "A workflow combining specs, gates, and reviews into a development pipeline.",
-      "properties": {
-        "gates": {
-          "items": {
-            "$ref": "#/$defs/Gate"
-          },
-          "type": "array"
-        },
-        "name": {
-          "type": "string"
-        },
-        "specs": {
-          "items": {
-            "$ref": "#/$defs/Spec"
-          },
-          "type": "array"
-        }
-      },
-      "required": [
-        "name",
-        "specs",
-        "gates"
-      ],
       "type": "object"
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "description": "Top-level configuration for Assay.",
+  "additionalProperties": false,
+  "description": "Top-level configuration for an Assay project.\n\nLoaded from `.assay/config.toml`.",
   "properties": {
+    "gates": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/GatesConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Gate execution configuration."
+    },
     "project_name": {
+      "description": "Project name (required, non-empty after trim).",
       "type": "string"
     },
-    "workflows": {
-      "items": {
-        "$ref": "#/$defs/Workflow"
-      },
-      "type": "array"
+    "specs_dir": {
+      "default": "specs/",
+      "description": "Directory containing spec files, relative to `.assay/`.\nDefaults to `\"specs/\"`.",
+      "type": "string"
     }
   },
   "required": [
-    "project_name",
-    "workflows"
+    "project_name"
   ],
   "title": "Config",
   "type": "object"

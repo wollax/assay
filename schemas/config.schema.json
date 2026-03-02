@@ -2,81 +2,55 @@
   "$id": "https://assay.dev/schemas/config.schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Config",
-  "description": "Top-level configuration for Assay.",
+  "description": "Top-level configuration for an Assay project.\n\nLoaded from `.assay/config.toml`.",
   "type": "object",
   "properties": {
+    "gates": {
+      "description": "Gate execution configuration.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/GatesConfig"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "project_name": {
+      "description": "Project name (required, non-empty after trim).",
       "type": "string"
     },
-    "workflows": {
-      "type": "array",
-      "items": {
-        "$ref": "#/$defs/Workflow"
-      }
+    "specs_dir": {
+      "description": "Directory containing spec files, relative to `.assay/`.\nDefaults to `\"specs/\"`.",
+      "type": "string",
+      "default": "specs/"
     }
   },
+  "additionalProperties": false,
   "required": [
-    "project_name",
-    "workflows"
+    "project_name"
   ],
   "$defs": {
-    "Gate": {
-      "description": "A quality gate that must pass before work proceeds.",
+    "GatesConfig": {
+      "description": "Gate execution configuration.",
       "type": "object",
       "properties": {
-        "name": {
-          "type": "string"
+        "default_timeout": {
+          "description": "Default timeout for gate commands in seconds. Defaults to 300.",
+          "type": "integer",
+          "format": "uint64",
+          "default": 300,
+          "minimum": 0
         },
-        "passed": {
-          "type": "boolean"
+        "working_dir": {
+          "description": "Working directory for gate execution.",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
-      "required": [
-        "name",
-        "passed"
-      ]
-    },
-    "Spec": {
-      "description": "A specification that defines what should be built and its acceptance criteria.",
-      "type": "object",
-      "properties": {
-        "description": {
-          "type": "string"
-        },
-        "name": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "name",
-        "description"
-      ]
-    },
-    "Workflow": {
-      "description": "A workflow combining specs, gates, and reviews into a development pipeline.",
-      "type": "object",
-      "properties": {
-        "gates": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/Gate"
-          }
-        },
-        "name": {
-          "type": "string"
-        },
-        "specs": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/Spec"
-          }
-        }
-      },
-      "required": [
-        "name",
-        "specs",
-        "gates"
-      ]
+      "additionalProperties": false
     }
   }
 }

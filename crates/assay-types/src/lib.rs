@@ -66,11 +66,23 @@ inventory::submit! {
     }
 }
 
-/// Top-level configuration for Assay.
+/// Top-level configuration for an Assay project.
+///
+/// Loaded from `.assay/config.toml`.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct Config {
+    /// Project name (required, non-empty after trim).
     pub project_name: String,
-    pub workflows: Vec<Workflow>,
+
+    /// Directory containing spec files, relative to `.assay/`.
+    /// Defaults to `"specs/"`.
+    #[serde(default = "default_specs_dir")]
+    pub specs_dir: String,
+
+    /// Gate execution configuration.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gates: Option<GatesConfig>,
 }
 
 inventory::submit! {
@@ -78,4 +90,32 @@ inventory::submit! {
         name: "config",
         generate: || schemars::schema_for!(Config),
     }
+}
+
+/// Gate execution configuration.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct GatesConfig {
+    /// Default timeout for gate commands in seconds. Defaults to 300.
+    #[serde(default = "default_timeout")]
+    pub default_timeout: u64,
+
+    /// Working directory for gate execution.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub working_dir: Option<String>,
+}
+
+inventory::submit! {
+    schema_registry::SchemaEntry {
+        name: "gates-config",
+        generate: || schemars::schema_for!(GatesConfig),
+    }
+}
+
+fn default_specs_dir() -> String {
+    "specs/".to_string()
+}
+
+fn default_timeout() -> u64 {
+    300
 }

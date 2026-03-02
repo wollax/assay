@@ -2,18 +2,18 @@
 
 ## Current Position
 
-Phase: 4 of 10 — Schema Generation
-Plan: 01 of 01
-Status: Phase 4 Complete
-Last activity: 2026-03-01 — Completed 04-01-PLAN.md (schema generation pipeline)
+Phase: 5 of 10 — Config and Initialization
+Plan: 03 of 03
+Status: Phase 5 complete
+Last activity: 2026-03-02 — Completed 05-03-PLAN.md (init logic and CLI subcommand)
 
-Progress: [██░░░░░░░░] 23% (10/43 requirements)
+Progress: [████░░░░░░] 37% (16/43 requirements)
 
 ## Milestone Progress
 
 | Milestone | Phases | Requirements | Complete |
 |-----------|--------|--------------|----------|
-| v0.1.0 | 10 | 43 | 23% |
+| v0.1.0 | 10 | 43 | 37% |
 
 ## Phase Status
 
@@ -23,7 +23,7 @@ Progress: [██░░░░░░░░] 23% (10/43 requirements)
 | 2 | MCP Spike | Complete (GO) |
 | 3 | Error Types and Domain Model | Complete |
 | 4 | Schema Generation | Complete |
-| 5 | Config and Initialization | Not Started |
+| 5 | Config and Initialization | Complete (3/3 plans) |
 | 6 | Spec Files | Not Started |
 | 7 | Gate Evaluation | Not Started |
 | 8 | MCP Server Tools | Not Started |
@@ -66,6 +66,16 @@ Progress: [██░░░░░░░░] 23% (10/43 requirements)
 - Schema $id uses https://assay.dev/schemas/{name}.schema.json (aspirational URL convention)
 - Generated schemas committed to git for IDE/consumer access without building
 - Convention: every JsonSchema-derived type MUST have inventory::submit! immediately after definition
+- ConfigError in config/mod.rs, not error.rs — config-specific validation output stays with config concerns
+- toml dep added to assay-core for config loading (Plan 02)
+- Existing Workflow/Gate types left untouched — only Config replaced; placeholders revisited later
+- from_str() returns toml::de::Error (not AssayError) for composability — raw parse details for tests/tools
+- validate() returns Vec<ConfigError> (not AssayError) — separates collection from reporting
+- load() composes from_str + validate, wraps errors with file path context
+- tempfile added as workspace dev-dependency for filesystem test isolation
+- String templates for generated files (toml::to_string cannot emit comments)
+- create_dir() not create_dir_all() for .assay/ — atomic idempotency guard
+- Minimal project name sanitization — fallback to "assay-project" only when file_name() is None/empty
 
 ### Blockers
 
@@ -73,11 +83,10 @@ None.
 
 ### Next Actions
 
-1. Begin Phase 5 (Config and Initialization) — unblocked
-2. Phases 4-10 proceed on confirmed architecture
+1. Begin Phase 6 — Spec Files (spec loading, validation, parsing from .assay/specs/)
 
 ### Session Continuity
 
-Last session: 2026-03-01
-Stopped at: Phase 4 complete
+Last session: 2026-03-02
+Stopped at: Completed Phase 5 (all 3 plans)
 Resume file: None

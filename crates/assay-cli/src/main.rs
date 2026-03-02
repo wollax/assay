@@ -13,6 +13,12 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Initialize a new Assay project in the current directory
+    Init {
+        /// Override the inferred project name
+        #[arg(long)]
+        name: Option<String>,
+    },
     /// MCP server operations
     Mcp {
         #[command(subcommand)]
@@ -50,6 +56,26 @@ async fn main() {
     let cli = Cli::parse();
 
     match cli.command {
+        Some(Command::Init { name }) => {
+            let root = std::env::current_dir().unwrap_or_else(|e| {
+                eprintln!("Error: could not determine current directory: {e}");
+                std::process::exit(1);
+            });
+            let options = assay_core::init::InitOptions { name };
+            match assay_core::init::init(&root, &options) {
+                Ok(result) => {
+                    println!("  Created assay project `{}`", result.project_name);
+                    for path in &result.created_files {
+                        let display = path.strip_prefix(&root).unwrap_or(path);
+                        println!("    created {}", display.display());
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Error: {e}");
+                    std::process::exit(1);
+                }
+            }
+        }
         Some(Command::Mcp { command }) => match command {
             McpCommand::Serve => {
                 init_mcp_tracing();

@@ -1,0 +1,24 @@
+{
+  "$id": "https://assay.dev/schemas/gates-config.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "GatesConfig",
+  "description": "Gate execution configuration.",
+  "type": "object",
+  "properties": {
+    "default_timeout": {
+      "description": "Default timeout for gate commands in seconds. Defaults to 300.",
+      "type": "integer",
+      "format": "uint64",
+      "default": 300,
+      "minimum": 0
+    },
+    "working_dir": {
+      "description": "Working directory for gate execution.",
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "additionalProperties": false
+}
