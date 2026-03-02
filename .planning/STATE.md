@@ -3,9 +3,9 @@
 ## Current Position
 
 Phase: 5 of 10 — Config and Initialization
-Plan: 02 of 03
-Status: In progress
-Last activity: 2026-03-02 — Completed 05-02-PLAN.md (config loading and validation via TDD)
+Plan: 03 of 03
+Status: Phase 5 complete
+Last activity: 2026-03-02 — Completed 05-03-PLAN.md (init logic and CLI subcommand)
 
 Progress: [███░░░░░░░] 30% (13/43 requirements)
 
@@ -13,7 +13,7 @@ Progress: [███░░░░░░░] 30% (13/43 requirements)
 
 | Milestone | Phases | Requirements | Complete |
 |-----------|--------|--------------|----------|
-| v0.1.0 | 10 | 43 | 23% |
+| v0.1.0 | 10 | 43 | 30% |
 
 ## Phase Status
 
@@ -23,7 +23,7 @@ Progress: [███░░░░░░░] 30% (13/43 requirements)
 | 2 | MCP Spike | Complete (GO) |
 | 3 | Error Types and Domain Model | Complete |
 | 4 | Schema Generation | Complete |
-| 5 | Config and Initialization | In Progress (Plan 2/3 complete) |
+| 5 | Config and Initialization | Complete (3/3 plans) |
 | 6 | Spec Files | Not Started |
 | 7 | Gate Evaluation | Not Started |
 | 8 | MCP Server Tools | Not Started |
@@ -73,6 +73,9 @@ Progress: [███░░░░░░░] 30% (13/43 requirements)
 - validate() returns Vec<ConfigError> (not AssayError) — separates collection from reporting
 - load() composes from_str + validate, wraps errors with file path context
 - tempfile added as workspace dev-dependency for filesystem test isolation
+- String templates for generated files (toml::to_string cannot emit comments)
+- create_dir() not create_dir_all() for .assay/ — atomic idempotency guard
+- Minimal project name sanitization — fallback to "assay-project" only when file_name() is None/empty
 
 ### Blockers
 
@@ -80,10 +83,10 @@ None.
 
 ### Next Actions
 
-1. Execute 05-03-PLAN.md — Init logic in assay-core and CLI init subcommand
+1. Begin Phase 6 — Spec Files (spec loading, validation, parsing from .assay/specs/)
 
 ### Session Continuity
 
 Last session: 2026-03-02
-Stopped at: Completed 05-02-PLAN.md
+Stopped at: Completed Phase 5 (all 3 plans)
 Resume file: None
