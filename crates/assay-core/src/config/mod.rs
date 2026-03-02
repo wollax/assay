@@ -4,8 +4,11 @@
 //! from files and environment.
 
 use std::fmt;
+use std::path::Path;
 
 use assay_types::Config;
+
+use crate::error::{AssayError, Result};
 
 /// A single validation issue in a config file.
 #[derive(Debug, Clone)]
@@ -66,6 +69,32 @@ pub fn validate(config: &Config) -> std::result::Result<(), Vec<ConfigError>> {
     } else {
         Err(errors)
     }
+}
+
+/// Load and validate a config from `.assay/config.toml` relative to `root`.
+///
+/// Reads the file, parses it as TOML, and validates the result. Wraps
+/// parse errors in [`AssayError::ConfigParse`] (with file path) and
+/// validation errors in [`AssayError::ConfigValidation`].
+pub fn load(root: &Path) -> Result<Config> {
+    let path = root.join(".assay").join("config.toml");
+
+    let content = std::fs::read_to_string(&path).map_err(|source| AssayError::Io {
+        operation: "reading config".into(),
+        path: path.clone(),
+        source,
+    })?;
+
+    let config: Config = toml::from_str(&content).map_err(|e| AssayError::ConfigParse {
+        path: path.clone(),
+        message: e.to_string(),
+    })?;
+
+    if let Err(errors) = validate(&config) {
+        return Err(AssayError::ConfigValidation { path, errors });
+    }
+
+    Ok(config)
 }
 
 #[cfg(test)]
