@@ -36,6 +36,12 @@ fn config_schema_snapshot() {
 }
 
 #[test]
+fn gates_config_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::GatesConfig);
+    assert_json_snapshot!("gates-config-schema", schema.to_value());
+}
+
+#[test]
 fn gate_kind_schema_snapshot() {
     let schema = schemars::schema_for!(assay_types::GateKind);
     assert_json_snapshot!("gate-kind-schema", schema.to_value());
