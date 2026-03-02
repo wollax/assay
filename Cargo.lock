@@ -118,6 +118,7 @@ dependencies = [
  "assay-core",
  "assay-mcp",
  "clap",
+ "serde_json",
  "tokio",
  "tracing-subscriber",
 ]

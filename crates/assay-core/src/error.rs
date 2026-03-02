@@ -2,6 +2,7 @@ use std::path::PathBuf;
 use thiserror::Error;
 
 use crate::config::ConfigError;
+use crate::spec::SpecError;
 
 /// Unified error type for all Assay operations.
 ///
@@ -43,6 +44,33 @@ pub enum AssayError {
     /// Init refused because `.assay/` already exists.
     #[error(".assay/ already exists. Remove it first to reinitialize.")]
     AlreadyInitialized,
+
+    /// Spec file parsing failed (invalid TOML or schema mismatch).
+    #[error("parsing spec `{path}`: {message}")]
+    SpecParse {
+        /// The spec file that failed to parse.
+        path: PathBuf,
+        /// The parse error message (includes line/column from toml crate).
+        message: String,
+    },
+
+    /// Spec validation failed (structurally valid TOML but semantically invalid).
+    #[error("invalid spec `{path}`:\n{}", .errors.iter().map(|e| format!("  - {e}")).collect::<Vec<_>>().join("\n"))]
+    SpecValidation {
+        /// The spec file that failed validation.
+        path: PathBuf,
+        /// All validation errors found.
+        errors: Vec<SpecError>,
+    },
+
+    /// Spec directory scanning failed (I/O error reading the directory).
+    #[error("scanning specs directory `{path}`: {source}")]
+    SpecScan {
+        /// The directory that couldn't be scanned.
+        path: PathBuf,
+        /// The underlying I/O error.
+        source: std::io::Error,
+    },
 }
 
 /// Convenience result alias for Assay operations.

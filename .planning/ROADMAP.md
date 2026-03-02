@@ -156,6 +156,11 @@ Plans:
 3. `spec::scan()` finds all `.toml` files in `.assay/specs/` and returns their parsed representations
 4. `assay spec show <name>` displays a human-readable representation of a named spec
 
+**Plans:** 2 plans
+Plans:
+- [x] 06-01-PLAN.md — Spec type updates, error variants, and spec module (from_str, validate, load, scan) via TDD
+- [x] 06-02-PLAN.md — Wire CLI spec show and spec list subcommands with table/JSON output
+
 ---
 
 #### Phase 7: Gate Evaluation
@@ -276,13 +281,13 @@ Plans:
 | 3 | Error Types and Domain Model | Complete | 5 | 5 |
 | 4 | Schema Generation | Complete | 1 | 1 |
 | 5 | Config and Initialization | Complete | 6 | 6 |
-| 6 | Spec Files | Not Started | 6 | 0 |
+| 6 | Spec Files | Complete | 6 | 6 |
 | 7 | Gate Evaluation | Not Started | 8 | 0 |
 | 8 | MCP Server Tools | Not Started | 6 | 0 |
 | 9 | CLI Surface Completion | Not Started | 1 | 0 |
 | 10 | Claude Code Plugin | Not Started | 6 | 0 |
 
-**Overall:** 16/43 requirements complete (37%)
+**Overall:** 22/43 requirements complete (51%)
 
 ---
 

@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 /// that can verify it programmatically. When `cmd` is `None`, the criterion
 /// is evaluated manually (or in future phases, via an agent `prompt` field).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct Criterion {
     /// Human-readable name for this criterion.
     pub name: String,
