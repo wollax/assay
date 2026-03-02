@@ -1,6 +1,8 @@
 use std::path::PathBuf;
 use thiserror::Error;
 
+use crate::config::ConfigError;
+
 /// Unified error type for all Assay operations.
 ///
 /// New variants are added as downstream phases consume them.
@@ -19,6 +21,28 @@ pub enum AssayError {
         /// The underlying I/O error.
         source: std::io::Error,
     },
+
+    /// Config file parsing failed (invalid TOML or schema mismatch).
+    #[error("parsing config `{path}`: {message}")]
+    ConfigParse {
+        /// The config file that failed to parse.
+        path: PathBuf,
+        /// The parse error message (includes line/column from toml crate).
+        message: String,
+    },
+
+    /// Config validation failed (structurally valid TOML but semantically invalid).
+    #[error("invalid config `{path}`:\n{}", .errors.iter().map(|e| format!("  - {e}")).collect::<Vec<_>>().join("\n"))]
+    ConfigValidation {
+        /// The config file that failed validation.
+        path: PathBuf,
+        /// All validation errors found.
+        errors: Vec<ConfigError>,
+    },
+
+    /// Init refused because `.assay/` already exists.
+    #[error(".assay/ already exists. Remove it first to reinitialize.")]
+    AlreadyInitialized,
 }
 
 /// Convenience result alias for Assay operations.

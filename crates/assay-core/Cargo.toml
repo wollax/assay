@@ -9,3 +9,7 @@ description = "Domain logic for Assay: specs, gates, reviews, and workflows"
 [dependencies]
 assay-types.workspace = true
 thiserror.workspace = true
+toml.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

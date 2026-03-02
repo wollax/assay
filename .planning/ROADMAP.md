@@ -128,6 +128,12 @@ Plans:
 3. `config::load()` parses a valid TOML config and returns structured data; invalid TOML produces error messages that include the file path and field name
 4. `config::validate()` rejects configs with missing or empty required fields
 
+**Plans:** 3 plans
+Plans:
+- [x] 05-01-PLAN.md — Redesign Config type, add GatesConfig, new error variants, update snapshots/schemas
+- [x] 05-02-PLAN.md — Config loading and validation (from_str, load, validate) via TDD
+- [x] 05-03-PLAN.md — Init logic in assay-core and CLI init subcommand
+
 ---
 
 #### Phase 6: Spec Files
@@ -269,14 +275,14 @@ Plans:
 | 2 | MCP Spike | Complete | 2 | 2 |
 | 3 | Error Types and Domain Model | Complete | 5 | 5 |
 | 4 | Schema Generation | Complete | 1 | 1 |
-| 5 | Config and Initialization | Not Started | 6 | 0 |
+| 5 | Config and Initialization | Complete | 6 | 6 |
 | 6 | Spec Files | Not Started | 6 | 0 |
 | 7 | Gate Evaluation | Not Started | 8 | 0 |
 | 8 | MCP Server Tools | Not Started | 6 | 0 |
 | 9 | CLI Surface Completion | Not Started | 1 | 0 |
 | 10 | Claude Code Plugin | Not Started | 6 | 0 |
 
-**Overall:** 10/43 requirements complete (23%)
+**Overall:** 16/43 requirements complete (37%)
 
 ---
 
