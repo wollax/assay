@@ -100,6 +100,10 @@ Progress: [█████████░] 98% (42/43 requirements)
 - No tool name prefix (spec_get not assay_spec_get) — MCP servers already namespace tools
 - first_nonempty_line extracts failure reason from stderr for summary mode; empty stderr gets "unknown"
 
+### Pending Issues
+
+30 open issues (9 from Phase 8 PR review: 1 critical, 7 important, 1 suggestion)
+
 ### Blockers
 
 None.
