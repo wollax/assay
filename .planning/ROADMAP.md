@@ -128,6 +128,12 @@ Plans:
 3. `config::load()` parses a valid TOML config and returns structured data; invalid TOML produces error messages that include the file path and field name
 4. `config::validate()` rejects configs with missing or empty required fields
 
+**Plans:** 3 plans
+Plans:
+- [ ] 05-01-PLAN.md — Redesign Config type, add GatesConfig, new error variants, update snapshots/schemas
+- [ ] 05-02-PLAN.md — Config loading and validation (from_str, load, validate) via TDD
+- [ ] 05-03-PLAN.md — Init logic in assay-core and CLI init subcommand
+
 ---
 
 #### Phase 6: Spec Files
