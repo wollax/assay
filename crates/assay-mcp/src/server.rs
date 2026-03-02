@@ -362,6 +362,7 @@ mod tests {
     use assay_core::gate::{CriterionResult, GateRunSummary};
     use assay_types::{GateKind, GateResult};
     use chrono::Utc;
+    use std::io::Write as _;
 
     fn sample_summary() -> GateRunSummary {
         GateRunSummary {
@@ -605,6 +606,342 @@ mod tests {
             failed.reason.as_deref(),
             Some("unknown"),
             "failed with empty stderr should have 'unknown' reason"
+        );
+    }
+
+    // ── Helper function integration tests ────────────────────────────
+
+    /// Create a tempdir with a valid `.assay/config.toml`.
+    fn create_project(config_toml: &str) -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        let assay_dir = dir.path().join(".assay");
+        std::fs::create_dir_all(&assay_dir).unwrap();
+        let mut f = std::fs::File::create(assay_dir.join("config.toml")).unwrap();
+        f.write_all(config_toml.as_bytes()).unwrap();
+        dir
+    }
+
+    /// Create a spec file inside a project's specs directory.
+    fn create_spec(project_dir: &Path, specs_dir_name: &str, filename: &str, content: &str) {
+        let specs_path = project_dir.join(".assay").join(specs_dir_name);
+        std::fs::create_dir_all(&specs_path).unwrap();
+        let mut f = std::fs::File::create(specs_path.join(filename)).unwrap();
+        f.write_all(content.as_bytes()).unwrap();
+    }
+
+    #[test]
+    fn test_load_config_valid_project() {
+        let dir = create_project(r#"project_name = "test-project""#);
+        let config = load_config(dir.path());
+
+        assert!(
+            config.is_ok(),
+            "load_config should succeed for valid project, got: {:?}",
+            config.err()
+        );
+        let config = config.unwrap();
+        assert_eq!(config.project_name, "test-project");
+    }
+
+    #[test]
+    fn test_load_config_missing_project() {
+        let dir = tempfile::tempdir().unwrap();
+        let result = load_config(dir.path());
+
+        assert!(
+            result.is_err(),
+            "load_config should fail for missing .assay/"
+        );
+        let err_result = result.unwrap_err();
+        assert!(
+            err_result.is_error.unwrap_or(false),
+            "should produce isError: true"
+        );
+
+        // Check that error text mentions the path
+        let text: String = err_result
+            .content
+            .iter()
+            .filter_map(|c| match &c.raw {
+                RawContent::Text(t) => Some(t.text.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert!(
+            text.contains("config"),
+            "error should mention config, got: {text}"
+        );
+    }
+
+    #[test]
+    fn test_load_spec_not_found() {
+        let dir = create_project(r#"project_name = "test""#);
+        // Create the specs directory but no spec files
+        std::fs::create_dir_all(dir.path().join(".assay").join("specs")).unwrap();
+
+        let config = load_config(dir.path()).unwrap();
+        let result = load_spec(dir.path(), &config, "nonexistent");
+
+        assert!(
+            result.is_err(),
+            "load_spec should fail for nonexistent spec"
+        );
+        let err_result = result.unwrap_err();
+        assert!(
+            err_result.is_error.unwrap_or(false),
+            "should produce isError: true"
+        );
+
+        let text: String = err_result
+            .content
+            .iter()
+            .filter_map(|c| match &c.raw {
+                RawContent::Text(t) => Some(t.text.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert!(
+            text.contains("nonexistent"),
+            "error should mention the spec name, got: {text}"
+        );
+    }
+
+    #[test]
+    fn test_load_spec_valid() {
+        let dir = create_project(r#"project_name = "test""#);
+        create_spec(
+            dir.path(),
+            "specs",
+            "auth-flow.toml",
+            r#"
+name = "auth-flow"
+description = "Auth spec"
+
+[[criteria]]
+name = "unit-tests"
+description = "Tests pass"
+cmd = "echo ok"
+"#,
+        );
+
+        let config = load_config(dir.path()).unwrap();
+        let result = load_spec(dir.path(), &config, "auth-flow");
+
+        assert!(
+            result.is_ok(),
+            "load_spec should succeed for valid spec, got: {:?}",
+            result.err()
+        );
+        let spec = result.unwrap();
+        assert_eq!(spec.name, "auth-flow");
+        assert_eq!(spec.criteria.len(), 1);
+    }
+
+    #[test]
+    fn test_resolve_working_dir_default() {
+        let cwd = PathBuf::from("/some/project");
+        let config = assay_types::Config {
+            project_name: "test".to_string(),
+            specs_dir: "specs/".to_string(),
+            gates: None,
+        };
+
+        let result = resolve_working_dir(&cwd, &config);
+        assert_eq!(result, cwd, "default should return cwd");
+    }
+
+    #[test]
+    fn test_resolve_working_dir_relative() {
+        let cwd = PathBuf::from("/some/project");
+        let config = assay_types::Config {
+            project_name: "test".to_string(),
+            specs_dir: "specs/".to_string(),
+            gates: Some(assay_types::GatesConfig {
+                default_timeout: 300,
+                working_dir: Some("subdir".to_string()),
+            }),
+        };
+
+        let result = resolve_working_dir(&cwd, &config);
+        assert_eq!(
+            result,
+            PathBuf::from("/some/project/subdir"),
+            "relative dir should be joined to cwd"
+        );
+    }
+
+    #[test]
+    fn test_resolve_working_dir_absolute() {
+        let cwd = PathBuf::from("/some/project");
+        let config = assay_types::Config {
+            project_name: "test".to_string(),
+            specs_dir: "specs/".to_string(),
+            gates: Some(assay_types::GatesConfig {
+                default_timeout: 300,
+                working_dir: Some("/tmp/custom".to_string()),
+            }),
+        };
+
+        let result = resolve_working_dir(&cwd, &config);
+        assert_eq!(
+            result,
+            PathBuf::from("/tmp/custom"),
+            "absolute dir should be used as-is"
+        );
+    }
+
+    // ── Response serialization tests ─────────────────────────────────
+
+    #[test]
+    fn test_spec_list_entry_serialization() {
+        let entry = SpecListEntry {
+            name: "auth-flow".to_string(),
+            description: "Authentication flow".to_string(),
+            criteria_count: 3,
+        };
+
+        let json = serde_json::to_value(&entry).unwrap();
+        assert_eq!(json["name"], "auth-flow");
+        assert_eq!(json["description"], "Authentication flow");
+        assert_eq!(json["criteria_count"], 3);
+    }
+
+    #[test]
+    fn test_spec_list_entry_omits_empty_description() {
+        let entry = SpecListEntry {
+            name: "bare-spec".to_string(),
+            description: String::new(),
+            criteria_count: 1,
+        };
+
+        let json = serde_json::to_value(&entry).unwrap();
+        assert_eq!(json["name"], "bare-spec");
+        assert!(
+            json.get("description").is_none(),
+            "empty description should be omitted, got: {json}"
+        );
+        assert_eq!(json["criteria_count"], 1);
+    }
+
+    #[test]
+    fn test_gate_run_response_serialization() {
+        let response = GateRunResponse {
+            spec_name: "auth-flow".to_string(),
+            passed: 2,
+            failed: 1,
+            skipped: 1,
+            total_duration_ms: 1500,
+            criteria: vec![
+                CriterionSummary {
+                    name: "unit-tests".to_string(),
+                    status: "passed".to_string(),
+                    exit_code: Some(0),
+                    duration_ms: Some(800),
+                    reason: None,
+                    stdout: None,
+                    stderr: None,
+                },
+                CriterionSummary {
+                    name: "lint".to_string(),
+                    status: "failed".to_string(),
+                    exit_code: Some(1),
+                    duration_ms: Some(700),
+                    reason: Some("error: unused variable".to_string()),
+                    stdout: None,
+                    stderr: None,
+                },
+                CriterionSummary {
+                    name: "review".to_string(),
+                    status: "skipped".to_string(),
+                    exit_code: None,
+                    duration_ms: None,
+                    reason: None,
+                    stdout: None,
+                    stderr: None,
+                },
+            ],
+        };
+
+        let json = serde_json::to_value(&response).unwrap();
+
+        // Top-level fields
+        assert_eq!(json["spec_name"], "auth-flow");
+        assert_eq!(json["passed"], 2);
+        assert_eq!(json["failed"], 1);
+        assert_eq!(json["skipped"], 1);
+        assert_eq!(json["total_duration_ms"], 1500);
+
+        // Passed criterion: no reason, no stdout, no stderr in JSON
+        let passed = &json["criteria"][0];
+        assert_eq!(passed["name"], "unit-tests");
+        assert_eq!(passed["status"], "passed");
+        assert_eq!(passed["exit_code"], 0);
+        assert!(
+            passed.get("reason").is_none(),
+            "passed should not have reason: {passed}"
+        );
+        assert!(
+            passed.get("stdout").is_none(),
+            "summary mode should not have stdout: {passed}"
+        );
+        assert!(
+            passed.get("stderr").is_none(),
+            "summary mode should not have stderr: {passed}"
+        );
+
+        // Failed criterion: has reason, no stdout/stderr
+        let failed = &json["criteria"][1];
+        assert_eq!(failed["name"], "lint");
+        assert_eq!(failed["reason"], "error: unused variable");
+        assert!(
+            failed.get("stdout").is_none(),
+            "summary mode should not have stdout: {failed}"
+        );
+
+        // Skipped criterion: minimal fields only
+        let skipped = &json["criteria"][2];
+        assert_eq!(skipped["name"], "review");
+        assert_eq!(skipped["status"], "skipped");
+        assert!(
+            skipped.get("exit_code").is_none(),
+            "skipped should not have exit_code: {skipped}"
+        );
+        assert!(
+            skipped.get("duration_ms").is_none(),
+            "skipped should not have duration_ms: {skipped}"
+        );
+        assert!(
+            skipped.get("reason").is_none(),
+            "skipped should not have reason: {skipped}"
+        );
+    }
+
+    #[test]
+    fn test_gate_run_response_with_evidence() {
+        let response = GateRunResponse {
+            spec_name: "test".to_string(),
+            passed: 1,
+            failed: 0,
+            skipped: 0,
+            total_duration_ms: 500,
+            criteria: vec![CriterionSummary {
+                name: "check".to_string(),
+                status: "passed".to_string(),
+                exit_code: Some(0),
+                duration_ms: Some(500),
+                reason: None,
+                stdout: Some("all tests passed".to_string()),
+                stderr: Some(String::new()),
+            }],
+        };
+
+        let json = serde_json::to_value(&response).unwrap();
+        let criterion = &json["criteria"][0];
+
+        assert_eq!(criterion["stdout"], "all tests passed");
+        assert!(
+            criterion.get("stderr").is_some(),
+            "evidence mode should include stderr even when empty"
         );
     }
 }
