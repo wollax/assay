@@ -272,4 +272,83 @@ default_timeout = 600
         assert!(fields.contains(&"specs_dir"));
         assert!(fields.contains(&"[gates].default_timeout"));
     }
+
+    // ── load tests ──────────────────────────────────────────────────
+
+    use std::io::Write;
+
+    fn write_config(root: &std::path::Path, content: &str) {
+        let assay_dir = root.join(".assay");
+        std::fs::create_dir_all(&assay_dir).unwrap();
+        let config_path = assay_dir.join("config.toml");
+        let mut f = std::fs::File::create(&config_path).unwrap();
+        f.write_all(content.as_bytes()).unwrap();
+    }
+
+    #[test]
+    fn load_valid_config() {
+        let dir = tempfile::tempdir().unwrap();
+        write_config(dir.path(), r#"project_name = "loaded""#);
+
+        let config = super::load(dir.path()).expect("valid config should load");
+
+        assert_eq!(config.project_name, "loaded");
+        assert_eq!(config.specs_dir, "specs/");
+        assert!(config.gates.is_none());
+    }
+
+    #[test]
+    fn load_missing_file_returns_io_error() {
+        let dir = tempfile::tempdir().unwrap();
+        // No .assay/config.toml created
+
+        let err = super::load(dir.path()).unwrap_err();
+        assert!(
+            matches!(err, crate::error::AssayError::Io { .. }),
+            "expected Io error, got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn load_invalid_toml_returns_config_parse() {
+        let dir = tempfile::tempdir().unwrap();
+        write_config(dir.path(), "not valid toml ===");
+
+        let err = super::load(dir.path()).unwrap_err();
+        match &err {
+            crate::error::AssayError::ConfigParse { path, message } => {
+                assert!(
+                    path.ends_with("config.toml"),
+                    "path should end with config.toml, got: {path:?}"
+                );
+                assert!(
+                    message.contains("TOML parse error"),
+                    "message should contain parse error, got: {message}"
+                );
+            }
+            other => panic!("expected ConfigParse, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn load_valid_toml_invalid_semantics_returns_config_validation() {
+        let dir = tempfile::tempdir().unwrap();
+        // Empty project_name is parseable but semantically invalid
+        write_config(dir.path(), r#"project_name = """#);
+
+        let err = super::load(dir.path()).unwrap_err();
+        match &err {
+            crate::error::AssayError::ConfigValidation { path, errors } => {
+                assert!(
+                    path.ends_with("config.toml"),
+                    "path should end with config.toml, got: {path:?}"
+                );
+                assert!(
+                    !errors.is_empty(),
+                    "should have at least one validation error"
+                );
+            }
+            other => panic!("expected ConfigValidation, got: {other:?}"),
+        }
+    }
 }
