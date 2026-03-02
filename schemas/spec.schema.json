@@ -45,6 +45,15 @@
         "name": {
           "description": "Human-readable name for this criterion.",
           "type": "string"
+        },
+        "timeout": {
+          "description": "Optional timeout in seconds for this criterion's command.\nOverrides the global default but is overridden by CLI `--timeout`.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0
         }
       },
       "additionalProperties": false,

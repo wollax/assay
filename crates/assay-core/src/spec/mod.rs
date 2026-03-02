@@ -340,6 +340,7 @@ unknown_crit_key = true
                 name: "c1".to_string(),
                 description: "d1".to_string(),
                 cmd: None,
+                timeout: None,
             }],
         }
     }
@@ -402,11 +403,13 @@ unknown_crit_key = true
                     name: "dup".to_string(),
                     description: "first".to_string(),
                     cmd: None,
+                    timeout: None,
                 },
                 Criterion {
                     name: "dup".to_string(),
                     description: "second".to_string(),
                     cmd: None,
+                    timeout: None,
                 },
             ],
         };
@@ -428,6 +431,7 @@ unknown_crit_key = true
                 name: String::new(),
                 description: "d1".to_string(),
                 cmd: None,
+                timeout: None,
             }],
         };
 
