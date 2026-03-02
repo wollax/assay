@@ -22,12 +22,12 @@
 
 ## Spec Files
 
-- [ ] **SPEC-01**: TOML spec file parsing via `assay_core::spec::load()` and `from_str()` free functions
-- [ ] **SPEC-02**: Spec struct with `name`, `description`, `criteria: Vec<Criterion>`
-- [ ] **SPEC-03**: Criteria with optional `cmd` field — present = executable, absent = descriptive
-- [ ] **SPEC-04**: Spec validation — name required, non-empty after trim, unique criteria names
-- [ ] **SPEC-05**: Spec directory scanning — find all `.toml` files in `.assay/specs/`
-- [ ] **SPEC-06**: `assay spec show <name>` CLI command displaying parsed spec
+- [x] **SPEC-01**: TOML spec file parsing via `assay_core::spec::load()` and `from_str()` free functions
+- [x] **SPEC-02**: Spec struct with `name`, `description`, `criteria: Vec<Criterion>`
+- [x] **SPEC-03**: Criteria with optional `cmd` field — present = executable, absent = descriptive
+- [x] **SPEC-04**: Spec validation — name required, non-empty after trim, unique criteria names
+- [x] **SPEC-05**: Spec directory scanning — find all `.toml` files in `.assay/specs/`
+- [x] **SPEC-06**: `assay spec show <name>` CLI command displaying parsed spec
 
 ## Gate Evaluation
 
@@ -107,12 +107,12 @@
 | CFG-04 | 5 — Config and Initialization | Complete |
 | CFG-05 | 5 — Config and Initialization | Complete |
 | CFG-06 | 5 — Config and Initialization | Complete |
-| SPEC-01 | 6 — Spec Files | Not Started |
-| SPEC-02 | 6 — Spec Files | Not Started |
-| SPEC-03 | 6 — Spec Files | Not Started |
-| SPEC-04 | 6 — Spec Files | Not Started |
-| SPEC-05 | 6 — Spec Files | Not Started |
-| SPEC-06 | 6 — Spec Files | Not Started |
+| SPEC-01 | 6 — Spec Files | Complete |
+| SPEC-02 | 6 — Spec Files | Complete |
+| SPEC-03 | 6 — Spec Files | Complete |
+| SPEC-04 | 6 — Spec Files | Complete |
+| SPEC-05 | 6 — Spec Files | Complete |
+| SPEC-06 | 6 — Spec Files | Complete |
 | GATE-01 | 7 — Gate Evaluation | Not Started |
 | GATE-02 | 7 — Gate Evaluation | Not Started |
 | GATE-03 | 7 — Gate Evaluation | Not Started |
