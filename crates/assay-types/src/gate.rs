@@ -19,6 +19,12 @@ pub enum GateKind {
 
     /// A gate that always passes — useful for placeholder or manual gates.
     AlwaysPass,
+
+    /// A gate that checks whether a file exists at the given path.
+    FileExists {
+        /// Path to check, relative to the working directory.
+        path: String,
+    },
 }
 
 inventory::submit! {
@@ -60,6 +66,16 @@ pub struct GateResult {
 
     /// When the gate evaluation completed.
     pub timestamp: DateTime<Utc>,
+
+    /// Whether stdout or stderr was truncated due to size limits.
+    /// Omitted from serialized output when false.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub truncated: bool,
+
+    /// Original byte count before truncation.
+    /// Omitted from serialized output when `None`.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub original_bytes: Option<u64>,
 }
 
 inventory::submit! {
@@ -95,6 +111,27 @@ mod tests {
     }
 
     #[test]
+    fn gate_kind_file_exists_toml_roundtrip() {
+        let kind = GateKind::FileExists {
+            path: "README.md".to_string(),
+        };
+
+        let toml_str = toml::to_string(&kind).expect("serialize to TOML");
+        assert!(
+            toml_str.contains(r#"kind = "FileExists""#),
+            "TOML should contain kind = \"FileExists\", got:\n{toml_str}"
+        );
+        assert!(
+            toml_str.contains(r#"path = "README.md""#),
+            "TOML should contain path = \"README.md\", got:\n{toml_str}"
+        );
+
+        let roundtripped: GateKind = toml::from_str(&toml_str).expect("deserialize from TOML");
+        let re_serialized = toml::to_string(&roundtripped).expect("re-serialize to TOML");
+        assert_eq!(toml_str, re_serialized);
+    }
+
+    #[test]
     fn gate_kind_always_pass_toml_roundtrip() {
         let kind = GateKind::AlwaysPass;
 
@@ -119,6 +156,8 @@ mod tests {
             exit_code: None,
             duration_ms: 0,
             timestamp: Utc::now(),
+            truncated: false,
+            original_bytes: None,
         };
 
         let json = serde_json::to_string(&result).expect("serialize to JSON");
@@ -134,6 +173,14 @@ mod tests {
             !json.contains("exit_code"),
             "JSON should omit None exit_code, got:\n{json}"
         );
+        assert!(
+            !json.contains("truncated"),
+            "JSON should omit false truncated, got:\n{json}"
+        );
+        assert!(
+            !json.contains("original_bytes"),
+            "JSON should omit None original_bytes, got:\n{json}"
+        );
     }
 
     #[test]
@@ -148,6 +195,8 @@ mod tests {
             exit_code: Some(0),
             duration_ms: 1500,
             timestamp: Utc::now(),
+            truncated: false,
+            original_bytes: None,
         };
 
         let json = serde_json::to_string(&result).expect("serialize to JSON");
@@ -162,6 +211,33 @@ mod tests {
         assert!(
             json.contains("exit_code"),
             "JSON should include Some exit_code, got:\n{json}"
+        );
+    }
+
+    #[test]
+    fn gate_result_json_includes_truncation_fields_when_populated() {
+        let result = GateResult {
+            passed: true,
+            kind: GateKind::Command {
+                cmd: "cargo test".to_string(),
+            },
+            stdout: "output".to_string(),
+            stderr: String::new(),
+            exit_code: Some(0),
+            duration_ms: 100,
+            timestamp: Utc::now(),
+            truncated: true,
+            original_bytes: Some(131_072),
+        };
+
+        let json = serde_json::to_string(&result).expect("serialize to JSON");
+        assert!(
+            json.contains("truncated"),
+            "JSON should include truncated when true, got:\n{json}"
+        );
+        assert!(
+            json.contains("original_bytes"),
+            "JSON should include original_bytes when Some, got:\n{json}"
         );
     }
 }

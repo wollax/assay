@@ -36,6 +36,7 @@ fn spec_validates() {
             name: "compiles".to_string(),
             description: "The project compiles".to_string(),
             cmd: None,
+            timeout: None,
         }],
     });
 }
@@ -68,6 +69,7 @@ fn workflow_validates() {
                 name: "compiles".to_string(),
                 description: "The project compiles".to_string(),
                 cmd: None,
+                timeout: None,
             }],
         }],
         gates: vec![Gate {
@@ -121,6 +123,8 @@ fn gate_result_full_validates() {
         exit_code: Some(0),
         duration_ms: 1500,
         timestamp: Utc::now(),
+        truncated: false,
+        original_bytes: None,
     });
 }
 
@@ -134,6 +138,8 @@ fn gate_result_minimal_validates() {
         exit_code: None,
         duration_ms: 0,
         timestamp: Utc::now(),
+        truncated: false,
+        original_bytes: None,
     });
 }
 
@@ -143,6 +149,7 @@ fn criterion_with_cmd_validates() {
         name: "tests pass".to_string(),
         description: "All unit tests pass".to_string(),
         cmd: Some("cargo test".to_string()),
+        timeout: None,
     });
 }
 
@@ -152,5 +159,40 @@ fn criterion_without_cmd_validates() {
         name: "builds cleanly".to_string(),
         description: "The project compiles without warnings".to_string(),
         cmd: None,
+        timeout: None,
+    });
+}
+
+#[test]
+fn criterion_with_timeout_validates() {
+    validate(&Criterion {
+        name: "slow test".to_string(),
+        description: "Integration tests with timeout".to_string(),
+        cmd: Some("cargo test -- --ignored".to_string()),
+        timeout: Some(60),
+    });
+}
+
+#[test]
+fn gate_kind_file_exists_validates() {
+    validate(&GateKind::FileExists {
+        path: "README.md".to_string(),
+    });
+}
+
+#[test]
+fn gate_result_truncated_validates() {
+    validate(&GateResult {
+        passed: true,
+        kind: GateKind::Command {
+            cmd: "cargo test".to_string(),
+        },
+        stdout: "output".to_string(),
+        stderr: String::new(),
+        exit_code: Some(0),
+        duration_ms: 100,
+        timestamp: Utc::now(),
+        truncated: true,
+        original_bytes: Some(131_072),
     });
 }

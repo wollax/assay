@@ -36,6 +36,24 @@ expression: schema.to_value()
         "kind"
       ],
       "type": "object"
+    },
+    {
+      "description": "A gate that checks whether a file exists at the given path.",
+      "properties": {
+        "kind": {
+          "const": "FileExists",
+          "type": "string"
+        },
+        "path": {
+          "description": "Path to check, relative to the working directory.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "path"
+      ],
+      "type": "object"
     }
   ],
   "title": "GateKind"

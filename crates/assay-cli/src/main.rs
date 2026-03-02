@@ -29,6 +29,11 @@ enum Command {
         #[command(subcommand)]
         command: SpecCommand,
     },
+    /// Run quality gates for a spec
+    Gate {
+        #[command(subcommand)]
+        command: GateCommand,
+    },
 }
 
 #[derive(Subcommand)]
@@ -49,6 +54,24 @@ enum SpecCommand {
     },
     /// List all available specs
     List,
+}
+
+#[derive(Subcommand)]
+enum GateCommand {
+    /// Run all executable criteria for a spec
+    Run {
+        /// Spec name (filename without .toml extension)
+        name: String,
+        /// Override timeout for all criteria (seconds)
+        #[arg(long)]
+        timeout: Option<u64>,
+        /// Show evidence for all criteria, not just failures
+        #[arg(short, long)]
+        verbose: bool,
+        /// Output as JSON instead of streaming display
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 /// Check whether terminal colors should be used.
@@ -73,6 +96,30 @@ fn format_criteria_type(has_cmd: bool, color: bool) -> String {
         "\x1b[33mdescriptive\x1b[0m".to_string()
     } else {
         "descriptive".to_string()
+    }
+}
+
+/// Format "ok" with optional green color.
+fn format_pass(color: bool) -> &'static str {
+    if color { "\x1b[32mok\x1b[0m" } else { "ok" }
+}
+
+/// Format "FAILED" with optional red color.
+fn format_fail(color: bool) -> &'static str {
+    if color {
+        "\x1b[31mFAILED\x1b[0m"
+    } else {
+        "FAILED"
+    }
+}
+
+/// Format a number with optional ANSI color, only applying color when
+/// the value is non-zero.
+fn format_count(value: usize, ansi_code: &str, color: bool) -> String {
+    if color && value > 0 {
+        format!("{ansi_code}{value}\x1b[0m")
+    } else {
+        value.to_string()
     }
 }
 
@@ -246,6 +293,176 @@ fn handle_spec_list() {
     }
 }
 
+/// Handle `assay gate run <name> [--timeout N] [--verbose] [--json]`.
+fn handle_gate_run(name: &str, cli_timeout: Option<u64>, verbose: bool, json: bool) {
+    let root = project_root();
+    let config = match assay_core::config::load(&root) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("Error: {e}");
+            std::process::exit(1);
+        }
+    };
+    let specs_dir = root.join(".assay").join(&config.specs_dir);
+    let spec_path = specs_dir.join(format!("{name}.toml"));
+
+    let spec = match assay_core::spec::load(&spec_path) {
+        Ok(s) => s,
+        Err(assay_core::AssayError::Io { source, .. })
+            if source.kind() == std::io::ErrorKind::NotFound =>
+        {
+            eprintln!("Error: spec '{name}' not found in {}", config.specs_dir);
+            std::process::exit(1);
+        }
+        Err(e) => {
+            eprintln!("Error: {e}");
+            std::process::exit(1);
+        }
+    };
+
+    // Resolve working directory: config gates.working_dir > project root
+    let working_dir = match config.gates.as_ref().and_then(|g| g.working_dir.as_deref()) {
+        Some(dir) => {
+            let path = std::path::Path::new(dir);
+            if path.is_absolute() {
+                path.to_path_buf()
+            } else {
+                root.join(path)
+            }
+        }
+        None => root.clone(),
+    };
+
+    // Extract config timeout
+    let config_timeout = config.gates.as_ref().map(|g| g.default_timeout);
+
+    // JSON output path: evaluate all at once, serialize, print
+    if json {
+        let summary =
+            assay_core::gate::evaluate_all(&spec, &working_dir, cli_timeout, config_timeout);
+        let output = serde_json::to_string_pretty(&summary).unwrap_or_else(|e| {
+            eprintln!("Error: failed to serialize gate results: {e}");
+            std::process::exit(1);
+        });
+        println!("{output}");
+        if summary.failed > 0 {
+            std::process::exit(1);
+        }
+        return;
+    }
+
+    // Streaming display path: iterate criteria manually for live progress
+    let color = colors_enabled();
+
+    let mut passed = 0usize;
+    let mut failed = 0usize;
+    let mut skipped = 0usize;
+    let executable_count = spec.criteria.iter().filter(|c| c.cmd.is_some()).count();
+
+    if executable_count == 0 {
+        println!("No executable criteria found");
+        return;
+    }
+
+    for criterion in &spec.criteria {
+        // Descriptive-only criteria: skip silently during streaming
+        if criterion.cmd.is_none() {
+            skipped += 1;
+            continue;
+        }
+
+        // Show "running" state (overwritable line on stderr)
+        if color {
+            eprint!("\r\x1b[K  {} ... running", criterion.name);
+        } else {
+            eprint!("\r  {} ... running", criterion.name);
+        }
+
+        let timeout =
+            assay_core::gate::resolve_timeout(cli_timeout, criterion.timeout, config_timeout);
+
+        match assay_core::gate::evaluate(criterion, &working_dir, timeout) {
+            Ok(result) => {
+                let status_label = if result.passed {
+                    passed += 1;
+                    format_pass(color)
+                } else {
+                    failed += 1;
+                    format_fail(color)
+                };
+
+                // Replace the running line with final status
+                if color {
+                    eprintln!("\r\x1b[K  {} ... {}", criterion.name, status_label);
+                } else {
+                    eprintln!("\r  {} ... {}", criterion.name, status_label);
+                }
+
+                // Show evidence for failures (always) or all criteria (--verbose)
+                if !result.passed || verbose {
+                    print_evidence(&result.stdout, &result.stderr, result.truncated, color);
+                }
+            }
+            Err(err) => {
+                failed += 1;
+
+                // Replace the running line with FAILED
+                if color {
+                    eprintln!("\r\x1b[K  {} ... {}", criterion.name, format_fail(color));
+                } else {
+                    eprintln!("\r  {} ... {}", criterion.name, format_fail(color));
+                }
+                eprintln!("    error: {err}");
+            }
+        }
+    }
+
+    // Summary line (stdout for capturability)
+    let total = passed + failed + skipped;
+    let passed_str = format_count(passed, "\x1b[32m", color);
+    let failed_str = format_count(failed, "\x1b[31m", color);
+    let skipped_str = format_count(skipped, "\x1b[33m", color);
+
+    println!();
+    println!(
+        "Results: {passed_str} passed, {failed_str} failed, {skipped_str} skipped (of {total} total)"
+    );
+
+    if failed > 0 {
+        std::process::exit(1);
+    }
+}
+
+/// Print evidence (stdout/stderr) for a gate result.
+///
+/// Multi-line output is indented with 4 spaces per line. If the output
+/// was truncated, a note is appended.
+fn print_evidence(stdout: &str, stderr: &str, truncated: bool, color: bool) {
+    let stdout = stdout.trim();
+    let stderr = stderr.trim();
+
+    if !stdout.is_empty() {
+        eprintln!("    stdout:");
+        for line in stdout.lines() {
+            eprintln!("      {line}");
+        }
+    }
+    if !stderr.is_empty() {
+        eprintln!("    stderr:");
+        for line in stderr.lines() {
+            eprintln!("      {line}");
+        }
+    }
+    if truncated {
+        let note = if color {
+            "\x1b[33m[output truncated]\x1b[0m"
+        } else {
+            "[output truncated]"
+        };
+        eprintln!("    {note}");
+    }
+}
+
 /// Initialize tracing to stderr for MCP server operation.
 ///
 /// Default level is `warn`. Override via `RUST_LOG` environment variable.
@@ -302,6 +519,16 @@ async fn main() {
         Some(Command::Spec { command }) => match command {
             SpecCommand::Show { name, json } => handle_spec_show(&name, json),
             SpecCommand::List => handle_spec_list(),
+        },
+        Some(Command::Gate { command }) => match command {
+            GateCommand::Run {
+                name,
+                timeout,
+                verbose,
+                json,
+            } => {
+                handle_gate_run(&name, timeout, verbose, json);
+            }
         },
         None => {
             println!("assay {}", env!("CARGO_PKG_VERSION"));

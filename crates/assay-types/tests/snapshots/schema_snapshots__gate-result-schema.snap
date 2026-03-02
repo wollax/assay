@@ -37,6 +37,24 @@ expression: schema.to_value()
             "kind"
           ],
           "type": "object"
+        },
+        {
+          "description": "A gate that checks whether a file exists at the given path.",
+          "properties": {
+            "kind": {
+              "const": "FileExists",
+              "type": "string"
+            },
+            "path": {
+              "description": "Path to check, relative to the working directory.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "path"
+          ],
+          "type": "object"
         }
       ]
     }
@@ -62,6 +80,15 @@ expression: schema.to_value()
       "$ref": "#/$defs/GateKind",
       "description": "Which gate kind produced this result."
     },
+    "original_bytes": {
+      "description": "Original byte count before truncation.\nOmitted from serialized output when `None`.",
+      "format": "uint64",
+      "minimum": 0,
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
     "passed": {
       "description": "Whether the gate passed.",
       "type": "boolean"
@@ -78,6 +105,10 @@ expression: schema.to_value()
       "description": "When the gate evaluation completed.",
       "format": "date-time",
       "type": "string"
+    },
+    "truncated": {
+      "description": "Whether stdout or stderr was truncated due to size limits.\nOmitted from serialized output when false.",
+      "type": "boolean"
     }
   },
   "required": [
