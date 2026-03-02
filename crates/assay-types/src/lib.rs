@@ -10,9 +10,18 @@ use serde::{Deserialize, Serialize};
 
 /// A specification that defines what should be built and its acceptance criteria.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct Spec {
+    /// Display name for this spec (required, must be unique across all specs).
     pub name: String,
+
+    /// Human-readable description. Defaults to empty string, omitted from
+    /// serialized output when empty.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub description: String,
+
+    /// Acceptance criteria that must be satisfied.
+    pub criteria: Vec<Criterion>,
 }
 
 inventory::submit! {

@@ -1,9 +1,36 @@
 ---
 source: crates/assay-types/tests/schema_snapshots.rs
+assertion_line: 29
 expression: schema.to_value()
 ---
 {
   "$defs": {
+    "Criterion": {
+      "additionalProperties": false,
+      "description": "A single acceptance criterion attached to a spec.\n\nEach criterion has a name, description, and an optional shell command\nthat can verify it programmatically. When `cmd` is `None`, the criterion\nis evaluated manually (or in future phases, via an agent `prompt` field).",
+      "properties": {
+        "cmd": {
+          "description": "Optional shell command to verify this criterion.\nOmitted from serialized output when `None`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "description": {
+          "description": "Detailed description of what this criterion checks.",
+          "type": "string"
+        },
+        "name": {
+          "description": "Human-readable name for this criterion.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "description"
+      ],
+      "type": "object"
+    },
     "Gate": {
       "description": "A quality gate that must pass before work proceeds.",
       "properties": {
@@ -21,18 +48,28 @@ expression: schema.to_value()
       "type": "object"
     },
     "Spec": {
+      "additionalProperties": false,
       "description": "A specification that defines what should be built and its acceptance criteria.",
       "properties": {
+        "criteria": {
+          "description": "Acceptance criteria that must be satisfied.",
+          "items": {
+            "$ref": "#/$defs/Criterion"
+          },
+          "type": "array"
+        },
         "description": {
+          "description": "Human-readable description. Defaults to empty string, omitted from\nserialized output when empty.",
           "type": "string"
         },
         "name": {
+          "description": "Display name for this spec (required, must be unique across all specs).",
           "type": "string"
         }
       },
       "required": [
         "name",
-        "description"
+        "criteria"
       ],
       "type": "object"
     }
