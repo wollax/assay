@@ -71,6 +71,29 @@ pub enum AssayError {
         /// The underlying I/O error.
         source: std::io::Error,
     },
+
+    /// A gate command failed to spawn or poll (I/O error during execution).
+    #[error("gate execution failed for `{cmd}` in `{working_dir}`: {source}")]
+    GateExecution {
+        /// The command that failed.
+        cmd: String,
+        /// The working directory where execution was attempted.
+        working_dir: PathBuf,
+        /// The underlying I/O error.
+        source: std::io::Error,
+    },
+
+    /// A spec was not found by name in the specs directory.
+    ///
+    /// Forward-declared for Phase 8 (MCP `spec_get` tool). Not yet
+    /// constructed in production code.
+    #[error("spec `{name}` not found in {specs_dir}")]
+    SpecNotFound {
+        /// The spec name that was looked up.
+        name: String,
+        /// The directory that was searched.
+        specs_dir: PathBuf,
+    },
 }
 
 /// Convenience result alias for Assay operations.
@@ -141,6 +164,45 @@ mod tests {
 
         assert!(ok_result().is_ok());
         assert!(err_result().is_err());
+    }
+
+    #[test]
+    fn gate_execution_error_display() {
+        let err = AssayError::GateExecution {
+            cmd: "cargo test".to_string(),
+            working_dir: PathBuf::from("/tmp/project"),
+            source: io::Error::new(io::ErrorKind::NotFound, "No such file or directory"),
+        };
+        let display = err.to_string();
+
+        assert_eq!(
+            display,
+            "gate execution failed for `cargo test` in `/tmp/project`: No such file or directory"
+        );
+    }
+
+    #[test]
+    fn gate_execution_error_source_chain() {
+        use std::error::Error;
+
+        let err = AssayError::GateExecution {
+            cmd: "echo hi".to_string(),
+            working_dir: PathBuf::from("/tmp"),
+            source: io::Error::new(io::ErrorKind::PermissionDenied, "Permission denied"),
+        };
+        let source = err.source().expect("GateExecution should have a source");
+        assert!(source.downcast_ref::<io::Error>().is_some());
+    }
+
+    #[test]
+    fn spec_not_found_error_display() {
+        let err = AssayError::SpecNotFound {
+            name: "auth-flow".to_string(),
+            specs_dir: PathBuf::from(".assay/specs/"),
+        };
+        let display = err.to_string();
+
+        assert_eq!(display, "spec `auth-flow` not found in .assay/specs/");
     }
 
     // `#[non_exhaustive]` is a compile-time property: external crates matching on

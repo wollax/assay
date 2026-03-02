@@ -23,6 +23,15 @@
       "description": "Which gate kind produced this result.",
       "$ref": "#/$defs/GateKind"
     },
+    "original_bytes": {
+      "description": "Original byte count before truncation.\nOmitted from serialized output when `None`.",
+      "type": [
+        "integer",
+        "null"
+      ],
+      "format": "uint64",
+      "minimum": 0
+    },
     "passed": {
       "description": "Whether the gate passed.",
       "type": "boolean"
@@ -39,6 +48,10 @@
       "description": "When the gate evaluation completed.",
       "type": "string",
       "format": "date-time"
+    },
+    "truncated": {
+      "description": "Whether stdout or stderr was truncated due to size limits.\nOmitted from serialized output when false.",
+      "type": "boolean"
     }
   },
   "required": [
@@ -80,6 +93,24 @@
           },
           "required": [
             "kind"
+          ]
+        },
+        {
+          "description": "A gate that checks whether a file exists at the given path.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "FileExists"
+            },
+            "path": {
+              "description": "Path to check, relative to the working directory.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "path"
           ]
         }
       ]

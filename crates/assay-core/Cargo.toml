@@ -8,8 +8,13 @@ description = "Domain logic for Assay: specs, gates, reviews, and workflows"
 
 [dependencies]
 assay-types.workspace = true
+chrono.workspace = true
+serde.workspace = true
 thiserror.workspace = true
 toml.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+libc.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

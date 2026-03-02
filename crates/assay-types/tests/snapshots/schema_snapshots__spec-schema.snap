@@ -1,6 +1,5 @@
 ---
 source: crates/assay-types/tests/schema_snapshots.rs
-assertion_line: 11
 expression: schema.to_value()
 ---
 {
@@ -23,6 +22,15 @@ expression: schema.to_value()
         "name": {
           "description": "Human-readable name for this criterion.",
           "type": "string"
+        },
+        "timeout": {
+          "description": "Optional timeout in seconds for this criterion's command.\nOverrides the global default but is overridden by CLI `--timeout`.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
         }
       },
       "required": [
