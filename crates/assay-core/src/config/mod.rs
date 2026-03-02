@@ -5,6 +5,8 @@
 
 use std::fmt;
 
+use assay_types::Config;
+
 /// A single validation issue in a config file.
 #[derive(Debug, Clone)]
 pub struct ConfigError {
@@ -20,9 +22,17 @@ impl fmt::Display for ConfigError {
     }
 }
 
+/// Parse a config from a TOML string without validation.
+///
+/// Returns the raw `toml::de::Error` on failure, preserving line/column
+/// information. Callers that need validation should use [`load()`] instead.
+pub fn from_str(s: &str) -> std::result::Result<Config, toml::de::Error> {
+    toml::from_str(s)
+}
+
 #[cfg(test)]
 mod tests {
-    use assay_types::{Config, GatesConfig};
+    // Config and GatesConfig accessed via from_str return type and field access.
 
     // ── from_str tests ──────────────────────────────────────────────
 
