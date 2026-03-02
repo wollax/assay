@@ -27,6 +27,32 @@
     "gates"
   ],
   "$defs": {
+    "Criterion": {
+      "description": "A single acceptance criterion attached to a spec.\n\nEach criterion has a name, description, and an optional shell command\nthat can verify it programmatically. When `cmd` is `None`, the criterion\nis evaluated manually (or in future phases, via an agent `prompt` field).",
+      "type": "object",
+      "properties": {
+        "cmd": {
+          "description": "Optional shell command to verify this criterion.\nOmitted from serialized output when `None`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "description": {
+          "description": "Detailed description of what this criterion checks.",
+          "type": "string"
+        },
+        "name": {
+          "description": "Human-readable name for this criterion.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "description"
+      ]
+    },
     "Gate": {
       "description": "A quality gate that must pass before work proceeds.",
       "type": "object",
@@ -47,16 +73,26 @@
       "description": "A specification that defines what should be built and its acceptance criteria.",
       "type": "object",
       "properties": {
+        "criteria": {
+          "description": "Acceptance criteria that must be satisfied.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Criterion"
+          }
+        },
         "description": {
+          "description": "Human-readable description. Defaults to empty string, omitted from\nserialized output when empty.",
           "type": "string"
         },
         "name": {
+          "description": "Display name for this spec (required, must be unique across all specs).",
           "type": "string"
         }
       },
+      "additionalProperties": false,
       "required": [
         "name",
-        "description"
+        "criteria"
       ]
     }
   }
