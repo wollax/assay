@@ -30,6 +30,44 @@ pub fn from_str(s: &str) -> std::result::Result<Config, toml::de::Error> {
     toml::from_str(s)
 }
 
+/// Validate a parsed config for semantic correctness.
+///
+/// Collects **all** validation errors at once so the user can fix
+/// everything in a single pass. Returns `Ok(())` when valid,
+/// `Err(errors)` with every issue found otherwise.
+pub fn validate(config: &Config) -> std::result::Result<(), Vec<ConfigError>> {
+    let mut errors = Vec::new();
+
+    if config.project_name.trim().is_empty() {
+        errors.push(ConfigError {
+            field: "project_name".into(),
+            message: "required, must not be empty".into(),
+        });
+    }
+
+    if config.specs_dir.trim().is_empty() {
+        errors.push(ConfigError {
+            field: "specs_dir".into(),
+            message: "required, must not be empty".into(),
+        });
+    }
+
+    if let Some(gates) = &config.gates {
+        if gates.default_timeout == 0 {
+            errors.push(ConfigError {
+                field: "[gates].default_timeout".into(),
+                message: "must be a positive integer".into(),
+            });
+        }
+    }
+
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     // Config and GatesConfig accessed via from_str return type and field access.
