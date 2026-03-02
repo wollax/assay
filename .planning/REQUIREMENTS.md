@@ -8,7 +8,7 @@
 - [x] **FND-04**: `GateKind` enum with `#[serde(tag = "kind")]` — `Command { cmd }` and `AlwaysPass` variants
 - [x] **FND-05**: `GateResult` struct with `passed`, `stdout`, `stderr`, `exit_code`, `duration_ms`, `timestamp` fields
 - [x] **FND-06**: `Criterion` struct with `name`, `description`, optional `cmd` field (forward-compatible with `prompt`)
-- [ ] **FND-07**: Schema generation binary (`assay-types/examples/generate-schemas.rs`) + `just schemas` recipe
+- [x] **FND-07**: Schema generation binary (`assay-types/examples/generate-schemas.rs`) + `just schemas` recipe
 - [x] **FND-08**: New `assay-mcp` crate added to workspace (library crate for MCP server)
 
 ## Config & Initialization
@@ -99,7 +99,7 @@
 | FND-04 | 3 — Error Types and Domain Model | Complete |
 | FND-05 | 3 — Error Types and Domain Model | Complete |
 | FND-06 | 3 — Error Types and Domain Model | Complete |
-| FND-07 | 4 — Schema Generation | Not Started |
+| FND-07 | 4 — Schema Generation | Complete |
 | FND-08 | 1 — Workspace Prerequisites | Complete |
 | CFG-01 | 5 — Config and Initialization | Not Started |
 | CFG-02 | 5 — Config and Initialization | Not Started |
