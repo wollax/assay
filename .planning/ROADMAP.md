@@ -102,6 +102,10 @@ Plans:
 2. Generated schemas reflect schemars 1.x output and validate against sample TOML-converted-to-JSON input
 3. Schema files are deterministic (re-running produces identical output)
 
+**Plans:** 1 plan
+Plans:
+- [x] 04-01-PLAN.md — Schema registry, generator binary, just recipes, roundtrip + snapshot tests
+
 ---
 
 #### Phase 5: Config and Initialization
@@ -264,7 +268,7 @@ Plans:
 | 1 | Workspace Prerequisites | Complete | 2 | 2 |
 | 2 | MCP Spike | Complete | 2 | 2 |
 | 3 | Error Types and Domain Model | Complete | 5 | 5 |
-| 4 | Schema Generation | Not Started | 1 | 0 |
+| 4 | Schema Generation | Complete | 1 | 1 |
 | 5 | Config and Initialization | Not Started | 6 | 0 |
 | 6 | Spec Files | Not Started | 6 | 0 |
 | 7 | Gate Evaluation | Not Started | 8 | 0 |
@@ -272,7 +276,7 @@ Plans:
 | 9 | CLI Surface Completion | Not Started | 1 | 0 |
 | 10 | Claude Code Plugin | Not Started | 6 | 0 |
 
-**Overall:** 9/43 requirements complete (21%)
+**Overall:** 10/43 requirements complete (23%)
 
 ---
 

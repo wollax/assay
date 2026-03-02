@@ -1,0 +1,39 @@
+{
+  "$id": "https://assay.dev/schemas/gate-kind.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "GateKind",
+  "description": "The kind of gate to evaluate.\n\nUses internal tagging (`#[serde(tag = \"kind\")]`) so TOML output includes\na `kind = \"Command\"` or `kind = \"AlwaysPass\"` discriminator field.",
+  "oneOf": [
+    {
+      "description": "A gate that runs a shell command and checks its exit code.",
+      "type": "object",
+      "properties": {
+        "cmd": {
+          "description": "The shell command to execute.",
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "const": "Command"
+        }
+      },
+      "required": [
+        "kind",
+        "cmd"
+      ]
+    },
+    {
+      "description": "A gate that always passes — useful for placeholder or manual gates.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "AlwaysPass"
+        }
+      },
+      "required": [
+        "kind"
+      ]
+    }
+  ]
+}

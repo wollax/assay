@@ -43,3 +43,22 @@ cli *ARGS:
 # Run the TUI
 tui:
     cargo run -p assay-tui
+
+# Generate JSON Schema files for all public types
+schemas:
+    cargo run -p assay-types --example generate-schemas
+
+# Check that generated schemas are up to date (for CI)
+schemas-check:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    tmpdir=$(mktemp -d)
+    cp -r schemas/ "$tmpdir/schemas-expected"
+    just schemas
+    if ! diff -r schemas/ "$tmpdir/schemas-expected" > /dev/null 2>&1; then
+        echo "ERROR: schemas/ is out of date. Run 'just schemas' and commit."
+        rm -rf "$tmpdir"
+        exit 1
+    fi
+    rm -rf "$tmpdir"
+    echo "Schemas are up to date."

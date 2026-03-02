@@ -1,0 +1,63 @@
+{
+  "$id": "https://assay.dev/schemas/workflow.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Workflow",
+  "description": "A workflow combining specs, gates, and reviews into a development pipeline.",
+  "type": "object",
+  "properties": {
+    "gates": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Gate"
+      }
+    },
+    "name": {
+      "type": "string"
+    },
+    "specs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Spec"
+      }
+    }
+  },
+  "required": [
+    "name",
+    "specs",
+    "gates"
+  ],
+  "$defs": {
+    "Gate": {
+      "description": "A quality gate that must pass before work proceeds.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "passed": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name",
+        "passed"
+      ]
+    },
+    "Spec": {
+      "description": "A specification that defines what should be built and its acceptance criteria.",
+      "type": "object",
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "description"
+      ]
+    }
+  }
+}
