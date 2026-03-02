@@ -71,17 +71,19 @@ fn workflow_validates() {
 fn config_validates() {
     validate(&Config {
         project_name: "test-project".to_string(),
-        workflows: vec![Workflow {
-            name: "ci".to_string(),
-            specs: vec![Spec {
-                name: "auth".to_string(),
-                description: "Authentication flow".to_string(),
-            }],
-            gates: vec![Gate {
-                name: "tests".to_string(),
-                passed: false,
-            }],
-        }],
+        specs_dir: "specs/".to_string(),
+        gates: Some(assay_types::GatesConfig {
+            default_timeout: 300,
+            working_dir: Some(".".to_string()),
+        }),
+    });
+}
+
+#[test]
+fn gates_config_validates() {
+    validate(&assay_types::GatesConfig {
+        default_timeout: 300,
+        working_dir: None,
     });
 }
 
