@@ -127,4 +127,111 @@ unknown_gate_option = true
             "should reject unknown gates key, got: {msg}"
         );
     }
+
+    // ── validate tests ──────────────────────────────────────────────
+
+    fn valid_config() -> assay_types::Config {
+        super::from_str(r#"project_name = "test""#).unwrap()
+    }
+
+    #[test]
+    fn validate_valid_config_returns_ok() {
+        assert!(super::validate(&valid_config()).is_ok());
+    }
+
+    #[test]
+    fn validate_valid_config_with_gates_returns_ok() {
+        let config = super::from_str(
+            r#"
+project_name = "test"
+[gates]
+default_timeout = 600
+"#,
+        )
+        .unwrap();
+
+        assert!(super::validate(&config).is_ok());
+    }
+
+    #[test]
+    fn validate_empty_project_name() {
+        let mut config = valid_config();
+        config.project_name = String::new();
+
+        let errors = super::validate(&config).unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert_eq!(errors[0].field, "project_name");
+        assert!(
+            errors[0].message.contains("must not be empty"),
+            "got: {}",
+            errors[0].message
+        );
+    }
+
+    #[test]
+    fn validate_whitespace_only_project_name() {
+        let mut config = valid_config();
+        config.project_name = "   \t  ".to_string();
+
+        let errors = super::validate(&config).unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert_eq!(errors[0].field, "project_name");
+    }
+
+    #[test]
+    fn validate_empty_specs_dir() {
+        let mut config = valid_config();
+        config.specs_dir = String::new();
+
+        let errors = super::validate(&config).unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert_eq!(errors[0].field, "specs_dir");
+        assert!(
+            errors[0].message.contains("must not be empty"),
+            "got: {}",
+            errors[0].message
+        );
+    }
+
+    #[test]
+    fn validate_zero_default_timeout() {
+        let mut config = valid_config();
+        config.gates = Some(assay_types::GatesConfig {
+            default_timeout: 0,
+            working_dir: None,
+        });
+
+        let errors = super::validate(&config).unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert_eq!(errors[0].field, "[gates].default_timeout");
+        assert!(
+            errors[0].message.contains("positive"),
+            "got: {}",
+            errors[0].message
+        );
+    }
+
+    #[test]
+    fn validate_collects_all_errors_at_once() {
+        let config = assay_types::Config {
+            project_name: String::new(),
+            specs_dir: String::new(),
+            gates: Some(assay_types::GatesConfig {
+                default_timeout: 0,
+                working_dir: None,
+            }),
+        };
+
+        let errors = super::validate(&config).unwrap_err();
+        assert_eq!(
+            errors.len(),
+            3,
+            "should collect all 3 errors, got: {errors:?}"
+        );
+
+        let fields: Vec<&str> = errors.iter().map(|e| e.field.as_str()).collect();
+        assert!(fields.contains(&"project_name"));
+        assert!(fields.contains(&"specs_dir"));
+        assert!(fields.contains(&"[gates].default_timeout"));
+    }
 }
