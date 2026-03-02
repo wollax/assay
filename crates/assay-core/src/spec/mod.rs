@@ -3,6 +3,7 @@
 //! Handles creating, parsing, and validating specifications
 //! that define what should be built and their acceptance criteria.
 
+use std::collections::HashSet;
 use std::fmt;
 use std::path::Path;
 
@@ -35,23 +36,145 @@ pub struct ScanResult {
 }
 
 /// Parse a spec from a TOML string without validation.
+///
+/// Returns the raw `toml::de::Error` on failure, preserving line/column
+/// information. Callers that need validation should use [`load()`] instead.
 pub fn from_str(s: &str) -> std::result::Result<Spec, toml::de::Error> {
-    todo!()
+    toml::from_str(s)
 }
 
 /// Validate a parsed spec for semantic correctness.
+///
+/// Collects **all** validation errors at once so the user can fix
+/// everything in a single pass. Returns `Ok(())` when valid,
+/// `Err(errors)` with every issue found otherwise.
 pub fn validate(spec: &Spec) -> std::result::Result<(), Vec<SpecError>> {
-    todo!()
+    let mut errors = Vec::new();
+
+    if spec.name.trim().is_empty() {
+        errors.push(SpecError {
+            field: "name".into(),
+            message: "required, must not be empty".into(),
+        });
+    }
+
+    if spec.criteria.is_empty() {
+        errors.push(SpecError {
+            field: "criteria".into(),
+            message: "must have at least one criterion".into(),
+        });
+    } else {
+        let mut seen = HashSet::new();
+        for (i, criterion) in spec.criteria.iter().enumerate() {
+            if criterion.name.trim().is_empty() {
+                errors.push(SpecError {
+                    field: format!("criteria[{i}].name"),
+                    message: "required, must not be empty".into(),
+                });
+            } else if !seen.insert(&criterion.name) {
+                errors.push(SpecError {
+                    field: format!("criteria[{i}].name"),
+                    message: format!("duplicate criterion name `{}`", criterion.name),
+                });
+            }
+        }
+    }
+
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors)
+    }
 }
 
 /// Load and validate a spec from a file path.
+///
+/// Reads the file, parses it as TOML, and validates the result. Wraps
+/// parse errors in [`AssayError::SpecParse`] (with file path) and
+/// validation errors in [`AssayError::SpecValidation`].
 pub fn load(path: &Path) -> Result<Spec> {
-    todo!()
+    let content = std::fs::read_to_string(path).map_err(|source| AssayError::Io {
+        operation: "reading spec".into(),
+        path: path.to_path_buf(),
+        source,
+    })?;
+
+    let spec: Spec = toml::from_str(&content).map_err(|e| AssayError::SpecParse {
+        path: path.to_path_buf(),
+        message: e.to_string(),
+    })?;
+
+    if let Err(errors) = validate(&spec) {
+        return Err(AssayError::SpecValidation {
+            path: path.to_path_buf(),
+            errors,
+        });
+    }
+
+    Ok(spec)
 }
 
 /// Scan a directory for `.toml` spec files.
+///
+/// Performs a flat (non-recursive) scan. Non-`.toml` files are silently
+/// skipped. Results are sorted by filename. After loading all valid specs,
+/// duplicate `name` fields across files are detected and reported as errors.
 pub fn scan(specs_dir: &Path) -> Result<ScanResult> {
-    todo!()
+    let entries = std::fs::read_dir(specs_dir).map_err(|source| AssayError::SpecScan {
+        path: specs_dir.to_path_buf(),
+        source,
+    })?;
+
+    // Collect and sort directory entries by filename
+    let mut paths: Vec<_> = entries
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.path())
+        .filter(|path| path.extension().is_some_and(|ext| ext == "toml"))
+        .collect();
+    paths.sort();
+
+    let mut specs = Vec::new();
+    let mut errors = Vec::new();
+
+    for path in &paths {
+        match load(path) {
+            Ok(spec) => {
+                let slug = path
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("")
+                    .to_string();
+                specs.push((slug, spec));
+            }
+            Err(err) => {
+                errors.push(err);
+            }
+        }
+    }
+
+    // Detect duplicate spec names across files
+    let mut seen_names: HashSet<String> = HashSet::new();
+    let mut duplicate_indices = Vec::new();
+    for (i, (_slug, spec)) in specs.iter().enumerate() {
+        if !seen_names.insert(spec.name.clone()) {
+            duplicate_indices.push(i);
+        }
+    }
+
+    // Remove duplicates in reverse order (to preserve indices) and add to errors
+    for i in duplicate_indices.into_iter().rev() {
+        let (slug, spec) = specs.remove(i);
+        let path = specs_dir.join(format!("{slug}.toml"));
+        errors.push(AssayError::SpecValidation {
+            path,
+            errors: vec![SpecError {
+                field: "name".into(),
+                message: format!("duplicate spec name `{}`", spec.name),
+            }],
+        });
+    }
+
+    Ok(ScanResult { specs, errors })
 }
 
 #[cfg(test)]
