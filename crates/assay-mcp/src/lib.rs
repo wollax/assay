@@ -1,14 +1,18 @@
 //! MCP (Model Context Protocol) server library for Assay.
 //!
 //! This crate provides the MCP server implementation that exposes Assay's
-//! spec-driven workflows, quality gates, and reviews as MCP tools and resources.
+//! spec and gate operations as MCP tools. Three tools are available:
+//!
+//! - `spec_list` — discover available specs in the project
+//! - `spec_get` — read a full spec definition by name
+//! - `gate_run` — evaluate quality gate criteria for a spec
 
-mod spike;
+mod server;
 
 /// Start the MCP server on stdio transport.
 ///
-/// Delegates to the internal spike server. Serves JSON-RPC on stdin/stdout
+/// Delegates to the internal server module. Serves JSON-RPC on stdin/stdout
 /// until the transport closes. Caller must initialize tracing before calling.
 pub async fn serve() -> Result<(), Box<dyn std::error::Error>> {
-    spike::serve().await
+    server::serve().await
 }
