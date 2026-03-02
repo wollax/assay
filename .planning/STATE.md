@@ -3,17 +3,17 @@
 ## Current Position
 
 Phase: 6 of 10 — Spec Files
-Plan: 01 of 02
-Status: In progress
-Last activity: 2026-03-02 — Completed 06-01-PLAN.md
+Plan: 02 of 02
+Status: Complete
+Last activity: 2026-03-02 — Completed 06-02-PLAN.md
 
-Progress: [█████░░░░░] 49% (21/43 requirements)
+Progress: [██████░░░░] 65% (28/43 requirements)
 
 ## Milestone Progress
 
 | Milestone | Phases | Requirements | Complete |
 |-----------|--------|--------------|----------|
-| v0.1.0 | 10 | 43 | 49% |
+| v0.1.0 | 10 | 43 | 65% |
 
 ## Phase Status
 
@@ -24,7 +24,7 @@ Progress: [█████░░░░░] 49% (21/43 requirements)
 | 3 | Error Types and Domain Model | Complete |
 | 4 | Schema Generation | Complete |
 | 5 | Config and Initialization | Complete (3/3 plans) |
-| 6 | Spec Files | In Progress (1/2 plans) |
+| 6 | Spec Files | Complete (2/2 plans) |
 | 7 | Gate Evaluation | Not Started |
 | 8 | MCP Server Tools | Not Started |
 | 9 | CLI Surface Completion | Not Started |
@@ -79,6 +79,9 @@ Progress: [█████░░░░░] 49% (21/43 requirements)
 - SpecError in spec/mod.rs, not error.rs — mirrors ConfigError pattern, spec-specific validation output stays with spec concerns
 - Duplicate spec names: first-seen wins, later file with duplicate name becomes an error entry
 - Criterion name validation: empty names checked before duplicate detection
+- ANSI escape codes for CLI colors (no external color dependency), NO_COLOR env var respected per no-color.org
+- println!-based table formatting (no external table library), dynamic column widths from data
+- serde_json wired to assay-cli for --json output; both spec commands resolve specs_dir from config::load()
 
 ### Blockers
 
@@ -86,10 +89,10 @@ None.
 
 ### Next Actions
 
-1. Execute Phase 6 Plan 02 — CLI spec show and spec list subcommands
+1. Execute Phase 7 — Gate Evaluation
 
 ### Session Continuity
 
 Last session: 2026-03-02
-Stopped at: Completed 06-01-PLAN.md (spec module TDD)
+Stopped at: Completed 06-02-PLAN.md (CLI spec show/list subcommands)
 Resume file: None
