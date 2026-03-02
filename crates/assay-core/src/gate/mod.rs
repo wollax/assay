@@ -80,7 +80,7 @@ pub struct CriterionResult {
 ///
 /// This function is synchronous. From async code, use:
 /// ```ignore
-/// tokio::task::spawn_blocking(move || gate::evaluate(&criterion, &dir, timeout)).await?
+/// tokio::task::spawn_blocking(move || gate::evaluate(&criterion, &dir, timeout)).await??
 /// ```
 pub fn evaluate(
     criterion: &Criterion,
@@ -197,6 +197,11 @@ pub fn resolve_timeout(
 ///
 /// Resolves `path` relative to `working_dir` and checks whether the
 /// file exists. No process execution, no timeout needed.
+///
+/// **Note:** This function is not dispatched through [`evaluate`] — it's a
+/// standalone entry point. `evaluate()` derives `GateKind` from `Criterion`
+/// fields (cmd presence). File-check criteria will be integrated in a future
+/// phase when `Criterion` gains a `path` field alongside `cmd`.
 pub fn evaluate_file_exists(path: &str, working_dir: &Path) -> Result<GateResult> {
     let start = Instant::now();
     let full_path = working_dir.join(path);
@@ -256,20 +261,26 @@ fn evaluate_command(cmd: &str, working_dir: &Path, timeout: Duration) -> Result<
     let stdout_handle = child.stdout.take();
     let stderr_handle = child.stderr.take();
 
-    // Spawn reader threads to drain pipes (prevents deadlock)
+    // Spawn reader threads to drain pipes (prevents deadlock).
+    // Errors are captured alongside the buffer so the caller can
+    // include partial output in GateResult even if a read fails.
     let stdout_thread = std::thread::spawn(move || {
         let mut buf = Vec::new();
-        if let Some(mut stdout) = stdout_handle {
-            let _ = std::io::Read::read_to_end(&mut stdout, &mut buf);
+        if let Some(mut stdout) = stdout_handle
+            && let Err(e) = std::io::Read::read_to_end(&mut stdout, &mut buf)
+        {
+            return (buf, Some(e));
         }
-        buf
+        (buf, None)
     });
     let stderr_thread = std::thread::spawn(move || {
         let mut buf = Vec::new();
-        if let Some(mut stderr) = stderr_handle {
-            let _ = std::io::Read::read_to_end(&mut stderr, &mut buf);
+        if let Some(mut stderr) = stderr_handle
+            && let Err(e) = std::io::Read::read_to_end(&mut stderr, &mut buf)
+        {
+            return (buf, Some(e));
         }
-        buf
+        (buf, None)
     });
 
     // Poll for completion with timeout
@@ -278,8 +289,20 @@ fn evaluate_command(cmd: &str, working_dir: &Path, timeout: Duration) -> Result<
             Ok(Some(status)) => break Some(status),
             Ok(None) => {
                 if start.elapsed() >= timeout {
-                    let _ = child.kill();
-                    let _ = child.wait(); // Reap zombie
+                    // Kill the process group (Unix) or direct child (non-Unix)
+                    #[cfg(unix)]
+                    {
+                        // SAFETY: child.id() returns a u32; process_group(0) set
+                        // pgid == pid, so killpg sends SIGKILL to the entire group.
+                        let pid = child.id() as libc::pid_t;
+                        unsafe { libc::killpg(pid, libc::SIGKILL) };
+                    }
+                    #[cfg(not(unix))]
+                    {
+                        let _ = child.kill();
+                    }
+                    // Reap zombie — ignore errors (process may already be gone)
+                    let _ = child.wait();
                     break None;
                 }
                 std::thread::sleep(Duration::from_millis(POLL_INTERVAL_MS));
@@ -296,12 +319,38 @@ fn evaluate_command(cmd: &str, working_dir: &Path, timeout: Duration) -> Result<
 
     let duration_ms = start.elapsed().as_millis() as u64;
 
-    // Join reader threads (safe: process is dead, pipes will EOF)
-    let stdout_bytes = stdout_thread.join().unwrap_or_default();
-    let stderr_bytes = stderr_thread.join().unwrap_or_default();
+    // Join reader threads (safe: process is dead, pipes will EOF).
+    // Thread panics and pipe read errors are surfaced as warnings
+    // appended to the corresponding output stream.
+    let (stdout_bytes, stdout_read_err) = stdout_thread.join().unwrap_or_else(|_| {
+        (
+            Vec::new(),
+            Some(std::io::Error::other("stdout reader thread panicked")),
+        )
+    });
+    let (stderr_bytes, stderr_read_err) = stderr_thread.join().unwrap_or_else(|_| {
+        (
+            Vec::new(),
+            Some(std::io::Error::other("stderr reader thread panicked")),
+        )
+    });
 
-    let stdout_raw = String::from_utf8_lossy(&stdout_bytes);
-    let stderr_raw = String::from_utf8_lossy(&stderr_bytes);
+    let mut stdout_raw = String::from_utf8_lossy(&stdout_bytes).into_owned();
+    let mut stderr_raw = String::from_utf8_lossy(&stderr_bytes).into_owned();
+
+    // Append pipe read errors so they appear in evidence
+    if let Some(e) = stdout_read_err {
+        if !stdout_raw.is_empty() {
+            stdout_raw.push('\n');
+        }
+        stdout_raw.push_str(&format!("[pipe read error: {e}]"));
+    }
+    if let Some(e) = stderr_read_err {
+        if !stderr_raw.is_empty() {
+            stderr_raw.push('\n');
+        }
+        stderr_raw.push_str(&format!("[pipe read error: {e}]"));
+    }
 
     // Track original sizes for truncation metadata
     let original_stdout_len = stdout_raw.len();
@@ -421,8 +470,10 @@ mod tests {
             result.stdout
         );
         assert_eq!(result.exit_code, Some(0));
-        // duration_ms is populated (may be 0 on very fast machines)
-        assert!(matches!(result.kind, GateKind::Command { .. }));
+        assert!(
+            result.duration_ms > 0 || cfg!(miri),
+            "duration_ms should be non-zero"
+        );
         assert!(matches!(result.kind, GateKind::Command { .. }));
     }
 

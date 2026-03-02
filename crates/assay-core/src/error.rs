@@ -72,10 +72,10 @@ pub enum AssayError {
         source: std::io::Error,
     },
 
-    /// A gate command failed to start (spawn error).
+    /// A gate command failed to spawn or poll (I/O error during execution).
     #[error("gate execution failed for `{cmd}` in `{working_dir}`: {source}")]
     GateExecution {
-        /// The command that failed to spawn.
+        /// The command that failed.
         cmd: String,
         /// The working directory where execution was attempted.
         working_dir: PathBuf,
@@ -84,12 +84,15 @@ pub enum AssayError {
     },
 
     /// A spec was not found by name in the specs directory.
+    ///
+    /// Forward-declared for Phase 8 (MCP `spec_get` tool). Not yet
+    /// constructed in production code.
     #[error("spec `{name}` not found in {specs_dir}")]
     SpecNotFound {
         /// The spec name that was looked up.
         name: String,
         /// The directory that was searched.
-        specs_dir: String,
+        specs_dir: PathBuf,
     },
 }
 
@@ -195,7 +198,7 @@ mod tests {
     fn spec_not_found_error_display() {
         let err = AssayError::SpecNotFound {
             name: "auth-flow".to_string(),
-            specs_dir: ".assay/specs/".to_string(),
+            specs_dir: PathBuf::from(".assay/specs/"),
         };
         let display = err.to_string();
 
