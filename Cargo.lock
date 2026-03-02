@@ -141,6 +141,8 @@ name = "assay-mcp"
 version = "0.1.0"
 dependencies = [
  "assay-core",
+ "assay-types",
+ "chrono",
  "rmcp",
  "schemars",
  "serde",
