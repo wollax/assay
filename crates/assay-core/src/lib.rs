@@ -17,3 +17,6 @@ pub mod workflow;
 
 /// Configuration loading and validation.
 pub mod config;
+
+/// Project initialization.
+pub mod init;
