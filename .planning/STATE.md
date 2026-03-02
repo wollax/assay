@@ -2,18 +2,18 @@
 
 ## Current Position
 
-Phase: 7 of 10 — Gate Evaluation
-Plan: 02 of 02
-Status: Complete
-Last activity: 2026-03-02 — Completed 07-02-PLAN.md
+Phase: 8 of 10 — MCP Server Tools
+Plan: 01 of 02
+Status: In progress
+Last activity: 2026-03-02 — Completed 08-01-PLAN.md
 
-Progress: [████████░░] 84% (36/43 requirements)
+Progress: [█████████░] 88% (38/43 requirements)
 
 ## Milestone Progress
 
 | Milestone | Phases | Requirements | Complete |
 |-----------|--------|--------------|----------|
-| v0.1.0 | 10 | 43 | 84% |
+| v0.1.0 | 10 | 43 | 88% |
 
 ## Phase Status
 
@@ -26,7 +26,7 @@ Progress: [████████░░] 84% (36/43 requirements)
 | 5 | Config and Initialization | Complete (3/3 plans) |
 | 6 | Spec Files | Complete (2/2 plans) |
 | 7 | Gate Evaluation | Complete (2/2 plans) |
-| 8 | MCP Server Tools | Not Started |
+| 8 | MCP Server Tools | In Progress (1/2 plans) |
 | 9 | CLI Surface Completion | Not Started |
 | 10 | Claude Code Plugin | Not Started |
 
@@ -52,7 +52,7 @@ Progress: [████████░░] 84% (36/43 requirements)
 - rmcp's `#[tool_router]` / `#[tool_handler]` macro pattern works cleanly for tool registration
 - `tracing-subscriber` stderr-only writer keeps stdout clean for JSON-RPC (no byte leakage)
 - `Implementation::from_build_env()` populates server info from Cargo.toml automatically
-- Spike code remains as working reference until Phase 8 replaces with real tools
+- ~~Spike code remains as working reference until Phase 8 replaces with real tools~~ → Phase 8 Plan 01 deleted spike.rs, replaced with AssayServer
 - GateResult does not derive PartialEq — DateTime equality is semantically questionable
 - serde_json moved to dev-dependencies in assay-types (source files don't use it)
 - schemars chrono04 feature enabled at workspace level for DateTime<Utc> JsonSchema support
@@ -93,6 +93,12 @@ Progress: [████████░░] 84% (36/43 requirements)
 - Evidence display: multi-line output indented with 4 spaces, labeled with "stdout:" / "stderr:"
 - Working dir resolved as project root (satisfies GATE-04 as explicit choice)
 - Config timeout extracted from config.gates.default_timeout
+- assay-types added as direct dependency of assay-mcp (transitive access through assay-core doesn't allow type naming in function signatures)
+- chrono added as dev-dependency of assay-mcp for GateResult construction in tests
+- Domain errors returned as CallToolResult::error (isError: true), protocol errors as Err(McpError)
+- Per-call config/spec resolution (no startup validation, no stale state)
+- No tool name prefix (spec_get not assay_spec_get) — MCP servers already namespace tools
+- first_nonempty_line extracts failure reason from stderr for summary mode; empty stderr gets "unknown"
 
 ### Blockers
 
@@ -100,10 +106,10 @@ None.
 
 ### Next Actions
 
-1. Execute Phase 8 — MCP Server Tools
+1. Execute Phase 8 Plan 02 — Integration tests and CLI wiring
 
 ### Session Continuity
 
 Last session: 2026-03-02
-Stopped at: Completed 07-02-PLAN.md (CLI gate run command with streaming display)
+Stopped at: Completed 08-01-PLAN.md (AssayServer with three MCP tools)
 Resume file: None
