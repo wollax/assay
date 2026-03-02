@@ -2,18 +2,18 @@
 
 ## Current Position
 
-Phase: 5 of 10 — Config and Initialization
-Plan: 03 of 03
-Status: Phase 5 complete
-Last activity: 2026-03-02 — Completed 05-03-PLAN.md (init logic and CLI subcommand)
+Phase: 6 of 10 — Spec Files
+Plan: 01 of 02
+Status: In progress
+Last activity: 2026-03-02 — Completed 06-01-PLAN.md
 
-Progress: [████░░░░░░] 37% (16/43 requirements)
+Progress: [█████░░░░░] 49% (21/43 requirements)
 
 ## Milestone Progress
 
 | Milestone | Phases | Requirements | Complete |
 |-----------|--------|--------------|----------|
-| v0.1.0 | 10 | 43 | 37% |
+| v0.1.0 | 10 | 43 | 49% |
 
 ## Phase Status
 
@@ -24,7 +24,7 @@ Progress: [████░░░░░░] 37% (16/43 requirements)
 | 3 | Error Types and Domain Model | Complete |
 | 4 | Schema Generation | Complete |
 | 5 | Config and Initialization | Complete (3/3 plans) |
-| 6 | Spec Files | Not Started |
+| 6 | Spec Files | In Progress (1/2 plans) |
 | 7 | Gate Evaluation | Not Started |
 | 8 | MCP Server Tools | Not Started |
 | 9 | CLI Surface Completion | Not Started |
@@ -76,6 +76,9 @@ Progress: [████░░░░░░] 37% (16/43 requirements)
 - String templates for generated files (toml::to_string cannot emit comments)
 - create_dir() not create_dir_all() for .assay/ — atomic idempotency guard
 - Minimal project name sanitization — fallback to "assay-project" only when file_name() is None/empty
+- SpecError in spec/mod.rs, not error.rs — mirrors ConfigError pattern, spec-specific validation output stays with spec concerns
+- Duplicate spec names: first-seen wins, later file with duplicate name becomes an error entry
+- Criterion name validation: empty names checked before duplicate detection
 
 ### Blockers
 
@@ -83,10 +86,10 @@ None.
 
 ### Next Actions
 
-1. Begin Phase 6 — Spec Files (spec loading, validation, parsing from .assay/specs/)
+1. Execute Phase 6 Plan 02 — CLI spec show and spec list subcommands
 
 ### Session Continuity
 
 Last session: 2026-03-02
-Stopped at: Completed Phase 5 (all 3 plans)
+Stopped at: Completed 06-01-PLAN.md (spec module TDD)
 Resume file: None
