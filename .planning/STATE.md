@@ -3,17 +3,17 @@
 ## Current Position
 
 Phase: 8 of 10 — MCP Server Tools
-Plan: 01 of 02
-Status: In progress
-Last activity: 2026-03-02 — Completed 08-01-PLAN.md
+Plan: 02 of 02
+Status: Complete
+Last activity: 2026-03-02 — Completed 08-02-PLAN.md
 
-Progress: [█████████░] 88% (38/43 requirements)
+Progress: [█████████░] 98% (42/43 requirements)
 
 ## Milestone Progress
 
 | Milestone | Phases | Requirements | Complete |
 |-----------|--------|--------------|----------|
-| v0.1.0 | 10 | 43 | 88% |
+| v0.1.0 | 10 | 43 | 98% |
 
 ## Phase Status
 
@@ -26,7 +26,7 @@ Progress: [█████████░] 88% (38/43 requirements)
 | 5 | Config and Initialization | Complete (3/3 plans) |
 | 6 | Spec Files | Complete (2/2 plans) |
 | 7 | Gate Evaluation | Complete (2/2 plans) |
-| 8 | MCP Server Tools | In Progress (1/2 plans) |
+| 8 | MCP Server Tools | Complete (2/2 plans) |
 | 9 | CLI Surface Completion | Not Started |
 | 10 | Claude Code Plugin | Not Started |
 
@@ -106,10 +106,10 @@ None.
 
 ### Next Actions
 
-1. Execute Phase 8 Plan 02 — Integration tests and CLI wiring
+1. Execute Phase 9 — CLI Surface Completion
 
 ### Session Continuity
 
 Last session: 2026-03-02
-Stopped at: Completed 08-01-PLAN.md (AssayServer with three MCP tools)
+Stopped at: Completed 08-02-PLAN.md (CLI wiring verification and integration tests; all 9 MCP scenarios verified)
 Resume file: None
