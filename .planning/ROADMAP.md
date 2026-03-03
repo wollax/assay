@@ -35,6 +35,10 @@
 - [ ] Phase 17: MCP Hardening & Agent History
 - [ ] Phase 18: CLI Hardening & Enforcement Surface
 - [ ] Phase 19: Testing & Tooling
+- [ ] Phase 20: Session JSONL Parser & Token Diagnostics
+- [ ] Phase 21: Team State Checkpointing
+- [ ] Phase 22: Pruning Engine
+- [ ] Phase 23: Guard Daemon & Recovery
 
 ---
 
@@ -43,7 +47,7 @@
 | Milestone | Status | Phases | Requirements | Complete |
 |-----------|--------|--------|--------------|----------|
 | v0.1.0 Proof of Concept | Shipped | 10 | 43 | 100% |
-| v0.2.0 Dual-Track Gates & Hardening | In Progress | 9 | 31 | 0% |
+| v0.2.0 Dual-Track Gates & Hardening | In Progress | 13 | 52 | 0% |
 | v0.3.0 | Planned | — | — | — |
 
 ---
@@ -226,6 +230,99 @@
 
 ---
 
+### Phase 20: Session JSONL Parser & Token Diagnostics
+
+**Goal:** Parse Claude Code session files to provide exact token-aware diagnostics — the foundation for all context management features. Inspired by [Cozempic](https://github.com/Ruya-AI/cozempic).
+
+**Depends on:** None (independent of phases 11-19)
+
+**Requirements:**
+- SDIAG-01: JSONL parser reads Claude Code session files
+- SDIAG-02: Extract exact token counts from `usage` fields
+- SDIAG-03: Calculate context window utilization % per model
+- SDIAG-04: Categorize bloat sources (progress ticks, thinking blocks, stale reads, tool output, metadata, system reminders)
+- SDIAG-05: CLI `assay context diagnose` shows token usage, bloat breakdown, context %
+- SDIAG-06: CLI `assay context list` shows sessions with sizes and token counts
+- SDIAG-07: MCP `context_diagnose` tool exposes full diagnostics to agents
+- SDIAG-08: MCP `estimate_tokens` tool for quick token count + context %
+
+**Success Criteria:**
+1. Parser successfully reads a real Claude Code session JSONL file and extracts message-level token counts
+2. `assay context diagnose` shows total tokens used, context window %, and a categorized bloat breakdown
+3. `assay context list` displays all sessions with file size, token count, and message count columns
+4. MCP `context_diagnose` returns structured JSON with the same data available to CLI
+5. MCP `estimate_tokens` returns token count and context % within 100ms (reads only session tail)
+
+---
+
+### Phase 21: Team State Checkpointing
+
+**Goal:** Extract and persist agent team state from session files and config.json, with hook-driven and manual checkpoint triggers.
+
+**Depends on:** Phase 20 (uses session JSONL parser)
+
+**Requirements:**
+- TPROT-01: Team state extractor reads JSONL session + `~/.claude/teams/*/config.json`
+- TPROT-02: Checkpoint persists team state to markdown file
+- TPROT-03: CLI `assay checkpoint` command for on-demand snapshots
+- TPROT-04: Plugin hooks trigger checkpoints on PostToolUse[Task|TaskCreate|TaskUpdate], PreCompact, Stop
+
+**Success Criteria:**
+1. Extractor correctly identifies all agent spawns, task state, and coordination messages from a session JSONL
+2. Config.json fields (team name, lead agent, member models, working directories) are merged as authoritative
+3. `assay checkpoint` writes a human-readable markdown file with agent list, task list, and coordination summary
+4. Plugin hooks fire on every Task/TaskCreate/TaskUpdate tool use, PreCompact, and Stop — checkpoint file is updated
+5. Checkpoint round-trips: state extracted from JSONL matches state in checkpoint file
+
+---
+
+### Phase 22: Pruning Engine
+
+**Goal:** Composable, team-aware pruning strategies that safely reduce session bloat while preserving critical coordination messages.
+
+**Depends on:** Phase 20 (session parser), Phase 21 (team extractor for protection)
+
+**Requirements:**
+- TPROT-05: Composable pruning strategies (progress-collapse, metadata-strip, thinking-blocks, tool-output-trim, stale-reads, system-reminder-dedup)
+- TPROT-06: Team-aware pruning preserves coordination messages
+
+**Success Criteria:**
+1. Each strategy runs independently and reports bytes/tokens saved and messages removed/modified
+2. Strategies compose sequentially — each runs on the output of the previous, savings are accurate
+3. Team coordination messages (Task, TeamCreate, SendMessage, TaskCreate, TaskUpdate) are never removed by any strategy
+4. Dry-run is the default — `--execute` required to modify files
+5. Automatic timestamped backup before any modification
+6. A prescription (gentle/standard/aggressive) applies the correct strategy subset with expected savings range
+
+---
+
+### Phase 23: Guard Daemon & Recovery
+
+**Goal:** Background daemon with tiered threshold response, reactive overflow recovery, and circuit breaker — the full context protection system.
+
+**Depends on:** Phase 20, Phase 21, Phase 22
+
+**Requirements:**
+- TPROT-07: Guard daemon polls session file at configurable interval
+- TPROT-08: Soft threshold triggers gentle pruning without session reload
+- TPROT-09: Hard threshold triggers full prune + team-protect + optional session reload
+- TPROT-10: Token-based thresholds alongside file-size thresholds
+- TPROT-11: Reactive overflow recovery with file system watcher (kqueue on macOS, inotify on Linux)
+- TPROT-12: Circuit breaker prevents infinite recovery loops
+- TPROT-13: Escalating prescriptions on repeated recoveries (gentle → standard → aggressive)
+
+**Success Criteria:**
+1. Guard daemon runs as a background process with PID file preventing double-starts
+2. Soft threshold crossing triggers a gentle prune without restarting the session
+3. Hard threshold crossing triggers full prune with team-protect and optional session reload
+4. Token-based and file-size thresholds work independently — whichever fires first triggers action
+5. Reactive watcher detects session file growth within sub-second latency (kqueue) and triggers recovery
+6. Circuit breaker trips after configurable max recoveries in time window, halts with final checkpoint
+7. Escalating prescriptions: recovery #1=gentle, #2=standard, #3=aggressive before breaker trips
+8. `Ctrl+C` on guard writes a final checkpoint before exiting
+
+---
+
 ## Requirement Coverage
 
 | Requirement | Phase | Description |
@@ -261,5 +358,26 @@
 | TOOL-01 | 19 | cargo-deny multiple-versions → deny |
 | TOOL-02 | 19 | cargo-deny source-controls → deny |
 | TOOL-03 | 19 | Dogfooding spec |
+| SDIAG-01 | 20 | JSONL session file parser |
+| SDIAG-02 | 20 | Token count extraction from usage fields |
+| SDIAG-03 | 20 | Context window utilization % |
+| SDIAG-04 | 20 | Bloat source categorization |
+| SDIAG-05 | 20 | CLI context diagnose command |
+| SDIAG-06 | 20 | CLI context list command |
+| SDIAG-07 | 20 | MCP context_diagnose tool |
+| SDIAG-08 | 20 | MCP estimate_tokens tool |
+| TPROT-01 | 21 | Team state extractor (JSONL + config.json) |
+| TPROT-02 | 21 | Checkpoint markdown persistence |
+| TPROT-03 | 21 | CLI checkpoint command |
+| TPROT-04 | 21 | Plugin checkpoint hooks |
+| TPROT-05 | 22 | Composable pruning strategies |
+| TPROT-06 | 22 | Team-aware pruning protection |
+| TPROT-07 | 23 | Guard daemon polling loop |
+| TPROT-08 | 23 | Soft threshold pruning |
+| TPROT-09 | 23 | Hard threshold + team-protect + reload |
+| TPROT-10 | 23 | Token-based thresholds |
+| TPROT-11 | 23 | Reactive overflow recovery (kqueue/inotify) |
+| TPROT-12 | 23 | Circuit breaker |
+| TPROT-13 | 23 | Escalating prescriptions |
 
-**Coverage:** 31/31 requirements mapped (100%)
+**Coverage:** 52/52 requirements mapped (100%)

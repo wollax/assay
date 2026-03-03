@@ -21,7 +21,7 @@ Progress: v0.2.0 [          ] 0%
 | Milestone | Phases | Requirements | Complete |
 |-----------|--------|--------------|----------|
 | v0.1.0 | 10 | 43 | 100% (shipped) |
-| v0.2.0 | 9 (11-19) | 31 | 0% |
+| v0.2.0 | 13 (11-23) | 52 | 0% |
 
 ## Accumulated Context
 
@@ -41,6 +41,11 @@ v0.2.0 decisions (from brainstorm + research):
 - Timestamp + 6-char random hex suffix for run IDs (no new crate)
 - Include assay_version in GateRunRecord for future schema migration
 - Two-tier enforcement only (required/advisory) — SonarQube validates no warnings tier
+- Cozempic-inspired features (token diagnostics, team protection) added to v0.2.0 as phases 20-23
+- Session JSONL parsing in Rust (not Python) — full feature parity with Cozempic, native performance
+- Phases 20-23 are independent of 11-19 — can be worked in parallel or after gates
+- Guard daemon uses kqueue (macOS) / inotify (Linux) for sub-second reactive recovery
+- Pruning strategies compose sequentially, dry-run by default, team messages always protected
 
 ### Pending Issues
 
@@ -56,6 +61,6 @@ Phase 11: Type System Foundation — create plan(s) and implement
 
 ### Session Continuity
 
-Last session: 2026-03-02
-Stopped at: Roadmap created, ready for Phase 11 planning
+Last session: 2026-03-03
+Stopped at: Added Cozempic-inspired phases 20-23 (token diagnostics + team protection) to v0.2.0 roadmap
 Resume file: None
