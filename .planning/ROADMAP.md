@@ -232,6 +232,11 @@ Plans:
 
 **Note:** This phase is deliberately small. The CLI subcommands are implemented incrementally in Phases 5-8 as each domain capability lands. Phase 9 ensures the CLI surface is polished, help text is complete, and `plugin.json` metadata is accurate.
 
+**Plans:** 2 plans
+Plans:
+- [ ] 09-01-PLAN.md — CLI polish: help enrichment, bare invocation, binary name fix, CLI issue fixes
+- [ ] 09-02-PLAN.md — Plugin manifest finalization and version sync recipes
+
 ---
 
 #### Phase 10: Claude Code Plugin
