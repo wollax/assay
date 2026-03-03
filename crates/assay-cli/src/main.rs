@@ -1,10 +1,33 @@
 use clap::{Parser, Subcommand};
 
+/// Extra bytes added by a single ANSI color sequence pair (`\x1b[XXm` ... `\x1b[0m`).
+/// `\x1b[32m` = 5 bytes, `\x1b[0m` = 4 bytes, total = 9.
+const ANSI_COLOR_OVERHEAD: usize = 9;
+
 #[derive(Parser)]
 #[command(
     name = "assay",
     version,
-    about = "Agentic development kit with spec-driven workflows"
+    about = "Agentic development kit with spec-driven workflows",
+    long_about = None,
+    after_long_help = "\
+Examples:
+  Initialize a new project:
+    assay init
+    assay init --name my-project
+
+  List and inspect specs:
+    assay spec list
+    assay spec show auth-flow
+    assay spec show auth-flow --json
+
+  Run quality gates:
+    assay gate run auth-flow
+    assay gate run auth-flow --verbose
+    assay gate run auth-flow --json
+
+  Start the MCP server (for AI agent integration):
+    assay mcp serve"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -14,22 +37,56 @@ struct Cli {
 #[derive(Subcommand)]
 enum Command {
     /// Initialize a new Assay project in the current directory
+    #[command(after_long_help = "\
+Examples:
+  Create a project using the directory name:
+    assay init
+
+  Create a project with a custom name:
+    assay init --name my-project")]
     Init {
         /// Override the inferred project name
         #[arg(long)]
         name: Option<String>,
     },
     /// MCP server operations
+    #[command(after_long_help = "\
+Examples:
+  Start the stdio MCP server:
+    assay mcp serve")]
     Mcp {
         #[command(subcommand)]
         command: McpCommand,
     },
     /// Manage spec files
+    #[command(after_long_help = "\
+Examples:
+  List all specs in the project:
+    assay spec list
+
+  Show a spec's criteria as a table:
+    assay spec show auth-flow
+
+  Show a spec as JSON (for agent consumption):
+    assay spec show auth-flow --json")]
     Spec {
         #[command(subcommand)]
         command: SpecCommand,
     },
     /// Run quality gates for a spec
+    #[command(after_long_help = "\
+Examples:
+  Run gates for a spec:
+    assay gate run auth-flow
+
+  Run with verbose output (show all evidence):
+    assay gate run auth-flow --verbose
+
+  Run with a custom timeout (seconds):
+    assay gate run auth-flow --timeout 60
+
+  Run and output JSON (for agent consumption):
+    assay gate run auth-flow --json")]
     Gate {
         #[command(subcommand)]
         command: GateCommand,
@@ -39,12 +96,26 @@ enum Command {
 #[derive(Subcommand)]
 enum McpCommand {
     /// Start the MCP server (stdio transport)
+    #[command(after_long_help = "\
+Examples:
+  Start the server for Claude Code integration:
+    assay mcp serve
+
+  Start with debug logging:
+    RUST_LOG=debug assay mcp serve")]
     Serve,
 }
 
 #[derive(Subcommand)]
 enum SpecCommand {
     /// Display a spec's criteria in detail
+    #[command(after_long_help = "\
+Examples:
+  Show criteria as a formatted table:
+    assay spec show auth-flow
+
+  Show as JSON (for scripting or agent use):
+    assay spec show auth-flow --json")]
     Show {
         /// Spec name (filename without .toml extension)
         name: String,
@@ -53,12 +124,29 @@ enum SpecCommand {
         json: bool,
     },
     /// List all available specs
+    #[command(after_long_help = "\
+Examples:
+  List all specs in the project:
+    assay spec list")]
     List,
 }
 
 #[derive(Subcommand)]
 enum GateCommand {
     /// Run all executable criteria for a spec
+    #[command(after_long_help = "\
+Examples:
+  Run all gates:
+    assay gate run auth-flow
+
+  Run with verbose evidence output:
+    assay gate run auth-flow --verbose
+
+  Override timeout to 60 seconds:
+    assay gate run auth-flow --timeout 60
+
+  Output as JSON:
+    assay gate run auth-flow --json")]
     Run {
         /// Spec name (filename without .toml extension)
         name: String,
@@ -79,7 +167,7 @@ enum GateCommand {
 /// Returns `false` when the `NO_COLOR` environment variable is set
 /// (any value, including empty — per <https://no-color.org/>).
 fn colors_enabled() -> bool {
-    std::env::var("NO_COLOR").is_err()
+    std::env::var_os("NO_COLOR").is_none()
 }
 
 /// Format a criterion type label, optionally with ANSI color.
@@ -223,8 +311,7 @@ fn handle_spec_show(name: &str, json: bool) {
                 type_label,
                 num_w = num_width,
                 name_w = name_width,
-                // ANSI codes add 9 chars (\x1b[32m = 5 + \x1b[0m = 4) that don't display
-                type_w = type_width + 9,
+                type_w = type_width + ANSI_COLOR_OVERHEAD,
             );
         } else {
             println!(
@@ -281,7 +368,7 @@ fn handle_spec_list() {
     println!("Specs:");
     for (slug, spec) in &result.specs {
         if spec.description.is_empty() {
-            println!("  {slug}");
+            println!("  {:<width$}", slug, width = name_width);
         } else {
             println!(
                 "  {:<width$}  {}",
@@ -488,10 +575,7 @@ async fn main() {
 
     match cli.command {
         Some(Command::Init { name }) => {
-            let root = std::env::current_dir().unwrap_or_else(|e| {
-                eprintln!("Error: could not determine current directory: {e}");
-                std::process::exit(1);
-            });
+            let root = project_root();
             let options = assay_core::init::InitOptions { name };
             match assay_core::init::init(&root, &options) {
                 Ok(result) => {
@@ -511,7 +595,7 @@ async fn main() {
             McpCommand::Serve => {
                 init_mcp_tracing();
                 if let Err(e) = assay_mcp::serve().await {
-                    eprintln!("Error: {e:?}");
+                    eprintln!("Error: {e}");
                     std::process::exit(1);
                 }
             }
