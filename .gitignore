@@ -25,3 +25,5 @@ Thumbs.db
 
 # MCP config (local dev convenience, not committed)
 .mcp.json
+# Exception: plugin ships its own .mcp.json for distribution
+!plugins/**/.mcp.json
