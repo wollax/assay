@@ -99,6 +99,13 @@ Progress: [██████████] 100% (43/43 requirements)
 - Per-call config/spec resolution (no startup validation, no stale state)
 - No tool name prefix (spec_get not assay_spec_get) — MCP servers already namespace tools
 - first_nonempty_line extracts failure reason from stderr for summary mode; empty stderr gets "unknown"
+- Rich help via clap `after_long_help` on all commands — shows with `--help`, compact `-h` stays clean
+- Bare invocation detects `.assay/` directory: in-project shows status, outside shows hint + help
+- `show_status()` reuses config::load and spec::scan, no gate execution (performance: filesystem reads only)
+- Hint to stderr, help to stdout via `CommandFactory::print_help` — UNIX convention
+- `ANSI_COLOR_OVERHEAD` named constant replaces magic number 9 in column width calculation
+- `NO_COLOR` uses `var_os` per no-color.org (handles non-UTF-8 env values correctly)
+- `[[bin]] name = "assay"` in Cargo.toml — installed binary is `assay` not `assay-cli`
 - plugin.json description = "Agentic development kit with spec-driven workflows" (matches CLI about text)
 - plugin.json version synced from workspace Cargo.toml via `just sync-plugin-version`
 - `just check-plugin-version` integrated into `just ready` for CI drift detection
@@ -119,5 +126,5 @@ None.
 ### Session Continuity
 
 Last session: 2026-03-03
-Stopped at: Completed 09-02-PLAN.md (Plugin manifest finalization and version sync recipes)
+Stopped at: Completed 09-01-PLAN.md (CLI polish, help enrichment, bare invocation, 5 issue fixes)
 Resume file: None
