@@ -24,6 +24,24 @@
 
 **Git range:** initial commit → `fix(10): address second review round`
 
-**What's next:** v0.2.0 — TBD
+---
+
+## v0.2.0 Dual-Track Gates & Hardening (In Progress)
+
+**Goal:** Ship agent-evaluated gates (via MCP `gate_report` tool), run history persistence, required/advisory gate enforcement, and comprehensive hardening of the v0.1 foundation.
+
+**Phases:** 11-19 (9 phases, 31 requirements)
+
+**Target features:**
+
+- Type system foundation: relocate result types to assay-types, serde hygiene
+- Enforcement levels: required/advisory on criteria with enforcement-aware evaluation
+- Run history: JSON persistence with atomic writes, retention policy, CLI viewer
+- Agent gate recording: `gate_report` MCP tool, `GateKind::AgentReport`, evaluator metadata
+- MCP hardening: timeout param, path validation, error handling, `gate_history` tool
+- CLI hardening: error propagation, exit codes, constants, enforcement-aware output
+- Testing & tooling: MCP handler tests, coverage gaps, cargo-deny tightening, dogfooding
+
+**Roadmap:** See .planning/ROADMAP.md
 
 ---

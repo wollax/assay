@@ -79,38 +79,38 @@
 
 ## Traceability
 
-<!-- Updated by roadmapper after phase assignment -->
+<!-- Updated by roadmapper after phase assignment — 2026-03-02 -->
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| HIST-01 | — | Pending |
-| HIST-02 | — | Pending |
-| HIST-03 | — | Pending |
-| HIST-04 | — | Pending |
-| ENFC-01 | — | Pending |
-| ENFC-02 | — | Pending |
-| ENFC-03 | — | Pending |
-| ENFC-04 | — | Pending |
-| AGNT-01 | — | Pending |
-| AGNT-02 | — | Pending |
-| AGNT-03 | — | Pending |
-| AGNT-04 | — | Pending |
-| AGNT-05 | — | Pending |
-| TYPE-01 | — | Pending |
-| TYPE-02 | — | Pending |
-| TYPE-03 | — | Pending |
-| TYPE-04 | — | Pending |
-| TEST-01 | — | Pending |
-| TEST-02 | — | Pending |
-| TEST-03 | — | Pending |
-| MCP-01 | — | Pending |
-| MCP-02 | — | Pending |
-| MCP-03 | — | Pending |
-| MCP-04 | — | Pending |
-| CLI-01 | — | Pending |
-| CLI-02 | — | Pending |
-| CLI-03 | — | Pending |
-| CLI-04 | — | Pending |
-| TOOL-01 | — | Pending |
-| TOOL-02 | — | Pending |
-| TOOL-03 | — | Pending |
+| TYPE-01 | 11 | Pending |
+| TYPE-02 | 11 | Pending |
+| TYPE-03 | 11 | Pending |
+| TYPE-04 | 12 | Pending |
+| ENFC-01 | 13 | Pending |
+| ENFC-02 | 13 | Pending |
+| ENFC-03 | 18 | Pending |
+| ENFC-04 | 17 | Pending |
+| HIST-01 | 14 | Pending |
+| HIST-02 | 15 | Pending |
+| HIST-03 | 15 | Pending |
+| HIST-04 | 14 | Pending |
+| AGNT-01 | 16 | Pending |
+| AGNT-02 | 16 | Pending |
+| AGNT-03 | 16 | Pending |
+| AGNT-04 | 16 | Pending |
+| AGNT-05 | 17 | Pending |
+| MCP-01 | 17 | Pending |
+| MCP-02 | 17 | Pending |
+| MCP-03 | 17 | Pending |
+| MCP-04 | 17 | Pending |
+| CLI-01 | 18 | Pending |
+| CLI-02 | 18 | Pending |
+| CLI-03 | 18 | Pending |
+| CLI-04 | 18 | Pending |
+| TEST-01 | 19 | Pending |
+| TEST-02 | 19 | Pending |
+| TEST-03 | 19 | Pending |
+| TOOL-01 | 19 | Pending |
+| TOOL-02 | 19 | Pending |
+| TOOL-03 | 19 | Pending |

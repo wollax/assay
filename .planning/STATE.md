@@ -9,10 +9,10 @@ See: .planning/PROJECT.md (updated 2026-03-02)
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: 11 — Type System Foundation
 Plan: —
-Status: Defining requirements
-Last activity: 2026-03-02 — Milestone v0.2.0 started
+Status: Roadmap created, ready for planning
+Last activity: 2026-03-02 — Roadmap created (phases 11-19)
 
 Progress: v0.2.0 [          ] 0%
 
@@ -21,7 +21,7 @@ Progress: v0.2.0 [          ] 0%
 | Milestone | Phases | Requirements | Complete |
 |-----------|--------|--------------|----------|
 | v0.1.0 | 10 | 43 | 100% (shipped) |
-| v0.2.0 | TBD | TBD | 0% |
+| v0.2.0 | 9 (11-19) | 31 | 0% |
 
 ## Accumulated Context
 
@@ -29,12 +29,18 @@ Progress: v0.2.0 [          ] 0%
 
 v0.1.0 decisions archived to .planning/milestones/v0.1.0-ROADMAP.md
 
-v0.2.0 decisions (from brainstorm):
+v0.2.0 decisions (from brainstorm + research):
 - Agent gates receive evaluations via MCP, not call LLMs directly
 - Self-evaluation + audit trail for v0.2; independent evaluator deferred to v0.3
 - Keep core types domain-agnostic
 - No built-in LLM client, no SpecProvider trait yet
 - Pipeline semantics for future orchestrator design
+- Type relocation (GateRunSummary -> assay-types) is highest-churn change — do first
+- Agent-reported gates default to advisory enforcement (trust asymmetry)
+- Per-spec subdirectory layout for results (.assay/results/{spec-name}/)
+- Timestamp + 6-char random hex suffix for run IDs (no new crate)
+- Include assay_version in GateRunRecord for future schema migration
+- Two-tier enforcement only (required/advisory) — SonarQube validates no warnings tier
 
 ### Pending Issues
 
@@ -46,10 +52,10 @@ None.
 
 ### Next Actions
 
-Define requirements → create roadmap
+Phase 11: Type System Foundation — create plan(s) and implement
 
 ### Session Continuity
 
 Last session: 2026-03-02
-Stopped at: v0.2.0 milestone definition in progress
+Stopped at: Roadmap created, ready for Phase 11 planning
 Resume file: None
