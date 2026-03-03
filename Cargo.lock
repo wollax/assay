@@ -117,6 +117,7 @@ version = "0.1.0"
 dependencies = [
  "assay-core",
  "assay-mcp",
+ "assay-types",
  "clap",
  "serde_json",
  "tokio",
