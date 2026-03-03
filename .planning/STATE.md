@@ -2,18 +2,18 @@
 
 ## Current Position
 
-Phase: 8 of 10 — MCP Server Tools
+Phase: 9 of 10 — CLI Surface Completion
 Plan: 02 of 02
-Status: Complete
-Last activity: 2026-03-02 — Completed 08-02-PLAN.md
+Status: Phase complete
+Last activity: 2026-03-03 — Completed 09-02-PLAN.md
 
-Progress: [█████████░] 98% (42/43 requirements)
+Progress: [██████████] 100% (43/43 requirements)
 
 ## Milestone Progress
 
 | Milestone | Phases | Requirements | Complete |
 |-----------|--------|--------------|----------|
-| v0.1.0 | 10 | 43 | 98% |
+| v0.1.0 | 10 | 43 | 100% |
 
 ## Phase Status
 
@@ -27,7 +27,7 @@ Progress: [█████████░] 98% (42/43 requirements)
 | 6 | Spec Files | Complete (2/2 plans) |
 | 7 | Gate Evaluation | Complete (2/2 plans) |
 | 8 | MCP Server Tools | Complete (2/2 plans) |
-| 9 | CLI Surface Completion | Not Started |
+| 9 | CLI Surface Completion | Complete (2/2 plans) |
 | 10 | Claude Code Plugin | Not Started |
 
 ## Accumulated Context
@@ -99,6 +99,10 @@ Progress: [█████████░] 98% (42/43 requirements)
 - Per-call config/spec resolution (no startup validation, no stale state)
 - No tool name prefix (spec_get not assay_spec_get) — MCP servers already namespace tools
 - first_nonempty_line extracts failure reason from stderr for summary mode; empty stderr gets "unknown"
+- plugin.json description = "Agentic development kit with spec-driven workflows" (matches CLI about text)
+- plugin.json version synced from workspace Cargo.toml via `just sync-plugin-version`
+- `just check-plugin-version` integrated into `just ready` for CI drift detection
+- `grep + sed` for Cargo.toml version extraction, `jq` for JSON patching
 
 ### Pending Issues
 
@@ -110,10 +114,10 @@ None.
 
 ### Next Actions
 
-1. Execute Phase 9 — CLI Surface Completion
+1. Execute Phase 10 — Claude Code Plugin
 
 ### Session Continuity
 
-Last session: 2026-03-02
-Stopped at: Completed 08-02-PLAN.md (CLI wiring verification and integration tests; all 9 MCP scenarios verified)
+Last session: 2026-03-03
+Stopped at: Completed 09-02-PLAN.md (Plugin manifest finalization and version sync recipes)
 Resume file: None
