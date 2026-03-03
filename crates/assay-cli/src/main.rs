@@ -26,6 +26,7 @@ Examples:
     assay gate run auth-flow
     assay gate run auth-flow --verbose
     assay gate run auth-flow --json
+    assay gate run --all
 
   Start the MCP server (for AI agent integration):
     assay mcp serve"
@@ -137,8 +138,11 @@ enum GateCommand {
     /// Run all executable criteria for a spec
     #[command(after_long_help = "\
 Examples:
-  Run all gates:
+  Run gates for a single spec:
     assay gate run auth-flow
+
+  Run gates for all specs:
+    assay gate run --all
 
   Run with verbose evidence output:
     assay gate run auth-flow --verbose
@@ -147,10 +151,17 @@ Examples:
     assay gate run auth-flow --timeout 60
 
   Output as JSON:
-    assay gate run auth-flow --json")]
+    assay gate run auth-flow --json
+
+  Run all specs as JSON:
+    assay gate run --all --json")]
     Run {
         /// Spec name (filename without .toml extension)
-        name: String,
+        #[arg(conflicts_with = "all")]
+        name: Option<String>,
+        /// Run gates for all specs in the project
+        #[arg(long)]
+        all: bool,
         /// Override timeout for all criteria (seconds)
         #[arg(long)]
         timeout: Option<u64>,
@@ -378,6 +389,163 @@ fn handle_spec_list() {
                 width = name_width
             );
         }
+    }
+}
+
+/// Handle `assay gate run --all [--timeout N] [--verbose] [--json]`.
+///
+/// Scans all specs and runs gates for each, printing results per-spec.
+/// Exits 0 if all specs pass, exits 1 if any spec has failures.
+fn handle_gate_run_all(cli_timeout: Option<u64>, verbose: bool, json: bool) {
+    let root = project_root();
+    let config = match assay_core::config::load(&root) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("Error: {e}");
+            std::process::exit(1);
+        }
+    };
+    let specs_dir = root.join(".assay").join(&config.specs_dir);
+
+    let result = match assay_core::spec::scan(&specs_dir) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("Error: {e}");
+            std::process::exit(1);
+        }
+    };
+
+    // Print scan warnings
+    for err in &result.errors {
+        eprintln!("Warning: {err}");
+    }
+
+    if result.specs.is_empty() {
+        println!("No specs found in {}", config.specs_dir);
+        return;
+    }
+
+    // Resolve working directory: config gates.working_dir > project root
+    let working_dir = match config.gates.as_ref().and_then(|g| g.working_dir.as_deref()) {
+        Some(dir) => {
+            let path = std::path::Path::new(dir);
+            if path.is_absolute() {
+                path.to_path_buf()
+            } else {
+                root.join(path)
+            }
+        }
+        None => root.clone(),
+    };
+
+    // Extract config timeout
+    let config_timeout = config.gates.as_ref().map(|g| g.default_timeout);
+
+    if json {
+        // JSON output: collect all summaries into a JSON array
+        let summaries: Vec<_> = result
+            .specs
+            .iter()
+            .map(|(_slug, spec)| {
+                assay_core::gate::evaluate_all(spec, &working_dir, cli_timeout, config_timeout)
+            })
+            .collect();
+
+        let any_failed = summaries.iter().any(|s| s.failed > 0);
+
+        let output = serde_json::to_string_pretty(&summaries).unwrap_or_else(|e| {
+            eprintln!("Error: failed to serialize gate results: {e}");
+            std::process::exit(1);
+        });
+        println!("{output}");
+
+        if any_failed {
+            std::process::exit(1);
+        }
+        return;
+    }
+
+    // Streaming display: run each spec and show results
+    let color = colors_enabled();
+    let mut total_passed = 0usize;
+    let mut total_failed = 0usize;
+    let mut total_skipped = 0usize;
+    let spec_count = result.specs.len();
+
+    for (i, (slug, spec)) in result.specs.iter().enumerate() {
+        if i > 0 {
+            eprintln!();
+        }
+        eprintln!("--- {} ---", slug);
+
+        let executable_count = spec.criteria.iter().filter(|c| c.cmd.is_some()).count();
+        if executable_count == 0 {
+            eprintln!("  No executable criteria");
+            total_skipped += spec.criteria.len();
+            continue;
+        }
+
+        for criterion in &spec.criteria {
+            if criterion.cmd.is_none() {
+                total_skipped += 1;
+                continue;
+            }
+
+            if color {
+                eprint!("\r\x1b[K  {} ... running", criterion.name);
+            } else {
+                eprint!("\r  {} ... running", criterion.name);
+            }
+
+            let timeout =
+                assay_core::gate::resolve_timeout(cli_timeout, criterion.timeout, config_timeout);
+
+            match assay_core::gate::evaluate(criterion, &working_dir, timeout) {
+                Ok(result) => {
+                    let status_label = if result.passed {
+                        total_passed += 1;
+                        format_pass(color)
+                    } else {
+                        total_failed += 1;
+                        format_fail(color)
+                    };
+
+                    if color {
+                        eprintln!("\r\x1b[K  {} ... {}", criterion.name, status_label);
+                    } else {
+                        eprintln!("\r  {} ... {}", criterion.name, status_label);
+                    }
+
+                    if !result.passed || verbose {
+                        print_evidence(&result.stdout, &result.stderr, result.truncated, color);
+                    }
+                }
+                Err(err) => {
+                    total_failed += 1;
+                    if color {
+                        eprintln!("\r\x1b[K  {} ... {}", criterion.name, format_fail(color));
+                    } else {
+                        eprintln!("\r  {} ... {}", criterion.name, format_fail(color));
+                    }
+                    eprintln!("    error: {err}");
+                }
+            }
+        }
+    }
+
+    // Aggregate summary
+    let total = total_passed + total_failed + total_skipped;
+    let passed_str = format_count(total_passed, "\x1b[32m", color);
+    let failed_str = format_count(total_failed, "\x1b[31m", color);
+    let skipped_str = format_count(total_skipped, "\x1b[33m", color);
+
+    println!();
+    println!(
+        "Results ({spec_count} specs): {passed_str} passed, {failed_str} failed, {skipped_str} skipped (of {total} total)"
+    );
+
+    if total_failed > 0 {
+        std::process::exit(1);
     }
 }
 
@@ -664,12 +832,26 @@ async fn main() {
         },
         Some(Command::Gate { command }) => match command {
             GateCommand::Run {
-                name,
+                name: Some(name),
                 timeout,
                 verbose,
                 json,
+                ..
             } => {
                 handle_gate_run(&name, timeout, verbose, json);
+            }
+            GateCommand::Run {
+                all: true,
+                timeout,
+                verbose,
+                json,
+                ..
+            } => {
+                handle_gate_run_all(timeout, verbose, json);
+            }
+            GateCommand::Run { .. } => {
+                eprintln!("Error: specify a spec name or use --all");
+                std::process::exit(1);
             }
         },
         None => {
