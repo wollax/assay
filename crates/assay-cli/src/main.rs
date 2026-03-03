@@ -1,4 +1,5 @@
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
+use std::path::Path;
 
 /// Extra bytes added by a single ANSI color sequence pair (`\x1b[XXm` ... `\x1b[0m`).
 /// `\x1b[32m` = 5 bytes, `\x1b[0m` = 4 bytes, total = 9.
@@ -550,6 +551,63 @@ fn print_evidence(stdout: &str, stderr: &str, truncated: bool, color: bool) {
     }
 }
 
+/// Display project status for bare `assay` invocation inside an initialized project.
+///
+/// Shows the project name, version, and a spec inventory with criteria counts.
+fn show_status(root: &Path) {
+    let config = match assay_core::config::load(root) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("Error: {e}");
+            std::process::exit(1);
+        }
+    };
+
+    println!(
+        "assay {} -- {}",
+        env!("CARGO_PKG_VERSION"),
+        config.project_name
+    );
+    println!();
+
+    let specs_dir = root.join(".assay").join(&config.specs_dir);
+    let result = match assay_core::spec::scan(&specs_dir) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("Warning: could not scan specs: {e}");
+            return;
+        }
+    };
+
+    for err in &result.errors {
+        eprintln!("Warning: {err}");
+    }
+
+    if result.specs.is_empty() {
+        println!("No specs found in {}", config.specs_dir);
+        return;
+    }
+
+    // Compute column width for alignment
+    let name_width = result
+        .specs
+        .iter()
+        .map(|(slug, _)| slug.len())
+        .max()
+        .unwrap_or(0);
+
+    println!("Specs:");
+    for (slug, spec) in &result.specs {
+        let total = spec.criteria.len();
+        let executable = spec.criteria.iter().filter(|c| c.cmd.is_some()).count();
+        println!(
+            "  {:<width$}  {total} criteria ({executable} executable)",
+            slug,
+            width = name_width,
+        );
+    }
+}
+
 /// Initialize tracing to stderr for MCP server operation.
 ///
 /// Default level is `warn`. Override via `RUST_LOG` environment variable.
@@ -615,7 +673,14 @@ async fn main() {
             }
         },
         None => {
-            println!("assay {}", env!("CARGO_PKG_VERSION"));
+            let root = project_root();
+            if root.join(".assay").is_dir() {
+                show_status(&root);
+            } else {
+                eprintln!("Not an Assay project. Run `assay init` to get started.");
+                let _ = Cli::command().print_help();
+                println!();
+            }
         }
     }
 }
