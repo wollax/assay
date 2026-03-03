@@ -3,17 +3,17 @@
 ## Current Position
 
 Phase: 10 of 10 — Claude Code Plugin
-Plan: 01 of 02
-Status: In progress
-Last activity: 2026-03-03 — Completed 10-01-PLAN.md
+Plan: 02 of 02
+Status: Phase complete
+Last activity: 2026-03-03 — Completed 10-02-PLAN.md
 
-Progress: [█████████░] 91% (39/43 requirements)
+Progress: [██████████] 100% (43/43 requirements)
 
 ## Milestone Progress
 
 | Milestone | Phases | Requirements | Complete |
 |-----------|--------|--------------|----------|
-| v0.1.0 | 10 | 43 | 91% |
+| v0.1.0 | 10 | 43 | 100% |
 
 ## Phase Status
 
@@ -28,7 +28,7 @@ Progress: [█████████░] 91% (39/43 requirements)
 | 7 | Gate Evaluation | Complete (2/2 plans) |
 | 8 | MCP Server Tools | Complete (2/2 plans) |
 | 9 | CLI Surface Completion | Complete (2/2 plans) |
-| 10 | Claude Code Plugin | In Progress (1/2 plans) |
+| 10 | Claude Code Plugin | Complete (2/2 plans) |
 
 ## Accumulated Context
 
@@ -114,6 +114,13 @@ Progress: [█████████░] 91% (39/43 requirements)
 - Skills use MCP tool orchestration pattern — instruct Claude to call MCP tools, not shell commands
 - CLAUDE.md uses prescriptive tone with mandatory spec-first 4-step workflow
 - README documents `ASSAY_STOP_HOOK_MODE` env var (enforce/warn/off) for Stop hook configuration
+- `--all` flag on gate run uses clap `conflicts_with` for mutual exclusivity with name
+- handle_gate_run_all reuses evaluate/resolve_timeout helpers from assay-core::gate
+- JSON output for --all is `Vec<GateRunSummary>` array (one per spec)
+- PostToolUse script drains stdin (no jq needed — always reminds)
+- Stop hook guard chain: stop_hook_active > mode=off > no .assay/ > no binary > run gates
+- ASSAY_STOP_HOOK_MODE env var controls enforcement (enforce/warn/off, default enforce)
+- bash prefix in hooks.json avoids execute permission issues
 
 ### Pending Issues
 
@@ -125,10 +132,10 @@ None.
 
 ### Next Actions
 
-1. Execute Phase 10 Plan 02 — Hooks and Scripts
+v0.1.0 milestone complete. All 10 phases delivered.
 
 ### Session Continuity
 
 Last session: 2026-03-03
-Stopped at: Completed 10-01-PLAN.md (MCP config, skills, CLAUDE.md, README)
+Stopped at: Completed 10-02-PLAN.md (hooks, scripts, CLI --all flag)
 Resume file: None
