@@ -392,11 +392,14 @@ fn handle_spec_list() {
     }
 }
 
-/// Handle `assay gate run --all [--timeout N] [--verbose] [--json]`.
-///
-/// Scans all specs and runs gates for each, printing results per-spec.
-/// Exits 0 if all specs pass, exits 1 if any spec has failures.
-fn handle_gate_run_all(cli_timeout: Option<u64>, verbose: bool, json: bool) {
+/// Load project config and resolve the shared gate execution context.
+/// Returns (root, config, working_dir, config_timeout). Prints errors and exits on failure.
+fn load_gate_context() -> (
+    std::path::PathBuf,
+    assay_types::Config,
+    std::path::PathBuf,
+    Option<u64>,
+) {
     let root = project_root();
     let config = match assay_core::config::load(&root) {
         Ok(c) => c,
@@ -405,27 +408,7 @@ fn handle_gate_run_all(cli_timeout: Option<u64>, verbose: bool, json: bool) {
             std::process::exit(1);
         }
     };
-    let specs_dir = root.join(".assay").join(&config.specs_dir);
 
-    let result = match assay_core::spec::scan(&specs_dir) {
-        Ok(r) => r,
-        Err(e) => {
-            eprintln!("Error: {e}");
-            std::process::exit(1);
-        }
-    };
-
-    // Print scan warnings
-    for err in &result.errors {
-        eprintln!("Warning: {err}");
-    }
-
-    if result.specs.is_empty() {
-        println!("No specs found in {}", config.specs_dir);
-        return;
-    }
-
-    // Resolve working directory: config gates.working_dir > project root
     let working_dir = match config.gates.as_ref().and_then(|g| g.working_dir.as_deref()) {
         Some(dir) => {
             let path = std::path::Path::new(dir);
@@ -438,11 +421,103 @@ fn handle_gate_run_all(cli_timeout: Option<u64>, verbose: bool, json: bool) {
         None => root.clone(),
     };
 
-    // Extract config timeout
     let config_timeout = config.gates.as_ref().map(|g| g.default_timeout);
 
+    (root, config, working_dir, config_timeout)
+}
+
+/// Streaming display counters accumulated during criterion evaluation.
+struct StreamCounters {
+    passed: usize,
+    failed: usize,
+    skipped: usize,
+}
+
+/// Stream a single criterion's evaluation with live "running" -> "PASS/FAIL" display.
+fn stream_criterion(
+    criterion: &assay_types::Criterion,
+    working_dir: &std::path::Path,
+    cli_timeout: Option<u64>,
+    config_timeout: Option<u64>,
+    verbose: bool,
+    color: bool,
+    counters: &mut StreamCounters,
+) {
+    if criterion.cmd.is_none() {
+        counters.skipped += 1;
+        return;
+    }
+
+    if color {
+        eprint!("\r\x1b[K  {} ... running", criterion.name);
+    } else {
+        eprint!("\r  {} ... running", criterion.name);
+    }
+
+    let timeout = assay_core::gate::resolve_timeout(cli_timeout, criterion.timeout, config_timeout);
+
+    match assay_core::gate::evaluate(criterion, working_dir, timeout) {
+        Ok(result) => {
+            let status_label = if result.passed {
+                counters.passed += 1;
+                format_pass(color)
+            } else {
+                counters.failed += 1;
+                format_fail(color)
+            };
+
+            if color {
+                eprintln!("\r\x1b[K  {} ... {}", criterion.name, status_label);
+            } else {
+                eprintln!("\r  {} ... {}", criterion.name, status_label);
+            }
+
+            if !result.passed || verbose {
+                print_evidence(&result.stdout, &result.stderr, result.truncated, color);
+            }
+        }
+        Err(err) => {
+            counters.failed += 1;
+            if color {
+                eprintln!("\r\x1b[K  {} ... {}", criterion.name, format_fail(color));
+            } else {
+                eprintln!("\r  {} ... {}", criterion.name, format_fail(color));
+            }
+            eprintln!("    error: {err}");
+        }
+    }
+}
+
+/// Handle `assay gate run --all [--timeout N] [--verbose] [--json]`.
+///
+/// Scans all specs and runs gates for each, printing results per-spec.
+/// Exits 0 if all specs pass, exits 1 if any spec has failures.
+fn handle_gate_run_all(cli_timeout: Option<u64>, verbose: bool, json: bool) {
+    let (root, config, working_dir, config_timeout) = load_gate_context();
+    let specs_dir = root.join(".assay").join(&config.specs_dir);
+
+    let result = match assay_core::spec::scan(&specs_dir) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("Error: {e}");
+            std::process::exit(1);
+        }
+    };
+
+    for err in &result.errors {
+        eprintln!("Warning: {err}");
+    }
+
+    if result.specs.is_empty() {
+        if json {
+            println!("[]");
+        } else {
+            println!("No specs found in {}", config.specs_dir);
+        }
+        return;
+    }
+
     if json {
-        // JSON output: collect all summaries into a JSON array
         let summaries: Vec<_> = result
             .specs
             .iter()
@@ -465,11 +540,12 @@ fn handle_gate_run_all(cli_timeout: Option<u64>, verbose: bool, json: bool) {
         return;
     }
 
-    // Streaming display: run each spec and show results
     let color = colors_enabled();
-    let mut total_passed = 0usize;
-    let mut total_failed = 0usize;
-    let mut total_skipped = 0usize;
+    let mut counters = StreamCounters {
+        passed: 0,
+        failed: 0,
+        skipped: 0,
+    };
     let spec_count = result.specs.len();
 
     for (i, (slug, spec)) in result.specs.iter().enumerate() {
@@ -481,84 +557,41 @@ fn handle_gate_run_all(cli_timeout: Option<u64>, verbose: bool, json: bool) {
         let executable_count = spec.criteria.iter().filter(|c| c.cmd.is_some()).count();
         if executable_count == 0 {
             eprintln!("  No executable criteria");
-            total_skipped += spec.criteria.len();
+            counters.skipped += spec.criteria.len();
             continue;
         }
 
         for criterion in &spec.criteria {
-            if criterion.cmd.is_none() {
-                total_skipped += 1;
-                continue;
-            }
-
-            if color {
-                eprint!("\r\x1b[K  {} ... running", criterion.name);
-            } else {
-                eprint!("\r  {} ... running", criterion.name);
-            }
-
-            let timeout =
-                assay_core::gate::resolve_timeout(cli_timeout, criterion.timeout, config_timeout);
-
-            match assay_core::gate::evaluate(criterion, &working_dir, timeout) {
-                Ok(result) => {
-                    let status_label = if result.passed {
-                        total_passed += 1;
-                        format_pass(color)
-                    } else {
-                        total_failed += 1;
-                        format_fail(color)
-                    };
-
-                    if color {
-                        eprintln!("\r\x1b[K  {} ... {}", criterion.name, status_label);
-                    } else {
-                        eprintln!("\r  {} ... {}", criterion.name, status_label);
-                    }
-
-                    if !result.passed || verbose {
-                        print_evidence(&result.stdout, &result.stderr, result.truncated, color);
-                    }
-                }
-                Err(err) => {
-                    total_failed += 1;
-                    if color {
-                        eprintln!("\r\x1b[K  {} ... {}", criterion.name, format_fail(color));
-                    } else {
-                        eprintln!("\r  {} ... {}", criterion.name, format_fail(color));
-                    }
-                    eprintln!("    error: {err}");
-                }
-            }
+            stream_criterion(
+                criterion,
+                &working_dir,
+                cli_timeout,
+                config_timeout,
+                verbose,
+                color,
+                &mut counters,
+            );
         }
     }
 
-    // Aggregate summary
-    let total = total_passed + total_failed + total_skipped;
-    let passed_str = format_count(total_passed, "\x1b[32m", color);
-    let failed_str = format_count(total_failed, "\x1b[31m", color);
-    let skipped_str = format_count(total_skipped, "\x1b[33m", color);
+    let total = counters.passed + counters.failed + counters.skipped;
+    let passed_str = format_count(counters.passed, "\x1b[32m", color);
+    let failed_str = format_count(counters.failed, "\x1b[31m", color);
+    let skipped_str = format_count(counters.skipped, "\x1b[33m", color);
 
     println!();
     println!(
         "Results ({spec_count} specs): {passed_str} passed, {failed_str} failed, {skipped_str} skipped (of {total} total)"
     );
 
-    if total_failed > 0 {
+    if counters.failed > 0 {
         std::process::exit(1);
     }
 }
 
 /// Handle `assay gate run <name> [--timeout N] [--verbose] [--json]`.
 fn handle_gate_run(name: &str, cli_timeout: Option<u64>, verbose: bool, json: bool) {
-    let root = project_root();
-    let config = match assay_core::config::load(&root) {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("Error: {e}");
-            std::process::exit(1);
-        }
-    };
+    let (root, config, working_dir, config_timeout) = load_gate_context();
     let specs_dir = root.join(".assay").join(&config.specs_dir);
     let spec_path = specs_dir.join(format!("{name}.toml"));
 
@@ -576,23 +609,6 @@ fn handle_gate_run(name: &str, cli_timeout: Option<u64>, verbose: bool, json: bo
         }
     };
 
-    // Resolve working directory: config gates.working_dir > project root
-    let working_dir = match config.gates.as_ref().and_then(|g| g.working_dir.as_deref()) {
-        Some(dir) => {
-            let path = std::path::Path::new(dir);
-            if path.is_absolute() {
-                path.to_path_buf()
-            } else {
-                root.join(path)
-            }
-        }
-        None => root.clone(),
-    };
-
-    // Extract config timeout
-    let config_timeout = config.gates.as_ref().map(|g| g.default_timeout);
-
-    // JSON output path: evaluate all at once, serialize, print
     if json {
         let summary =
             assay_core::gate::evaluate_all(&spec, &working_dir, cli_timeout, config_timeout);
@@ -607,12 +623,12 @@ fn handle_gate_run(name: &str, cli_timeout: Option<u64>, verbose: bool, json: bo
         return;
     }
 
-    // Streaming display path: iterate criteria manually for live progress
     let color = colors_enabled();
-
-    let mut passed = 0usize;
-    let mut failed = 0usize;
-    let mut skipped = 0usize;
+    let mut counters = StreamCounters {
+        passed: 0,
+        failed: 0,
+        skipped: 0,
+    };
     let executable_count = spec.criteria.iter().filter(|c| c.cmd.is_some()).count();
 
     if executable_count == 0 {
@@ -621,70 +637,28 @@ fn handle_gate_run(name: &str, cli_timeout: Option<u64>, verbose: bool, json: bo
     }
 
     for criterion in &spec.criteria {
-        // Descriptive-only criteria: skip silently during streaming
-        if criterion.cmd.is_none() {
-            skipped += 1;
-            continue;
-        }
-
-        // Show "running" state (overwritable line on stderr)
-        if color {
-            eprint!("\r\x1b[K  {} ... running", criterion.name);
-        } else {
-            eprint!("\r  {} ... running", criterion.name);
-        }
-
-        let timeout =
-            assay_core::gate::resolve_timeout(cli_timeout, criterion.timeout, config_timeout);
-
-        match assay_core::gate::evaluate(criterion, &working_dir, timeout) {
-            Ok(result) => {
-                let status_label = if result.passed {
-                    passed += 1;
-                    format_pass(color)
-                } else {
-                    failed += 1;
-                    format_fail(color)
-                };
-
-                // Replace the running line with final status
-                if color {
-                    eprintln!("\r\x1b[K  {} ... {}", criterion.name, status_label);
-                } else {
-                    eprintln!("\r  {} ... {}", criterion.name, status_label);
-                }
-
-                // Show evidence for failures (always) or all criteria (--verbose)
-                if !result.passed || verbose {
-                    print_evidence(&result.stdout, &result.stderr, result.truncated, color);
-                }
-            }
-            Err(err) => {
-                failed += 1;
-
-                // Replace the running line with FAILED
-                if color {
-                    eprintln!("\r\x1b[K  {} ... {}", criterion.name, format_fail(color));
-                } else {
-                    eprintln!("\r  {} ... {}", criterion.name, format_fail(color));
-                }
-                eprintln!("    error: {err}");
-            }
-        }
+        stream_criterion(
+            criterion,
+            &working_dir,
+            cli_timeout,
+            config_timeout,
+            verbose,
+            color,
+            &mut counters,
+        );
     }
 
-    // Summary line (stdout for capturability)
-    let total = passed + failed + skipped;
-    let passed_str = format_count(passed, "\x1b[32m", color);
-    let failed_str = format_count(failed, "\x1b[31m", color);
-    let skipped_str = format_count(skipped, "\x1b[33m", color);
+    let total = counters.passed + counters.failed + counters.skipped;
+    let passed_str = format_count(counters.passed, "\x1b[32m", color);
+    let failed_str = format_count(counters.failed, "\x1b[31m", color);
+    let skipped_str = format_count(counters.skipped, "\x1b[33m", color);
 
     println!();
     println!(
         "Results: {passed_str} passed, {failed_str} failed, {skipped_str} skipped (of {total} total)"
     );
 
-    if failed > 0 {
+    if counters.failed > 0 {
         std::process::exit(1);
     }
 }
