@@ -29,7 +29,7 @@ deny:
     cargo deny check
 
 # Run all checks (CI-equivalent)
-ready: fmt-check lint test deny
+ready: fmt-check lint test deny check-plugin-version
     @echo "All checks passed."
 
 # Watch for changes and rebuild
@@ -62,3 +62,37 @@ schemas-check:
     fi
     rm -rf "$tmpdir"
     echo "Schemas are up to date."
+
+# Extract workspace version from Cargo.toml
+_workspace-version:
+    @grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/'
+
+plugin_json := "plugins/claude-code/.claude-plugin/plugin.json"
+
+# Sync plugin.json version with workspace Cargo.toml version
+sync-plugin-version:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    version=$(just _workspace-version)
+    f="{{ plugin_json }}"
+    if [ -f "$f" ]; then
+        jq --arg v "$version" '.version = $v' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+        echo "  synced $f -> $version"
+    fi
+    echo "Plugin versions synced to $version"
+
+# Check plugin.json version matches workspace version
+check-plugin-version:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    expected=$(just _workspace-version)
+    f="{{ plugin_json }}"
+    if [ -f "$f" ]; then
+        actual=$(jq -r '.version' "$f")
+        if [ "$expected" != "$actual" ]; then
+            echo "ERROR: $f version ($actual) != workspace version ($expected)"
+            echo "Run 'just sync-plugin-version' to fix."
+            exit 1
+        fi
+    fi
+    echo "Plugin versions match workspace ($expected)."

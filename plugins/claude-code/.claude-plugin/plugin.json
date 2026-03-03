@@ -1,6 +1,8 @@
 {
   "name": "assay",
   "version": "0.1.0",
-  "description": "Assay plugin for Claude Code — spec-driven workflows with gated quality checks",
-  "author": "wollax"
+  "description": "Agentic development kit with spec-driven workflows",
+  "author": "wollax",
+  "homepage": "https://github.com/wollax/assay",
+  "license": "MIT"
 }
