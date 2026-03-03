@@ -234,8 +234,8 @@ Plans:
 
 **Plans:** 2 plans
 Plans:
-- [ ] 09-01-PLAN.md — CLI polish: help enrichment, bare invocation, binary name fix, CLI issue fixes
-- [ ] 09-02-PLAN.md — Plugin manifest finalization and version sync recipes
+- [x] 09-01-PLAN.md — CLI polish: help enrichment, bare invocation, binary name fix, CLI issue fixes
+- [x] 09-02-PLAN.md — Plugin manifest finalization and version sync recipes
 
 ---
 
@@ -294,10 +294,10 @@ Plans:
 | 6 | Spec Files | Complete | 6 | 6 |
 | 7 | Gate Evaluation | Complete | 8 | 8 |
 | 8 | MCP Server Tools | Complete | 6 | 6 |
-| 9 | CLI Surface Completion | Not Started | 1 | 0 |
+| 9 | CLI Surface Completion | Complete | 1 | 1 |
 | 10 | Claude Code Plugin | Not Started | 6 | 0 |
 
-**Overall:** 42/43 requirements complete (98%)
+**Overall:** 37/43 requirements complete (86%)
 
 ---
 
