@@ -553,15 +553,13 @@ fn print_evidence(stdout: &str, stderr: &str, truncated: bool, color: bool) {
 
 /// Display project status for bare `assay` invocation inside an initialized project.
 ///
-/// Shows the project name, version, and a spec inventory with criteria counts.
-fn show_status(root: &Path) {
-    let config = match assay_core::config::load(root) {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("Error: {e}");
-            std::process::exit(1);
-        }
-    };
+/// Shows the binary version, project name, and a spec inventory with criteria counts.
+/// Returns `Err` on config load failure so the caller controls the exit.
+///
+/// Unlike `handle_spec_list`, scan errors are soft warnings here — bare invocation
+/// should degrade gracefully since the user didn't explicitly ask for spec data.
+fn show_status(root: &Path) -> Result<(), String> {
+    let config = assay_core::config::load(root).map_err(|e| format!("{e}"))?;
 
     println!(
         "assay {} -- {}",
@@ -575,7 +573,7 @@ fn show_status(root: &Path) {
         Ok(r) => r,
         Err(e) => {
             eprintln!("Warning: could not scan specs: {e}");
-            return;
+            return Ok(());
         }
     };
 
@@ -585,7 +583,7 @@ fn show_status(root: &Path) {
 
     if result.specs.is_empty() {
         println!("No specs found in {}", config.specs_dir);
-        return;
+        return Ok(());
     }
 
     // Compute column width for alignment
@@ -606,6 +604,8 @@ fn show_status(root: &Path) {
             width = name_width,
         );
     }
+
+    Ok(())
 }
 
 /// Initialize tracing to stderr for MCP server operation.
@@ -673,12 +673,19 @@ async fn main() {
             }
         },
         None => {
+            // Note: project detection checks cwd only — no upward traversal.
+            // Running `assay` from a subdirectory of a project shows the hint.
             let root = project_root();
             if root.join(".assay").is_dir() {
-                show_status(&root);
+                if let Err(e) = show_status(&root) {
+                    eprintln!("Error: {e}");
+                    std::process::exit(1);
+                }
             } else {
                 eprintln!("Not an Assay project. Run `assay init` to get started.");
-                let _ = Cli::command().print_help();
+                if let Err(e) = Cli::command().print_help() {
+                    eprintln!("Error: could not print help: {e}");
+                }
                 println!();
             }
         }
