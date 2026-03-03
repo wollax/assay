@@ -114,13 +114,25 @@ The `assay-mcp` crate provides MCP server functionality. Future crates may inclu
 - Binary crates are thin wrappers that delegate to `assay-core`
 - Run `just ready` before considering work complete
 
+## Current Milestone: v0.2.0 Dual-Track Gates & Hardening
+
+**Goal:** Ship agent-evaluated gates (via MCP `gate_report` tool), run history persistence, required/advisory gate enforcement, and comprehensive hardening of the v0.1 foundation.
+
+**Target features:**
+
+- Run History — JSON persistence of gate results for audit trail and iteration
+- Required/Advisory gates — enforcement level on criteria for flexible quality policies
+- Agent gate recording — `gate_report` MCP tool for agents to submit evaluations
+- Foundation hardening — test coverage, type hygiene, MCP hardening, CLI polish, tooling
+- Dogfooding — use Assay to build Assay
+
 ## Current State
 
 **Shipped:** v0.1.0 Proof of Concept (2026-03-02)
 
 5,028 lines of Rust across 5 crates (types, core, cli, tui, mcp). 119 tests. Claude Code plugin with MCP integration, skills, and hooks.
 
-**Next milestone:** TBD
+**Current:** v0.2.0 in progress
 
 ## Requirements
 
@@ -143,14 +155,23 @@ The `assay-mcp` crate provides MCP server functionality. Future crates may inclu
 
 ### Active
 
-(None — next milestone not yet defined)
+- [ ] Run History: persist gate results to `.assay/results/` as JSON — v0.2.0
+- [ ] Required/Advisory gates: enforcement level on Criterion — v0.2.0
+- [ ] Agent gate recording: `gate_report` MCP tool, `GateKind::AgentReported` — v0.2.0
+- [ ] Wire FileExists gate kind into evaluate() — v0.2.0
+- [ ] Dogfooding: use Assay's own gates on Assay development — v0.2.0
+- [ ] Test coverage: MCP handler tests, edge case tests — v0.2.0
+- [ ] Type system hygiene: serde skip_serializing_if, OutputDetail, invariants — v0.2.0
+- [ ] MCP hardening: timeout param, working_dir validation, error handling — v0.2.0
+- [ ] CLI polish: error propagation, exit codes, help, constants — v0.2.0
+- [ ] Tooling: cargo-deny warn→deny, schema validation — v0.2.0
 
 ### Future
 
 - [ ] Domain model redesign: spec provider trait, workflow phases
 - [ ] Pluggable spec provider interface with built-in default implementation
-- [ ] Programmable gate framework: file, threshold, composite, agent-evaluated
-- [ ] Dual-track criteria: agent-evaluated track (production)
+- [ ] Programmable gate framework: file, threshold, composite
+- [ ] Context-controlled agent evaluation (`gate_evaluate` with context assembly)
 - [ ] Per-agent worktree management (create, isolate, clean up)
 - [ ] tmux session/pane management for agent lifecycle
 - [ ] Orchestrator/daemon managing concurrent sessions
@@ -182,12 +203,18 @@ The `assay-mcp` crate provides MCP server functionality. Future crates may inclu
 | assay-mcp as library crate, single `assay` binary | All surfaces through one binary, MCP server started via `assay mcp serve` | ✓ Good — v0.1.0 |
 | spawn() + reader threads + try_wait for gate timeout | Command::output() can't enforce timeouts; polling with kill on timeout | ✓ Good — v0.1.0 |
 | Skills use MCP tool orchestration, not shell commands | Agent calls MCP tools directly rather than shelling out to CLI | ✓ Good — v0.1.0 |
+| Agent gates receive evaluations, not call LLMs | Agents already have LLM access; Assay records results via `gate_report` MCP tool | Decided — v0.2.0 brainstorm |
+| Self-evaluation + audit trail for v0.2, independent evaluator for v0.3 | Trust problem is real but unsolvable without orchestrator; history enables human audit | Decided — v0.2.0 brainstorm |
+| Keep core types domain-agnostic | Gate evaluation and evidence capture should work for any domain, not just code | Decided — v0.2.0 brainstorm |
+| No built-in LLM client | `gate_report` → `gate_evaluate` progression may make it unnecessary; avoid HTTP/API key complexity | Decided — v0.2.0 brainstorm |
+| No SpecProvider trait yet | One implementation = premature abstraction; wait for concrete second provider | Decided — v0.2.0 brainstorm |
 
 ## Reference Material
 
 - [agtx](https://github.com/fynnfluegge/agtx) — Reference architecture for agent orchestration with worktrees/tmux
 - Brainstorm session 1: `.planning/brainstorms/2026-02-28T16-37-brainstorm/SUMMARY.md`
 - Brainstorm session 2: `.planning/brainstorms/2026-02-28T17-45-brainstorm/SUMMARY.md`
+- Brainstorm session 3: `.planning/brainstorms/2026-03-02T20-53-brainstorm/SUMMARY.md`
 
 ---
-*Last updated: 2026-03-02 after v0.1.0 milestone*
+*Last updated: 2026-03-02 after v0.2.0 milestone start*
