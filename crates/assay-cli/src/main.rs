@@ -448,11 +448,8 @@ fn stream_criterion(
         return;
     }
 
-    if color {
-        eprint!("\r\x1b[K  {} ... running", criterion.name);
-    } else {
-        eprint!("\r  {} ... running", criterion.name);
-    }
+    let cr = if color { "\r\x1b[K" } else { "\r" };
+    eprint!("{cr}  {} ... running", criterion.name);
 
     let timeout = assay_core::gate::resolve_timeout(cli_timeout, criterion.timeout, config_timeout);
 
@@ -466,11 +463,7 @@ fn stream_criterion(
                 format_fail(color)
             };
 
-            if color {
-                eprintln!("\r\x1b[K  {} ... {}", criterion.name, status_label);
-            } else {
-                eprintln!("\r  {} ... {}", criterion.name, status_label);
-            }
+            eprintln!("{cr}  {} ... {}", criterion.name, status_label);
 
             if !result.passed || verbose {
                 print_evidence(&result.stdout, &result.stderr, result.truncated, color);
@@ -478,13 +471,26 @@ fn stream_criterion(
         }
         Err(err) => {
             counters.failed += 1;
-            if color {
-                eprintln!("\r\x1b[K  {} ... {}", criterion.name, format_fail(color));
-            } else {
-                eprintln!("\r  {} ... {}", criterion.name, format_fail(color));
-            }
+            eprintln!("{cr}  {} ... {}", criterion.name, format_fail(color));
             eprintln!("    error: {err}");
         }
+    }
+}
+
+/// Print a gate summary line and exit with code 1 if any criteria failed.
+fn print_gate_summary(counters: &StreamCounters, color: bool, label: &str) {
+    let total = counters.passed + counters.failed + counters.skipped;
+    let passed_str = format_count(counters.passed, "\x1b[32m", color);
+    let failed_str = format_count(counters.failed, "\x1b[31m", color);
+    let skipped_str = format_count(counters.skipped, "\x1b[33m", color);
+
+    println!();
+    println!(
+        "{label}: {passed_str} passed, {failed_str} failed, {skipped_str} skipped (of {total} total)"
+    );
+
+    if counters.failed > 0 {
+        std::process::exit(1);
     }
 }
 
@@ -574,19 +580,7 @@ fn handle_gate_run_all(cli_timeout: Option<u64>, verbose: bool, json: bool) {
         }
     }
 
-    let total = counters.passed + counters.failed + counters.skipped;
-    let passed_str = format_count(counters.passed, "\x1b[32m", color);
-    let failed_str = format_count(counters.failed, "\x1b[31m", color);
-    let skipped_str = format_count(counters.skipped, "\x1b[33m", color);
-
-    println!();
-    println!(
-        "Results ({spec_count} specs): {passed_str} passed, {failed_str} failed, {skipped_str} skipped (of {total} total)"
-    );
-
-    if counters.failed > 0 {
-        std::process::exit(1);
-    }
+    print_gate_summary(&counters, color, &format!("Results ({spec_count} specs)"));
 }
 
 /// Handle `assay gate run <name> [--timeout N] [--verbose] [--json]`.
@@ -648,19 +642,7 @@ fn handle_gate_run(name: &str, cli_timeout: Option<u64>, verbose: bool, json: bo
         );
     }
 
-    let total = counters.passed + counters.failed + counters.skipped;
-    let passed_str = format_count(counters.passed, "\x1b[32m", color);
-    let failed_str = format_count(counters.failed, "\x1b[31m", color);
-    let skipped_str = format_count(counters.skipped, "\x1b[33m", color);
-
-    println!();
-    println!(
-        "Results: {passed_str} passed, {failed_str} failed, {skipped_str} skipped (of {total} total)"
-    );
-
-    if counters.failed > 0 {
-        std::process::exit(1);
-    }
+    print_gate_summary(&counters, color, "Results");
 }
 
 /// Print evidence (stdout/stderr) for a gate result.
