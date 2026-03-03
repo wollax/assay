@@ -6,6 +6,10 @@ license.workspace = true
 repository.workspace = true
 description = "Assay command-line interface"
 
+[[bin]]
+name = "assay"
+path = "src/main.rs"
+
 [dependencies]
 assay-core.workspace = true
 assay-mcp.workspace = true
