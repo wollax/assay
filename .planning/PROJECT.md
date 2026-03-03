@@ -74,7 +74,7 @@ assay-cli ──→ assay-core ──→ assay-types
 assay-tui ──→ assay-core ──→ assay-types
 ```
 
-Future crates may include `assay-mcp` (MCP server library) and `assay-daemon` (orchestrator), but these are not scoped yet.
+The `assay-mcp` crate provides MCP server functionality. Future crates may include `assay-daemon` (orchestrator), but these are not scoped yet.
 
 ### Key Abstractions
 
@@ -90,7 +90,7 @@ Future crates may include `assay-mcp` (MCP server library) and `assay-daemon` (o
 
 - **CLI** (`assay-cli`) — Human-facing commands for project init, spec management, gate execution, workflow status
 - **TUI** (`assay-tui`) — Dashboard for supervising multiple sessions/projects simultaneously
-- **MCP Server** (future) — Machine-facing protocol so agents interact with Assay programmatically
+- **MCP Server** (`assay-mcp`) — Machine-facing protocol so agents interact with Assay programmatically
 - **Plugins** — Installable integrations for specific agentic AI systems (Claude Code, Codex, OpenCode)
 - **IDE** (TBD) — Visual interface
 
@@ -114,21 +114,13 @@ Future crates may include `assay-mcp` (MCP server library) and `assay-daemon` (o
 - Binary crates are thin wrappers that delegate to `assay-core`
 - Run `just ready` before considering work complete
 
-## Current Milestone: v0.1.0 Proof of Concept
+## Current State
 
-**Goal:** Prove Assay's dual-track gate differentiator through a thin vertical slice — foundation types, spec-driven gates, MCP server, and Claude Code plugin — with parallel plugin research to learn agent interaction patterns.
+**Shipped:** v0.1.0 Proof of Concept (2026-03-02)
 
-**Target features:**
+5,028 lines of Rust across 5 crates (types, core, cli, tui, mcp). 119 tests. Claude Code plugin with MCP integration, skills, and hooks.
 
-- Unified error types with thiserror
-- Domain model hardening (GateKind enum, GateResult with evidence)
-- Config loading (TOML) and project initialization (`assay init`)
-- Spec files (TOML with criteria, optional `cmd` field)
-- Command gate evaluation with structured results
-- MCP server (stdio, 2 tools: `spec/get` + `gate/run`)
-- Claude Code plugin (`.mcp.json` + CLAUDE.md snippet)
-- Schema generation pipeline
-- Plugin research track (agent UX pattern discovery)
+**Next milestone:** TBD
 
 ## Requirements
 
@@ -139,19 +131,19 @@ Future crates may include `assay-mcp` (MCP server library) and `assay-daemon` (o
 - ✓ Serde + schemars derives on domain types — existing
 - ✓ Clap CLI skeleton — existing
 - ✓ Ratatui TUI skeleton — existing
+- ✓ Error type foundation: unified AssayError with thiserror, `#[non_exhaustive]` — v0.1.0
+- ✓ Domain model hardening: GateKind enum, GateResult with evidence, types as pub DTOs — v0.1.0
+- ✓ Schema generation pipeline: standalone binary + `just schemas` — v0.1.0
+- ✓ Config loading: free functions in assay-core, TOML only — v0.1.0
+- ✓ Spec + config validation: free functions in assay-core, trim-then-validate — v0.1.0
+- ✓ Gate evaluation: command gates, sync, explicit working_dir, structured GateResult — v0.1.0
+- ✓ CLI subcommands: init, gate run, spec show/list, mcp serve — v0.1.0
+- ✓ MCP server: stdio via rmcp, 3 tools (spec_get, spec_list, gate_run) — v0.1.0
+- ✓ Claude Code plugin: .mcp.json, skills, hooks, CLAUDE.md — v0.1.0
 
-### Active (v0.1.0)
+### Active
 
-- [ ] Error type foundation: unified AssayError with thiserror, `#[non_exhaustive]`
-- [ ] Domain model hardening: GateKind enum, GateResult with stdout/stderr evidence, types as pub DTOs
-- [ ] Schema generation pipeline: standalone binary + `just schemas`
-- [ ] Config loading: free functions in assay-core, TOML only
-- [ ] Spec + config validation: free functions in assay-core, trim-then-validate
-- [ ] Gate evaluation: command gates, sync, explicit working_dir, structured GateResult
-- [ ] CLI subcommands: `init` + `validate` + `gate run` + `spec show` + `mcp serve`
-- [ ] MCP server: stdio via rmcp, 2 tools (spec/get, gate/run)
-- [ ] Claude Code plugin: `.mcp.json` + CLAUDE.md snippet
-- [ ] Plugin research: agent UX pattern discovery via prototype
+(None — next milestone not yet defined)
 
 ### Future
 
@@ -178,15 +170,18 @@ Future crates may include `assay-mcp` (MCP server library) and `assay-daemon` (o
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Full alternative to agtx, not a layer on top | Need to own the full stack to integrate gates and merge-back deeply | Decided |
-| Pluggable spec providers, not a single format | Teams already use Kata, Spec Kit, etc.; Assay shouldn't force migration | Decided |
-| Dual-track gate criteria (deterministic + agent-evaluated) | Novel combination; category-defining differentiator | Decided |
+| Full alternative to agtx, not a layer on top | Need to own the full stack to integrate gates and merge-back deeply | ✓ Good |
+| Pluggable spec providers, not a single format | Teams already use Kata, Spec Kit, etc.; Assay shouldn't force migration | ✓ Good |
+| Dual-track gate criteria (deterministic + agent-evaluated) | Novel combination; category-defining differentiator | ✓ Good — deterministic track shipped v0.1.0, agent track deferred |
 | Human approves merges by default (`autonomous: false`) | Trust must be earned; configurable for full automation later | Decided |
 | Merge-back via feature-merge agent + orchestrator gates | Agent work in worktrees needs quality enforcement before reaching main | Decided |
-| TOML for config, JSON for data exchange | Rust ecosystem convention; schemars generates JSON schemas | Decided |
-| Enum dispatch for gates, not trait objects | Simpler, serializable, sufficient until plugin system exists | Decided |
-| Start with domain model before any UI/orchestration | Everything consumes types; wrong types means rewriting everything | Decided |
-| Gate is pure config, not mixed config+state | `passed: bool` removed; runtime state belongs to GateResult | Decided |
+| TOML for config, JSON for data exchange | Rust ecosystem convention; schemars generates JSON schemas | ✓ Good |
+| Enum dispatch for gates, not trait objects | Simpler, serializable, sufficient until plugin system exists | ✓ Good |
+| Start with domain model before any UI/orchestration | Everything consumes types; wrong types means rewriting everything | ✓ Good — types stable through 10 phases |
+| Gate is pure config, not mixed config+state | `passed: bool` removed; runtime state belongs to GateResult | ✓ Good |
+| assay-mcp as library crate, single `assay` binary | All surfaces through one binary, MCP server started via `assay mcp serve` | ✓ Good — v0.1.0 |
+| spawn() + reader threads + try_wait for gate timeout | Command::output() can't enforce timeouts; polling with kill on timeout | ✓ Good — v0.1.0 |
+| Skills use MCP tool orchestration, not shell commands | Agent calls MCP tools directly rather than shelling out to CLI | ✓ Good — v0.1.0 |
 
 ## Reference Material
 
@@ -195,4 +190,4 @@ Future crates may include `assay-mcp` (MCP server library) and `assay-daemon` (o
 - Brainstorm session 2: `.planning/brainstorms/2026-02-28T17-45-brainstorm/SUMMARY.md`
 
 ---
-*Last updated: 2026-02-28 — Milestone v0.1.0 started*
+*Last updated: 2026-03-02 after v0.1.0 milestone*
