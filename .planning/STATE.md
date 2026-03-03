@@ -2,18 +2,18 @@
 
 ## Current Position
 
-Phase: 9 of 10 — CLI Surface Completion
-Plan: 02 of 02
-Status: Phase complete
-Last activity: 2026-03-03 — Completed 09-02-PLAN.md
+Phase: 10 of 10 — Claude Code Plugin
+Plan: 01 of 02
+Status: In progress
+Last activity: 2026-03-03 — Completed 10-01-PLAN.md
 
-Progress: [████████░░] 86% (37/43 requirements)
+Progress: [█████████░] 91% (39/43 requirements)
 
 ## Milestone Progress
 
 | Milestone | Phases | Requirements | Complete |
 |-----------|--------|--------------|----------|
-| v0.1.0 | 10 | 43 | 86% |
+| v0.1.0 | 10 | 43 | 91% |
 
 ## Phase Status
 
@@ -28,7 +28,7 @@ Progress: [████████░░] 86% (37/43 requirements)
 | 7 | Gate Evaluation | Complete (2/2 plans) |
 | 8 | MCP Server Tools | Complete (2/2 plans) |
 | 9 | CLI Surface Completion | Complete (2/2 plans) |
-| 10 | Claude Code Plugin | Not Started |
+| 10 | Claude Code Plugin | In Progress (1/2 plans) |
 
 ## Accumulated Context
 
@@ -110,6 +110,10 @@ Progress: [████████░░] 86% (37/43 requirements)
 - plugin.json version synced from workspace Cargo.toml via `just sync-plugin-version`
 - `just check-plugin-version` integrated into `just ready` for CI drift detection
 - `grep + sed` for Cargo.toml version extraction, `jq` for JSON patching
+- .gitignore negation pattern `!plugins/**/.mcp.json` for plugin distribution (root .mcp.json stays ignored)
+- Skills use MCP tool orchestration pattern — instruct Claude to call MCP tools, not shell commands
+- CLAUDE.md uses prescriptive tone with mandatory spec-first 4-step workflow
+- README documents `ASSAY_STOP_HOOK_MODE` env var (enforce/warn/off) for Stop hook configuration
 
 ### Pending Issues
 
@@ -121,10 +125,10 @@ None.
 
 ### Next Actions
 
-1. Execute Phase 10 — Claude Code Plugin
+1. Execute Phase 10 Plan 02 — Hooks and Scripts
 
 ### Session Continuity
 
 Last session: 2026-03-03
-Stopped at: Completed 09-01-PLAN.md (CLI polish, help enrichment, bare invocation, 5 issue fixes)
+Stopped at: Completed 10-01-PLAN.md (MCP config, skills, CLAUDE.md, README)
 Resume file: None
