@@ -55,6 +55,37 @@
 - [ ] **TOOL-02**: cargo-deny `source-controls` policy tightened from warn to deny
 - [ ] **TOOL-03**: Dogfooding spec exists — Assay uses its own gates to enforce quality on itself
 
+## Session Diagnostics
+
+*Inspired by [Cozempic](https://github.com/Ruya-AI/cozempic) — token-aware context management for AI agent sessions.*
+
+- [ ] **SDIAG-01**: JSONL parser reads Claude Code session files from `~/.claude/projects/*/sessions/`
+- [ ] **SDIAG-02**: Extract exact token counts from `usage` fields in assistant messages
+- [ ] **SDIAG-03**: Calculate context window utilization % for model's max context (200K tokens for Opus)
+- [ ] **SDIAG-04**: Categorize bloat sources (progress ticks, thinking blocks, stale reads, tool output overflow, metadata, system reminders)
+- [ ] **SDIAG-05**: CLI `assay context diagnose` shows token usage, bloat breakdown, context %
+- [ ] **SDIAG-06**: CLI `assay context list` shows sessions with sizes and token counts
+- [ ] **SDIAG-07**: MCP `context_diagnose` tool exposes full diagnostics to agents
+- [ ] **SDIAG-08**: MCP `estimate_tokens` tool for quick token count + context %
+
+## Agent Team Context Protection
+
+*Inspired by [Cozempic](https://github.com/Ruya-AI/cozempic) — prevent context loss that orphans agent teams during auto-compaction.*
+
+- [ ] **TPROT-01**: Team state extractor reads JSONL session + `~/.claude/teams/*/config.json`
+- [ ] **TPROT-02**: Checkpoint persists team state (agents, tasks, coordination messages) to markdown file
+- [ ] **TPROT-03**: CLI `assay checkpoint` command for on-demand state snapshots
+- [ ] **TPROT-04**: Plugin hooks trigger checkpoints on PostToolUse[Task|TaskCreate|TaskUpdate], PreCompact, Stop
+- [ ] **TPROT-05**: Composable pruning strategies (progress-collapse, metadata-strip, thinking-blocks, tool-output-trim, stale-reads, system-reminder-dedup)
+- [ ] **TPROT-06**: Team-aware pruning preserves coordination messages (Task, TeamCreate, SendMessage, TaskCreate, TaskUpdate)
+- [ ] **TPROT-07**: Guard daemon polls session file at configurable interval
+- [ ] **TPROT-08**: Soft threshold triggers gentle pruning without session reload
+- [ ] **TPROT-09**: Hard threshold triggers full prune + team-protect + optional session reload
+- [ ] **TPROT-10**: Token-based thresholds alongside file-size thresholds
+- [ ] **TPROT-11**: Reactive overflow recovery with file system watcher (kqueue on macOS, inotify on Linux)
+- [ ] **TPROT-12**: Circuit breaker prevents infinite recovery loops (configurable max recoveries in time window)
+- [ ] **TPROT-13**: Escalating prescriptions on repeated recoveries (gentle → standard → aggressive)
+
 ---
 
 ## Future Requirements (deferred)
@@ -114,3 +145,24 @@
 | TOOL-01 | 19 | Pending |
 | TOOL-02 | 19 | Pending |
 | TOOL-03 | 19 | Pending |
+| SDIAG-01 | 20 | Pending |
+| SDIAG-02 | 20 | Pending |
+| SDIAG-03 | 20 | Pending |
+| SDIAG-04 | 20 | Pending |
+| SDIAG-05 | 20 | Pending |
+| SDIAG-06 | 20 | Pending |
+| SDIAG-07 | 20 | Pending |
+| SDIAG-08 | 20 | Pending |
+| TPROT-01 | 21 | Pending |
+| TPROT-02 | 21 | Pending |
+| TPROT-03 | 21 | Pending |
+| TPROT-04 | 21 | Pending |
+| TPROT-05 | 22 | Pending |
+| TPROT-06 | 22 | Pending |
+| TPROT-07 | 23 | Pending |
+| TPROT-08 | 23 | Pending |
+| TPROT-09 | 23 | Pending |
+| TPROT-10 | 23 | Pending |
+| TPROT-11 | 23 | Pending |
+| TPROT-12 | 23 | Pending |
+| TPROT-13 | 23 | Pending |

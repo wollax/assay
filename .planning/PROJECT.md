@@ -125,6 +125,8 @@ The `assay-mcp` crate provides MCP server functionality. Future crates may inclu
 - Agent gate recording — `gate_report` MCP tool for agents to submit evaluations
 - Foundation hardening — test coverage, type hygiene, MCP hardening, CLI polish, tooling
 - Dogfooding — use Assay to build Assay
+- Token-aware session diagnostics — exact token counts from session files, context % visualization, bloat categorization
+- Agent team context protection — checkpointing, team-aware pruning, guard daemon, reactive overflow recovery
 
 ## Current State
 
@@ -165,6 +167,8 @@ The `assay-mcp` crate provides MCP server functionality. Future crates may inclu
 - [ ] MCP hardening: timeout param, working_dir validation, error handling — v0.2.0
 - [ ] CLI polish: error propagation, exit codes, help, constants — v0.2.0
 - [ ] Tooling: cargo-deny warn→deny, schema validation — v0.2.0
+- [ ] Token-aware session diagnostics: JSONL parser, token extraction, context %, bloat categorization — v0.2.0
+- [ ] Agent team context protection: checkpointing, pruning engine, guard daemon, overflow recovery — v0.2.0
 
 ### Future
 
@@ -208,6 +212,10 @@ The `assay-mcp` crate provides MCP server functionality. Future crates may inclu
 | Keep core types domain-agnostic | Gate evaluation and evidence capture should work for any domain, not just code | Decided — v0.2.0 brainstorm |
 | No built-in LLM client | `gate_report` → `gate_evaluate` progression may make it unnecessary; avoid HTTP/API key complexity | Decided — v0.2.0 brainstorm |
 | No SpecProvider trait yet | One implementation = premature abstraction; wait for concrete second provider | Decided — v0.2.0 brainstorm |
+| Cozempic-inspired features in Rust, not Python | Full native performance; avoids Python dependency; aligns with workspace | Decided — v0.2.0 |
+| Session diagnostics + team protection appended to v0.2.0 | Orthogonal to gates (phases 20-23); fits "hardening" theme; no disruption to 11-19 | Decided — v0.2.0 |
+| Guard daemon with kqueue/inotify, not polling-only | Sub-second reactive recovery for inbox-flood overflow (Cozempic's key insight) | Decided — v0.2.0 |
+| Composable pruning strategies, dry-run default | Safety first — never modify without `--execute`; team messages always protected | Decided — v0.2.0 |
 
 ## Reference Material
 
@@ -215,6 +223,7 @@ The `assay-mcp` crate provides MCP server functionality. Future crates may inclu
 - Brainstorm session 1: `.planning/brainstorms/2026-02-28T16-37-brainstorm/SUMMARY.md`
 - Brainstorm session 2: `.planning/brainstorms/2026-02-28T17-45-brainstorm/SUMMARY.md`
 - Brainstorm session 3: `.planning/brainstorms/2026-03-02T20-53-brainstorm/SUMMARY.md`
+- [Cozempic](https://github.com/Ruya-AI/cozempic) — Reference for token-aware diagnostics and agent team context loss protection
 
 ---
-*Last updated: 2026-03-02 after v0.2.0 milestone start*
+*Last updated: 2026-03-03 after adding Cozempic-inspired phases 20-23 to v0.2.0*
