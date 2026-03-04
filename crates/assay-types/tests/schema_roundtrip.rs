@@ -334,7 +334,10 @@ fn gate_run_summary_backward_compat_deserialize() {
 
     let summary: GateRunSummary =
         serde_json::from_str(minimal_json).expect("minimal JSON should deserialize");
-    assert!(summary.results.is_empty(), "results should default to empty vec");
+    assert!(
+        summary.results.is_empty(),
+        "results should default to empty vec"
+    );
     assert_eq!(summary.spec_name, "legacy-spec");
 
     // Also validate the deserialized instance against the schema
