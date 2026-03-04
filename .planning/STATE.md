@@ -10,18 +10,18 @@ See: .planning/PROJECT.md (updated 2026-03-02)
 ## Current Position
 
 Phase: 11 — Type System Foundation
-Plan: —
-Status: Planned (2 plans: 11-01, 11-02), ready for execution
-Last activity: 2026-03-04 — Phase 11 plans created
+Plan: 01 of 2
+Status: In progress (11-01 complete, 11-02 pending)
+Last activity: 2026-03-04 — Completed 11-01-PLAN.md
 
-Progress: v0.2.0 [          ] 0%
+Progress: v0.2.0 [#         ] ~4%
 
 ## Milestone Progress
 
 | Milestone | Phases | Requirements | Complete |
 |-----------|--------|--------------|----------|
 | v0.1.0 | 10 | 43 | 100% (shipped) |
-| v0.2.0 | 13 (11-23) | 52 | 0% |
+| v0.2.0 | 13 (11-23) | 52 | ~4% |
 
 ## Accumulated Context
 
@@ -47,6 +47,11 @@ v0.2.0 decisions (from brainstorm + research):
 - Guard daemon uses kqueue (macOS) / inotify (Linux) for sub-second reactive recovery
 - Pruning strategies compose sequentially, dry-run by default, team messages always protected
 
+v0.2.0 decisions (from 11-01 execution):
+- Clean break for type relocation: no re-exports from assay-core, all consumers import from assay_types
+- Output types (GateRunSummary, CriterionResult) do NOT use deny_unknown_fields
+- Schema registry entries added for both relocated types
+
 ### Pending Issues
 
 38 open issues (expanded from 30 after Phase 8-10 PR reviews)
@@ -57,10 +62,10 @@ None.
 
 ### Next Actions
 
-Phase 11: Type System Foundation — execute plan 11-01 (wave 1), then 11-02 (wave 2)
+Phase 11: Type System Foundation — execute plan 11-02 (wave 2)
 
 ### Session Continuity
 
-Last session: 2026-03-03
-Stopped at: Added Cozempic-inspired phases 20-23 (token diagnostics + team protection) to v0.2.0 roadmap
+Last session: 2026-03-04
+Stopped at: Completed 11-01-PLAN.md (type relocation + serde hygiene)
 Resume file: None
