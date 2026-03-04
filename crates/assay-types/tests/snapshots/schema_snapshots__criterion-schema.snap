@@ -22,6 +22,13 @@ expression: schema.to_value()
       "description": "Human-readable name for this criterion.",
       "type": "string"
     },
+    "path": {
+      "description": "Optional file path to check for existence.\nWhen set (and `cmd` is `None`), the criterion evaluates as a `FileExists` gate.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "timeout": {
       "description": "Optional timeout in seconds for this criterion's command.\nOverrides the global default but is overridden by CLI `--timeout`.",
       "format": "uint64",

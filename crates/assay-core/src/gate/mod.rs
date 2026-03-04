@@ -898,4 +898,100 @@ mod tests {
         assert_eq!(c.cmd, Some("echo ok".to_string()));
         assert_eq!(c.timeout, Some(60));
     }
+
+    // ── FileExists dispatch via evaluate() ──────────────────────────
+
+    #[test]
+    fn evaluate_dispatches_file_exists_present() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("target.txt"), "content").unwrap();
+
+        let criterion = Criterion {
+            name: "file check".to_string(),
+            description: "check file exists".to_string(),
+            cmd: None,
+            path: Some("target.txt".to_string()),
+            timeout: None,
+        };
+
+        let result = evaluate(&criterion, dir.path(), Duration::from_secs(10)).unwrap();
+
+        assert!(result.passed, "existing file should pass");
+        assert!(matches!(result.kind, GateKind::FileExists { ref path } if path == "target.txt"));
+    }
+
+    #[test]
+    fn evaluate_dispatches_file_exists_missing() {
+        let dir = tempfile::tempdir().unwrap();
+
+        let criterion = Criterion {
+            name: "file check".to_string(),
+            description: "check file exists".to_string(),
+            cmd: None,
+            path: Some("missing.txt".to_string()),
+            timeout: None,
+        };
+
+        let result = evaluate(&criterion, dir.path(), Duration::from_secs(10)).unwrap();
+
+        assert!(!result.passed, "missing file should fail");
+        assert!(result.stderr.contains("file not found"));
+    }
+
+    #[test]
+    fn evaluate_all_includes_file_exists_criteria() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("exists.txt"), "content").unwrap();
+
+        let spec = Spec {
+            name: "file-check".to_string(),
+            description: String::new(),
+            criteria: vec![
+                Criterion {
+                    name: "file present".to_string(),
+                    description: "checks file".to_string(),
+                    cmd: None,
+                    path: Some("exists.txt".to_string()),
+                    timeout: None,
+                },
+                Criterion {
+                    name: "descriptive only".to_string(),
+                    description: "no cmd or path".to_string(),
+                    cmd: None,
+                    path: None,
+                    timeout: None,
+                },
+            ],
+        };
+
+        let summary = evaluate_all(&spec, dir.path(), None, None);
+
+        assert_eq!(summary.passed, 1, "file exists criterion should pass");
+        assert_eq!(
+            summary.skipped, 1,
+            "descriptive criterion should be skipped"
+        );
+        assert_eq!(summary.failed, 0);
+    }
+
+    #[test]
+    fn evaluate_cmd_takes_precedence_over_path() {
+        let dir = tempfile::tempdir().unwrap();
+
+        let criterion = Criterion {
+            name: "both set".to_string(),
+            description: "cmd wins".to_string(),
+            cmd: Some("echo cmd-ran".to_string()),
+            path: Some("irrelevant.txt".to_string()),
+            timeout: None,
+        };
+
+        let result = evaluate(&criterion, dir.path(), Duration::from_secs(10)).unwrap();
+
+        assert!(result.passed);
+        assert!(
+            matches!(result.kind, GateKind::Command { .. }),
+            "cmd should take precedence"
+        );
+    }
 }
