@@ -5,9 +5,9 @@
 
 use std::collections::HashSet;
 use std::fmt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-use assay_types::Spec;
+use assay_types::{FeatureSpec, GatesSpec, Spec};
 
 use crate::error::{AssayError, Result};
 
@@ -26,12 +26,48 @@ impl fmt::Display for SpecError {
     }
 }
 
+/// A unified spec entry discovered during directory scanning.
+///
+/// Represents either a legacy flat `.toml` file or a directory-based spec
+/// with `gates.toml` (and optional `spec.toml`).
+#[derive(Debug)]
+pub enum SpecEntry {
+    /// A legacy flat `.toml` spec file.
+    Legacy { slug: String, spec: Spec },
+    /// A directory-based spec with `gates.toml` and optional `spec.toml`.
+    Directory {
+        slug: String,
+        gates: GatesSpec,
+        /// Path to `spec.toml` if it exists (not loaded eagerly).
+        spec_path: Option<PathBuf>,
+    },
+}
+
+impl SpecEntry {
+    /// The slug (directory name or filename stem) for this entry.
+    pub fn slug(&self) -> &str {
+        match self {
+            Self::Legacy { slug, .. } | Self::Directory { slug, .. } => slug,
+        }
+    }
+
+    /// The display name from the loaded spec/gates.
+    pub fn name(&self) -> &str {
+        match self {
+            Self::Legacy { spec, .. } => &spec.name,
+            Self::Directory { gates, .. } => &gates.name,
+        }
+    }
+}
+
 /// Result of scanning a directory for spec files.
 #[derive(Debug)]
 pub struct ScanResult {
-    /// Successfully parsed and validated specs, sorted by filename.
+    /// All discovered spec entries (legacy + directory), sorted by slug.
+    pub entries: Vec<SpecEntry>,
+    /// Successfully parsed and validated legacy specs, sorted by filename.
     /// Each entry is `(slug, spec)` where slug is the filename without extension.
-    /// Specs with duplicate `name` fields are removed and reported in `errors`.
+    /// Populated from `entries` for backward compatibility.
     pub specs: Vec<(String, Spec)>,
     /// Errors from files that failed to parse, validate, or read.
     pub errors: Vec<AssayError>,
@@ -117,24 +153,255 @@ pub fn load(path: &Path) -> Result<Spec> {
     Ok(spec)
 }
 
-/// Scan a directory for `.toml` spec files.
+/// Load and validate a gates spec from a `gates.toml` file path.
+pub fn load_gates(path: &Path) -> Result<GatesSpec> {
+    let content = std::fs::read_to_string(path).map_err(|source| AssayError::Io {
+        operation: "reading gates spec".into(),
+        path: path.to_path_buf(),
+        source,
+    })?;
+
+    let gates: GatesSpec = toml::from_str(&content).map_err(|e| AssayError::GatesSpecParse {
+        path: path.to_path_buf(),
+        message: e.to_string(),
+    })?;
+
+    if let Err(errors) = validate_gates_spec(&gates) {
+        return Err(AssayError::GatesSpecValidation {
+            path: path.to_path_buf(),
+            errors,
+        });
+    }
+
+    Ok(gates)
+}
+
+/// Load and validate a feature spec from a `spec.toml` file path.
+pub fn load_feature_spec(path: &Path) -> Result<FeatureSpec> {
+    let content = std::fs::read_to_string(path).map_err(|source| AssayError::Io {
+        operation: "reading feature spec".into(),
+        path: path.to_path_buf(),
+        source,
+    })?;
+
+    let spec: FeatureSpec = toml::from_str(&content).map_err(|e| AssayError::FeatureSpecParse {
+        path: path.to_path_buf(),
+        message: e.to_string(),
+    })?;
+
+    if let Err(errors) = validate_feature_spec(&spec) {
+        return Err(AssayError::FeatureSpecValidation {
+            path: path.to_path_buf(),
+            errors,
+        });
+    }
+
+    Ok(spec)
+}
+
+/// Unified spec lookup: tries directory first (gates.toml), then flat file.
 ///
-/// Performs a flat (non-recursive) scan. Non-`.toml` files are silently
-/// skipped. Results are sorted by filename. After loading all valid specs,
-/// duplicate `name` fields across files are detected and reported as errors.
+/// Returns `SpecNotFound` if neither exists.
+pub fn load_spec_entry(slug: &str, specs_dir: &Path) -> Result<SpecEntry> {
+    let dir_path = specs_dir.join(slug);
+    let gates_path = dir_path.join("gates.toml");
+
+    // Try directory-based spec first
+    if gates_path.is_file() {
+        let gates = load_gates(&gates_path)?;
+        let spec_path = dir_path.join("spec.toml");
+        let spec_path = if spec_path.is_file() {
+            Some(spec_path)
+        } else {
+            None
+        };
+        return Ok(SpecEntry::Directory {
+            slug: slug.to_string(),
+            gates,
+            spec_path,
+        });
+    }
+
+    // Try legacy flat file
+    let flat_path = specs_dir.join(format!("{slug}.toml"));
+    if flat_path.is_file() {
+        let spec = load(&flat_path)?;
+        return Ok(SpecEntry::Legacy {
+            slug: slug.to_string(),
+            spec,
+        });
+    }
+
+    Err(AssayError::SpecNotFound {
+        name: slug.to_string(),
+        specs_dir: specs_dir.to_path_buf(),
+    })
+}
+
+/// Validate a feature spec for semantic correctness.
+///
+/// Checks: non-empty name, valid REQ-ID format, no duplicate requirement IDs.
+pub fn validate_feature_spec(spec: &FeatureSpec) -> std::result::Result<(), Vec<SpecError>> {
+    let mut errors = Vec::new();
+
+    if spec.name.trim().is_empty() {
+        errors.push(SpecError {
+            field: "name".into(),
+            message: "required, must not be empty".into(),
+        });
+    }
+
+    // Validate requirement IDs: REQ-[AREA]-[NNN] format
+    let mut seen_ids = HashSet::new();
+    for (i, req) in spec.requirements.iter().enumerate() {
+        if req.id.trim().is_empty() {
+            errors.push(SpecError {
+                field: format!("requirements[{i}].id"),
+                message: "required, must not be empty".into(),
+            });
+        } else if !is_valid_req_id(&req.id) {
+            errors.push(SpecError {
+                field: format!("requirements[{i}].id"),
+                message: format!(
+                    "invalid requirement ID `{}`; expected REQ-<AREA>-<NNN> format",
+                    req.id
+                ),
+            });
+        } else if !seen_ids.insert(&req.id) {
+            errors.push(SpecError {
+                field: format!("requirements[{i}].id"),
+                message: format!("duplicate requirement ID `{}`", req.id),
+            });
+        }
+
+        if req.title.trim().is_empty() {
+            errors.push(SpecError {
+                field: format!("requirements[{i}].title"),
+                message: "required, must not be empty".into(),
+            });
+        }
+
+        if req.statement.trim().is_empty() {
+            errors.push(SpecError {
+                field: format!("requirements[{i}].statement"),
+                message: "required, must not be empty".into(),
+            });
+        }
+    }
+
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors)
+    }
+}
+
+/// Validate a gates spec for semantic correctness.
+///
+/// Same rules as legacy spec validation: non-empty name, at least one criterion,
+/// no duplicate criterion names.
+pub fn validate_gates_spec(spec: &GatesSpec) -> std::result::Result<(), Vec<SpecError>> {
+    let mut errors = Vec::new();
+
+    if spec.name.trim().is_empty() {
+        errors.push(SpecError {
+            field: "name".into(),
+            message: "required, must not be empty".into(),
+        });
+    }
+
+    if spec.criteria.is_empty() {
+        errors.push(SpecError {
+            field: "criteria".into(),
+            message: "must have at least one criterion".into(),
+        });
+    } else {
+        let mut seen = HashSet::new();
+        for (i, criterion) in spec.criteria.iter().enumerate() {
+            if criterion.name.trim().is_empty() {
+                errors.push(SpecError {
+                    field: format!("criteria[{i}].name"),
+                    message: "required, must not be empty".into(),
+                });
+            } else if !seen.insert(&criterion.name) {
+                errors.push(SpecError {
+                    field: format!("criteria[{i}].name"),
+                    message: format!("duplicate criterion name `{}`", criterion.name),
+                });
+            }
+        }
+    }
+
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors)
+    }
+}
+
+/// Validate a requirement ID follows the `REQ-AREA-NNN` pattern.
+///
+/// Hand-written parser (no regex dependency):
+/// - Must start with `REQ-`
+/// - Followed by an uppercase-alpha area segment (1+ chars)
+/// - Then `-`
+/// - Then digits (1+ chars)
+fn is_valid_req_id(id: &str) -> bool {
+    let rest = match id.strip_prefix("REQ-") {
+        Some(r) => r,
+        None => return false,
+    };
+
+    // Find the last `-` that separates AREA from NNN
+    let last_dash = match rest.rfind('-') {
+        Some(pos) => pos,
+        None => return false,
+    };
+
+    let area = &rest[..last_dash];
+    let number = &rest[last_dash + 1..];
+
+    // Area: non-empty, all uppercase ASCII letters or hyphens (for multi-word areas)
+    if area.is_empty() {
+        return false;
+    }
+    if !area.chars().all(|c| c.is_ascii_uppercase() || c == '-') {
+        return false;
+    }
+    // Area must not start or end with hyphen
+    if area.starts_with('-') || area.ends_with('-') {
+        return false;
+    }
+
+    // Number: non-empty, all digits
+    if number.is_empty() {
+        return false;
+    }
+    number.chars().all(|c| c.is_ascii_digit())
+}
+
+/// Scan a directory for spec files (both flat `.toml` and directory-based).
+///
+/// Performs a flat (non-recursive) scan. Detects:
+/// - `.toml` files → loaded as legacy `Spec`
+/// - Subdirectories containing `gates.toml` → loaded as `GatesSpec`
+///
+/// Results are sorted by slug. After loading all valid specs,
+/// duplicate names across entries are detected and reported as errors.
+/// The legacy `specs` field is populated from `Legacy` entries for backward compatibility.
 pub fn scan(specs_dir: &Path) -> Result<ScanResult> {
-    let entries = std::fs::read_dir(specs_dir).map_err(|source| AssayError::SpecScan {
+    let dir_entries = std::fs::read_dir(specs_dir).map_err(|source| AssayError::SpecScan {
         path: specs_dir.to_path_buf(),
         source,
     })?;
 
-    // Collect and sort directory entries by filename
-    let mut entry_errors = Vec::new();
-    let mut paths: Vec<_> = entries
+    // Collect all directory entries
+    let mut scan_errors = Vec::new();
+    let mut fs_entries: Vec<_> = dir_entries
         .filter_map(|entry| match entry {
-            Ok(e) => Some(e.path()),
+            Ok(e) => Some(e),
             Err(source) => {
-                entry_errors.push(AssayError::Io {
+                scan_errors.push(AssayError::Io {
                     operation: "reading directory entry".into(),
                     path: specs_dir.to_path_buf(),
                     source,
@@ -142,61 +409,107 @@ pub fn scan(specs_dir: &Path) -> Result<ScanResult> {
                 None
             }
         })
-        .filter(|path| path.extension().is_some_and(|ext| ext == "toml"))
         .collect();
-    paths.sort();
+    fs_entries.sort_by_key(|e| e.path());
 
-    let mut specs = Vec::new();
-    let mut errors = entry_errors;
+    let mut entries = Vec::new();
+    let mut errors = scan_errors;
 
-    for path in &paths {
-        match load(path) {
-            Ok(spec) => {
-                let slug = match path.file_stem().and_then(|s| s.to_str()) {
+    for fs_entry in &fs_entries {
+        let path = fs_entry.path();
+
+        // Directory-based spec: subdirectory with gates.toml
+        if path.is_dir() {
+            let gates_path = path.join("gates.toml");
+            if gates_path.is_file() {
+                let slug = match path.file_name().and_then(|s| s.to_str()) {
                     Some(s) if !s.is_empty() => s.to_string(),
-                    _ => {
-                        errors.push(AssayError::Io {
-                            operation: "extracting filename stem".into(),
-                            path: path.clone(),
-                            source: std::io::Error::new(
-                                std::io::ErrorKind::InvalidData,
-                                "file has no valid stem",
-                            ),
-                        });
-                        continue;
-                    }
+                    _ => continue,
                 };
-                specs.push((slug, spec));
+                match load_gates(&gates_path) {
+                    Ok(gates) => {
+                        let spec_path = path.join("spec.toml");
+                        let spec_path = if spec_path.is_file() {
+                            Some(spec_path)
+                        } else {
+                            None
+                        };
+                        entries.push(SpecEntry::Directory {
+                            slug,
+                            gates,
+                            spec_path,
+                        });
+                    }
+                    Err(err) => errors.push(err),
+                }
             }
-            Err(err) => {
-                errors.push(err);
+            continue;
+        }
+
+        // Legacy flat .toml file
+        if path.extension().is_some_and(|ext| ext == "toml") {
+            match load(&path) {
+                Ok(spec) => {
+                    let slug = match path.file_stem().and_then(|s| s.to_str()) {
+                        Some(s) if !s.is_empty() => s.to_string(),
+                        _ => {
+                            errors.push(AssayError::Io {
+                                operation: "extracting filename stem".into(),
+                                path: path.clone(),
+                                source: std::io::Error::new(
+                                    std::io::ErrorKind::InvalidData,
+                                    "file has no valid stem",
+                                ),
+                            });
+                            continue;
+                        }
+                    };
+                    entries.push(SpecEntry::Legacy { slug, spec });
+                }
+                Err(err) => errors.push(err),
             }
         }
     }
 
-    // Detect duplicate spec names across files
+    // Detect duplicate names across all entries
     let mut seen_names: HashSet<String> = HashSet::new();
     let mut duplicate_indices = Vec::new();
-    for (i, (_slug, spec)) in specs.iter().enumerate() {
-        if !seen_names.insert(spec.name.clone()) {
+    for (i, entry) in entries.iter().enumerate() {
+        if !seen_names.insert(entry.name().to_string()) {
             duplicate_indices.push(i);
         }
     }
 
-    // Remove duplicates in reverse order (to preserve indices) and add to errors
+    // Remove duplicates in reverse order and report as errors
     for i in duplicate_indices.into_iter().rev() {
-        let (slug, spec) = specs.remove(i);
-        let path = specs_dir.join(format!("{slug}.toml"));
+        let removed = entries.remove(i);
+        let path = match &removed {
+            SpecEntry::Legacy { slug, .. } => specs_dir.join(format!("{slug}.toml")),
+            SpecEntry::Directory { slug, .. } => specs_dir.join(slug).join("gates.toml"),
+        };
         errors.push(AssayError::SpecValidation {
             path,
             errors: vec![SpecError {
                 field: "name".into(),
-                message: format!("duplicate spec name `{}`", spec.name),
+                message: format!("duplicate spec name `{}`", removed.name()),
             }],
         });
     }
 
-    Ok(ScanResult { specs, errors })
+    // Build backward-compatible specs vec from Legacy entries
+    let specs: Vec<(String, Spec)> = entries
+        .iter()
+        .filter_map(|entry| match entry {
+            SpecEntry::Legacy { slug, spec } => Some((slug.clone(), spec.clone())),
+            SpecEntry::Directory { .. } => None,
+        })
+        .collect();
+
+    Ok(ScanResult {
+        entries,
+        specs,
+        errors,
+    })
 }
 
 #[cfg(test)]
@@ -713,5 +1026,525 @@ description = "d1"
             matches!(err, AssayError::SpecScan { .. }),
             "expected SpecScan error, got: {err:?}"
         );
+    }
+
+    // ── directory-based spec tests ──────────────────────────────────
+
+    fn create_dir_spec(
+        specs_dir: &std::path::Path,
+        name: &str,
+        gates_toml: &str,
+        spec_toml: Option<&str>,
+    ) {
+        let dir = specs_dir.join(name);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("gates.toml"), gates_toml).unwrap();
+        if let Some(content) = spec_toml {
+            std::fs::write(dir.join("spec.toml"), content).unwrap();
+        }
+    }
+
+    #[test]
+    fn load_gates_valid() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("gates.toml");
+        std::fs::write(
+            &path,
+            r#"
+name = "auth-flow"
+
+[[criteria]]
+name = "compiles"
+description = "Code compiles"
+cmd = "cargo build"
+requirements = ["REQ-FUNC-001"]
+"#,
+        )
+        .unwrap();
+
+        let gates = load_gates(&path).expect("valid gates spec");
+        assert_eq!(gates.name, "auth-flow");
+        assert_eq!(gates.criteria.len(), 1);
+        assert_eq!(gates.criteria[0].requirements, vec!["REQ-FUNC-001"]);
+    }
+
+    #[test]
+    fn load_gates_invalid_toml() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("gates.toml");
+        std::fs::write(&path, "not valid toml ===").unwrap();
+
+        let err = load_gates(&path).unwrap_err();
+        assert!(
+            matches!(err, AssayError::GatesSpecParse { .. }),
+            "expected GatesSpecParse, got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn load_gates_empty_name_fails_validation() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("gates.toml");
+        std::fs::write(
+            &path,
+            r#"
+name = ""
+
+[[criteria]]
+name = "c1"
+description = "d1"
+"#,
+        )
+        .unwrap();
+
+        let err = load_gates(&path).unwrap_err();
+        assert!(
+            matches!(err, AssayError::GatesSpecValidation { .. }),
+            "expected GatesSpecValidation, got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn load_feature_spec_valid() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("spec.toml");
+        std::fs::write(
+            &path,
+            r#"
+name = "auth-flow"
+status = "draft"
+
+[[requirements]]
+id = "REQ-FUNC-001"
+title = "Login"
+statement = "Users can log in"
+"#,
+        )
+        .unwrap();
+
+        let spec = load_feature_spec(&path).expect("valid feature spec");
+        assert_eq!(spec.name, "auth-flow");
+        assert_eq!(spec.requirements.len(), 1);
+    }
+
+    #[test]
+    fn load_feature_spec_invalid_req_id() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("spec.toml");
+        std::fs::write(
+            &path,
+            r#"
+name = "auth-flow"
+
+[[requirements]]
+id = "BAD-ID"
+title = "Login"
+statement = "Users can log in"
+"#,
+        )
+        .unwrap();
+
+        let err = load_feature_spec(&path).unwrap_err();
+        assert!(
+            matches!(err, AssayError::FeatureSpecValidation { .. }),
+            "expected FeatureSpecValidation, got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn load_spec_entry_finds_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        create_dir_spec(
+            dir.path(),
+            "auth-flow",
+            r#"
+name = "auth-flow"
+
+[[criteria]]
+name = "c1"
+description = "d1"
+"#,
+            Some(
+                r#"
+name = "auth-flow"
+status = "draft"
+"#,
+            ),
+        );
+
+        let entry = load_spec_entry("auth-flow", dir.path()).expect("should find directory spec");
+        assert!(
+            matches!(entry, SpecEntry::Directory { ref spec_path, .. } if spec_path.is_some()),
+            "expected Directory with spec_path, got: {entry:?}"
+        );
+        assert_eq!(entry.slug(), "auth-flow");
+    }
+
+    #[test]
+    fn load_spec_entry_finds_legacy() {
+        let dir = tempfile::tempdir().unwrap();
+        write_spec_in(
+            dir.path(),
+            "hello.toml",
+            r#"
+name = "hello"
+
+[[criteria]]
+name = "c1"
+description = "d1"
+"#,
+        );
+
+        let entry = load_spec_entry("hello", dir.path()).expect("should find legacy spec");
+        assert!(
+            matches!(entry, SpecEntry::Legacy { .. }),
+            "expected Legacy, got: {entry:?}"
+        );
+    }
+
+    #[test]
+    fn load_spec_entry_prefers_directory_over_flat() {
+        let dir = tempfile::tempdir().unwrap();
+        // Create both a flat file and a directory with the same slug
+        write_spec_in(
+            dir.path(),
+            "auth.toml",
+            r#"
+name = "auth"
+
+[[criteria]]
+name = "c1"
+description = "d1"
+"#,
+        );
+        create_dir_spec(
+            dir.path(),
+            "auth",
+            r#"
+name = "auth"
+
+[[criteria]]
+name = "c1"
+description = "d1"
+"#,
+            None,
+        );
+
+        let entry = load_spec_entry("auth", dir.path()).expect("should find spec");
+        assert!(
+            matches!(entry, SpecEntry::Directory { .. }),
+            "directory should take priority over flat file"
+        );
+    }
+
+    #[test]
+    fn load_spec_entry_not_found() {
+        let dir = tempfile::tempdir().unwrap();
+        let err = load_spec_entry("nonexistent", dir.path()).unwrap_err();
+        assert!(
+            matches!(err, AssayError::SpecNotFound { .. }),
+            "expected SpecNotFound, got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn scan_discovers_directory_specs() {
+        let dir = tempfile::tempdir().unwrap();
+        create_dir_spec(
+            dir.path(),
+            "auth-flow",
+            r#"
+name = "auth-flow"
+
+[[criteria]]
+name = "c1"
+description = "d1"
+cmd = "echo ok"
+"#,
+            None,
+        );
+
+        let result = scan(dir.path()).expect("scan should succeed");
+        assert_eq!(result.entries.len(), 1);
+        assert!(
+            matches!(&result.entries[0], SpecEntry::Directory { slug, .. } if slug == "auth-flow"),
+            "expected Directory entry"
+        );
+        // Legacy specs vec should be empty (no flat files)
+        assert!(result.specs.is_empty());
+    }
+
+    #[test]
+    fn scan_mixed_legacy_and_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        write_spec_in(
+            dir.path(),
+            "alpha.toml",
+            r#"
+name = "alpha"
+
+[[criteria]]
+name = "c1"
+description = "d1"
+"#,
+        );
+        create_dir_spec(
+            dir.path(),
+            "beta-dir",
+            r#"
+name = "beta-dir"
+
+[[criteria]]
+name = "c1"
+description = "d1"
+"#,
+            None,
+        );
+
+        let result = scan(dir.path()).expect("scan should succeed");
+        assert_eq!(result.entries.len(), 2);
+        assert!(result.errors.is_empty());
+
+        // Legacy specs should only contain the flat file
+        assert_eq!(result.specs.len(), 1);
+        assert_eq!(result.specs[0].0, "alpha");
+    }
+
+    #[test]
+    fn scan_detects_cross_format_duplicate_names() {
+        let dir = tempfile::tempdir().unwrap();
+        write_spec_in(
+            dir.path(),
+            "dupe.toml",
+            r#"
+name = "same-name"
+
+[[criteria]]
+name = "c1"
+description = "d1"
+"#,
+        );
+        create_dir_spec(
+            dir.path(),
+            "dupe-dir",
+            r#"
+name = "same-name"
+
+[[criteria]]
+name = "c1"
+description = "d1"
+"#,
+            None,
+        );
+
+        let result = scan(dir.path()).expect("scan should succeed");
+        assert!(
+            !result.errors.is_empty(),
+            "should detect cross-format duplicate names"
+        );
+    }
+
+    #[test]
+    fn scan_ignores_directories_without_gates_toml() {
+        let dir = tempfile::tempdir().unwrap();
+        // Create a directory without gates.toml
+        std::fs::create_dir_all(dir.path().join("empty-dir")).unwrap();
+        std::fs::write(dir.path().join("empty-dir").join("readme.md"), "not a spec").unwrap();
+
+        let result = scan(dir.path()).expect("scan should succeed");
+        assert!(result.entries.is_empty());
+        assert!(result.errors.is_empty());
+    }
+
+    // ── validate_feature_spec tests ─────────────────────────────────
+
+    #[test]
+    fn validate_feature_spec_valid() {
+        let spec = FeatureSpec {
+            name: "test".into(),
+            status: Default::default(),
+            version: String::new(),
+            overview: None,
+            constraints: None,
+            users: vec![],
+            requirements: vec![assay_types::feature_spec::Requirement {
+                id: "REQ-FUNC-001".into(),
+                title: "Test".into(),
+                statement: "The system SHALL test".into(),
+                rationale: String::new(),
+                obligation: Default::default(),
+                priority: Default::default(),
+                verification: Default::default(),
+                status: Default::default(),
+                acceptance_criteria: vec![],
+            }],
+            quality: None,
+            assumptions: vec![],
+            dependencies: vec![],
+            risks: vec![],
+            verification: None,
+        };
+        assert!(validate_feature_spec(&spec).is_ok());
+    }
+
+    #[test]
+    fn validate_feature_spec_empty_name() {
+        let spec = FeatureSpec {
+            name: "".into(),
+            status: Default::default(),
+            version: String::new(),
+            overview: None,
+            constraints: None,
+            users: vec![],
+            requirements: vec![],
+            quality: None,
+            assumptions: vec![],
+            dependencies: vec![],
+            risks: vec![],
+            verification: None,
+        };
+        let errors = validate_feature_spec(&spec).unwrap_err();
+        assert!(errors.iter().any(|e| e.field == "name"));
+    }
+
+    #[test]
+    fn validate_feature_spec_duplicate_req_ids() {
+        let req = assay_types::feature_spec::Requirement {
+            id: "REQ-FUNC-001".into(),
+            title: "Test".into(),
+            statement: "Statement".into(),
+            rationale: String::new(),
+            obligation: Default::default(),
+            priority: Default::default(),
+            verification: Default::default(),
+            status: Default::default(),
+            acceptance_criteria: vec![],
+        };
+        let spec = FeatureSpec {
+            name: "test".into(),
+            status: Default::default(),
+            version: String::new(),
+            overview: None,
+            constraints: None,
+            users: vec![],
+            requirements: vec![req.clone(), req],
+            quality: None,
+            assumptions: vec![],
+            dependencies: vec![],
+            risks: vec![],
+            verification: None,
+        };
+        let errors = validate_feature_spec(&spec).unwrap_err();
+        assert!(errors.iter().any(|e| e.message.contains("duplicate")));
+    }
+
+    #[test]
+    fn validate_feature_spec_invalid_req_id_format() {
+        let spec = FeatureSpec {
+            name: "test".into(),
+            status: Default::default(),
+            version: String::new(),
+            overview: None,
+            constraints: None,
+            users: vec![],
+            requirements: vec![assay_types::feature_spec::Requirement {
+                id: "BAD-FORMAT".into(),
+                title: "Test".into(),
+                statement: "Statement".into(),
+                rationale: String::new(),
+                obligation: Default::default(),
+                priority: Default::default(),
+                verification: Default::default(),
+                status: Default::default(),
+                acceptance_criteria: vec![],
+            }],
+            quality: None,
+            assumptions: vec![],
+            dependencies: vec![],
+            risks: vec![],
+            verification: None,
+        };
+        let errors = validate_feature_spec(&spec).unwrap_err();
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.message.contains("invalid requirement ID"))
+        );
+    }
+
+    // ── is_valid_req_id tests ───────────────────────────────────────
+
+    #[test]
+    fn req_id_valid_formats() {
+        assert!(is_valid_req_id("REQ-FUNC-001"));
+        assert!(is_valid_req_id("REQ-SEC-42"));
+        assert!(is_valid_req_id("REQ-NON-FUNC-1"));
+        assert!(is_valid_req_id("REQ-UI-UX-003"));
+    }
+
+    #[test]
+    fn req_id_invalid_formats() {
+        assert!(!is_valid_req_id(""));
+        assert!(!is_valid_req_id("FUNC-001"));
+        assert!(!is_valid_req_id("REQ-001"));
+        assert!(!is_valid_req_id("REQ--001"));
+        assert!(!is_valid_req_id("REQ-func-001")); // lowercase
+        assert!(!is_valid_req_id("REQ-FUNC-"));
+        assert!(!is_valid_req_id("REQ-FUNC-abc"));
+    }
+
+    // ── validate_gates_spec tests ───────────────────────────────────
+
+    #[test]
+    fn validate_gates_spec_valid() {
+        let spec = GatesSpec {
+            name: "test".into(),
+            description: String::new(),
+            criteria: vec![assay_types::GateCriterion {
+                name: "c1".into(),
+                description: "d1".into(),
+                cmd: None,
+                timeout: None,
+                requirements: vec![],
+            }],
+        };
+        assert!(validate_gates_spec(&spec).is_ok());
+    }
+
+    #[test]
+    fn validate_gates_spec_empty_criteria() {
+        let spec = GatesSpec {
+            name: "test".into(),
+            description: String::new(),
+            criteria: vec![],
+        };
+        let errors = validate_gates_spec(&spec).unwrap_err();
+        assert!(errors.iter().any(|e| e.message.contains("at least one")));
+    }
+
+    #[test]
+    fn validate_gates_spec_duplicate_criterion_names() {
+        let spec = GatesSpec {
+            name: "test".into(),
+            description: String::new(),
+            criteria: vec![
+                assay_types::GateCriterion {
+                    name: "dup".into(),
+                    description: "d1".into(),
+                    cmd: None,
+                    timeout: None,
+                    requirements: vec![],
+                },
+                assay_types::GateCriterion {
+                    name: "dup".into(),
+                    description: "d2".into(),
+                    cmd: None,
+                    timeout: None,
+                    requirements: vec![],
+                },
+            ],
+        };
+        let errors = validate_gates_spec(&spec).unwrap_err();
+        assert!(errors.iter().any(|e| e.message.contains("dup")));
     }
 }

@@ -1,271 +1,220 @@
-# Research Summary: Assay v0.1.0 Proof of Concept
+# Research Summary: Assay v0.2.0 "Dual-Track Gates & Hardening"
 
-**Synthesized:** 2026-02-28
-**Source files:** STACK.md, FEATURES.md, ARCHITECTURE.md, PITFALLS.md
-**Purpose:** Decision-ready synthesis for roadmap planning
+**Date:** 2026-03-02
+**Synthesized from:** STACK.md, FEATURES.md, ARCHITECTURE.md, PITFALLS.md
+**Milestone scope:** Run History, Required/Advisory Gates, Agent Gate Recording, Foundation Hardening
 
 ---
 
 ## Executive Summary
 
-Assay v0.1.0 is buildable now, with one mandatory prerequisite and four critical pitfalls to design around before writing a line of implementation code. The mandatory prerequisite is upgrading schemars from 0.8 to 1.x — this is forced by rmcp's `server` feature and cannot be deferred. The good news: it is a mechanical two-line change with near-zero breakage risk given the codebase uses only derive macros and no schemars APIs. The bad news: it touches every type in assay-types and must be the first commit of the implementation sprint.
+Four parallel research streams converge on a consistent picture: the v0.2.0 feature set is well-scoped, implementable without new dependencies, and architecturally sound. The highest-risk change is not a new feature — it is a type relocation (`GateRunSummary` and `CriterionResult` from `assay-core::gate` to `assay-types`) required by run history persistence. The second-highest concern is `deny_unknown_fields` on user-facing types, which needs a deliberate resolution strategy for forward compatibility. Everything else is additive and low-risk.
 
-The architecture is sound. Four researchers independently arrived at the same structure: a new `assay-mcp` library crate sitting between `assay-cli` and `assay-core`, with gate evaluation kept synchronous in core and bridged via `tokio::task::spawn_blocking` in the MCP layer. This separation is not optional — it is the direct mitigation for three of the four critical pitfalls (pipe buffer deadlock, async/sync collision, zombie processes). The stdout corruption pitfall (P-01) is the single most dangerous failure mode: any `println!()` in any crate reachable from the MCP server path silently breaks the protocol without a useful error. This constraint must be enforced at the design level, not patched after the fact.
-
-The feature set for v0.1.0 is deliberately narrow and correct. The vertical slice is: config init, TOML spec files, command gate evaluation, MCP server (two tools: `spec_get` + `gate_run`), and Claude Code plugin. Nothing else ships in v0.1. The dual-track gate differentiator (agent-evaluated criteria) is correctly deferred to v0.2, but the type system should be designed to accommodate it from day one — specifically, `Criterion.cmd` as `Option<String>` with a reserved `prompt` field path.
+The research validates the brainstorm scope entirely. No features need to be cut; no dependencies need to be added; no architectural rewrites are required.
 
 ---
 
-## Key Findings
+## Key Findings by Area
 
-### Stack (STACK.md)
+### 1. Stack (zero new dependencies)
 
-**New workspace dependencies required:**
+**Finding:** All v0.2.0 features are implementable with the existing workspace dependency set.
 
-| Crate | Version | Purpose |
-|---|---|---|
-| `rmcp` | 0.17 | Official MCP Rust SDK (modelcontextprotocol org) |
-| `toml` | 1 | TOML parsing for config and spec files |
-| `tracing` | 0.1 | Structured logging (MCP server must log to stderr) |
-| `tracing-subscriber` | 0.3 | Log subscriber for MCP binary |
+The only concrete change is promoting `serde_json` from `[dev-dependencies]` to `[dependencies]` in `assay-core/Cargo.toml`. The full JSON persistence stack (`serde_json`, `chrono`, `std::fs`) is already present. `rmcp` 0.17.0 (released 2026-02-27) is the current version and requires no upgrade. The `gate_report` tool is a straightforward addition to the existing `#[tool_router]` impl block.
 
-**Mandatory upgrade:**
+Rejected without regret: NDJSON libraries, UUID crates, file-locking crates, embedded databases (SQLite, sled, redb). All were evaluated and found to be complexity without benefit at Assay's scale.
 
-`schemars = "0.8"` → `schemars = "1"` — forced by rmcp's `server` feature. The upgrade is mechanical: only `derive(JsonSchema)` is used in assay-types, and the derive macro works identically in 1.x. No schemars API surfaces are called. Risk: low. Deferability: zero.
+**One opportunity:** rmcp 0.17.0 introduces `Json<T>` structured output. Use it for `gate_report` since it returns structured data agents need to parse. Migrating existing tools is optional and non-blocking for v0.2.
 
-**rmcp maturity:** rmcp 0.17.0 was released 2026-02-27. It is the canonical SDK (hosted under the `modelcontextprotocol` GitHub org), has MCP conformance tests as of 0.17, and covers stdio transport fully. It is pre-1.0 and has released 7 times in 3 months. Pin to `"0.17"` (minor, not patch) and plan for potential breaking changes at `0.18`. The MCP server code should be fully isolated in `assay-mcp` to minimize upgrade blast radius.
+**Concrete `Cargo.toml` diff for `assay-core`:**
+```diff
+ [dependencies]
+ assay-types.workspace = true
+ chrono.workspace = true
+ serde.workspace = true
++serde_json.workspace = true
+ thiserror.workspace = true
+ toml.workspace = true
+```
 
-**Crate placement:**
-
-- `toml`: workspace dep, consumed by `assay-core`
-- `rmcp`, `tracing`, `tracing-subscriber`: workspace deps, consumed by `assay-mcp` only
-- `assay-cli` gains `assay-mcp` as a dependency and `tokio` (to call the async `serve()` function)
+**Confidence:** High (all answers verified against codebase, crates.io, and rmcp 0.17.0 release notes).
 
 ---
 
-### Features (FEATURES.md)
+### 2. Features (industry-validated scope)
 
-**The non-negotiable v0.1.0 table stakes (11 items):**
+**Finding:** The two-tier enforcement model and file-per-run history are industry-proven patterns. The `gate_report` tool is genuinely novel in the MCP ecosystem.
 
-1. `AssayError` enum with thiserror, `#[non_exhaustive]`
-2. `GateKind` enum, `GateResult` with evidence fields (stdout, stderr, exit_code, duration, timestamp)
-3. `assay init` — creates `.assay/config.toml` + `specs/` directory
-4. Config loading — TOML parse + validation as free functions in core
-5. TOML spec files — criteria with optional `cmd` field
-6. Spec validation — name required, unique criteria names, trim-then-validate
-7. Gate evaluation — command execution, exit code, stdout/stderr capture, timeout
-8. CLI subcommands — `init`, `validate`, `gate run`, `spec show`, `mcp serve`
-9. MCP server — stdio via rmcp, `spec_get` + `gate_run` tools
-10. Claude Code plugin — `plugin.json` + `.mcp.json` + gate-check skill
-11. Schema generation — schemars-based binary + `just schemas`
+**Run History:** The industry split is clear — local-first tools (nextest, dbt, agentic-orchestration) use JSON/NDJSON files; server tools (SonarQube) use databases. Assay is local-first. JSON files in `.assay/results/` is the correct choice. File-per-run is simpler than NDJSON append logs for the scale (<1000 results per project) and avoids concurrent-write complexity.
 
-**The differentiators worth shipping if sprint capacity allows:**
+**Enforcement Levels:** SonarQube's history confirms the lesson: three-tier enforcement (pass/warning/fail) creates warning fatigue and was removed in v7.6. GitLab CI's two-tier model (`allow_failure`) is the proven UX. Assay ships `required` (default) and `advisory`, nothing more. Default must be `required` to preserve backward compatibility and prevent "everything is optional" drift.
 
-- `spec_list` MCP tool (enumerate available specs) — low effort, high agent UX value
-- Aggregate gate results ("3/5 passed" summary) — agents need this for decision-making
-- PostToolUse hook (auto-gate after code write/edit) — turns the plugin from passive to active
-- Stop hook (prevent agent completion without passing gates) — the core behavioral guarantee
+**Agent Gate Recording:** No MCP tool in the ecosystem currently implements a `gate_report` submission pattern. The closest analogs (agentic-orchestration critic loops, MCPx-eval judges) are integrated rather than externalized. Assay's `gate_report` creates a new pattern: externalized quality assessment with structured evidence, submitted by the agent that did the work. This is the v0.2 differentiator.
 
-**Explicit anti-features (do not add, even if easy):**
+**Hardening:** The existing open issues inventory (20 items) provides the full hardening backlog. The credibility of a quality tool depends entirely on its own quality. Hardening ships alongside new features, not deferred after.
 
-- Interactive init wizard — this is an agent-first tool
-- Markdown spec bodies — structured TOML is the deliberate differentiation from spec-kit/OpenSpec
-- Gate caching — gates must always re-evaluate fresh
-- SSE/HTTP transport — local-only in v0.1
-- Parallel gate execution — document async guidance, ship sync; avoid complexity
+**Recommended feature ordering:**
+1. Hardening prerequisites (fix issues that cause churn if done after feature work)
+2. Enforcement levels (small type change, big behavioral impact; prerequisite for agent evaluation)
+3. Run history (depends on enforcement levels for correct status recording)
+4. Agent gate recording (depends on run history for persistence infrastructure)
 
 ---
 
-### Architecture (ARCHITECTURE.md)
+### 3. Architecture (clear integration path, one medium-risk refactor)
 
-**New dependency graph:**
+**Finding:** The v0.2.0 features integrate cleanly into the existing architecture. The dependency graph requires no changes. All new code follows established patterns. One type relocation is necessary and safe but touches multiple files.
 
-```
-assay-cli ──> assay-mcp ──> assay-core ──> assay-types
-assay-tui ──────────────> assay-core ──> assay-types
-```
+**New components:**
+- `assay-core::history` module — `save()`, `list()`, `list_recent()`, `load()`, `latest()`
+- `assay-mcp` tools — `gate_report` and `gate_history`
+- `assay-cli` subcommand — `assay gate history <spec>`
 
-`assay-mcp` is a library crate (`crates/assay-mcp/`) exposing `pub async fn serve() -> Result<()>`. The CLI calls it; there is no separate binary. This produces a single `assay` binary, simplifying plugin configuration and distribution.
+**New types in `assay-types`:**
+- `Enforcement` enum (Required/Advisory) on `Criterion`
+- `GateRunSummary` and `CriterionResult` — moved from `assay-core::gate`, gains `Deserialize + JsonSchema`
+- `GateRunRecord` — persistence wrapper with trigger and metadata
+- `RunTrigger` enum (Cli, Mcp, Agent)
+- `GateKind::AgentReport` variant
 
-**assay-mcp structure (intentionally small, ~200-300 lines):**
+**The type relocation (`GateRunSummary` → `assay-types`) is the highest-churn change.** It touches `assay-core::gate::evaluate_all()`, `assay-mcp::server::format_gate_response()`, MCP server tests, and `assay-cli::main.rs`. This is a compile-error-driven refactor — move the types, fix imports until `just ready` passes. It is safe and necessary; keeping `GateRunRecord` in `assay-types` while `GateRunSummary` remains in `assay-core` would create a circular dependency.
 
-```
-crates/assay-mcp/
-  src/
-    lib.rs      # pub async fn serve(), module declarations
-    server.rs   # AssayServer struct, #[tool_router] impl, ServerHandler impl
-```
+**CLI streaming → history integration:** The CLI uses per-criterion streaming (`stream_criterion()`), not `evaluate_all()`. To persist run history without losing the streaming UX, accumulate `CriterionResult` entries alongside the streaming display, then construct and save a `GateRunRecord` at the end.
 
-**The sync/async bridge (mandatory pattern):**
+**`.assay/results/` gitignore:** Already present in `init.rs::render_gitignore()`. History files will be gitignored by default without any new work.
 
-Gate evaluation is synchronous (`std::process::Command`). Every call from an async rmcp tool handler must use `tokio::task::spawn_blocking`:
+**MCP tool count:** v0.1.0 has 3 tools. v0.2.0 targets 5 (`gate_report`, `gate_history` added). Stay at 5 maximum to bound context window cost for agents listing tools.
 
+**History module API (assay-core::history):**
 ```rust
-#[tool(name = "gate_run", description = "Run gate criteria for a spec")]
-async fn gate_run(&self, Parameters(req): Parameters<GateRunRequest>) -> Result<CallToolResult, McpError> {
-    let result = tokio::task::spawn_blocking(move || {
-        assay_core::gate::evaluate(&gate, &working_dir)
-    }).await
-      .map_err(|e| McpError::internal_error(e.to_string(), None))?
-      .map_err(|e| McpError::internal_error(e.to_string(), None))?;
-    // ...
-}
+pub fn save(root: &Path, record: &GateRunRecord) -> Result<PathBuf>
+pub fn list(root: &Path, spec_name: &str) -> Result<Vec<GateRunRecord>>
+pub fn list_recent(root: &Path, spec_name: &str, limit: usize) -> Result<Vec<GateRunRecord>>
+pub fn load(root: &Path, spec_name: &str, run_id: &str) -> Result<GateRunRecord>
+pub fn latest(root: &Path, spec_name: &str) -> Result<Option<GateRunRecord>>
 ```
 
-**Build order:**
+---
 
-1. assay-types (schemars upgrade, domain model redesign)
-2. assay-core (error types, config, spec, gate modules)
-3. assay-mcp (MCP server, depends on core)
-4. assay-cli (CLI subcommands, depends on core + mcp)
-5. assay-tui (no changes, must still compile)
-6. plugins/claude-code (static JSON config files)
+### 4. Pitfalls (17 identified, 4 critical)
 
-**No workspace member changes needed:** `members = ["crates/*"]` already covers the new `assay-mcp` crate.
+**Finding:** The four critical pitfalls each have clear preventions. None are blockers; all are design decisions to make early.
+
+**P-21 (Critical): `deny_unknown_fields` blocks forward compatibility**
+
+`Spec`, `Criterion`, `Config`, and `GatesConfig` all use `#[serde(deny_unknown_fields)]`. Adding new fields in v0.2 (e.g., `enforcement` on `Criterion`) means a spec file that includes the new field cannot be parsed by v0.1 Assay. This is a downgrade scenario — but a real UX concern for projects that share spec files across tool versions.
+
+Prevention: Add all new fields with `#[serde(default, skip_serializing_if = "...")]` so they are omitted from serialized output when at default values, preserving round-trip compatibility. Do not remove `deny_unknown_fields` — it catches real typos. Write explicit backward-compatibility tests: parse v0.1.0-era spec files with v0.2 code. No whitelist mechanism exists in serde (issue #1864).
+
+**P-22 (Critical): Concurrent result file writes**
+
+Two concurrent gate runs on the same spec can corrupt result files. Prevention: use atomic writes via `tempfile::NamedTempFile::persist()` (crate already in workspace deps). The unique-filename-per-run strategy (timestamp + short random suffix) eliminates contention without requiring file locking.
+
+**P-23 (Critical): Unbounded result file accumulation**
+
+Agent retry loops can generate thousands of result files. Prevention: implement a per-spec retention policy at write time — keep only the last N files (default: 20). The existing 64KB `MAX_OUTPUT_BYTES` truncation already limits per-file size. Implement retention on day one, not as an afterthought.
+
+**P-24 (Critical): Agent self-grading bias**
+
+The same agent that implemented code evaluating whether it meets criteria has documented biases (anchoring, sycophancy, criterion reinterpretation). Prevention: require `reasoning` field (already planned), add `confidence` field, default agent gates to `advisory` enforcement, and never allow an agent gate result to override a failed command gate.
+
+**P-35 (Integration): Result shape divergence between persistence and MCP API**
+
+`GateRunResponse` (MCP projection) and the persisted `GateRunRecord` must not diverge. Prevention: define a single canonical type in `assay-types` (`GateRunRecord`) and project from it: `GateRunSummary → GateRunRecord` on persist, `GateRunRecord → GateRunResponse` on serve.
+
+**P-36 (Integration): Trust mismatch in required agent gates**
+
+A `required + AgentEval` gate has the same blocking power as `required + Command` but far lower reliability. A command gate produces deterministic, reproducible results. An agent gate's pass/fail is probabilistic. Prevention: default agent-reported gates to `advisory` enforcement regardless of spec configuration; display agent gate results with visual distinction in CLI and MCP responses.
 
 ---
 
-### Pitfalls (PITFALLS.md)
+## Confidence Levels
 
-**Four critical pitfalls that require design-level mitigation (not patches):**
-
-**P-01 — Stdout corruption (Critical):** Any non-JSON-RPC output to stdout breaks the MCP protocol silently. This includes `println!()`, tracing output defaulting to stdout, and clap error messages. Mitigation: initialize `tracing-subscriber` with `.with_writer(std::io::stderr).with_ansi(false)` as the first line of the MCP server path. Treat stdout corruption as a P0 bug, not a debug issue. Audit assay-core for any `println!()` calls — core must return data, never print.
-
-**P-02 — Pipe buffer deadlock (Critical):** Using `Command::spawn()` + reading stdout + reading stderr + `wait()` deadlocks when output exceeds pipe buffer (~64KB on macOS). Use `Command::output()` exclusively in gate evaluation. Document this in a code comment to prevent future "optimization."
-
-**P-03 — Async/sync collision (Critical):** Calling `Command::output()` directly in an async tool handler blocks the tokio worker thread. Under single-threaded runtimes (including `#[tokio::test]`), this deadlocks. Mitigation: `spawn_blocking` for all gate evaluation calls from async context. Keep assay-core gate functions fully synchronous — no async dependency.
-
-**P-04 — Zombie processes (Critical):** `std::process::Child` has no `Drop` that kills the child. Dropped children become orphans; timed-out children become zombies unless explicitly `kill()`ed then `wait()`ed. Implement timeout as: poll with `try_wait()`, on timeout call `child.kill()` then `child.wait()`. Set a default timeout (300 seconds) configurable per gate.
-
-**Eight moderate pitfalls (design-level mitigations):**
-
-- **P-05:** Use `#[serde(tag = "kind")]` (internal tagging) on `GateKind`. External tagging does not work with TOML. Decide this before publishing any spec file format.
-- **P-06:** Use `#[serde(deny_unknown_fields)]` on spec/config structs. Wrap TOML errors with file path and context. Poor error messages are user-hostile for a file format users write by hand.
-- **P-07:** Avoid `#[from]` on error variants; use explicit `map_err` with context (file path, operation). Domain-specific variants, not passthrough wrappers.
-- **P-08:** Keep MCP tool parameter structs flat — no `#[serde(flatten)]`, no custom serializers. Verify roundtrip in tests.
-- **P-09:** Plugin `.mcp.json` should reference `"command": "assay"` (system PATH) not a relative workspace path. Document `cargo install` requirement. Use absolute `target/debug/` path in local dev override.
-- **P-10:** Always set `Command::current_dir()` explicitly. Never inherit. Resolve relative `working_dir` values against the project root (directory containing `.assay/`).
-- **P-11:** rmcp feature flags: `["server", "transport-io"]` — `macros` is included in `server`. Add a comment in `Cargo.toml` explaining each feature's purpose.
-- **P-20:** When `assay mcp serve` is invoked, clap must not print anything to stdout. Configure clap error output to stderr. Test by running `assay mcp serve` and asserting first stdout byte is `{`.
+| Area | Confidence | Basis |
+|------|-----------|-------|
+| Zero new dependencies needed | High | Verified against codebase, crates.io, rmcp 0.17.0 release notes |
+| File-per-run history design | High | Industry comparison (nextest, dbt, agentic-orchestration) |
+| Two-tier enforcement correctness | High | SonarQube removal of warning tier; GitLab CI `allow_failure` pattern |
+| `gate_report` MCP tool novelty | High | No equivalent found in MCP ecosystem survey |
+| Type relocation churn estimate | High | All consumers identified and mapped in ARCHITECTURE.md |
+| `deny_unknown_fields` forward-compat impact | High | Verified against serde issue tracker (issue #1864) |
+| Agent self-grading bias severity | High | Multiple AI evaluation research sources (2025) |
+| Retention policy urgency | Medium | Depends on usage patterns; agent loops are the high-risk scenario |
 
 ---
 
-## Implications for Roadmap
+## Gaps and Open Questions
 
-### Phase 0: Prerequisites (1-2 days, before any feature work)
+**Gap 1: `assay_version` in persisted records**
+PITFALLS.md (P-26) recommends including `assay_version` in `GateRunRecord` for future schema migration. STACK.md and ARCHITECTURE.md do not include it in their proposed schemas. Decision needed before finalizing `GateRunRecord` type. Recommendation: include it; one field, high future value.
 
-**Do these first, in this order, or the sprint will stall:**
+**Gap 2: Result file directory layout**
+STACK.md proposes flat (`.assay/results/{spec-name}_{timestamp}.json`). ARCHITECTURE.md proposes per-spec subdirectory (`.assay/results/{spec-name}/{timestamp}.json`). FEATURES.md uses `.assay/runs/` as the root. Recommendation: ARCHITECTURE.md's per-spec subdirectory layout — bounds per-directory file counts, makes per-spec queries faster, and is consistent with per-spec retention pruning.
 
-1. **Upgrade schemars 0.8 → 1.x** in root `Cargo.toml`. Run `just ready`. Verify clean. This is a blocker for everything involving rmcp.
-2. **MCP spike** — build a hardcoded 1-tool rmcp server in `assay-mcp`, wire `assay mcp serve`, install the plugin in Claude Code, call the tool. This is a GO/NO-GO gate for the entire v0.1 architecture. If rmcp doesn't work with Claude Code's MCP client at the current version, the whole plan needs to pivot. Do not skip this spike. Budget 1 day.
-3. **Add workspace deps** — `rmcp`, `toml`, `tracing`, `tracing-subscriber`, upgraded `schemars`.
+**Gap 3: Run ID generation strategy**
+STACK.md prefers timestamp + random suffix (no new crate). FEATURES.md proposes ULID or UUID v7 (time-ordered, adds a crate). Recommendation: timestamp + 6-char random hex suffix, no new crate. Stable run IDs for cross-referencing are out of scope for v0.2.
 
-Rationale: Three of the four critical pitfalls live at the MCP/async boundary. The spike validates the boundary is real, the `spawn_blocking` pattern works, and stdout stays clean before any domain logic is built on top.
-
----
-
-### Phase 1: Domain Foundation (2-3 days)
-
-**Implement in assay-types and assay-core, in dependency order:**
-
-1. **assay-types redesign** — `GateKind` enum with `#[serde(tag = "kind")]`, `GateResult` with evidence fields, `Criterion` with `cmd: Option<String>`. No `passed` field on `Gate`. Forward-compatible `prompt` field path.
-2. **AssayError** — thiserror enum, `#[non_exhaustive]`, domain-specific variants with context (not passthrough `#[from]`).
-3. **Config loading** — `assay_core::config::load()`, `from_str()`, `validate()`. Uses `toml` crate. `#[serde(deny_unknown_fields)]` on config struct.
-4. **Spec parsing** — `assay_core::spec::load_spec()`, `parse_spec()`, `validate()`. `+++` delimiter format. `#[serde(deny_unknown_fields)]`.
-5. **Gate evaluation** — `assay_core::gate::evaluate()`. `Command::output()` (not spawn+wait). Explicit `current_dir`. Timeout with kill+wait. Returns `GateResult` with full evidence.
-6. **Schema generation** — example binary in `assay-types/examples/`, `just schemas` justfile entry.
-
-Rationale: This phase produces the entire domain without any presentation concerns. Both CLI and MCP server will delegate to these functions identically. Testing at this phase is pure Rust, no MCP complexity.
+**Gap 4: `gate_history` vs `gate_report` naming alignment**
+ARCHITECTURE.md uses `gate_history` for the history query tool. STACK.md uses `gate_report` for agent submission with a separate history tool implied. Confirm final tool names before implementation to avoid SKILL.md churn.
 
 ---
 
-### Phase 2: CLI Surface (1-2 days)
+## Roadmap Implications
 
-**Thin clap wrappers over Phase 1:**
+### Must-do before any feature work
 
-1. `assay init` — create `.assay/` + `config.toml` + `specs/` + example spec
-2. `assay spec show <name>` — load and display parsed spec
-3. `assay gate run <spec>` — evaluate all gates, print structured results
-4. `assay mcp serve` — call `assay_mcp::serve().await` (Phase 3)
+1. Audit all `AssayError` match sites (`rg 'AssayError::' crates/`) before touching error types
+2. Resolve Gaps 2 and 3 above (directory layout and run ID strategy)
+3. Close stale issues #19-23 (reference `spike.rs` which was replaced in v0.1)
 
-Rationale: CLI is the human-facing surface. Build it before the MCP surface to validate that the domain logic is correct from an interactive perspective. The `mcp serve` subcommand is a one-liner stub until Phase 3.
+### Phase ordering (validated by research)
 
----
+**Phase 1: Hardening prerequisite issues**
+Fix issues that cause churn if deferred: #33 (SpecNotFound construction), #30 (failure reason from stdout), #37 (validate working_dir), #12 (TUI try_init), #31 (gate_run timeout param). Small, independent, unblock clean feature work.
 
-### Phase 3: MCP Server (2-3 days)
+**Phase 2: Type foundation**
+Add `Enforcement` enum; add `enforcement` field to `Criterion` with `#[serde(default)]`; move `GateRunSummary` and `CriterionResult` to `assay-types`; add `Deserialize + JsonSchema`; add `GateKind::AgentReport`; add `GateRunRecord` and `RunTrigger`; update schema snapshots. Run `just ready`.
 
-**assay-mcp crate implementation:**
+**Phase 3: Core logic**
+Update `evaluate_all()` for enforcement-aware counting; implement `assay-core::history` module with retention policy built in; add `HistoryIo`, `HistoryParse`, `CriterionNotFound` error variants. Run `just ready`.
 
-1. `AssayServer` struct with `project_root: PathBuf` + `tool_router: ToolRouter<Self>`
-2. `spec_get` tool — load and return `Spec` as JSON
-3. `gate_run` tool — evaluate gates via `spawn_blocking`, return `Vec<GateResult>` as JSON
-4. `ServerHandler` implementation with capabilities and instructions
-5. `pub async fn serve()` wired to `rmcp::transport::stdio()`
-6. tracing-subscriber initialized to stderr with ANSI disabled
+**Phase 4: MCP surface**
+Wire history saving into `gate_run`; update `GateRunResponse`/`CriterionSummary` for enforcement; add `gate_report` tool (advisory-by-default for agent-reported gates); add `gate_history` tool; add timeout parameter (#31); fix remaining MCP hardening issues (#32, #34, #35, #36, #38). Run `just ready`.
 
-Validation: Run `assay mcp serve`, pipe stdout through `jq`, assert clean JSON-RPC. Run gate tools against a real spec. Verify no stdout corruption.
+**Phase 5: CLI surface**
+Collect `CriterionResult` entries during streaming; save `GateRunRecord` after all criteria evaluated; add `assay gate history <spec>` subcommand; update `print_gate_summary()` for advisory counts; fix #13 (CLI Result return type). Run `just ready`.
 
----
+**Phase 6: CI/Build hardening**
+Fix #14 (schema validation in CI), #15 and #16 (deny.toml tightening). Final `just ready`.
 
-### Phase 4: Claude Code Plugin (1 day)
+### Anti-features (confirmed out of scope)
 
-**Static config files, no Rust:**
-
-1. `.mcp.json` with `"command": "assay", "args": ["mcp", "serve"]`
-2. `plugin.json` updated
-3. `CLAUDE.md` workflow instructions snippet
-4. gate-check skill (`SKILL.md`)
-5. spec-show skill (`SKILL.md`)
-6. (If time: PostToolUse hook for auto-gate after Write/Edit)
-
-Validation: Install plugin in Claude Code. Ask Claude to call `spec_get`. Ask Claude to call `gate_run`. Observe structured results. Adjust tool descriptions based on what the agent does or doesn't understand.
-
----
-
-### Differentiators to Ship Before v0.1.0 RC
-
-In priority order (do these after Phase 4 if sprint capacity remains):
-
-1. `spec_list` MCP tool — trivial to add, high agent UX value
-2. Aggregate gate results — "3/5 passed" summary in `gate_run` response
-3. Stop hook — prevents agent from considering work done with failing gates
-4. PostToolUse hook — auto-trigger gate evaluation after code changes
+| Anti-feature | Rationale |
+|---|---|
+| SQLite or embedded database | Overkill for local file-based tool |
+| NDJSON with compression | Premature at this scale |
+| Three-tier enforcement | SonarQube removed warnings in v7.6; warning fatigue is real |
+| `prompt` field on `Criterion` | LLM API dependency; `gate_report` is the v0.2 mechanism |
+| Automated re-evaluation triggers | Agent decides when to re-evaluate |
+| Multi-agent consensus evaluations | v0.3+ complexity |
+| Workflow state machine | Assay is a quality tool, not an orchestrator |
+| Auto-retry on gate failure | Orchestration is agtx's job |
+| Run diffing | Agent context eviction makes delta refs unreliable |
+| Error telemetry / phone-home | Local tool, no data collection |
 
 ---
 
-## Confidence Assessment
+## Critical Decisions Required Before Implementation
 
-| Finding | Confidence | Basis |
-|---|---|---|
-| schemars 0.8 → 1.x is a blocker | High | rmcp 0.17.0 Cargo.toml verified; trait incompatibility is fundamental |
-| schemars upgrade is low-risk | High | Only derive macros used; no schemars API surfaces in assay-types |
-| rmcp 0.17 works with Claude Code | Medium | SDK is official and has conformance tests, but not end-to-end tested in this codebase. Spike required. |
-| `spawn_blocking` is correct bridge pattern | High | Documented tokio pattern; confirmed in rmcp examples |
-| `Command::output()` prevents pipe deadlock | High | Well-documented Rust issue; `output()` is the stdlib-recommended solution |
-| Plugin `.mcp.json` format is correct | High | Verified against Claude Code official plugin documentation |
-| `#[serde(tag = "kind")]` required for TOML enums | High | Known TOML serde limitation; confirmed in multiple sources |
-| rmcp API stability at 0.17 | Medium | Pre-1.0 with active development; changelog monitoring required |
-| Gate timeout via `try_wait` polling | Medium | Works but is not elegant; `wait-timeout` crate may be cleaner |
-| PostToolUse hook triggers gate evaluation | Medium | Hook format documented but not tested in this integration |
+| Decision | Options | Recommendation |
+|----------|---------|----------------|
+| Result file directory layout | Flat vs per-spec subdirectory | Per-spec subdirectory (`.assay/results/{spec-name}/`) |
+| Run ID strategy | Timestamp+random suffix vs ULID vs UUID v7 | Timestamp + 6-char random hex (no new crate) |
+| `assay_version` in `GateRunRecord` | Include vs omit | Include; cost is one field, value is future schema migration |
+| Agent gate enforcement default | Advisory vs Required | Advisory by default; explicit override via flag |
+| `GateRunSummary` location | Keep in core (add Deserialize) vs move to types | Move to `assay-types`; cleanest long-term architecture |
+| `gate_report` output format | Text content vs `Json<T>` structured | `Json<T>` via rmcp 0.17.0 for new tools; retrofit existing tools later |
 
 ---
 
-## Gaps to Address
-
-**Before sprint kickoff (answers needed):**
-
-1. **MCP spike result** — Does rmcp 0.17 + Claude Code's MCP client exchange protocol successfully? This is a binary yes/no that gates the entire architecture. Schedule this as day 1.
-
-2. **Spec file format finalized** — The `+++` TOML frontmatter delimiter is in the architecture research but not validated against user expectations. Is this the right format, or should specs be pure TOML files (no delimiter)? The delimiter adds complexity to parsing with no clear benefit if specs don't have a markdown body section.
-
-3. **Timeout implementation** — PITFALLS.md flags the `wait-timeout` crate as a cleaner option over manual `try_wait` polling. Evaluate before implementing gate evaluation. Using a crate adds a dependency; rolling it by hand adds a code maintenance burden.
-
-4. **Gate `working_dir` resolution rule** — When `working_dir` is relative in a spec TOML, the anchor must be defined and documented before any spec files are written. Recommendation: anchor to the directory containing the `.assay/` directory (project root). This must be in the spec before implementation.
-
-5. **rmcp `schemars` feature flag** — ARCHITECTURE.md lists `["server", "transport-io", "schemars"]` while STACK.md lists `["server", "transport-io"]` (noting `schemars` is implicit via `server`). Verify which features are required by running `cargo check` with both configurations during the spike.
-
-6. **Plugin binary distribution strategy** — The plugin currently has no install mechanism. For v0.1.0 proof-of-concept, `cargo install` + PATH is sufficient. But the roadmap needs a decision on whether v0.2 will add a brew formula, cargo-binstall support, or another distribution channel before the plugin is usable by non-Rust developers.
-
----
-
-*Synthesized from parallel research by 4 agents — 2026-02-28*
+*Synthesized from parallel research by 4 agents — 2026-03-02*

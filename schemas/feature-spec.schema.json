@@ -1,0 +1,492 @@
+{
+  "$id": "https://assay.dev/schemas/feature-spec.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "FeatureSpec",
+  "description": "A feature specification following IEEE 830/29148 principles.\n\nLoaded from `.assay/specs/<feature>/spec.toml`. Captures the full\nrequirements context for a feature: what to build, who it's for,\nconstraints, quality attributes, risks, and verification strategy.",
+  "type": "object",
+  "properties": {
+    "assumptions": {
+      "description": "Assumptions about the operating environment.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Assumption"
+      }
+    },
+    "constraints": {
+      "description": "Implementation constraints.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Constraints"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "dependencies": {
+      "description": "External dependencies.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Dependency"
+      }
+    },
+    "name": {
+      "description": "Feature name (must match the directory name / gates.toml name).",
+      "type": "string"
+    },
+    "overview": {
+      "description": "Feature overview: perspective, functions, description.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/FeatureOverview"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "quality": {
+      "description": "Quality attributes (non-functional requirements).",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/QualityAttributes"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "requirements": {
+      "description": "Structured requirements.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Requirement"
+      }
+    },
+    "risks": {
+      "description": "Identified risks and mitigations.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Risk"
+      }
+    },
+    "status": {
+      "description": "Lifecycle status of the overall feature.",
+      "$ref": "#/$defs/SpecStatus",
+      "default": "draft"
+    },
+    "users": {
+      "description": "User classes that interact with this feature.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/UserClass"
+      }
+    },
+    "verification": {
+      "description": "Verification strategy for the feature.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/VerificationStrategy"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "version": {
+      "description": "Specification version.",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "name"
+  ],
+  "$defs": {
+    "AcceptanceCriterion": {
+      "description": "A single acceptance criterion attached to a requirement.",
+      "type": "object",
+      "properties": {
+        "criterion": {
+          "description": "The criterion statement (Gherkin, EARS, or plain text).",
+          "type": "string"
+        },
+        "type": {
+          "description": "Format of this acceptance criterion.",
+          "$ref": "#/$defs/AcceptanceCriterionType",
+          "default": "plain"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "criterion"
+      ]
+    },
+    "AcceptanceCriterionType": {
+      "description": "Acceptance criterion type for a requirement.",
+      "type": "string",
+      "enum": [
+        "gherkin",
+        "ears",
+        "plain"
+      ]
+    },
+    "Assumption": {
+      "description": "An assumption that, if false, affects the feature.",
+      "type": "object",
+      "properties": {
+        "description": {
+          "description": "Description of the assumption.",
+          "type": "string"
+        },
+        "impact_if_false": {
+          "description": "Impact if the assumption proves false.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "description"
+      ]
+    },
+    "Constraints": {
+      "description": "Constraints that bound the feature implementation.",
+      "type": "object",
+      "properties": {
+        "performance": {
+          "description": "Performance constraints.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "regulatory": {
+          "description": "Regulatory/compliance constraints.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "technology": {
+          "description": "Technology constraints.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "Dependency": {
+      "description": "An external dependency of this feature.",
+      "type": "object",
+      "properties": {
+        "description": {
+          "description": "Description of this dependency.",
+          "type": "string"
+        },
+        "name": {
+          "description": "Name of the dependency.",
+          "type": "string"
+        },
+        "type": {
+          "description": "Type of dependency (e.g., \"external_service\", \"library\", \"internal_module\").",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name"
+      ]
+    },
+    "FeatureOverview": {
+      "description": "Overview section of a feature spec.",
+      "type": "object",
+      "properties": {
+        "description": {
+          "description": "Summary description of the feature.",
+          "type": "string"
+        },
+        "functions": {
+          "description": "High-level functions this feature provides.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "perspective": {
+          "description": "How this feature fits into the larger system.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "ImpactLevel": {
+      "description": "Impact level for risk assessment.",
+      "type": "string",
+      "enum": [
+        "low",
+        "medium",
+        "high",
+        "critical"
+      ]
+    },
+    "LikelihoodLevel": {
+      "description": "Likelihood level for risk assessment.",
+      "type": "string",
+      "enum": [
+        "low",
+        "medium",
+        "high"
+      ]
+    },
+    "Obligation": {
+      "description": "RFC 2119 obligation level for a requirement.",
+      "type": "string",
+      "enum": [
+        "shall",
+        "should",
+        "may"
+      ]
+    },
+    "Priority": {
+      "description": "MoSCoW priority for a requirement.",
+      "type": "string",
+      "enum": [
+        "must",
+        "should",
+        "could",
+        "wont"
+      ]
+    },
+    "QualityAttribute": {
+      "description": "A quality attribute (non-functional requirement).",
+      "type": "object",
+      "properties": {
+        "controls": {
+          "description": "Security controls.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "description": {
+          "description": "Description of this quality requirement.",
+          "type": "string"
+        },
+        "response_time_ms": {
+          "description": "Quantitative target (e.g., response time).",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "QualityAttributes": {
+      "description": "Quality attributes section keyed by category.",
+      "type": "object",
+      "properties": {
+        "performance": {
+          "description": "Performance quality attributes.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/QualityAttribute"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reliability": {
+          "description": "Reliability quality attributes.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/QualityAttribute"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "security": {
+          "description": "Security quality attributes.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/QualityAttribute"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "usability": {
+          "description": "Usability quality attributes.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/QualityAttribute"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "Requirement": {
+      "description": "A structured requirement within a feature spec.",
+      "type": "object",
+      "properties": {
+        "acceptance_criteria": {
+          "description": "Acceptance criteria for this requirement.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AcceptanceCriterion"
+          }
+        },
+        "id": {
+          "description": "Unique requirement ID in `REQ-[AREA]-[NNN]` format.",
+          "type": "string"
+        },
+        "obligation": {
+          "description": "RFC 2119 obligation level.",
+          "$ref": "#/$defs/Obligation",
+          "default": "shall"
+        },
+        "priority": {
+          "description": "MoSCoW priority.",
+          "$ref": "#/$defs/Priority",
+          "default": "must"
+        },
+        "rationale": {
+          "description": "Why this requirement exists.",
+          "type": "string"
+        },
+        "statement": {
+          "description": "The normative requirement statement.",
+          "type": "string"
+        },
+        "status": {
+          "description": "Lifecycle status of this requirement.",
+          "$ref": "#/$defs/SpecStatus",
+          "default": "draft"
+        },
+        "title": {
+          "description": "Short human-readable title.",
+          "type": "string"
+        },
+        "verification": {
+          "description": "How this requirement is verified.",
+          "$ref": "#/$defs/VerificationMethod",
+          "default": "test"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "title",
+        "statement"
+      ]
+    },
+    "Risk": {
+      "description": "A risk associated with this feature.",
+      "type": "object",
+      "properties": {
+        "description": {
+          "description": "Description of the risk.",
+          "type": "string"
+        },
+        "impact": {
+          "description": "Impact if the risk materializes.",
+          "$ref": "#/$defs/ImpactLevel",
+          "default": "medium"
+        },
+        "likelihood": {
+          "description": "Likelihood of the risk materializing.",
+          "$ref": "#/$defs/LikelihoodLevel",
+          "default": "medium"
+        },
+        "mitigation": {
+          "description": "Planned mitigation strategy.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "description"
+      ]
+    },
+    "SpecStatus": {
+      "description": "Status of a feature spec or individual requirement through its lifecycle.",
+      "type": "string",
+      "enum": [
+        "draft",
+        "proposed",
+        "planned",
+        "in-progress",
+        "verified",
+        "deprecated"
+      ]
+    },
+    "UserClass": {
+      "description": "A user class that interacts with this feature.",
+      "type": "object",
+      "properties": {
+        "expertise": {
+          "description": "Expertise level of this user class.",
+          "type": "string"
+        },
+        "frequency": {
+          "description": "Usage frequency.",
+          "type": "string"
+        },
+        "goals": {
+          "description": "Goals this user class has for this feature.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "name": {
+          "description": "Name of this user class.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name"
+      ]
+    },
+    "VerificationMethod": {
+      "description": "Verification method for a requirement.",
+      "type": "string",
+      "enum": [
+        "test",
+        "analysis",
+        "inspection",
+        "demonstration"
+      ]
+    },
+    "VerificationStrategy": {
+      "description": "Verification strategy for the feature as a whole.",
+      "type": "object",
+      "properties": {
+        "environments": {
+          "description": "Target environments for verification.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "strategy": {
+          "description": "Overall verification strategy description.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

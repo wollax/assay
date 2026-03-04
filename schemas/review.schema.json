@@ -20,7 +20,6 @@
   },
   "required": [
     "spec_name",
-    "approved",
-    "comments"
+    "approved"
   ]
 }

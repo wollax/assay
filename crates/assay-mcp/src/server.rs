@@ -19,7 +19,8 @@ use rmcp::{
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use assay_types::{Config, Spec};
+use assay_core::spec::SpecEntry;
+use assay_types::Config;
 
 // ── Parameter structs ────────────────────────────────────────────────
 
@@ -59,6 +60,11 @@ struct SpecListEntry {
     #[serde(skip_serializing_if = "String::is_empty")]
     description: String,
     criteria_count: usize,
+    /// "legacy" for flat .toml files, "directory" for directory-based specs.
+    format: String,
+    /// Whether a companion `spec.toml` (feature spec) exists.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    has_feature_spec: bool,
 }
 
 /// Aggregate gate run response.
@@ -130,12 +136,27 @@ impl AssayServer {
         };
 
         let entries: Vec<SpecListEntry> = scan_result
-            .specs
-            .into_iter()
-            .map(|(slug, spec)| SpecListEntry {
-                name: slug,
-                description: spec.description,
-                criteria_count: spec.criteria.len(),
+            .entries
+            .iter()
+            .map(|entry| match entry {
+                SpecEntry::Legacy { slug, spec } => SpecListEntry {
+                    name: slug.clone(),
+                    description: spec.description.clone(),
+                    criteria_count: spec.criteria.len(),
+                    format: "legacy".to_string(),
+                    has_feature_spec: false,
+                },
+                SpecEntry::Directory {
+                    slug,
+                    gates,
+                    spec_path,
+                } => SpecListEntry {
+                    name: slug.clone(),
+                    description: gates.description.clone(),
+                    criteria_count: gates.criteria.len(),
+                    format: "directory".to_string(),
+                    has_feature_spec: spec_path.is_some(),
+                },
             })
             .collect();
 
@@ -147,7 +168,7 @@ impl AssayServer {
 
     /// Get a spec by name.
     #[tool(
-        description = "Get a spec by name. Returns the full spec definition as JSON including name, description, and all criteria with their commands and timeouts. Use spec_list first to find available spec names."
+        description = "Get a spec by name. Returns the full spec definition as JSON. For legacy specs: {format, name, description, criteria}. For directory specs: {format, gates, feature_spec?}. Use spec_list first to find available spec names."
     )]
     async fn spec_get(
         &self,
@@ -158,20 +179,43 @@ impl AssayServer {
             Ok(c) => c,
             Err(err_result) => return Ok(err_result),
         };
-        let spec = match load_spec(&cwd, &config, &params.0.name) {
-            Ok(s) => s,
+        let entry = match load_spec_entry_mcp(&cwd, &config, &params.0.name) {
+            Ok(e) => e,
             Err(err_result) => return Ok(err_result),
         };
 
-        let json = serde_json::to_string(&spec)
-            .map_err(|e| McpError::internal_error(format!("serialization failed: {e}"), None))?;
+        let json = match &entry {
+            SpecEntry::Legacy { spec, .. } => {
+                let response = serde_json::json!({
+                    "format": "legacy",
+                    "name": spec.name,
+                    "description": spec.description,
+                    "criteria": spec.criteria,
+                });
+                serde_json::to_string(&response)
+            }
+            SpecEntry::Directory {
+                gates, spec_path, ..
+            } => {
+                let feature_spec = spec_path
+                    .as_ref()
+                    .and_then(|p| assay_core::spec::load_feature_spec(p).ok());
+                let response = serde_json::json!({
+                    "format": "directory",
+                    "gates": gates,
+                    "feature_spec": feature_spec,
+                });
+                serde_json::to_string(&response)
+            }
+        }
+        .map_err(|e| McpError::internal_error(format!("serialization failed: {e}"), None))?;
 
         Ok(CallToolResult::success(vec![Content::text(json)]))
     }
 
     /// Run quality gate checks for a spec.
     #[tool(
-        description = "Run quality gate checks for a spec. Evaluates all executable criteria (shell commands) and returns pass/fail status per criterion with aggregate counts. Set include_evidence=true for full stdout/stderr output per criterion."
+        description = "Run quality gate checks for a spec. Evaluates all executable criteria (shell commands) and returns pass/fail status per criterion with aggregate counts. Set include_evidence=true for full stdout/stderr output per criterion. Works with both legacy (.toml) and directory-based (gates.toml) specs."
     )]
     async fn gate_run(
         &self,
@@ -182,8 +226,8 @@ impl AssayServer {
             Ok(c) => c,
             Err(err_result) => return Ok(err_result),
         };
-        let spec = match load_spec(&cwd, &config, &params.0.name) {
-            Ok(s) => s,
+        let entry = match load_spec_entry_mcp(&cwd, &config, &params.0.name) {
+            Ok(e) => e,
             Err(err_result) => return Ok(err_result),
         };
         let include_evidence = params.0.include_evidence;
@@ -191,11 +235,18 @@ impl AssayServer {
         let working_dir = resolve_working_dir(&cwd, &config);
         let config_timeout = config.gates.as_ref().map(|g| g.default_timeout);
 
-        let spec_owned = spec.clone();
         let working_dir_owned = working_dir.clone();
 
-        let summary = tokio::task::spawn_blocking(move || {
-            assay_core::gate::evaluate_all(&spec_owned, &working_dir_owned, None, config_timeout)
+        let summary = tokio::task::spawn_blocking(move || match entry {
+            SpecEntry::Legacy { spec, .. } => {
+                assay_core::gate::evaluate_all(&spec, &working_dir_owned, None, config_timeout)
+            }
+            SpecEntry::Directory { gates, .. } => assay_core::gate::evaluate_all_gates(
+                &gates,
+                &working_dir_owned,
+                None,
+                config_timeout,
+            ),
         })
         .await
         .map_err(|e| McpError::internal_error(format!("gate evaluation panicked: {e}"), None))?;
@@ -239,11 +290,14 @@ fn load_config(cwd: &Path) -> Result<Config, CallToolResult> {
     assay_core::config::load(cwd).map_err(|e| domain_error(&e))
 }
 
-/// Load a spec by name from the configured specs directory.
-fn load_spec(cwd: &Path, config: &Config, name: &str) -> Result<Spec, CallToolResult> {
+/// Load a spec entry by name, trying directory-based first, then legacy.
+fn load_spec_entry_mcp(
+    cwd: &Path,
+    config: &Config,
+    name: &str,
+) -> Result<SpecEntry, CallToolResult> {
     let specs_dir = cwd.join(".assay").join(&config.specs_dir);
-    let spec_path = specs_dir.join(format!("{name}.toml"));
-    assay_core::spec::load(&spec_path).map_err(|e| domain_error(&e))
+    assay_core::spec::load_spec_entry(name, &specs_dir).map_err(|e| domain_error(&e))
 }
 
 /// Resolve the gate working directory from config, matching CLI behavior.
@@ -268,7 +322,7 @@ fn domain_error(err: &assay_core::AssayError) -> CallToolResult {
 
 /// Map a `GateRunSummary` to the bounded `GateRunResponse` struct.
 fn format_gate_response(
-    summary: &assay_core::gate::GateRunSummary,
+    summary: &assay_types::GateRunSummary,
     include_evidence: bool,
 ) -> GateRunResponse {
     let criteria = summary
@@ -359,8 +413,7 @@ pub async fn serve() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use assay_core::gate::{CriterionResult, GateRunSummary};
-    use assay_types::{GateKind, GateResult};
+    use assay_types::{CriterionResult, GateKind, GateResult, GateRunSummary};
     use chrono::Utc;
     use std::io::Write as _;
 
@@ -674,17 +727,17 @@ mod tests {
     }
 
     #[test]
-    fn test_load_spec_not_found() {
+    fn test_load_spec_entry_not_found() {
         let dir = create_project(r#"project_name = "test""#);
         // Create the specs directory but no spec files
         std::fs::create_dir_all(dir.path().join(".assay").join("specs")).unwrap();
 
         let config = load_config(dir.path()).unwrap();
-        let result = load_spec(dir.path(), &config, "nonexistent");
+        let result = load_spec_entry_mcp(dir.path(), &config, "nonexistent");
 
         assert!(
             result.is_err(),
-            "load_spec should fail for nonexistent spec"
+            "load_spec_entry_mcp should fail for nonexistent spec"
         );
         let err_result = result.unwrap_err();
         assert!(
@@ -707,7 +760,7 @@ mod tests {
     }
 
     #[test]
-    fn test_load_spec_valid() {
+    fn test_load_spec_entry_legacy() {
         let dir = create_project(r#"project_name = "test""#);
         create_spec(
             dir.path(),
@@ -725,16 +778,43 @@ cmd = "echo ok"
         );
 
         let config = load_config(dir.path()).unwrap();
-        let result = load_spec(dir.path(), &config, "auth-flow");
+        let result = load_spec_entry_mcp(dir.path(), &config, "auth-flow");
 
         assert!(
             result.is_ok(),
-            "load_spec should succeed for valid spec, got: {:?}",
+            "load_spec_entry_mcp should succeed for valid spec, got: {:?}",
             result.err()
         );
-        let spec = result.unwrap();
-        assert_eq!(spec.name, "auth-flow");
-        assert_eq!(spec.criteria.len(), 1);
+        let entry = result.unwrap();
+        assert!(matches!(entry, SpecEntry::Legacy { .. }));
+        assert_eq!(entry.name(), "auth-flow");
+    }
+
+    #[test]
+    fn test_load_spec_entry_directory() {
+        let dir = create_project(r#"project_name = "test""#);
+        let specs_dir = dir.path().join(".assay").join("specs").join("auth-dir");
+        std::fs::create_dir_all(&specs_dir).unwrap();
+        std::fs::write(
+            specs_dir.join("gates.toml"),
+            r#"
+name = "auth-dir"
+
+[[criteria]]
+name = "compiles"
+description = "Code compiles"
+cmd = "echo ok"
+"#,
+        )
+        .unwrap();
+
+        let config = load_config(dir.path()).unwrap();
+        let result = load_spec_entry_mcp(dir.path(), &config, "auth-dir");
+
+        assert!(result.is_ok());
+        let entry = result.unwrap();
+        assert!(matches!(entry, SpecEntry::Directory { .. }));
+        assert_eq!(entry.name(), "auth-dir");
     }
 
     #[test]
@@ -798,12 +878,19 @@ cmd = "echo ok"
             name: "auth-flow".to_string(),
             description: "Authentication flow".to_string(),
             criteria_count: 3,
+            format: "legacy".to_string(),
+            has_feature_spec: false,
         };
 
         let json = serde_json::to_value(&entry).unwrap();
         assert_eq!(json["name"], "auth-flow");
         assert_eq!(json["description"], "Authentication flow");
         assert_eq!(json["criteria_count"], 3);
+        assert_eq!(json["format"], "legacy");
+        assert!(
+            json.get("has_feature_spec").is_none(),
+            "false has_feature_spec should be omitted"
+        );
     }
 
     #[test]
@@ -812,6 +899,8 @@ cmd = "echo ok"
             name: "bare-spec".to_string(),
             description: String::new(),
             criteria_count: 1,
+            format: "legacy".to_string(),
+            has_feature_spec: false,
         };
 
         let json = serde_json::to_value(&entry).unwrap();
@@ -821,6 +910,21 @@ cmd = "echo ok"
             "empty description should be omitted, got: {json}"
         );
         assert_eq!(json["criteria_count"], 1);
+    }
+
+    #[test]
+    fn test_spec_list_entry_directory_format() {
+        let entry = SpecListEntry {
+            name: "auth-dir".to_string(),
+            description: String::new(),
+            criteria_count: 2,
+            format: "directory".to_string(),
+            has_feature_spec: true,
+        };
+
+        let json = serde_json::to_value(&entry).unwrap();
+        assert_eq!(json["format"], "directory");
+        assert_eq!(json["has_feature_spec"], true);
     }
 
     #[test]

@@ -102,9 +102,7 @@ expression: schema.to_value()
     }
   },
   "required": [
-    "name",
-    "specs",
-    "gates"
+    "name"
   ],
   "title": "Workflow",
   "type": "object"

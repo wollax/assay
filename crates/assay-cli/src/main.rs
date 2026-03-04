@@ -1,3 +1,4 @@
+use assay_core::spec::SpecEntry;
 use clap::{CommandFactory, Parser, Subcommand};
 use std::path::Path;
 
@@ -131,6 +132,15 @@ Examples:
   List all specs in the project:
     assay spec list")]
     List,
+    /// Create a new directory-based spec with template files
+    #[command(after_long_help = "\
+Examples:
+  Create a new feature spec:
+    assay spec new auth-flow")]
+    New {
+        /// Name for the new spec (used as directory name)
+        name: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -242,13 +252,10 @@ fn handle_spec_show(name: &str, json: bool) {
         }
     };
     let specs_dir = root.join(".assay").join(&config.specs_dir);
-    let spec_path = specs_dir.join(format!("{name}.toml"));
 
-    let spec = match assay_core::spec::load(&spec_path) {
-        Ok(s) => s,
-        Err(assay_core::AssayError::Io { source, .. })
-            if source.kind() == std::io::ErrorKind::NotFound =>
-        {
+    let entry = match assay_core::spec::load_spec_entry(name, &specs_dir) {
+        Ok(e) => e,
+        Err(assay_core::AssayError::SpecNotFound { .. }) => {
             eprintln!("Error: spec '{name}' not found in {}", config.specs_dir);
             std::process::exit(1);
         }
@@ -258,36 +265,104 @@ fn handle_spec_show(name: &str, json: bool) {
         }
     };
 
-    if json {
-        let output = serde_json::to_string_pretty(&spec).unwrap_or_else(|e| {
-            eprintln!("Error: failed to serialize spec: {e}");
-            std::process::exit(1);
-        });
-        println!("{output}");
-        return;
-    }
+    match entry {
+        SpecEntry::Legacy { spec, .. } => {
+            if json {
+                let output = serde_json::to_string_pretty(&spec).unwrap_or_else(|e| {
+                    eprintln!("Error: failed to serialize spec: {e}");
+                    std::process::exit(1);
+                });
+                println!("{output}");
+                return;
+            }
+            print_spec_table(&spec.name, &spec.description, &spec.criteria);
+        }
+        SpecEntry::Directory {
+            gates, spec_path, ..
+        } => {
+            if json {
+                let mut map = serde_json::Map::new();
+                map.insert("format".into(), "directory".into());
+                map.insert(
+                    "gates".into(),
+                    serde_json::to_value(&gates).unwrap_or_default(),
+                );
+                if let Some(ref sp) = spec_path
+                    && let Ok(feature_spec) = assay_core::spec::load_feature_spec(sp)
+                {
+                    map.insert(
+                        "feature_spec".into(),
+                        serde_json::to_value(&feature_spec).unwrap_or_default(),
+                    );
+                }
+                let output = serde_json::to_string_pretty(&serde_json::Value::Object(map)).unwrap();
+                println!("{output}");
+                return;
+            }
 
-    // Table output
+            println!("Spec: {} [srs]", gates.name);
+
+            // Show feature spec summary if available
+            if let Some(ref sp) = spec_path
+                && let Ok(feature_spec) = assay_core::spec::load_feature_spec(sp)
+            {
+                if let Some(ref overview) = feature_spec.overview
+                    && !overview.description.is_empty()
+                {
+                    println!("Description: {}", overview.description);
+                }
+                if !feature_spec.requirements.is_empty() {
+                    println!(
+                        "Requirements: {} ({})",
+                        feature_spec.requirements.len(),
+                        feature_spec
+                            .requirements
+                            .iter()
+                            .map(|r| r.id.as_str())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    );
+                }
+            }
+            println!();
+
+            // Convert GateCriteria to Criteria for table display
+            let criteria: Vec<_> = gates
+                .criteria
+                .iter()
+                .map(assay_core::gate::to_criterion)
+                .collect();
+            print_criteria_table(&criteria);
+
+            // Show requirement traceability
+            let traced: Vec<_> = gates
+                .criteria
+                .iter()
+                .filter(|c| !c.requirements.is_empty())
+                .collect();
+            if !traced.is_empty() {
+                println!();
+                println!("Traceability:");
+                for c in &traced {
+                    println!("  {} → {}", c.name, c.requirements.join(", "));
+                }
+            }
+        }
+    }
+}
+
+/// Print a spec table header and rows for a list of criteria.
+fn print_criteria_table(criteria: &[assay_types::Criterion]) {
     let color = colors_enabled();
-
-    println!("Spec: {}", spec.name);
-    if !spec.description.is_empty() {
-        println!("Description: {}", spec.description);
-    }
-    println!();
-
-    // Column widths: compute from data
-    let num_width = spec.criteria.len().to_string().len().max(1);
-    let name_width = spec
-        .criteria
+    let num_width = criteria.len().to_string().len().max(1);
+    let name_width = criteria
         .iter()
         .map(|c| c.name.len())
         .max()
         .unwrap_or(9)
-        .max(9); // "Criterion" header
-    let type_width = 11; // "descriptive" is longest at 11
+        .max(9);
+    let type_width = 11;
 
-    // Header
     println!(
         "  {:<num_w$}  {:<name_w$}  {:<type_w$}  Command",
         "#",
@@ -297,7 +372,6 @@ fn handle_spec_show(name: &str, json: bool) {
         name_w = name_width,
         type_w = type_width,
     );
-    // Separator
     println!(
         "  {:<num_w$}  {:<name_w$}  {:<type_w$}  {}",
         "\u{2500}".repeat(num_width),
@@ -309,12 +383,10 @@ fn handle_spec_show(name: &str, json: bool) {
         type_w = type_width,
     );
 
-    for (i, criterion) in spec.criteria.iter().enumerate() {
+    for (i, criterion) in criteria.iter().enumerate() {
         let type_label = format_criteria_type(criterion.cmd.is_some(), color);
         let cmd_display = criterion.cmd.as_deref().unwrap_or("");
 
-        // When color is enabled the ANSI codes add non-printing characters,
-        // so we need to pad the plain text width manually.
         if color {
             println!(
                 "  {:<num_w$}  {:<name_w$}  {:<type_w$}  {cmd_display}",
@@ -339,6 +411,16 @@ fn handle_spec_show(name: &str, json: bool) {
     }
 }
 
+/// Print a full spec table (name + description + criteria).
+fn print_spec_table(name: &str, description: &str, criteria: &[assay_types::Criterion]) {
+    println!("Spec: {name}");
+    if !description.is_empty() {
+        println!("Description: {description}");
+    }
+    println!();
+    print_criteria_table(criteria);
+}
+
 /// Handle `assay spec list`.
 fn handle_spec_list() {
     let root = project_root();
@@ -359,37 +441,132 @@ fn handle_spec_list() {
         }
     };
 
-    // Print warnings for scan errors
     for err in &result.errors {
         eprintln!("Warning: {err}");
     }
 
-    if result.specs.is_empty() {
+    if result.entries.is_empty() {
         println!("No specs found in {}", config.specs_dir);
         return;
     }
 
-    // Compute name column width for alignment
     let name_width = result
-        .specs
+        .entries
         .iter()
-        .map(|(slug, _)| slug.len())
+        .map(|e| e.slug().len())
         .max()
         .unwrap_or(0);
 
     println!("Specs:");
-    for (slug, spec) in &result.specs {
-        if spec.description.is_empty() {
-            println!("  {:<width$}", slug, width = name_width);
-        } else {
-            println!(
-                "  {:<width$}  {}",
-                slug,
-                spec.description,
-                width = name_width
-            );
+    for entry in &result.entries {
+        match entry {
+            SpecEntry::Legacy { slug, spec } => {
+                if spec.description.is_empty() {
+                    println!("  {:<width$}", slug, width = name_width);
+                } else {
+                    println!(
+                        "  {:<width$}  {}",
+                        slug,
+                        spec.description,
+                        width = name_width
+                    );
+                }
+            }
+            SpecEntry::Directory { slug, gates, .. } => {
+                let indicator = "[srs]";
+                let criteria_count = gates.criteria.len();
+                println!(
+                    "  {:<width$}  {indicator} {criteria_count} criteria",
+                    slug,
+                    width = name_width
+                );
+            }
         }
     }
+}
+
+/// Handle `assay spec new <name>`.
+///
+/// Creates a directory-based spec with template `spec.toml` and `gates.toml`.
+fn handle_spec_new(name: &str) {
+    let root = project_root();
+    let config = match assay_core::config::load(&root) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("Error: {e}");
+            std::process::exit(1);
+        }
+    };
+    let specs_dir = root.join(".assay").join(&config.specs_dir);
+    let spec_dir = specs_dir.join(name);
+
+    if spec_dir.exists() {
+        eprintln!(
+            "Error: spec directory '{}' already exists",
+            spec_dir.display()
+        );
+        std::process::exit(1);
+    }
+
+    // Also check for a flat file with the same name
+    let flat_path = specs_dir.join(format!("{name}.toml"));
+    if flat_path.exists() {
+        eprintln!("Error: spec '{name}.toml' already exists as a flat file");
+        std::process::exit(1);
+    }
+
+    if let Err(e) = std::fs::create_dir_all(&spec_dir) {
+        eprintln!("Error: could not create directory: {e}");
+        std::process::exit(1);
+    }
+
+    let spec_toml = format!(
+        r#"name = "{name}"
+status = "draft"
+version = "0.1"
+
+[overview]
+description = ""
+functions = []
+
+[[requirements]]
+id = "REQ-FUNC-001"
+title = ""
+statement = ""
+obligation = "shall"
+priority = "must"
+verification = "test"
+status = "draft"
+"#
+    );
+
+    let gates_toml = format!(
+        r#"name = "{name}"
+
+[[criteria]]
+name = "compiles"
+description = "{name} compiles without errors"
+cmd = "echo 'TODO: add compile check'"
+"#
+    );
+
+    let spec_path = spec_dir.join("spec.toml");
+    let gates_path = spec_dir.join("gates.toml");
+
+    if let Err(e) = std::fs::write(&spec_path, &spec_toml) {
+        eprintln!("Error: failed to write spec.toml: {e}");
+        std::process::exit(1);
+    }
+    if let Err(e) = std::fs::write(&gates_path, &gates_toml) {
+        eprintln!("Error: failed to write gates.toml: {e}");
+        std::process::exit(1);
+    }
+
+    let rel_spec = spec_path.strip_prefix(&root).unwrap_or(&spec_path);
+    let rel_gates = gates_path.strip_prefix(&root).unwrap_or(&gates_path);
+    println!("  Created spec `{name}`");
+    println!("    created {}", rel_spec.display());
+    println!("    created {}", rel_gates.display());
 }
 
 /// Load project config and resolve the shared gate execution context.
@@ -514,7 +691,7 @@ fn handle_gate_run_all(cli_timeout: Option<u64>, verbose: bool, json: bool) {
         eprintln!("Warning: {err}");
     }
 
-    if result.specs.is_empty() {
+    if result.entries.is_empty() {
         if json {
             println!("[]");
         } else {
@@ -525,10 +702,18 @@ fn handle_gate_run_all(cli_timeout: Option<u64>, verbose: bool, json: bool) {
 
     if json {
         let summaries: Vec<_> = result
-            .specs
+            .entries
             .iter()
-            .map(|(_slug, spec)| {
-                assay_core::gate::evaluate_all(spec, &working_dir, cli_timeout, config_timeout)
+            .map(|entry| match entry {
+                SpecEntry::Legacy { spec, .. } => {
+                    assay_core::gate::evaluate_all(spec, &working_dir, cli_timeout, config_timeout)
+                }
+                SpecEntry::Directory { gates, .. } => assay_core::gate::evaluate_all_gates(
+                    gates,
+                    &working_dir,
+                    cli_timeout,
+                    config_timeout,
+                ),
             })
             .collect();
 
@@ -552,22 +737,31 @@ fn handle_gate_run_all(cli_timeout: Option<u64>, verbose: bool, json: bool) {
         failed: 0,
         skipped: 0,
     };
-    let spec_count = result.specs.len();
+    let spec_count = result.entries.len();
 
-    for (i, (slug, spec)) in result.specs.iter().enumerate() {
+    for (i, entry) in result.entries.iter().enumerate() {
         if i > 0 {
             eprintln!();
         }
-        eprintln!("--- {} ---", slug);
+        eprintln!("--- {} ---", entry.slug());
 
-        let executable_count = spec.criteria.iter().filter(|c| c.cmd.is_some()).count();
+        let criteria: Vec<assay_types::Criterion> = match entry {
+            SpecEntry::Legacy { spec, .. } => spec.criteria.clone(),
+            SpecEntry::Directory { gates, .. } => gates
+                .criteria
+                .iter()
+                .map(assay_core::gate::to_criterion)
+                .collect(),
+        };
+
+        let executable_count = criteria.iter().filter(|c| c.cmd.is_some()).count();
         if executable_count == 0 {
             eprintln!("  No executable criteria");
-            counters.skipped += spec.criteria.len();
+            counters.skipped += criteria.len();
             continue;
         }
 
-        for criterion in &spec.criteria {
+        for criterion in &criteria {
             stream_criterion(
                 criterion,
                 &working_dir,
@@ -587,13 +781,10 @@ fn handle_gate_run_all(cli_timeout: Option<u64>, verbose: bool, json: bool) {
 fn handle_gate_run(name: &str, cli_timeout: Option<u64>, verbose: bool, json: bool) {
     let (root, config, working_dir, config_timeout) = load_gate_context();
     let specs_dir = root.join(".assay").join(&config.specs_dir);
-    let spec_path = specs_dir.join(format!("{name}.toml"));
 
-    let spec = match assay_core::spec::load(&spec_path) {
-        Ok(s) => s,
-        Err(assay_core::AssayError::Io { source, .. })
-            if source.kind() == std::io::ErrorKind::NotFound =>
-        {
+    let entry = match assay_core::spec::load_spec_entry(name, &specs_dir) {
+        Ok(e) => e,
+        Err(assay_core::AssayError::SpecNotFound { .. }) => {
             eprintln!("Error: spec '{name}' not found in {}", config.specs_dir);
             std::process::exit(1);
         }
@@ -604,8 +795,17 @@ fn handle_gate_run(name: &str, cli_timeout: Option<u64>, verbose: bool, json: bo
     };
 
     if json {
-        let summary =
-            assay_core::gate::evaluate_all(&spec, &working_dir, cli_timeout, config_timeout);
+        let summary = match &entry {
+            SpecEntry::Legacy { spec, .. } => {
+                assay_core::gate::evaluate_all(spec, &working_dir, cli_timeout, config_timeout)
+            }
+            SpecEntry::Directory { gates, .. } => assay_core::gate::evaluate_all_gates(
+                gates,
+                &working_dir,
+                cli_timeout,
+                config_timeout,
+            ),
+        };
         let output = serde_json::to_string_pretty(&summary).unwrap_or_else(|e| {
             eprintln!("Error: failed to serialize gate results: {e}");
             std::process::exit(1);
@@ -617,20 +817,29 @@ fn handle_gate_run(name: &str, cli_timeout: Option<u64>, verbose: bool, json: bo
         return;
     }
 
+    let criteria: Vec<assay_types::Criterion> = match &entry {
+        SpecEntry::Legacy { spec, .. } => spec.criteria.clone(),
+        SpecEntry::Directory { gates, .. } => gates
+            .criteria
+            .iter()
+            .map(assay_core::gate::to_criterion)
+            .collect(),
+    };
+
     let color = colors_enabled();
     let mut counters = StreamCounters {
         passed: 0,
         failed: 0,
         skipped: 0,
     };
-    let executable_count = spec.criteria.iter().filter(|c| c.cmd.is_some()).count();
+    let executable_count = criteria.iter().filter(|c| c.cmd.is_some()).count();
 
     if executable_count == 0 {
         println!("No executable criteria found");
         return;
     }
 
-    for criterion in &spec.criteria {
+    for criterion in &criteria {
         stream_criterion(
             criterion,
             &working_dir,
@@ -705,28 +914,40 @@ fn show_status(root: &Path) -> Result<(), String> {
         eprintln!("Warning: {err}");
     }
 
-    if result.specs.is_empty() {
+    if result.entries.is_empty() {
         println!("No specs found in {}", config.specs_dir);
         return Ok(());
     }
 
-    // Compute column width for alignment
     let name_width = result
-        .specs
+        .entries
         .iter()
-        .map(|(slug, _)| slug.len())
+        .map(|e| e.slug().len())
         .max()
         .unwrap_or(0);
 
     println!("Specs:");
-    for (slug, spec) in &result.specs {
-        let total = spec.criteria.len();
-        let executable = spec.criteria.iter().filter(|c| c.cmd.is_some()).count();
-        println!(
-            "  {:<width$}  {total} criteria ({executable} executable)",
-            slug,
-            width = name_width,
-        );
+    for entry in &result.entries {
+        match entry {
+            SpecEntry::Legacy { slug, spec } => {
+                let total = spec.criteria.len();
+                let executable = spec.criteria.iter().filter(|c| c.cmd.is_some()).count();
+                println!(
+                    "  {:<width$}  {total} criteria ({executable} executable)",
+                    slug,
+                    width = name_width,
+                );
+            }
+            SpecEntry::Directory { slug, gates, .. } => {
+                let total = gates.criteria.len();
+                let executable = gates.criteria.iter().filter(|c| c.cmd.is_some()).count();
+                println!(
+                    "  {:<width$}  [srs] {total} criteria ({executable} executable)",
+                    slug,
+                    width = name_width,
+                );
+            }
+        }
     }
 
     Ok(())
@@ -785,6 +1006,7 @@ async fn main() {
         Some(Command::Spec { command }) => match command {
             SpecCommand::Show { name, json } => handle_spec_show(&name, json),
             SpecCommand::List => handle_spec_list(),
+            SpecCommand::New { name } => handle_spec_new(&name),
         },
         Some(Command::Gate { command }) => match command {
             GateCommand::Run {
