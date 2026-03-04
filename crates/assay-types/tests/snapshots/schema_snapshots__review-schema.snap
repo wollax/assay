@@ -21,8 +21,7 @@ expression: schema.to_value()
   },
   "required": [
     "spec_name",
-    "approved",
-    "comments"
+    "approved"
   ],
   "title": "Review",
   "type": "object"

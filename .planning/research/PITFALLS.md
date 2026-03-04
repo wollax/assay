@@ -1,316 +1,439 @@
-# Pitfalls Research: v0.1.0 Vertical Slice
+# Pitfalls Research: v0.2.0 Features
 
-**Date:** 2026-02-28
-**Scope:** Common mistakes when adding MCP server, TOML spec parsing, command gate evaluation, config loading, Claude Code plugin integration, and error types to the Assay Rust workspace.
+**Date:** 2026-03-02
+**Scope:** Common mistakes when adding run history persistence, required/advisory enforcement levels, agent gate evaluation recording, and foundation hardening to the existing Assay v0.1.0 codebase.
+
+**Supersedes:** v0.1.0 PITFALLS.md (all v0.1.0 pitfalls P-01 through P-20 have been mitigated in the shipped codebase).
 
 ---
 
 ## Critical Pitfalls
 
-### P-01: Stdout corruption in MCP stdio transport
+### P-21: `deny_unknown_fields` blocks schema evolution on user-facing types
 
-**Area:** MCP Server (rmcp)
-**What goes wrong:** Any output written to stdout that is not a valid JSON-RPC message breaks the MCP protocol. The stdio transport reserves stdout exclusively for protocol messages. This includes `println!()` debug statements, tracing/log output defaulting to stdout, and panic messages that write to stdout.
+**Area:** Schema Evolution (assay-types)
+**Confidence:** High (verified in codebase)
 
-**Why it's easy to miss:** Rust's default tracing subscriber writes to stdout. During development, `println!()` debugging is second nature. The server compiles and runs fine, but the MCP client silently drops the connection or returns parse errors.
+**What goes wrong:** Assay v0.1.0 uses `#[serde(deny_unknown_fields)]` on `Spec`, `Criterion`, `Config`, and `GatesConfig`. When v0.2 adds new fields (e.g., `enforcement` on `Criterion`, `results_dir` on `Config`), any spec or config file written by v0.2 that includes the new fields becomes **unparseable by v0.1 Assay**. This is backward-compatible (old files work with new code) but not forward-compatible (new files break old code).
+
+More critically: if v0.2 adds a field with `#[serde(default)]` so it is optional, a user who writes a v0.2 spec file and later downgrades will get a hard deserialization error, not a warning. The `deny_unknown_fields` attribute is all-or-nothing; there is no whitelist mechanism in serde (serde issue #1864 confirms this).
+
+**Warning signs:**
+- Tests pass but users report "unknown field" errors after downgrading
+- CI/CD using different Assay versions across environments
+- Spec files shared between projects using different Assay versions
 
 **Prevention:**
-- Initialize tracing subscriber with `.with_writer(std::io::stderr)` and `.with_ansi(false)` before any other initialization.
-- Add a project-level clippy lint or code review check banning `println!()` in the MCP server crate.
-- Test the MCP server binary by piping its stdout through a JSON validator as a smoke test.
-- Consider a wrapper that redirects stdout at the fd level as a safety net.
+- Add new fields with `#[serde(default, skip_serializing_if = "...")]` so they are omitted from serialized output when unset, preserving roundtrip compatibility
+- Document the minimum Assay version required for each field in spec/config schemas
+- Consider a `version` or `schema_version` field on `Config` (not on Spec, to avoid per-file overhead) that gates field parsing
+- Write explicit backward-compatibility tests: parse a v0.1.0-era spec file with v0.2 code and verify no regressions
+- **Do not remove `deny_unknown_fields`** -- it catches real typos. Instead, evolve fields carefully
 
-**Assay-specific risk:** The CLI and MCP server share `assay-core`. If core functions use `println!()` for user-facing output (reasonable in CLI context), those same functions corrupt the MCP transport when called from the server. Core must never write to stdout directly; output should be returned as data.
+**Which phase should address it:** The first phase that adds any new field to `Spec`, `Criterion`, or `Config`.
 
 ---
 
-### P-02: Pipe buffer deadlock in gate subprocess evaluation
+### P-22: Concurrent result file writes corrupt run history
 
-**Area:** Gate Evaluation (std::process::Command)
-**What goes wrong:** When capturing both stdout and stderr from a gate command via `Stdio::piped()`, the parent blocks on `wait()` while the child blocks trying to write to a full pipe buffer. The pipe buffer is typically 4KB-64KB depending on the OS. Any gate command producing moderate output (e.g., a test suite, linter) triggers this.
+**Area:** Run History Persistence (file I/O)
+**Confidence:** High (architectural analysis)
 
-**Why it's easy to miss:** Small test commands produce little output and work fine. The deadlock only appears with real workloads where stdout/stderr exceed the buffer size. On macOS, the default pipe buffer is 64KB, so it surfaces later than on Linux (where it can be as low as 4KB in some configurations).
+**What goes wrong:** Run history persists `GateRunSummary` results to `.assay/results/`. If two gate evaluations run concurrently (e.g., CLI `assay gate run --all` in parallel, MCP server handling simultaneous `gate_run` calls, or CI running alongside a developer), they may:
+1. Write to the same result file simultaneously, producing corrupted JSON/TOML
+2. Read a partially-written file when querying history
+3. Race on directory creation (`std::fs::create_dir_all` is not atomic)
+
+The v0.1.0 `.assay/.gitignore` already ignores `results/`, but the directory does not exist yet -- it must be created on first write.
+
+**Warning signs:**
+- Truncated or malformed JSON in result files
+- Intermittent "file not found" or "invalid JSON" errors in CI
+- Result files containing interleaved content from two runs
 
 **Prevention:**
-- Use `Command::output()` (which reads pipes before waiting) instead of `Command::spawn()` + `child.wait()`.
-- If streaming output is needed, spawn dedicated threads to drain stdout and stderr concurrently before calling `wait()`.
-- Set explicit output size limits in GateResult (truncate at N bytes) to bound memory usage.
-- Document the deadlock risk in gate evaluation code with a comment explaining why `output()` is used.
+- Use atomic file writes: write to a temporary file in the same directory, then `rename()` to the final path. The `tempfile` crate (already in workspace dependencies) supports this via `NamedTempFile::persist()`
+- Use unique filenames per run (e.g., `{spec_name}-{timestamp}-{pid}.json`) rather than overwriting a single file per spec
+- Call `fsync` / `File::sync_all()` before `persist()` if crash safety matters (result files are ephemeral, so this may be overkill)
+- For reading history, use a listing + parse approach (glob `results/*.json`) rather than maintaining an index file that requires locking
+- Avoid advisory file locking (`fs2`, `fd-lock`) for result files; the complexity is not justified when unique filenames solve the problem
 
-**Assay-specific risk:** Gate evaluation captures stdout/stderr as evidence in GateResult. The natural approach of `spawn()` + reading stdout + reading stderr + `wait()` is exactly the deadlock pattern. The `output()` method is the correct default for v0.1.
+**Which phase should address it:** The run history persistence phase.
 
 ---
 
-### P-03: Async/sync boundary collision between MCP server and gate evaluation
+### P-23: Unbounded result file accumulation exhausts disk
 
-**Area:** MCP Server + Gate Evaluation
-**What goes wrong:** rmcp requires a tokio async runtime (`#[tokio::main]`, async tool handlers). Gate evaluation uses synchronous `std::process::Command`. Calling blocking `Command::output()` directly inside an async tool handler blocks the tokio worker thread, starving other tasks. Under a single-threaded runtime (including `#[tokio::test]`), this causes a deadlock.
+**Area:** Run History Persistence (disk space)
+**Confidence:** Medium (depends on usage patterns)
 
-**Why it's easy to miss:** With `#[tokio::main]` (multi-threaded), blocking a single worker may not visibly stall the server during light testing. It surfaces under load or in tests using `#[tokio::test]` (single-threaded runtime).
+**What goes wrong:** Each `gate_run` invocation writes a result file. In CI environments or agent loops that repeatedly run gates, the `.assay/results/` directory grows unboundedly. A gate with 10 criteria, each producing 64KB of stdout/stderr evidence, generates ~640KB per run. At 100 runs/day, that is 64MB/day -- manageable for a human, but an agent in a tight retry loop could run gates thousands of times.
+
+**Warning signs:**
+- `.assay/results/` directory consuming gigabytes
+- `du -sh .assay/` surprising users
+- Disk full errors in CI
 
 **Prevention:**
-- Wrap all `std::process::Command` calls in `tokio::task::spawn_blocking()` when called from async context.
-- Keep gate evaluation functions in `assay-core` synchronous (taking no async dependency). The MCP server crate is responsible for bridging via `spawn_blocking()`.
-- Never use `futures::executor::block_on()` inside a tokio runtime; it takes over the worker thread and can deadlock.
-- Test MCP tool handlers with `#[tokio::test(flavor = "multi_thread")]` to catch threading issues.
+- Implement a retention policy: keep only the last N result files per spec (default: 10-20)
+- Truncate stdout/stderr in persisted results the same way the in-memory `GateResult` does (already has `MAX_OUTPUT_BYTES = 65_536`)
+- Add a `assay results prune` CLI command for manual cleanup
+- Do not store evidence in result files by default; store summaries only, with `--include-evidence` writing the full data
+- Prune on write: when persisting a new result, delete oldest files beyond the retention limit
 
-**Assay-specific risk:** The v0.1 design calls for "sync gate evaluation" with "no async in core." This is correct, but the MCP server (which must be async due to rmcp) needs to call those sync functions. The bridging layer in the MCP server crate is the critical point.
+**Which phase should address it:** The run history persistence phase, as a built-in constraint rather than an afterthought.
 
 ---
 
-### P-04: Zombie processes from gate commands that ignore timeouts
+### P-24: Agent self-grading bias in agent-evaluated gates
 
-**Area:** Gate Evaluation (std::process::Command)
-**What goes wrong:** `std::process::Command` has no built-in timeout. If a gate command hangs (infinite loop, waiting on network, blocked on input), the parent process blocks indefinitely on `wait()` or `output()`. If the process is killed but not waited on, it becomes a zombie. If `Child` is dropped without `wait()`, the child process continues running as an orphan.
+**Area:** Agent Evaluation Trust
+**Confidence:** High (well-documented in AI evaluation literature)
 
-**Why it's easy to miss:** Rust's `Child` struct has no `Drop` implementation that kills the process. Dropping it silently leaks the child. Gate commands during development are fast, so timeouts aren't tested.
+**What goes wrong:** When the same AI agent that implemented code also evaluates whether it meets criteria (via a `prompt` field on `Criterion`), the agent has a systematic bias toward passing its own work. Research shows this manifests as:
+1. **Anchoring bias**: The agent anchors on its own implementation decisions and evaluates criteria through that lens
+2. **Sycophantic evaluation**: The agent avoids failing its own work to appear competent
+3. **Criterion reinterpretation**: The agent interprets ambiguous criteria favorably when evaluating its own output
+4. **Missing edge cases**: The agent doesn't test failure modes it didn't consider during implementation
+
+Google Cloud's 2025 agent trust research emphasizes that "without a clear audit trail of why the AI made its decisions, it is nearly impossible to diagnose failures or prove due diligence."
+
+**Warning signs:**
+- Agent-evaluated gates pass at suspiciously higher rates than command gates
+- Agent evaluation justifications are vague or tautological ("The code meets the criterion because it implements the required functionality")
+- Agent passes criteria that would fail deterministic checks
 
 **Prevention:**
-- Implement a timeout wrapper using `Child::try_wait()` in a polling loop with `thread::sleep()`, or use a dedicated thread with a timeout channel.
-- Always call `child.kill()` followed by `child.wait()` on timeout. The `wait()` after `kill()` is necessary to reap the zombie.
-- Consider the `wait-timeout` crate or similar for cleaner timeout semantics.
-- Set a reasonable default timeout (e.g., 300 seconds) with override in spec/gate config.
-- When wrapping `Command::output()` in `spawn_blocking()` for the MCP server, the timeout must be on the blocking task itself, not just the process.
+- **Separate evaluator from implementer**: Run agent evaluations in a fresh agent context without the conversation history of the implementing agent
+- Record the full evaluation reasoning in `GateResult` (not just pass/fail) so humans can audit
+- Require deterministic gates alongside agent gates: every spec should have at least one command-based criterion as an anchor
+- Add a `confidence` field to agent `GateResult` so low-confidence passes can be flagged
+- Default agent gates to `enforcement: "advisory"` (not `required`) until trust calibration shows they are reliable
+- Never allow an agent gate result to override a failed command gate result
 
-**Assay-specific risk:** Gate evaluation captures evidence for GateResult. A runaway gate blocks the entire evaluation pipeline. With the MCP server calling gate evaluation, a hung gate also blocks the MCP tool response, which may cause the MCP client (Claude Code) to time out and retry or abandon.
+**Which phase should address it:** The agent gate evaluation phase, with the enforcement level phase establishing the advisory/required distinction first.
 
 ---
 
 ## Moderate Pitfalls
 
-### P-05: TOML enum deserialization does not support external tagging
+### P-25: Enforcement level changes silently weaken existing gate results
 
-**Area:** TOML Spec Parsing
-**What goes wrong:** Serde's default enum representation (externally tagged, e.g., `{ "Command": { ... } }`) does not work with the TOML format. TOML cannot represent the nested table structure that externally tagged enums require. Attempting to deserialize an externally tagged enum from TOML produces confusing errors about expected types.
+**Area:** Required/Advisory Gate Enforcement
+**Confidence:** Medium (design analysis)
 
-**Why it's easy to miss:** The same struct with `#[derive(Deserialize)]` works perfectly with JSON but fails with TOML. Serde examples predominantly use JSON, creating a false expectation.
+**What goes wrong:** When adding `enforcement: "required"` vs `"advisory"` to criteria/gates, the enforcement level determines whether a gate failure blocks progression. The pitfall is twofold:
+1. **Default assignment**: If existing criteria default to `required`, existing users see no behavior change. If they default to `advisory`, existing gate failures that previously blocked the CLI exit code 1 now become non-blocking, silently weakening quality.
+2. **MCP response ambiguity**: The MCP `gate_run` response currently returns aggregate `passed`/`failed`/`skipped` counts. Adding enforcement levels means `failed` could mean "failed-required" (blocking) or "failed-advisory" (informational). Agents must distinguish these to know whether to retry.
+
+**Warning signs:**
+- Agents stop retrying gate failures that used to block
+- CLI exit code changes meaning (was: any failure = exit 1, now: only required failures = exit 1)
+- Users confused by "failures" that don't block
 
 **Prevention:**
-- Use `#[serde(tag = "kind")]` (internally tagged) or `#[serde(untagged)]` for enums that will be deserialized from TOML.
-- For `GateKind`, prefer internally tagged: `#[serde(tag = "kind")]` with variants like `kind = "command"`. This is readable in TOML and explicit.
-- Avoid `#[serde(untagged)]` for enums with structurally similar variants; it tries each variant in order and returns the error from the last attempt, making debugging impossible.
-- Test deserialization from TOML strings in unit tests, not just from JSON.
+- Default `enforcement` to `"required"` for backward compatibility -- all existing behavior is preserved
+- Extend the `gate_run` MCP response with separate counts: `required_passed`, `required_failed`, `advisory_passed`, `advisory_failed`
+- CLI exit code policy: exit 1 if any `required` criterion fails; advisory failures produce warnings but exit 0
+- Document the enforcement level clearly in spec examples and schema descriptions
+- Add an `enforcement` field to `CriterionSummary` in the MCP response so agents see enforcement per-criterion, not just in aggregate
 
-**Assay-specific risk:** The domain model uses `GateKind` as an enum (command, and future: file, threshold, agent-evaluated). If the enum uses serde's default external tagging, spec files will be unparseable. This must be decided before any spec file format is published.
+**Which phase should address it:** The enforcement level phase, before agent evaluation is added (agent gates should be `advisory` by default).
 
 ---
 
-### P-06: Missing or extra TOML fields produce unhelpful errors
+### P-26: `GateRunSummary` is not serializable for persistence
 
-**Area:** Config Loading / TOML Spec Parsing
-**What goes wrong:** The `toml` crate's error messages for missing required fields or unknown fields are minimal. A missing required field says `missing field 'x'` without indicating which table or line. Extra fields are silently ignored by default (serde's behavior), meaning typos in field names go undetected.
+**Area:** Run History Persistence (type design)
+**Confidence:** High (verified in codebase)
 
-**Why it's easy to miss:** Happy-path testing always has correct fields. Typos and missing fields surface only when users write specs by hand.
+**What goes wrong:** `GateRunSummary` and `CriterionResult` in `assay-core::gate` derive only `Serialize` (via `#[derive(Debug, Clone, Serialize)]`). They do **not** derive `Deserialize` or `JsonSchema`. To persist and reload run history, these types need full serde roundtrip support. However, they live in `assay-core` (not `assay-types`), and `assay-core` does not export them as public DTOs intended for persistence.
+
+Additionally, `CriterionResult.result` is `Option<GateResult>` where `GateResult` is from `assay-types` and already has full serde derives. The mismatch is specifically on the wrapper types in `assay-core`.
+
+**Warning signs:**
+- Cannot deserialize result files back into structured types
+- Must define parallel types for persistence, creating duplication
+- Tests cannot assert on deserialized run history
 
 **Prevention:**
-- Use `#[serde(deny_unknown_fields)]` on config and spec structs to catch typos. This is critical for user-authored TOML files.
-- Implement a validation layer on top of deserialization: parse first (toml -> struct), then validate semantically (non-empty names, valid paths, etc.).
-- Wrap `toml::from_str()` errors with file path and context: "Error parsing spec file 'path/to/spec.toml': missing field 'name' in [gate]".
-- Use `#[serde(default)]` intentionally, not reflexively. Every default field is a field the user can silently omit.
+- Add `Deserialize` and `JsonSchema` to `GateRunSummary` and `CriterionResult` in `assay-core`
+- Alternatively, define a `RunRecord` type in `assay-types` that is the persistence DTO, distinct from the computed `GateRunSummary`
+- If using a separate persistence type, implement `From<GateRunSummary> for RunRecord` as a one-way mapping (core -> types)
+- Add a `run_id` field (UUID or timestamp-based) to the persistence type for indexing
+- Include `assay_version` in the persisted record for future schema migration
 
-**Assay-specific risk:** Spec files are the primary user-authored artifact. Poor error messages here directly impact the core user experience. The "trim-then-validate" pattern from STATE.md requirements means validation is a two-step process: deserialization tolerates whitespace, then validation checks semantics.
+**Which phase should address it:** The run history persistence phase, as a prerequisite to writing result files.
 
 ---
 
-### P-07: thiserror `#[from]` creates implicit conversion chains across crate boundaries
+### P-27: New MCP tools break existing plugin skills
 
-**Area:** Error Type Design
-**What goes wrong:** Using `#[from]` on error variants creates `From<InnerError>` implementations. When `assay-core` has `#[from] toml::de::Error` and also `#[from] std::io::Error`, any function returning `Result<T, CoreError>` can implicitly convert both error types. This hides the origin of errors, making it hard to distinguish "config file not found" (io::Error) from "config file malformed" (toml::de::Error) at the call site.
+**Area:** MCP Tool Addition (backward compatibility)
+**Confidence:** Medium (integration analysis)
 
-**Why it's easy to miss:** The `?` operator with `#[from]` feels ergonomic. The problem is invisible until you need to match on error variants and realize multiple code paths produce the same variant.
+**What goes wrong:** v0.2 adds new MCP tools (e.g., `gate_history`, `gate_record_agent_eval`). The Claude Code plugin's `SKILL.md` files reference specific tool names and response shapes. If existing tool response shapes change (e.g., `gate_run` response gains `enforcement` fields), skills that parse the response may break. More subtly, the MCP `tools/list` response grows, consuming more of the agent's context window.
+
+The existing plugin at `plugins/claude-code/` has skills that assume the current `gate_run` response format: `{spec_name, passed, failed, skipped, total_duration_ms, criteria: [{name, status, exit_code, ...}]}`.
+
+**Warning signs:**
+- Agent reports "unexpected field" or ignores new fields in gate_run responses
+- Agent's context window fills up from tool listing, reducing available context for actual work
+- Plugin skills give incorrect advice based on stale response format assumptions
 
 **Prevention:**
-- Use `#[from]` sparingly. Prefer explicit error construction: `toml::from_str(s).map_err(AssayError::ConfigParse)?`.
-- Create domain-specific error variants, not passthrough wrappers: `ConfigParse { path: PathBuf, source: toml::de::Error }` instead of `Toml(#[from] toml::de::Error)`.
-- Add context (file path, operation description) at the conversion site, not in the error type.
-- For a workspace, keep `#[non_exhaustive]` off error types in `assay-types` (they are internal DTOs), but use it on public error types in `assay-core` if the crate is ever published.
+- Make all response schema changes additive (new optional fields, never remove or rename existing fields)
+- Add `enforcement` as an optional field on `CriterionSummary` with `#[serde(skip_serializing_if = "Option::is_none")]` so existing responses are unchanged
+- Update `SKILL.md` files to handle new response fields, but make the handling graceful (new fields are informational, not required for the skill to function)
+- Keep MCP tool count low (the v0.1.0 server has 3 tools; aim for 5-6 max in v0.2)
+- Test plugin skills end-to-end with the updated MCP server before release
 
-**Assay-specific risk:** STATE.md says "add error variants when consumed, not speculatively." This is correct but creates pressure to add `#[from]` variants lazily. Each `#[from]` should be a conscious decision about whether the conversion preserves enough context.
+**Which phase should address it:** Every phase that modifies MCP tool schemas or adds new tools.
 
 ---
 
-### P-08: rmcp tool handler parameter schema mismatch with schemars
+### P-28: Result file path length exceeds OS limits on deep project paths
 
-**Area:** MCP Server (rmcp)
-**What goes wrong:** rmcp uses `schemars::JsonSchema` to generate the parameter schema for MCP tools. If the parameter struct's schemars-generated schema diverges from what serde actually accepts (e.g., due to custom deserializers, `#[serde(with)]`, or flatten), the MCP client sends parameters that match the schema but fail deserialization. The error surfaces as "failed to deserialize parameters" at runtime.
+**Area:** Run History Persistence (file I/O)
+**Confidence:** Low (edge case, but painful when hit)
 
-**Why it's easy to miss:** schemars and serde are separate derive macros with different code paths. Most simple structs work identically, but divergence appears with: `#[serde(flatten)]`, `#[serde(with = "...")]` (schemars requires the `with` target to implement `JsonSchema`), `Option<T>` with `#[serde(default)]` vs `#[serde(skip_serializing_if)]`, and untagged enums.
+**What goes wrong:** Result file paths follow the pattern `.assay/results/{spec_name}-{timestamp}-{pid}.json`. On Windows, `MAX_PATH` is 260 characters. A deep project path (`C:\Users\user\Documents\Projects\client\workspace\project\`) plus a long spec name plus a full ISO 8601 timestamp can exceed this limit. On macOS/Linux, `NAME_MAX` is 255 bytes for a single filename component, which a long spec name could approach.
+
+**Warning signs:**
+- "File name too long" errors on result file creation
+- Tests pass in shallow temp directories but fail in deep project paths
 
 **Prevention:**
-- Keep tool parameter structs simple: flat fields, no `#[serde(flatten)]`, no custom serializers.
-- Derive both `JsonSchema` and `Deserialize` on all parameter types and verify roundtrip in tests.
-- For `assay-types` DTOs reused as MCP parameters, ensure both `schemars` and `serde` attributes are compatible.
-- Generate JSON schemas as part of CI (the `just schemas` pipeline) and diff them to catch regressions.
+- Truncate spec names in filenames (first 50 chars) and use a hash suffix for uniqueness
+- Use compact timestamps (e.g., `20260302T143022` not `2026-03-02T14:30:22.123456+00:00`)
+- Validate total path length before writing and return a clear error
+- Alternatively, use a flat numeric ID scheme: `results/00001.json`, `results/00002.json`
 
-**Assay-specific risk:** The v0.1 MCP tools are `spec/get` and `gate/run`. Their parameters likely reuse or mirror types from `assay-types`. Any schemars/serde mismatch between the types crate and the MCP parameter handling will surface as runtime deserialization failures that the schema alone can't diagnose.
+**Which phase should address it:** The run history persistence phase (filename format decision).
 
 ---
 
-### P-09: `CLAUDE_PLUGIN_ROOT` resolution and binary path issues
+### P-29: Hardening refactors break the `#[non_exhaustive]` error type contract
 
-**Area:** Claude Code Plugin Integration
-**What goes wrong:** The `.mcp.json` file in a Claude Code plugin uses `${CLAUDE_PLUGIN_ROOT}` for relative paths to the server binary. If the server binary isn't built, isn't at the expected path, or lacks execute permissions, the plugin fails silently or with an unhelpful "Connection closed" error. Claude Code doesn't surface the underlying OS error clearly.
+**Area:** Hardening (error types)
+**Confidence:** Medium (design analysis)
 
-**Why it's easy to miss:** The developer always has the binary built locally. The error appears when: another developer clones without building, the binary path changes due to a cargo workspace target directory change, or the plugin is installed from a different location than expected.
+**What goes wrong:** `AssayError` is `#[non_exhaustive]`, which means adding variants is non-breaking. However, hardening often involves **reorganizing** error variants (merging similar ones, renaming for clarity, changing field types). Any variant that the MCP server pattern-matches on in `domain_error()` or that the CLI matches in `main.rs` will break silently if renamed. The MCP server currently converts all `AssayError` variants to a text string via `err.to_string()`, which is resilient, but the CLI matches specific variants (e.g., `AssayError::Io { source, .. } if source.kind() == std::io::ErrorKind::NotFound`).
+
+**Warning signs:**
+- CLI error messages change unexpectedly after refactoring
+- Match arms in CLI become dead code after variant reorganization
+- `cargo clippy` warns about unreachable patterns
 
 **Prevention:**
-- Use a build script or `just` task that builds the MCP server binary and copies it to the plugin directory before plugin testing.
-- Validate the binary path and permissions in plugin installation documentation.
-- Use `command` paths that work after `cargo install` (system PATH) rather than relying on workspace-relative paths for distribution.
-- For development, use absolute paths to `target/debug/` or `target/release/` in a local `.mcp.json` override.
-- Test the plugin by actually installing it with `claude plugin add` in a clean environment.
+- Before reorganizing error variants, grep all match sites: `rg 'AssayError::' crates/`
+- Add exhaustive test coverage for error display strings (insta snapshots) before refactoring
+- When renaming variants, use `#[deprecated]` type aliases or add both old and new variants temporarily
+- Keep the MCP server's `domain_error()` converting via `Display` (`.to_string()`) rather than matching on specific variants
+- Run `just ready` after every error type change to catch breakage immediately
 
-**Assay-specific risk:** The plugin is at `plugins/claude-code/` and the MCP server binary will be built by cargo. The `.mcp.json` must reference the binary correctly. During development, the binary is in `target/debug/assay-cli` (or a dedicated MCP server binary); in distribution, it's wherever `cargo install` puts it. These are fundamentally different paths.
+**Which phase should address it:** The hardening phase, with match-site auditing as a prerequisite step.
 
 ---
 
-### P-10: Gate working directory ambiguity
+### P-30: Agent evaluation recording leaks sensitive command output
 
-**Area:** Gate Evaluation
-**What goes wrong:** `std::process::Command::current_dir()` sets the working directory for the subprocess, but the semantics of "working directory" for a gate are ambiguous. Is it the project root? The spec file's parent directory? The directory the CLI was invoked from? If unspecified, it defaults to the parent process's cwd, which varies depending on how the CLI or MCP server was started.
+**Area:** Agent Evaluation Recording (security)
+**Confidence:** Medium (depends on what gates run)
 
-**Why it's easy to miss:** During local development, cwd is always the project root. Ambiguity surfaces when: the MCP server is started from a different directory, the CLI is invoked from a subdirectory, or specs reference relative paths for gate commands.
+**What goes wrong:** When recording agent gate evaluations, the `GateResult` captures stdout/stderr from the agent's evaluation process. If the agent subprocess has access to environment variables, API keys, or file contents, these may appear in stdout/stderr and get persisted to `.assay/results/`. While `.assay/results/` is gitignored, it exists on disk and may be accessible to other tools, agents, or users on the same machine.
 
-**Prevention:**
-- Make `working_dir` an explicit required or defaulted field on gate configuration in the spec file.
-- Resolve all relative paths against a single, documented anchor (recommend: the directory containing the spec file, or the project root from config).
-- In gate evaluation, always set `Command::current_dir()` explicitly; never rely on inherited cwd.
-- Log the resolved working directory in GateResult evidence for debuggability.
+The v0.1.0 codebase already captures stdout/stderr from command gates (up to 64KB). The same capture mechanism applied to agent evaluation subprocesses has a larger attack surface because agent processes typically have broader system access than simple shell commands.
 
-**Assay-specific risk:** The v0.1 requirements call for "explicit working_dir" on gate evaluation. This is correct. The pitfall is in the resolution logic: if `working_dir` is relative in the TOML spec, relative to what?
-
----
-
-### P-11: Feature flag misconfiguration for rmcp
-
-**Area:** MCP Server (rmcp)
-**What goes wrong:** The `rmcp` crate requires specific feature flags: `server`, `transport-io` (for stdio), and `macros` (for `#[tool_handler]` and `#[tool_router]`). Omitting any of these causes confusing compilation errors about missing traits or methods, not a clear "enable feature X" message.
-
-**Why it's easy to miss:** Cargo features are additive and the rmcp documentation shows snippets without always listing required features. The error messages reference internal trait bounds, not feature flags.
+**Warning signs:**
+- API keys or tokens appearing in result files
+- Result files containing file contents from outside the project
+- Agent evaluation stderr including debug output with credentials
 
 **Prevention:**
-- Pin the exact rmcp feature set in `Cargo.toml` workspace dependencies: `rmcp = { version = "...", features = ["server", "transport-io", "macros"] }`.
-- Add a comment in `Cargo.toml` explaining why each feature is needed.
-- If rmcp requires `tokio`, ensure the workspace tokio dependency has compatible features (rmcp may need specific tokio features beyond `full`).
+- Sanitize captured output before persistence: strip common secret patterns (`Bearer `, `sk-`, `ghp_`, etc.)
+- Apply the existing `MAX_OUTPUT_BYTES` truncation to agent evaluation output (already implemented for command gates)
+- Document that result files may contain sensitive information and should not be committed to version control (the `.gitignore` pattern already covers this)
+- Consider a `--redact` flag on result persistence that masks potential secrets
+- For agent evaluation specifically: use `Command::env_clear()` and whitelist only necessary environment variables (mirrors v0.1.0 pitfall P-17's guidance, which was documented but not implemented)
 
-**Assay-specific risk:** The workspace already has `tokio = { version = "1", features = ["full"] }` in workspace dependencies. Adding rmcp means ensuring its tokio version requirement is compatible. If rmcp pins a different tokio minor version range, cargo will pull two tokio versions or fail to resolve.
+**Which phase should address it:** The agent evaluation recording phase.
 
 ---
 
 ## Minor Pitfalls
 
-### P-12: `#[serde(default)]` on Option fields in spec TOML creates three-state ambiguity
+### P-31: Test coverage regressions during hardening refactors
 
-**Area:** TOML Spec Parsing
-**What goes wrong:** For TOML spec fields like `cmd` (optional command for a gate criterion), `Option<String>` with `#[serde(default)]` means: the field is absent = `None`, the field is present with a value = `Some(value)`. But TOML doesn't have null, so there's no way to explicitly represent "this field exists but has no value." If someone writes `cmd = ""`, that's `Some("")`, not `None`. This matters for validation.
+**Area:** Hardening (test infrastructure)
+**Confidence:** Medium (process risk)
+
+**What goes wrong:** v0.1.0 ships with 119 tests across the workspace. Hardening phases that refactor internal APIs (e.g., extracting common patterns, reorganizing modules) risk breaking existing tests. The temptation is to delete or weaken tests that no longer compile rather than updating them to test the refactored code. This is especially risky with insta snapshot tests, where `cargo insta review` can silently accept wrong snapshots.
+
+**Warning signs:**
+- Test count decreasing after a refactoring PR
+- `cargo insta review --accept` run without manual inspection
+- Tests that assert on implementation details (specific function signatures) rather than behavior
 
 **Prevention:**
-- Validate that `Some("")` is treated the same as `None` in the trim-then-validate pass, or reject it with a clear error.
-- Document in spec file examples that omitting the field is the correct way to indicate "no command."
-- Consider using a custom deserializer that trims and converts empty strings to `None`.
+- Record test count before and after each hardening change: `cargo test 2>&1 | tail -1`
+- Never decrease test count during hardening without documented justification
+- Use `just ready` (which includes `fmt-check + lint + test + deny`) as the gate for every change
+- For insta snapshots: review diffs manually, do not auto-accept
+- Add a CI check that fails if test count drops (can be a simple `wc -l` on test output)
+
+**Which phase should address it:** The hardening phase, as a continuous process check.
 
 ---
 
-### P-13: schemars version mismatch between workspace and rmcp
+### P-32: `GateKind` enum extension requires matching in multiple crates
 
-**Area:** Schema Generation / MCP Server
-**What goes wrong:** The workspace uses `schemars = "0.8"`. If rmcp depends on a different schemars version (e.g., 0.9 or a fork), two incompatible `JsonSchema` traits exist. Types derived with workspace schemars cannot be used as rmcp tool parameters.
+**Area:** Schema Evolution (type design)
+**Confidence:** High (verified in codebase)
+
+**What goes wrong:** Adding a new `GateKind` variant (e.g., `AgentEval { prompt: String }`) requires updates in:
+1. `assay-types/src/gate.rs` -- the enum definition
+2. `assay-core/src/gate/mod.rs` -- the `evaluate()` match arm
+3. `assay-mcp/src/server.rs` -- the `format_gate_response()` mapping
+4. `assay-cli/src/main.rs` -- potentially the display logic
+5. Test files across all of the above
+
+Because `GateKind` uses `#[serde(tag = "kind")]` (internally tagged), the new variant also needs TOML roundtrip tests to confirm the tag value. If the variant has different fields than existing ones, the schemars-generated JSON Schema changes, which must be verified against MCP client expectations.
+
+**Warning signs:**
+- "non-exhaustive patterns" compiler error in downstream crates after adding a variant
+- New variant works in tests but produces wrong JSON Schema
+- TOML serialization of new variant has unexpected format
 
 **Prevention:**
-- Check rmcp's schemars version requirement before adding it to the workspace.
-- If versions differ, create bridge types in the MCP server crate that re-derive `JsonSchema` with rmcp's schemars version.
-- Pin schemars in workspace `[workspace.dependencies]` and use `cargo tree -d` to detect duplicate dependency versions.
+- Add the variant to `GateKind` with a TOML roundtrip test in the same PR
+- Grep all match sites before opening the PR: `rg 'GateKind::' crates/`
+- Generate and diff JSON schemas before and after the change
+- The `evaluate()` function in `assay-core` should handle the new variant even if it is a stub (`todo!()` is acceptable during development but must be replaced before merge)
+- Consider a `GateKind::Unknown` catch-all variant for forward compatibility (but this conflicts with `deny_unknown_fields` on the enum's internal tag)
+
+**Which phase should address it:** The agent gate evaluation phase (when `AgentEval` variant is added).
 
 ---
 
-### P-14: Config file search path ordering surprises
+### P-33: Run history query performance degrades with file-per-run storage
 
-**Area:** Config Loading
-**What goes wrong:** Config loading typically searches multiple locations (project root, user home, XDG config). If multiple config files exist, the merge order determines which values win. Users expect "closer = higher priority" (project overrides global), but if the implementation loads in the wrong order or doesn't merge (takes the first found), settings disappear.
+**Area:** Run History Persistence (performance)
+**Confidence:** Low (unlikely to matter at v0.2 scale)
+
+**What goes wrong:** Querying run history (e.g., "show last 5 runs for spec X") requires listing the directory, parsing filenames for timestamps, sorting, and deserializing the top N files. With thousands of result files, directory listing becomes slow on some filesystems (especially network-mounted or Windows NTFS with many small files).
+
+**Warning signs:**
+- `assay results show` command taking seconds
+- MCP `gate_history` tool timing out
+- File system inode limits reached on ext4
 
 **Prevention:**
-- Define and document a clear, fixed precedence order: project > user > system.
-- For v0.1, keep it simple: look for `assay.toml` in the current directory and its ancestors. No merging, no multi-file configs.
-- Return an error type that includes which file was loaded, so users can debug "why is it using that config?"
+- Implement retention (P-23) to bound the number of files per spec
+- Use a compact index file (`.assay/results/index.jsonl`, one line per run with metadata) for fast queries, writing full results to individual files
+- If index file corruption is a concern, rebuild it from individual result files on demand
+- For v0.2, file-per-run is fine; consider SQLite only if v0.3+ needs complex queries
+
+**Which phase should address it:** The run history persistence phase (design decision, not implementation blocker).
 
 ---
 
-### P-15: MCP notification format version mismatch
+### P-34: `spawn_blocking` bridge does not propagate panics clearly for new gate types
 
-**Area:** MCP Server (rmcp)
-**What goes wrong:** The MCP specification changed the `notifications/message` format between versions. The current spec (2025-06-18) uses `{ level, data, logger? }`. Some clients still expect the old format `{ level, message }`. If the rmcp version implements one format and the Claude Code client expects another, the connection drops immediately after handshake.
+**Area:** MCP Server (async/sync boundary)
+**Confidence:** Medium (extends v0.1.0 P-03)
 
-**Prevention:**
-- Use the latest rmcp release that targets the current MCP specification.
-- Test the MCP server against the actual Claude Code client, not just unit tests or a mock client.
-- Pin the rmcp version in `Cargo.toml` (not a range) to prevent surprise upgrades that change protocol behavior.
-- Check the rmcp changelog for protocol version bumps before upgrading.
+**What goes wrong:** The MCP server wraps `evaluate_all()` in `tokio::task::spawn_blocking()`. When adding agent evaluation (which may invoke a subprocess that itself uses an LLM API), the blocking task duration increases significantly. If the agent evaluation process hangs or panics inside `spawn_blocking`, the MCP server's error handling maps the `JoinError` to a generic `"gate evaluation panicked"` message. With multiple gate types (command, file, agent), the panic source becomes ambiguous.
 
----
-
-### P-16: `color-eyre` and MCP server conflict
-
-**Area:** Error Handling / MCP Server
-**What goes wrong:** The workspace uses `color-eyre` for error reporting. `color-eyre`'s panic hook and error handler write to stderr with ANSI colors and install a global panic handler. In the CLI, this is desirable. In the MCP server, the panic handler's stderr output is generally fine (stderr is for logging), but `color-eyre`'s global install (`color_eyre::install()`) can only be called once per process. If both the CLI error handling and MCP server initialization try to install it, the second call panics.
+**Warning signs:**
+- MCP server returns "gate evaluation panicked" with no context on which criterion or gate type caused it
+- Agent evaluation hangs indefinitely because the blocking task has no independent timeout
+- Tokio's blocking thread pool exhaustion when multiple agent evaluations run concurrently
 
 **Prevention:**
-- Call `color_eyre::install()` only in `main()` of binary crates, never in library code.
-- The MCP server binary (or `mcp serve` subcommand) should install its own error handler or share the CLI's.
-- `assay-core` must never call `color_eyre::install()`.
+- Add per-gate-type context to the `JoinError` mapping: include the criterion name and gate kind in the error message
+- Apply a per-criterion timeout inside the blocking task (already done for command gates; extend to agent gates)
+- Configure tokio's blocking thread pool size if agent evaluations are expected to be concurrent (`tokio::runtime::Builder::max_blocking_threads()`)
+- Consider using `tokio::task::spawn_blocking` per-criterion rather than per-spec to isolate panics
 
----
-
-### P-17: Gate command environment variable leakage
-
-**Area:** Gate Evaluation
-**What goes wrong:** `std::process::Command` inherits the parent process's environment by default. If the MCP server or CLI has sensitive environment variables (API keys, tokens), they leak into gate subprocesses. Gate commands authored by users (potentially from spec files shared across teams) run with full access to the parent's environment.
-
-**Prevention:**
-- Use `Command::env_clear()` before setting specific environment variables the gate needs.
-- Whitelist which environment variables gates can access, or provide an explicit `env` map in the gate configuration.
-- At minimum, document that gate commands inherit the parent environment.
-- For v0.1, consider a clear default: inherit `PATH`, `HOME`, `USER`, `TMPDIR` only.
-
----
-
-### P-18: Workspace dependency version for `toml` crate not declared
-
-**Area:** Config Loading / TOML Spec Parsing
-**What goes wrong:** The current `Cargo.toml` workspace dependencies do not include the `toml` crate. If individual crates add it independently with different version ranges, cargo may resolve to different versions across the workspace, or worse, the `toml` crate's serde feature interacts differently with the workspace's serde version.
-
-**Prevention:**
-- Add `toml = { version = "0.8", features = ["parse"] }` to `[workspace.dependencies]` before any crate imports it.
-- Ensure the `toml` version's serde dependency is compatible with the workspace's `serde = "1"`.
-- Use `cargo deny` (already configured) to flag duplicate crate versions.
+**Which phase should address it:** The agent evaluation recording phase.
 
 ---
 
 ## Integration Pitfalls (Cross-Cutting)
 
-### P-19: assay-types DTOs used as MCP parameters need dual-derive compatibility
+### P-35: Run history persistence and MCP response format must agree on result shape
 
-**Area:** Types Crate + MCP Server
-**What goes wrong:** `assay-types` already derives `Serialize`, `Deserialize`, and `JsonSchema` on all DTOs. If these types are reused as rmcp tool parameters, they must also satisfy rmcp's `Parameters<T>` constraint, which requires `DeserializeOwned + JsonSchema`. This works, but adding `#[serde(deny_unknown_fields)]` to types for TOML strictness breaks MCP parameter deserialization if the MCP client sends extra metadata fields.
+**Area:** Run History + MCP Server
+**Confidence:** High (architectural coupling)
+
+**What goes wrong:** The MCP `gate_run` tool returns a `GateRunResponse` (defined in `assay-mcp/src/server.rs`) that is a projection of `GateRunSummary` (defined in `assay-core/src/gate/mod.rs`). Run history persistence writes `GateRunSummary` (or a derived `RunRecord`) to disk. If the persistence format diverges from the MCP response format, loading a historical result and serving it via a `gate_history` MCP tool requires a format conversion layer. Worse, if the persistence format drops fields that the MCP response includes (or vice versa), information is lost.
+
+**Warning signs:**
+- Historical results served via MCP are missing fields that live results have
+- Two separate serialization formats for the same conceptual data
+- Maintenance burden of keeping three types in sync (`GateRunSummary`, `RunRecord`, `GateRunResponse`)
 
 **Prevention:**
-- Separate TOML-facing types (strict, with `deny_unknown_fields`) from MCP-facing parameter types (permissive).
-- Alternatively, use wrapper types in the MCP server crate: `struct SpecGetParams { name: String }` rather than reusing `assay_types::Spec` directly.
-- Test both TOML deserialization and MCP parameter deserialization for any shared type.
+- Define a single canonical result type in `assay-types` (e.g., `RunRecord`) that is used for both persistence and MCP responses
+- The MCP server projects from `RunRecord` to `GateRunResponse` (a subset), not from `GateRunSummary`
+- Keep the projection one-directional: `GateRunSummary -> RunRecord` on persist, `RunRecord -> GateRunResponse` on serve
+- Test that a serialized-then-deserialized `RunRecord` produces the same `GateRunResponse` as a fresh evaluation
+
+**Which phase should address it:** The run history persistence phase (design) and the MCP tool addition phase (consumption).
 
 ---
 
-### P-20: MCP server `mcp serve` subcommand vs. standalone binary decision
+### P-36: Enforcement levels interact with agent evaluation trust in non-obvious ways
 
-**Area:** CLI + MCP Server
-**What goes wrong:** If the MCP server runs as a CLI subcommand (`assay mcp serve`), the CLI's initialization code (clap parsing, color-eyre install, config loading) runs before the MCP server starts. The CLI might print version info, help text, or errors to stdout before the MCP transport takes over, corrupting the protocol. If it's a standalone binary, the workspace layout and build pipeline need to support two binary targets.
+**Area:** Enforcement Levels + Agent Evaluation
+**Confidence:** Medium (design coupling)
+
+**What goes wrong:** The enforcement level (`required` vs `advisory`) and the gate type (`Command` vs `AgentEval`) create a 2x2 matrix of behaviors:
+
+| | Required | Advisory |
+|---|---|---|
+| **Command gate** | Fails -> blocks, exit 1 | Fails -> warning, exit 0 |
+| **Agent gate** | Fails -> blocks, exit 1 | Fails -> warning, exit 0 |
+
+The pitfall: a `required` + `AgentEval` gate has the same blocking power as a `required` + `Command` gate, but the trust level is fundamentally different. A command gate produces deterministic, reproducible results. An agent gate's pass/fail is probabilistic and subject to the biases in P-24. Giving both the same blocking power means an unreliable agent evaluation can block production workflows.
+
+**Warning signs:**
+- Users set agent gates to `required` because they want quality enforcement, not realizing the evaluation is non-deterministic
+- Agent gate results fluctuate between runs (pass one time, fail the next) creating flaky "quality" gates
+- Teams lose trust in the gate system because required gates fail spuriously
 
 **Prevention:**
-- If using a subcommand approach: ensure clap does not print to stdout on parse errors (configure clap to use stderr via `Command::color(ColorChoice::Auto)` and custom error handling).
-- The `mcp serve` subcommand must suppress all non-protocol stdout output immediately.
-- Test by running `assay mcp serve` and verifying the first byte on stdout is `{` (start of a JSON-RPC message).
-- Alternatively, create a separate `assay-mcp` binary crate with minimal initialization.
+- Default agent gates to `enforcement: "advisory"` regardless of what the user specifies, with a CLI warning: "agent-evaluated gates are advisory by default; use `--force-required` to override"
+- Add a `trust_level` or `determinism` metadata field to `GateResult` so downstream consumers (CLI, MCP, TUI) can display appropriate caveats
+- In the CLI, display agent gate results with a visual distinction (e.g., a `~` prefix instead of a checkmark)
+- In the MCP response, include `deterministic: false` on agent gate results so agents can weigh them appropriately
+- Consider a calibration mechanism: track agent gate agreement with command gates over time, and promote to `required` only when agreement exceeds a threshold
 
-**Assay-specific risk:** The v0.1 requirements list `mcp serve` as a CLI subcommand. This means the CLI crate depends on the MCP server functionality. The CLI's stdout management must be airtight when this subcommand is invoked.
+**Which phase should address it:** The enforcement level phase should establish the framework; the agent evaluation phase should implement the trust constraints.
+
+---
+
+### P-37: Hardening changes to `assay-core` public API break both CLI and MCP consumers
+
+**Area:** Hardening (API stability)
+**Confidence:** High (workspace coupling)
+
+**What goes wrong:** `assay-core` exports public functions (`gate::evaluate`, `gate::evaluate_all`, `spec::load`, `spec::scan`, `config::load`, `init::init`) and types (`GateRunSummary`, `CriterionResult`, `AssayError`) consumed by both `assay-cli` and `assay-mcp`. Hardening changes that modify function signatures (e.g., adding a parameter, changing return types, reorganizing modules) break both consumers simultaneously. Because the workspace compiles all crates together, this surfaces as compile errors, not runtime failures -- but it means every core API change requires coordinated updates across at minimum 2 downstream crates.
+
+**Warning signs:**
+- A "quick refactor" in `assay-core` cascades into changes in 3+ files across crates
+- Function signature changes require updating both CLI and MCP server in the same PR
+- PR size bloat from cross-crate cascades
+
+**Prevention:**
+- Add changes behind new functions/methods rather than modifying existing signatures. Deprecate old ones with `#[deprecated]` for one release cycle
+- Use builder patterns or option structs for functions likely to gain parameters (e.g., `EvaluateOptions { cli_timeout, config_timeout, enforcement_filter }` instead of adding positional parameters)
+- Extract common patterns into internal helper functions within `assay-core` rather than changing the public API surface
+- Run `just ready` after every change to catch all downstream breakage immediately
+- Consider marking `assay-core`'s public API with `/// # Stability` doc comments indicating which functions are stable vs. experimental
+
+**Which phase should address it:** The hardening phase (API surface review), with continuous attention during all phases.
 
 ---
 
@@ -318,50 +441,56 @@
 
 | ID | Severity | Area | Core Issue |
 |---|---|---|---|
-| P-01 | Critical | MCP/stdio | Stdout corruption breaks protocol |
-| P-02 | Critical | Gate eval | Pipe buffer deadlock on large output |
-| P-03 | Critical | MCP+Gate | Blocking sync code in async runtime |
-| P-04 | Critical | Gate eval | No timeout, zombie/orphan processes |
-| P-05 | Moderate | TOML | External enum tagging unsupported |
-| P-06 | Moderate | TOML/Config | Poor error messages for users |
-| P-07 | Moderate | Error types | Implicit `#[from]` hides context |
-| P-08 | Moderate | MCP/types | schemars/serde schema divergence |
-| P-09 | Moderate | Plugin | Binary path resolution failures |
-| P-10 | Moderate | Gate eval | Ambiguous working directory |
-| P-11 | Moderate | MCP/rmcp | Feature flag misconfiguration |
-| P-12 | Minor | TOML | Empty string vs absent field |
-| P-13 | Minor | Schema/MCP | schemars version conflict |
-| P-14 | Minor | Config | Search path ordering |
-| P-15 | Minor | MCP | Protocol version mismatch |
-| P-16 | Minor | Error/MCP | color-eyre global install conflict |
-| P-17 | Minor | Gate eval | Environment variable leakage |
-| P-18 | Minor | Config/TOML | Workspace dep not declared |
-| P-19 | Integration | Types+MCP | Dual-derive compatibility |
-| P-20 | Integration | CLI+MCP | Subcommand stdout corruption |
+| P-21 | Critical | Schema evolution | `deny_unknown_fields` blocks forward compatibility |
+| P-22 | Critical | Run history I/O | Concurrent writes corrupt result files |
+| P-23 | Critical | Run history I/O | Unbounded result file accumulation |
+| P-24 | Critical | Agent evaluation | Self-grading bias in agent-evaluated gates |
+| P-25 | Moderate | Enforcement levels | Default level choice silently changes behavior |
+| P-26 | Moderate | Run history types | `GateRunSummary` lacks `Deserialize` for persistence |
+| P-27 | Moderate | MCP tools | New tools/fields break existing plugin skills |
+| P-28 | Moderate | Run history I/O | Result file path length exceeds OS limits |
+| P-29 | Moderate | Hardening | Error type refactors break match sites |
+| P-30 | Moderate | Agent evaluation | Recorded evaluation output leaks secrets |
+| P-31 | Minor | Hardening | Test coverage regression during refactors |
+| P-32 | Minor | Schema evolution | `GateKind` extension requires multi-crate updates |
+| P-33 | Minor | Run history | File-per-run query performance at scale |
+| P-34 | Minor | MCP server | `spawn_blocking` error context for new gate types |
+| P-35 | Integration | History + MCP | Result shape divergence between persistence and API |
+| P-36 | Integration | Enforcement + Agent | Trust mismatch in required agent gates |
+| P-37 | Integration | Hardening + API | Core API changes cascade across consumers |
+
+---
+
+## Phase Allocation
+
+| Phase | Pitfalls to Address |
+|---|---|
+| **Run History Persistence** | P-22, P-23, P-26, P-28, P-33, P-35 |
+| **Enforcement Levels** | P-21, P-25, P-36 |
+| **Agent Gate Evaluation** | P-24, P-30, P-32, P-34, P-36 |
+| **MCP Tool Addition** | P-27, P-35 |
+| **Hardening** | P-29, P-31, P-37 |
+| **All Phases** | P-21 (any field addition), P-37 (any API change) |
 
 ---
 
 ## Sources
 
-- [Shuttle: How to Build a stdio MCP Server in Rust](https://www.shuttle.dev/blog/2025/07/18/how-to-build-a-stdio-mcp-server-in-rust)
-- [Write your MCP servers in Rust](https://rup12.net/posts/write-your-mcps-in-rust/)
-- [rmcp docs.rs](https://docs.rs/rmcp/latest/rmcp/)
-- [modelcontextprotocol/rust-sdk](https://github.com/modelcontextprotocol/rust-sdk)
-- [MCP Transports specification](https://modelcontextprotocol.io/specification/2025-06-18/basic/transports)
-- [Codex rmcp stdio compatibility issue](https://github.com/openai/codex/issues/5671)
-- [Rust std::process::Command stdout deadlock (Issue #45572)](https://github.com/rust-lang/rust/issues/45572)
-- [Rust std::process::Child documentation](https://doc.rust-lang.org/std/process/struct.Child.html)
-- [Tokio: Bridging with sync code](https://tokio.rs/tokio/topics/bridging)
-- [Claude Code MCP documentation](https://code.claude.com/docs/en/mcp)
-- [SFEIR MCP Troubleshooting](https://institute.sfeir.com/en/claude-code/claude-code-mcp-model-context-protocol/troubleshooting/)
-- [Serde enum representations](https://serde.rs/enum-representations.html)
-- [TOML externally tagged enum issue](https://github.com/alexcrichton/toml-rs/issues/225)
-- [Error type design in Rust](https://nrc.github.io/error-docs/error-design/error-type-design.html)
-- [Designing error types in Rust libraries](https://d34dl0ck.me/rust-bites-designing-error-types-in-rust-libraries/index.html)
-- [Serde + TOML + deserialize_with on Options](https://users.rust-lang.org/t/serde-toml-deserialize-with-on-options/77347)
-- [thiserror docs.rs](https://docs.rs/thiserror/latest/thiserror/)
-- [schemars attributes documentation](https://graham.cool/schemars/deriving/attributes/)
+- [serde `deny_unknown_fields` whitelist limitation (Issue #1864)](https://github.com/serde-rs/serde/issues/1864)
+- [serde `deny_unknown_fields` and `skip` incompatibility (Issue #2121)](https://github.com/serde-rs/serde/issues/2121)
+- [Atomic file writes in Rust (rust-lang forum)](https://users.rust-lang.org/t/how-to-write-replace-files-atomically/42821)
+- [tempfile `NamedTempFile::persist` docs](https://docs.rs/tempfile/latest/tempfile/struct.NamedTempFile.html)
+- [atomic-write-file crate](https://docs.rs/atomic-write-file)
+- [fs4 (fork of fs2) cross-platform file locking](https://lib.rs/crates/fs4)
+- [PSA: Avoid Data Corruption by Syncing to the Disk](https://blog.elijahlopez.ca/posts/data-corruption-atomic-writing/)
+- [MCP Tools Specification](https://modelcontextprotocol.io/specification/draft/server/tools)
+- [MCP Tool Schema Guide (Merge)](https://www.merge.dev/blog/mcp-tool-schema)
+- [Google Cloud: Lessons from 2025 on agents and trust](https://cloud.google.com/transform/ai-grew-up-and-got-a-job-lessons-from-2025-on-agents-and-trust)
+- [AI Agent Evaluation: Comprehensive Framework (LXT)](https://www.lxt.ai/blog/ai-agent-evaluation/)
+- [Evaluations for the Agentic World (McKinsey, 2026)](https://medium.com/quantumblack/evaluations-for-the-agentic-world-c3c150f0dd5a)
+- [The AI Test Agent's Dilemma: Ethics of Autonomous QA (2025)](https://www.askui.com/blog-posts/ai-qa-ethics-dilemma-2025)
+- [Measurement Imbalance in Agentic AI Evaluation](https://arxiv.org/html/2506.02064v2)
 
 ---
 
-*Research completed: 2026-02-28*
+*Research completed: 2026-03-02*

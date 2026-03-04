@@ -1,323 +1,385 @@
-# Roadmap — v0.1.0 Proof of Concept
+# Roadmap: Assay
 
-## Overview
+## Milestones
 
-| Milestone | Status | Phases | Requirements |
-|-----------|--------|--------|--------------|
-| v0.1.0 Proof of Concept | In Progress | 10 | 43 |
-
-### Milestones
-
-- v0.1.0 Proof of Concept 🔄
-
----
-
-## v0.1.0 — Proof of Concept
+<details>
+<summary>✅ v0.1.0 Proof of Concept — SHIPPED 2026-03-02</summary>
 
 **Goal:** Prove Assay's dual-track gate differentiator through a thin vertical slice — foundation types, spec-driven gates, MCP server, and Claude Code plugin.
 
-**Phases:** 10
-**Requirements:** 43 (FND: 8, CFG: 6, SPEC: 6, GATE: 8, MCP: 8, PLG: 7)
-
----
-
-#### Phase 1: Workspace Prerequisites
-
-**Goal:** Eliminate the mandatory schemars blocker and add all new workspace dependencies so every downstream phase can build cleanly.
-
-**Dependencies:** None (first phase)
-
-**Requirements:**
-- **FND-01**: Upgrade schemars from 0.8 to 1.x across the workspace (required by rmcp)
-- **FND-08**: New `assay-mcp` crate added to workspace (library crate for MCP server)
-
-**Success Criteria:**
-1. `just ready` passes with schemars 1.x and the new `assay-mcp` crate in the workspace
-2. All existing derives (`Serialize`, `Deserialize`, `JsonSchema`) compile without modification beyond the version bump
-3. `cargo check -p assay-mcp` succeeds (empty lib crate with rmcp dependency)
-
----
-
-#### Phase 2: MCP Spike
-
-**Goal:** Validate that rmcp 0.17 + stdio transport + Claude Code's MCP client exchange protocol successfully. This is a GO/NO-GO gate for the entire v0.1 architecture.
-
-**Dependencies:** Phase 1
-
-**Requirements:**
-- **MCP-01**: MCP server with stdio transport via rmcp in `assay-mcp` crate
-- **MCP-06**: tracing-subscriber initialized to stderr (stdout reserved for JSON-RPC protocol)
-
-**Success Criteria:**
-1. A hardcoded single-tool MCP server starts via `assay mcp serve` and responds to JSON-RPC initialize/tool calls on stdin/stdout
-2. No non-JSON-RPC bytes appear on stdout during server operation (tracing goes to stderr)
-3. Claude Code can discover and call the spike tool when the plugin is installed locally
-4. Spike result documented as GO (proceed) or NO-GO (pivot architecture)
-
-**Plans:**
-| Plan | Wave | Objective | Tasks | Autonomous |
-|------|------|-----------|-------|------------|
-| 02-01 | 1 | Implement spike server, wire CLI, validate protocol roundtrip | 2 | Task 1: yes, Task 2: human-verify |
-
----
-
-#### Phase 3: Error Types and Domain Model
-
-**Goal:** Establish the shared type system and error handling that every crate depends on. Types are pure data (DTOs); no business logic in assay-types.
-
-**Dependencies:** Phase 1
-
-**Requirements:**
-- **FND-02**: Unified `AssayError` enum with thiserror and `#[non_exhaustive]`, starting with `Io` variant
-- **FND-03**: Result type alias `pub type Result<T> = std::result::Result<T, AssayError>`
-- **FND-04**: `GateKind` enum with `#[serde(tag = "kind")]` — `Command { cmd }` and `AlwaysPass` variants
-- **FND-05**: `GateResult` struct with `passed`, `stdout`, `stderr`, `exit_code`, `duration_ms`, `timestamp` fields
-- **FND-06**: `Criterion` struct with `name`, `description`, optional `cmd` field (forward-compatible with `prompt`)
-
-**Success Criteria:**
-1. `GateKind` serializes to TOML with internal tagging (`kind = "Command"`) and roundtrips correctly
-2. `GateResult` captures all evidence fields and serializes to JSON for MCP consumption
-3. `Criterion` with `cmd = None` is valid (descriptive-only criterion) and `cmd = Some(...)` is valid (executable criterion)
-4. `AssayError` variants include contextual information (file paths, operation descriptions), not bare passthrough wrappers
-5. `just ready` passes with all new types derived for `Serialize`, `Deserialize`, `JsonSchema`
-
-**Plans:** 2 plans
-Plans:
-- [ ] 03-01-PLAN.md — Domain types (GateKind, GateResult, Criterion) in assay-types with serde roundtrip tests
-- [ ] 03-02-PLAN.md — AssayError enum and Result alias in assay-core with context-rich error handling
-
----
-
-#### Phase 4: Schema Generation
-
-**Goal:** Produce JSON Schema files from domain types so external tools and agents can validate Assay config and spec formats.
-
-**Dependencies:** Phase 3
-
-**Requirements:**
-- **FND-07**: Schema generation binary (`assay-types/examples/generate-schemas.rs`) + `just schemas` recipe
-
-**Success Criteria:**
-1. `just schemas` produces JSON Schema files in `schemas/` for all public domain types
-2. Generated schemas reflect schemars 1.x output and validate against sample TOML-converted-to-JSON input
-3. Schema files are deterministic (re-running produces identical output)
-
-**Plans:** 1 plan
-Plans:
-- [x] 04-01-PLAN.md — Schema registry, generator binary, just recipes, roundtrip + snapshot tests
-
----
-
-#### Phase 5: Config and Initialization
-
-**Goal:** Users can initialize an Assay project and the system can load/validate its configuration.
-
-**Dependencies:** Phase 3
-
-**Requirements:**
-- **CFG-01**: `assay init` creates `.assay/` directory with `config.toml` and `specs/` subdirectory
-- **CFG-02**: Template-based `config.toml` generation with project name (inferred from directory) and sensible defaults
-- **CFG-03**: Example spec file created in `.assay/specs/` during init
-- **CFG-04**: Idempotent init — refuse to overwrite existing `.assay/` directory
-- **CFG-05**: Config loading via `assay_core::config::load()` and `from_str()` free functions
-- **CFG-06**: Config validation via `assay_core::config::validate()` with structured error reporting
-
-**Success Criteria:**
-1. Running `assay init` in a fresh directory creates `.assay/config.toml` and `.assay/specs/` with an example spec
-2. Running `assay init` a second time in the same directory fails with a clear error (does not overwrite)
-3. `config::load()` parses a valid TOML config and returns structured data; invalid TOML produces error messages that include the file path and field name
-4. `config::validate()` rejects configs with missing or empty required fields
-
-**Plans:** 3 plans
-Plans:
-- [x] 05-01-PLAN.md — Redesign Config type, add GatesConfig, new error variants, update snapshots/schemas
-- [x] 05-02-PLAN.md — Config loading and validation (from_str, load, validate) via TDD
-- [x] 05-03-PLAN.md — Init logic in assay-core and CLI init subcommand
-
----
-
-#### Phase 6: Spec Files
-
-**Goal:** Users can write TOML spec files with criteria, and the system can parse, validate, and enumerate them.
-
-**Dependencies:** Phase 3, Phase 5 (specs live in `.assay/specs/` created by init)
-
-**Requirements:**
-- **SPEC-01**: TOML spec file parsing via `assay_core::spec::load()` and `from_str()` free functions
-- **SPEC-02**: Spec struct with `name`, `description`, `criteria: Vec<Criterion>`
-- **SPEC-03**: Criteria with optional `cmd` field — present = executable, absent = descriptive
-- **SPEC-04**: Spec validation — name required, non-empty after trim, unique criteria names
-- **SPEC-05**: Spec directory scanning — find all `.toml` files in `.assay/specs/`
-- **SPEC-06**: `assay spec show <name>` CLI command displaying parsed spec
-
-**Success Criteria:**
-1. A TOML spec file with multiple criteria (some with `cmd`, some without) parses successfully
-2. Validation rejects specs with empty names, whitespace-only names, or duplicate criteria names — with clear error messages
-3. `spec::scan()` finds all `.toml` files in `.assay/specs/` and returns their parsed representations
-4. `assay spec show <name>` displays a human-readable representation of a named spec
-
-**Plans:** 2 plans
-Plans:
-- [x] 06-01-PLAN.md — Spec type updates, error variants, and spec module (from_str, validate, load, scan) via TDD
-- [x] 06-02-PLAN.md — Wire CLI spec show and spec list subcommands with table/JSON output
-
----
-
-#### Phase 7: Gate Evaluation
-
-**Goal:** Command gates execute, capture evidence, enforce timeouts, and produce structured results that both CLI and MCP can consume.
-
-**Dependencies:** Phase 3, Phase 6 (gates evaluate criteria from specs)
-
-**Requirements:**
-- **GATE-01**: Command gate execution via `std::process::Command` with exit code evaluation
-- **GATE-02**: Structured `GateResult` with stdout/stderr evidence capture
-- **GATE-03**: Timeout enforcement on gate commands with configurable default (300s)
-- **GATE-04**: Explicit `working_dir` parameter on `gate::evaluate()` — never inherit
-- **GATE-05**: `assay gate run <spec>` CLI command running all executable criteria
-- **GATE-06**: `GateKind::FileExists { path }` variant for file existence checks
-- **GATE-07**: Aggregate gate results — summary showing "N/M criteria passed" per spec
-- **GATE-08**: Gate evaluation is sync with documented async guidance (`spawn_blocking`)
-
-**Success Criteria:**
-1. A command gate runs `echo hello` and `GateResult` contains `passed: true`, stdout: `"hello\n"`, exit_code: `0`, and a non-zero `duration_ms`
-2. A command gate with a failing command produces `passed: false` with stderr evidence and the correct non-zero exit code
-3. A command exceeding the timeout is killed, and `GateResult` reflects the timeout with appropriate error information
-4. `assay gate run <spec>` prints a summary showing "N/M criteria passed" and individual criterion results
-5. `gate::evaluate()` requires an explicit `working_dir` — no default, no inheritance from the process
-
----
-
-#### Phase 8: MCP Server Tools
-
-**Goal:** The MCP server exposes spec and gate operations as tools that AI agents can discover and call programmatically.
-
-**Dependencies:** Phase 2 (spike validates MCP works), Phase 6 (spec tools), Phase 7 (gate tools)
-
-**Requirements:**
-- **MCP-02**: `spec_get` tool — retrieve parsed spec by name, return as structured JSON
-- **MCP-03**: `gate_run` tool — execute all command criteria for a spec, return `Vec<GateResult>`
-- **MCP-04**: `spec_list` tool — enumerate available specs in the project
-- **MCP-05**: `assay mcp serve` CLI subcommand starting the MCP server
-- **MCP-07**: `spawn_blocking` bridge for sync gate evaluation in async tool handlers
-- **MCP-08**: Tool descriptions clear enough for agent discovery without additional prompting
-
-**Success Criteria:**
-1. An agent calling `spec_get` with a valid spec name receives the full spec as structured JSON
-2. An agent calling `gate_run` receives a `Vec<GateResult>` with evidence for each criterion, and the async handler does not block the tokio runtime
-3. An agent calling `spec_list` receives an array of available spec names in the project
-4. `assay mcp serve` starts the server and the first byte on stdout is `{` (clean JSON-RPC, no clap output leakage)
-5. Tool descriptions are self-documenting: an agent unfamiliar with Assay can understand what each tool does from the description alone
-
-**Plans:** 2 plans
-Plans:
-- [x] 08-01-PLAN.md — AssayServer with three MCP tools (spec_get, spec_list, gate_run), parameter schemas, response formatting, error handling
-- [x] 08-02-PLAN.md — CLI wiring verification, integration tests, and end-to-end MCP server validation
-
----
-
-#### Phase 9: CLI Surface Completion
-
-**Goal:** All CLI subcommands are wired and functional, delegating to core and MCP libraries.
-
-**Dependencies:** Phase 5 (init), Phase 6 (spec show), Phase 7 (gate run), Phase 8 (mcp serve)
-
-**Requirements:**
-- **PLG-01**: `plugin.json` manifest with name, version, description, author
-
-**Success Criteria:**
-1. `assay init`, `assay spec show`, `assay gate run`, and `assay mcp serve` all work end-to-end as documented
-2. `assay --help` lists all subcommands with clear descriptions
-3. `plugin.json` contains accurate metadata matching the workspace version
-
-**Note:** This phase is deliberately small. The CLI subcommands are implemented incrementally in Phases 5-8 as each domain capability lands. Phase 9 ensures the CLI surface is polished, help text is complete, and `plugin.json` metadata is accurate.
-
-**Plans:** 2 plans
-Plans:
-- [x] 09-01-PLAN.md — CLI polish: help enrichment, bare invocation, binary name fix, CLI issue fixes
-- [x] 09-02-PLAN.md — Plugin manifest finalization and version sync recipes
-
----
-
-#### Phase 10: Claude Code Plugin
-
-**Goal:** A working Claude Code plugin that installs Assay as an MCP server and provides skills and hooks for spec-driven development workflows.
-
-**Dependencies:** Phase 8 (MCP server must be functional), Phase 9 (CLI must be complete)
-
-**Requirements:**
-- **PLG-02**: `.mcp.json` pointing to `assay mcp serve` (stdio transport)
-- **PLG-03**: `/gate-check` skill — run gates for current spec and report results
-- **PLG-04**: `/spec-show` skill — display current spec via MCP
-- **PLG-05**: CLAUDE.md workflow snippet for project-level agent instructions
-- **PLG-06**: PostToolUse hook — auto-trigger gate evaluation after Write/Edit tool use
-- **PLG-07**: Stop hook — prevent agent completion without passing gates
-
-**Success Criteria:**
-1. Installing the plugin in Claude Code registers the Assay MCP server and all skills appear in the skill list
-2. An agent can call `/gate-check` and receive structured pass/fail results for the current spec
-3. An agent can call `/spec-show` and see the full spec with criteria
-4. After a Write or Edit tool use, the PostToolUse hook triggers gate evaluation automatically
-5. An agent cannot mark work as complete while gates are failing (Stop hook enforces gate pass)
-
----
-
-## Requirement Coverage
-
-| Phase | Requirements | Count |
-|-------|-------------|-------|
-| 1 | FND-01, FND-08 | 2 |
-| 2 | MCP-01, MCP-06 | 2 |
-| 3 | FND-02, FND-03, FND-04, FND-05, FND-06 | 5 |
-| 4 | FND-07 | 1 |
-| 5 | CFG-01, CFG-02, CFG-03, CFG-04, CFG-05, CFG-06 | 6 |
-| 6 | SPEC-01, SPEC-02, SPEC-03, SPEC-04, SPEC-05, SPEC-06 | 6 |
-| 7 | GATE-01, GATE-02, GATE-03, GATE-04, GATE-05, GATE-06, GATE-07, GATE-08 | 8 |
-| 8 | MCP-02, MCP-03, MCP-04, MCP-05, MCP-07, MCP-08 | 6 |
-| 9 | PLG-01 | 1 |
-| 10 | PLG-02, PLG-03, PLG-04, PLG-05, PLG-06, PLG-07 | 6 |
-| **Total** | | **43** |
-
-**Validation:** 43 requirements, each mapped to exactly one phase. Coverage is 100%.
+- [x] Phase 1: Workspace Prerequisites (1 plan) — 2026-02-28
+- [x] Phase 2: MCP Spike (1 plan) — 2026-02-28
+- [x] Phase 3: Error Types and Domain Model (2 plans) — 2026-02-28
+- [x] Phase 4: Schema Generation (1 plan) — 2026-02-28
+- [x] Phase 5: Config and Initialization (3 plans) — 2026-03-01
+- [x] Phase 6: Spec Files (2 plans) — 2026-03-01
+- [x] Phase 7: Gate Evaluation (2 plans) — 2026-03-01
+- [x] Phase 8: MCP Server Tools (2 plans) — 2026-03-01
+- [x] Phase 9: CLI Surface Completion (2 plans) — 2026-03-02
+- [x] Phase 10: Claude Code Plugin (2 plans) — 2026-03-02
+
+[Full archive](milestones/v0.1.0-ROADMAP.md)
+
+</details>
+
+### 🔄 v0.2.0 Dual-Track Gates & Hardening
+
+**Goal:** Ship agent-evaluated gates (via MCP `gate_report` tool), run history persistence, required/advisory gate enforcement, and comprehensive hardening of the v0.1 foundation.
+
+- [x] Phase 11: Type System Foundation (2 plans) — 2026-03-04
+  - [x] 11-01: Type relocation + serde hygiene
+  - [x] 11-02: Schema snapshots, roundtrip tests, schema regeneration
+- [ ] Phase 12: FileExists Gate Wiring
+- [ ] Phase 13: Enforcement Levels
+- [ ] Phase 14: Run History Core
+- [ ] Phase 15: Run History CLI
+- [ ] Phase 16: Agent Gate Recording
+- [ ] Phase 17: MCP Hardening & Agent History
+- [ ] Phase 18: CLI Hardening & Enforcement Surface
+- [ ] Phase 19: Testing & Tooling
+- [ ] Phase 20: Session JSONL Parser & Token Diagnostics
+- [ ] Phase 21: Team State Checkpointing
+- [ ] Phase 22: Pruning Engine
+- [ ] Phase 23: Guard Daemon & Recovery
 
 ---
 
 ## Progress Summary
 
-| Phase | Name | Status | Requirements | Completed |
-|-------|------|--------|--------------|-----------|
-| 1 | Workspace Prerequisites | Complete | 2 | 2 |
-| 2 | MCP Spike | Complete | 2 | 2 |
-| 3 | Error Types and Domain Model | Complete | 5 | 5 |
-| 4 | Schema Generation | Complete | 1 | 1 |
-| 5 | Config and Initialization | Complete | 6 | 6 |
-| 6 | Spec Files | Complete | 6 | 6 |
-| 7 | Gate Evaluation | Complete | 8 | 8 |
-| 8 | MCP Server Tools | Complete | 6 | 6 |
-| 9 | CLI Surface Completion | Complete | 1 | 1 |
-| 10 | Claude Code Plugin | Complete | 6 | 6 |
-
-**Overall:** 43/43 requirements complete (100%)
+| Milestone | Status | Phases | Requirements | Complete |
+|-----------|--------|--------|--------------|----------|
+| v0.1.0 Proof of Concept | Shipped | 10 | 43 | 100% |
+| v0.2.0 Dual-Track Gates & Hardening | In Progress | 13 | 52 | 8% |
+| v0.3.0 | Planned | — | — | — |
 
 ---
 
-## Dependency Graph
+## v0.2.0 Phase Details
 
-```
-Phase 1 ──> Phase 2 (MCP spike needs workspace deps)
-Phase 1 ──> Phase 3 (domain types need schemars 1.x)
-Phase 3 ──> Phase 4 (schemas generated from types)
-Phase 3 ──> Phase 5 (config uses domain types)
-Phase 3 + Phase 5 ──> Phase 6 (specs use types, live in .assay/)
-Phase 3 + Phase 6 ──> Phase 7 (gates evaluate spec criteria)
-Phase 2 + Phase 6 + Phase 7 ──> Phase 8 (MCP tools wrap spec/gate)
-Phase 5 + Phase 6 + Phase 7 + Phase 8 ──> Phase 9 (CLI wires everything)
-Phase 8 + Phase 9 ──> Phase 10 (plugin needs working MCP + CLI)
-```
+### Phase 11: Type System Foundation
 
-**Critical path:** 1 -> 3 -> 6 -> 7 -> 8 -> 10
+**Goal:** Relocate result types from assay-core to assay-types and enforce serde hygiene across all domain types — the highest-churn refactor that must land before any feature work.
 
-**Parallelizable:**
-- Phase 2 (MCP spike) and Phase 3 (domain model) can run in parallel after Phase 1
-- Phase 4 (schemas) can run in parallel with Phase 5 (config) after Phase 3
-- Phase 5 (config) and Phase 6 (specs) have a soft dependency (specs use .assay/ dir) but core parsing is independent
+**Depends on:** None (first phase of v0.2.0)
+
+**Requirements:**
+- TYPE-01: `GateRunSummary` and `CriterionResult` relocated from assay-core to assay-types with `Deserialize` + `JsonSchema`
+- TYPE-02: All domain types use `#[serde(skip_serializing_if)]` on optional fields
+- TYPE-03: New fields use `#[serde(default)]` for backward compatibility with existing spec/config files
+
+**Success Criteria:**
+1. `GateRunSummary` and `CriterionResult` import from `assay_types` in all consuming crates and `just ready` passes
+2. Serializing a type with `None` optional fields produces JSON without those keys
+3. A v0.1.0-era spec file (without new fields) parses successfully under v0.2.0 code
+4. JSON Schema snapshots reflect the relocated types with `Deserialize` + `JsonSchema` derives
+
+---
+
+### Phase 12: FileExists Gate Wiring
+
+**Goal:** Connect the existing `FileExists` gate kind to the evaluation dispatch so it produces real results instead of being dead code.
+
+**Depends on:** Phase 11
+
+**Requirements:**
+- TYPE-04: `FileExists` gate kind is wired into `evaluate()` dispatch (connect dead code)
+
+**Success Criteria:**
+1. A spec with a `FileExists` criterion pointing to an existing file evaluates to `passed: true` with evidence
+2. A spec with a `FileExists` criterion pointing to a missing file evaluates to `passed: false` with a clear reason
+3. `GateKind::FileExists` is no longer reachable as an unhandled match arm in gate evaluation
+
+---
+
+### Phase 13: Enforcement Levels
+
+**Goal:** Add required/advisory enforcement to criteria so gate evaluation distinguishes blocking failures from informational warnings.
+
+**Depends on:** Phase 11
+
+**Requirements:**
+- ENFC-01: Criterion has an `enforcement` field with values `required` (default) and `advisory`
+- ENFC-02: Gate evaluation summary separates required failures from advisory failures
+
+**Success Criteria:**
+1. A criterion without an explicit `enforcement` field deserializes with `required` as the default
+2. `evaluate_all()` returns a summary where required and advisory failure counts are reported separately
+3. A gate with only advisory failures reports an overall `passed: true` status
+4. A gate with any required failure reports `passed: false` regardless of advisory results
+
+---
+
+### Phase 14: Run History Core
+
+**Goal:** Persist gate run results to disk as JSON files with atomic writes and retention policy, providing the audit trail infrastructure for all surfaces.
+
+**Depends on:** Phase 11, Phase 13
+
+**Requirements:**
+- HIST-01: Gate run results are persisted to `.assay/results/<spec>/<timestamp>.json` after every evaluation
+- HIST-04: Run history files use atomic write (tempfile-then-rename) to prevent corruption from concurrent writes
+
+**Success Criteria:**
+1. After `evaluate_all()`, a JSON file appears in `.assay/results/<spec-name>/` with the complete `GateRunRecord`
+2. Two concurrent saves for the same spec produce two distinct files (no clobbering or corruption)
+3. A partially-written file (simulated crash) does not leave a corrupt JSON file in the results directory
+4. The persisted `GateRunRecord` deserializes back to the same logical content that was saved
+
+---
+
+### Phase 15: Run History CLI
+
+**Goal:** Users can view gate run history from the command line, and results are automatically pruned to prevent unbounded accumulation.
+
+**Depends on:** Phase 14
+
+**Requirements:**
+- HIST-02: User can view recent gate run history for a spec via `assay history <spec>`
+- HIST-03: Run history has a configurable retention policy (per-spec file count limit) enforced on save
+
+**Success Criteria:**
+1. `assay history <spec>` displays a table of recent gate runs with timestamp, pass/fail, and criterion counts
+2. When more than N results exist (N = configured retention limit), the oldest files are pruned on the next save
+3. A user can configure the retention limit in `.assay/config.toml` and see it take effect on the next gate run
+
+---
+
+### Phase 16: Agent Gate Recording
+
+**Goal:** Agents can submit gate evaluations via the MCP `gate_report` tool with structured reasoning, creating the second track of Assay's dual-track quality gates.
+
+**Depends on:** Phase 13, Phase 14
+
+**Requirements:**
+- AGNT-01: MCP `gate_report` tool accepts agent-submitted pass/fail evaluations with structured reasoning
+- AGNT-02: `GateKind::AgentReport` variant exists for criteria evaluated by agents (not shell commands)
+- AGNT-03: Agent evaluations include `evaluator_role` metadata (`self`, `independent`, `human`)
+- AGNT-04: Agent evaluation results are persisted to run history (same store as command gate results)
+
+**Success Criteria:**
+1. An agent calling `gate_report` with a spec name, criterion name, pass/fail, and reasoning receives a structured confirmation response
+2. The submitted evaluation appears in the run history directory as a persisted `GateRunRecord`
+3. Agent-reported results carry `evaluator_role` metadata distinguishing self-evaluation from independent evaluation
+4. Agent-reported gates default to `advisory` enforcement unless explicitly overridden
+5. `GateKind::AgentReport` criteria are visually distinct from `Command` criteria in gate summaries
+
+---
+
+### Phase 17: MCP Hardening & Agent History
+
+**Goal:** Harden the MCP surface with timeout support, path validation, error handling, and documentation — then expose gate history to agents.
+
+**Depends on:** Phase 14, Phase 16
+
+**Requirements:**
+- MCP-01: `gate_run` tool accepts a `timeout` parameter for agent-controlled timeouts
+- MCP-02: `resolve_working_dir` validates that the path exists before evaluation
+- MCP-03: `spec_list` handles scan errors gracefully instead of silently discarding them
+- MCP-04: Tool descriptions are accurate and field-level documentation exists on response structs
+- AGNT-05: MCP `gate_history` tool allows agents to query past gate run results for a spec
+- ENFC-04: MCP `gate_run` response distinguishes required vs advisory results
+
+**Success Criteria:**
+1. An agent calling `gate_run` with a `timeout` parameter gets results within that timeout (or a timeout error)
+2. An agent calling `gate_run` with a non-existent `working_dir` receives a clear error before any gate execution starts
+3. An agent calling `gate_history` for a spec receives a list of recent run results with timestamps and outcomes
+4. MCP `gate_run` responses include separate counts for required and advisory pass/fail results
+5. `spec_list` returns partial results with error annotations when some spec files fail to parse
+
+---
+
+### Phase 18: CLI Hardening & Enforcement Surface
+
+**Goal:** Polish the CLI with proper error propagation, exit codes, constants, and surface enforcement-level awareness in gate run output.
+
+**Depends on:** Phase 13, Phase 15
+
+**Requirements:**
+- CLI-01: `main()` returns `Result` for proper error propagation
+- CLI-02: Bare `assay` invocation exits with non-zero code
+- CLI-03: `.assay` directory path is extracted to a named constant
+- CLI-04: Gate command help duplication is resolved
+- ENFC-03: CLI exit code reflects only required criterion failures; advisory failures are warnings
+
+**Success Criteria:**
+1. `assay` with no subcommand prints help and exits with a non-zero exit code
+2. A gate run where all required criteria pass but advisory criteria fail exits with code 0 (success)
+3. A gate run where any required criterion fails exits with a non-zero code regardless of advisory results
+4. CLI error messages display the underlying cause chain (no silent swallowing of errors)
+5. The `.assay` directory path appears as a named constant, not a string literal, in CLI code
+
+---
+
+### Phase 19: Testing & Tooling
+
+**Goal:** Fill test coverage gaps, add comprehensive tests for all new v0.2.0 features, tighten cargo-deny policies, and dogfood Assay on itself.
+
+**Depends on:** Phase 16, Phase 17, Phase 18
+
+**Requirements:**
+- TEST-01: MCP tool handlers have direct unit/integration tests (currently zero coverage)
+- TEST-02: Test coverage gaps from Phase 3 and Phase 6 PR reviews are addressed
+- TEST-03: All new features (history, enforcement, gate_report) have comprehensive tests
+- TOOL-01: cargo-deny `multiple-versions` policy tightened from warn to deny
+- TOOL-02: cargo-deny `source-controls` policy tightened from warn to deny
+- TOOL-03: Dogfooding spec exists — Assay uses its own gates to enforce quality on itself
+
+**Success Criteria:**
+1. MCP tool handlers (`spec_get`, `spec_list`, `gate_run`, `gate_report`, `gate_history`) each have at least one direct test
+2. `cargo deny check` passes with `multiple-versions` and `source-controls` set to `deny`
+3. An `.assay/specs/self-check.toml` spec exists that runs Assay's own quality gates (fmt, clippy, tests, deny)
+4. `just ready` passes and `assay gate run self-check` passes on a clean build
+
+---
+
+### Phase 20: Session JSONL Parser & Token Diagnostics
+
+**Goal:** Parse Claude Code session files to provide exact token-aware diagnostics — the foundation for all context management features. Inspired by [Cozempic](https://github.com/Ruya-AI/cozempic).
+
+**Depends on:** None (independent of phases 11-19)
+
+**Requirements:**
+- SDIAG-01: JSONL parser reads Claude Code session files
+- SDIAG-02: Extract exact token counts from `usage` fields
+- SDIAG-03: Calculate context window utilization % per model
+- SDIAG-04: Categorize bloat sources (progress ticks, thinking blocks, stale reads, tool output, metadata, system reminders)
+- SDIAG-05: CLI `assay context diagnose` shows token usage, bloat breakdown, context %
+- SDIAG-06: CLI `assay context list` shows sessions with sizes and token counts
+- SDIAG-07: MCP `context_diagnose` tool exposes full diagnostics to agents
+- SDIAG-08: MCP `estimate_tokens` tool for quick token count + context %
+
+**Success Criteria:**
+1. Parser successfully reads a real Claude Code session JSONL file and extracts message-level token counts
+2. `assay context diagnose` shows total tokens used, context window %, and a categorized bloat breakdown
+3. `assay context list` displays all sessions with file size, token count, and message count columns
+4. MCP `context_diagnose` returns structured JSON with the same data available to CLI
+5. MCP `estimate_tokens` returns token count and context % within 100ms (reads only session tail)
+
+---
+
+### Phase 21: Team State Checkpointing
+
+**Goal:** Extract and persist agent team state from session files and config.json, with hook-driven and manual checkpoint triggers.
+
+**Depends on:** Phase 20 (uses session JSONL parser)
+
+**Requirements:**
+- TPROT-01: Team state extractor reads JSONL session + `~/.claude/teams/*/config.json`
+- TPROT-02: Checkpoint persists team state to markdown file
+- TPROT-03: CLI `assay checkpoint` command for on-demand snapshots
+- TPROT-04: Plugin hooks trigger checkpoints on PostToolUse[Task|TaskCreate|TaskUpdate], PreCompact, Stop
+
+**Success Criteria:**
+1. Extractor correctly identifies all agent spawns, task state, and coordination messages from a session JSONL
+2. Config.json fields (team name, lead agent, member models, working directories) are merged as authoritative
+3. `assay checkpoint` writes a human-readable markdown file with agent list, task list, and coordination summary
+4. Plugin hooks fire on every Task/TaskCreate/TaskUpdate tool use, PreCompact, and Stop — checkpoint file is updated
+5. Checkpoint round-trips: state extracted from JSONL matches state in checkpoint file
+
+---
+
+### Phase 22: Pruning Engine
+
+**Goal:** Composable, team-aware pruning strategies that safely reduce session bloat while preserving critical coordination messages.
+
+**Depends on:** Phase 20 (session parser), Phase 21 (team extractor for protection)
+
+**Requirements:**
+- TPROT-05: Composable pruning strategies (progress-collapse, metadata-strip, thinking-blocks, tool-output-trim, stale-reads, system-reminder-dedup)
+- TPROT-06: Team-aware pruning preserves coordination messages
+
+**Success Criteria:**
+1. Each strategy runs independently and reports bytes/tokens saved and messages removed/modified
+2. Strategies compose sequentially — each runs on the output of the previous, savings are accurate
+3. Team coordination messages (Task, TeamCreate, SendMessage, TaskCreate, TaskUpdate) are never removed by any strategy
+4. Dry-run is the default — `--execute` required to modify files
+5. Automatic timestamped backup before any modification
+6. A prescription (gentle/standard/aggressive) applies the correct strategy subset with expected savings range
+
+---
+
+### Phase 23: Guard Daemon & Recovery
+
+**Goal:** Background daemon with tiered threshold response, reactive overflow recovery, and circuit breaker — the full context protection system.
+
+**Depends on:** Phase 20, Phase 21, Phase 22
+
+**Requirements:**
+- TPROT-07: Guard daemon polls session file at configurable interval
+- TPROT-08: Soft threshold triggers gentle pruning without session reload
+- TPROT-09: Hard threshold triggers full prune + team-protect + optional session reload
+- TPROT-10: Token-based thresholds alongside file-size thresholds
+- TPROT-11: Reactive overflow recovery with file system watcher (kqueue on macOS, inotify on Linux)
+- TPROT-12: Circuit breaker prevents infinite recovery loops
+- TPROT-13: Escalating prescriptions on repeated recoveries (gentle → standard → aggressive)
+
+**Success Criteria:**
+1. Guard daemon runs as a background process with PID file preventing double-starts
+2. Soft threshold crossing triggers a gentle prune without restarting the session
+3. Hard threshold crossing triggers full prune with team-protect and optional session reload
+4. Token-based and file-size thresholds work independently — whichever fires first triggers action
+5. Reactive watcher detects session file growth within sub-second latency (kqueue) and triggers recovery
+6. Circuit breaker trips after configurable max recoveries in time window, halts with final checkpoint
+7. Escalating prescriptions: recovery #1=gentle, #2=standard, #3=aggressive before breaker trips
+8. `Ctrl+C` on guard writes a final checkpoint before exiting
+
+---
+
+## Requirement Coverage
+
+| Requirement | Phase | Description |
+|-------------|-------|-------------|
+| TYPE-01 | 11 | Relocate GateRunSummary/CriterionResult to assay-types |
+| TYPE-02 | 11 | skip_serializing_if on optional fields |
+| TYPE-03 | 11 | serde(default) for backward compat |
+| TYPE-04 | 12 | Wire FileExists into evaluate() |
+| ENFC-01 | 13 | Enforcement field on Criterion |
+| ENFC-02 | 13 | Summary separates required/advisory |
+| ENFC-03 | 18 | CLI exit code reflects required only |
+| ENFC-04 | 17 | MCP response distinguishes required/advisory |
+| HIST-01 | 14 | Persist results to .assay/results/ |
+| HIST-02 | 15 | CLI history command |
+| HIST-03 | 15 | Retention policy |
+| HIST-04 | 14 | Atomic writes |
+| AGNT-01 | 16 | gate_report MCP tool |
+| AGNT-02 | 16 | GateKind::AgentReport variant |
+| AGNT-03 | 16 | evaluator_role metadata |
+| AGNT-04 | 16 | Agent results persisted to history |
+| AGNT-05 | 17 | gate_history MCP tool |
+| MCP-01 | 17 | gate_run timeout parameter |
+| MCP-02 | 17 | Working dir validation |
+| MCP-03 | 17 | spec_list error handling |
+| MCP-04 | 17 | Tool description accuracy |
+| CLI-01 | 18 | main() returns Result |
+| CLI-02 | 18 | Bare invocation exit code |
+| CLI-03 | 18 | .assay path constant |
+| CLI-04 | 18 | Help duplication fix |
+| TEST-01 | 19 | MCP handler tests |
+| TEST-02 | 19 | Phase 3/6 review gaps |
+| TEST-03 | 19 | New feature tests |
+| TOOL-01 | 19 | cargo-deny multiple-versions → deny |
+| TOOL-02 | 19 | cargo-deny source-controls → deny |
+| TOOL-03 | 19 | Dogfooding spec |
+| SDIAG-01 | 20 | JSONL session file parser |
+| SDIAG-02 | 20 | Token count extraction from usage fields |
+| SDIAG-03 | 20 | Context window utilization % |
+| SDIAG-04 | 20 | Bloat source categorization |
+| SDIAG-05 | 20 | CLI context diagnose command |
+| SDIAG-06 | 20 | CLI context list command |
+| SDIAG-07 | 20 | MCP context_diagnose tool |
+| SDIAG-08 | 20 | MCP estimate_tokens tool |
+| TPROT-01 | 21 | Team state extractor (JSONL + config.json) |
+| TPROT-02 | 21 | Checkpoint markdown persistence |
+| TPROT-03 | 21 | CLI checkpoint command |
+| TPROT-04 | 21 | Plugin checkpoint hooks |
+| TPROT-05 | 22 | Composable pruning strategies |
+| TPROT-06 | 22 | Team-aware pruning protection |
+| TPROT-07 | 23 | Guard daemon polling loop |
+| TPROT-08 | 23 | Soft threshold pruning |
+| TPROT-09 | 23 | Hard threshold + team-protect + reload |
+| TPROT-10 | 23 | Token-based thresholds |
+| TPROT-11 | 23 | Reactive overflow recovery (kqueue/inotify) |
+| TPROT-12 | 23 | Circuit breaker |
+| TPROT-13 | 23 | Escalating prescriptions |
+
+**Coverage:** 52/52 requirements mapped (100%)

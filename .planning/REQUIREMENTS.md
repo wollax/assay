@@ -1,138 +1,168 @@
-# Requirements — v0.1.0 Proof of Concept
+# Requirements: Assay v0.2.0 — Dual-Track Gates & Hardening
 
-## Foundation
+## Run History
 
-- [x] **FND-01**: Upgrade schemars from 0.8 to 1.x across the workspace (required by rmcp)
-- [x] **FND-02**: Unified `AssayError` enum with thiserror and `#[non_exhaustive]`, starting with `Io` variant
-- [x] **FND-03**: Result type alias `pub type Result<T> = std::result::Result<T, AssayError>`
-- [x] **FND-04**: `GateKind` enum with `#[serde(tag = "kind")]` — `Command { cmd }` and `AlwaysPass` variants
-- [x] **FND-05**: `GateResult` struct with `passed`, `stdout`, `stderr`, `exit_code`, `duration_ms`, `timestamp` fields
-- [x] **FND-06**: `Criterion` struct with `name`, `description`, optional `cmd` field (forward-compatible with `prompt`)
-- [x] **FND-07**: Schema generation binary (`assay-types/examples/generate-schemas.rs`) + `just schemas` recipe
-- [x] **FND-08**: New `assay-mcp` crate added to workspace (library crate for MCP server)
+- [ ] **HIST-01**: Gate run results are persisted to `.assay/results/<spec>/<timestamp>.json` after every evaluation
+- [ ] **HIST-02**: User can view recent gate run history for a spec via `assay history <spec>`
+- [ ] **HIST-03**: Run history has a configurable retention policy (per-spec file count limit) enforced on save
+- [ ] **HIST-04**: Run history files use atomic write (tempfile-then-rename) to prevent corruption from concurrent writes
 
-## Config & Initialization
+## Gate Enforcement
 
-- [x] **CFG-01**: `assay init` creates `.assay/` directory with `config.toml` and `specs/` subdirectory
-- [x] **CFG-02**: Template-based `config.toml` generation with project name (inferred from directory) and sensible defaults
-- [x] **CFG-03**: Example spec file created in `.assay/specs/` during init
-- [x] **CFG-04**: Idempotent init — refuse to overwrite existing `.assay/` directory
-- [x] **CFG-05**: Config loading via `assay_core::config::load()` and `from_str()` free functions
-- [x] **CFG-06**: Config validation via `assay_core::config::validate()` with structured error reporting
+- [ ] **ENFC-01**: Criterion has an `enforcement` field with values `required` (default) and `advisory`
+- [ ] **ENFC-02**: Gate evaluation summary separates required failures from advisory failures
+- [ ] **ENFC-03**: CLI exit code reflects only required criterion failures; advisory failures are warnings
+- [ ] **ENFC-04**: MCP `gate_run` response distinguishes required vs advisory results
 
-## Spec Files
+## Agent Gate Recording
 
-- [x] **SPEC-01**: TOML spec file parsing via `assay_core::spec::load()` and `from_str()` free functions
-- [x] **SPEC-02**: Spec struct with `name`, `description`, `criteria: Vec<Criterion>`
-- [x] **SPEC-03**: Criteria with optional `cmd` field — present = executable, absent = descriptive
-- [x] **SPEC-04**: Spec validation — name required, non-empty after trim, unique criteria names
-- [x] **SPEC-05**: Spec directory scanning — find all `.toml` files in `.assay/specs/`
-- [x] **SPEC-06**: `assay spec show <name>` CLI command displaying parsed spec
+- [ ] **AGNT-01**: MCP `gate_report` tool accepts agent-submitted pass/fail evaluations with structured reasoning
+- [ ] **AGNT-02**: `GateKind::AgentReport` variant exists for criteria evaluated by agents (not shell commands)
+- [ ] **AGNT-03**: Agent evaluations include `evaluator_role` metadata (`self`, `independent`, `human`)
+- [ ] **AGNT-04**: Agent evaluation results are persisted to run history (same store as command gate results)
+- [ ] **AGNT-05**: MCP `gate_history` tool allows agents to query past gate run results for a spec
 
-## Gate Evaluation
+## Foundation — Type System
 
-- [ ] **GATE-01**: Command gate execution via `std::process::Command` with exit code evaluation
-- [ ] **GATE-02**: Structured `GateResult` with stdout/stderr evidence capture
-- [ ] **GATE-03**: Timeout enforcement on gate commands with configurable default (300s)
-- [ ] **GATE-04**: Explicit `working_dir` parameter on `gate::evaluate()` — never inherit
-- [ ] **GATE-05**: `assay gate run <spec>` CLI command running all executable criteria
-- [ ] **GATE-06**: `GateKind::FileExists { path }` variant for file existence checks
-- [ ] **GATE-07**: Aggregate gate results — summary showing "N/M criteria passed" per spec
-- [ ] **GATE-08**: Gate evaluation is sync with documented async guidance (`spawn_blocking`)
+- [x] **TYPE-01**: `GateRunSummary` and `CriterionResult` relocated from assay-core to assay-types with `Deserialize` + `JsonSchema`
+- [x] **TYPE-02**: All domain types use `#[serde(skip_serializing_if)]` on optional fields
+- [x] **TYPE-03**: New fields use `#[serde(default)]` for backward compatibility with existing spec/config files
+- [ ] **TYPE-04**: `FileExists` gate kind is wired into `evaluate()` dispatch (connect dead code)
 
-## MCP Server
+## Foundation — Testing
 
-- [ ] **MCP-01**: MCP server with stdio transport via rmcp in `assay-mcp` crate
-- [ ] **MCP-02**: `spec_get` tool — retrieve parsed spec by name, return as structured JSON
-- [ ] **MCP-03**: `gate_run` tool — execute all command criteria for a spec, return `Vec<GateResult>`
-- [ ] **MCP-04**: `spec_list` tool — enumerate available specs in the project
-- [ ] **MCP-05**: `assay mcp serve` CLI subcommand starting the MCP server
-- [ ] **MCP-06**: tracing-subscriber initialized to stderr (stdout reserved for JSON-RPC protocol)
-- [ ] **MCP-07**: `spawn_blocking` bridge for sync gate evaluation in async tool handlers
-- [ ] **MCP-08**: Tool descriptions clear enough for agent discovery without additional prompting
+- [ ] **TEST-01**: MCP tool handlers have direct unit/integration tests (currently zero coverage)
+- [ ] **TEST-02**: Test coverage gaps from Phase 3 and Phase 6 PR reviews are addressed
+- [ ] **TEST-03**: All new features (history, enforcement, gate_report) have comprehensive tests
 
-## Claude Code Plugin
+## Foundation — MCP Hardening
 
-- [ ] **PLG-01**: `plugin.json` manifest with name, version, description, author
-- [ ] **PLG-02**: `.mcp.json` pointing to `assay mcp serve` (stdio transport)
-- [ ] **PLG-03**: `/gate-check` skill — run gates for current spec and report results
-- [ ] **PLG-04**: `/spec-show` skill — display current spec via MCP
-- [ ] **PLG-05**: CLAUDE.md workflow snippet for project-level agent instructions
-- [ ] **PLG-06**: PostToolUse hook — auto-trigger gate evaluation after Write/Edit tool use
-- [ ] **PLG-07**: Stop hook — prevent agent completion without passing gates
+- [ ] **MCP-01**: `gate_run` tool accepts a `timeout` parameter for agent-controlled timeouts
+- [ ] **MCP-02**: `resolve_working_dir` validates that the path exists before evaluation
+- [ ] **MCP-03**: `spec_list` handles scan errors gracefully instead of silently discarding them
+- [ ] **MCP-04**: Tool descriptions are accurate and field-level documentation exists on response structs
+
+## Foundation — CLI Hardening
+
+- [ ] **CLI-01**: `main()` returns `Result` for proper error propagation
+- [ ] **CLI-02**: Bare `assay` invocation exits with non-zero code
+- [ ] **CLI-03**: `.assay` directory path is extracted to a named constant
+- [ ] **CLI-04**: Gate command help duplication is resolved
+
+## Foundation — Tooling
+
+- [ ] **TOOL-01**: cargo-deny `multiple-versions` policy tightened from warn to deny
+- [ ] **TOOL-02**: cargo-deny `source-controls` policy tightened from warn to deny
+- [ ] **TOOL-03**: Dogfooding spec exists — Assay uses its own gates to enforce quality on itself
+
+## Session Diagnostics
+
+*Inspired by [Cozempic](https://github.com/Ruya-AI/cozempic) — token-aware context management for AI agent sessions.*
+
+- [ ] **SDIAG-01**: JSONL parser reads Claude Code session files from `~/.claude/projects/*/sessions/`
+- [ ] **SDIAG-02**: Extract exact token counts from `usage` fields in assistant messages
+- [ ] **SDIAG-03**: Calculate context window utilization % for model's max context (200K tokens for Opus)
+- [ ] **SDIAG-04**: Categorize bloat sources (progress ticks, thinking blocks, stale reads, tool output overflow, metadata, system reminders)
+- [ ] **SDIAG-05**: CLI `assay context diagnose` shows token usage, bloat breakdown, context %
+- [ ] **SDIAG-06**: CLI `assay context list` shows sessions with sizes and token counts
+- [ ] **SDIAG-07**: MCP `context_diagnose` tool exposes full diagnostics to agents
+- [ ] **SDIAG-08**: MCP `estimate_tokens` tool for quick token count + context %
+
+## Agent Team Context Protection
+
+*Inspired by [Cozempic](https://github.com/Ruya-AI/cozempic) — prevent context loss that orphans agent teams during auto-compaction.*
+
+- [ ] **TPROT-01**: Team state extractor reads JSONL session + `~/.claude/teams/*/config.json`
+- [ ] **TPROT-02**: Checkpoint persists team state (agents, tasks, coordination messages) to markdown file
+- [ ] **TPROT-03**: CLI `assay checkpoint` command for on-demand state snapshots
+- [ ] **TPROT-04**: Plugin hooks trigger checkpoints on PostToolUse[Task|TaskCreate|TaskUpdate], PreCompact, Stop
+- [ ] **TPROT-05**: Composable pruning strategies (progress-collapse, metadata-strip, thinking-blocks, tool-output-trim, stale-reads, system-reminder-dedup)
+- [ ] **TPROT-06**: Team-aware pruning preserves coordination messages (Task, TeamCreate, SendMessage, TaskCreate, TaskUpdate)
+- [ ] **TPROT-07**: Guard daemon polls session file at configurable interval
+- [ ] **TPROT-08**: Soft threshold triggers gentle pruning without session reload
+- [ ] **TPROT-09**: Hard threshold triggers full prune + team-protect + optional session reload
+- [ ] **TPROT-10**: Token-based thresholds alongside file-size thresholds
+- [ ] **TPROT-11**: Reactive overflow recovery with file system watcher (kqueue on macOS, inotify on Linux)
+- [ ] **TPROT-12**: Circuit breaker prevents infinite recovery loops (configurable max recoveries in time window)
+- [ ] **TPROT-13**: Escalating prescriptions on repeated recoveries (gentle → standard → aggressive)
 
 ---
 
-## Future Requirements (v0.2+)
+## Future Requirements (deferred)
 
-- Agent-evaluated criteria (`prompt` field on Criterion, subprocess invocation)
-- Markdown spec bodies (TOML frontmatter + Markdown content)
-- Spec lifecycle/status tracking (Draft/Active/Implementing/Review/Done)
-- Spec dependencies and versioning
-- Composite gates (AND/OR logic)
-- Threshold gates (e.g., coverage >= 80%)
-- Parallel gate execution
-- Workflow state machine
-- Structured review system
-- Global config (`~/.config/assay/`)
-- Additional MCP tools beyond the initial 3
-- Codex/OpenCode plugins
-- TUI dashboard features
+- Run comparison/diffing between gate results — v0.3
+- Trend analysis and flaky criterion detection — v0.3
+- Context-controlled agent evaluation (`gate_evaluate`) — v0.3
+- Independent evaluator enforcement (requires orchestrator) — v0.3
+- OutputDetail enum for semantic verbosity control — v0.3
+- Wire format vs display format type separation — v0.3
+- Streaming capture with byte budget for gate evaluation — v0.3
 
 ## Out of Scope
 
-- Interactive init wizard — agent-first tool, non-interactive by default
-- Markdown-only spec format — Assay is structured TOML-first
-- Gate caching/memoization — gates must re-evaluate fresh
-- SSE/HTTP MCP transport — v0.1 is local-only
-- Plugin marketplace publishing — need working product first
-- Custom spec DSL — agents + shell commands replace the need
-- Agent marketplace or capability routing — YAGNI
+- Built-in LLM client — agents already have LLM access; `gate_report` eliminates the need
+- SpecProvider trait — premature abstraction with one implementation
+- SQLite or database storage — file-per-run is sufficient at this scale
+- Three-tier enforcement (required/warning/advisory) — SonarQube removed warnings; two tiers is validated
+- Composite gate logic (AND/OR/threshold) — required/advisory delivers the value
+- TUI dashboard — no orchestrator to visualize yet
+- Trust calibration / confidence scores — research problem, not engineering problem
 
 ## Traceability
 
-| REQ-ID | Phase | Status |
-|--------|-------|--------|
-| FND-01 | 1 — Workspace Prerequisites | Complete |
-| FND-02 | 3 — Error Types and Domain Model | Complete |
-| FND-03 | 3 — Error Types and Domain Model | Complete |
-| FND-04 | 3 — Error Types and Domain Model | Complete |
-| FND-05 | 3 — Error Types and Domain Model | Complete |
-| FND-06 | 3 — Error Types and Domain Model | Complete |
-| FND-07 | 4 — Schema Generation | Complete |
-| FND-08 | 1 — Workspace Prerequisites | Complete |
-| CFG-01 | 5 — Config and Initialization | Complete |
-| CFG-02 | 5 — Config and Initialization | Complete |
-| CFG-03 | 5 — Config and Initialization | Complete |
-| CFG-04 | 5 — Config and Initialization | Complete |
-| CFG-05 | 5 — Config and Initialization | Complete |
-| CFG-06 | 5 — Config and Initialization | Complete |
-| SPEC-01 | 6 — Spec Files | Complete |
-| SPEC-02 | 6 — Spec Files | Complete |
-| SPEC-03 | 6 — Spec Files | Complete |
-| SPEC-04 | 6 — Spec Files | Complete |
-| SPEC-05 | 6 — Spec Files | Complete |
-| SPEC-06 | 6 — Spec Files | Complete |
-| GATE-01 | 7 — Gate Evaluation | Not Started |
-| GATE-02 | 7 — Gate Evaluation | Not Started |
-| GATE-03 | 7 — Gate Evaluation | Not Started |
-| GATE-04 | 7 — Gate Evaluation | Not Started |
-| GATE-05 | 7 — Gate Evaluation | Not Started |
-| GATE-06 | 7 — Gate Evaluation | Not Started |
-| GATE-07 | 7 — Gate Evaluation | Not Started |
-| GATE-08 | 7 — Gate Evaluation | Not Started |
-| MCP-01 | 2 — MCP Spike | Not Started |
-| MCP-02 | 8 — MCP Server Tools | Not Started |
-| MCP-03 | 8 — MCP Server Tools | Not Started |
-| MCP-04 | 8 — MCP Server Tools | Not Started |
-| MCP-05 | 8 — MCP Server Tools | Not Started |
-| MCP-06 | 2 — MCP Spike | Not Started |
-| MCP-07 | 8 — MCP Server Tools | Not Started |
-| MCP-08 | 8 — MCP Server Tools | Not Started |
-| PLG-01 | 9 — CLI Surface Completion | Not Started |
-| PLG-02 | 10 — Claude Code Plugin | Not Started |
-| PLG-03 | 10 — Claude Code Plugin | Not Started |
-| PLG-04 | 10 — Claude Code Plugin | Not Started |
-| PLG-05 | 10 — Claude Code Plugin | Not Started |
-| PLG-06 | 10 — Claude Code Plugin | Not Started |
-| PLG-07 | 10 — Claude Code Plugin | Not Started |
+<!-- Updated by roadmapper after phase assignment — 2026-03-02 -->
+
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| TYPE-01 | 11 | Complete |
+| TYPE-02 | 11 | Complete |
+| TYPE-03 | 11 | Complete |
+| TYPE-04 | 12 | Pending |
+| ENFC-01 | 13 | Pending |
+| ENFC-02 | 13 | Pending |
+| ENFC-03 | 18 | Pending |
+| ENFC-04 | 17 | Pending |
+| HIST-01 | 14 | Pending |
+| HIST-02 | 15 | Pending |
+| HIST-03 | 15 | Pending |
+| HIST-04 | 14 | Pending |
+| AGNT-01 | 16 | Pending |
+| AGNT-02 | 16 | Pending |
+| AGNT-03 | 16 | Pending |
+| AGNT-04 | 16 | Pending |
+| AGNT-05 | 17 | Pending |
+| MCP-01 | 17 | Pending |
+| MCP-02 | 17 | Pending |
+| MCP-03 | 17 | Pending |
+| MCP-04 | 17 | Pending |
+| CLI-01 | 18 | Pending |
+| CLI-02 | 18 | Pending |
+| CLI-03 | 18 | Pending |
+| CLI-04 | 18 | Pending |
+| TEST-01 | 19 | Pending |
+| TEST-02 | 19 | Pending |
+| TEST-03 | 19 | Pending |
+| TOOL-01 | 19 | Pending |
+| TOOL-02 | 19 | Pending |
+| TOOL-03 | 19 | Pending |
+| SDIAG-01 | 20 | Pending |
+| SDIAG-02 | 20 | Pending |
+| SDIAG-03 | 20 | Pending |
+| SDIAG-04 | 20 | Pending |
+| SDIAG-05 | 20 | Pending |
+| SDIAG-06 | 20 | Pending |
+| SDIAG-07 | 20 | Pending |
+| SDIAG-08 | 20 | Pending |
+| TPROT-01 | 21 | Pending |
+| TPROT-02 | 21 | Pending |
+| TPROT-03 | 21 | Pending |
+| TPROT-04 | 21 | Pending |
+| TPROT-05 | 22 | Pending |
+| TPROT-06 | 22 | Pending |
+| TPROT-07 | 23 | Pending |
+| TPROT-08 | 23 | Pending |
+| TPROT-09 | 23 | Pending |
+| TPROT-10 | 23 | Pending |
+| TPROT-11 | 23 | Pending |
+| TPROT-12 | 23 | Pending |
+| TPROT-13 | 23 | Pending |

@@ -1,0 +1,45 @@
+{
+  "$id": "https://assay.dev/schemas/gate-criterion.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "GateCriterion",
+  "description": "A single gate criterion with optional requirement traceability.\n\nExtends the concept of [`crate::Criterion`] with a `requirements` field\nthat links criteria to specific requirement IDs (e.g., `REQ-FUNC-001`).",
+  "type": "object",
+  "properties": {
+    "cmd": {
+      "description": "Optional shell command to verify this criterion.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "description": {
+      "description": "Detailed description of what this criterion checks.",
+      "type": "string"
+    },
+    "name": {
+      "description": "Human-readable name for this criterion.",
+      "type": "string"
+    },
+    "requirements": {
+      "description": "Requirement IDs this criterion traces to (e.g., `[\"REQ-FUNC-001\"]`).",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "timeout": {
+      "description": "Optional timeout in seconds for this criterion's command.",
+      "type": [
+        "integer",
+        "null"
+      ],
+      "format": "uint64",
+      "minimum": 0
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "name",
+    "description"
+  ]
+}
