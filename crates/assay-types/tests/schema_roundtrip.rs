@@ -33,6 +33,7 @@ fn spec_validates() {
     validate(&Spec {
         name: "build-feature".to_string(),
         description: "Implement the login page".to_string(),
+        gate: None,
         criteria: vec![Criterion {
             name: "compiles".to_string(),
             description: "The project compiles".to_string(),
@@ -67,6 +68,7 @@ fn workflow_validates() {
         specs: vec![Spec {
             name: "build-feature".to_string(),
             description: "Implement the login page".to_string(),
+            gate: None,
             criteria: vec![Criterion {
                 name: "compiles".to_string(),
                 description: "The project compiles".to_string(),
