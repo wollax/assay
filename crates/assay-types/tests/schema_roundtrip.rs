@@ -40,6 +40,7 @@ fn spec_validates() {
             cmd: None,
             path: None,
             timeout: None,
+            enforcement: None,
         }],
     });
 }
@@ -75,6 +76,7 @@ fn workflow_validates() {
                 cmd: None,
                 path: None,
                 timeout: None,
+                enforcement: None,
             }],
         }],
         gates: vec![Gate {
@@ -156,6 +158,7 @@ fn criterion_with_cmd_validates() {
         cmd: Some("cargo test".to_string()),
         path: None,
         timeout: None,
+        enforcement: None,
     });
 }
 
@@ -167,6 +170,7 @@ fn criterion_without_cmd_validates() {
         cmd: None,
         path: None,
         timeout: None,
+        enforcement: None,
     });
 }
 
@@ -178,6 +182,7 @@ fn criterion_with_timeout_validates() {
         cmd: Some("cargo test -- --ignored".to_string()),
         path: None,
         timeout: Some(60),
+        enforcement: None,
     });
 }
 
@@ -238,12 +243,14 @@ fn gates_spec_validates() {
     validate(&GatesSpec {
         name: "auth-flow".to_string(),
         description: String::new(),
+        gate: None,
         criteria: vec![GateCriterion {
             name: "auth-compiles".to_string(),
             description: "Auth module compiles".to_string(),
             cmd: Some("cargo build -p auth".to_string()),
             path: None,
             timeout: None,
+            enforcement: None,
             requirements: vec!["REQ-FUNC-001".to_string()],
         }],
     });
@@ -257,6 +264,7 @@ fn gate_criterion_without_cmd_validates() {
         cmd: None,
         path: None,
         timeout: None,
+        enforcement: None,
         requirements: vec![],
     });
 }
@@ -280,11 +288,13 @@ fn gate_run_summary_full_validates() {
                 truncated: false,
                 original_bytes: None,
             }),
+            enforcement: Enforcement::Required,
         }],
         passed: 1,
         failed: 0,
         skipped: 0,
         total_duration_ms: 1500,
+        enforcement: EnforcementSummary::default(),
     });
 }
 
@@ -295,11 +305,13 @@ fn gate_run_summary_with_skipped_criterion_validates() {
         results: vec![CriterionResult {
             criterion_name: "descriptive-only".to_string(),
             result: None,
+            enforcement: Enforcement::Required,
         }],
         passed: 0,
         failed: 0,
         skipped: 1,
         total_duration_ms: 0,
+        enforcement: EnforcementSummary::default(),
     });
 }
 
@@ -318,6 +330,7 @@ fn criterion_result_with_result_validates() {
             truncated: false,
             original_bytes: None,
         }),
+        enforcement: Enforcement::Required,
     });
 }
 
@@ -326,6 +339,7 @@ fn criterion_result_skipped_validates() {
     validate(&CriterionResult {
         criterion_name: "manual-check".to_string(),
         result: None,
+        enforcement: Enforcement::Required,
     });
 }
 

@@ -19,6 +19,17 @@ expression: schema.to_value()
           "description": "Detailed description of what this criterion checks.",
           "type": "string"
         },
+        "enforcement": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Enforcement"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Enforcement level override for this criterion. `None` means \"use the\nspec-level default from `[gate]` section\" (which itself defaults to `required`)."
+        },
         "name": {
           "description": "Human-readable name for this criterion.",
           "type": "string"
