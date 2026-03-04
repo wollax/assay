@@ -56,6 +56,7 @@ inventory::submit! {
 pub struct Review {
     pub spec_name: String,
     pub approved: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub comments: Vec<String>,
 }
 
@@ -70,7 +71,9 @@ inventory::submit! {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct Workflow {
     pub name: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub specs: Vec<Spec>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub gates: Vec<Gate>,
 }
 
