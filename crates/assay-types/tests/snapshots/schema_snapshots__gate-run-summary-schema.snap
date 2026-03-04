@@ -11,6 +11,11 @@ expression: schema.to_value()
           "description": "The name of the criterion that was evaluated.",
           "type": "string"
         },
+        "enforcement": {
+          "$ref": "#/$defs/Enforcement",
+          "default": "required",
+          "description": "Resolved enforcement level for this criterion (Required or Advisory)."
+        },
         "result": {
           "anyOf": [
             {
@@ -25,6 +30,53 @@ expression: schema.to_value()
       },
       "required": [
         "criterion_name"
+      ],
+      "type": "object"
+    },
+    "Enforcement": {
+      "description": "Enforcement level for a gate criterion.\n\nDetermines whether a criterion failure blocks the gate (required)\nor is informational only (advisory).",
+      "oneOf": [
+        {
+          "const": "required",
+          "description": "Failure blocks the gate. This is the default.",
+          "type": "string"
+        },
+        {
+          "const": "advisory",
+          "description": "Failure is informational; does not block the gate.",
+          "type": "string"
+        }
+      ]
+    },
+    "EnforcementSummary": {
+      "description": "Enforcement breakdown in a gate run summary.\n\nAlways present on `GateRunSummary`, with counts defaulting to 0.\nOnly counts executable criteria (skipped criteria are excluded).",
+      "properties": {
+        "advisory_failed": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "advisory_passed": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "required_failed": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "required_passed": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "required_passed",
+        "required_failed",
+        "advisory_passed",
+        "advisory_failed"
       ],
       "type": "object"
     },
@@ -146,6 +198,16 @@ expression: schema.to_value()
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "description": "Summary of evaluating all criteria in a spec.",
   "properties": {
+    "enforcement": {
+      "$ref": "#/$defs/EnforcementSummary",
+      "default": {
+        "advisory_failed": 0,
+        "advisory_passed": 0,
+        "required_failed": 0,
+        "required_passed": 0
+      },
+      "description": "Enforcement-level breakdown of results (excludes skipped criteria)."
+    },
     "failed": {
       "description": "Number of criteria that failed.",
       "format": "uint",

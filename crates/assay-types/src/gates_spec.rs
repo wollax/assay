@@ -7,6 +7,8 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::enforcement::{Enforcement, GateSection};
+
 /// A single gate criterion with optional requirement traceability.
 ///
 /// Extends the concept of [`crate::Criterion`] with a `requirements` field
@@ -33,6 +35,11 @@ pub struct GateCriterion {
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub timeout: Option<u64>,
 
+    /// Enforcement level override for this criterion. `None` means "use the
+    /// spec-level default from `[gate]` section" (which itself defaults to `required`).
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub enforcement: Option<Enforcement>,
+
     /// Requirement IDs this criterion traces to (e.g., `["REQ-FUNC-001"]`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub requirements: Vec<String>,
@@ -51,6 +58,10 @@ pub struct GatesSpec {
     /// Human-readable description. Defaults to empty string.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub description: String,
+
+    /// Gate configuration section (enforcement defaults).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gate: Option<GateSection>,
 
     /// Gate criteria that must be satisfied.
     pub criteria: Vec<GateCriterion>,
@@ -79,12 +90,14 @@ mod tests {
         let spec = GatesSpec {
             name: "auth-flow".to_string(),
             description: String::new(),
+            gate: None,
             criteria: vec![GateCriterion {
                 name: "compiles".to_string(),
                 description: "Code compiles".to_string(),
                 cmd: Some("cargo build".to_string()),
                 path: None,
                 timeout: None,
+                enforcement: None,
                 requirements: vec![],
             }],
         };
@@ -177,6 +190,7 @@ unknown_crit_key = true
             cmd: None,
             path: None,
             timeout: None,
+            enforcement: None,
             requirements: vec![],
         };
 
@@ -203,6 +217,7 @@ unknown_crit_key = true
             cmd: Some("cargo test -- --ignored".to_string()),
             path: None,
             timeout: Some(120),
+            enforcement: None,
             requirements: vec!["REQ-FUNC-001".to_string()],
         };
 
