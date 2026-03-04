@@ -386,7 +386,11 @@ fn print_criteria_table(criteria: &[assay_types::Criterion]) {
     for (i, criterion) in criteria.iter().enumerate() {
         let type_label =
             format_criteria_type(criterion.cmd.is_some() || criterion.path.is_some(), color);
-        let cmd_display = criterion.cmd.as_deref().unwrap_or("");
+        let cmd_display = criterion
+            .cmd
+            .as_deref()
+            .or(criterion.path.as_deref())
+            .unwrap_or("");
 
         if color {
             println!(

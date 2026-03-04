@@ -125,9 +125,7 @@ pub fn evaluate_all(
                     criterion_name: criterion.name.clone(),
                     result: Some(GateResult {
                         passed: false,
-                        kind: GateKind::Command {
-                            cmd: criterion.cmd.clone().unwrap_or_default(),
-                        },
+                        kind: gate_kind_for(criterion),
                         stdout: String::new(),
                         stderr: format!("gate evaluation error: {err}"),
                         exit_code: None,
@@ -201,9 +199,7 @@ pub fn evaluate_all_gates(
                     criterion_name: criterion.name.clone(),
                     result: Some(GateResult {
                         passed: false,
-                        kind: GateKind::Command {
-                            cmd: criterion.cmd.clone().unwrap_or_default(),
-                        },
+                        kind: gate_kind_for(&criterion),
                         stdout: String::new(),
                         stderr: format!("gate evaluation error: {err}"),
                         exit_code: None,
@@ -240,6 +236,19 @@ pub fn to_criterion(gc: &GateCriterion) -> Criterion {
     }
 }
 
+/// Derive the `GateKind` for error reporting from a criterion's fields.
+///
+/// Mirrors the dispatch logic in [`evaluate`] so that error results
+/// carry the correct gate kind even when evaluation fails before
+/// producing a `GateResult`.
+fn gate_kind_for(criterion: &Criterion) -> GateKind {
+    match (&criterion.cmd, &criterion.path) {
+        (Some(cmd), _) => GateKind::Command { cmd: cmd.clone() },
+        (None, Some(path)) => GateKind::FileExists { path: path.clone() },
+        (None, None) => GateKind::AlwaysPass,
+    }
+}
+
 /// Resolve the effective timeout from three tiers of configuration.
 ///
 /// Precedence: CLI `--timeout` > per-criterion `timeout` > config global > 300s default.
@@ -265,6 +274,25 @@ pub fn resolve_timeout(
 /// `cmd: None`.
 pub fn evaluate_file_exists(path: &str, working_dir: &Path) -> Result<GateResult> {
     let start = Instant::now();
+
+    // Reject absolute paths and traversal outside working_dir
+    let raw = Path::new(path);
+    if raw.is_absolute() {
+        return Ok(GateResult {
+            passed: false,
+            kind: GateKind::FileExists {
+                path: path.to_string(),
+            },
+            stdout: String::new(),
+            stderr: format!("path must be relative, got: {path}"),
+            exit_code: None,
+            duration_ms: start.elapsed().as_millis() as u64,
+            timestamp: Utc::now(),
+            truncated: false,
+            original_bytes: None,
+        });
+    }
+
     let full_path = working_dir.join(path);
     let exists = full_path.exists();
 
@@ -896,7 +924,24 @@ mod tests {
         assert_eq!(c.name, "test");
         assert_eq!(c.description, "desc");
         assert_eq!(c.cmd, Some("echo ok".to_string()));
+        assert_eq!(c.path, None);
         assert_eq!(c.timeout, Some(60));
+    }
+
+    #[test]
+    fn to_criterion_preserves_path() {
+        let gc = GateCriterion {
+            name: "file-check".to_string(),
+            description: "check file".to_string(),
+            cmd: None,
+            path: Some("dist/app.wasm".to_string()),
+            timeout: None,
+            requirements: vec![],
+        };
+
+        let c = to_criterion(&gc);
+        assert_eq!(c.path, Some("dist/app.wasm".to_string()));
+        assert_eq!(c.cmd, None);
     }
 
     // ── FileExists dispatch via evaluate() ──────────────────────────
@@ -993,5 +1038,42 @@ mod tests {
             matches!(result.kind, GateKind::Command { .. }),
             "cmd should take precedence"
         );
+    }
+
+    #[test]
+    fn evaluate_all_gates_with_file_exists() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("readme.md"), "# Hello").unwrap();
+
+        let gates = GatesSpec {
+            name: "file-gates".to_string(),
+            description: String::new(),
+            criteria: vec![GateCriterion {
+                name: "readme exists".to_string(),
+                description: "check readme".to_string(),
+                cmd: None,
+                path: Some("readme.md".to_string()),
+                timeout: None,
+                requirements: vec![],
+            }],
+        };
+
+        let summary = evaluate_all_gates(&gates, dir.path(), None, None);
+
+        assert_eq!(summary.passed, 1);
+        assert_eq!(summary.failed, 0);
+        assert_eq!(summary.skipped, 0);
+        let result = summary.results[0].result.as_ref().unwrap();
+        assert!(matches!(result.kind, GateKind::FileExists { ref path } if path == "readme.md"));
+    }
+
+    #[test]
+    fn evaluate_file_exists_rejects_absolute_path() {
+        let dir = tempfile::tempdir().unwrap();
+
+        let result = evaluate_file_exists("/etc/passwd", dir.path()).unwrap();
+
+        assert!(!result.passed);
+        assert!(result.stderr.contains("path must be relative"));
     }
 }
