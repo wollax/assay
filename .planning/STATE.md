@@ -9,19 +9,19 @@ See: .planning/PROJECT.md (updated 2026-03-02)
 
 ## Current Position
 
-Phase: 11 — Type System Foundation (COMPLETE)
-Plan: 02 of 2 (all complete)
-Status: Complete
-Last activity: 2026-03-04 — Completed 11-02-PLAN.md
+Phase: 12 — FileExists Gate Wiring (COMPLETE)
+Plan: 01 of 1 (all complete)
+Status: Phase complete
+Last activity: 2026-03-04 — Completed 12-01-PLAN.md
 
-Progress: v0.2.0 [#         ] ~8%
+Progress: v0.2.0 [██        ] ~15%
 
 ## Milestone Progress
 
 | Milestone | Phases | Requirements | Complete |
 |-----------|--------|--------------|----------|
 | v0.1.0 | 10 | 43 | 100% (shipped) |
-| v0.2.0 | 13 (11-23) | 52 | ~8% |
+| v0.2.0 | 13 (11-23) | 52 | ~15% |
 
 ## Accumulated Context
 
@@ -56,6 +56,11 @@ v0.2.0 decisions (from 11-02 execution):
 - Backward-compat test verifies GateRunSummary deserializes from minimal JSON without results field
 - Skipped criterion test (result: None) verifies skip_serializing_if works correctly
 
+v0.2.0 decisions (from 12-01 execution):
+- cmd takes precedence over path when both set (simpler than mutual exclusivity validation)
+- path field uses same serde attributes as cmd (skip_serializing_if + default)
+- evaluate_file_exists implementation unchanged — already correct
+
 ### Pending Issues
 
 38 open issues (expanded from 30 after Phase 8-10 PR reviews)
@@ -66,10 +71,10 @@ None.
 
 ### Next Actions
 
-Phase 12: Gate Run Record — plan and execute (depends on Phase 11)
+Phase 13: Gate Run Record — plan and execute (depends on Phase 11, Phase 12 complete)
 
 ### Session Continuity
 
 Last session: 2026-03-04
-Stopped at: Completed Phase 11 (11-01 + 11-02 both done)
+Stopped at: Completed Phase 12 (12-01 done)
 Resume file: None
