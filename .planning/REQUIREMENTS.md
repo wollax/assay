@@ -24,9 +24,9 @@
 
 ## Foundation — Type System
 
-- [ ] **TYPE-01**: `GateRunSummary` and `CriterionResult` relocated from assay-core to assay-types with `Deserialize` + `JsonSchema`
-- [ ] **TYPE-02**: All domain types use `#[serde(skip_serializing_if)]` on optional fields
-- [ ] **TYPE-03**: New fields use `#[serde(default)]` for backward compatibility with existing spec/config files
+- [x] **TYPE-01**: `GateRunSummary` and `CriterionResult` relocated from assay-core to assay-types with `Deserialize` + `JsonSchema`
+- [x] **TYPE-02**: All domain types use `#[serde(skip_serializing_if)]` on optional fields
+- [x] **TYPE-03**: New fields use `#[serde(default)]` for backward compatibility with existing spec/config files
 - [ ] **TYPE-04**: `FileExists` gate kind is wired into `evaluate()` dispatch (connect dead code)
 
 ## Foundation — Testing
@@ -114,9 +114,9 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| TYPE-01 | 11 | Pending |
-| TYPE-02 | 11 | Pending |
-| TYPE-03 | 11 | Pending |
+| TYPE-01 | 11 | Complete |
+| TYPE-02 | 11 | Complete |
+| TYPE-03 | 11 | Complete |
 | TYPE-04 | 12 | Pending |
 | ENFC-01 | 13 | Pending |
 | ENFC-02 | 13 | Pending |
