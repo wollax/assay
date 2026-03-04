@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 2026-03-02)
 
 ## Current Position
 
-Phase: 12 — FileExists Gate Wiring (COMPLETE)
-Plan: 01 of 1 (all complete)
-Status: Phase complete
-Last activity: 2026-03-04 — Completed 12-01-PLAN.md
+Phase: 13 — Enforcement Levels
+Plan: 01 of 3 (complete)
+Status: In progress
+Last activity: 2026-03-04 — Completed 13-01-PLAN.md
 
-Progress: v0.2.0 [██        ] ~15%
+Progress: v0.2.0 [███       ] ~20%
 
 ## Milestone Progress
 
@@ -61,6 +61,11 @@ v0.2.0 decisions (from 12-01 execution):
 - path field uses same serde attributes as cmd (skip_serializing_if + default)
 - evaluate_file_exists implementation unchanged — already correct
 
+v0.2.0 decisions (from 13-01 execution):
+- Enforcement enum uses Copy trait (two-variant fieldless, read frequently during evaluation)
+- Input types use Option<Enforcement> (None = inherit from gate section default); output types use concrete Enforcement
+- GateSection uses deny_unknown_fields (user-authored input); EnforcementSummary does not (output type)
+
 ### Pending Issues
 
 38 open issues (expanded from 30 after Phase 8-10 PR reviews)
@@ -71,10 +76,10 @@ None.
 
 ### Next Actions
 
-Phase 13: Gate Run Record — plan and execute (depends on Phase 11, Phase 12 complete)
+Phase 13-02: Enforcement evaluation logic — implement resolve_enforcement(), update evaluate_all/evaluate_all_gates, validation rules
 
 ### Session Continuity
 
 Last session: 2026-03-04
-Stopped at: Completed Phase 12 (12-01 done)
+Stopped at: Completed 13-01-PLAN.md (enforcement type layer)
 Resume file: None
