@@ -1,6 +1,7 @@
 //! Roundtrip validation tests: serialize known-good instances to JSON,
 //! validate against the generated schema for each type.
 
+use assay_types::feature_spec::*;
 use assay_types::*;
 use chrono::Utc;
 
@@ -194,5 +195,59 @@ fn gate_result_truncated_validates() {
         timestamp: Utc::now(),
         truncated: true,
         original_bytes: Some(131_072),
+    });
+}
+
+#[test]
+fn feature_spec_minimal_validates() {
+    validate(&FeatureSpec {
+        name: "auth-flow".to_string(),
+        status: SpecStatus::Draft,
+        version: "0.1".to_string(),
+        overview: None,
+        constraints: None,
+        users: vec![],
+        requirements: vec![Requirement {
+            id: "REQ-FUNC-001".to_string(),
+            title: "Login".to_string(),
+            statement: "The system SHALL authenticate users".to_string(),
+            rationale: String::new(),
+            obligation: Obligation::Shall,
+            priority: Priority::Must,
+            verification: VerificationMethod::Test,
+            status: SpecStatus::Draft,
+            acceptance_criteria: vec![],
+        }],
+        quality: None,
+        assumptions: vec![],
+        dependencies: vec![],
+        risks: vec![],
+        verification: None,
+    });
+}
+
+#[test]
+fn gates_spec_validates() {
+    validate(&GatesSpec {
+        name: "auth-flow".to_string(),
+        description: String::new(),
+        criteria: vec![GateCriterion {
+            name: "auth-compiles".to_string(),
+            description: "Auth module compiles".to_string(),
+            cmd: Some("cargo build -p auth".to_string()),
+            timeout: None,
+            requirements: vec!["REQ-FUNC-001".to_string()],
+        }],
+    });
+}
+
+#[test]
+fn gate_criterion_without_cmd_validates() {
+    validate(&GateCriterion {
+        name: "password-policy".to_string(),
+        description: "Password hashing meets requirements".to_string(),
+        cmd: None,
+        timeout: None,
+        requirements: vec![],
     });
 }

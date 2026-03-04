@@ -1,0 +1,73 @@
+{
+  "$id": "https://assay.dev/schemas/gates-spec.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "GatesSpec",
+  "description": "A gate specification loaded from `gates.toml` in a directory-based spec.\n\nParallel to [`crate::Spec`] but designed for the directory layout where\ncriteria live in `gates.toml` alongside a `spec.toml`.",
+  "type": "object",
+  "properties": {
+    "criteria": {
+      "description": "Gate criteria that must be satisfied.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/GateCriterion"
+      }
+    },
+    "description": {
+      "description": "Human-readable description. Defaults to empty string.",
+      "type": "string"
+    },
+    "name": {
+      "description": "Display name for this gate spec (must match directory name / feature spec name).",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "name",
+    "criteria"
+  ],
+  "$defs": {
+    "GateCriterion": {
+      "description": "A single gate criterion with optional requirement traceability.\n\nExtends the concept of [`crate::Criterion`] with a `requirements` field\nthat links criteria to specific requirement IDs (e.g., `REQ-FUNC-001`).",
+      "type": "object",
+      "properties": {
+        "cmd": {
+          "description": "Optional shell command to verify this criterion.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "description": {
+          "description": "Detailed description of what this criterion checks.",
+          "type": "string"
+        },
+        "name": {
+          "description": "Human-readable name for this criterion.",
+          "type": "string"
+        },
+        "requirements": {
+          "description": "Requirement IDs this criterion traces to (e.g., `[\"REQ-FUNC-001\"]`).",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "timeout": {
+          "description": "Optional timeout in seconds for this criterion's command.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "description"
+      ]
+    }
+  }
+}
