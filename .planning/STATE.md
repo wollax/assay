@@ -9,19 +9,19 @@ See: .planning/PROJECT.md (updated 2026-03-02)
 
 ## Current Position
 
-Phase: 11 — Type System Foundation
-Plan: 01 of 2
-Status: In progress (11-01 complete, 11-02 pending)
-Last activity: 2026-03-04 — Completed 11-01-PLAN.md
+Phase: 11 — Type System Foundation (COMPLETE)
+Plan: 02 of 2 (all complete)
+Status: Complete
+Last activity: 2026-03-04 — Completed 11-02-PLAN.md
 
-Progress: v0.2.0 [#         ] ~4%
+Progress: v0.2.0 [#         ] ~8%
 
 ## Milestone Progress
 
 | Milestone | Phases | Requirements | Complete |
 |-----------|--------|--------------|----------|
 | v0.1.0 | 10 | 43 | 100% (shipped) |
-| v0.2.0 | 13 (11-23) | 52 | ~4% |
+| v0.2.0 | 13 (11-23) | 52 | ~8% |
 
 ## Accumulated Context
 
@@ -52,6 +52,10 @@ v0.2.0 decisions (from 11-01 execution):
 - Output types (GateRunSummary, CriterionResult) do NOT use deny_unknown_fields
 - Schema registry entries added for both relocated types
 
+v0.2.0 decisions (from 11-02 execution):
+- Backward-compat test verifies GateRunSummary deserializes from minimal JSON without results field
+- Skipped criterion test (result: None) verifies skip_serializing_if works correctly
+
 ### Pending Issues
 
 38 open issues (expanded from 30 after Phase 8-10 PR reviews)
@@ -62,10 +66,10 @@ None.
 
 ### Next Actions
 
-Phase 11: Type System Foundation — execute plan 11-02 (wave 2)
+Phase 12: Gate Run Record — plan and execute (depends on Phase 11)
 
 ### Session Continuity
 
 Last session: 2026-03-04
-Stopped at: Completed 11-01-PLAN.md (type relocation + serde hygiene)
+Stopped at: Completed Phase 11 (11-01 + 11-02 both done)
 Resume file: None
