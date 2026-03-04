@@ -116,6 +116,16 @@ pub fn validate(spec: &Spec) -> std::result::Result<(), Vec<SpecError>> {
                     message: format!("duplicate criterion name `{}`", criterion.name),
                 });
             }
+
+            if criterion.cmd.is_some() && criterion.path.is_some() {
+                errors.push(SpecError {
+                    field: format!("criteria[{i}]"),
+                    message: format!(
+                        "criterion `{}` has both `cmd` and `path`; `cmd` takes precedence, `path` is ignored",
+                        criterion.name
+                    ),
+                });
+            }
         }
     }
 
@@ -327,6 +337,16 @@ pub fn validate_gates_spec(spec: &GatesSpec) -> std::result::Result<(), Vec<Spec
                 errors.push(SpecError {
                     field: format!("criteria[{i}].name"),
                     message: format!("duplicate criterion name `{}`", criterion.name),
+                });
+            }
+
+            if criterion.cmd.is_some() && criterion.path.is_some() {
+                errors.push(SpecError {
+                    field: format!("criteria[{i}]"),
+                    message: format!(
+                        "criterion `{}` has both `cmd` and `path`; `cmd` takes precedence, `path` is ignored",
+                        criterion.name
+                    ),
                 });
             }
         }
@@ -653,6 +673,7 @@ unknown_crit_key = true
                 name: "c1".to_string(),
                 description: "d1".to_string(),
                 cmd: None,
+                path: None,
                 timeout: None,
             }],
         }
@@ -716,12 +737,14 @@ unknown_crit_key = true
                     name: "dup".to_string(),
                     description: "first".to_string(),
                     cmd: None,
+                    path: None,
                     timeout: None,
                 },
                 Criterion {
                     name: "dup".to_string(),
                     description: "second".to_string(),
                     cmd: None,
+                    path: None,
                     timeout: None,
                 },
             ],
@@ -744,6 +767,7 @@ unknown_crit_key = true
                 name: String::new(),
                 description: "d1".to_string(),
                 cmd: None,
+                path: None,
                 timeout: None,
             }],
         };
@@ -1504,6 +1528,7 @@ description = "d1"
                 name: "c1".into(),
                 description: "d1".into(),
                 cmd: None,
+                path: None,
                 timeout: None,
                 requirements: vec![],
             }],
@@ -1532,6 +1557,7 @@ description = "d1"
                     name: "dup".into(),
                     description: "d1".into(),
                     cmd: None,
+                    path: None,
                     timeout: None,
                     requirements: vec![],
                 },
@@ -1539,6 +1565,7 @@ description = "d1"
                     name: "dup".into(),
                     description: "d2".into(),
                     cmd: None,
+                    path: None,
                     timeout: None,
                     requirements: vec![],
                 },

@@ -29,7 +29,8 @@
 - [x] Phase 11: Type System Foundation (2 plans) — 2026-03-04
   - [x] 11-01: Type relocation + serde hygiene
   - [x] 11-02: Schema snapshots, roundtrip tests, schema regeneration
-- [ ] Phase 12: FileExists Gate Wiring
+- [x] Phase 12: FileExists Gate Wiring (1 plan) — 2026-03-04
+  - [x] 12-01: Add path field, wire dispatch, update tests and snapshots
 - [ ] Phase 13: Enforcement Levels
 - [ ] Phase 14: Run History Core
 - [ ] Phase 15: Run History CLI
@@ -49,7 +50,7 @@
 | Milestone | Status | Phases | Requirements | Complete |
 |-----------|--------|--------|--------------|----------|
 | v0.1.0 Proof of Concept | Shipped | 10 | 43 | 100% |
-| v0.2.0 Dual-Track Gates & Hardening | In Progress | 13 | 52 | 8% |
+| v0.2.0 Dual-Track Gates & Hardening | In Progress | 13 | 52 | 15% |
 | v0.3.0 | Planned | — | — | — |
 
 ---

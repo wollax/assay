@@ -37,6 +37,7 @@ fn spec_validates() {
             name: "compiles".to_string(),
             description: "The project compiles".to_string(),
             cmd: None,
+            path: None,
             timeout: None,
         }],
     });
@@ -70,6 +71,7 @@ fn workflow_validates() {
                 name: "compiles".to_string(),
                 description: "The project compiles".to_string(),
                 cmd: None,
+                path: None,
                 timeout: None,
             }],
         }],
@@ -150,6 +152,7 @@ fn criterion_with_cmd_validates() {
         name: "tests pass".to_string(),
         description: "All unit tests pass".to_string(),
         cmd: Some("cargo test".to_string()),
+        path: None,
         timeout: None,
     });
 }
@@ -160,6 +163,7 @@ fn criterion_without_cmd_validates() {
         name: "builds cleanly".to_string(),
         description: "The project compiles without warnings".to_string(),
         cmd: None,
+        path: None,
         timeout: None,
     });
 }
@@ -170,6 +174,7 @@ fn criterion_with_timeout_validates() {
         name: "slow test".to_string(),
         description: "Integration tests with timeout".to_string(),
         cmd: Some("cargo test -- --ignored".to_string()),
+        path: None,
         timeout: Some(60),
     });
 }
@@ -235,6 +240,7 @@ fn gates_spec_validates() {
             name: "auth-compiles".to_string(),
             description: "Auth module compiles".to_string(),
             cmd: Some("cargo build -p auth".to_string()),
+            path: None,
             timeout: None,
             requirements: vec!["REQ-FUNC-001".to_string()],
         }],
@@ -247,6 +253,7 @@ fn gate_criterion_without_cmd_validates() {
         name: "password-policy".to_string(),
         description: "Password hashing meets requirements".to_string(),
         cmd: None,
+        path: None,
         timeout: None,
         requirements: vec![],
     });
