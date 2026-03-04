@@ -46,6 +46,21 @@ expression: schema.to_value()
       ],
       "type": "object"
     },
+    "Enforcement": {
+      "description": "Enforcement level for a gate criterion.\n\nDetermines whether a criterion failure blocks the gate (required)\nor is informational only (advisory).",
+      "oneOf": [
+        {
+          "const": "required",
+          "description": "Failure blocks the gate. This is the default.",
+          "type": "string"
+        },
+        {
+          "const": "advisory",
+          "description": "Failure is informational; does not block the gate.",
+          "type": "string"
+        }
+      ]
+    },
     "Gate": {
       "description": "A quality gate that must pass before work proceeds.",
       "properties": {
@@ -62,6 +77,18 @@ expression: schema.to_value()
       ],
       "type": "object"
     },
+    "GateSection": {
+      "additionalProperties": false,
+      "description": "Gate-level configuration section.\n\nParsed from `[gate]` in spec TOML files. Provides spec-wide defaults\nthat individual criteria can override.",
+      "properties": {
+        "enforcement": {
+          "$ref": "#/$defs/Enforcement",
+          "default": "required",
+          "description": "Default enforcement level for all criteria in this spec."
+        }
+      },
+      "type": "object"
+    },
     "Spec": {
       "additionalProperties": false,
       "description": "A specification that defines what should be built and its acceptance criteria.",
@@ -76,6 +103,17 @@ expression: schema.to_value()
         "description": {
           "description": "Human-readable description. Defaults to empty string, omitted from\nserialized output when empty.",
           "type": "string"
+        },
+        "gate": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/GateSection"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Gate configuration section (enforcement defaults)."
         },
         "name": {
           "description": "Display name for this spec (required, must be unique across all specs).",
