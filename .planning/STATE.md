@@ -11,8 +11,8 @@ See: .planning/PROJECT.md (updated 2026-03-02)
 
 Phase: 11 — Type System Foundation
 Plan: —
-Status: Roadmap created, ready for planning
-Last activity: 2026-03-02 — Roadmap created (phases 11-19)
+Status: Planned (2 plans: 11-01, 11-02), ready for execution
+Last activity: 2026-03-04 — Phase 11 plans created
 
 Progress: v0.2.0 [          ] 0%
 
@@ -57,7 +57,7 @@ None.
 
 ### Next Actions
 
-Phase 11: Type System Foundation — create plan(s) and implement
+Phase 11: Type System Foundation — execute plan 11-01 (wave 1), then 11-02 (wave 2)
 
 ### Session Continuity
 

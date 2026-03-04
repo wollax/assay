@@ -26,7 +26,9 @@
 
 **Goal:** Ship agent-evaluated gates (via MCP `gate_report` tool), run history persistence, required/advisory gate enforcement, and comprehensive hardening of the v0.1 foundation.
 
-- [ ] Phase 11: Type System Foundation
+- [ ] Phase 11: Type System Foundation (2 plans)
+  - [ ] 11-01: Type relocation + serde hygiene
+  - [ ] 11-02: Schema snapshots, roundtrip tests, schema regeneration
 - [ ] Phase 12: FileExists Gate Wiring
 - [ ] Phase 13: Enforcement Levels
 - [ ] Phase 14: Run History Core
