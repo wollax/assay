@@ -116,6 +116,16 @@ pub fn validate(spec: &Spec) -> std::result::Result<(), Vec<SpecError>> {
                     message: format!("duplicate criterion name `{}`", criterion.name),
                 });
             }
+
+            if criterion.cmd.is_some() && criterion.path.is_some() {
+                errors.push(SpecError {
+                    field: format!("criteria[{i}]"),
+                    message: format!(
+                        "criterion `{}` has both `cmd` and `path`; `cmd` takes precedence, `path` is ignored",
+                        criterion.name
+                    ),
+                });
+            }
         }
     }
 
@@ -327,6 +337,16 @@ pub fn validate_gates_spec(spec: &GatesSpec) -> std::result::Result<(), Vec<Spec
                 errors.push(SpecError {
                     field: format!("criteria[{i}].name"),
                     message: format!("duplicate criterion name `{}`", criterion.name),
+                });
+            }
+
+            if criterion.cmd.is_some() && criterion.path.is_some() {
+                errors.push(SpecError {
+                    field: format!("criteria[{i}]"),
+                    message: format!(
+                        "criterion `{}` has both `cmd` and `path`; `cmd` takes precedence, `path` is ignored",
+                        criterion.name
+                    ),
                 });
             }
         }
