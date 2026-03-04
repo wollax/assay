@@ -1,0 +1,194 @@
+---
+source: crates/assay-types/tests/schema_snapshots.rs
+expression: schema.to_value()
+---
+{
+  "$defs": {
+    "CriterionResult": {
+      "description": "A criterion paired with its evaluation result.",
+      "properties": {
+        "criterion_name": {
+          "description": "The name of the criterion that was evaluated.",
+          "type": "string"
+        },
+        "result": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/GateResult"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The gate result, or `None` if skipped (no cmd)."
+        }
+      },
+      "required": [
+        "criterion_name"
+      ],
+      "type": "object"
+    },
+    "GateKind": {
+      "description": "The kind of gate to evaluate.\n\nUses internal tagging (`#[serde(tag = \"kind\")]`) so TOML output includes\na `kind = \"Command\"` or `kind = \"AlwaysPass\"` discriminator field.",
+      "oneOf": [
+        {
+          "description": "A gate that runs a shell command and checks its exit code.",
+          "properties": {
+            "cmd": {
+              "description": "The shell command to execute.",
+              "type": "string"
+            },
+            "kind": {
+              "const": "Command",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "cmd"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A gate that always passes — useful for placeholder or manual gates.",
+          "properties": {
+            "kind": {
+              "const": "AlwaysPass",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A gate that checks whether a file exists at the given path.",
+          "properties": {
+            "kind": {
+              "const": "FileExists",
+              "type": "string"
+            },
+            "path": {
+              "description": "Path to check, relative to the working directory.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "path"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "GateResult": {
+      "description": "The result of evaluating a gate.\n\nCaptures whether the gate passed, the command output (if any), timing,\nand which kind of gate produced this result (self-describing via `kind`).",
+      "properties": {
+        "duration_ms": {
+          "description": "How long the gate took to evaluate, in milliseconds.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "exit_code": {
+          "description": "Exit code from the gate command, if applicable.\nOmitted from serialized output when `None` (e.g., for `AlwaysPass` gates).",
+          "format": "int32",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "kind": {
+          "$ref": "#/$defs/GateKind",
+          "description": "Which gate kind produced this result."
+        },
+        "original_bytes": {
+          "description": "Original byte count before truncation.\nOmitted from serialized output when `None`.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "passed": {
+          "description": "Whether the gate passed.",
+          "type": "boolean"
+        },
+        "stderr": {
+          "description": "Standard error captured from the gate command.\nOmitted from serialized output when empty.",
+          "type": "string"
+        },
+        "stdout": {
+          "description": "Standard output captured from the gate command.\nOmitted from serialized output when empty.",
+          "type": "string"
+        },
+        "timestamp": {
+          "description": "When the gate evaluation completed.",
+          "format": "date-time",
+          "type": "string"
+        },
+        "truncated": {
+          "description": "Whether stdout or stderr was truncated due to size limits.\nOmitted from serialized output when false.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "passed",
+        "kind",
+        "duration_ms",
+        "timestamp"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Summary of evaluating all criteria in a spec.",
+  "properties": {
+    "failed": {
+      "description": "Number of criteria that failed.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "passed": {
+      "description": "Number of criteria that passed.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "results": {
+      "description": "Results for each criterion that was evaluated or skipped.",
+      "items": {
+        "$ref": "#/$defs/CriterionResult"
+      },
+      "type": "array"
+    },
+    "skipped": {
+      "description": "Number of criteria skipped (descriptive-only, no cmd).",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "spec_name": {
+      "description": "Spec name that was evaluated.",
+      "type": "string"
+    },
+    "total_duration_ms": {
+      "description": "Total wall-clock duration for all evaluations in milliseconds.",
+      "format": "uint64",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "spec_name",
+    "passed",
+    "failed",
+    "skipped",
+    "total_duration_ms"
+  ],
+  "title": "GateRunSummary",
+  "type": "object"
+}

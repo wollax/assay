@@ -251,3 +251,92 @@ fn gate_criterion_without_cmd_validates() {
         requirements: vec![],
     });
 }
+
+#[test]
+fn gate_run_summary_full_validates() {
+    validate(&GateRunSummary {
+        spec_name: "test-spec".to_string(),
+        results: vec![CriterionResult {
+            criterion_name: "unit-tests".to_string(),
+            result: Some(GateResult {
+                passed: true,
+                kind: GateKind::Command {
+                    cmd: "cargo test".to_string(),
+                },
+                stdout: "all tests passed".to_string(),
+                stderr: String::new(),
+                exit_code: Some(0),
+                duration_ms: 1500,
+                timestamp: Utc::now(),
+                truncated: false,
+                original_bytes: None,
+            }),
+        }],
+        passed: 1,
+        failed: 0,
+        skipped: 0,
+        total_duration_ms: 1500,
+    });
+}
+
+#[test]
+fn gate_run_summary_with_skipped_criterion_validates() {
+    validate(&GateRunSummary {
+        spec_name: "test-spec".to_string(),
+        results: vec![CriterionResult {
+            criterion_name: "descriptive-only".to_string(),
+            result: None,
+        }],
+        passed: 0,
+        failed: 0,
+        skipped: 1,
+        total_duration_ms: 0,
+    });
+}
+
+#[test]
+fn criterion_result_with_result_validates() {
+    validate(&CriterionResult {
+        criterion_name: "compiles".to_string(),
+        result: Some(GateResult {
+            passed: true,
+            kind: GateKind::AlwaysPass,
+            stdout: String::new(),
+            stderr: String::new(),
+            exit_code: None,
+            duration_ms: 0,
+            timestamp: Utc::now(),
+            truncated: false,
+            original_bytes: None,
+        }),
+    });
+}
+
+#[test]
+fn criterion_result_skipped_validates() {
+    validate(&CriterionResult {
+        criterion_name: "manual-check".to_string(),
+        result: None,
+    });
+}
+
+#[test]
+fn gate_run_summary_backward_compat_deserialize() {
+    // Verify TYPE-03: a minimal JSON blob missing optional/defaultable fields
+    // still deserializes successfully (serde(default) on results vec).
+    let minimal_json = r#"{
+        "spec_name": "legacy-spec",
+        "passed": 0,
+        "failed": 0,
+        "skipped": 0,
+        "total_duration_ms": 0
+    }"#;
+
+    let summary: GateRunSummary =
+        serde_json::from_str(minimal_json).expect("minimal JSON should deserialize");
+    assert!(summary.results.is_empty(), "results should default to empty vec");
+    assert_eq!(summary.spec_name, "legacy-spec");
+
+    // Also validate the deserialized instance against the schema
+    validate(&summary);
+}
