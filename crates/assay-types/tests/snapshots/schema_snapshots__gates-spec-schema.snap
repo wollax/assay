@@ -23,6 +23,13 @@ expression: schema.to_value()
           "description": "Human-readable name for this criterion.",
           "type": "string"
         },
+        "path": {
+          "description": "Optional file path to check for existence.\nWhen set (and `cmd` is `None`), the criterion evaluates as a `FileExists` gate.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "requirements": {
           "description": "Requirement IDs this criterion traces to (e.g., `[\"REQ-FUNC-001\"]`).",
           "items": {

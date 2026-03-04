@@ -71,6 +71,7 @@ fn workflow_validates() {
                 name: "compiles".to_string(),
                 description: "The project compiles".to_string(),
                 cmd: None,
+                path: None,
                 timeout: None,
             }],
         }],
@@ -162,6 +163,7 @@ fn criterion_without_cmd_validates() {
         name: "builds cleanly".to_string(),
         description: "The project compiles without warnings".to_string(),
         cmd: None,
+        path: None,
         timeout: None,
     });
 }
