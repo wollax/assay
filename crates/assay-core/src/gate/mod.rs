@@ -43,7 +43,8 @@ const MIN_TIMEOUT_SECS: u64 = 1;
 /// Evaluate a single criterion as a gate.
 ///
 /// Derives `GateKind` from criterion fields: if `cmd` is `Some`, it's
-/// `GateKind::Command`; if `cmd` is `None`, it's `GateKind::AlwaysPass`.
+/// `GateKind::Command`; if `path` is `Some` (and `cmd` is `None`), it's
+/// `GateKind::FileExists`; if both are `None`, it's `GateKind::AlwaysPass`.
 ///
 /// `working_dir` is required — this function never inherits the process CWD.
 /// `timeout` is the maximum wall-clock time for the command to complete.
@@ -59,9 +60,10 @@ pub fn evaluate(
     working_dir: &Path,
     timeout: Duration,
 ) -> Result<GateResult> {
-    match &criterion.cmd {
-        Some(cmd) => evaluate_command(cmd, working_dir, timeout),
-        None => evaluate_always_pass(),
+    match (&criterion.cmd, &criterion.path) {
+        (Some(cmd), _) => evaluate_command(cmd, working_dir, timeout),
+        (None, Some(path)) => evaluate_file_exists(path, working_dir),
+        (None, None) => evaluate_always_pass(),
     }
 }
 
@@ -94,7 +96,7 @@ pub fn evaluate_all(
     let mut skipped = 0usize;
 
     for criterion in &spec.criteria {
-        if criterion.cmd.is_none() {
+        if criterion.cmd.is_none() && criterion.path.is_none() {
             skipped += 1;
             results.push(CriterionResult {
                 criterion_name: criterion.name.clone(),
@@ -170,7 +172,7 @@ pub fn evaluate_all_gates(
     for gate_criterion in &gates.criteria {
         let criterion = to_criterion(gate_criterion);
 
-        if criterion.cmd.is_none() {
+        if criterion.cmd.is_none() && criterion.path.is_none() {
             skipped += 1;
             results.push(CriterionResult {
                 criterion_name: criterion.name.clone(),
@@ -233,6 +235,7 @@ pub fn to_criterion(gc: &GateCriterion) -> Criterion {
         name: gc.name.clone(),
         description: gc.description.clone(),
         cmd: gc.cmd.clone(),
+        path: gc.path.clone(),
         timeout: gc.timeout,
     }
 }
@@ -258,10 +261,8 @@ pub fn resolve_timeout(
 /// Resolves `path` relative to `working_dir` and checks whether the
 /// file exists. No process execution, no timeout needed.
 ///
-/// **Note:** This function is not dispatched through [`evaluate`] — it's a
-/// standalone entry point. `evaluate()` derives `GateKind` from `Criterion`
-/// fields (cmd presence). File-check criteria will be integrated in a future
-/// phase when `Criterion` gains a `path` field alongside `cmd`.
+/// Dispatched from [`evaluate`] when a criterion has `path: Some(...)` and
+/// `cmd: None`.
 pub fn evaluate_file_exists(path: &str, working_dir: &Path) -> Result<GateResult> {
     let start = Instant::now();
     let full_path = working_dir.join(path);
@@ -518,6 +519,7 @@ mod tests {
             name: "echo test".to_string(),
             description: "runs echo".to_string(),
             cmd: Some("echo hello".to_string()),
+            path: None,
             timeout: None,
         };
 
@@ -544,6 +546,7 @@ mod tests {
             name: "fail test".to_string(),
             description: "runs failing cmd".to_string(),
             cmd: Some("sh -c 'echo fail >&2 && exit 1'".to_string()),
+            path: None,
             timeout: None,
         };
 
@@ -566,6 +569,7 @@ mod tests {
             name: "timeout test".to_string(),
             description: "runs slow cmd".to_string(),
             cmd: Some("sleep 10".to_string()),
+            path: None,
             timeout: None,
         };
 
@@ -589,6 +593,7 @@ mod tests {
             name: "descriptive".to_string(),
             description: "no cmd".to_string(),
             cmd: None,
+            path: None,
             timeout: None,
         };
 
@@ -639,6 +644,7 @@ mod tests {
             name: "pwd test".to_string(),
             description: "checks working dir".to_string(),
             cmd: Some("pwd".to_string()),
+            path: None,
             timeout: None,
         };
 
@@ -729,18 +735,21 @@ mod tests {
                     name: "passes".to_string(),
                     description: "will pass".to_string(),
                     cmd: Some("true".to_string()),
+                    path: None,
                     timeout: None,
                 },
                 Criterion {
                     name: "descriptive".to_string(),
                     description: "no cmd".to_string(),
                     cmd: None,
+                    path: None,
                     timeout: None,
                 },
                 Criterion {
                     name: "fails".to_string(),
                     description: "will fail".to_string(),
                     cmd: Some("false".to_string()),
+                    path: None,
                     timeout: None,
                 },
             ],
@@ -768,6 +777,7 @@ mod tests {
                 name: "impossible".to_string(),
                 description: "nonexistent binary".to_string(),
                 cmd: Some("/nonexistent/binary/that/does/not/exist".to_string()),
+                path: None,
                 timeout: None,
             }],
         };
@@ -793,6 +803,7 @@ mod tests {
                     name: "passes".to_string(),
                     description: "will pass".to_string(),
                     cmd: Some("true".to_string()),
+                    path: None,
                     timeout: None,
                     requirements: vec!["REQ-FUNC-001".to_string()],
                 },
@@ -800,6 +811,7 @@ mod tests {
                     name: "descriptive".to_string(),
                     description: "no cmd".to_string(),
                     cmd: None,
+                    path: None,
                     timeout: None,
                     requirements: vec![],
                 },
@@ -807,6 +819,7 @@ mod tests {
                     name: "fails".to_string(),
                     description: "will fail".to_string(),
                     cmd: Some("false".to_string()),
+                    path: None,
                     timeout: None,
                     requirements: vec!["REQ-SEC-001".to_string()],
                 },
@@ -835,6 +848,7 @@ mod tests {
                 name: "echo".to_string(),
                 description: "echo test".to_string(),
                 cmd: Some("echo ok".to_string()),
+                path: None,
                 timeout: None,
             }],
         };
@@ -846,6 +860,7 @@ mod tests {
                 name: "echo".to_string(),
                 description: "echo test".to_string(),
                 cmd: Some("echo ok".to_string()),
+                path: None,
                 timeout: None,
                 requirements: vec![],
             }],
@@ -872,6 +887,7 @@ mod tests {
             name: "test".to_string(),
             description: "desc".to_string(),
             cmd: Some("echo ok".to_string()),
+            path: None,
             timeout: Some(60),
             requirements: vec!["REQ-FUNC-001".to_string()],
         };
