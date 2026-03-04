@@ -76,3 +76,15 @@ fn gate_criterion_schema_snapshot() {
     let schema = schemars::schema_for!(assay_types::GateCriterion);
     assert_json_snapshot!("gate-criterion-schema", schema.to_value());
 }
+
+#[test]
+fn gate_run_summary_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::GateRunSummary);
+    assert_json_snapshot!("gate-run-summary-schema", schema.to_value());
+}
+
+#[test]
+fn criterion_result_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::CriterionResult);
+    assert_json_snapshot!("criterion-result-schema", schema.to_value());
+}
