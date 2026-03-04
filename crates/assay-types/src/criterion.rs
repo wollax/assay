@@ -23,6 +23,11 @@ pub struct Criterion {
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub cmd: Option<String>,
 
+    /// Optional file path to check for existence.
+    /// When set (and `cmd` is `None`), the criterion evaluates as a `FileExists` gate.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub path: Option<String>,
+
     /// Optional timeout in seconds for this criterion's command.
     /// Overrides the global default but is overridden by CLI `--timeout`.
     #[serde(skip_serializing_if = "Option::is_none", default)]
@@ -46,6 +51,7 @@ mod tests {
             name: "builds cleanly".to_string(),
             description: "The project compiles without warnings".to_string(),
             cmd: None,
+            path: None,
             timeout: None,
         };
 
@@ -69,6 +75,7 @@ mod tests {
             name: "tests pass".to_string(),
             description: "All unit tests pass".to_string(),
             cmd: Some("cargo test".to_string()),
+            path: None,
             timeout: None,
         };
 
@@ -88,6 +95,7 @@ mod tests {
             name: "long test".to_string(),
             description: "A slow integration test".to_string(),
             cmd: Some("cargo test -- --ignored".to_string()),
+            path: None,
             timeout: Some(60),
         };
 
