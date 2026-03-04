@@ -194,9 +194,9 @@ fn colors_enabled() -> bool {
 
 /// Format a criterion type label, optionally with ANSI color.
 ///
-/// "executable" (has a `cmd`) renders green; "descriptive" renders yellow.
-fn format_criteria_type(has_cmd: bool, color: bool) -> String {
-    if has_cmd {
+/// "executable" (has a `cmd` or `path`) renders green; "descriptive" renders yellow.
+fn format_criteria_type(is_executable: bool, color: bool) -> String {
+    if is_executable {
         if color {
             "\x1b[32mexecutable\x1b[0m".to_string()
         } else {
@@ -384,7 +384,8 @@ fn print_criteria_table(criteria: &[assay_types::Criterion]) {
     );
 
     for (i, criterion) in criteria.iter().enumerate() {
-        let type_label = format_criteria_type(criterion.cmd.is_some(), color);
+        let type_label =
+            format_criteria_type(criterion.cmd.is_some() || criterion.path.is_some(), color);
         let cmd_display = criterion.cmd.as_deref().unwrap_or("");
 
         if color {
@@ -620,7 +621,7 @@ fn stream_criterion(
     color: bool,
     counters: &mut StreamCounters,
 ) {
-    if criterion.cmd.is_none() {
+    if criterion.cmd.is_none() && criterion.path.is_none() {
         counters.skipped += 1;
         return;
     }
@@ -754,7 +755,10 @@ fn handle_gate_run_all(cli_timeout: Option<u64>, verbose: bool, json: bool) {
                 .collect(),
         };
 
-        let executable_count = criteria.iter().filter(|c| c.cmd.is_some()).count();
+        let executable_count = criteria
+            .iter()
+            .filter(|c| c.cmd.is_some() || c.path.is_some())
+            .count();
         if executable_count == 0 {
             eprintln!("  No executable criteria");
             counters.skipped += criteria.len();
@@ -832,7 +836,10 @@ fn handle_gate_run(name: &str, cli_timeout: Option<u64>, verbose: bool, json: bo
         failed: 0,
         skipped: 0,
     };
-    let executable_count = criteria.iter().filter(|c| c.cmd.is_some()).count();
+    let executable_count = criteria
+        .iter()
+        .filter(|c| c.cmd.is_some() || c.path.is_some())
+        .count();
 
     if executable_count == 0 {
         println!("No executable criteria found");
@@ -931,7 +938,11 @@ fn show_status(root: &Path) -> Result<(), String> {
         match entry {
             SpecEntry::Legacy { slug, spec } => {
                 let total = spec.criteria.len();
-                let executable = spec.criteria.iter().filter(|c| c.cmd.is_some()).count();
+                let executable = spec
+                    .criteria
+                    .iter()
+                    .filter(|c| c.cmd.is_some() || c.path.is_some())
+                    .count();
                 println!(
                     "  {:<width$}  {total} criteria ({executable} executable)",
                     slug,
@@ -940,7 +951,11 @@ fn show_status(root: &Path) -> Result<(), String> {
             }
             SpecEntry::Directory { slug, gates, .. } => {
                 let total = gates.criteria.len();
-                let executable = gates.criteria.iter().filter(|c| c.cmd.is_some()).count();
+                let executable = gates
+                    .criteria
+                    .iter()
+                    .filter(|c| c.cmd.is_some() || c.path.is_some())
+                    .count();
                 println!(
                     "  {:<width$}  [srs] {total} criteria ({executable} executable)",
                     slug,
