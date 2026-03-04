@@ -29,7 +29,8 @@
 - [x] Phase 11: Type System Foundation (2 plans) — 2026-03-04
   - [x] 11-01: Type relocation + serde hygiene
   - [x] 11-02: Schema snapshots, roundtrip tests, schema regeneration
-- [ ] Phase 12: FileExists Gate Wiring
+- [ ] Phase 12: FileExists Gate Wiring (1 plan)
+  - [ ] 12-01: Add path field, wire dispatch, update tests and snapshots
 - [ ] Phase 13: Enforcement Levels
 - [ ] Phase 14: Run History Core
 - [ ] Phase 15: Run History CLI
