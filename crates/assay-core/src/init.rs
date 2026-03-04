@@ -24,8 +24,8 @@ pub struct InitResult {
 
 /// Initialize an Assay project at the given root directory.
 ///
-/// Creates `.assay/config.toml`, `.assay/specs/`, `.assay/.gitignore`,
-/// and an example spec file.
+/// Creates `.assay/config.toml`, `.assay/specs/`, `.assay/srs.md`,
+/// `.assay/.gitignore`, and an example spec file.
 ///
 /// Returns `AssayError::AlreadyInitialized` if `.assay/` already exists.
 pub fn init(root: &Path, options: &InitOptions) -> Result<InitResult> {
@@ -79,6 +79,17 @@ pub fn init(root: &Path, options: &InitOptions) -> Result<InitResult> {
         source,
     })?;
     created_files.push(spec_path);
+
+    // SRS template
+    let srs_path = assay_dir.join("srs.md");
+    std::fs::write(&srs_path, render_srs_template(&project_name)).map_err(|source| {
+        AssayError::Io {
+            operation: "writing SRS template".into(),
+            path: srs_path.clone(),
+            source,
+        }
+    })?;
+    created_files.push(srs_path);
 
     // .gitignore inside .assay/
     let gitignore_path = assay_dir.join(".gitignore");
@@ -159,6 +170,63 @@ description = "A README file exists in the project root"
 "#
 }
 
+/// Generate an IEEE 830/29148-inspired SRS Markdown template.
+fn render_srs_template(project_name: &str) -> String {
+    format!(
+        r#"# Software Requirements Specification
+## {project_name}
+
+> This document follows the structure of IEEE 830/29148.
+> Fill in sections as your project evolves. Delete sections that don't apply.
+
+### 1. Introduction
+
+#### 1.1 Purpose
+<!-- What does this system do? Who is this document for? -->
+
+#### 1.2 Scope
+<!-- What is included and excluded from this project? -->
+
+#### 1.3 Definitions & Acronyms
+<!-- Key terms used throughout the project -->
+
+| Term | Definition |
+|------|-----------|
+|      |           |
+
+### 2. Overall Description
+
+#### 2.1 Product Perspective
+<!-- How does this system fit into a larger context? -->
+
+#### 2.2 Product Functions
+<!-- High-level summary of major functions -->
+
+#### 2.3 User Classes and Characteristics
+<!-- Who uses this system? What are their needs? -->
+
+#### 2.4 Operating Environment
+<!-- Platforms, browsers, dependencies, infrastructure -->
+
+#### 2.5 Constraints
+<!-- Technical, regulatory, or business constraints -->
+
+#### 2.6 Assumptions and Dependencies
+<!-- What must be true for this project to succeed? -->
+
+### 3. Specific Requirements
+
+<!-- Add feature specs as subdirectories under .assay/specs/.
+     Each feature has its own spec.toml and gates.toml.
+     Reference requirement IDs here using the REQ-[AREA]-[NNN] format. -->
+
+### 4. Appendices
+
+<!-- Supporting material: wireframes, data models, API contracts, etc. -->
+"#
+    )
+}
+
 /// Generate .gitignore content for the .assay/ directory.
 fn render_gitignore() -> &'static str {
     r#"# Assay transient files
@@ -204,11 +272,13 @@ mod tests {
         assert!(root.join(".assay/config.toml").is_file());
         // hello-world.toml exists
         assert!(root.join(".assay/specs/hello-world.toml").is_file());
+        // srs.md exists
+        assert!(root.join(".assay/srs.md").is_file());
         // .gitignore exists
         assert!(root.join(".assay/.gitignore").is_file());
 
-        // created_files tracks all three written files
-        assert_eq!(result.created_files.len(), 3);
+        // created_files tracks all four written files
+        assert_eq!(result.created_files.len(), 4);
 
         cleanup(&root);
     }

@@ -1,0 +1,48 @@
+---
+source: crates/assay-types/tests/schema_snapshots.rs
+expression: schema.to_value()
+---
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "A single gate criterion with optional requirement traceability.\n\nExtends the concept of [`crate::Criterion`] with a `requirements` field\nthat links criteria to specific requirement IDs (e.g., `REQ-FUNC-001`).",
+  "properties": {
+    "cmd": {
+      "description": "Optional shell command to verify this criterion.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "description": {
+      "description": "Detailed description of what this criterion checks.",
+      "type": "string"
+    },
+    "name": {
+      "description": "Human-readable name for this criterion.",
+      "type": "string"
+    },
+    "requirements": {
+      "description": "Requirement IDs this criterion traces to (e.g., `[\"REQ-FUNC-001\"]`).",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "timeout": {
+      "description": "Optional timeout in seconds for this criterion's command.",
+      "format": "uint64",
+      "minimum": 0,
+      "type": [
+        "integer",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "name",
+    "description"
+  ],
+  "title": "GateCriterion",
+  "type": "object"
+}

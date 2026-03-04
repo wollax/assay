@@ -1,9 +1,15 @@
 pub mod criterion;
+pub mod feature_spec;
 pub mod gate;
+pub mod gate_run;
+pub mod gates_spec;
 pub mod schema_registry;
 
 pub use criterion::Criterion;
+pub use feature_spec::FeatureSpec;
 pub use gate::{GateKind, GateResult};
+pub use gate_run::{CriterionResult, GateRunSummary};
+pub use gates_spec::{GateCriterion, GatesSpec};
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};

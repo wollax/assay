@@ -94,6 +94,42 @@ pub enum AssayError {
         /// The directory that was searched.
         specs_dir: PathBuf,
     },
+
+    /// Feature spec (`spec.toml`) parsing failed.
+    #[error("parsing feature spec `{path}`: {message}")]
+    FeatureSpecParse {
+        /// The spec.toml file that failed to parse.
+        path: PathBuf,
+        /// The parse error message.
+        message: String,
+    },
+
+    /// Feature spec (`spec.toml`) validation failed.
+    #[error("invalid feature spec `{path}`:\n{}", .errors.iter().map(|e| format!("  - {e}")).collect::<Vec<_>>().join("\n"))]
+    FeatureSpecValidation {
+        /// The spec.toml file that failed validation.
+        path: PathBuf,
+        /// All validation errors found.
+        errors: Vec<SpecError>,
+    },
+
+    /// Gates spec (`gates.toml`) parsing failed.
+    #[error("parsing gates spec `{path}`: {message}")]
+    GatesSpecParse {
+        /// The gates.toml file that failed to parse.
+        path: PathBuf,
+        /// The parse error message.
+        message: String,
+    },
+
+    /// Gates spec (`gates.toml`) validation failed.
+    #[error("invalid gates spec `{path}`:\n{}", .errors.iter().map(|e| format!("  - {e}")).collect::<Vec<_>>().join("\n"))]
+    GatesSpecValidation {
+        /// The gates.toml file that failed validation.
+        path: PathBuf,
+        /// All validation errors found.
+        errors: Vec<SpecError>,
+    },
 }
 
 /// Convenience result alias for Assay operations.

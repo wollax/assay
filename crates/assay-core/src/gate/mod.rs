@@ -23,9 +23,11 @@ use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 use chrono::Utc;
-use serde::Serialize;
 
-use assay_types::{Criterion, GateKind, GateResult, Spec};
+use assay_types::{
+    Criterion, CriterionResult, GateCriterion, GateKind, GateResult, GateRunSummary, GatesSpec,
+    Spec,
+};
 
 use crate::error::{AssayError, Result};
 
@@ -37,36 +39,6 @@ const POLL_INTERVAL_MS: u64 = 50;
 
 /// Minimum timeout floor in seconds.
 const MIN_TIMEOUT_SECS: u64 = 1;
-
-/// Summary of evaluating all criteria in a spec.
-///
-/// This is a computed summary type (not a persisted DTO). It lives in
-/// `assay-core`, not `assay-types`, because it represents aggregate
-/// evaluation results rather than configuration or state.
-#[derive(Debug, Clone, Serialize)]
-pub struct GateRunSummary {
-    /// Spec name that was evaluated.
-    pub spec_name: String,
-    /// Results for each criterion that was evaluated or skipped.
-    pub results: Vec<CriterionResult>,
-    /// Number of criteria that passed.
-    pub passed: usize,
-    /// Number of criteria that failed.
-    pub failed: usize,
-    /// Number of criteria skipped (descriptive-only, no cmd).
-    pub skipped: usize,
-    /// Total wall-clock duration for all evaluations in milliseconds.
-    pub total_duration_ms: u64,
-}
-
-/// A criterion paired with its evaluation result.
-#[derive(Debug, Clone, Serialize)]
-pub struct CriterionResult {
-    /// The name of the criterion that was evaluated.
-    pub criterion_name: String,
-    /// The gate result, or `None` if skipped (no cmd).
-    pub result: Option<GateResult>,
-}
 
 /// Evaluate a single criterion as a gate.
 ///
@@ -174,6 +146,94 @@ pub fn evaluate_all(
         failed,
         skipped,
         total_duration_ms: start.elapsed().as_millis() as u64,
+    }
+}
+
+/// Evaluate all criteria in a `GatesSpec` sequentially.
+///
+/// Equivalent to [`evaluate_all`] but for the directory-based `GatesSpec`
+/// format. Each `GateCriterion` is converted to a `Criterion` for evaluation.
+/// The `requirements` field on `GateCriterion` is not used during evaluation
+/// (it's metadata for traceability).
+pub fn evaluate_all_gates(
+    gates: &GatesSpec,
+    working_dir: &Path,
+    cli_timeout: Option<u64>,
+    config_timeout: Option<u64>,
+) -> GateRunSummary {
+    let start = Instant::now();
+    let mut results = Vec::with_capacity(gates.criteria.len());
+    let mut passed = 0usize;
+    let mut failed = 0usize;
+    let mut skipped = 0usize;
+
+    for gate_criterion in &gates.criteria {
+        let criterion = to_criterion(gate_criterion);
+
+        if criterion.cmd.is_none() {
+            skipped += 1;
+            results.push(CriterionResult {
+                criterion_name: criterion.name.clone(),
+                result: None,
+            });
+            continue;
+        }
+
+        let timeout = resolve_timeout(cli_timeout, criterion.timeout, config_timeout);
+
+        match evaluate(&criterion, working_dir, timeout) {
+            Ok(gate_result) => {
+                if gate_result.passed {
+                    passed += 1;
+                } else {
+                    failed += 1;
+                }
+                results.push(CriterionResult {
+                    criterion_name: criterion.name.clone(),
+                    result: Some(gate_result),
+                });
+            }
+            Err(err) => {
+                failed += 1;
+                results.push(CriterionResult {
+                    criterion_name: criterion.name.clone(),
+                    result: Some(GateResult {
+                        passed: false,
+                        kind: GateKind::Command {
+                            cmd: criterion.cmd.clone().unwrap_or_default(),
+                        },
+                        stdout: String::new(),
+                        stderr: format!("gate evaluation error: {err}"),
+                        exit_code: None,
+                        duration_ms: 0,
+                        timestamp: Utc::now(),
+                        truncated: false,
+                        original_bytes: None,
+                    }),
+                });
+            }
+        }
+    }
+
+    GateRunSummary {
+        spec_name: gates.name.clone(),
+        results,
+        passed,
+        failed,
+        skipped,
+        total_duration_ms: start.elapsed().as_millis() as u64,
+    }
+}
+
+/// Convert a `GateCriterion` to a `Criterion` for evaluation.
+///
+/// Drops the `requirements` field (traceability metadata, not used in evaluation).
+pub fn to_criterion(gc: &GateCriterion) -> Criterion {
+    Criterion {
+        name: gc.name.clone(),
+        description: gc.description.clone(),
+        cmd: gc.cmd.clone(),
+        timeout: gc.timeout,
     }
 }
 
@@ -718,5 +778,108 @@ mod tests {
         assert_eq!(summary.passed, 0);
         let result = summary.results[0].result.as_ref().unwrap();
         assert!(!result.passed);
+    }
+
+    // ── evaluate_all_gates ────────────────────────────────────────────
+
+    #[test]
+    fn evaluate_all_gates_mixed_criteria() {
+        let dir = tempfile::tempdir().unwrap();
+        let gates = GatesSpec {
+            name: "mixed".to_string(),
+            description: String::new(),
+            criteria: vec![
+                GateCriterion {
+                    name: "passes".to_string(),
+                    description: "will pass".to_string(),
+                    cmd: Some("true".to_string()),
+                    timeout: None,
+                    requirements: vec!["REQ-FUNC-001".to_string()],
+                },
+                GateCriterion {
+                    name: "descriptive".to_string(),
+                    description: "no cmd".to_string(),
+                    cmd: None,
+                    timeout: None,
+                    requirements: vec![],
+                },
+                GateCriterion {
+                    name: "fails".to_string(),
+                    description: "will fail".to_string(),
+                    cmd: Some("false".to_string()),
+                    timeout: None,
+                    requirements: vec!["REQ-SEC-001".to_string()],
+                },
+            ],
+        };
+
+        let summary = evaluate_all_gates(&gates, dir.path(), None, None);
+
+        assert_eq!(summary.spec_name, "mixed");
+        assert_eq!(summary.passed, 1, "one criterion should pass");
+        assert_eq!(summary.failed, 1, "one criterion should fail");
+        assert_eq!(summary.skipped, 1, "one criterion should be skipped");
+        assert_eq!(summary.results.len(), 3);
+        assert!(summary.results[1].result.is_none());
+    }
+
+    #[test]
+    fn evaluate_all_gates_equivalent_to_legacy() {
+        let dir = tempfile::tempdir().unwrap();
+
+        // Create equivalent specs in both formats
+        let legacy_spec = Spec {
+            name: "test".to_string(),
+            description: String::new(),
+            criteria: vec![Criterion {
+                name: "echo".to_string(),
+                description: "echo test".to_string(),
+                cmd: Some("echo ok".to_string()),
+                timeout: None,
+            }],
+        };
+
+        let gates_spec = GatesSpec {
+            name: "test".to_string(),
+            description: String::new(),
+            criteria: vec![GateCriterion {
+                name: "echo".to_string(),
+                description: "echo test".to_string(),
+                cmd: Some("echo ok".to_string()),
+                timeout: None,
+                requirements: vec![],
+            }],
+        };
+
+        let legacy_summary = evaluate_all(&legacy_spec, dir.path(), None, None);
+        let gates_summary = evaluate_all_gates(&gates_spec, dir.path(), None, None);
+
+        // Both return GateRunSummary with same structure
+        assert_eq!(legacy_summary.spec_name, gates_summary.spec_name);
+        assert_eq!(legacy_summary.passed, gates_summary.passed);
+        assert_eq!(legacy_summary.failed, gates_summary.failed);
+        assert_eq!(legacy_summary.skipped, gates_summary.skipped);
+        assert_eq!(legacy_summary.results.len(), gates_summary.results.len());
+        assert_eq!(
+            legacy_summary.results[0].criterion_name,
+            gates_summary.results[0].criterion_name
+        );
+    }
+
+    #[test]
+    fn to_criterion_drops_requirements() {
+        let gc = GateCriterion {
+            name: "test".to_string(),
+            description: "desc".to_string(),
+            cmd: Some("echo ok".to_string()),
+            timeout: Some(60),
+            requirements: vec!["REQ-FUNC-001".to_string()],
+        };
+
+        let c = to_criterion(&gc);
+        assert_eq!(c.name, "test");
+        assert_eq!(c.description, "desc");
+        assert_eq!(c.cmd, Some("echo ok".to_string()));
+        assert_eq!(c.timeout, Some(60));
     }
 }
