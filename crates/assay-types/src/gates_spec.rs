@@ -24,6 +24,11 @@ pub struct GateCriterion {
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub cmd: Option<String>,
 
+    /// Optional file path to check for existence.
+    /// When set (and `cmd` is `None`), the criterion evaluates as a `FileExists` gate.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub path: Option<String>,
+
     /// Optional timeout in seconds for this criterion's command.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub timeout: Option<u64>,
@@ -78,6 +83,7 @@ mod tests {
                 name: "compiles".to_string(),
                 description: "Code compiles".to_string(),
                 cmd: Some("cargo build".to_string()),
+                path: None,
                 timeout: None,
                 requirements: vec![],
             }],
@@ -169,6 +175,7 @@ unknown_crit_key = true
             name: "descriptive".to_string(),
             description: "No command".to_string(),
             cmd: None,
+            path: None,
             timeout: None,
             requirements: vec![],
         };
@@ -194,6 +201,7 @@ unknown_crit_key = true
             name: "slow-test".to_string(),
             description: "A slow integration test".to_string(),
             cmd: Some("cargo test -- --ignored".to_string()),
+            path: None,
             timeout: Some(120),
             requirements: vec!["REQ-FUNC-001".to_string()],
         };
