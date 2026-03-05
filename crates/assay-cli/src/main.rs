@@ -742,20 +742,41 @@ fn handle_gate_run_all(cli_timeout: Option<u64>, verbose: bool, json: bool) {
         return;
     }
 
+    let assay_dir = root.join(".assay");
+    let max_history = config.gates.as_ref().and_then(|g| g.max_history);
+
     if json {
         let summaries: Vec<_> = result
             .entries
             .iter()
-            .map(|entry| match entry {
-                SpecEntry::Legacy { spec, .. } => {
-                    assay_core::gate::evaluate_all(spec, &working_dir, cli_timeout, config_timeout)
-                }
-                SpecEntry::Directory { gates, .. } => assay_core::gate::evaluate_all_gates(
-                    gates,
+            .map(|entry| {
+                let summary = match entry {
+                    SpecEntry::Legacy { spec, .. } => {
+                        assay_core::gate::evaluate_all(
+                            spec,
+                            &working_dir,
+                            cli_timeout,
+                            config_timeout,
+                        )
+                    }
+                    SpecEntry::Directory { gates, .. } => {
+                        assay_core::gate::evaluate_all_gates(
+                            gates,
+                            &working_dir,
+                            cli_timeout,
+                            config_timeout,
+                        )
+                    }
+                };
+                save_run_record(
+                    &assay_dir,
+                    &summary.spec_name,
                     &working_dir,
-                    cli_timeout,
-                    config_timeout,
-                ),
+                    summary.clone(),
+                    max_history,
+                    true,
+                );
+                summary
             })
             .collect();
 
@@ -818,10 +839,14 @@ fn handle_gate_run_all(cli_timeout: Option<u64>, verbose: bool, json: bool) {
             continue;
         }
 
+        let before_passed = counters.passed;
+        let before_failed = counters.failed;
+        let before_skipped = counters.skipped;
+
         for criterion in &criteria {
-            let before_failed = counters.failed;
+            let pre_fail = counters.failed;
             stream_criterion(criterion, &working_dir, &cfg, &mut counters);
-            if counters.failed > before_failed {
+            if counters.failed > pre_fail {
                 let enforcement =
                     assay_core::gate::resolve_enforcement(criterion.enforcement, gate_section);
                 if enforcement == assay_types::Enforcement::Required {
@@ -829,6 +854,27 @@ fn handle_gate_run_all(cli_timeout: Option<u64>, verbose: bool, json: bool) {
                 }
             }
         }
+
+        // Save per-spec history (streaming mode)
+        let spec_passed = counters.passed - before_passed;
+        let spec_failed = counters.failed - before_failed;
+        let spec_skipped = counters.skipped - before_skipped;
+        save_run_record(
+            &assay_dir,
+            entry.slug(),
+            &working_dir,
+            assay_types::GateRunSummary {
+                spec_name: entry.slug().to_string(),
+                results: Vec::new(),
+                passed: spec_passed,
+                failed: spec_failed,
+                skipped: spec_skipped,
+                total_duration_ms: 0,
+                enforcement: assay_types::EnforcementSummary::default(),
+            },
+            max_history,
+            false,
+        );
     }
 
     print_gate_summary(&counters, color, &format!("Results ({spec_count} specs)"));
@@ -854,6 +900,9 @@ fn handle_gate_run(name: &str, cli_timeout: Option<u64>, verbose: bool, json: bo
         }
     };
 
+    let assay_dir = root.join(".assay");
+    let max_history = config.gates.as_ref().and_then(|g| g.max_history);
+
     if json {
         let summary = match &entry {
             SpecEntry::Legacy { spec, .. } => {
@@ -866,6 +915,17 @@ fn handle_gate_run(name: &str, cli_timeout: Option<u64>, verbose: bool, json: bo
                 config_timeout,
             ),
         };
+
+        // Save history with full fidelity (includes per-criterion results)
+        save_run_record(
+            &assay_dir,
+            name,
+            &working_dir,
+            summary.clone(),
+            max_history,
+            true,
+        );
+
         let output = serde_json::to_string_pretty(&summary).unwrap_or_else(|e| {
             eprintln!("Error: failed to serialize gate results: {e}");
             std::process::exit(1);
@@ -926,9 +986,60 @@ fn handle_gate_run(name: &str, cli_timeout: Option<u64>, verbose: bool, json: bo
         }
     }
 
+    // Save history (streaming mode has no per-criterion results)
+    save_run_record(
+        &assay_dir,
+        name,
+        &working_dir,
+        assay_types::GateRunSummary {
+            spec_name: name.to_string(),
+            results: Vec::new(),
+            passed: counters.passed,
+            failed: counters.failed,
+            skipped: counters.skipped,
+            total_duration_ms: 0,
+            enforcement: assay_types::EnforcementSummary::default(),
+        },
+        max_history,
+        false,
+    );
+
     print_gate_summary(&counters, color, "Results");
     if has_required_failure {
         std::process::exit(1);
+    }
+}
+
+/// Build a [`GateRunRecord`] and persist it via [`assay_core::history::save()`].
+///
+/// Prune messages are printed to stderr unless `suppress_prune_msg` is true (e.g., JSON mode).
+/// Save failures are non-fatal warnings.
+fn save_run_record(
+    assay_dir: &Path,
+    name: &str,
+    working_dir: &Path,
+    summary: assay_types::GateRunSummary,
+    max_history: Option<usize>,
+    suppress_prune_msg: bool,
+) {
+    let timestamp = chrono::Utc::now();
+    let run_id = assay_core::history::generate_run_id(&timestamp);
+    let record = assay_types::GateRunRecord {
+        run_id,
+        assay_version: env!("CARGO_PKG_VERSION").to_string(),
+        timestamp,
+        working_dir: Some(working_dir.display().to_string()),
+        summary,
+    };
+    match assay_core::history::save(assay_dir, &record, max_history) {
+        Ok(result) => {
+            if result.pruned > 0 && !suppress_prune_msg {
+                eprintln!("Pruned {} old run(s) for {name}", result.pruned);
+            }
+        }
+        Err(e) => {
+            eprintln!("Warning: could not save run history: {e}");
+        }
     }
 }
 
