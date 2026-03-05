@@ -37,9 +37,7 @@ pub fn generate_run_id(timestamp: &DateTime<Utc>) -> String {
 ///
 /// Returns the path to the written file.
 pub fn save(assay_dir: &Path, record: &GateRunRecord) -> Result<PathBuf> {
-    let results_dir = assay_dir
-        .join("results")
-        .join(&record.summary.spec_name);
+    let results_dir = assay_dir.join("results").join(&record.summary.spec_name);
 
     std::fs::create_dir_all(&results_dir).map_err(|source| AssayError::Io {
         operation: "creating results directory".into(),
@@ -132,9 +130,7 @@ pub fn list(assay_dir: &Path, spec_name: &str) -> Result<Vec<String>> {
         .filter_map(|entry| {
             let path = entry.path();
             if path.extension().is_some_and(|ext| ext == "json") {
-                path.file_stem()
-                    .and_then(|s| s.to_str())
-                    .map(String::from)
+                path.file_stem().and_then(|s| s.to_str()).map(String::from)
             } else {
                 None
             }
@@ -250,7 +246,10 @@ mod tests {
         assert_eq!(loaded.summary.passed, record.summary.passed);
         assert_eq!(loaded.summary.failed, record.summary.failed);
         assert_eq!(loaded.summary.skipped, record.summary.skipped);
-        assert_eq!(loaded.summary.total_duration_ms, record.summary.total_duration_ms);
+        assert_eq!(
+            loaded.summary.total_duration_ms,
+            record.summary.total_duration_ms
+        );
     }
 
     #[test]
