@@ -118,6 +118,7 @@ dependencies = [
  "assay-core",
  "assay-mcp",
  "assay-types",
+ "chrono",
  "clap",
  "serde_json",
  "tokio",
