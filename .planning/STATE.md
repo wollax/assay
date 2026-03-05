@@ -9,19 +9,19 @@ See: .planning/PROJECT.md (updated 2026-03-02)
 
 ## Current Position
 
-Phase: 16 — Agent Gate Recording
+Phase: 16 — Agent Gate Recording (VERIFIED & COMPLETE)
 Plan: 04 of 4 (complete)
-Status: Phase 16 complete
-Last activity: 2026-03-05 — Completed 16-04-PLAN.md (Visual Distinction, Schema Snapshots, Quality Gate)
+Status: Phase complete, verified, moved to completed/
+Last activity: 2026-03-05 — Phase 16 verified and completed
 
-Progress: v0.2.0 [██████░   ] ~42%
+Progress: v0.2.0 [██████░   ] ~46%
 
 ## Milestone Progress
 
 | Milestone | Phases | Requirements | Complete |
 |-----------|--------|--------------|----------|
 | v0.1.0 | 10 | 43 | 100% (shipped) |
-| v0.2.0 | 13 (11-23) | 52 | ~38% |
+| v0.2.0 | 13 (11-23) | 52 | ~46% |
 
 ## Accumulated Context
 
@@ -131,7 +131,7 @@ None.
 
 ### Next Actions
 
-Phase 16 complete. Next: Phase 17 (pending selection)
+Phase 16 verified and complete. Next: Phase 17 — MCP Hardening & Agent History
 
 ### Session Continuity
 
