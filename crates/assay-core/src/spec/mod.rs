@@ -152,8 +152,9 @@ pub fn validate(spec: &Spec) -> std::result::Result<(), Vec<SpecError>> {
 
         // Verify at least one executable criterion is required.
         // AgentReport criteria count as "executable" (evaluated through sessions).
-        let is_executable =
-            |c: &assay_types::Criterion| c.cmd.is_some() || c.path.is_some() || c.kind == Some(CriterionKind::AgentReport);
+        let is_executable = |c: &assay_types::Criterion| {
+            c.cmd.is_some() || c.path.is_some() || c.kind == Some(CriterionKind::AgentReport)
+        };
         let has_executable = spec.criteria.iter().any(&is_executable);
         let has_required_executable = spec.criteria.iter().any(|c| {
             let enforcement = crate::gate::resolve_enforcement(c.enforcement, spec.gate.as_ref());
@@ -1867,23 +1868,23 @@ cmd = "true"
             name: "test".to_string(),
             description: String::new(),
             gate: None,
-            criteria: vec![
-                Criterion {
-                    name: "agent-with-cmd".to_string(),
-                    description: "agent criterion with cmd".to_string(),
-                    cmd: Some("echo bad".to_string()),
-                    path: None,
-                    timeout: None,
-                    enforcement: Some(Enforcement::Required),
-                    kind: Some(CriterionKind::AgentReport),
-                    prompt: Some("Review code".to_string()),
-                },
-            ],
+            criteria: vec![Criterion {
+                name: "agent-with-cmd".to_string(),
+                description: "agent criterion with cmd".to_string(),
+                cmd: Some("echo bad".to_string()),
+                path: None,
+                timeout: None,
+                enforcement: Some(Enforcement::Required),
+                kind: Some(CriterionKind::AgentReport),
+                prompt: Some("Review code".to_string()),
+            }],
         };
 
         let errors = validate(&spec).unwrap_err();
         assert!(
-            errors.iter().any(|e| e.message.contains("AgentReport") && e.message.contains("cmd")),
+            errors
+                .iter()
+                .any(|e| e.message.contains("AgentReport") && e.message.contains("cmd")),
             "should reject AgentReport with cmd, got: {errors:?}"
         );
     }
@@ -1894,23 +1895,23 @@ cmd = "true"
             name: "test".to_string(),
             description: String::new(),
             gate: None,
-            criteria: vec![
-                Criterion {
-                    name: "agent-with-path".to_string(),
-                    description: "agent criterion with path".to_string(),
-                    cmd: None,
-                    path: Some("README.md".to_string()),
-                    timeout: None,
-                    enforcement: Some(Enforcement::Required),
-                    kind: Some(CriterionKind::AgentReport),
-                    prompt: Some("Check file".to_string()),
-                },
-            ],
+            criteria: vec![Criterion {
+                name: "agent-with-path".to_string(),
+                description: "agent criterion with path".to_string(),
+                cmd: None,
+                path: Some("README.md".to_string()),
+                timeout: None,
+                enforcement: Some(Enforcement::Required),
+                kind: Some(CriterionKind::AgentReport),
+                prompt: Some("Check file".to_string()),
+            }],
         };
 
         let errors = validate(&spec).unwrap_err();
         assert!(
-            errors.iter().any(|e| e.message.contains("AgentReport") && e.message.contains("path")),
+            errors
+                .iter()
+                .any(|e| e.message.contains("AgentReport") && e.message.contains("path")),
             "should reject AgentReport with path, got: {errors:?}"
         );
     }

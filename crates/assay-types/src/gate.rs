@@ -351,7 +351,10 @@ mod tests {
         let json = serde_json::to_string(&result).expect("serialize to JSON");
         assert!(json.contains("evidence"), "JSON should include evidence");
         assert!(json.contains("reasoning"), "JSON should include reasoning");
-        assert!(json.contains("confidence"), "JSON should include confidence");
+        assert!(
+            json.contains("confidence"),
+            "JSON should include confidence"
+        );
         assert!(
             json.contains("evaluator_role"),
             "JSON should include evaluator_role"
