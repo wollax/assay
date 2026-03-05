@@ -106,7 +106,11 @@ fn prune(assay_dir: &Path, spec_name: &str, max_count: usize) -> Result<usize> {
 /// of `Some(0)` or `None` disables pruning.
 ///
 /// Returns a [`SaveResult`] containing the path and pruning count.
-pub fn save(assay_dir: &Path, record: &GateRunRecord, max_history: Option<usize>) -> Result<SaveResult> {
+pub fn save(
+    assay_dir: &Path,
+    record: &GateRunRecord,
+    max_history: Option<usize>,
+) -> Result<SaveResult> {
     validate_path_component(&record.summary.spec_name, "spec name")?;
     validate_path_component(&record.run_id, "run ID")?;
     let results_dir = assay_dir.join("results").join(&record.summary.spec_name);
@@ -296,7 +300,11 @@ mod tests {
 
         let result = save(dir.path(), &record, None).unwrap();
 
-        assert!(result.path.exists(), "saved file should exist at {:?}", result.path);
+        assert!(
+            result.path.exists(),
+            "saved file should exist at {:?}",
+            result.path
+        );
         assert_eq!(result.path.extension().unwrap(), "json");
     }
 
@@ -375,7 +383,10 @@ mod tests {
         let r1_result = save(dir.path(), &r1, None).unwrap();
         let r2_result = save(dir.path(), &r2, None).unwrap();
 
-        assert_ne!(r1_result.path, r2_result.path, "two saves should produce distinct files");
+        assert_ne!(
+            r1_result.path, r2_result.path,
+            "two saves should produce distinct files"
+        );
         assert!(r1_result.path.exists());
         assert!(r2_result.path.exists());
 

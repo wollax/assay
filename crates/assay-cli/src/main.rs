@@ -751,22 +751,18 @@ fn handle_gate_run_all(cli_timeout: Option<u64>, verbose: bool, json: bool) {
             .iter()
             .map(|entry| {
                 let summary = match entry {
-                    SpecEntry::Legacy { spec, .. } => {
-                        assay_core::gate::evaluate_all(
-                            spec,
-                            &working_dir,
-                            cli_timeout,
-                            config_timeout,
-                        )
-                    }
-                    SpecEntry::Directory { gates, .. } => {
-                        assay_core::gate::evaluate_all_gates(
-                            gates,
-                            &working_dir,
-                            cli_timeout,
-                            config_timeout,
-                        )
-                    }
+                    SpecEntry::Legacy { spec, .. } => assay_core::gate::evaluate_all(
+                        spec,
+                        &working_dir,
+                        cli_timeout,
+                        config_timeout,
+                    ),
+                    SpecEntry::Directory { gates, .. } => assay_core::gate::evaluate_all_gates(
+                        gates,
+                        &working_dir,
+                        cli_timeout,
+                        config_timeout,
+                    ),
                 };
                 save_run_record(
                     &assay_dir,
@@ -1068,7 +1064,7 @@ fn format_duration_ms(ms: u64) -> String {
         format!("{ms}ms")
     } else if ms < 60_000 {
         let secs = ms as f64 / 1000.0;
-        if ms % 1000 == 0 {
+        if ms.is_multiple_of(1000) {
             format!("{secs:.0}s")
         } else {
             format!("{secs:.1}s")
@@ -1252,10 +1248,7 @@ fn handle_gate_history_detail(name: &str, run_id: &str, json: bool) {
 
     println!("Run: {}", record.run_id);
     println!("Spec: {}", s.spec_name);
-    println!(
-        "Time: {}",
-        record.timestamp.format("%Y-%m-%d %H:%M:%S UTC")
-    );
+    println!("Time: {}", record.timestamp.format("%Y-%m-%d %H:%M:%S UTC"));
     println!("Duration: {}", format_duration_ms(s.total_duration_ms));
     println!("Status: {overall}");
     println!("Assay: {}", record.assay_version);
