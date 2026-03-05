@@ -548,6 +548,9 @@ status = "draft"
     let gates_toml = format!(
         r#"name = "{name}"
 
+[gate]
+enforcement = "required"
+
 [[criteria]]
 name = "compiles"
 description = "{name} compiles without errors"
@@ -613,6 +616,7 @@ struct StreamCounters {
     passed: usize,
     failed: usize,
     skipped: usize,
+    required_failed: usize,
 }
 
 /// Stream a single criterion's evaluation with live "running" -> "PASS/FAIL" display.
@@ -623,6 +627,7 @@ fn stream_criterion(
     config_timeout: Option<u64>,
     verbose: bool,
     color: bool,
+    enforcement: assay_types::Enforcement,
     counters: &mut StreamCounters,
 ) {
     if criterion.cmd.is_none() && criterion.path.is_none() {
@@ -642,6 +647,9 @@ fn stream_criterion(
                 format_pass(color)
             } else {
                 counters.failed += 1;
+                if enforcement == assay_types::Enforcement::Required {
+                    counters.required_failed += 1;
+                }
                 format_fail(color)
             };
 
@@ -653,6 +661,9 @@ fn stream_criterion(
         }
         Err(err) => {
             counters.failed += 1;
+            if enforcement == assay_types::Enforcement::Required {
+                counters.required_failed += 1;
+            }
             eprintln!("{cr}  {} ... {}", criterion.name, format_fail(color));
             eprintln!("    error: {err}");
         }
@@ -671,7 +682,7 @@ fn print_gate_summary(counters: &StreamCounters, color: bool, label: &str) {
         "{label}: {passed_str} passed, {failed_str} failed, {skipped_str} skipped (of {total} total)"
     );
 
-    if counters.failed > 0 {
+    if counters.required_failed > 0 {
         std::process::exit(1);
     }
 }
@@ -722,7 +733,7 @@ fn handle_gate_run_all(cli_timeout: Option<u64>, verbose: bool, json: bool) {
             })
             .collect();
 
-        let any_failed = summaries.iter().any(|s| s.failed > 0);
+        let any_failed = summaries.iter().any(|s| s.enforcement.required_failed > 0);
 
         let output = serde_json::to_string_pretty(&summaries).unwrap_or_else(|e| {
             eprintln!("Error: failed to serialize gate results: {e}");
@@ -741,6 +752,7 @@ fn handle_gate_run_all(cli_timeout: Option<u64>, verbose: bool, json: bool) {
         passed: 0,
         failed: 0,
         skipped: 0,
+        required_failed: 0,
     };
     let spec_count = result.entries.len();
 
@@ -749,6 +761,11 @@ fn handle_gate_run_all(cli_timeout: Option<u64>, verbose: bool, json: bool) {
             eprintln!();
         }
         eprintln!("--- {} ---", entry.slug());
+
+        let gate_section: Option<&assay_types::GateSection> = match entry {
+            SpecEntry::Legacy { spec, .. } => spec.gate.as_ref(),
+            SpecEntry::Directory { gates, .. } => gates.gate.as_ref(),
+        };
 
         let criteria: Vec<assay_types::Criterion> = match entry {
             SpecEntry::Legacy { spec, .. } => spec.criteria.clone(),
@@ -770,6 +787,10 @@ fn handle_gate_run_all(cli_timeout: Option<u64>, verbose: bool, json: bool) {
         }
 
         for criterion in &criteria {
+            let enforcement = assay_core::gate::resolve_enforcement(
+                criterion.enforcement,
+                gate_section,
+            );
             stream_criterion(
                 criterion,
                 &working_dir,
@@ -777,6 +798,7 @@ fn handle_gate_run_all(cli_timeout: Option<u64>, verbose: bool, json: bool) {
                 config_timeout,
                 verbose,
                 color,
+                enforcement,
                 &mut counters,
             );
         }
@@ -819,7 +841,7 @@ fn handle_gate_run(name: &str, cli_timeout: Option<u64>, verbose: bool, json: bo
             std::process::exit(1);
         });
         println!("{output}");
-        if summary.failed > 0 {
+        if summary.enforcement.required_failed > 0 {
             std::process::exit(1);
         }
         return;
@@ -834,11 +856,17 @@ fn handle_gate_run(name: &str, cli_timeout: Option<u64>, verbose: bool, json: bo
             .collect(),
     };
 
+    let gate_section: Option<&assay_types::GateSection> = match &entry {
+        SpecEntry::Legacy { spec, .. } => spec.gate.as_ref(),
+        SpecEntry::Directory { gates, .. } => gates.gate.as_ref(),
+    };
+
     let color = colors_enabled();
     let mut counters = StreamCounters {
         passed: 0,
         failed: 0,
         skipped: 0,
+        required_failed: 0,
     };
     let executable_count = criteria
         .iter()
@@ -851,6 +879,10 @@ fn handle_gate_run(name: &str, cli_timeout: Option<u64>, verbose: bool, json: bo
     }
 
     for criterion in &criteria {
+        let enforcement = assay_core::gate::resolve_enforcement(
+            criterion.enforcement,
+            gate_section,
+        );
         stream_criterion(
             criterion,
             &working_dir,
@@ -858,6 +890,7 @@ fn handle_gate_run(name: &str, cli_timeout: Option<u64>, verbose: bool, json: bo
             config_timeout,
             verbose,
             color,
+            enforcement,
             &mut counters,
         );
     }
