@@ -300,4 +300,47 @@ mod tests {
         assert_eq!(l1.run_id, r1.run_id);
         assert_eq!(l2.run_id, r2.run_id);
     }
+
+    #[test]
+    fn test_concurrent_saves_produce_distinct_files() {
+        use std::sync::Arc;
+        use std::thread;
+
+        let dir = TempDir::new().unwrap();
+        let dir_path = Arc::new(dir.path().to_path_buf());
+        let spec_name = "concurrent-spec";
+
+        let handles: Vec<_> = (0..10)
+            .map(|_| {
+                let path = Arc::clone(&dir_path);
+                let name = spec_name.to_string();
+                thread::spawn(move || {
+                    let record = make_test_record(&name);
+                    let saved_path = save(&path, &record).unwrap();
+                    (record.run_id, saved_path)
+                })
+            })
+            .collect();
+
+        let results: Vec<(String, PathBuf)> =
+            handles.into_iter().map(|h| h.join().unwrap()).collect();
+
+        // All 10 saves produced files.
+        assert_eq!(results.len(), 10);
+
+        // All paths are distinct (no clobbering).
+        let paths: std::collections::HashSet<_> =
+            results.iter().map(|(_, p)| p.clone()).collect();
+        assert_eq!(paths.len(), 10, "all 10 file paths should be distinct");
+
+        // list() returns exactly 10 entries.
+        let ids = list(&dir_path, spec_name).unwrap();
+        assert_eq!(ids.len(), 10, "list() should return 10 run IDs");
+
+        // Each entry deserializes successfully.
+        for id in &ids {
+            let loaded = load(&dir_path, spec_name, id).unwrap();
+            assert_eq!(&loaded.run_id, id);
+        }
+    }
 }
