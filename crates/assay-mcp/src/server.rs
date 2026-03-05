@@ -1,11 +1,12 @@
 //! MCP server implementation with spec and gate tools.
 //!
-//! Provides the [`AssayServer`] which exposes five tools over MCP:
+//! Provides the [`AssayServer`] which exposes six tools over MCP:
 //! - `spec_list` — discover available specs
 //! - `spec_get` — read a full spec definition
 //! - `gate_run` — evaluate quality gate criteria (auto-creates sessions for agent criteria)
 //! - `gate_report` — submit agent evaluation for a criterion in an active session
 //! - `gate_finalize` — finalize a session, persisting all evaluations as a GateRunRecord
+//! - `gate_history` — query past gate run results for a spec
 //!
 //! All domain errors are returned as `CallToolResult` with `isError: true`
 //! so that agents can see and self-correct. Protocol errors (`McpError`)
@@ -111,6 +112,28 @@ struct GateFinalizeParams {
     session_id: String,
 }
 
+/// Parameters for the `gate_history` tool.
+#[derive(Deserialize, JsonSchema)]
+struct GateHistoryParams {
+    /// Spec name to query history for.
+    #[schemars(description = "Spec name to query history for (filename without .toml extension)")]
+    name: String,
+
+    /// Optional run ID to retrieve a specific record. When omitted, returns a list of recent runs.
+    #[schemars(
+        description = "Specific run ID to retrieve full details for. Omit to list recent runs."
+    )]
+    #[serde(default)]
+    run_id: Option<String>,
+
+    /// Maximum number of runs to return in list mode (default: 10).
+    #[schemars(
+        description = "Maximum number of runs to return (default: 10, ignored when run_id is set)"
+    )]
+    #[serde(default)]
+    limit: Option<usize>,
+}
+
 // ── Response structs ─────────────────────────────────────────────────
 
 /// A single entry in the `spec_list` response.
@@ -171,6 +194,38 @@ struct GateReportResponse {
     accepted: bool,
     evaluations_count: usize,
     pending_criteria: Vec<String>,
+}
+
+/// Response for `gate_history` in list mode — returns recent run summaries.
+#[derive(Serialize)]
+struct GateHistoryListResponse {
+    /// Spec name that was queried.
+    spec_name: String,
+    /// Total number of runs available for this spec (before limit is applied).
+    total_runs: usize,
+    /// Run summaries, most recent first.
+    runs: Vec<GateHistoryEntry>,
+}
+
+/// A single run entry in the history list.
+#[derive(Serialize)]
+struct GateHistoryEntry {
+    /// Unique run identifier.
+    run_id: String,
+    /// ISO 8601 timestamp of the run.
+    timestamp: String,
+    /// Number of criteria that passed.
+    passed: usize,
+    /// Number of criteria that failed.
+    failed: usize,
+    /// Number of criteria that were skipped.
+    skipped: usize,
+    /// Number of required criteria that failed.
+    required_failed: usize,
+    /// Number of advisory criteria that failed.
+    advisory_failed: usize,
+    /// Whether the gate was blocked (any required criterion failed).
+    blocked: bool,
 }
 
 /// Per-criterion result within a gate run response.
@@ -572,6 +627,76 @@ impl AssayServer {
 
         Ok(CallToolResult::success(vec![Content::text(json)]))
     }
+
+    /// Query gate run history for a spec.
+    #[tool(
+        description = "Query gate run history for a spec. Without run_id, returns a list of recent runs with summary counts. With run_id, returns the full gate run record including all criterion results. Use this to check past gate outcomes and track quality trends."
+    )]
+    async fn gate_history(
+        &self,
+        params: Parameters<GateHistoryParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let cwd = resolve_cwd()?;
+        let _config = match load_config(&cwd) {
+            Ok(c) => c,
+            Err(err_result) => return Ok(err_result),
+        };
+        let assay_dir = cwd.join(".assay");
+
+        // Detail mode: return full record for a specific run.
+        if let Some(ref run_id) = params.0.run_id {
+            let record = match assay_core::history::load(&assay_dir, &params.0.name, run_id) {
+                Ok(r) => r,
+                Err(e) => return Ok(domain_error(&e)),
+            };
+            let json = serde_json::to_string(&record)
+                .map_err(|e| McpError::internal_error(format!("serialization failed: {e}"), None))?;
+            return Ok(CallToolResult::success(vec![Content::text(json)]));
+        }
+
+        // List mode: return recent run summaries.
+        let all_ids = match assay_core::history::list(&assay_dir, &params.0.name) {
+            Ok(ids) => ids,
+            Err(e) => return Ok(domain_error(&e)),
+        };
+
+        let total_runs = all_ids.len();
+        let limit = params.0.limit.unwrap_or(10);
+
+        // list() returns oldest-first; take the last `limit` entries and reverse for most-recent-first.
+        let selected_ids: Vec<&String> = all_ids.iter().rev().take(limit).collect();
+
+        let mut runs = Vec::with_capacity(selected_ids.len());
+        for id in &selected_ids {
+            match assay_core::history::load(&assay_dir, &params.0.name, id) {
+                Ok(record) => {
+                    runs.push(GateHistoryEntry {
+                        run_id: record.run_id,
+                        timestamp: record.timestamp.to_rfc3339(),
+                        passed: record.summary.passed,
+                        failed: record.summary.failed,
+                        skipped: record.summary.skipped,
+                        required_failed: record.summary.enforcement.required_failed,
+                        advisory_failed: record.summary.enforcement.advisory_failed,
+                        blocked: record.summary.enforcement.required_failed > 0,
+                    });
+                }
+                Err(e) => {
+                    tracing::warn!(run_id = %id, "skipping unreadable history entry: {e}");
+                }
+            }
+        }
+
+        let response = GateHistoryListResponse {
+            spec_name: params.0.name,
+            total_runs,
+            runs,
+        };
+
+        let json = serde_json::to_string(&response)
+            .map_err(|e| McpError::internal_error(format!("serialization failed: {e}"), None))?;
+        Ok(CallToolResult::success(vec![Content::text(json)]))
+    }
 }
 
 #[tool_handler]
@@ -586,7 +711,8 @@ impl ServerHandler for AssayServer {
                  (quality checks). Use spec_list to discover specs, spec_get to \
                  read one, gate_run to evaluate criteria. For specs with agent \
                  criteria: gate_run returns a session_id, then call gate_report \
-                 for each criterion, and gate_finalize to persist results."
+                 for each criterion, and gate_finalize to persist results. \
+                 Use gate_history to query past run results and track quality trends."
                     .to_string(),
             ),
         }
