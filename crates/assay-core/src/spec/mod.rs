@@ -7,7 +7,7 @@ use std::collections::HashSet;
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-use assay_types::{Enforcement, FeatureSpec, GatesSpec, Spec};
+use assay_types::{CriterionKind, Enforcement, FeatureSpec, GatesSpec, Spec};
 
 use crate::error::{AssayError, Result};
 
@@ -126,17 +126,38 @@ pub fn validate(spec: &Spec) -> std::result::Result<(), Vec<SpecError>> {
                     ),
                 });
             }
+
+            // AgentReport criteria must not have cmd or path
+            if criterion.kind == Some(CriterionKind::AgentReport) {
+                if criterion.cmd.is_some() {
+                    errors.push(SpecError {
+                        field: format!("criteria[{i}]"),
+                        message: format!(
+                            "criterion `{}` has kind=AgentReport with `cmd`; agent criteria cannot have a command",
+                            criterion.name
+                        ),
+                    });
+                }
+                if criterion.path.is_some() {
+                    errors.push(SpecError {
+                        field: format!("criteria[{i}]"),
+                        message: format!(
+                            "criterion `{}` has kind=AgentReport with `path`; agent criteria cannot have a path check",
+                            criterion.name
+                        ),
+                    });
+                }
+            }
         }
 
-        // Verify at least one executable criterion is required
-        let has_executable = spec
-            .criteria
-            .iter()
-            .any(|c| c.cmd.is_some() || c.path.is_some());
+        // Verify at least one executable criterion is required.
+        // AgentReport criteria count as "executable" (evaluated through sessions).
+        let is_executable =
+            |c: &assay_types::Criterion| c.cmd.is_some() || c.path.is_some() || c.kind == Some(CriterionKind::AgentReport);
+        let has_executable = spec.criteria.iter().any(&is_executable);
         let has_required_executable = spec.criteria.iter().any(|c| {
-            let is_executable = c.cmd.is_some() || c.path.is_some();
             let enforcement = crate::gate::resolve_enforcement(c.enforcement, spec.gate.as_ref());
-            is_executable && enforcement == Enforcement::Required
+            is_executable(c) && enforcement == Enforcement::Required
         });
 
         if !has_executable {
@@ -372,17 +393,39 @@ pub fn validate_gates_spec(spec: &GatesSpec) -> std::result::Result<(), Vec<Spec
                     ),
                 });
             }
+
+            // AgentReport criteria must not have cmd or path
+            if criterion.kind == Some(CriterionKind::AgentReport) {
+                if criterion.cmd.is_some() {
+                    errors.push(SpecError {
+                        field: format!("criteria[{i}]"),
+                        message: format!(
+                            "criterion `{}` has kind=AgentReport with `cmd`; agent criteria cannot have a command",
+                            criterion.name
+                        ),
+                    });
+                }
+                if criterion.path.is_some() {
+                    errors.push(SpecError {
+                        field: format!("criteria[{i}]"),
+                        message: format!(
+                            "criterion `{}` has kind=AgentReport with `path`; agent criteria cannot have a path check",
+                            criterion.name
+                        ),
+                    });
+                }
+            }
         }
 
-        // Verify at least one executable criterion is required
-        let has_executable = spec
-            .criteria
-            .iter()
-            .any(|c| c.cmd.is_some() || c.path.is_some());
+        // Verify at least one executable criterion is required.
+        // AgentReport criteria count as "executable" (evaluated through sessions).
+        let is_executable = |c: &assay_types::GateCriterion| {
+            c.cmd.is_some() || c.path.is_some() || c.kind == Some(CriterionKind::AgentReport)
+        };
+        let has_executable = spec.criteria.iter().any(&is_executable);
         let has_required_executable = spec.criteria.iter().any(|c| {
-            let is_executable = c.cmd.is_some() || c.path.is_some();
             let enforcement = crate::gate::resolve_enforcement(c.enforcement, spec.gate.as_ref());
-            is_executable && enforcement == Enforcement::Required
+            is_executable(c) && enforcement == Enforcement::Required
         });
 
         if !has_executable {
@@ -1813,6 +1856,62 @@ cmd = "true"
             errors
                 .iter()
                 .any(|e| e.message.contains("at least one executable criterion"))
+        );
+    }
+
+    // ── AgentReport mutual exclusivity validation ────────────────────
+
+    #[test]
+    fn validation_rejects_agent_report_with_cmd() {
+        let spec = Spec {
+            name: "test".to_string(),
+            description: String::new(),
+            gate: None,
+            criteria: vec![
+                Criterion {
+                    name: "agent-with-cmd".to_string(),
+                    description: "agent criterion with cmd".to_string(),
+                    cmd: Some("echo bad".to_string()),
+                    path: None,
+                    timeout: None,
+                    enforcement: Some(Enforcement::Required),
+                    kind: Some(CriterionKind::AgentReport),
+                    prompt: Some("Review code".to_string()),
+                },
+            ],
+        };
+
+        let errors = validate(&spec).unwrap_err();
+        assert!(
+            errors.iter().any(|e| e.message.contains("AgentReport") && e.message.contains("cmd")),
+            "should reject AgentReport with cmd, got: {errors:?}"
+        );
+    }
+
+    #[test]
+    fn validation_rejects_agent_report_with_path() {
+        let spec = Spec {
+            name: "test".to_string(),
+            description: String::new(),
+            gate: None,
+            criteria: vec![
+                Criterion {
+                    name: "agent-with-path".to_string(),
+                    description: "agent criterion with path".to_string(),
+                    cmd: None,
+                    path: Some("README.md".to_string()),
+                    timeout: None,
+                    enforcement: Some(Enforcement::Required),
+                    kind: Some(CriterionKind::AgentReport),
+                    prompt: Some("Check file".to_string()),
+                },
+            ],
+        };
+
+        let errors = validate(&spec).unwrap_err();
+        assert!(
+            errors.iter().any(|e| e.message.contains("AgentReport") && e.message.contains("path")),
+            "should reject AgentReport with path, got: {errors:?}"
         );
     }
 }
