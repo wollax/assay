@@ -9,19 +9,19 @@ See: .planning/PROJECT.md (updated 2026-03-02)
 
 ## Current Position
 
-Phase: 17 — MCP Hardening & Agent History (complete)
+Phase: 17 — MCP Hardening & Agent History (VERIFIED & COMPLETE)
 Plan: 02 of 2 (complete)
-Status: Phase 17 complete
-Last activity: 2026-03-05 — Completed 17-02-PLAN.md
+Status: Phase complete, verified, moved to completed/
+Last activity: 2026-03-05 — Phase 17 verified and completed
 
-Progress: v0.2.0 [██████░   ] ~55%
+Progress: v0.2.0 [██████░   ] ~54%
 
 ## Milestone Progress
 
 | Milestone | Phases | Requirements | Complete |
 |-----------|--------|--------------|----------|
 | v0.1.0 | 10 | 43 | 100% (shipped) |
-| v0.2.0 | 13 (11-23) | 52 | ~50% |
+| v0.2.0 | 13 (11-23) | 52 | ~54% |
 
 ## Accumulated Context
 
@@ -143,7 +143,7 @@ None.
 
 ### Next Actions
 
-Phase 17 complete. Next phase TBD from v0.2.0 roadmap.
+Phase 17 verified and complete. Next: Phase 18 — CLI Hardening & Enforcement Surface
 
 ### Session Continuity
 
