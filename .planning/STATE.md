@@ -10,9 +10,9 @@ See: .planning/PROJECT.md (updated 2026-03-02)
 ## Current Position
 
 Phase: 16 — Agent Gate Recording
-Plan: 02 of 4 (complete)
+Plan: 03 of 4 (complete)
 Status: In progress
-Last activity: 2026-03-05 — Completed 16-02-PLAN.md (Core Evaluation Dispatch and Validation)
+Last activity: 2026-03-05 — Completed 16-03-PLAN.md (MCP gate_report and gate_finalize Tools)
 
 Progress: v0.2.0 [██████░   ] ~42%
 
@@ -108,6 +108,13 @@ v0.2.0 decisions (from 16-02 execution):
 - AgentReport criteria count as "executable" for at-least-one-required validation
 - Evaluator priority: Human > Independent > SelfEval (highest wins)
 
+v0.2.0 decisions (from 16-03 execution):
+- AssayServer holds Arc<Mutex<HashMap<String, AgentSession>>> for in-memory session state
+- gate_run auto-creates sessions when spec contains AgentReport criteria
+- Session timeout is 30 minutes; timed-out sessions are auto-finalized and persisted
+- CriterionSummary gains kind_label field (cmd/file/agent) for agent-aware formatting
+- GateRunResponse gains optional session_id/pending_criteria for session-aware responses
+
 ### Pending Issues
 
 38 open issues (expanded from 30 after Phase 8-10 PR reviews)
@@ -118,10 +125,10 @@ None.
 
 ### Next Actions
 
-Phase 16 Plan 02 complete. Next: 16-03 — MCP gate_report and gate_finalize tools
+Phase 16 Plan 03 complete. Next: 16-04 — CLI and integration (final plan)
 
 ### Session Continuity
 
 Last session: 2026-03-05
-Stopped at: Completed 16-02-PLAN.md
+Stopped at: Completed 16-03-PLAN.md
 Resume file: None
