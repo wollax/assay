@@ -139,13 +139,16 @@ struct GateHistoryParams {
 /// A single entry in the `spec_list` response.
 #[derive(Serialize)]
 struct SpecListEntry {
+    /// Spec name (filename stem without `.toml` extension).
     name: String,
+    /// Human-readable description of the spec. Omitted from JSON when empty.
     #[serde(skip_serializing_if = "String::is_empty")]
     description: String,
+    /// Number of criteria defined in the spec.
     criteria_count: usize,
-    /// "legacy" for flat .toml files, "directory" for directory-based specs.
+    /// Spec format: `"legacy"` for flat `.toml` files, `"directory"` for directory-based specs.
     format: String,
-    /// Whether a companion `spec.toml` (feature spec) exists.
+    /// Whether a companion `spec.toml` (feature spec) exists. Omitted from JSON when `false`.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     has_feature_spec: bool,
 }
@@ -153,7 +156,9 @@ struct SpecListEntry {
 /// Response envelope for `spec_list`, including scan errors.
 #[derive(Serialize)]
 struct SpecListResponse {
+    /// Successfully parsed specs.
     specs: Vec<SpecListEntry>,
+    /// Spec files that failed to parse. Omitted from JSON when empty.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     errors: Vec<SpecListError>,
 }
@@ -161,38 +166,56 @@ struct SpecListResponse {
 /// A spec file that failed to parse during scanning.
 #[derive(Serialize)]
 struct SpecListError {
+    /// Human-readable error description including the filename and parse error.
     message: String,
 }
 
-/// Aggregate gate run response.
+/// Aggregate gate run response returned by the `gate_run` tool.
 #[derive(Serialize)]
 struct GateRunResponse {
+    /// Name of the spec that was evaluated.
     spec_name: String,
+    /// Total number of criteria that passed.
     passed: usize,
+    /// Total number of criteria that failed.
     failed: usize,
+    /// Number of criteria skipped (descriptive-only, no command or path).
     skipped: usize,
+    /// Number of required-enforcement criteria that passed.
     required_passed: usize,
+    /// Number of required-enforcement criteria that failed.
     required_failed: usize,
+    /// Number of advisory-enforcement criteria that passed.
     advisory_passed: usize,
+    /// Number of advisory-enforcement criteria that failed.
     advisory_failed: usize,
+    /// Whether the gate is blocked — `true` when any required criterion failed.
     blocked: bool,
+    /// Total wall-clock duration for all evaluations in milliseconds.
     total_duration_ms: u64,
+    /// Per-criterion results with status, enforcement, and optional evidence.
     criteria: Vec<CriterionSummary>,
-    /// Session ID when agent criteria are present (requires gate_report + gate_finalize).
+    /// Session ID when agent criteria are present. Omitted for command-only specs.
+    /// Use with `gate_report` and `gate_finalize` to complete agent evaluations.
     #[serde(skip_serializing_if = "Option::is_none")]
     session_id: Option<String>,
-    /// Criteria pending agent evaluation (names only).
+    /// Names of criteria pending agent evaluation. Omitted when no session is active.
     #[serde(skip_serializing_if = "Option::is_none")]
     pending_criteria: Option<Vec<String>>,
 }
 
-/// Response from the `gate_report` tool.
+/// Response from the `gate_report` tool confirming an evaluation was recorded.
 #[derive(Serialize)]
 struct GateReportResponse {
+    /// Session ID the evaluation was submitted to.
     session_id: String,
+    /// Name of the criterion that was evaluated.
     criterion_name: String,
+    /// Whether the evaluation was accepted (always `true` on success).
     accepted: bool,
+    /// Total number of evaluations recorded for this criterion (supports multiple evaluator roles).
     evaluations_count: usize,
+    /// Names of criteria still pending agent evaluation in this session.
     pending_criteria: Vec<String>,
 }
 
@@ -231,19 +254,28 @@ struct GateHistoryEntry {
 /// Per-criterion result within a gate run response.
 #[derive(Serialize)]
 struct CriterionSummary {
+    /// Criterion name as defined in the spec.
     name: String,
+    /// Evaluation status: `"passed"`, `"failed"`, or `"skipped"`.
     status: String,
+    /// Enforcement level: `"required"` or `"advisory"`.
     enforcement: String,
+    /// Criterion kind label: `"cmd"`, `"file"`, or `"agent"`. Omitted for skipped criteria.
     #[serde(skip_serializing_if = "Option::is_none")]
     kind_label: Option<String>,
+    /// Process exit code. Present for command criteria, absent for file-exists and skipped.
     #[serde(skip_serializing_if = "Option::is_none")]
     exit_code: Option<i32>,
+    /// Evaluation duration in milliseconds. Absent for skipped criteria.
     #[serde(skip_serializing_if = "Option::is_none")]
     duration_ms: Option<u64>,
+    /// First non-empty line of stderr for failed criteria. Absent for passed/skipped.
     #[serde(skip_serializing_if = "Option::is_none")]
     reason: Option<String>,
+    /// Full stdout output. Only present when `include_evidence=true`.
     #[serde(skip_serializing_if = "Option::is_none")]
     stdout: Option<String>,
+    /// Full stderr output. Only present when `include_evidence=true`.
     #[serde(skip_serializing_if = "Option::is_none")]
     stderr: Option<String>,
 }
@@ -280,7 +312,7 @@ impl AssayServer {
 
     /// List all specs in the current Assay project.
     #[tool(
-        description = "List all specs in the current Assay project. Returns an array of {name, description, criteria_count} objects. Use this to discover available specs before calling spec_get or gate_run."
+        description = "List all specs in the current Assay project. Returns {specs, errors?} where specs is an array of {name, description?, criteria_count, format, has_feature_spec?} objects and errors lists any spec files that failed to parse. Use this to discover available specs before calling spec_get or gate_run."
     )]
     async fn spec_list(&self) -> Result<CallToolResult, McpError> {
         let cwd = resolve_cwd()?;
@@ -385,7 +417,7 @@ impl AssayServer {
 
     /// Run quality gate checks for a spec.
     #[tool(
-        description = "Run quality gate checks for a spec. Evaluates all executable criteria (shell commands) and returns pass/fail status per criterion with aggregate counts. If the spec contains agent-evaluated criteria (kind=AgentReport), a session is auto-created and a session_id is returned — use gate_report to submit evaluations, then gate_finalize to persist results. Set include_evidence=true for full stdout/stderr output per criterion."
+        description = "Run quality gate checks for a spec. Evaluates all executable criteria (shell commands, file checks) and returns pass/fail status per criterion with enforcement-level counts (required_passed, required_failed, advisory_passed, advisory_failed) and a blocked flag. Set timeout (seconds, default 300) to limit evaluation time. Set include_evidence=true for full stdout/stderr. If the spec contains agent-evaluated criteria (kind=AgentReport), a session_id and pending_criteria are returned — use gate_report for each, then gate_finalize to persist."
     )]
     async fn gate_run(
         &self,
@@ -649,8 +681,9 @@ impl AssayServer {
                 Ok(r) => r,
                 Err(e) => return Ok(domain_error(&e)),
             };
-            let json = serde_json::to_string(&record)
-                .map_err(|e| McpError::internal_error(format!("serialization failed: {e}"), None))?;
+            let json = serde_json::to_string(&record).map_err(|e| {
+                McpError::internal_error(format!("serialization failed: {e}"), None)
+            })?;
             return Ok(CallToolResult::success(vec![Content::text(json)]));
         }
 
