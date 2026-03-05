@@ -18,5 +18,8 @@ pub mod workflow;
 /// Configuration loading and validation.
 pub mod config;
 
+/// Run history persistence.
+pub mod history;
+
 /// Project initialization.
 pub mod init;
