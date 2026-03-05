@@ -213,7 +213,13 @@ pub fn list(assay_dir: &Path, spec_name: &str) -> Result<Vec<String>> {
             path: spec_dir.clone(),
             source,
         })?
-        .filter_map(|entry| entry.ok())
+        .filter_map(|entry| match entry {
+            Ok(e) => Some(e),
+            Err(e) => {
+                eprintln!("Warning: skipping history entry: {e}");
+                None
+            }
+        })
         .filter_map(|entry| {
             let path = entry.path();
             if path.extension().is_some_and(|ext| ext == "json") {
@@ -677,6 +683,32 @@ mod tests {
 
         let ids = list(dir.path(), spec).unwrap();
         assert_eq!(ids.len(), 5, "max_history=None should not prune");
+    }
+
+    #[test]
+    fn test_prune_to_one_keeps_only_latest() {
+        use chrono::Duration;
+
+        let dir = TempDir::new().unwrap();
+        let spec = "prune-one";
+        let base = DateTime::parse_from_rfc3339("2026-05-01T00:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+
+        let mut run_ids = Vec::new();
+        for i in 0..3 {
+            let ts = base + Duration::seconds(i);
+            let record = make_test_record_at(spec, ts);
+            run_ids.push(record.run_id.clone());
+            save(dir.path(), &record, None).unwrap();
+        }
+
+        let pruned = prune(dir.path(), spec, 1).unwrap();
+        assert_eq!(pruned, 2, "should prune 2 of 3 files");
+
+        let remaining = list(dir.path(), spec).unwrap();
+        assert_eq!(remaining.len(), 1, "should have exactly 1 file remaining");
+        assert_eq!(remaining[0], run_ids[2], "the latest record should remain");
     }
 
     #[test]

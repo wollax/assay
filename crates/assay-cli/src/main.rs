@@ -859,15 +859,7 @@ fn handle_gate_run_all(cli_timeout: Option<u64>, verbose: bool, json: bool) {
             &assay_dir,
             entry.slug(),
             &working_dir,
-            assay_types::GateRunSummary {
-                spec_name: entry.slug().to_string(),
-                results: Vec::new(),
-                passed: spec_passed,
-                failed: spec_failed,
-                skipped: spec_skipped,
-                total_duration_ms: 0,
-                enforcement: assay_types::EnforcementSummary::default(),
-            },
+            streaming_summary(entry.slug(), spec_passed, spec_failed, spec_skipped),
             max_history,
             false,
         );
@@ -987,15 +979,7 @@ fn handle_gate_run(name: &str, cli_timeout: Option<u64>, verbose: bool, json: bo
         &assay_dir,
         name,
         &working_dir,
-        assay_types::GateRunSummary {
-            spec_name: name.to_string(),
-            results: Vec::new(),
-            passed: counters.passed,
-            failed: counters.failed,
-            skipped: counters.skipped,
-            total_duration_ms: 0,
-            enforcement: assay_types::EnforcementSummary::default(),
-        },
+        streaming_summary(name, counters.passed, counters.failed, counters.skipped),
         max_history,
         false,
     );
@@ -1003,6 +987,24 @@ fn handle_gate_run(name: &str, cli_timeout: Option<u64>, verbose: bool, json: bo
     print_gate_summary(&counters, color, "Results");
     if has_required_failure {
         std::process::exit(1);
+    }
+}
+
+/// Build a [`GateRunSummary`] for streaming mode (no per-criterion results or timing).
+fn streaming_summary(
+    spec_name: &str,
+    passed: usize,
+    failed: usize,
+    skipped: usize,
+) -> assay_types::GateRunSummary {
+    assay_types::GateRunSummary {
+        spec_name: spec_name.to_string(),
+        results: Vec::new(),
+        passed,
+        failed,
+        skipped,
+        total_duration_ms: 0,
+        enforcement: assay_types::EnforcementSummary::default(),
     }
 }
 
@@ -1135,10 +1137,16 @@ fn handle_gate_history(name: &str, json: bool, limit: usize) {
         .map(|s| s.as_str())
         .collect();
 
-    // Load all records for display
+    // Load all records for display (warn on corrupt files)
     let records: Vec<assay_types::GateRunRecord> = display_ids
         .iter()
-        .filter_map(|id| assay_core::history::load(&assay_dir, name, id).ok())
+        .filter_map(|id| match assay_core::history::load(&assay_dir, name, id) {
+            Ok(r) => Some(r),
+            Err(e) => {
+                eprintln!("Warning: skipping run {id}: {e}");
+                None
+            }
+        })
         .collect();
 
     if json {
@@ -1219,7 +1227,28 @@ fn handle_gate_history(name: &str, json: bool, limit: usize) {
 /// Handle `assay gate history <name> <run-id> [--json]` — detail view.
 fn handle_gate_history_detail(name: &str, run_id: &str, json: bool) {
     let root = project_root();
+    let config = match assay_core::config::load(&root) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("Error: {e}");
+            std::process::exit(1);
+        }
+    };
     let assay_dir = root.join(".assay");
+
+    // Verify spec exists
+    let specs_dir = assay_dir.join(&config.specs_dir);
+    match assay_core::spec::load_spec_entry(name, &specs_dir) {
+        Ok(_) => {}
+        Err(assay_core::AssayError::SpecNotFound { .. }) => {
+            eprintln!("Error: spec '{name}' not found in {}", config.specs_dir);
+            std::process::exit(1);
+        }
+        Err(e) => {
+            eprintln!("Error: {e}");
+            std::process::exit(1);
+        }
+    }
 
     let record = match assay_core::history::load(&assay_dir, name, run_id) {
         Ok(r) => r,
@@ -1494,7 +1523,26 @@ async fn main() {
                 ..
             } => {
                 let root = project_root();
+                let config = match assay_core::config::load(&root) {
+                    Ok(c) => c,
+                    Err(e) => {
+                        eprintln!("Error: {e}");
+                        std::process::exit(1);
+                    }
+                };
                 let assay_dir = root.join(".assay");
+                let specs_dir = assay_dir.join(&config.specs_dir);
+                match assay_core::spec::load_spec_entry(&name, &specs_dir) {
+                    Ok(_) => {}
+                    Err(assay_core::AssayError::SpecNotFound { .. }) => {
+                        eprintln!("Error: spec '{name}' not found in {}", config.specs_dir);
+                        std::process::exit(1);
+                    }
+                    Err(e) => {
+                        eprintln!("Error: {e}");
+                        std::process::exit(1);
+                    }
+                }
                 let ids = match assay_core::history::list(&assay_dir, &name) {
                     Ok(ids) => ids,
                     Err(e) => {

@@ -142,14 +142,6 @@ inventory::submit! {
     }
 }
 
-/// Default max_history value for documentation and CLI defaults.
-///
-/// Not used as a serde default — `None` means "no pruning configured"
-/// and the CLI applies this value when the field is absent.
-pub fn default_max_history() -> usize {
-    1000
-}
-
 fn default_specs_dir() -> String {
     "specs/".to_string()
 }
