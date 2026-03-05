@@ -669,12 +669,14 @@ unknown_crit_key = true
         Spec {
             name: "test".to_string(),
             description: String::new(),
+            gate: None,
             criteria: vec![Criterion {
                 name: "c1".to_string(),
                 description: "d1".to_string(),
                 cmd: None,
                 path: None,
                 timeout: None,
+                enforcement: None,
             }],
         }
     }
@@ -714,6 +716,7 @@ unknown_crit_key = true
         let spec = Spec {
             name: "test".to_string(),
             description: String::new(),
+            gate: None,
             criteria: vec![],
         };
 
@@ -732,6 +735,7 @@ unknown_crit_key = true
         let spec = Spec {
             name: "test".to_string(),
             description: String::new(),
+            gate: None,
             criteria: vec![
                 Criterion {
                     name: "dup".to_string(),
@@ -739,6 +743,7 @@ unknown_crit_key = true
                     cmd: None,
                     path: None,
                     timeout: None,
+                    enforcement: None,
                 },
                 Criterion {
                     name: "dup".to_string(),
@@ -746,6 +751,7 @@ unknown_crit_key = true
                     cmd: None,
                     path: None,
                     timeout: None,
+                    enforcement: None,
                 },
             ],
         };
@@ -763,12 +769,14 @@ unknown_crit_key = true
         let spec = Spec {
             name: "test".to_string(),
             description: String::new(),
+            gate: None,
             criteria: vec![Criterion {
                 name: String::new(),
                 description: "d1".to_string(),
                 cmd: None,
                 path: None,
                 timeout: None,
+                enforcement: None,
             }],
         };
 
@@ -781,6 +789,7 @@ unknown_crit_key = true
         let spec = Spec {
             name: "   ".to_string(),
             description: String::new(),
+            gate: None,
             criteria: vec![],
         };
 
@@ -1524,12 +1533,14 @@ description = "d1"
         let spec = GatesSpec {
             name: "test".into(),
             description: String::new(),
+            gate: None,
             criteria: vec![assay_types::GateCriterion {
                 name: "c1".into(),
                 description: "d1".into(),
                 cmd: None,
                 path: None,
                 timeout: None,
+                enforcement: None,
                 requirements: vec![],
             }],
         };
@@ -1541,6 +1552,7 @@ description = "d1"
         let spec = GatesSpec {
             name: "test".into(),
             description: String::new(),
+            gate: None,
             criteria: vec![],
         };
         let errors = validate_gates_spec(&spec).unwrap_err();
@@ -1552,6 +1564,7 @@ description = "d1"
         let spec = GatesSpec {
             name: "test".into(),
             description: String::new(),
+            gate: None,
             criteria: vec![
                 assay_types::GateCriterion {
                     name: "dup".into(),
@@ -1559,6 +1572,7 @@ description = "d1"
                     cmd: None,
                     path: None,
                     timeout: None,
+                    enforcement: None,
                     requirements: vec![],
                 },
                 assay_types::GateCriterion {
@@ -1567,6 +1581,7 @@ description = "d1"
                     cmd: None,
                     path: None,
                     timeout: None,
+                    enforcement: None,
                     requirements: vec![],
                 },
             ],

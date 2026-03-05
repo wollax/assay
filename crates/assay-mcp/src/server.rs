@@ -413,7 +413,9 @@ pub async fn serve() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use assay_types::{CriterionResult, GateKind, GateResult, GateRunSummary};
+    use assay_types::{
+        CriterionResult, Enforcement, EnforcementSummary, GateKind, GateResult, GateRunSummary,
+    };
     use chrono::Utc;
     use std::io::Write as _;
 
@@ -436,6 +438,7 @@ mod tests {
                         truncated: false,
                         original_bytes: None,
                     }),
+                    enforcement: Enforcement::Required,
                 },
                 CriterionResult {
                     criterion_name: "lint".to_string(),
@@ -452,16 +455,19 @@ mod tests {
                         truncated: false,
                         original_bytes: None,
                     }),
+                    enforcement: Enforcement::Required,
                 },
                 CriterionResult {
                     criterion_name: "review-checklist".to_string(),
                     result: None,
+                    enforcement: Enforcement::Required,
                 },
             ],
             passed: 1,
             failed: 1,
             skipped: 1,
             total_duration_ms: 2000,
+            enforcement: EnforcementSummary::default(),
         }
     }
 
@@ -646,11 +652,13 @@ mod tests {
                     truncated: false,
                     original_bytes: None,
                 }),
+                enforcement: Enforcement::Required,
             }],
             passed: 0,
             failed: 1,
             skipped: 0,
             total_duration_ms: 50,
+            enforcement: EnforcementSummary::default(),
         };
 
         let response = format_gate_response(&summary, false);
