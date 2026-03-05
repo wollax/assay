@@ -10,9 +10,9 @@ See: .planning/PROJECT.md (updated 2026-03-02)
 ## Current Position
 
 Phase: 14 — Run History Core
-Plan: 01 of 2
-Status: In progress
-Last activity: 2026-03-05 — Completed 14-01-PLAN.md
+Plan: 02 of 2
+Status: Complete
+Last activity: 2026-03-05 — Completed 14-02-PLAN.md
 
 Progress: v0.2.0 [████      ] ~27%
 
@@ -79,6 +79,9 @@ v0.2.0 decisions (from 14-01 execution):
 - No new error variants needed — existing AssayError::Io covers all history operations
 - generate_run_id() is public for caller flexibility
 
+v0.2.0 decisions (from 14-02 execution):
+- PartialEq derived on GateRunRecord, GateRunSummary, CriterionResult, GateResult (non-breaking, enables structural equality assertions)
+
 ### Pending Issues
 
 38 open issues (expanded from 30 after Phase 8-10 PR reviews)
@@ -89,10 +92,10 @@ None.
 
 ### Next Actions
 
-Phase 14 Plan 01 complete. Next: 14-02-PLAN.md
+Phase 14 complete (all 2 plans done). Ready for PR.
 
 ### Session Continuity
 
 Last session: 2026-03-05
-Stopped at: Completed 14-01-PLAN.md
+Stopped at: Completed 14-02-PLAN.md (Phase 14 complete)
 Resume file: None
