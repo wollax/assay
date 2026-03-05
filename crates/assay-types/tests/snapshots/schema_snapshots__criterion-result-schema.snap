@@ -4,6 +4,21 @@ expression: schema.to_value()
 ---
 {
   "$defs": {
+    "Enforcement": {
+      "description": "Enforcement level for a gate criterion.\n\nDetermines whether a criterion failure blocks the gate (required)\nor is informational only (advisory).",
+      "oneOf": [
+        {
+          "const": "required",
+          "description": "Failure blocks the gate. This is the default.",
+          "type": "string"
+        },
+        {
+          "const": "advisory",
+          "description": "Failure is informational; does not block the gate.",
+          "type": "string"
+        }
+      ]
+    },
     "GateKind": {
       "description": "The kind of gate to evaluate.\n\nUses internal tagging (`#[serde(tag = \"kind\")]`) so TOML output includes\na `kind = \"Command\"` or `kind = \"AlwaysPass\"` discriminator field.",
       "oneOf": [
@@ -125,6 +140,11 @@ expression: schema.to_value()
     "criterion_name": {
       "description": "The name of the criterion that was evaluated.",
       "type": "string"
+    },
+    "enforcement": {
+      "$ref": "#/$defs/Enforcement",
+      "default": "required",
+      "description": "Resolved enforcement level for this criterion (Required or Advisory)."
     },
     "result": {
       "anyOf": [

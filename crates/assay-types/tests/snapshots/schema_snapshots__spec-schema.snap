@@ -19,6 +19,17 @@ expression: schema.to_value()
           "description": "Detailed description of what this criterion checks.",
           "type": "string"
         },
+        "enforcement": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Enforcement"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Enforcement level override for this criterion. `None` means \"use the\nspec-level default from `[gate]` section\" (which itself defaults to `required`)."
+        },
         "name": {
           "description": "Human-readable name for this criterion.",
           "type": "string"
@@ -45,6 +56,33 @@ expression: schema.to_value()
         "description"
       ],
       "type": "object"
+    },
+    "Enforcement": {
+      "description": "Enforcement level for a gate criterion.\n\nDetermines whether a criterion failure blocks the gate (required)\nor is informational only (advisory).",
+      "oneOf": [
+        {
+          "const": "required",
+          "description": "Failure blocks the gate. This is the default.",
+          "type": "string"
+        },
+        {
+          "const": "advisory",
+          "description": "Failure is informational; does not block the gate.",
+          "type": "string"
+        }
+      ]
+    },
+    "GateSection": {
+      "additionalProperties": false,
+      "description": "Gate-level configuration section.\n\nParsed from `[gate]` in spec TOML files. Provides spec-wide defaults\nthat individual criteria can override.",
+      "properties": {
+        "enforcement": {
+          "$ref": "#/$defs/Enforcement",
+          "default": "required",
+          "description": "Default enforcement level for all criteria in this spec."
+        }
+      },
+      "type": "object"
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -61,6 +99,17 @@ expression: schema.to_value()
     "description": {
       "description": "Human-readable description. Defaults to empty string, omitted from\nserialized output when empty.",
       "type": "string"
+    },
+    "gate": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/GateSection"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Gate configuration section (enforcement defaults)."
     },
     "name": {
       "description": "Display name for this spec (required, must be unique across all specs).",

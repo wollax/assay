@@ -1,0 +1,35 @@
+---
+source: crates/assay-types/tests/schema_snapshots.rs
+expression: schema.to_value()
+---
+{
+  "$defs": {
+    "Enforcement": {
+      "description": "Enforcement level for a gate criterion.\n\nDetermines whether a criterion failure blocks the gate (required)\nor is informational only (advisory).",
+      "oneOf": [
+        {
+          "const": "required",
+          "description": "Failure blocks the gate. This is the default.",
+          "type": "string"
+        },
+        {
+          "const": "advisory",
+          "description": "Failure is informational; does not block the gate.",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Gate-level configuration section.\n\nParsed from `[gate]` in spec TOML files. Provides spec-wide defaults\nthat individual criteria can override.",
+  "properties": {
+    "enforcement": {
+      "$ref": "#/$defs/Enforcement",
+      "default": "required",
+      "description": "Default enforcement level for all criteria in this spec."
+    }
+  },
+  "title": "GateSection",
+  "type": "object"
+}

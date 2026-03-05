@@ -31,7 +31,10 @@
   - [x] 11-02: Schema snapshots, roundtrip tests, schema regeneration
 - [x] Phase 12: FileExists Gate Wiring (1 plan) — 2026-03-04
   - [x] 12-01: Add path field, wire dispatch, update tests and snapshots
-- [ ] Phase 13: Enforcement Levels
+- [x] Phase 13: Enforcement Levels — 2026-03-04
+  - [x] 13-01: Enforcement type layer (Enforcement enum, GateSection, EnforcementSummary)
+  - [x] 13-02: Enforcement evaluation logic (resolve_enforcement, enforcement-aware evaluation, validation)
+  - [x] 13-03: CLI enforcement integration (exit codes, spec template, schema snapshots)
 - [ ] Phase 14: Run History Core
 - [ ] Phase 15: Run History CLI
 - [ ] Phase 16: Agent Gate Recording
@@ -50,7 +53,7 @@
 | Milestone | Status | Phases | Requirements | Complete |
 |-----------|--------|--------|--------------|----------|
 | v0.1.0 Proof of Concept | Shipped | 10 | 43 | 100% |
-| v0.2.0 Dual-Track Gates & Hardening | In Progress | 13 | 52 | 15% |
+| v0.2.0 Dual-Track Gates & Hardening | In Progress | 13 | 52 | 23% |
 | v0.3.0 | Planned | — | — | — |
 
 ---
