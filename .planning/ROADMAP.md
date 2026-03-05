@@ -38,7 +38,9 @@
 - [x] Phase 14: Run History Core — 2026-03-05
   - [x] 14-01: GateRunRecord type and history persistence module
   - [x] 14-02: History persistence integration tests
-- [ ] Phase 15: Run History CLI
+- [x] Phase 15: Run History CLI — 2026-03-05
+  - [x] 15-01: Config extension, pruning, and save() update
+  - [x] 15-02: CLI history command, table/detail views, gate run integration
 - [ ] Phase 16: Agent Gate Recording
 - [ ] Phase 17: MCP Hardening & Agent History
 - [ ] Phase 18: CLI Hardening & Enforcement Surface
@@ -55,7 +57,7 @@
 | Milestone | Status | Phases | Requirements | Complete |
 |-----------|--------|--------|--------------|----------|
 | v0.1.0 Proof of Concept | Shipped | 10 | 43 | 100% |
-| v0.2.0 Dual-Track Gates & Hardening | In Progress | 13 | 52 | 31% |
+| v0.2.0 Dual-Track Gates & Hardening | In Progress | 13 | 52 | 38% |
 | v0.3.0 | Planned | — | — | — |
 
 ---

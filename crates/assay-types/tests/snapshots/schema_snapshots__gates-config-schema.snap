@@ -1,6 +1,5 @@
 ---
 source: crates/assay-types/tests/schema_snapshots.rs
-assertion_line: 41
 expression: schema.to_value()
 ---
 {
@@ -14,6 +13,15 @@ expression: schema.to_value()
       "format": "uint64",
       "minimum": 0,
       "type": "integer"
+    },
+    "max_history": {
+      "description": "Maximum number of run history files to retain per spec.\nWhen set, oldest files beyond this limit are pruned on each save.\nA value of `0` means unlimited (no pruning). Defaults to `None` (no pruning).",
+      "format": "uint",
+      "minimum": 0,
+      "type": [
+        "integer",
+        "null"
+      ]
     },
     "working_dir": {
       "description": "Working directory for gate execution.",

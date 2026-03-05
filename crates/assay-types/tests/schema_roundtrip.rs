@@ -94,6 +94,7 @@ fn config_validates() {
         gates: Some(assay_types::GatesConfig {
             default_timeout: 300,
             working_dir: Some(".".to_string()),
+            max_history: None,
         }),
     });
 }
@@ -103,6 +104,7 @@ fn gates_config_validates() {
     validate(&assay_types::GatesConfig {
         default_timeout: 300,
         working_dir: None,
+        max_history: None,
     });
 }
 
