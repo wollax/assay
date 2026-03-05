@@ -10,9 +10,9 @@ See: .planning/PROJECT.md (updated 2026-03-02)
 ## Current Position
 
 Phase: 16 — Agent Gate Recording
-Plan: 01 of 4 (complete)
+Plan: 02 of 4 (complete)
 Status: In progress
-Last activity: 2026-03-05 — Completed 16-01-PLAN.md (Agent Gate Types and Criterion Extension)
+Last activity: 2026-03-05 — Completed 16-02-PLAN.md (Core Evaluation Dispatch and Validation)
 
 Progress: v0.2.0 [██████░   ] ~42%
 
@@ -100,6 +100,14 @@ v0.2.0 decisions (from 16-01 execution):
 - EvaluatorRole::SelfEval serializes as "self" via serde rename
 - Downstream compile errors (assay-core, assay-mcp) deferred to Plan 02
 
+v0.2.0 decisions (from 16-02 execution):
+- evaluate() returns InvalidCriterion error for AgentReport (not evaluable standalone)
+- evaluate_all/evaluate_all_gates skip AgentReport criteria as pending (result: None)
+- finalize_as_timed_out() does NOT save — caller decides persistence
+- Unevaluated advisory criteria in timed-out sessions are skipped (not failed)
+- AgentReport criteria count as "executable" for at-least-one-required validation
+- Evaluator priority: Human > Independent > SelfEval (highest wins)
+
 ### Pending Issues
 
 38 open issues (expanded from 30 after Phase 8-10 PR reviews)
@@ -110,10 +118,10 @@ None.
 
 ### Next Actions
 
-Phase 16 Plan 01 complete. Next: 16-02 — Evaluation Dispatch and Core Wiring (fixes downstream compile errors, wires agent evaluation into gate dispatch)
+Phase 16 Plan 02 complete. Next: 16-03 — MCP gate_report and gate_finalize tools
 
 ### Session Continuity
 
 Last session: 2026-03-05
-Stopped at: Completed 16-01-PLAN.md
+Stopped at: Completed 16-02-PLAN.md
 Resume file: None
