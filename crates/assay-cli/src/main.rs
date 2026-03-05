@@ -620,6 +620,7 @@ struct StreamCounters {
 }
 
 /// Stream a single criterion's evaluation with live "running" -> "PASS/FAIL" display.
+#[allow(clippy::too_many_arguments)]
 fn stream_criterion(
     criterion: &assay_types::Criterion,
     working_dir: &std::path::Path,
@@ -787,10 +788,8 @@ fn handle_gate_run_all(cli_timeout: Option<u64>, verbose: bool, json: bool) {
         }
 
         for criterion in &criteria {
-            let enforcement = assay_core::gate::resolve_enforcement(
-                criterion.enforcement,
-                gate_section,
-            );
+            let enforcement =
+                assay_core::gate::resolve_enforcement(criterion.enforcement, gate_section);
             stream_criterion(
                 criterion,
                 &working_dir,
@@ -879,10 +878,8 @@ fn handle_gate_run(name: &str, cli_timeout: Option<u64>, verbose: bool, json: bo
     }
 
     for criterion in &criteria {
-        let enforcement = assay_core::gate::resolve_enforcement(
-            criterion.enforcement,
-            gate_section,
-        );
+        let enforcement =
+            assay_core::gate::resolve_enforcement(criterion.enforcement, gate_section);
         stream_criterion(
             criterion,
             &working_dir,

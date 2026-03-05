@@ -344,6 +344,108 @@ fn criterion_result_skipped_validates() {
 }
 
 #[test]
+fn enforcement_roundtrip() {
+    // Required (default)
+    let req = Enforcement::Required;
+    let json = serde_json::to_string(&req).unwrap();
+    assert_eq!(json, r#""required""#);
+    let back: Enforcement = serde_json::from_str(&json).unwrap();
+    assert_eq!(back, req);
+
+    // Advisory
+    let adv = Enforcement::Advisory;
+    let json = serde_json::to_string(&adv).unwrap();
+    assert_eq!(json, r#""advisory""#);
+    let back: Enforcement = serde_json::from_str(&json).unwrap();
+    assert_eq!(back, adv);
+
+    validate(&req);
+    validate(&adv);
+}
+
+#[test]
+fn gate_section_roundtrip() {
+    let section = GateSection {
+        enforcement: Enforcement::Advisory,
+    };
+    let json = serde_json::to_string(&section).unwrap();
+    let back: GateSection = serde_json::from_str(&json).unwrap();
+    assert_eq!(back.enforcement, Enforcement::Advisory);
+    validate(&section);
+}
+
+#[test]
+fn enforcement_summary_roundtrip() {
+    let summary = EnforcementSummary {
+        required_passed: 3,
+        required_failed: 1,
+        advisory_passed: 2,
+        advisory_failed: 0,
+    };
+    let json = serde_json::to_string(&summary).unwrap();
+    let back: EnforcementSummary = serde_json::from_str(&json).unwrap();
+    assert_eq!(back, summary);
+    validate(&summary);
+}
+
+#[test]
+fn spec_with_gate_section_toml_roundtrip() {
+    let toml_str = r#"
+name = "test"
+description = "A test spec"
+
+[gate]
+enforcement = "advisory"
+
+[[criteria]]
+name = "lint"
+description = "Run linter"
+cmd = "echo lint"
+"#;
+    let spec: Spec = toml::from_str(toml_str).expect("should parse TOML with [gate] section");
+    assert_eq!(
+        spec.gate.as_ref().unwrap().enforcement,
+        Enforcement::Advisory
+    );
+    validate(&spec);
+}
+
+#[test]
+fn spec_without_enforcement_fields_backward_compat() {
+    // Old-style spec without enforcement or gate section still parses
+    let toml_str = r#"
+name = "legacy"
+description = "No enforcement fields"
+
+[[criteria]]
+name = "build"
+description = "Build it"
+cmd = "make"
+"#;
+    let spec: Spec = toml::from_str(toml_str).expect("old TOML without enforcement should parse");
+    assert!(spec.gate.is_none());
+    assert!(spec.criteria[0].enforcement.is_none());
+    validate(&spec);
+}
+
+#[test]
+fn gate_run_summary_backward_compat_no_enforcement() {
+    // Old JSON without enforcement field still deserializes (serde default)
+    let json = r#"{
+        "spec_name": "old-spec",
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0,
+        "total_duration_ms": 100
+    }"#;
+    let summary: GateRunSummary =
+        serde_json::from_str(json).expect("old JSON without enforcement should parse");
+    assert_eq!(summary.enforcement.required_passed, 0);
+    assert_eq!(summary.enforcement.required_failed, 0);
+    validate(&summary);
+}
+
+#[test]
 fn gate_run_summary_backward_compat_deserialize() {
     // Verify TYPE-03: a minimal JSON blob missing optional/defaultable fields
     // still deserializes successfully (serde(default) on results vec).

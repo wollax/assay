@@ -16,6 +16,17 @@
       "description": "Human-readable description. Defaults to empty string.",
       "type": "string"
     },
+    "gate": {
+      "description": "Gate configuration section (enforcement defaults).",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/GateSection"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "name": {
       "description": "Display name for this gate spec (must match directory name / feature spec name).",
       "type": "string"
@@ -27,6 +38,21 @@
     "criteria"
   ],
   "$defs": {
+    "Enforcement": {
+      "description": "Enforcement level for a gate criterion.\n\nDetermines whether a criterion failure blocks the gate (required)\nor is informational only (advisory).",
+      "oneOf": [
+        {
+          "description": "Failure blocks the gate. This is the default.",
+          "type": "string",
+          "const": "required"
+        },
+        {
+          "description": "Failure is informational; does not block the gate.",
+          "type": "string",
+          "const": "advisory"
+        }
+      ]
+    },
     "GateCriterion": {
       "description": "A single gate criterion with optional requirement traceability.\n\nExtends the concept of [`crate::Criterion`] with a `requirements` field\nthat links criteria to specific requirement IDs (e.g., `REQ-FUNC-001`).",
       "type": "object",
@@ -42,9 +68,27 @@
           "description": "Detailed description of what this criterion checks.",
           "type": "string"
         },
+        "enforcement": {
+          "description": "Enforcement level override for this criterion. `None` means \"use the\nspec-level default from `[gate]` section\" (which itself defaults to `required`).",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Enforcement"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "name": {
           "description": "Human-readable name for this criterion.",
           "type": "string"
+        },
+        "path": {
+          "description": "Optional file path to check for existence.\nWhen set (and `cmd` is `None`), the criterion evaluates as a `FileExists` gate.",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "requirements": {
           "description": "Requirement IDs this criterion traces to (e.g., `[\"REQ-FUNC-001\"]`).",
@@ -68,6 +112,18 @@
         "name",
         "description"
       ]
+    },
+    "GateSection": {
+      "description": "Gate-level configuration section.\n\nParsed from `[gate]` in spec TOML files. Provides spec-wide defaults\nthat individual criteria can override.",
+      "type": "object",
+      "properties": {
+        "enforcement": {
+          "description": "Default enforcement level for all criteria in this spec.",
+          "$ref": "#/$defs/Enforcement",
+          "default": "required"
+        }
+      },
+      "additionalProperties": false
     }
   }
 }

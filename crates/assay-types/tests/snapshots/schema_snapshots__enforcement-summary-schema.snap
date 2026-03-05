@@ -1,0 +1,38 @@
+---
+source: crates/assay-types/tests/schema_snapshots.rs
+expression: schema.to_value()
+---
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Enforcement breakdown in a gate run summary.\n\nAlways present on `GateRunSummary`, with counts defaulting to 0.\nOnly counts executable criteria (skipped criteria are excluded).",
+  "properties": {
+    "advisory_failed": {
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "advisory_passed": {
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "required_failed": {
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "required_passed": {
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "required_passed",
+    "required_failed",
+    "advisory_passed",
+    "advisory_failed"
+  ],
+  "title": "EnforcementSummary",
+  "type": "object"
+}
