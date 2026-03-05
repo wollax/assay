@@ -88,3 +88,21 @@ fn criterion_result_schema_snapshot() {
     let schema = schemars::schema_for!(assay_types::CriterionResult);
     assert_json_snapshot!("criterion-result-schema", schema.to_value());
 }
+
+#[test]
+fn enforcement_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::Enforcement);
+    assert_json_snapshot!("enforcement-schema", schema.to_value());
+}
+
+#[test]
+fn gate_section_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::GateSection);
+    assert_json_snapshot!("gate-section-schema", schema.to_value());
+}
+
+#[test]
+fn enforcement_summary_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::EnforcementSummary);
+    assert_json_snapshot!("enforcement-summary-schema", schema.to_value());
+}
