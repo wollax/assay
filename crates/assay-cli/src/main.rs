@@ -182,6 +182,38 @@ Examples:
         #[arg(long)]
         json: bool,
     },
+    /// View gate run history for a spec
+    #[command(after_long_help = "\
+Examples:
+  Show recent gate runs:
+    assay gate history auth-flow
+
+  Show the last 5 runs:
+    assay gate history auth-flow --limit 5
+
+  Show details for a specific run:
+    assay gate history auth-flow 20260305T143000Z-a3f1b2
+
+  Show details of the most recent run:
+    assay gate history auth-flow --last
+
+  Output as JSON:
+    assay gate history auth-flow --json")]
+    History {
+        /// Spec name
+        name: String,
+        /// Run ID to show in detail (optional)
+        run_id: Option<String>,
+        /// Show the most recent run in detail
+        #[arg(long, conflicts_with = "run_id")]
+        last: bool,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+        /// Maximum number of runs to display (default: 20)
+        #[arg(long, default_value = "20")]
+        limit: usize,
+    },
 }
 
 /// Check whether terminal colors should be used.
@@ -900,6 +932,264 @@ fn handle_gate_run(name: &str, cli_timeout: Option<u64>, verbose: bool, json: bo
     }
 }
 
+/// Format a timestamp as a relative age string (e.g., "5m", "2h") or absolute when >24h.
+fn format_relative_timestamp(ts: &chrono::DateTime<chrono::Utc>) -> String {
+    let now = chrono::Utc::now();
+    let delta = now.signed_duration_since(*ts);
+    let secs = delta.num_seconds();
+    if secs < 0 {
+        return ts.format("%Y-%m-%d %H:%M").to_string();
+    }
+    if secs < 60 {
+        format!("{secs}s")
+    } else if secs < 3600 {
+        format!("{}m", secs / 60)
+    } else if secs < 86400 {
+        format!("{}h", secs / 3600)
+    } else {
+        ts.format("%Y-%m-%d %H:%M").to_string()
+    }
+}
+
+/// Format a duration in milliseconds as a human-readable string.
+fn format_duration_ms(ms: u64) -> String {
+    if ms < 1000 {
+        format!("{ms}ms")
+    } else if ms < 60_000 {
+        let secs = ms as f64 / 1000.0;
+        if ms % 1000 == 0 {
+            format!("{secs:.0}s")
+        } else {
+            format!("{secs:.1}s")
+        }
+    } else {
+        let total_secs = ms / 1000;
+        let mins = total_secs / 60;
+        let secs = total_secs % 60;
+        if secs == 0 {
+            format!("{mins}m")
+        } else {
+            format!("{mins}m {secs}s")
+        }
+    }
+}
+
+/// Handle `assay gate history <name> [--json] [--limit N]` — table view.
+fn handle_gate_history(name: &str, json: bool, limit: usize) {
+    let root = project_root();
+    let config = match assay_core::config::load(&root) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("Error: {e}");
+            std::process::exit(1);
+        }
+    };
+    let assay_dir = root.join(".assay");
+
+    // Verify spec exists
+    let specs_dir = assay_dir.join(&config.specs_dir);
+    match assay_core::spec::load_spec_entry(name, &specs_dir) {
+        Ok(_) => {}
+        Err(assay_core::AssayError::SpecNotFound { .. }) => {
+            eprintln!("Error: spec '{name}' not found in {}", config.specs_dir);
+            std::process::exit(1);
+        }
+        Err(e) => {
+            eprintln!("Error: {e}");
+            std::process::exit(1);
+        }
+    }
+
+    let ids = match assay_core::history::list(&assay_dir, name) {
+        Ok(ids) => ids,
+        Err(e) => {
+            eprintln!("Error: {e}");
+            std::process::exit(1);
+        }
+    };
+
+    if ids.is_empty() {
+        if json {
+            println!("[]");
+        } else {
+            println!("No history for {name}");
+        }
+        return;
+    }
+
+    // Take the last `limit` entries (most recent, since list is sorted oldest-first)
+    let display_ids: Vec<&str> = ids
+        .iter()
+        .rev()
+        .take(limit)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .map(|s| s.as_str())
+        .collect();
+
+    // Load all records for display
+    let records: Vec<assay_types::GateRunRecord> = display_ids
+        .iter()
+        .filter_map(|id| assay_core::history::load(&assay_dir, name, id).ok())
+        .collect();
+
+    if json {
+        let output = serde_json::to_string_pretty(&records).unwrap_or_else(|e| {
+            eprintln!("Error: {e}");
+            std::process::exit(1);
+        });
+        println!("{output}");
+        return;
+    }
+
+    // Print table
+    let color = colors_enabled();
+    let num_width = records.len().to_string().len().max(1);
+
+    println!(
+        "  {:<nw$}  {:<16}  {:<6}  {:>6}  {:>6}  {:>7}  {:>10}  {:>10}  {:>8}",
+        "#",
+        "Timestamp",
+        "Status",
+        "Passed",
+        "Failed",
+        "Skipped",
+        "Req Failed",
+        "Adv Failed",
+        "Duration",
+        nw = num_width,
+    );
+    println!(
+        "  {:<nw$}  {:<16}  {:<6}  {:>6}  {:>6}  {:>7}  {:>10}  {:>10}  {:>8}",
+        "\u{2500}".repeat(num_width),
+        "\u{2500}".repeat(16),
+        "\u{2500}".repeat(6),
+        "\u{2500}".repeat(6),
+        "\u{2500}".repeat(6),
+        "\u{2500}".repeat(7),
+        "\u{2500}".repeat(10),
+        "\u{2500}".repeat(10),
+        "\u{2500}".repeat(8),
+        nw = num_width,
+    );
+
+    for (i, record) in records.iter().enumerate() {
+        let s = &record.summary;
+        let ts = format_relative_timestamp(&record.timestamp);
+        let status = if s.failed == 0 {
+            if color {
+                "\x1b[32mpass\x1b[0m".to_string()
+            } else {
+                "pass".to_string()
+            }
+        } else if color {
+            "\x1b[31mfail\x1b[0m".to_string()
+        } else {
+            "fail".to_string()
+        };
+        let dur = format_duration_ms(s.total_duration_ms);
+
+        let status_width = if color { 6 + ANSI_COLOR_OVERHEAD } else { 6 };
+
+        println!(
+            "  {:<nw$}  {:<16}  {:<sw$}  {:>6}  {:>6}  {:>7}  {:>10}  {:>10}  {:>8}",
+            i + 1,
+            ts,
+            status,
+            s.passed,
+            s.failed,
+            s.skipped,
+            s.enforcement.required_failed,
+            s.enforcement.advisory_failed,
+            dur,
+            nw = num_width,
+            sw = status_width,
+        );
+    }
+}
+
+/// Handle `assay gate history <name> <run-id> [--json]` — detail view.
+fn handle_gate_history_detail(name: &str, run_id: &str, json: bool) {
+    let root = project_root();
+    let assay_dir = root.join(".assay");
+
+    let record = match assay_core::history::load(&assay_dir, name, run_id) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("Error: {e}");
+            std::process::exit(1);
+        }
+    };
+
+    if json {
+        let output = serde_json::to_string_pretty(&record).unwrap_or_else(|e| {
+            eprintln!("Error: {e}");
+            std::process::exit(1);
+        });
+        println!("{output}");
+        return;
+    }
+
+    let s = &record.summary;
+    let color = colors_enabled();
+    let overall = if s.failed == 0 {
+        format_pass(color)
+    } else {
+        format_fail(color)
+    };
+
+    println!("Run: {}", record.run_id);
+    println!("Spec: {}", s.spec_name);
+    println!(
+        "Time: {}",
+        record.timestamp.format("%Y-%m-%d %H:%M:%S UTC")
+    );
+    println!("Duration: {}", format_duration_ms(s.total_duration_ms));
+    println!("Status: {overall}");
+    println!("Assay: {}", record.assay_version);
+    if let Some(ref wd) = record.working_dir {
+        println!("Working dir: {wd}");
+    }
+    println!();
+    println!(
+        "Summary: {} passed, {} failed, {} skipped",
+        s.passed, s.failed, s.skipped
+    );
+    println!(
+        "Enforcement: {} req passed, {} req failed, {} adv passed, {} adv failed",
+        s.enforcement.required_passed,
+        s.enforcement.required_failed,
+        s.enforcement.advisory_passed,
+        s.enforcement.advisory_failed
+    );
+
+    if !s.results.is_empty() {
+        println!();
+        println!("Criteria:");
+        for cr in &s.results {
+            let status_str = match &cr.result {
+                Some(r) if r.passed => format_pass(color),
+                Some(_) => format_fail(color),
+                None => "skip",
+            };
+            let enforcement_label = match cr.enforcement {
+                assay_types::Enforcement::Required => "req",
+                assay_types::Enforcement::Advisory => "adv",
+            };
+            let duration_str = cr
+                .result
+                .as_ref()
+                .map(|r| format_duration_ms(r.duration_ms))
+                .unwrap_or_default();
+            println!(
+                "  {} ... {} [{}] {}",
+                cr.criterion_name, status_str, enforcement_label, duration_str
+            );
+        }
+    }
+}
+
 /// Print evidence (stdout/stderr) for a gate result.
 ///
 /// Multi-line output is indented with 4 spaces per line. If the output
@@ -1084,6 +1374,45 @@ async fn main() {
             GateCommand::Run { .. } => {
                 eprintln!("Error: specify a spec name or use --all");
                 std::process::exit(1);
+            }
+            GateCommand::History {
+                name,
+                run_id: Some(rid),
+                json,
+                ..
+            } => {
+                handle_gate_history_detail(&name, &rid, json);
+            }
+            GateCommand::History {
+                name,
+                last: true,
+                json,
+                ..
+            } => {
+                let root = project_root();
+                let assay_dir = root.join(".assay");
+                let ids = match assay_core::history::list(&assay_dir, &name) {
+                    Ok(ids) => ids,
+                    Err(e) => {
+                        eprintln!("Error: {e}");
+                        std::process::exit(1);
+                    }
+                };
+                match ids.last() {
+                    Some(last_id) => handle_gate_history_detail(&name, last_id, json),
+                    None => {
+                        if json {
+                            println!("null");
+                        } else {
+                            println!("No history for {name}");
+                        }
+                    }
+                }
+            }
+            GateCommand::History {
+                name, json, limit, ..
+            } => {
+                handle_gate_history(&name, json, limit);
             }
         },
         None => {
