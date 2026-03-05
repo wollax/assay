@@ -9,19 +9,19 @@ See: .planning/PROJECT.md (updated 2026-03-02)
 
 ## Current Position
 
-Phase: 14 — Run History Core (VERIFIED & COMPLETE)
+Phase: 15 — Run History CLI (VERIFIED & COMPLETE)
 Plan: 02 of 2 (complete)
 Status: Phase complete, verified, moved to completed/
-Last activity: 2026-03-05 — Phase 14 verified and completed
+Last activity: 2026-03-05 — Phase 15 verified and completed
 
-Progress: v0.2.0 [████      ] ~31%
+Progress: v0.2.0 [█████░    ] ~38%
 
 ## Milestone Progress
 
 | Milestone | Phases | Requirements | Complete |
 |-----------|--------|--------------|----------|
 | v0.1.0 | 10 | 43 | 100% (shipped) |
-| v0.2.0 | 13 (11-23) | 52 | ~31% |
+| v0.2.0 | 13 (11-23) | 52 | ~38% |
 
 ## Accumulated Context
 
@@ -82,6 +82,17 @@ v0.2.0 decisions (from 14-01 execution):
 v0.2.0 decisions (from 14-02 execution):
 - PartialEq derived on GateRunRecord, GateRunSummary, CriterionResult, GateResult (non-breaking, enables structural equality assertions)
 
+v0.2.0 decisions (from 15-01 execution):
+- max_history defaults to None (no pruning); CLI will apply default_max_history() (1000) when absent
+- Some(0) and None both skip pruning — zero is treated as unlimited
+- prune() is private to the history module — only save() calls it
+- SaveResult replaces PathBuf as save() return type
+
+v0.2.0 decisions (from 15-02 execution):
+- save_run_record() helper centralizes record construction and save logic
+- Streaming mode records have empty results vec and zero total_duration_ms (no per-criterion timing)
+- handle_gate_run_all() streaming path tracks per-spec counters via before/after delta
+
 ### Pending Issues
 
 38 open issues (expanded from 30 after Phase 8-10 PR reviews)
@@ -92,10 +103,10 @@ None.
 
 ### Next Actions
 
-Phase 14 verified and complete. Next: Phase 15 — Run History CLI
+Phase 15 verified and complete. Next: Phase 16 — Agent Gate Recording
 
 ### Session Continuity
 
 Last session: 2026-03-05
-Stopped at: Phase 14 verified and completed, PR ready for review
+Stopped at: Phase 15 verified and completed, PR ready for review
 Resume file: None

@@ -266,6 +266,7 @@ default_timeout = 600
         config.gates = Some(assay_types::GatesConfig {
             default_timeout: 0,
             working_dir: None,
+            max_history: None,
         });
 
         let errors = super::validate(&config).unwrap_err();
@@ -286,6 +287,7 @@ default_timeout = 600
             gates: Some(assay_types::GatesConfig {
                 default_timeout: 0,
                 working_dir: None,
+                max_history: None,
             }),
         };
 
