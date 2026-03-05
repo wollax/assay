@@ -7,7 +7,7 @@ use std::collections::HashSet;
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-use assay_types::{FeatureSpec, GatesSpec, Spec};
+use assay_types::{Enforcement, FeatureSpec, GatesSpec, Spec};
 
 use crate::error::{AssayError, Result};
 
@@ -126,6 +126,25 @@ pub fn validate(spec: &Spec) -> std::result::Result<(), Vec<SpecError>> {
                     ),
                 });
             }
+        }
+
+        // Verify at least one executable criterion is required
+        let has_required_executable = spec.criteria.iter().any(|c| {
+            let is_executable = c.cmd.is_some() || c.path.is_some();
+            let enforcement = c.enforcement.unwrap_or_else(|| {
+                spec.gate
+                    .as_ref()
+                    .map(|g| g.enforcement)
+                    .unwrap_or(Enforcement::Required)
+            });
+            is_executable && enforcement == Enforcement::Required
+        });
+
+        if !has_required_executable {
+            errors.push(SpecError {
+                field: "criteria".into(),
+                message: "at least one executable criterion must have enforcement = \"required\"; a gate with only advisory criteria would always pass".into(),
+            });
         }
     }
 
@@ -349,6 +368,25 @@ pub fn validate_gates_spec(spec: &GatesSpec) -> std::result::Result<(), Vec<Spec
                     ),
                 });
             }
+        }
+
+        // Verify at least one executable criterion is required
+        let has_required_executable = spec.criteria.iter().any(|c| {
+            let is_executable = c.cmd.is_some() || c.path.is_some();
+            let enforcement = c.enforcement.unwrap_or_else(|| {
+                spec.gate
+                    .as_ref()
+                    .map(|g| g.enforcement)
+                    .unwrap_or(Enforcement::Required)
+            });
+            is_executable && enforcement == Enforcement::Required
+        });
+
+        if !has_required_executable {
+            errors.push(SpecError {
+                field: "criteria".into(),
+                message: "at least one executable criterion must have enforcement = \"required\"; a gate with only advisory criteria would always pass".into(),
+            });
         }
     }
 
@@ -673,7 +711,7 @@ unknown_crit_key = true
             criteria: vec![Criterion {
                 name: "c1".to_string(),
                 description: "d1".to_string(),
-                cmd: None,
+                cmd: Some("true".to_string()),
                 path: None,
                 timeout: None,
                 enforcement: None,
@@ -822,6 +860,7 @@ name = "loaded"
 [[criteria]]
 name = "c1"
 description = "d1"
+cmd = "true"
 "#,
         );
 
@@ -875,6 +914,7 @@ name = ""
 [[criteria]]
 name = "c1"
 description = "d1"
+cmd = "true"
 "#,
         );
 
@@ -914,6 +954,7 @@ name = "alpha"
 [[criteria]]
 name = "c1"
 description = "d1"
+cmd = "true"
 "#,
         );
         write_spec_in(
@@ -925,6 +966,7 @@ name = "beta"
 [[criteria]]
 name = "c1"
 description = "d1"
+cmd = "true"
 "#,
         );
 
@@ -950,6 +992,7 @@ name = "good"
 [[criteria]]
 name = "c1"
 description = "d1"
+cmd = "true"
 "#,
         );
         write_spec_in(dir.path(), "bad.toml", "not valid toml ===");
@@ -972,6 +1015,7 @@ name = "spec"
 [[criteria]]
 name = "c1"
 description = "d1"
+cmd = "true"
 "#,
         );
         write_spec_in(dir.path(), "readme.md", "# Not a spec");
@@ -996,6 +1040,7 @@ name = "zeta"
 [[criteria]]
 name = "c1"
 description = "d1"
+cmd = "true"
 "#,
         );
         write_spec_in(
@@ -1007,6 +1052,7 @@ name = "alpha"
 [[criteria]]
 name = "c1"
 description = "d1"
+cmd = "true"
 "#,
         );
 
@@ -1027,6 +1073,7 @@ name = "same-name"
 [[criteria]]
 name = "c1"
 description = "d1"
+cmd = "true"
 "#,
         );
         write_spec_in(
@@ -1038,6 +1085,7 @@ name = "same-name"
 [[criteria]]
 name = "c1"
 description = "d1"
+cmd = "true"
 "#,
         );
 
@@ -1126,6 +1174,7 @@ name = ""
 [[criteria]]
 name = "c1"
 description = "d1"
+cmd = "true"
 "#,
         )
         .unwrap();
@@ -1196,6 +1245,7 @@ name = "auth-flow"
 [[criteria]]
 name = "c1"
 description = "d1"
+cmd = "true"
 "#,
             Some(
                 r#"
@@ -1225,6 +1275,7 @@ name = "hello"
 [[criteria]]
 name = "c1"
 description = "d1"
+cmd = "true"
 "#,
         );
 
@@ -1248,6 +1299,7 @@ name = "auth"
 [[criteria]]
 name = "c1"
 description = "d1"
+cmd = "true"
 "#,
         );
         create_dir_spec(
@@ -1259,6 +1311,7 @@ name = "auth"
 [[criteria]]
 name = "c1"
 description = "d1"
+cmd = "true"
 "#,
             None,
         );
@@ -1319,6 +1372,7 @@ name = "alpha"
 [[criteria]]
 name = "c1"
 description = "d1"
+cmd = "true"
 "#,
         );
         create_dir_spec(
@@ -1330,6 +1384,7 @@ name = "beta-dir"
 [[criteria]]
 name = "c1"
 description = "d1"
+cmd = "true"
 "#,
             None,
         );
@@ -1355,6 +1410,7 @@ name = "same-name"
 [[criteria]]
 name = "c1"
 description = "d1"
+cmd = "true"
 "#,
         );
         create_dir_spec(
@@ -1366,6 +1422,7 @@ name = "same-name"
 [[criteria]]
 name = "c1"
 description = "d1"
+cmd = "true"
 "#,
             None,
         );
@@ -1537,7 +1594,7 @@ description = "d1"
             criteria: vec![assay_types::GateCriterion {
                 name: "c1".into(),
                 description: "d1".into(),
-                cmd: None,
+                cmd: Some("true".into()),
                 path: None,
                 timeout: None,
                 enforcement: None,
@@ -1588,5 +1645,140 @@ description = "d1"
         };
         let errors = validate_gates_spec(&spec).unwrap_err();
         assert!(errors.iter().any(|e| e.message.contains("dup")));
+    }
+
+    // ── enforcement validation tests ─────────────────────────────────
+
+    #[test]
+    fn validate_rejects_all_advisory_criteria() {
+        use assay_types::enforcement::{Enforcement, GateSection};
+
+        let spec = Spec {
+            name: "test".to_string(),
+            description: String::new(),
+            gate: Some(GateSection {
+                enforcement: Enforcement::Advisory,
+            }),
+            criteria: vec![Criterion {
+                name: "lint".to_string(),
+                description: "run lint".to_string(),
+                cmd: Some("cargo clippy".to_string()),
+                path: None,
+                timeout: None,
+                enforcement: None, // inherits advisory from gate section
+            }],
+        };
+        let errors = validate(&spec).unwrap_err();
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.message.contains("at least one executable criterion"))
+        );
+    }
+
+    #[test]
+    fn validate_accepts_required_override_on_advisory_default() {
+        use assay_types::enforcement::{Enforcement, GateSection};
+
+        let spec = Spec {
+            name: "test".to_string(),
+            description: String::new(),
+            gate: Some(GateSection {
+                enforcement: Enforcement::Advisory,
+            }),
+            criteria: vec![Criterion {
+                name: "lint".to_string(),
+                description: "lint".to_string(),
+                cmd: Some("cargo clippy".to_string()),
+                path: None,
+                timeout: None,
+                enforcement: Some(Enforcement::Required),
+            }],
+        };
+        assert!(validate(&spec).is_ok());
+    }
+
+    #[test]
+    fn validate_no_gate_section_defaults_required() {
+        // Existing specs without [gate] should still validate fine
+        let spec = Spec {
+            name: "test".to_string(),
+            description: String::new(),
+            gate: None,
+            criteria: vec![Criterion {
+                name: "build".to_string(),
+                description: "build".to_string(),
+                cmd: Some("cargo build".to_string()),
+                path: None,
+                timeout: None,
+                enforcement: None,
+            }],
+        };
+        assert!(validate(&spec).is_ok());
+    }
+
+    #[test]
+    fn validate_gates_spec_rejects_all_advisory() {
+        use assay_types::enforcement::{Enforcement, GateSection};
+
+        let spec = GatesSpec {
+            name: "test".into(),
+            description: String::new(),
+            gate: Some(GateSection {
+                enforcement: Enforcement::Advisory,
+            }),
+            criteria: vec![assay_types::GateCriterion {
+                name: "lint".into(),
+                description: "lint".into(),
+                cmd: Some("cargo clippy".into()),
+                path: None,
+                timeout: None,
+                enforcement: None,
+                requirements: vec![],
+            }],
+        };
+        let errors = validate_gates_spec(&spec).unwrap_err();
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.message.contains("at least one executable criterion"))
+        );
+    }
+
+    #[test]
+    fn validate_descriptive_required_does_not_count_as_executable() {
+        use assay_types::enforcement::Enforcement;
+
+        // A spec with one descriptive required criterion and one executable advisory criterion
+        // should fail: the descriptive one doesn't count because it has no cmd/path
+        let spec = Spec {
+            name: "test".to_string(),
+            description: String::new(),
+            gate: None,
+            criteria: vec![
+                Criterion {
+                    name: "descriptive".to_string(),
+                    description: "no cmd or path".to_string(),
+                    cmd: None,
+                    path: None,
+                    timeout: None,
+                    enforcement: Some(Enforcement::Required),
+                },
+                Criterion {
+                    name: "advisory-executable".to_string(),
+                    description: "has cmd but advisory".to_string(),
+                    cmd: Some("true".to_string()),
+                    path: None,
+                    timeout: None,
+                    enforcement: Some(Enforcement::Advisory),
+                },
+            ],
+        };
+        let errors = validate(&spec).unwrap_err();
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.message.contains("at least one executable criterion"))
+        );
     }
 }
