@@ -16,14 +16,47 @@ use assay_types::GateRunRecord;
 
 use crate::error::{AssayError, Result};
 
+/// Validate that a string is safe to use as a single path component.
+///
+/// Rejects empty strings, path separators (`/`, `\`), and traversal
+/// sequences (`..`) to prevent directory escape.
+fn validate_path_component(value: &str, label: &str) -> Result<()> {
+    if value.is_empty()
+        || value == "."
+        || value == ".."
+        || value.contains('/')
+        || value.contains('\\')
+    {
+        return Err(AssayError::Io {
+            operation: format!("validating {label}"),
+            path: PathBuf::from(value),
+            source: std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("invalid {label}: {value:?} (must be a safe filename component)"),
+            ),
+        });
+    }
+    Ok(())
+}
+
 /// Generate a run ID from a timestamp: `YYYYMMDDTHHMMSSZ-<6-char-hex>`.
 ///
-/// The hex suffix is derived from [`RandomState`] (OS-seeded SipHash),
-/// providing 24 bits of entropy to avoid collisions within the same second.
+/// The hex suffix is derived from [`RandomState`] (OS-seeded SipHash)
+/// with thread ID and nanosecond counter mixed in, providing 24 bits
+/// of collision resistance within the same second.
 pub fn generate_run_id(timestamp: &DateTime<Utc>) -> String {
     let ts = timestamp.format("%Y%m%dT%H%M%SZ");
-    let random = RandomState::new().build_hasher().finish();
-    let suffix = format!("{:06x}", random & 0xFF_FFFF);
+    let mut hasher = RandomState::new().build_hasher();
+    hasher.write_u64(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .subsec_nanos() as u64,
+    );
+    // Mix in thread identity via Debug format (stable API).
+    use std::hash::Hash;
+    std::thread::current().id().hash(&mut hasher);
+    let suffix = format!("{:06x}", hasher.finish() & 0xFF_FFFF);
     format!("{ts}-{suffix}")
 }
 
@@ -37,6 +70,8 @@ pub fn generate_run_id(timestamp: &DateTime<Utc>) -> String {
 ///
 /// Returns the path to the written file.
 pub fn save(assay_dir: &Path, record: &GateRunRecord) -> Result<PathBuf> {
+    validate_path_component(&record.summary.spec_name, "spec name")?;
+    validate_path_component(&record.run_id, "run ID")?;
     let results_dir = assay_dir.join("results").join(&record.summary.spec_name);
 
     std::fs::create_dir_all(&results_dir).map_err(|source| AssayError::Io {
@@ -91,6 +126,8 @@ pub fn save(assay_dir: &Path, record: &GateRunRecord) -> Result<PathBuf> {
 /// deserialization — records produced by a different schema version
 /// will fail loudly.
 pub fn load(assay_dir: &Path, spec_name: &str, run_id: &str) -> Result<GateRunRecord> {
+    validate_path_component(spec_name, "spec name")?;
+    validate_path_component(run_id, "run ID")?;
     let path = assay_dir
         .join("results")
         .join(spec_name)
@@ -114,6 +151,7 @@ pub fn load(assay_dir: &Path, spec_name: &str, run_id: &str) -> Result<GateRunRe
 /// Returns an empty vec if the spec results directory does not exist
 /// (this is not an error — the spec simply has no history yet).
 pub fn list(assay_dir: &Path, spec_name: &str) -> Result<Vec<String>> {
+    validate_path_component(spec_name, "spec name")?;
     let spec_dir = assay_dir.join("results").join(spec_name);
 
     if !spec_dir.is_dir() {
@@ -476,5 +514,25 @@ mod tests {
             record, independent,
             "independent deserialization should match original"
         );
+    }
+
+    #[test]
+    fn test_path_traversal_rejected() {
+        let dir = TempDir::new().unwrap();
+
+        // spec_name with traversal
+        let mut record = make_test_record("../escape");
+        assert!(save(dir.path(), &record).is_err());
+
+        // spec_name with slash
+        record.summary.spec_name = "foo/bar".to_string();
+        assert!(save(dir.path(), &record).is_err());
+
+        // load with traversal
+        assert!(load(dir.path(), "..", "some-id").is_err());
+        assert!(load(dir.path(), "ok-spec", "../escape").is_err());
+
+        // list with traversal
+        assert!(list(dir.path(), "..").is_err());
     }
 }
