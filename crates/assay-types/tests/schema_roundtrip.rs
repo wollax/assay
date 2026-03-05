@@ -134,6 +134,10 @@ fn gate_result_full_validates() {
         timestamp: Utc::now(),
         truncated: false,
         original_bytes: None,
+        evidence: None,
+        reasoning: None,
+        confidence: None,
+        evaluator_role: None,
     });
 }
 
@@ -149,6 +153,10 @@ fn gate_result_minimal_validates() {
         timestamp: Utc::now(),
         truncated: false,
         original_bytes: None,
+        evidence: None,
+        reasoning: None,
+        confidence: None,
+        evaluator_role: None,
     });
 }
 
@@ -209,6 +217,10 @@ fn gate_result_truncated_validates() {
         timestamp: Utc::now(),
         truncated: true,
         original_bytes: Some(131_072),
+        evidence: None,
+        reasoning: None,
+        confidence: None,
+        evaluator_role: None,
     });
 }
 
@@ -289,6 +301,10 @@ fn gate_run_summary_full_validates() {
                 timestamp: Utc::now(),
                 truncated: false,
                 original_bytes: None,
+                evidence: None,
+                reasoning: None,
+                confidence: None,
+                evaluator_role: None,
             }),
             enforcement: Enforcement::Required,
         }],
@@ -331,6 +347,10 @@ fn criterion_result_with_result_validates() {
             timestamp: Utc::now(),
             truncated: false,
             original_bytes: None,
+            evidence: None,
+            reasoning: None,
+            confidence: None,
+            evaluator_role: None,
         }),
         enforcement: Enforcement::Required,
     });
