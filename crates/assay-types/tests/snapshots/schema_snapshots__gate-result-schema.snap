@@ -4,6 +4,46 @@ expression: schema.to_value()
 ---
 {
   "$defs": {
+    "Confidence": {
+      "description": "Agent confidence level in an evaluation.",
+      "oneOf": [
+        {
+          "const": "high",
+          "description": "High confidence — clear evidence supports the conclusion.",
+          "type": "string"
+        },
+        {
+          "const": "medium",
+          "description": "Medium confidence — evidence is suggestive but not conclusive.",
+          "type": "string"
+        },
+        {
+          "const": "low",
+          "description": "Low confidence — uncertain; evaluation may need human review.",
+          "type": "string"
+        }
+      ]
+    },
+    "EvaluatorRole": {
+      "description": "The role of the evaluator who produced a gate result.\n\nDetermines trust level and audit requirements:\n- `SelfEval` (\"self\"): the coding agent evaluates its own work (default for v0.2).\n- `Independent`: a separate agent evaluates (planned for v0.3).\n- `Human`: a human performed the evaluation.",
+      "oneOf": [
+        {
+          "const": "self",
+          "description": "The coding agent evaluates its own work.",
+          "type": "string"
+        },
+        {
+          "const": "independent",
+          "description": "A separate, independent agent evaluates.",
+          "type": "string"
+        },
+        {
+          "const": "human",
+          "description": "A human performed the evaluation.",
+          "type": "string"
+        }
+      ]
+    },
     "GateKind": {
       "description": "The kind of gate to evaluate.\n\nUses internal tagging (`#[serde(tag = \"kind\")]`) so TOML output includes\na `kind = \"Command\"` or `kind = \"AlwaysPass\"` discriminator field.",
       "oneOf": [
@@ -55,6 +95,19 @@ expression: schema.to_value()
             "path"
           ],
           "type": "object"
+        },
+        {
+          "description": "A gate evaluated by an agent via structured reasoning.",
+          "properties": {
+            "kind": {
+              "const": "AgentReport",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
         }
       ]
     }
@@ -62,11 +115,40 @@ expression: schema.to_value()
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "description": "The result of evaluating a gate.\n\nCaptures whether the gate passed, the command output (if any), timing,\nand which kind of gate produced this result (self-describing via `kind`).",
   "properties": {
+    "confidence": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Confidence"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Agent's confidence level in the evaluation.\nOnly populated for `AgentReport` gates."
+    },
     "duration_ms": {
       "description": "How long the gate took to evaluate, in milliseconds.",
       "format": "uint64",
       "minimum": 0,
       "type": "integer"
+    },
+    "evaluator_role": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/EvaluatorRole"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Role of the evaluator who produced this result.\nOnly populated for `AgentReport` gates."
+    },
+    "evidence": {
+      "description": "What the agent observed (concrete facts).\nOnly populated for `AgentReport` gates.",
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "exit_code": {
       "description": "Exit code from the gate command, if applicable.\nOmitted from serialized output when `None` (e.g., for `AlwaysPass` gates).",
@@ -92,6 +174,13 @@ expression: schema.to_value()
     "passed": {
       "description": "Whether the gate passed.",
       "type": "boolean"
+    },
+    "reasoning": {
+      "description": "Why those facts lead to pass/fail.\nOnly populated for `AgentReport` gates.",
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "stderr": {
       "description": "Standard error captured from the gate command.\nOmitted from serialized output when empty.",

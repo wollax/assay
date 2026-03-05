@@ -5,13 +5,15 @@ pub mod gate;
 pub mod gate_run;
 pub mod gates_spec;
 pub mod schema_registry;
+pub mod session;
 
-pub use criterion::Criterion;
+pub use criterion::{Criterion, CriterionKind};
 pub use enforcement::{Enforcement, EnforcementSummary, GateSection};
 pub use feature_spec::FeatureSpec;
 pub use gate::{GateKind, GateResult};
 pub use gate_run::{CriterionResult, GateRunRecord, GateRunSummary};
 pub use gates_spec::{GateCriterion, GatesSpec};
+pub use session::{AgentEvaluation, AgentSession, Confidence, EvaluatorRole};
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};

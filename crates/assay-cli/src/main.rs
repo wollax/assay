@@ -1,4 +1,5 @@
 use assay_core::spec::SpecEntry;
+use assay_types::GateKind;
 use clap::{CommandFactory, Parser, Subcommand};
 use std::path::Path;
 
@@ -222,6 +223,31 @@ Examples:
 /// (any value, including empty — per <https://no-color.org/>).
 fn colors_enabled() -> bool {
     std::env::var_os("NO_COLOR").is_none()
+}
+
+/// Map a [`GateKind`] to a short display label for CLI output.
+fn gate_kind_label(kind: &GateKind) -> &'static str {
+    match kind {
+        GateKind::Command { .. } => "[cmd]",
+        GateKind::FileExists { .. } => "[file]",
+        GateKind::AlwaysPass => "[auto]",
+        GateKind::AgentReport => "[agent]",
+    }
+}
+
+/// Derive a display label from a [`Criterion`](assay_types::Criterion) struct.
+///
+/// Uses the same labels as [`gate_kind_label`] but infers kind from criterion fields.
+fn criterion_label(criterion: &assay_types::Criterion) -> &'static str {
+    if criterion.kind == Some(assay_types::CriterionKind::AgentReport) {
+        "[agent]"
+    } else if criterion.cmd.is_some() {
+        "[cmd]"
+    } else if criterion.path.is_some() {
+        "[file]"
+    } else {
+        ""
+    }
 }
 
 /// Format a criterion type label, optionally with ANSI color.
@@ -665,13 +691,26 @@ fn stream_criterion(
     cfg: &StreamConfig,
     counters: &mut StreamCounters,
 ) {
-    if criterion.cmd.is_none() && criterion.path.is_none() {
+    if criterion.cmd.is_none()
+        && criterion.path.is_none()
+        && criterion.kind != Some(assay_types::CriterionKind::AgentReport)
+    {
         counters.skipped += 1;
         return;
     }
 
+    // AgentReport criteria are pending (not evaluable via CLI)
+    if criterion.kind == Some(assay_types::CriterionKind::AgentReport) {
+        counters.skipped += 1;
+        let cr = if cfg.color { "\r\x1b[K" } else { "\r" };
+        let label = criterion_label(criterion);
+        eprintln!("{cr}  {label} {} ... pending", criterion.name);
+        return;
+    }
+
+    let label = criterion_label(criterion);
     let cr = if cfg.color { "\r\x1b[K" } else { "\r" };
-    eprint!("{cr}  {} ... running", criterion.name);
+    eprint!("{cr}  {label} {} ... running", criterion.name);
 
     let timeout =
         assay_core::gate::resolve_timeout(cfg.cli_timeout, criterion.timeout, cfg.config_timeout);
@@ -686,7 +725,7 @@ fn stream_criterion(
                 format_fail(cfg.color)
             };
 
-            eprintln!("{cr}  {} ... {}", criterion.name, status_label);
+            eprintln!("{cr}  {label} {} ... {}", criterion.name, status_label);
 
             if !result.passed || cfg.verbose {
                 print_evidence(&result.stdout, &result.stderr, result.truncated, cfg.color);
@@ -694,7 +733,11 @@ fn stream_criterion(
         }
         Err(err) => {
             counters.failed += 1;
-            eprintln!("{cr}  {} ... {}", criterion.name, format_fail(cfg.color));
+            eprintln!(
+                "{cr}  {label} {} ... {}",
+                criterion.name,
+                format_fail(cfg.color)
+            );
             eprintln!("    error: {err}");
         }
     }
@@ -1306,6 +1349,11 @@ fn handle_gate_history_detail(name: &str, run_id: &str, json: bool) {
                 Some(_) => format_fail(color),
                 None => "skip",
             };
+            let kind_label = cr
+                .result
+                .as_ref()
+                .map(|r| gate_kind_label(&r.kind))
+                .unwrap_or("");
             let enforcement_label = match cr.enforcement {
                 assay_types::Enforcement::Required => "req",
                 assay_types::Enforcement::Advisory => "adv",
@@ -1316,9 +1364,29 @@ fn handle_gate_history_detail(name: &str, run_id: &str, json: bool) {
                 .map(|r| format_duration_ms(r.duration_ms))
                 .unwrap_or_default();
             println!(
-                "  {} ... {} [{}] {}",
+                "  {kind_label} {} ... {} [{}] {}",
                 cr.criterion_name, status_str, enforcement_label, duration_str
             );
+
+            // Show agent evaluation fields when present
+            if let Some(ref r) = cr.result {
+                if let Some(ref role) = r.evaluator_role {
+                    println!("    evaluator: {role:?}");
+                }
+                if let Some(ref confidence) = r.confidence {
+                    println!("    confidence: {confidence:?}");
+                }
+                if let Some(ref evidence) = r.evidence {
+                    let truncated: String = evidence.chars().take(200).collect();
+                    let suffix = if evidence.len() > 200 { "..." } else { "" };
+                    println!("    evidence: {truncated}{suffix}");
+                }
+                if let Some(ref reasoning) = r.reasoning {
+                    let truncated: String = reasoning.chars().take(200).collect();
+                    let suffix = if reasoning.len() > 200 { "..." } else { "" };
+                    println!("    reasoning: {truncated}{suffix}");
+                }
+            }
         }
     }
 }

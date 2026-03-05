@@ -41,6 +41,8 @@ fn spec_validates() {
             path: None,
             timeout: None,
             enforcement: None,
+            kind: None,
+            prompt: None,
         }],
     });
 }
@@ -77,6 +79,8 @@ fn workflow_validates() {
                 path: None,
                 timeout: None,
                 enforcement: None,
+                kind: None,
+                prompt: None,
             }],
         }],
         gates: vec![Gate {
@@ -134,6 +138,10 @@ fn gate_result_full_validates() {
         timestamp: Utc::now(),
         truncated: false,
         original_bytes: None,
+        evidence: None,
+        reasoning: None,
+        confidence: None,
+        evaluator_role: None,
     });
 }
 
@@ -149,6 +157,10 @@ fn gate_result_minimal_validates() {
         timestamp: Utc::now(),
         truncated: false,
         original_bytes: None,
+        evidence: None,
+        reasoning: None,
+        confidence: None,
+        evaluator_role: None,
     });
 }
 
@@ -161,6 +173,8 @@ fn criterion_with_cmd_validates() {
         path: None,
         timeout: None,
         enforcement: None,
+        kind: None,
+        prompt: None,
     });
 }
 
@@ -173,6 +187,8 @@ fn criterion_without_cmd_validates() {
         path: None,
         timeout: None,
         enforcement: None,
+        kind: None,
+        prompt: None,
     });
 }
 
@@ -185,6 +201,8 @@ fn criterion_with_timeout_validates() {
         path: None,
         timeout: Some(60),
         enforcement: None,
+        kind: None,
+        prompt: None,
     });
 }
 
@@ -209,6 +227,10 @@ fn gate_result_truncated_validates() {
         timestamp: Utc::now(),
         truncated: true,
         original_bytes: Some(131_072),
+        evidence: None,
+        reasoning: None,
+        confidence: None,
+        evaluator_role: None,
     });
 }
 
@@ -253,6 +275,8 @@ fn gates_spec_validates() {
             path: None,
             timeout: None,
             enforcement: None,
+            kind: None,
+            prompt: None,
             requirements: vec!["REQ-FUNC-001".to_string()],
         }],
     });
@@ -267,6 +291,8 @@ fn gate_criterion_without_cmd_validates() {
         path: None,
         timeout: None,
         enforcement: None,
+        kind: None,
+        prompt: None,
         requirements: vec![],
     });
 }
@@ -289,6 +315,10 @@ fn gate_run_summary_full_validates() {
                 timestamp: Utc::now(),
                 truncated: false,
                 original_bytes: None,
+                evidence: None,
+                reasoning: None,
+                confidence: None,
+                evaluator_role: None,
             }),
             enforcement: Enforcement::Required,
         }],
@@ -331,6 +361,10 @@ fn criterion_result_with_result_validates() {
             timestamp: Utc::now(),
             truncated: false,
             original_bytes: None,
+            evidence: None,
+            reasoning: None,
+            confidence: None,
+            evaluator_role: None,
         }),
         enforcement: Enforcement::Required,
     });
