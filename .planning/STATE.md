@@ -10,9 +10,9 @@ See: .planning/PROJECT.md (updated 2026-03-02)
 ## Current Position
 
 Phase: 13 — Enforcement Levels
-Plan: 01 of 3 (complete)
+Plan: 02 of 3 (complete)
 Status: In progress
-Last activity: 2026-03-04 — Completed 13-01-PLAN.md
+Last activity: 2026-03-04 — Completed 13-02-PLAN.md
 
 Progress: v0.2.0 [███       ] ~20%
 
@@ -66,6 +66,12 @@ v0.2.0 decisions (from 13-01 execution):
 - Input types use Option<Enforcement> (None = inherit from gate section default); output types use concrete Enforcement
 - GateSection uses deny_unknown_fields (user-authored input); EnforcementSummary does not (output type)
 
+v0.2.0 decisions (from 13-02 execution):
+- Backward compat preserved: passed/failed/skipped counts compute as before; EnforcementSummary is additive
+- resolve_enforcement() is public for reuse by CLI/MCP pass/fail logic
+- Validation enforces at-least-one-required at parse time, not evaluation time
+- Descriptive-only criteria (no cmd/path) do not count as executable for the required check
+
 ### Pending Issues
 
 38 open issues (expanded from 30 after Phase 8-10 PR reviews)
@@ -76,10 +82,10 @@ None.
 
 ### Next Actions
 
-Phase 13-02: Enforcement evaluation logic — implement resolve_enforcement(), update evaluate_all/evaluate_all_gates, validation rules
+Phase 13-03: CLI enforcement integration — update StreamCounters, print_gate_summary, JSON exit code logic, spec new template
 
 ### Session Continuity
 
 Last session: 2026-03-04
-Stopped at: Completed 13-01-PLAN.md (enforcement type layer)
+Stopped at: Completed 13-02-PLAN.md (enforcement evaluation logic)
 Resume file: None
