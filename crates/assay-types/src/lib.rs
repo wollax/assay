@@ -127,6 +127,12 @@ pub struct GatesConfig {
     /// Working directory for gate execution.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub working_dir: Option<String>,
+
+    /// Maximum number of run history files to retain per spec.
+    /// When set, oldest files beyond this limit are pruned on each save.
+    /// A value of `0` means unlimited (no pruning). Defaults to `None` (no pruning).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_history: Option<usize>,
 }
 
 inventory::submit! {
@@ -134,6 +140,14 @@ inventory::submit! {
         name: "gates-config",
         generate: || schemars::schema_for!(GatesConfig),
     }
+}
+
+/// Default max_history value for documentation and CLI defaults.
+///
+/// Not used as a serde default — `None` means "no pruning configured"
+/// and the CLI applies this value when the field is absent.
+pub fn default_max_history() -> usize {
+    1000
 }
 
 fn default_specs_dir() -> String {
