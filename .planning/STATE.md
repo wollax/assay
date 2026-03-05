@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 2026-03-02)
 
 ## Current Position
 
-Phase: 15 — Run History CLI
-Plan: 01 of 2 (complete)
-Status: In progress
-Last activity: 2026-03-05 — Completed 15-01-PLAN.md
+Phase: 15 — Run History CLI (complete)
+Plan: 02 of 2 (complete)
+Status: Phase complete
+Last activity: 2026-03-05 — Completed 15-02-PLAN.md
 
-Progress: v0.2.0 [████░     ] ~35%
+Progress: v0.2.0 [█████░    ] ~38%
 
 ## Milestone Progress
 
@@ -88,6 +88,11 @@ v0.2.0 decisions (from 15-01 execution):
 - prune() is private to the history module — only save() calls it
 - SaveResult replaces PathBuf as save() return type
 
+v0.2.0 decisions (from 15-02 execution):
+- save_run_record() helper centralizes record construction and save logic
+- Streaming mode records have empty results vec and zero total_duration_ms (no per-criterion timing)
+- handle_gate_run_all() streaming path tracks per-spec counters via before/after delta
+
 ### Pending Issues
 
 38 open issues (expanded from 30 after Phase 8-10 PR reviews)
@@ -98,10 +103,10 @@ None.
 
 ### Next Actions
 
-Phase 15 Plan 01 complete. Next: Phase 15 Plan 02 — CLI history subcommand and save() wiring.
+Phase 15 complete. Next: Phase 16 or next pending phase.
 
 ### Session Continuity
 
 Last session: 2026-03-05
-Stopped at: Completed 15-01-PLAN.md
+Stopped at: Completed 15-02-PLAN.md (Phase 15 complete)
 Resume file: None
