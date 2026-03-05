@@ -129,18 +129,22 @@ pub fn validate(spec: &Spec) -> std::result::Result<(), Vec<SpecError>> {
         }
 
         // Verify at least one executable criterion is required
+        let has_executable = spec
+            .criteria
+            .iter()
+            .any(|c| c.cmd.is_some() || c.path.is_some());
         let has_required_executable = spec.criteria.iter().any(|c| {
             let is_executable = c.cmd.is_some() || c.path.is_some();
-            let enforcement = c.enforcement.unwrap_or_else(|| {
-                spec.gate
-                    .as_ref()
-                    .map(|g| g.enforcement)
-                    .unwrap_or(Enforcement::Required)
-            });
+            let enforcement = crate::gate::resolve_enforcement(c.enforcement, spec.gate.as_ref());
             is_executable && enforcement == Enforcement::Required
         });
 
-        if !has_required_executable {
+        if !has_executable {
+            errors.push(SpecError {
+                field: "criteria".into(),
+                message: "at least one criterion must have a `cmd` or `path` field".into(),
+            });
+        } else if !has_required_executable {
             errors.push(SpecError {
                 field: "criteria".into(),
                 message: "at least one executable criterion must have enforcement = \"required\"; a gate with only advisory criteria would always pass".into(),
@@ -371,18 +375,22 @@ pub fn validate_gates_spec(spec: &GatesSpec) -> std::result::Result<(), Vec<Spec
         }
 
         // Verify at least one executable criterion is required
+        let has_executable = spec
+            .criteria
+            .iter()
+            .any(|c| c.cmd.is_some() || c.path.is_some());
         let has_required_executable = spec.criteria.iter().any(|c| {
             let is_executable = c.cmd.is_some() || c.path.is_some();
-            let enforcement = c.enforcement.unwrap_or_else(|| {
-                spec.gate
-                    .as_ref()
-                    .map(|g| g.enforcement)
-                    .unwrap_or(Enforcement::Required)
-            });
+            let enforcement = crate::gate::resolve_enforcement(c.enforcement, spec.gate.as_ref());
             is_executable && enforcement == Enforcement::Required
         });
 
-        if !has_required_executable {
+        if !has_executable {
+            errors.push(SpecError {
+                field: "criteria".into(),
+                message: "at least one criterion must have a `cmd` or `path` field".into(),
+            });
+        } else if !has_required_executable {
             errors.push(SpecError {
                 field: "criteria".into(),
                 message: "at least one executable criterion must have enforcement = \"required\"; a gate with only advisory criteria would always pass".into(),
