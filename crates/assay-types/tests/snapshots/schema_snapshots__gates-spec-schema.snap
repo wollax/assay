@@ -4,6 +4,16 @@ expression: schema.to_value()
 ---
 {
   "$defs": {
+    "CriterionKind": {
+      "description": "The kind of evaluation a criterion uses.\n\nWhen set on a criterion, determines how it is evaluated.\n`AgentReport` means the criterion is evaluated by an agent\nvia structured reasoning rather than a shell command.",
+      "oneOf": [
+        {
+          "const": "AgentReport",
+          "description": "Evaluated by an agent via structured reasoning.",
+          "type": "string"
+        }
+      ]
+    },
     "Enforcement": {
       "description": "Enforcement level for a gate criterion.\n\nDetermines whether a criterion failure blocks the gate (required)\nor is informational only (advisory).",
       "oneOf": [
@@ -45,12 +55,30 @@ expression: schema.to_value()
           ],
           "description": "Enforcement level override for this criterion. `None` means \"use the\nspec-level default from `[gate]` section\" (which itself defaults to `required`)."
         },
+        "kind": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CriterionKind"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Criterion evaluation kind. When set to `AgentReport`, this criterion\nis evaluated by an agent. Mutually exclusive with `cmd` and `path`."
+        },
         "name": {
           "description": "Human-readable name for this criterion.",
           "type": "string"
         },
         "path": {
           "description": "Optional file path to check for existence.\nWhen set (and `cmd` is `None`), the criterion evaluates as a `FileExists` gate.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "prompt": {
+          "description": "Instruction prompt for agent-evaluated criteria.",
           "type": [
             "string",
             "null"
