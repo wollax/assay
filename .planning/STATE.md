@@ -10,9 +10,9 @@ See: .planning/PROJECT.md (updated 2026-03-02)
 ## Current Position
 
 Phase: 16 — Agent Gate Recording
-Plan: 03 of 4 (complete)
-Status: In progress
-Last activity: 2026-03-05 — Completed 16-03-PLAN.md (MCP gate_report and gate_finalize Tools)
+Plan: 04 of 4 (complete)
+Status: Phase 16 complete
+Last activity: 2026-03-05 — Completed 16-04-PLAN.md (Visual Distinction, Schema Snapshots, Quality Gate)
 
 Progress: v0.2.0 [██████░   ] ~42%
 
@@ -115,6 +115,12 @@ v0.2.0 decisions (from 16-03 execution):
 - CriterionSummary gains kind_label field (cmd/file/agent) for agent-aware formatting
 - GateRunResponse gains optional session_id/pending_criteria for session-aware responses
 
+v0.2.0 decisions (from 16-04 execution):
+- CLI streaming output prepends [cmd]/[file]/[agent]/[auto] labels to criterion names
+- AgentReport criteria show as "pending" in streaming mode (not skipped)
+- History detail view displays evaluator_role, confidence, evidence (200 chars), reasoning (200 chars) when present
+- 6 new schema snapshots added for Phase 16 types (total: 23)
+
 ### Pending Issues
 
 38 open issues (expanded from 30 after Phase 8-10 PR reviews)
@@ -125,10 +131,10 @@ None.
 
 ### Next Actions
 
-Phase 16 Plan 03 complete. Next: 16-04 — CLI and integration (final plan)
+Phase 16 complete. Next: Phase 17 (pending selection)
 
 ### Session Continuity
 
 Last session: 2026-03-05
-Stopped at: Completed 16-03-PLAN.md
+Stopped at: Completed 16-04-PLAN.md (Phase 16 complete)
 Resume file: None
