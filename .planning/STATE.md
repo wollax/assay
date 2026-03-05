@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 2026-03-02)
 
 ## Current Position
 
-Phase: 17 — MCP Hardening & Agent History
-Plan: 01 of 2 (complete)
-Status: In progress
-Last activity: 2026-03-05 — Completed 17-01-PLAN.md
+Phase: 17 — MCP Hardening & Agent History (complete)
+Plan: 02 of 2 (complete)
+Status: Phase 17 complete
+Last activity: 2026-03-05 — Completed 17-02-PLAN.md
 
-Progress: v0.2.0 [██████░   ] ~50%
+Progress: v0.2.0 [██████░   ] ~55%
 
 ## Milestone Progress
 
@@ -127,6 +127,12 @@ v0.2.0 decisions (from 17-01 execution):
 - spec_list uses SpecListResponse envelope with skip_serializing_if on errors vec
 - GateRunResponse gains required_passed, advisory_passed, blocked fields computed from EnforcementSummary
 
+v0.2.0 decisions (from 17-02 execution):
+- gate_history loads config for validation consistency, prefixes _config (not directly needed)
+- List mode reverses history::list() output for most-recent-first agent ergonomics
+- Detail mode passes through full GateRunRecord JSON without mapping
+- Default limit is 10 runs; unreadable entries skipped with tracing::warn
+
 ### Pending Issues
 
 38 open issues (expanded from 30 after Phase 8-10 PR reviews)
@@ -137,10 +143,10 @@ None.
 
 ### Next Actions
 
-Phase 17 Plan 01 complete. Next: 17-02-PLAN.md (new MCP tools and agent history)
+Phase 17 complete. Next phase TBD from v0.2.0 roadmap.
 
 ### Session Continuity
 
 Last session: 2026-03-05
-Stopped at: Completed 17-01-PLAN.md
+Stopped at: Completed 17-02-PLAN.md (Phase 17 complete)
 Resume file: None
