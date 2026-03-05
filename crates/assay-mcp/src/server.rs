@@ -2030,4 +2030,107 @@ cmd = "echo ok"
         assert!(!params.include_evidence);
         assert_eq!(params.timeout, None);
     }
+
+    // ── gate_history tests ──────────────────────────────────────────
+
+    #[test]
+    fn test_gate_history_params_name_only() {
+        let json = serde_json::json!({ "name": "auth-flow" });
+        let params: GateHistoryParams = serde_json::from_value(json).unwrap();
+        assert_eq!(params.name, "auth-flow");
+        assert_eq!(params.run_id, None);
+        assert_eq!(params.limit, None);
+    }
+
+    #[test]
+    fn test_gate_history_params_with_run_id() {
+        let json = serde_json::json!({
+            "name": "auth-flow",
+            "run_id": "20260305T120000Z-abc123"
+        });
+        let params: GateHistoryParams = serde_json::from_value(json).unwrap();
+        assert_eq!(params.name, "auth-flow");
+        assert_eq!(params.run_id, Some("20260305T120000Z-abc123".to_string()));
+        assert_eq!(params.limit, None);
+    }
+
+    #[test]
+    fn test_gate_history_params_with_limit() {
+        let json = serde_json::json!({
+            "name": "auth-flow",
+            "limit": 5
+        });
+        let params: GateHistoryParams = serde_json::from_value(json).unwrap();
+        assert_eq!(params.name, "auth-flow");
+        assert_eq!(params.run_id, None);
+        assert_eq!(params.limit, Some(5));
+    }
+
+    #[test]
+    fn test_gate_history_list_response_serialization() {
+        let response = GateHistoryListResponse {
+            spec_name: "auth-flow".to_string(),
+            total_runs: 25,
+            runs: vec![
+                GateHistoryEntry {
+                    run_id: "20260305T120000Z-abc123".to_string(),
+                    timestamp: "2026-03-05T12:00:00+00:00".to_string(),
+                    passed: 3,
+                    failed: 1,
+                    skipped: 0,
+                    required_failed: 1,
+                    advisory_failed: 0,
+                    blocked: true,
+                },
+                GateHistoryEntry {
+                    run_id: "20260305T110000Z-def456".to_string(),
+                    timestamp: "2026-03-05T11:00:00+00:00".to_string(),
+                    passed: 4,
+                    failed: 0,
+                    skipped: 0,
+                    required_failed: 0,
+                    advisory_failed: 0,
+                    blocked: false,
+                },
+            ],
+        };
+
+        let json = serde_json::to_value(&response).unwrap();
+        assert_eq!(json["spec_name"], "auth-flow");
+        assert_eq!(json["total_runs"], 25);
+        assert_eq!(json["runs"].as_array().unwrap().len(), 2);
+
+        let first = &json["runs"][0];
+        assert_eq!(first["run_id"], "20260305T120000Z-abc123");
+        assert_eq!(first["passed"], 3);
+        assert_eq!(first["failed"], 1);
+        assert_eq!(first["required_failed"], 1);
+        assert_eq!(first["blocked"], true);
+
+        let second = &json["runs"][1];
+        assert_eq!(second["blocked"], false);
+        assert_eq!(second["required_failed"], 0);
+    }
+
+    #[test]
+    fn test_gate_history_list_response_empty() {
+        let response = GateHistoryListResponse {
+            spec_name: "no-history".to_string(),
+            total_runs: 0,
+            runs: vec![],
+        };
+
+        let json = serde_json::to_value(&response).unwrap();
+        assert_eq!(json["spec_name"], "no-history");
+        assert_eq!(json["total_runs"], 0);
+        assert!(json["runs"].as_array().unwrap().is_empty());
+    }
+
+    // ── working_dir validation test ─────────────────────────────────
+
+    #[test]
+    fn test_working_dir_nonexistent_is_not_dir() {
+        let nonexistent = std::path::PathBuf::from("/tmp/assay-nonexistent-dir-12345");
+        assert!(!nonexistent.is_dir(), "test precondition: path must not exist");
+    }
 }
