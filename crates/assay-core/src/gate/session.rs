@@ -11,8 +11,8 @@ use std::time::Instant;
 use chrono::Utc;
 
 use assay_types::{
-    AgentEvaluation, AgentSession, CriterionResult, Enforcement, EnforcementSummary,
-    EvaluatorRole, GateKind, GateResult, GateRunRecord, GateRunSummary,
+    AgentEvaluation, AgentSession, CriterionResult, Enforcement, EnforcementSummary, EvaluatorRole,
+    GateKind, GateResult, GateRunRecord, GateRunSummary,
 };
 
 use crate::error::{AssayError, Result};
@@ -142,7 +142,10 @@ pub fn finalize_session(
     // Build results for agent-evaluated criteria
     for criterion_name in &session.criteria_names {
         // Skip if this criterion already has a command result
-        if results.iter().any(|cr| &cr.criterion_name == criterion_name) {
+        if results
+            .iter()
+            .any(|cr| &cr.criterion_name == criterion_name)
+        {
             continue;
         }
 
@@ -266,7 +269,10 @@ pub fn finalize_as_timed_out(session: &AgentSession) -> GateRunRecord {
 
     // Build results for agent criteria
     for criterion_name in &session.criteria_names {
-        if results.iter().any(|cr| &cr.criterion_name == criterion_name) {
+        if results
+            .iter()
+            .any(|cr| &cr.criterion_name == criterion_name)
+        {
             continue;
         }
 
@@ -399,7 +405,10 @@ mod tests {
             vec![],
         );
 
-        assert!(!session.session_id.is_empty(), "session_id should be non-empty");
+        assert!(
+            !session.session_id.is_empty(),
+            "session_id should be non-empty"
+        );
         assert_eq!(session.spec_name, "test-spec");
         assert!(session.agent_evaluations.is_empty());
     }
@@ -508,7 +517,10 @@ mod tests {
 
         let record = finalize_session(&session, dir.path(), None, None).unwrap();
 
-        assert_eq!(record.summary.failed, 1, "human evaluation should win (fail)");
+        assert_eq!(
+            record.summary.failed, 1,
+            "human evaluation should win (fail)"
+        );
         assert_eq!(record.summary.passed, 0);
 
         let cr = &record.summary.results[0];
@@ -521,10 +533,7 @@ mod tests {
     fn finalize_timed_out_marks_unevaluated_as_failed() {
         let mut session = create_session(
             "test-spec",
-            HashSet::from([
-                "required-check".to_string(),
-                "advisory-check".to_string(),
-            ]),
+            HashSet::from(["required-check".to_string(), "advisory-check".to_string()]),
             HashMap::from([
                 ("required-check".to_string(), Enforcement::Required),
                 ("advisory-check".to_string(), Enforcement::Advisory),
