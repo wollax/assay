@@ -69,7 +69,7 @@ pub fn evaluate(
 
 /// Evaluate all criteria in a spec sequentially.
 ///
-/// Skips criteria without `cmd` (records as skipped in summary). Uses
+/// Skips criteria without `cmd` or `path` (records as skipped in summary). Uses
 /// [`resolve_timeout`] for each criterion's timeout. Individual criterion
 /// failures are captured in `GateResult`, not propagated as errors. If
 /// [`evaluate`] returns an `Err` (spawn failure), it's captured as a
