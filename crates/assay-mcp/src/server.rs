@@ -127,6 +127,20 @@ struct SpecListEntry {
     has_feature_spec: bool,
 }
 
+/// Response envelope for `spec_list`, including scan errors.
+#[derive(Serialize)]
+struct SpecListResponse {
+    specs: Vec<SpecListEntry>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    errors: Vec<SpecListError>,
+}
+
+/// A spec file that failed to parse during scanning.
+#[derive(Serialize)]
+struct SpecListError {
+    message: String,
+}
+
 /// Aggregate gate run response.
 #[derive(Serialize)]
 struct GateRunResponse {
@@ -134,8 +148,11 @@ struct GateRunResponse {
     passed: usize,
     failed: usize,
     skipped: usize,
+    required_passed: usize,
     required_failed: usize,
+    advisory_passed: usize,
     advisory_failed: usize,
+    blocked: bool,
     total_duration_ms: u64,
     criteria: Vec<CriterionSummary>,
     /// Session ID when agent criteria are present (requires gate_report + gate_finalize).
@@ -223,7 +240,7 @@ impl AssayServer {
             Err(e) => return Ok(domain_error(&e)),
         };
 
-        let entries: Vec<SpecListEntry> = scan_result
+        let specs: Vec<SpecListEntry> = scan_result
             .entries
             .iter()
             .map(|entry| match entry {
@@ -248,7 +265,17 @@ impl AssayServer {
             })
             .collect();
 
-        let json = serde_json::to_string(&entries)
+        let errors: Vec<SpecListError> = scan_result
+            .errors
+            .iter()
+            .map(|e| SpecListError {
+                message: e.to_string(),
+            })
+            .collect();
+
+        let response = SpecListResponse { specs, errors };
+
+        let json = serde_json::to_string(&response)
             .map_err(|e| McpError::internal_error(format!("serialization failed: {e}"), None))?;
 
         Ok(CallToolResult::success(vec![Content::text(json)]))
@@ -760,8 +787,11 @@ fn format_gate_response(
         passed: summary.passed,
         failed: summary.failed,
         skipped: summary.skipped,
+        required_passed: summary.enforcement.required_passed,
         required_failed: summary.enforcement.required_failed,
+        advisory_passed: summary.enforcement.advisory_passed,
         advisory_failed: summary.enforcement.advisory_failed,
+        blocked: summary.enforcement.required_failed > 0,
         total_duration_ms: summary.total_duration_ms,
         criteria,
         session_id: None,
@@ -854,7 +884,12 @@ mod tests {
             failed: 1,
             skipped: 1,
             total_duration_ms: 2000,
-            enforcement: EnforcementSummary::default(),
+            enforcement: EnforcementSummary {
+                required_passed: 1,
+                required_failed: 1,
+                advisory_passed: 0,
+                advisory_failed: 0,
+            },
         }
     }
 
@@ -868,6 +903,14 @@ mod tests {
         assert_eq!(response.failed, 1);
         assert_eq!(response.skipped, 1);
         assert_eq!(response.total_duration_ms, 2000);
+        assert_eq!(response.required_passed, 1);
+        assert_eq!(response.required_failed, 1);
+        assert_eq!(response.advisory_passed, 0);
+        assert_eq!(response.advisory_failed, 0);
+        assert!(
+            response.blocked,
+            "blocked should be true when required_failed > 0"
+        );
         assert_eq!(response.criteria.len(), 3);
         assert!(
             response.session_id.is_none(),
@@ -1057,7 +1100,12 @@ mod tests {
             failed: 1,
             skipped: 0,
             total_duration_ms: 50,
-            enforcement: EnforcementSummary::default(),
+            enforcement: EnforcementSummary {
+                required_passed: 0,
+                required_failed: 1,
+                advisory_passed: 0,
+                advisory_failed: 0,
+            },
         };
 
         let response = format_gate_response(&summary, false);
@@ -1066,6 +1114,10 @@ mod tests {
             failed.reason.as_deref(),
             Some("unknown"),
             "failed with empty stderr should have 'unknown' reason"
+        );
+        assert!(
+            response.blocked,
+            "blocked should be true when required_failed > 0"
         );
     }
 
@@ -1343,8 +1395,11 @@ cmd = "echo ok"
             passed: 2,
             failed: 1,
             skipped: 1,
+            required_passed: 1,
             required_failed: 1,
+            advisory_passed: 0,
             advisory_failed: 0,
+            blocked: true,
             total_duration_ms: 1500,
             criteria: vec![
                 CriterionSummary {
@@ -1392,6 +1447,11 @@ cmd = "echo ok"
         assert_eq!(json["passed"], 2);
         assert_eq!(json["failed"], 1);
         assert_eq!(json["skipped"], 1);
+        assert_eq!(json["required_passed"], 1);
+        assert_eq!(json["required_failed"], 1);
+        assert_eq!(json["advisory_passed"], 0);
+        assert_eq!(json["advisory_failed"], 0);
+        assert_eq!(json["blocked"], true);
         assert_eq!(json["total_duration_ms"], 1500);
 
         // No session fields when no agent criteria
@@ -1461,8 +1521,11 @@ cmd = "echo ok"
             passed: 1,
             failed: 0,
             skipped: 0,
+            required_passed: 1,
             required_failed: 0,
+            advisory_passed: 0,
             advisory_failed: 0,
+            blocked: false,
             total_duration_ms: 500,
             criteria: vec![CriterionSummary {
                 name: "check".to_string(),
@@ -1516,8 +1579,11 @@ cmd = "echo ok"
             passed: 1,
             failed: 0,
             skipped: 1,
+            required_passed: 1,
             required_failed: 0,
+            advisory_passed: 0,
             advisory_failed: 0,
+            blocked: false,
             total_duration_ms: 500,
             criteria: vec![],
             session_id: Some("20260305T220000Z-abc123".to_string()),
@@ -1665,6 +1731,121 @@ cmd = "echo ok"
         assert_eq!(cr.kind_label.as_deref(), Some("agent"));
         assert_eq!(cr.status, "passed");
         assert_eq!(cr.enforcement, "advisory");
+    }
+
+    #[test]
+    fn test_spec_list_response_serialization_with_errors() {
+        let response = SpecListResponse {
+            specs: vec![SpecListEntry {
+                name: "auth".to_string(),
+                description: "Auth flow".to_string(),
+                criteria_count: 2,
+                format: "legacy".to_string(),
+                has_feature_spec: false,
+            }],
+            errors: vec![SpecListError {
+                message: "failed to parse broken.toml: invalid key".to_string(),
+            }],
+        };
+
+        let json = serde_json::to_value(&response).unwrap();
+        assert_eq!(json["specs"][0]["name"], "auth");
+        assert_eq!(
+            json["errors"][0]["message"],
+            "failed to parse broken.toml: invalid key"
+        );
+    }
+
+    #[test]
+    fn test_spec_list_response_serialization_without_errors() {
+        let response = SpecListResponse {
+            specs: vec![SpecListEntry {
+                name: "clean".to_string(),
+                description: String::new(),
+                criteria_count: 1,
+                format: "legacy".to_string(),
+                has_feature_spec: false,
+            }],
+            errors: vec![],
+        };
+
+        let json = serde_json::to_value(&response).unwrap();
+        assert_eq!(json["specs"][0]["name"], "clean");
+        assert!(
+            json.get("errors").is_none(),
+            "empty errors should be omitted via skip_serializing_if"
+        );
+    }
+
+    #[test]
+    fn test_format_gate_response_enforcement_counts() {
+        let summary = GateRunSummary {
+            spec_name: "enforcement-test".to_string(),
+            results: vec![
+                CriterionResult {
+                    criterion_name: "req-pass".to_string(),
+                    result: Some(GateResult {
+                        passed: true,
+                        kind: GateKind::Command {
+                            cmd: "true".to_string(),
+                        },
+                        stdout: String::new(),
+                        stderr: String::new(),
+                        exit_code: Some(0),
+                        duration_ms: 10,
+                        timestamp: Utc::now(),
+                        truncated: false,
+                        original_bytes: None,
+                        evidence: None,
+                        reasoning: None,
+                        confidence: None,
+                        evaluator_role: None,
+                    }),
+                    enforcement: Enforcement::Required,
+                },
+                CriterionResult {
+                    criterion_name: "adv-pass".to_string(),
+                    result: Some(GateResult {
+                        passed: true,
+                        kind: GateKind::Command {
+                            cmd: "true".to_string(),
+                        },
+                        stdout: String::new(),
+                        stderr: String::new(),
+                        exit_code: Some(0),
+                        duration_ms: 10,
+                        timestamp: Utc::now(),
+                        truncated: false,
+                        original_bytes: None,
+                        evidence: None,
+                        reasoning: None,
+                        confidence: None,
+                        evaluator_role: None,
+                    }),
+                    enforcement: Enforcement::Advisory,
+                },
+            ],
+            passed: 2,
+            failed: 0,
+            skipped: 0,
+            total_duration_ms: 20,
+            enforcement: EnforcementSummary {
+                required_passed: 1,
+                required_failed: 0,
+                advisory_passed: 1,
+                advisory_failed: 0,
+            },
+        };
+
+        let response = format_gate_response(&summary, false);
+        assert_eq!(response.required_passed, 1);
+        assert_eq!(response.required_failed, 0);
+        assert_eq!(response.advisory_passed, 1);
+        assert_eq!(response.advisory_failed, 0);
+        assert!(
+            !response.blocked,
+            "blocked should be false when no required failures"
+        );
     }
 
     #[test]
