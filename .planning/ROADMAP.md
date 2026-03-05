@@ -35,7 +35,9 @@
   - [x] 13-01: Enforcement type layer (Enforcement enum, GateSection, EnforcementSummary)
   - [x] 13-02: Enforcement evaluation logic (resolve_enforcement, enforcement-aware evaluation, validation)
   - [x] 13-03: CLI enforcement integration (exit codes, spec template, schema snapshots)
-- [ ] Phase 14: Run History Core
+- [x] Phase 14: Run History Core — 2026-03-05
+  - [x] 14-01: GateRunRecord type and history persistence module
+  - [x] 14-02: History persistence integration tests
 - [ ] Phase 15: Run History CLI
 - [ ] Phase 16: Agent Gate Recording
 - [ ] Phase 17: MCP Hardening & Agent History
@@ -53,7 +55,7 @@
 | Milestone | Status | Phases | Requirements | Complete |
 |-----------|--------|--------|--------------|----------|
 | v0.1.0 Proof of Concept | Shipped | 10 | 43 | 100% |
-| v0.2.0 Dual-Track Gates & Hardening | In Progress | 13 | 52 | 23% |
+| v0.2.0 Dual-Track Gates & Hardening | In Progress | 13 | 52 | 31% |
 | v0.3.0 | Planned | — | — | — |
 
 ---
