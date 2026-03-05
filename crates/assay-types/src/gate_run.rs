@@ -8,8 +8,8 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::enforcement::{Enforcement, EnforcementSummary};
 use crate::GateResult;
+use crate::enforcement::{Enforcement, EnforcementSummary};
 
 /// Summary of evaluating all criteria in a spec.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
