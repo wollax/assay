@@ -25,11 +25,13 @@ use std::time::{Duration, Instant};
 use chrono::Utc;
 
 use assay_types::{
-    Criterion, CriterionResult, Enforcement, EnforcementSummary, GateCriterion, GateKind,
-    GateResult, GateRunSummary, GateSection, GatesSpec, Spec,
+    Criterion, CriterionKind, CriterionResult, Enforcement, EnforcementSummary, GateCriterion,
+    GateKind, GateResult, GateRunSummary, GateSection, GatesSpec, Spec,
 };
 
 use crate::error::{AssayError, Result};
+
+pub mod session;
 
 /// Maximum bytes to retain from stdout/stderr capture (64 KB).
 const MAX_OUTPUT_BYTES: usize = 65_536;
@@ -60,6 +62,15 @@ pub fn evaluate(
     working_dir: &Path,
     timeout: Duration,
 ) -> Result<GateResult> {
+    // AgentReport criteria cannot be evaluated standalone — they are
+    // evaluated through the session lifecycle (gate_report + gate_finalize).
+    if criterion.kind == Some(CriterionKind::AgentReport) {
+        return Err(AssayError::InvalidCriterion {
+            spec_name: String::new(),
+            criterion_name: criterion.name.clone(),
+        });
+    }
+
     match (&criterion.cmd, &criterion.path) {
         (Some(cmd), _) => evaluate_command(cmd, working_dir, timeout),
         (None, Some(path)) => evaluate_file_exists(path, working_dir),
@@ -98,6 +109,18 @@ pub fn evaluate_all(
 
     for criterion in &spec.criteria {
         let resolved_enforcement = resolve_enforcement(criterion.enforcement, spec.gate.as_ref());
+
+        // AgentReport criteria are evaluated through the session lifecycle,
+        // not the synchronous evaluate path. Mark as skipped (pending).
+        if criterion.kind == Some(CriterionKind::AgentReport) {
+            skipped += 1;
+            results.push(CriterionResult {
+                criterion_name: criterion.name.clone(),
+                result: None,
+                enforcement: resolved_enforcement,
+            });
+            continue;
+        }
 
         if criterion.cmd.is_none() && criterion.path.is_none() {
             skipped += 1;
@@ -150,6 +173,10 @@ pub fn evaluate_all(
                         timestamp: Utc::now(),
                         truncated: false,
                         original_bytes: None,
+                        evidence: None,
+                        reasoning: None,
+                        confidence: None,
+                        evaluator_role: None,
                     }),
                     enforcement: resolved_enforcement,
                 });
@@ -191,6 +218,18 @@ pub fn evaluate_all_gates(
         let resolved_enforcement =
             resolve_enforcement(gate_criterion.enforcement, gates.gate.as_ref());
         let criterion = to_criterion(gate_criterion);
+
+        // AgentReport criteria are evaluated through the session lifecycle,
+        // not the synchronous evaluate path. Mark as skipped (pending).
+        if criterion.kind == Some(CriterionKind::AgentReport) {
+            skipped += 1;
+            results.push(CriterionResult {
+                criterion_name: criterion.name.clone(),
+                result: None,
+                enforcement: resolved_enforcement,
+            });
+            continue;
+        }
 
         if criterion.cmd.is_none() && criterion.path.is_none() {
             skipped += 1;
@@ -243,6 +282,10 @@ pub fn evaluate_all_gates(
                         timestamp: Utc::now(),
                         truncated: false,
                         original_bytes: None,
+                        evidence: None,
+                        reasoning: None,
+                        confidence: None,
+                        evaluator_role: None,
                     }),
                     enforcement: resolved_enforcement,
                 });
@@ -272,6 +315,8 @@ pub fn to_criterion(gc: &GateCriterion) -> Criterion {
         path: gc.path.clone(),
         timeout: gc.timeout,
         enforcement: gc.enforcement,
+        kind: gc.kind,
+        prompt: gc.prompt.clone(),
     }
 }
 
@@ -281,6 +326,9 @@ pub fn to_criterion(gc: &GateCriterion) -> Criterion {
 /// carry the correct gate kind even when evaluation fails before
 /// producing a `GateResult`.
 fn gate_kind_for(criterion: &Criterion) -> GateKind {
+    if criterion.kind == Some(CriterionKind::AgentReport) {
+        return GateKind::AgentReport;
+    }
     match (&criterion.cmd, &criterion.path) {
         (Some(cmd), _) => GateKind::Command { cmd: cmd.clone() },
         (None, Some(path)) => GateKind::FileExists { path: path.clone() },
@@ -343,6 +391,10 @@ pub fn evaluate_file_exists(path: &str, working_dir: &Path) -> Result<GateResult
             timestamp: Utc::now(),
             truncated: false,
             original_bytes: None,
+            evidence: None,
+            reasoning: None,
+            confidence: None,
+            evaluator_role: None,
         });
     }
 
@@ -365,6 +417,10 @@ pub fn evaluate_file_exists(path: &str, working_dir: &Path) -> Result<GateResult
         timestamp: Utc::now(),
         truncated: false,
         original_bytes: None,
+        evidence: None,
+        reasoning: None,
+        confidence: None,
+        evaluator_role: None,
     })
 }
 
@@ -525,6 +581,10 @@ fn evaluate_command(cmd: &str, working_dir: &Path, timeout: Duration) -> Result<
                 timestamp: Utc::now(),
                 truncated,
                 original_bytes,
+                evidence: None,
+                reasoning: None,
+                confidence: None,
+                evaluator_role: None,
             })
         }
         None => {
@@ -547,6 +607,10 @@ fn evaluate_command(cmd: &str, working_dir: &Path, timeout: Duration) -> Result<
                 timestamp: Utc::now(),
                 truncated,
                 original_bytes,
+                evidence: None,
+                reasoning: None,
+                confidence: None,
+                evaluator_role: None,
             })
         }
     }
@@ -564,6 +628,10 @@ fn evaluate_always_pass() -> Result<GateResult> {
         timestamp: Utc::now(),
         truncated: false,
         original_bytes: None,
+        evidence: None,
+        reasoning: None,
+        confidence: None,
+        evaluator_role: None,
     })
 }
 
@@ -603,6 +671,8 @@ mod tests {
             path: None,
             timeout: None,
             enforcement: None,
+            kind: None,
+            prompt: None,
         };
 
         let result = evaluate(&criterion, dir.path(), Duration::from_secs(10)).unwrap();
@@ -631,6 +701,8 @@ mod tests {
             path: None,
             timeout: None,
             enforcement: None,
+            kind: None,
+            prompt: None,
         };
 
         let result = evaluate(&criterion, dir.path(), Duration::from_secs(10)).unwrap();
@@ -655,6 +727,8 @@ mod tests {
             path: None,
             timeout: None,
             enforcement: None,
+            kind: None,
+            prompt: None,
         };
 
         let result = evaluate(&criterion, dir.path(), Duration::from_secs(1)).unwrap();
@@ -680,6 +754,8 @@ mod tests {
             path: None,
             timeout: None,
             enforcement: None,
+            kind: None,
+            prompt: None,
         };
 
         let result = evaluate(&criterion, dir.path(), Duration::from_secs(10)).unwrap();
@@ -732,6 +808,8 @@ mod tests {
             path: None,
             timeout: None,
             enforcement: None,
+            kind: None,
+            prompt: None,
         };
 
         let result = evaluate(&criterion, dir.path(), Duration::from_secs(10)).unwrap();
@@ -825,6 +903,8 @@ mod tests {
                     path: None,
                     timeout: None,
                     enforcement: None,
+                    kind: None,
+                    prompt: None,
                 },
                 Criterion {
                     name: "descriptive".to_string(),
@@ -833,6 +913,8 @@ mod tests {
                     path: None,
                     timeout: None,
                     enforcement: None,
+                    kind: None,
+                    prompt: None,
                 },
                 Criterion {
                     name: "fails".to_string(),
@@ -841,6 +923,8 @@ mod tests {
                     path: None,
                     timeout: None,
                     enforcement: None,
+                    kind: None,
+                    prompt: None,
                 },
             ],
         };
@@ -871,6 +955,8 @@ mod tests {
                 path: None,
                 timeout: None,
                 enforcement: None,
+                kind: None,
+                prompt: None,
             }],
         };
 
@@ -899,6 +985,8 @@ mod tests {
                     path: None,
                     timeout: None,
                     enforcement: None,
+                    kind: None,
+                    prompt: None,
                     requirements: vec!["REQ-FUNC-001".to_string()],
                 },
                 GateCriterion {
@@ -908,6 +996,8 @@ mod tests {
                     path: None,
                     timeout: None,
                     enforcement: None,
+                    kind: None,
+                    prompt: None,
                     requirements: vec![],
                 },
                 GateCriterion {
@@ -917,6 +1007,8 @@ mod tests {
                     path: None,
                     timeout: None,
                     enforcement: None,
+                    kind: None,
+                    prompt: None,
                     requirements: vec!["REQ-SEC-001".to_string()],
                 },
             ],
@@ -948,6 +1040,8 @@ mod tests {
                 path: None,
                 timeout: None,
                 enforcement: None,
+                kind: None,
+                prompt: None,
             }],
         };
 
@@ -962,6 +1056,8 @@ mod tests {
                 path: None,
                 timeout: None,
                 enforcement: None,
+                kind: None,
+                prompt: None,
                 requirements: vec![],
             }],
         };
@@ -990,6 +1086,8 @@ mod tests {
             path: None,
             timeout: Some(60),
             enforcement: None,
+            kind: None,
+            prompt: None,
             requirements: vec!["REQ-FUNC-001".to_string()],
         };
 
@@ -1010,6 +1108,8 @@ mod tests {
             path: Some("dist/app.wasm".to_string()),
             timeout: None,
             enforcement: None,
+            kind: None,
+            prompt: None,
             requirements: vec![],
         };
 
@@ -1032,6 +1132,8 @@ mod tests {
             path: Some("target.txt".to_string()),
             timeout: None,
             enforcement: None,
+            kind: None,
+            prompt: None,
         };
 
         let result = evaluate(&criterion, dir.path(), Duration::from_secs(10)).unwrap();
@@ -1051,6 +1153,8 @@ mod tests {
             path: Some("missing.txt".to_string()),
             timeout: None,
             enforcement: None,
+            kind: None,
+            prompt: None,
         };
 
         let result = evaluate(&criterion, dir.path(), Duration::from_secs(10)).unwrap();
@@ -1076,6 +1180,8 @@ mod tests {
                     path: Some("exists.txt".to_string()),
                     timeout: None,
                     enforcement: None,
+                    kind: None,
+                    prompt: None,
                 },
                 Criterion {
                     name: "descriptive only".to_string(),
@@ -1084,6 +1190,8 @@ mod tests {
                     path: None,
                     timeout: None,
                     enforcement: None,
+                    kind: None,
+                    prompt: None,
                 },
             ],
         };
@@ -1109,6 +1217,8 @@ mod tests {
             path: Some("irrelevant.txt".to_string()),
             timeout: None,
             enforcement: None,
+            kind: None,
+            prompt: None,
         };
 
         let result = evaluate(&criterion, dir.path(), Duration::from_secs(10)).unwrap();
@@ -1136,6 +1246,8 @@ mod tests {
                 path: Some("readme.md".to_string()),
                 timeout: None,
                 enforcement: None,
+                kind: None,
+                prompt: None,
                 requirements: vec![],
             }],
         };
@@ -1223,6 +1335,8 @@ mod tests {
                     path: None,
                     timeout: None,
                     enforcement: Some(Enforcement::Required),
+                    kind: None,
+                    prompt: None,
                 },
                 Criterion {
                     name: "advisory-fail".to_string(),
@@ -1231,6 +1345,8 @@ mod tests {
                     path: None,
                     timeout: None,
                     enforcement: Some(Enforcement::Advisory),
+                    kind: None,
+                    prompt: None,
                 },
             ],
         };
@@ -1267,6 +1383,8 @@ mod tests {
                     path: None,
                     timeout: None,
                     enforcement: Some(Enforcement::Required),
+                    kind: None,
+                    prompt: None,
                 },
                 Criterion {
                     name: "descriptive-only".to_string(),
@@ -1275,6 +1393,8 @@ mod tests {
                     path: None,
                     timeout: None,
                     enforcement: Some(Enforcement::Required),
+                    kind: None,
+                    prompt: None,
                 },
             ],
         };
@@ -1311,6 +1431,8 @@ mod tests {
                     path: None,
                     timeout: None,
                     enforcement: Some(Enforcement::Required),
+                    kind: None,
+                    prompt: None,
                     requirements: vec![],
                 },
                 GateCriterion {
@@ -1320,6 +1442,8 @@ mod tests {
                     path: None,
                     timeout: None,
                     enforcement: None,
+                    kind: None,
+                    prompt: None,
                     requirements: vec![],
                 },
             ],
@@ -1354,6 +1478,8 @@ mod tests {
                     path: None,
                     timeout: None,
                     enforcement: Some(Enforcement::Required),
+                    kind: None,
+                    prompt: None,
                 },
                 Criterion {
                     name: "advisory-fail".to_string(),
@@ -1362,6 +1488,8 @@ mod tests {
                     path: None,
                     timeout: None,
                     enforcement: Some(Enforcement::Advisory),
+                    kind: None,
+                    prompt: None,
                 },
                 Criterion {
                     name: "advisory-pass".to_string(),
@@ -1370,6 +1498,8 @@ mod tests {
                     path: None,
                     timeout: None,
                     enforcement: Some(Enforcement::Advisory),
+                    kind: None,
+                    prompt: None,
                 },
             ],
         };
@@ -1384,6 +1514,104 @@ mod tests {
         assert_eq!(summary.enforcement.required_passed, 1);
         assert_eq!(summary.enforcement.required_failed, 0);
         assert_eq!(summary.enforcement.advisory_passed, 1);
+        assert_eq!(summary.enforcement.advisory_failed, 1);
+    }
+
+    // ── AgentReport dispatch ────────────────────────────────────────
+
+    #[test]
+    fn evaluate_agent_criterion_returns_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let criterion = Criterion {
+            name: "agent-review".to_string(),
+            description: "Agent reviews code".to_string(),
+            cmd: None,
+            path: None,
+            timeout: None,
+            enforcement: None,
+            kind: Some(CriterionKind::AgentReport),
+            prompt: Some("Review the auth module".to_string()),
+        };
+
+        let result = evaluate(&criterion, dir.path(), Duration::from_secs(10));
+        assert!(
+            result.is_err(),
+            "evaluate() should return error for AgentReport criteria"
+        );
+
+        let err = result.unwrap_err();
+        let display = err.to_string();
+        assert!(
+            display.contains("agent-review"),
+            "error should mention the criterion name, got: {display}"
+        );
+    }
+
+    #[test]
+    fn evaluate_all_with_agent_criterion_marks_as_skipped() {
+        let dir = tempfile::tempdir().unwrap();
+        let spec = Spec {
+            name: "mixed-with-agent".to_string(),
+            description: String::new(),
+            gate: None,
+            criteria: vec![
+                Criterion {
+                    name: "cmd-pass".to_string(),
+                    description: "command that passes".to_string(),
+                    cmd: Some("true".to_string()),
+                    path: None,
+                    timeout: None,
+                    enforcement: Some(Enforcement::Required),
+                    kind: None,
+                    prompt: None,
+                },
+                Criterion {
+                    name: "agent-review".to_string(),
+                    description: "agent evaluates code quality".to_string(),
+                    cmd: None,
+                    path: None,
+                    timeout: None,
+                    enforcement: Some(Enforcement::Advisory),
+                    kind: Some(CriterionKind::AgentReport),
+                    prompt: Some("Check code quality".to_string()),
+                },
+                Criterion {
+                    name: "cmd-fail".to_string(),
+                    description: "command that fails".to_string(),
+                    cmd: Some("false".to_string()),
+                    path: None,
+                    timeout: None,
+                    enforcement: Some(Enforcement::Advisory),
+                    kind: None,
+                    prompt: None,
+                },
+            ],
+        };
+
+        let summary = evaluate_all(&spec, dir.path(), None, None);
+
+        assert_eq!(summary.passed, 1, "one command should pass");
+        assert_eq!(summary.failed, 1, "one command should fail");
+        assert_eq!(summary.skipped, 1, "agent criterion should be skipped");
+        assert_eq!(summary.results.len(), 3);
+
+        // Agent criterion is skipped (result: None)
+        let agent_result = &summary.results[1];
+        assert_eq!(agent_result.criterion_name, "agent-review");
+        assert!(
+            agent_result.result.is_none(),
+            "agent criterion should have no result (pending)"
+        );
+        assert_eq!(
+            agent_result.enforcement,
+            Enforcement::Advisory,
+            "enforcement should still be resolved"
+        );
+
+        // Enforcement summary should NOT count the skipped agent criterion
+        assert_eq!(summary.enforcement.required_passed, 1);
+        assert_eq!(summary.enforcement.required_failed, 0);
+        assert_eq!(summary.enforcement.advisory_passed, 0);
         assert_eq!(summary.enforcement.advisory_failed, 1);
     }
 }

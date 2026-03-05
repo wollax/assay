@@ -130,6 +130,31 @@ pub enum AssayError {
         /// All validation errors found.
         errors: Vec<SpecError>,
     },
+
+    /// Session not found (expired, finalized, or never created).
+    #[error("session `{session_id}` not found")]
+    SessionNotFound {
+        /// The session ID that was looked up.
+        session_id: String,
+    },
+
+    /// Criterion name not found in the spec.
+    #[error("criterion `{criterion_name}` not found in spec `{spec_name}`")]
+    InvalidCriterion {
+        /// The spec that was searched.
+        spec_name: String,
+        /// The criterion name that was not found.
+        criterion_name: String,
+    },
+
+    /// General session error.
+    #[error("session error for `{session_id}`: {message}")]
+    SessionError {
+        /// The session ID involved.
+        session_id: String,
+        /// Description of the error.
+        message: String,
+    },
 }
 
 /// Convenience result alias for Assay operations.

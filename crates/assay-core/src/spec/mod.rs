@@ -723,6 +723,8 @@ unknown_crit_key = true
                 path: None,
                 timeout: None,
                 enforcement: None,
+                kind: None,
+                prompt: None,
             }],
         }
     }
@@ -790,6 +792,8 @@ unknown_crit_key = true
                     path: None,
                     timeout: None,
                     enforcement: None,
+                    kind: None,
+                    prompt: None,
                 },
                 Criterion {
                     name: "dup".to_string(),
@@ -798,6 +802,8 @@ unknown_crit_key = true
                     path: None,
                     timeout: None,
                     enforcement: None,
+                    kind: None,
+                    prompt: None,
                 },
             ],
         };
@@ -823,6 +829,8 @@ unknown_crit_key = true
                 path: None,
                 timeout: None,
                 enforcement: None,
+                kind: None,
+                prompt: None,
             }],
         };
 
@@ -1606,6 +1614,8 @@ cmd = "true"
                 path: None,
                 timeout: None,
                 enforcement: None,
+                kind: None,
+                prompt: None,
                 requirements: vec![],
             }],
         };
@@ -1638,6 +1648,8 @@ cmd = "true"
                     path: None,
                     timeout: None,
                     enforcement: None,
+                    kind: None,
+                    prompt: None,
                     requirements: vec![],
                 },
                 assay_types::GateCriterion {
@@ -1647,6 +1659,8 @@ cmd = "true"
                     path: None,
                     timeout: None,
                     enforcement: None,
+                    kind: None,
+                    prompt: None,
                     requirements: vec![],
                 },
             ],
@@ -1674,6 +1688,8 @@ cmd = "true"
                 path: None,
                 timeout: None,
                 enforcement: None, // inherits advisory from gate section
+                kind: None,
+                prompt: None,
             }],
         };
         let errors = validate(&spec).unwrap_err();
@@ -1701,6 +1717,8 @@ cmd = "true"
                 path: None,
                 timeout: None,
                 enforcement: Some(Enforcement::Required),
+                kind: None,
+                prompt: None,
             }],
         };
         assert!(validate(&spec).is_ok());
@@ -1720,6 +1738,8 @@ cmd = "true"
                 path: None,
                 timeout: None,
                 enforcement: None,
+                kind: None,
+                prompt: None,
             }],
         };
         assert!(validate(&spec).is_ok());
@@ -1742,6 +1762,8 @@ cmd = "true"
                 path: None,
                 timeout: None,
                 enforcement: None,
+                kind: None,
+                prompt: None,
                 requirements: vec![],
             }],
         };
@@ -1771,6 +1793,8 @@ cmd = "true"
                     path: None,
                     timeout: None,
                     enforcement: Some(Enforcement::Required),
+                    kind: None,
+                    prompt: None,
                 },
                 Criterion {
                     name: "advisory-executable".to_string(),
@@ -1779,6 +1803,8 @@ cmd = "true"
                     path: None,
                     timeout: None,
                     enforcement: Some(Enforcement::Advisory),
+                    kind: None,
+                    prompt: None,
                 },
             ],
         };
