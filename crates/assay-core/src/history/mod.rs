@@ -145,7 +145,9 @@ pub fn list(assay_dir: &Path, spec_name: &str) -> Result<Vec<String>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use assay_types::{EnforcementSummary, GateRunSummary};
+    use assay_types::{
+        CriterionResult, Enforcement, EnforcementSummary, GateKind, GateResult, GateRunSummary,
+    };
     use tempfile::TempDir;
 
     /// Build a minimal `GateRunSummary` for testing.
@@ -329,8 +331,7 @@ mod tests {
         assert_eq!(results.len(), 10);
 
         // All paths are distinct (no clobbering).
-        let paths: std::collections::HashSet<_> =
-            results.iter().map(|(_, p)| p.clone()).collect();
+        let paths: std::collections::HashSet<_> = results.iter().map(|(_, p)| p.clone()).collect();
         assert_eq!(paths.len(), 10, "all 10 file paths should be distinct");
 
         // list() returns exactly 10 entries.
@@ -342,5 +343,138 @@ mod tests {
             let loaded = load(&dir_path, spec_name, id).unwrap();
             assert_eq!(&loaded.run_id, id);
         }
+    }
+
+    #[test]
+    fn test_partial_write_leaves_no_corrupt_file() {
+        let dir = TempDir::new().unwrap();
+        let spec_name = "crash-spec";
+        let results_dir = dir.path().join("results").join(spec_name);
+        std::fs::create_dir_all(&results_dir).unwrap();
+
+        // Simulate a crash: write truncated JSON to a temp file in the results dir.
+        // Use a name that looks like a temp file (no .json extension).
+        let crash_file = results_dir.join(".tmp_partial_write");
+        std::fs::write(&crash_file, r#"{"run_id":"broken","assay_ver"#).unwrap();
+
+        // list() should NOT include the temp file (no .json extension).
+        let ids = list(dir.path(), spec_name).unwrap();
+        assert!(ids.is_empty(), "temp file should not appear in list()");
+
+        // A valid save still works fine alongside the debris.
+        let record = make_test_record(spec_name);
+        let path = save(dir.path(), &record).unwrap();
+        assert!(path.exists());
+
+        // Load the valid record.
+        let loaded = load(dir.path(), spec_name, &record.run_id).unwrap();
+        assert_eq!(loaded.run_id, record.run_id);
+    }
+
+    #[test]
+    fn test_full_fidelity_roundtrip() {
+        let dir = TempDir::new().unwrap();
+
+        let timestamp = DateTime::parse_from_rfc3339("2026-03-05T14:30:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+
+        let record = GateRunRecord {
+            run_id: generate_run_id(&timestamp),
+            assay_version: "0.2.0-test".to_string(),
+            timestamp,
+            working_dir: Some("/tmp/test-project".into()),
+            summary: GateRunSummary {
+                spec_name: "fidelity-spec".to_string(),
+                results: vec![
+                    CriterionResult {
+                        criterion_name: "cargo-test".to_string(),
+                        result: Some(GateResult {
+                            passed: true,
+                            kind: GateKind::Command {
+                                cmd: "cargo test".to_string(),
+                            },
+                            stdout: "test result: ok. 42 passed".to_string(),
+                            stderr: String::new(),
+                            exit_code: Some(0),
+                            duration_ms: 1500,
+                            timestamp,
+                            truncated: false,
+                            original_bytes: None,
+                        }),
+                        enforcement: Enforcement::Required,
+                    },
+                    CriterionResult {
+                        criterion_name: "lint-check".to_string(),
+                        result: Some(GateResult {
+                            passed: false,
+                            kind: GateKind::Command {
+                                cmd: "cargo clippy".to_string(),
+                            },
+                            stdout: String::new(),
+                            stderr: "warning: unused variable".to_string(),
+                            exit_code: Some(1),
+                            duration_ms: 800,
+                            timestamp,
+                            truncated: true,
+                            original_bytes: Some(131_072),
+                        }),
+                        enforcement: Enforcement::Advisory,
+                    },
+                    CriterionResult {
+                        criterion_name: "descriptive-only".to_string(),
+                        result: None,
+                        enforcement: Enforcement::Required,
+                    },
+                    CriterionResult {
+                        criterion_name: "readme-exists".to_string(),
+                        result: Some(GateResult {
+                            passed: true,
+                            kind: GateKind::FileExists {
+                                path: "README.md".to_string(),
+                            },
+                            stdout: String::new(),
+                            stderr: String::new(),
+                            exit_code: None,
+                            duration_ms: 1,
+                            timestamp,
+                            truncated: false,
+                            original_bytes: None,
+                        }),
+                        enforcement: Enforcement::Required,
+                    },
+                ],
+                passed: 2,
+                failed: 1,
+                skipped: 1,
+                total_duration_ms: 2301,
+                enforcement: EnforcementSummary {
+                    required_passed: 2,
+                    required_failed: 0,
+                    advisory_passed: 0,
+                    advisory_failed: 1,
+                },
+            },
+        };
+
+        // Save and load back.
+        save(dir.path(), &record).unwrap();
+        let loaded = load(dir.path(), "fidelity-spec", &record.run_id).unwrap();
+
+        // Full structural equality.
+        assert_eq!(record, loaded, "roundtrip should preserve all fields");
+
+        // Independent deserialization from raw JSON.
+        let raw_path = dir
+            .path()
+            .join("results")
+            .join("fidelity-spec")
+            .join(format!("{}.json", record.run_id));
+        let raw_json = std::fs::read_to_string(&raw_path).unwrap();
+        let independent: GateRunRecord = serde_json::from_str(&raw_json).unwrap();
+        assert_eq!(
+            record, independent,
+            "independent deserialization should match original"
+        );
     }
 }

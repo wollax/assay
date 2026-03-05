@@ -38,7 +38,7 @@ inventory::submit! {
 ///
 /// Captures whether the gate passed, the command output (if any), timing,
 /// and which kind of gate produced this result (self-describing via `kind`).
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct GateResult {
     /// Whether the gate passed.
     pub passed: bool,
