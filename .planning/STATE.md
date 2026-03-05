@@ -9,19 +9,19 @@ See: .planning/PROJECT.md (updated 2026-03-02)
 
 ## Current Position
 
-Phase: 16 — Agent Gate Recording (VERIFIED & COMPLETE)
-Plan: 04 of 4 (complete)
-Status: Phase complete, verified, moved to completed/
-Last activity: 2026-03-05 — Phase 16 verified and completed
+Phase: 17 — MCP Hardening & Agent History
+Plan: 01 of 2 (complete)
+Status: In progress
+Last activity: 2026-03-05 — Completed 17-01-PLAN.md
 
-Progress: v0.2.0 [██████░   ] ~46%
+Progress: v0.2.0 [██████░   ] ~50%
 
 ## Milestone Progress
 
 | Milestone | Phases | Requirements | Complete |
 |-----------|--------|--------------|----------|
 | v0.1.0 | 10 | 43 | 100% (shipped) |
-| v0.2.0 | 13 (11-23) | 52 | ~46% |
+| v0.2.0 | 13 (11-23) | 52 | ~50% |
 
 ## Accumulated Context
 
@@ -121,6 +121,12 @@ v0.2.0 decisions (from 16-04 execution):
 - History detail view displays evaluator_role, confidence, evidence (200 chars), reasoning (200 chars) when present
 - 6 new schema snapshots added for Phase 16 types (total: 23)
 
+v0.2.0 decisions (from 17-01 execution):
+- gate_run timeout defaults to 300s, returns CallToolResult error (not McpError) on expiry
+- working_dir validation via is_dir() check before spawn_blocking — early return with domain error
+- spec_list uses SpecListResponse envelope with skip_serializing_if on errors vec
+- GateRunResponse gains required_passed, advisory_passed, blocked fields computed from EnforcementSummary
+
 ### Pending Issues
 
 38 open issues (expanded from 30 after Phase 8-10 PR reviews)
@@ -131,10 +137,10 @@ None.
 
 ### Next Actions
 
-Phase 16 verified and complete. Next: Phase 17 — MCP Hardening & Agent History
+Phase 17 Plan 01 complete. Next: 17-02-PLAN.md (new MCP tools and agent history)
 
 ### Session Continuity
 
 Last session: 2026-03-05
-Stopped at: Completed 16-04-PLAN.md (Phase 16 complete)
+Stopped at: Completed 17-01-PLAN.md
 Resume file: None
