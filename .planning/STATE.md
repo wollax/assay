@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 2026-03-02)
 
 ## Current Position
 
-Phase: 13 — Enforcement Levels (VERIFIED & COMPLETE)
-Plan: 03 of 3 (complete)
-Status: Phase complete, verified, moved to completed/
-Last activity: 2026-03-04 — Phase 13 verified and completed
+Phase: 14 — Run History Core
+Plan: 01 of 2
+Status: In progress
+Last activity: 2026-03-05 — Completed 14-01-PLAN.md
 
-Progress: v0.2.0 [███       ] ~23%
+Progress: v0.2.0 [████      ] ~27%
 
 ## Milestone Progress
 
@@ -72,6 +72,13 @@ v0.2.0 decisions (from 13-02 execution):
 - Validation enforces at-least-one-required at parse time, not evaluation time
 - Descriptive-only criteria (no cmd/path) do not count as executable for the required check
 
+v0.2.0 decisions (from 14-01 execution):
+- GateRunRecord wraps GateRunSummary via summary field (no field duplication)
+- spec_name accessed via record.summary.spec_name (already embedded, not duplicated at record level)
+- save() takes assay_dir and derives results path internally
+- No new error variants needed — existing AssayError::Io covers all history operations
+- generate_run_id() is public for caller flexibility
+
 ### Pending Issues
 
 38 open issues (expanded from 30 after Phase 8-10 PR reviews)
@@ -82,10 +89,10 @@ None.
 
 ### Next Actions
 
-Phase 13 verified and complete. Next: Phase 14 — Run History Core
+Phase 14 Plan 01 complete. Next: 14-02-PLAN.md
 
 ### Session Continuity
 
-Last session: 2026-03-04
-Stopped at: Phase 13 verified and completed, PR ready for review
+Last session: 2026-03-05
+Stopped at: Completed 14-01-PLAN.md
 Resume file: None
