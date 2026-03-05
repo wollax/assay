@@ -10,7 +10,7 @@ pub use criterion::Criterion;
 pub use enforcement::{Enforcement, EnforcementSummary, GateSection};
 pub use feature_spec::FeatureSpec;
 pub use gate::{GateKind, GateResult};
-pub use gate_run::{CriterionResult, GateRunSummary};
+pub use gate_run::{CriterionResult, GateRunRecord, GateRunSummary};
 pub use gates_spec::{GateCriterion, GatesSpec};
 
 use schemars::JsonSchema;

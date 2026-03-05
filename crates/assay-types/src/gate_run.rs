@@ -8,6 +8,8 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use chrono::{DateTime, Utc};
+
 use crate::GateResult;
 use crate::enforcement::{Enforcement, EnforcementSummary};
 
@@ -56,5 +58,34 @@ inventory::submit! {
     crate::schema_registry::SchemaEntry {
         name: "criterion-result",
         generate: || schemars::schema_for!(CriterionResult),
+    }
+}
+
+/// A complete, versioned record of a single gate evaluation run.
+///
+/// Wraps [`GateRunSummary`] with metadata for persistence and audit.
+/// Uses `deny_unknown_fields` — records are versioned artifacts;
+/// field mismatches should fail loudly. `assay_version` supports
+/// future schema migration.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct GateRunRecord {
+    /// Unique run identifier: `<timestamp>-<6-char-hex>` (e.g., `20260304T223015Z-a3f1b2`).
+    pub run_id: String,
+    /// Version of assay that produced this record (from `env!("CARGO_PKG_VERSION")`).
+    pub assay_version: String,
+    /// UTC timestamp when the evaluation started.
+    pub timestamp: DateTime<Utc>,
+    /// Working directory used for evaluation, if available.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub working_dir: Option<String>,
+    /// The complete gate run summary with all criterion results.
+    pub summary: GateRunSummary,
+}
+
+inventory::submit! {
+    crate::schema_registry::SchemaEntry {
+        name: "gate-run-record",
+        generate: || schemars::schema_for!(GateRunRecord),
     }
 }
