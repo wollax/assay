@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 2026-03-02)
 
 ## Current Position
 
-Phase: 15 — Run History CLI (VERIFIED & COMPLETE)
-Plan: 02 of 2 (complete)
-Status: Phase complete, verified, moved to completed/
-Last activity: 2026-03-05 — Phase 15 verified and completed
+Phase: 16 — Agent Gate Recording
+Plan: 01 of 4 (complete)
+Status: In progress
+Last activity: 2026-03-05 — Completed 16-01-PLAN.md (Agent Gate Types and Criterion Extension)
 
-Progress: v0.2.0 [█████░    ] ~38%
+Progress: v0.2.0 [██████░   ] ~42%
 
 ## Milestone Progress
 
@@ -93,6 +93,13 @@ v0.2.0 decisions (from 15-02 execution):
 - Streaming mode records have empty results vec and zero total_duration_ms (no per-criterion timing)
 - handle_gate_run_all() streaming path tracks per-spec counters via before/after delta
 
+v0.2.0 decisions (from 16-01 execution):
+- CriterionKind enum is simple (not internally tagged) — single variant AgentReport for now
+- Agent fields on GateResult are all Option<T> with skip_serializing_if for backward compat
+- AgentSession uses HashMap/HashSet for flexible keying (O(1) criterion lookup)
+- EvaluatorRole::SelfEval serializes as "self" via serde rename
+- Downstream compile errors (assay-core, assay-mcp) deferred to Plan 02
+
 ### Pending Issues
 
 38 open issues (expanded from 30 after Phase 8-10 PR reviews)
@@ -103,10 +110,10 @@ None.
 
 ### Next Actions
 
-Phase 15 verified and complete. Next: Phase 16 — Agent Gate Recording
+Phase 16 Plan 01 complete. Next: 16-02 — Evaluation Dispatch and Core Wiring (fixes downstream compile errors, wires agent evaluation into gate dispatch)
 
 ### Session Continuity
 
 Last session: 2026-03-05
-Stopped at: Phase 15 verified and completed, PR ready for review
+Stopped at: Completed 16-01-PLAN.md
 Resume file: None
