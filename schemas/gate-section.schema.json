@@ -1,0 +1,32 @@
+{
+  "$id": "https://assay.dev/schemas/gate-section.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "GateSection",
+  "description": "Gate-level configuration section.\n\nParsed from `[gate]` in spec TOML files. Provides spec-wide defaults\nthat individual criteria can override.",
+  "type": "object",
+  "properties": {
+    "enforcement": {
+      "description": "Default enforcement level for all criteria in this spec.",
+      "$ref": "#/$defs/Enforcement",
+      "default": "required"
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "Enforcement": {
+      "description": "Enforcement level for a gate criterion.\n\nDetermines whether a criterion failure blocks the gate (required)\nor is informational only (advisory).",
+      "oneOf": [
+        {
+          "description": "Failure blocks the gate. This is the default.",
+          "type": "string",
+          "const": "required"
+        },
+        {
+          "description": "Failure is informational; does not block the gate.",
+          "type": "string",
+          "const": "advisory"
+        }
+      ]
+    }
+  }
+}

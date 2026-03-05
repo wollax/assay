@@ -25,8 +25,8 @@ use std::time::{Duration, Instant};
 use chrono::Utc;
 
 use assay_types::{
-    Criterion, CriterionResult, GateCriterion, GateKind, GateResult, GateRunSummary, GatesSpec,
-    Spec,
+    Criterion, CriterionResult, Enforcement, EnforcementSummary, GateCriterion, GateKind,
+    GateResult, GateRunSummary, GateSection, GatesSpec, Spec,
 };
 
 use crate::error::{AssayError, Result};
@@ -69,7 +69,7 @@ pub fn evaluate(
 
 /// Evaluate all criteria in a spec sequentially.
 ///
-/// Skips criteria without `cmd` (records as skipped in summary). Uses
+/// Skips criteria without `cmd` or `path` (records as skipped in summary). Uses
 /// [`resolve_timeout`] for each criterion's timeout. Individual criterion
 /// failures are captured in `GateResult`, not propagated as errors. If
 /// [`evaluate`] returns an `Err` (spawn failure), it's captured as a
@@ -94,13 +94,17 @@ pub fn evaluate_all(
     let mut passed = 0usize;
     let mut failed = 0usize;
     let mut skipped = 0usize;
+    let mut enforcement_summary = EnforcementSummary::default();
 
     for criterion in &spec.criteria {
+        let resolved_enforcement = resolve_enforcement(criterion.enforcement, spec.gate.as_ref());
+
         if criterion.cmd.is_none() && criterion.path.is_none() {
             skipped += 1;
             results.push(CriterionResult {
                 criterion_name: criterion.name.clone(),
                 result: None,
+                enforcement: resolved_enforcement,
             });
             continue;
         }
@@ -111,16 +115,29 @@ pub fn evaluate_all(
             Ok(gate_result) => {
                 if gate_result.passed {
                     passed += 1;
+                    match resolved_enforcement {
+                        Enforcement::Required => enforcement_summary.required_passed += 1,
+                        Enforcement::Advisory => enforcement_summary.advisory_passed += 1,
+                    }
                 } else {
                     failed += 1;
+                    match resolved_enforcement {
+                        Enforcement::Required => enforcement_summary.required_failed += 1,
+                        Enforcement::Advisory => enforcement_summary.advisory_failed += 1,
+                    }
                 }
                 results.push(CriterionResult {
                     criterion_name: criterion.name.clone(),
                     result: Some(gate_result),
+                    enforcement: resolved_enforcement,
                 });
             }
             Err(err) => {
                 failed += 1;
+                match resolved_enforcement {
+                    Enforcement::Required => enforcement_summary.required_failed += 1,
+                    Enforcement::Advisory => enforcement_summary.advisory_failed += 1,
+                }
                 results.push(CriterionResult {
                     criterion_name: criterion.name.clone(),
                     result: Some(GateResult {
@@ -134,6 +151,7 @@ pub fn evaluate_all(
                         truncated: false,
                         original_bytes: None,
                     }),
+                    enforcement: resolved_enforcement,
                 });
             }
         }
@@ -146,6 +164,7 @@ pub fn evaluate_all(
         failed,
         skipped,
         total_duration_ms: start.elapsed().as_millis() as u64,
+        enforcement: enforcement_summary,
     }
 }
 
@@ -166,8 +185,11 @@ pub fn evaluate_all_gates(
     let mut passed = 0usize;
     let mut failed = 0usize;
     let mut skipped = 0usize;
+    let mut enforcement_summary = EnforcementSummary::default();
 
     for gate_criterion in &gates.criteria {
+        let resolved_enforcement =
+            resolve_enforcement(gate_criterion.enforcement, gates.gate.as_ref());
         let criterion = to_criterion(gate_criterion);
 
         if criterion.cmd.is_none() && criterion.path.is_none() {
@@ -175,6 +197,7 @@ pub fn evaluate_all_gates(
             results.push(CriterionResult {
                 criterion_name: criterion.name.clone(),
                 result: None,
+                enforcement: resolved_enforcement,
             });
             continue;
         }
@@ -185,16 +208,29 @@ pub fn evaluate_all_gates(
             Ok(gate_result) => {
                 if gate_result.passed {
                     passed += 1;
+                    match resolved_enforcement {
+                        Enforcement::Required => enforcement_summary.required_passed += 1,
+                        Enforcement::Advisory => enforcement_summary.advisory_passed += 1,
+                    }
                 } else {
                     failed += 1;
+                    match resolved_enforcement {
+                        Enforcement::Required => enforcement_summary.required_failed += 1,
+                        Enforcement::Advisory => enforcement_summary.advisory_failed += 1,
+                    }
                 }
                 results.push(CriterionResult {
                     criterion_name: criterion.name.clone(),
                     result: Some(gate_result),
+                    enforcement: resolved_enforcement,
                 });
             }
             Err(err) => {
                 failed += 1;
+                match resolved_enforcement {
+                    Enforcement::Required => enforcement_summary.required_failed += 1,
+                    Enforcement::Advisory => enforcement_summary.advisory_failed += 1,
+                }
                 results.push(CriterionResult {
                     criterion_name: criterion.name.clone(),
                     result: Some(GateResult {
@@ -208,6 +244,7 @@ pub fn evaluate_all_gates(
                         truncated: false,
                         original_bytes: None,
                     }),
+                    enforcement: resolved_enforcement,
                 });
             }
         }
@@ -220,6 +257,7 @@ pub fn evaluate_all_gates(
         failed,
         skipped,
         total_duration_ms: start.elapsed().as_millis() as u64,
+        enforcement: enforcement_summary,
     }
 }
 
@@ -233,6 +271,7 @@ pub fn to_criterion(gc: &GateCriterion) -> Criterion {
         cmd: gc.cmd.clone(),
         path: gc.path.clone(),
         timeout: gc.timeout,
+        enforcement: gc.enforcement,
     }
 }
 
@@ -247,6 +286,20 @@ fn gate_kind_for(criterion: &Criterion) -> GateKind {
         (None, Some(path)) => GateKind::FileExists { path: path.clone() },
         (None, None) => GateKind::AlwaysPass,
     }
+}
+
+/// Resolve the effective enforcement level for a criterion.
+///
+/// Precedence: per-criterion override > spec-level `[gate]` default > Required.
+pub fn resolve_enforcement(
+    criterion_enforcement: Option<Enforcement>,
+    gate_section: Option<&GateSection>,
+) -> Enforcement {
+    criterion_enforcement.unwrap_or_else(|| {
+        gate_section
+            .map(|g| g.enforcement)
+            .unwrap_or(Enforcement::Required)
+    })
 }
 
 /// Resolve the effective timeout from three tiers of configuration.
@@ -549,6 +602,7 @@ mod tests {
             cmd: Some("echo hello".to_string()),
             path: None,
             timeout: None,
+            enforcement: None,
         };
 
         let result = evaluate(&criterion, dir.path(), Duration::from_secs(10)).unwrap();
@@ -576,6 +630,7 @@ mod tests {
             cmd: Some("sh -c 'echo fail >&2 && exit 1'".to_string()),
             path: None,
             timeout: None,
+            enforcement: None,
         };
 
         let result = evaluate(&criterion, dir.path(), Duration::from_secs(10)).unwrap();
@@ -599,6 +654,7 @@ mod tests {
             cmd: Some("sleep 10".to_string()),
             path: None,
             timeout: None,
+            enforcement: None,
         };
 
         let result = evaluate(&criterion, dir.path(), Duration::from_secs(1)).unwrap();
@@ -623,6 +679,7 @@ mod tests {
             cmd: None,
             path: None,
             timeout: None,
+            enforcement: None,
         };
 
         let result = evaluate(&criterion, dir.path(), Duration::from_secs(10)).unwrap();
@@ -674,6 +731,7 @@ mod tests {
             cmd: Some("pwd".to_string()),
             path: None,
             timeout: None,
+            enforcement: None,
         };
 
         let result = evaluate(&criterion, dir.path(), Duration::from_secs(10)).unwrap();
@@ -758,6 +816,7 @@ mod tests {
         let spec = Spec {
             name: "mixed".to_string(),
             description: String::new(),
+            gate: None,
             criteria: vec![
                 Criterion {
                     name: "passes".to_string(),
@@ -765,6 +824,7 @@ mod tests {
                     cmd: Some("true".to_string()),
                     path: None,
                     timeout: None,
+                    enforcement: None,
                 },
                 Criterion {
                     name: "descriptive".to_string(),
@@ -772,6 +832,7 @@ mod tests {
                     cmd: None,
                     path: None,
                     timeout: None,
+                    enforcement: None,
                 },
                 Criterion {
                     name: "fails".to_string(),
@@ -779,6 +840,7 @@ mod tests {
                     cmd: Some("false".to_string()),
                     path: None,
                     timeout: None,
+                    enforcement: None,
                 },
             ],
         };
@@ -801,12 +863,14 @@ mod tests {
         let spec = Spec {
             name: "bad-cmd".to_string(),
             description: String::new(),
+            gate: None,
             criteria: vec![Criterion {
                 name: "impossible".to_string(),
                 description: "nonexistent binary".to_string(),
                 cmd: Some("/nonexistent/binary/that/does/not/exist".to_string()),
                 path: None,
                 timeout: None,
+                enforcement: None,
             }],
         };
 
@@ -826,6 +890,7 @@ mod tests {
         let gates = GatesSpec {
             name: "mixed".to_string(),
             description: String::new(),
+            gate: None,
             criteria: vec![
                 GateCriterion {
                     name: "passes".to_string(),
@@ -833,6 +898,7 @@ mod tests {
                     cmd: Some("true".to_string()),
                     path: None,
                     timeout: None,
+                    enforcement: None,
                     requirements: vec!["REQ-FUNC-001".to_string()],
                 },
                 GateCriterion {
@@ -841,6 +907,7 @@ mod tests {
                     cmd: None,
                     path: None,
                     timeout: None,
+                    enforcement: None,
                     requirements: vec![],
                 },
                 GateCriterion {
@@ -849,6 +916,7 @@ mod tests {
                     cmd: Some("false".to_string()),
                     path: None,
                     timeout: None,
+                    enforcement: None,
                     requirements: vec!["REQ-SEC-001".to_string()],
                 },
             ],
@@ -872,24 +940,28 @@ mod tests {
         let legacy_spec = Spec {
             name: "test".to_string(),
             description: String::new(),
+            gate: None,
             criteria: vec![Criterion {
                 name: "echo".to_string(),
                 description: "echo test".to_string(),
                 cmd: Some("echo ok".to_string()),
                 path: None,
                 timeout: None,
+                enforcement: None,
             }],
         };
 
         let gates_spec = GatesSpec {
             name: "test".to_string(),
             description: String::new(),
+            gate: None,
             criteria: vec![GateCriterion {
                 name: "echo".to_string(),
                 description: "echo test".to_string(),
                 cmd: Some("echo ok".to_string()),
                 path: None,
                 timeout: None,
+                enforcement: None,
                 requirements: vec![],
             }],
         };
@@ -917,6 +989,7 @@ mod tests {
             cmd: Some("echo ok".to_string()),
             path: None,
             timeout: Some(60),
+            enforcement: None,
             requirements: vec!["REQ-FUNC-001".to_string()],
         };
 
@@ -936,6 +1009,7 @@ mod tests {
             cmd: None,
             path: Some("dist/app.wasm".to_string()),
             timeout: None,
+            enforcement: None,
             requirements: vec![],
         };
 
@@ -957,6 +1031,7 @@ mod tests {
             cmd: None,
             path: Some("target.txt".to_string()),
             timeout: None,
+            enforcement: None,
         };
 
         let result = evaluate(&criterion, dir.path(), Duration::from_secs(10)).unwrap();
@@ -975,6 +1050,7 @@ mod tests {
             cmd: None,
             path: Some("missing.txt".to_string()),
             timeout: None,
+            enforcement: None,
         };
 
         let result = evaluate(&criterion, dir.path(), Duration::from_secs(10)).unwrap();
@@ -991,6 +1067,7 @@ mod tests {
         let spec = Spec {
             name: "file-check".to_string(),
             description: String::new(),
+            gate: None,
             criteria: vec![
                 Criterion {
                     name: "file present".to_string(),
@@ -998,6 +1075,7 @@ mod tests {
                     cmd: None,
                     path: Some("exists.txt".to_string()),
                     timeout: None,
+                    enforcement: None,
                 },
                 Criterion {
                     name: "descriptive only".to_string(),
@@ -1005,6 +1083,7 @@ mod tests {
                     cmd: None,
                     path: None,
                     timeout: None,
+                    enforcement: None,
                 },
             ],
         };
@@ -1029,6 +1108,7 @@ mod tests {
             cmd: Some("echo cmd-ran".to_string()),
             path: Some("irrelevant.txt".to_string()),
             timeout: None,
+            enforcement: None,
         };
 
         let result = evaluate(&criterion, dir.path(), Duration::from_secs(10)).unwrap();
@@ -1048,12 +1128,14 @@ mod tests {
         let gates = GatesSpec {
             name: "file-gates".to_string(),
             description: String::new(),
+            gate: None,
             criteria: vec![GateCriterion {
                 name: "readme exists".to_string(),
                 description: "check readme".to_string(),
                 cmd: None,
                 path: Some("readme.md".to_string()),
                 timeout: None,
+                enforcement: None,
                 requirements: vec![],
             }],
         };
@@ -1075,5 +1157,233 @@ mod tests {
 
         assert!(!result.passed);
         assert!(result.stderr.contains("path must be relative"));
+    }
+
+    // ── resolve_enforcement ─────────────────────────────────────────
+
+    #[test]
+    fn resolve_enforcement_precedence() {
+        // None + None => Required (default)
+        assert_eq!(resolve_enforcement(None, None), Enforcement::Required,);
+
+        // None + Some(Advisory) => Advisory (gate section default)
+        assert_eq!(
+            resolve_enforcement(
+                None,
+                Some(&GateSection {
+                    enforcement: Enforcement::Advisory
+                })
+            ),
+            Enforcement::Advisory,
+        );
+
+        // Some(Required) + Some(Advisory) => Required (criterion override wins)
+        assert_eq!(
+            resolve_enforcement(
+                Some(Enforcement::Required),
+                Some(&GateSection {
+                    enforcement: Enforcement::Advisory
+                }),
+            ),
+            Enforcement::Required,
+        );
+
+        // Some(Advisory) + None => Advisory (criterion override wins)
+        assert_eq!(
+            resolve_enforcement(Some(Enforcement::Advisory), None),
+            Enforcement::Advisory,
+        );
+
+        // None + Some(Required) => Required (gate section default)
+        assert_eq!(
+            resolve_enforcement(
+                None,
+                Some(&GateSection {
+                    enforcement: Enforcement::Required
+                })
+            ),
+            Enforcement::Required,
+        );
+    }
+
+    // ── enforcement tracking in evaluate_all ─────────────────────────
+
+    #[test]
+    fn evaluate_all_advisory_failure_does_not_block() {
+        let dir = tempfile::tempdir().unwrap();
+        let spec = Spec {
+            name: "advisory-test".to_string(),
+            description: String::new(),
+            gate: None,
+            criteria: vec![
+                Criterion {
+                    name: "required-pass".to_string(),
+                    description: "passes".to_string(),
+                    cmd: Some("true".to_string()),
+                    path: None,
+                    timeout: None,
+                    enforcement: Some(Enforcement::Required),
+                },
+                Criterion {
+                    name: "advisory-fail".to_string(),
+                    description: "fails but advisory".to_string(),
+                    cmd: Some("false".to_string()),
+                    path: None,
+                    timeout: None,
+                    enforcement: Some(Enforcement::Advisory),
+                },
+            ],
+        };
+
+        let summary = evaluate_all(&spec, dir.path(), None, None);
+
+        // Legacy counts: 1 pass, 1 fail
+        assert_eq!(summary.passed, 1);
+        assert_eq!(summary.failed, 1);
+
+        // Enforcement counts
+        assert_eq!(summary.enforcement.required_passed, 1);
+        assert_eq!(summary.enforcement.required_failed, 0);
+        assert_eq!(summary.enforcement.advisory_passed, 0);
+        assert_eq!(summary.enforcement.advisory_failed, 1);
+
+        // CriterionResult enforcement fields
+        assert_eq!(summary.results[0].enforcement, Enforcement::Required);
+        assert_eq!(summary.results[1].enforcement, Enforcement::Advisory);
+    }
+
+    #[test]
+    fn evaluate_all_skipped_excluded_from_enforcement() {
+        let dir = tempfile::tempdir().unwrap();
+        let spec = Spec {
+            name: "skip-test".to_string(),
+            description: String::new(),
+            gate: None,
+            criteria: vec![
+                Criterion {
+                    name: "required-pass".to_string(),
+                    description: "passes".to_string(),
+                    cmd: Some("true".to_string()),
+                    path: None,
+                    timeout: None,
+                    enforcement: Some(Enforcement::Required),
+                },
+                Criterion {
+                    name: "descriptive-only".to_string(),
+                    description: "no cmd or path".to_string(),
+                    cmd: None,
+                    path: None,
+                    timeout: None,
+                    enforcement: Some(Enforcement::Required),
+                },
+            ],
+        };
+
+        let summary = evaluate_all(&spec, dir.path(), None, None);
+
+        assert_eq!(summary.passed, 1);
+        assert_eq!(summary.skipped, 1);
+
+        // Enforcement summary should only count the executable criterion
+        assert_eq!(summary.enforcement.required_passed, 1);
+        assert_eq!(summary.enforcement.required_failed, 0);
+        assert_eq!(summary.enforcement.advisory_passed, 0);
+        assert_eq!(summary.enforcement.advisory_failed, 0);
+
+        // Skipped criterion still has its resolved enforcement set
+        assert_eq!(summary.results[1].enforcement, Enforcement::Required);
+    }
+
+    #[test]
+    fn evaluate_all_gates_enforcement_tracking() {
+        let dir = tempfile::tempdir().unwrap();
+        let gates = GatesSpec {
+            name: "enforcement-gates".to_string(),
+            description: String::new(),
+            gate: Some(GateSection {
+                enforcement: Enforcement::Advisory,
+            }),
+            criteria: vec![
+                GateCriterion {
+                    name: "required-override".to_string(),
+                    description: "overrides to required".to_string(),
+                    cmd: Some("true".to_string()),
+                    path: None,
+                    timeout: None,
+                    enforcement: Some(Enforcement::Required),
+                    requirements: vec![],
+                },
+                GateCriterion {
+                    name: "inherits-advisory".to_string(),
+                    description: "inherits advisory from gate section".to_string(),
+                    cmd: Some("false".to_string()),
+                    path: None,
+                    timeout: None,
+                    enforcement: None,
+                    requirements: vec![],
+                },
+            ],
+        };
+
+        let summary = evaluate_all_gates(&gates, dir.path(), None, None);
+
+        assert_eq!(summary.passed, 1);
+        assert_eq!(summary.failed, 1);
+        assert_eq!(summary.enforcement.required_passed, 1);
+        assert_eq!(summary.enforcement.required_failed, 0);
+        assert_eq!(summary.enforcement.advisory_passed, 0);
+        assert_eq!(summary.enforcement.advisory_failed, 1);
+
+        // Verify resolved enforcement on results
+        assert_eq!(summary.results[0].enforcement, Enforcement::Required);
+        assert_eq!(summary.results[1].enforcement, Enforcement::Advisory);
+    }
+
+    #[test]
+    fn all_required_pass_advisory_failures_still_pass() {
+        let dir = tempfile::tempdir().unwrap();
+        let spec = Spec {
+            name: "mixed-enforcement".to_string(),
+            description: String::new(),
+            gate: None,
+            criteria: vec![
+                Criterion {
+                    name: "required-pass".to_string(),
+                    description: "required, passes".to_string(),
+                    cmd: Some("true".to_string()),
+                    path: None,
+                    timeout: None,
+                    enforcement: Some(Enforcement::Required),
+                },
+                Criterion {
+                    name: "advisory-fail".to_string(),
+                    description: "advisory, fails".to_string(),
+                    cmd: Some("false".to_string()),
+                    path: None,
+                    timeout: None,
+                    enforcement: Some(Enforcement::Advisory),
+                },
+                Criterion {
+                    name: "advisory-pass".to_string(),
+                    description: "advisory, passes".to_string(),
+                    cmd: Some("true".to_string()),
+                    path: None,
+                    timeout: None,
+                    enforcement: Some(Enforcement::Advisory),
+                },
+            ],
+        };
+
+        let summary = evaluate_all(&spec, dir.path(), None, None);
+
+        // Legacy: passed=2, failed=1
+        assert_eq!(summary.passed, 2);
+        assert_eq!(summary.failed, 1);
+
+        // Enforcement: all required pass, advisory mixed
+        assert_eq!(summary.enforcement.required_passed, 1);
+        assert_eq!(summary.enforcement.required_failed, 0);
+        assert_eq!(summary.enforcement.advisory_passed, 1);
+        assert_eq!(summary.enforcement.advisory_failed, 1);
     }
 }

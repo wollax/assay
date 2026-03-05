@@ -5,6 +5,16 @@
   "description": "Summary of evaluating all criteria in a spec.",
   "type": "object",
   "properties": {
+    "enforcement": {
+      "description": "Enforcement-level breakdown of results (excludes skipped criteria).",
+      "$ref": "#/$defs/EnforcementSummary",
+      "default": {
+        "advisory_failed": 0,
+        "advisory_passed": 0,
+        "required_failed": 0,
+        "required_passed": 0
+      }
+    },
     "failed": {
       "description": "Number of criteria that failed.",
       "type": "integer",
@@ -57,6 +67,11 @@
           "description": "The name of the criterion that was evaluated.",
           "type": "string"
         },
+        "enforcement": {
+          "description": "Resolved enforcement level for this criterion (Required or Advisory).",
+          "$ref": "#/$defs/Enforcement",
+          "default": "required"
+        },
         "result": {
           "description": "The gate result, or `None` if skipped (no cmd).",
           "anyOf": [
@@ -71,6 +86,53 @@
       },
       "required": [
         "criterion_name"
+      ]
+    },
+    "Enforcement": {
+      "description": "Enforcement level for a gate criterion.\n\nDetermines whether a criterion failure blocks the gate (required)\nor is informational only (advisory).",
+      "oneOf": [
+        {
+          "description": "Failure blocks the gate. This is the default.",
+          "type": "string",
+          "const": "required"
+        },
+        {
+          "description": "Failure is informational; does not block the gate.",
+          "type": "string",
+          "const": "advisory"
+        }
+      ]
+    },
+    "EnforcementSummary": {
+      "description": "Enforcement breakdown in a gate run summary.\n\nAlways present on `GateRunSummary`, with counts defaulting to 0.\nOnly counts executable criteria (skipped criteria are excluded).",
+      "type": "object",
+      "properties": {
+        "advisory_failed": {
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "advisory_passed": {
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "required_failed": {
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "required_passed": {
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "required_passed",
+        "required_failed",
+        "advisory_passed",
+        "advisory_failed"
       ]
     },
     "GateKind": {

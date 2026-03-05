@@ -3,6 +3,8 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::Enforcement;
+
 /// A single acceptance criterion attached to a spec.
 ///
 /// Each criterion has a name, description, and an optional shell command
@@ -32,6 +34,11 @@ pub struct Criterion {
     /// Overrides the global default but is overridden by CLI `--timeout`.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub timeout: Option<u64>,
+
+    /// Enforcement level override for this criterion. `None` means "use the
+    /// spec-level default from `[gate]` section" (which itself defaults to `required`).
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub enforcement: Option<Enforcement>,
 }
 
 inventory::submit! {
@@ -53,6 +60,7 @@ mod tests {
             cmd: None,
             path: None,
             timeout: None,
+            enforcement: None,
         };
 
         let toml_str = toml::to_string(&criterion).expect("serialize to TOML");
@@ -77,6 +85,7 @@ mod tests {
             cmd: Some("cargo test".to_string()),
             path: None,
             timeout: None,
+            enforcement: None,
         };
 
         let toml_str = toml::to_string(&criterion).expect("serialize to TOML");
@@ -97,6 +106,7 @@ mod tests {
             cmd: Some("cargo test -- --ignored".to_string()),
             path: None,
             timeout: Some(60),
+            enforcement: None,
         };
 
         let toml_str = toml::to_string(&criterion).expect("serialize to TOML");

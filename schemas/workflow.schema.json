@@ -40,9 +40,27 @@
           "description": "Detailed description of what this criterion checks.",
           "type": "string"
         },
+        "enforcement": {
+          "description": "Enforcement level override for this criterion. `None` means \"use the\nspec-level default from `[gate]` section\" (which itself defaults to `required`).",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Enforcement"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "name": {
           "description": "Human-readable name for this criterion.",
           "type": "string"
+        },
+        "path": {
+          "description": "Optional file path to check for existence.\nWhen set (and `cmd` is `None`), the criterion evaluates as a `FileExists` gate.",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "timeout": {
           "description": "Optional timeout in seconds for this criterion's command.\nOverrides the global default but is overridden by CLI `--timeout`.",
@@ -58,6 +76,21 @@
       "required": [
         "name",
         "description"
+      ]
+    },
+    "Enforcement": {
+      "description": "Enforcement level for a gate criterion.\n\nDetermines whether a criterion failure blocks the gate (required)\nor is informational only (advisory).",
+      "oneOf": [
+        {
+          "description": "Failure blocks the gate. This is the default.",
+          "type": "string",
+          "const": "required"
+        },
+        {
+          "description": "Failure is informational; does not block the gate.",
+          "type": "string",
+          "const": "advisory"
+        }
       ]
     },
     "Gate": {
@@ -76,6 +109,18 @@
         "passed"
       ]
     },
+    "GateSection": {
+      "description": "Gate-level configuration section.\n\nParsed from `[gate]` in spec TOML files. Provides spec-wide defaults\nthat individual criteria can override.",
+      "type": "object",
+      "properties": {
+        "enforcement": {
+          "description": "Default enforcement level for all criteria in this spec.",
+          "$ref": "#/$defs/Enforcement",
+          "default": "required"
+        }
+      },
+      "additionalProperties": false
+    },
     "Spec": {
       "description": "A specification that defines what should be built and its acceptance criteria.",
       "type": "object",
@@ -90,6 +135,17 @@
         "description": {
           "description": "Human-readable description. Defaults to empty string, omitted from\nserialized output when empty.",
           "type": "string"
+        },
+        "gate": {
+          "description": "Gate configuration section (enforcement defaults).",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/GateSection"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "name": {
           "description": "Display name for this spec (required, must be unique across all specs).",

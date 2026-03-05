@@ -9,6 +9,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::GateResult;
+use crate::enforcement::{Enforcement, EnforcementSummary};
 
 /// Summary of evaluating all criteria in a spec.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -26,6 +27,9 @@ pub struct GateRunSummary {
     pub skipped: usize,
     /// Total wall-clock duration for all evaluations in milliseconds.
     pub total_duration_ms: u64,
+    /// Enforcement-level breakdown of results (excludes skipped criteria).
+    #[serde(default)]
+    pub enforcement: EnforcementSummary,
 }
 
 /// A criterion paired with its evaluation result.
@@ -36,6 +40,9 @@ pub struct CriterionResult {
     /// The gate result, or `None` if skipped (no cmd).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub result: Option<GateResult>,
+    /// Resolved enforcement level for this criterion (Required or Advisory).
+    #[serde(default)]
+    pub enforcement: Enforcement,
 }
 
 inventory::submit! {

@@ -9,8 +9,8 @@
 
 ## Gate Enforcement
 
-- [ ] **ENFC-01**: Criterion has an `enforcement` field with values `required` (default) and `advisory`
-- [ ] **ENFC-02**: Gate evaluation summary separates required failures from advisory failures
+- [x] **ENFC-01**: Criterion has an `enforcement` field with values `required` (default) and `advisory`
+- [x] **ENFC-02**: Gate evaluation summary separates required failures from advisory failures
 - [ ] **ENFC-03**: CLI exit code reflects only required criterion failures; advisory failures are warnings
 - [ ] **ENFC-04**: MCP `gate_run` response distinguishes required vs advisory results
 
@@ -27,7 +27,7 @@
 - [x] **TYPE-01**: `GateRunSummary` and `CriterionResult` relocated from assay-core to assay-types with `Deserialize` + `JsonSchema`
 - [x] **TYPE-02**: All domain types use `#[serde(skip_serializing_if)]` on optional fields
 - [x] **TYPE-03**: New fields use `#[serde(default)]` for backward compatibility with existing spec/config files
-- [ ] **TYPE-04**: `FileExists` gate kind is wired into `evaluate()` dispatch (connect dead code)
+- [x] **TYPE-04**: `FileExists` gate kind is wired into `evaluate()` dispatch (connect dead code)
 
 ## Foundation — Testing
 
@@ -117,9 +117,9 @@
 | TYPE-01 | 11 | Complete |
 | TYPE-02 | 11 | Complete |
 | TYPE-03 | 11 | Complete |
-| TYPE-04 | 12 | Pending |
-| ENFC-01 | 13 | Pending |
-| ENFC-02 | 13 | Pending |
+| TYPE-04 | 12 | Complete |
+| ENFC-01 | 13 | Complete |
+| ENFC-02 | 13 | Complete |
 | ENFC-03 | 18 | Pending |
 | ENFC-04 | 17 | Pending |
 | HIST-01 | 14 | Pending |

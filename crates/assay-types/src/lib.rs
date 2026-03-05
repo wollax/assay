@@ -1,4 +1,5 @@
 pub mod criterion;
+pub mod enforcement;
 pub mod feature_spec;
 pub mod gate;
 pub mod gate_run;
@@ -6,6 +7,7 @@ pub mod gates_spec;
 pub mod schema_registry;
 
 pub use criterion::Criterion;
+pub use enforcement::{Enforcement, EnforcementSummary, GateSection};
 pub use feature_spec::FeatureSpec;
 pub use gate::{GateKind, GateResult};
 pub use gate_run::{CriterionResult, GateRunSummary};
@@ -25,6 +27,10 @@ pub struct Spec {
     /// serialized output when empty.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub description: String,
+
+    /// Gate configuration section (enforcement defaults).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gate: Option<GateSection>,
 
     /// Acceptance criteria that must be satisfied.
     pub criteria: Vec<Criterion>,

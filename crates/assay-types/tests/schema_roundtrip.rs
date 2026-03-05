@@ -33,12 +33,14 @@ fn spec_validates() {
     validate(&Spec {
         name: "build-feature".to_string(),
         description: "Implement the login page".to_string(),
+        gate: None,
         criteria: vec![Criterion {
             name: "compiles".to_string(),
             description: "The project compiles".to_string(),
             cmd: None,
             path: None,
             timeout: None,
+            enforcement: None,
         }],
     });
 }
@@ -67,12 +69,14 @@ fn workflow_validates() {
         specs: vec![Spec {
             name: "build-feature".to_string(),
             description: "Implement the login page".to_string(),
+            gate: None,
             criteria: vec![Criterion {
                 name: "compiles".to_string(),
                 description: "The project compiles".to_string(),
                 cmd: None,
                 path: None,
                 timeout: None,
+                enforcement: None,
             }],
         }],
         gates: vec![Gate {
@@ -154,6 +158,7 @@ fn criterion_with_cmd_validates() {
         cmd: Some("cargo test".to_string()),
         path: None,
         timeout: None,
+        enforcement: None,
     });
 }
 
@@ -165,6 +170,7 @@ fn criterion_without_cmd_validates() {
         cmd: None,
         path: None,
         timeout: None,
+        enforcement: None,
     });
 }
 
@@ -176,6 +182,7 @@ fn criterion_with_timeout_validates() {
         cmd: Some("cargo test -- --ignored".to_string()),
         path: None,
         timeout: Some(60),
+        enforcement: None,
     });
 }
 
@@ -236,12 +243,14 @@ fn gates_spec_validates() {
     validate(&GatesSpec {
         name: "auth-flow".to_string(),
         description: String::new(),
+        gate: None,
         criteria: vec![GateCriterion {
             name: "auth-compiles".to_string(),
             description: "Auth module compiles".to_string(),
             cmd: Some("cargo build -p auth".to_string()),
             path: None,
             timeout: None,
+            enforcement: None,
             requirements: vec!["REQ-FUNC-001".to_string()],
         }],
     });
@@ -255,6 +264,7 @@ fn gate_criterion_without_cmd_validates() {
         cmd: None,
         path: None,
         timeout: None,
+        enforcement: None,
         requirements: vec![],
     });
 }
@@ -278,11 +288,13 @@ fn gate_run_summary_full_validates() {
                 truncated: false,
                 original_bytes: None,
             }),
+            enforcement: Enforcement::Required,
         }],
         passed: 1,
         failed: 0,
         skipped: 0,
         total_duration_ms: 1500,
+        enforcement: EnforcementSummary::default(),
     });
 }
 
@@ -293,11 +305,13 @@ fn gate_run_summary_with_skipped_criterion_validates() {
         results: vec![CriterionResult {
             criterion_name: "descriptive-only".to_string(),
             result: None,
+            enforcement: Enforcement::Required,
         }],
         passed: 0,
         failed: 0,
         skipped: 1,
         total_duration_ms: 0,
+        enforcement: EnforcementSummary::default(),
     });
 }
 
@@ -316,6 +330,7 @@ fn criterion_result_with_result_validates() {
             truncated: false,
             original_bytes: None,
         }),
+        enforcement: Enforcement::Required,
     });
 }
 
@@ -324,7 +339,110 @@ fn criterion_result_skipped_validates() {
     validate(&CriterionResult {
         criterion_name: "manual-check".to_string(),
         result: None,
+        enforcement: Enforcement::Required,
     });
+}
+
+#[test]
+fn enforcement_roundtrip() {
+    // Required (default)
+    let req = Enforcement::Required;
+    let json = serde_json::to_string(&req).unwrap();
+    assert_eq!(json, r#""required""#);
+    let back: Enforcement = serde_json::from_str(&json).unwrap();
+    assert_eq!(back, req);
+
+    // Advisory
+    let adv = Enforcement::Advisory;
+    let json = serde_json::to_string(&adv).unwrap();
+    assert_eq!(json, r#""advisory""#);
+    let back: Enforcement = serde_json::from_str(&json).unwrap();
+    assert_eq!(back, adv);
+
+    validate(&req);
+    validate(&adv);
+}
+
+#[test]
+fn gate_section_roundtrip() {
+    let section = GateSection {
+        enforcement: Enforcement::Advisory,
+    };
+    let json = serde_json::to_string(&section).unwrap();
+    let back: GateSection = serde_json::from_str(&json).unwrap();
+    assert_eq!(back.enforcement, Enforcement::Advisory);
+    validate(&section);
+}
+
+#[test]
+fn enforcement_summary_roundtrip() {
+    let summary = EnforcementSummary {
+        required_passed: 3,
+        required_failed: 1,
+        advisory_passed: 2,
+        advisory_failed: 0,
+    };
+    let json = serde_json::to_string(&summary).unwrap();
+    let back: EnforcementSummary = serde_json::from_str(&json).unwrap();
+    assert_eq!(back, summary);
+    validate(&summary);
+}
+
+#[test]
+fn spec_with_gate_section_toml_roundtrip() {
+    let toml_str = r#"
+name = "test"
+description = "A test spec"
+
+[gate]
+enforcement = "advisory"
+
+[[criteria]]
+name = "lint"
+description = "Run linter"
+cmd = "echo lint"
+"#;
+    let spec: Spec = toml::from_str(toml_str).expect("should parse TOML with [gate] section");
+    assert_eq!(
+        spec.gate.as_ref().unwrap().enforcement,
+        Enforcement::Advisory
+    );
+    validate(&spec);
+}
+
+#[test]
+fn spec_without_enforcement_fields_backward_compat() {
+    // Old-style spec without enforcement or gate section still parses
+    let toml_str = r#"
+name = "legacy"
+description = "No enforcement fields"
+
+[[criteria]]
+name = "build"
+description = "Build it"
+cmd = "make"
+"#;
+    let spec: Spec = toml::from_str(toml_str).expect("old TOML without enforcement should parse");
+    assert!(spec.gate.is_none());
+    assert!(spec.criteria[0].enforcement.is_none());
+    validate(&spec);
+}
+
+#[test]
+fn gate_run_summary_backward_compat_no_enforcement() {
+    // Old JSON without enforcement field still deserializes (serde default)
+    let json = r#"{
+        "spec_name": "old-spec",
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0,
+        "total_duration_ms": 100
+    }"#;
+    let summary: GateRunSummary =
+        serde_json::from_str(json).expect("old JSON without enforcement should parse");
+    assert_eq!(summary.enforcement.required_passed, 0);
+    assert_eq!(summary.enforcement.required_failed, 0);
+    validate(&summary);
 }
 
 #[test]

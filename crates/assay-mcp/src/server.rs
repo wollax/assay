@@ -74,6 +74,8 @@ struct GateRunResponse {
     passed: usize,
     failed: usize,
     skipped: usize,
+    required_failed: usize,
+    advisory_failed: usize,
     total_duration_ms: u64,
     criteria: Vec<CriterionSummary>,
 }
@@ -83,6 +85,7 @@ struct GateRunResponse {
 struct CriterionSummary {
     name: String,
     status: String,
+    enforcement: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     exit_code: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -325,6 +328,13 @@ fn format_gate_response(
     summary: &assay_types::GateRunSummary,
     include_evidence: bool,
 ) -> GateRunResponse {
+    let enforcement_label = |e: assay_types::Enforcement| -> String {
+        match e {
+            assay_types::Enforcement::Required => "required".to_string(),
+            assay_types::Enforcement::Advisory => "advisory".to_string(),
+        }
+    };
+
     let criteria = summary
         .results
         .iter()
@@ -332,6 +342,7 @@ fn format_gate_response(
             None => CriterionSummary {
                 name: cr.criterion_name.clone(),
                 status: "skipped".to_string(),
+                enforcement: enforcement_label(cr.enforcement),
                 exit_code: None,
                 duration_ms: None,
                 reason: None,
@@ -341,6 +352,7 @@ fn format_gate_response(
             Some(gate_result) if gate_result.passed => CriterionSummary {
                 name: cr.criterion_name.clone(),
                 status: "passed".to_string(),
+                enforcement: enforcement_label(cr.enforcement),
                 exit_code: gate_result.exit_code,
                 duration_ms: Some(gate_result.duration_ms),
                 reason: None,
@@ -362,6 +374,7 @@ fn format_gate_response(
                 CriterionSummary {
                     name: cr.criterion_name.clone(),
                     status: "failed".to_string(),
+                    enforcement: enforcement_label(cr.enforcement),
                     exit_code: gate_result.exit_code,
                     duration_ms: Some(gate_result.duration_ms),
                     reason: Some(reason),
@@ -385,6 +398,8 @@ fn format_gate_response(
         passed: summary.passed,
         failed: summary.failed,
         skipped: summary.skipped,
+        required_failed: summary.enforcement.required_failed,
+        advisory_failed: summary.enforcement.advisory_failed,
         total_duration_ms: summary.total_duration_ms,
         criteria,
     }
@@ -413,7 +428,9 @@ pub async fn serve() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use assay_types::{CriterionResult, GateKind, GateResult, GateRunSummary};
+    use assay_types::{
+        CriterionResult, Enforcement, EnforcementSummary, GateKind, GateResult, GateRunSummary,
+    };
     use chrono::Utc;
     use std::io::Write as _;
 
@@ -436,6 +453,7 @@ mod tests {
                         truncated: false,
                         original_bytes: None,
                     }),
+                    enforcement: Enforcement::Required,
                 },
                 CriterionResult {
                     criterion_name: "lint".to_string(),
@@ -452,16 +470,19 @@ mod tests {
                         truncated: false,
                         original_bytes: None,
                     }),
+                    enforcement: Enforcement::Required,
                 },
                 CriterionResult {
                     criterion_name: "review-checklist".to_string(),
                     result: None,
+                    enforcement: Enforcement::Required,
                 },
             ],
             passed: 1,
             failed: 1,
             skipped: 1,
             total_duration_ms: 2000,
+            enforcement: EnforcementSummary::default(),
         }
     }
 
@@ -646,11 +667,13 @@ mod tests {
                     truncated: false,
                     original_bytes: None,
                 }),
+                enforcement: Enforcement::Required,
             }],
             passed: 0,
             failed: 1,
             skipped: 0,
             total_duration_ms: 50,
+            enforcement: EnforcementSummary::default(),
         };
 
         let response = format_gate_response(&summary, false);
@@ -934,11 +957,14 @@ cmd = "echo ok"
             passed: 2,
             failed: 1,
             skipped: 1,
+            required_failed: 1,
+            advisory_failed: 0,
             total_duration_ms: 1500,
             criteria: vec![
                 CriterionSummary {
                     name: "unit-tests".to_string(),
                     status: "passed".to_string(),
+                    enforcement: "required".to_string(),
                     exit_code: Some(0),
                     duration_ms: Some(800),
                     reason: None,
@@ -948,6 +974,7 @@ cmd = "echo ok"
                 CriterionSummary {
                     name: "lint".to_string(),
                     status: "failed".to_string(),
+                    enforcement: "required".to_string(),
                     exit_code: Some(1),
                     duration_ms: Some(700),
                     reason: Some("error: unused variable".to_string()),
@@ -957,6 +984,7 @@ cmd = "echo ok"
                 CriterionSummary {
                     name: "review".to_string(),
                     status: "skipped".to_string(),
+                    enforcement: "required".to_string(),
                     exit_code: None,
                     duration_ms: None,
                     reason: None,
@@ -1027,10 +1055,13 @@ cmd = "echo ok"
             passed: 1,
             failed: 0,
             skipped: 0,
+            required_failed: 0,
+            advisory_failed: 0,
             total_duration_ms: 500,
             criteria: vec![CriterionSummary {
                 name: "check".to_string(),
                 status: "passed".to_string(),
+                enforcement: "required".to_string(),
                 exit_code: Some(0),
                 duration_ms: Some(500),
                 reason: None,
