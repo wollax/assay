@@ -9,19 +9,19 @@ See: .planning/PROJECT.md (updated 2026-03-02)
 
 ## Current Position
 
-Phase: 14 — Run History Core
-Plan: 02 of 2
-Status: Complete
-Last activity: 2026-03-05 — Completed 14-02-PLAN.md
+Phase: 14 — Run History Core (VERIFIED & COMPLETE)
+Plan: 02 of 2 (complete)
+Status: Phase complete, verified, moved to completed/
+Last activity: 2026-03-05 — Phase 14 verified and completed
 
-Progress: v0.2.0 [████      ] ~27%
+Progress: v0.2.0 [████      ] ~31%
 
 ## Milestone Progress
 
 | Milestone | Phases | Requirements | Complete |
 |-----------|--------|--------------|----------|
 | v0.1.0 | 10 | 43 | 100% (shipped) |
-| v0.2.0 | 13 (11-23) | 52 | ~15% |
+| v0.2.0 | 13 (11-23) | 52 | ~31% |
 
 ## Accumulated Context
 
@@ -92,10 +92,10 @@ None.
 
 ### Next Actions
 
-Phase 14 complete (all 2 plans done). Ready for PR.
+Phase 14 verified and complete. Next: Phase 15 — Run History CLI
 
 ### Session Continuity
 
 Last session: 2026-03-05
-Stopped at: Completed 14-02-PLAN.md (Phase 14 complete)
+Stopped at: Phase 14 verified and completed, PR ready for review
 Resume file: None
