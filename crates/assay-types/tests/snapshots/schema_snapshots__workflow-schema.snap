@@ -6,10 +6,10 @@ expression: schema.to_value()
   "$defs": {
     "Criterion": {
       "additionalProperties": false,
-      "description": "A single acceptance criterion attached to a spec.\n\nEach criterion has a name, description, and an optional shell command\nthat can verify it programmatically. When `cmd` is `None`, the criterion\nis evaluated manually (or in future phases, via an agent `prompt` field).",
+      "description": "A single acceptance criterion attached to a spec.\n\nEach criterion has a name, description, and an optional shell command\nthat can verify it programmatically. When `kind` is `AgentReport`, the\ncriterion is evaluated by an agent using the `prompt` field for guidance.",
       "properties": {
         "cmd": {
-          "description": "Optional shell command to verify this criterion.\nOmitted from serialized output when `None`.",
+          "description": "Optional shell command to verify this criterion.\nOmitted from serialized output when `None`.\nMutually exclusive with `kind = AgentReport`.",
           "type": [
             "string",
             "null"
@@ -30,12 +30,30 @@ expression: schema.to_value()
           ],
           "description": "Enforcement level override for this criterion. `None` means \"use the\nspec-level default from `[gate]` section\" (which itself defaults to `required`)."
         },
+        "kind": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CriterionKind"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Criterion evaluation kind. When set to `AgentReport`, this criterion\nis evaluated by an agent (not a shell command). Mutually exclusive\nwith `cmd` and `path`."
+        },
         "name": {
           "description": "Human-readable name for this criterion.",
           "type": "string"
         },
         "path": {
           "description": "Optional file path to check for existence.\nWhen set (and `cmd` is `None`), the criterion evaluates as a `FileExists` gate.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "prompt": {
+          "description": "Instruction prompt for agent-evaluated criteria.\nProvides guidance to the agent on what to evaluate.",
           "type": [
             "string",
             "null"
@@ -56,6 +74,16 @@ expression: schema.to_value()
         "description"
       ],
       "type": "object"
+    },
+    "CriterionKind": {
+      "description": "The kind of evaluation a criterion uses.\n\nWhen set on a criterion, determines how it is evaluated.\n`AgentReport` means the criterion is evaluated by an agent\nvia structured reasoning rather than a shell command.",
+      "oneOf": [
+        {
+          "const": "AgentReport",
+          "description": "Evaluated by an agent via structured reasoning.",
+          "type": "string"
+        }
+      ]
     },
     "Enforcement": {
       "description": "Enforcement level for a gate criterion.\n\nDetermines whether a criterion failure blocks the gate (required)\nor is informational only (advisory).",

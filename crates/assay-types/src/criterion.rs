@@ -5,11 +5,29 @@ use serde::{Deserialize, Serialize};
 
 use crate::Enforcement;
 
+/// The kind of evaluation a criterion uses.
+///
+/// When set on a criterion, determines how it is evaluated.
+/// `AgentReport` means the criterion is evaluated by an agent
+/// via structured reasoning rather than a shell command.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub enum CriterionKind {
+    /// Evaluated by an agent via structured reasoning.
+    AgentReport,
+}
+
+inventory::submit! {
+    crate::schema_registry::SchemaEntry {
+        name: "criterion-kind",
+        generate: || schemars::schema_for!(CriterionKind),
+    }
+}
+
 /// A single acceptance criterion attached to a spec.
 ///
 /// Each criterion has a name, description, and an optional shell command
-/// that can verify it programmatically. When `cmd` is `None`, the criterion
-/// is evaluated manually (or in future phases, via an agent `prompt` field).
+/// that can verify it programmatically. When `kind` is `AgentReport`, the
+/// criterion is evaluated by an agent using the `prompt` field for guidance.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Criterion {
@@ -21,7 +39,7 @@ pub struct Criterion {
 
     /// Optional shell command to verify this criterion.
     /// Omitted from serialized output when `None`.
-    // Forward-compatible: a future `prompt` field will support agent-based evaluation.
+    /// Mutually exclusive with `kind = AgentReport`.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub cmd: Option<String>,
 
@@ -39,6 +57,17 @@ pub struct Criterion {
     /// spec-level default from `[gate]` section" (which itself defaults to `required`).
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub enforcement: Option<Enforcement>,
+
+    /// Criterion evaluation kind. When set to `AgentReport`, this criterion
+    /// is evaluated by an agent (not a shell command). Mutually exclusive
+    /// with `cmd` and `path`.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub kind: Option<CriterionKind>,
+
+    /// Instruction prompt for agent-evaluated criteria.
+    /// Provides guidance to the agent on what to evaluate.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub prompt: Option<String>,
 }
 
 inventory::submit! {
@@ -61,6 +90,8 @@ mod tests {
             path: None,
             timeout: None,
             enforcement: None,
+            kind: None,
+            prompt: None,
         };
 
         let toml_str = toml::to_string(&criterion).expect("serialize to TOML");
@@ -86,6 +117,8 @@ mod tests {
             path: None,
             timeout: None,
             enforcement: None,
+            kind: None,
+            prompt: None,
         };
 
         let toml_str = toml::to_string(&criterion).expect("serialize to TOML");
@@ -107,6 +140,8 @@ mod tests {
             path: None,
             timeout: Some(60),
             enforcement: None,
+            kind: None,
+            prompt: None,
         };
 
         let toml_str = toml::to_string(&criterion).expect("serialize to TOML");
@@ -117,5 +152,64 @@ mod tests {
 
         let roundtripped: Criterion = toml::from_str(&toml_str).expect("deserialize from TOML");
         assert_eq!(criterion, roundtripped);
+    }
+
+    #[test]
+    fn criterion_agent_report_toml_roundtrip() {
+        let criterion = Criterion {
+            name: "code-review".to_string(),
+            description: "Agent reviews code for security issues".to_string(),
+            cmd: None,
+            path: None,
+            timeout: None,
+            enforcement: None,
+            kind: Some(CriterionKind::AgentReport),
+            prompt: Some("Review the auth module for SQL injection vulnerabilities".to_string()),
+        };
+
+        let toml_str = toml::to_string(&criterion).expect("serialize to TOML");
+        assert!(
+            toml_str.contains("kind = \"AgentReport\""),
+            "TOML should include kind, got:\n{toml_str}"
+        );
+        assert!(
+            toml_str.contains("prompt = \"Review"),
+            "TOML should include prompt, got:\n{toml_str}"
+        );
+        assert!(
+            !toml_str.contains("cmd"),
+            "TOML should omit cmd for agent criterion, got:\n{toml_str}"
+        );
+        assert!(
+            !toml_str.contains("path"),
+            "TOML should omit path for agent criterion, got:\n{toml_str}"
+        );
+
+        let roundtripped: Criterion = toml::from_str(&toml_str).expect("deserialize from TOML");
+        assert_eq!(criterion, roundtripped);
+    }
+
+    #[test]
+    fn criterion_kind_omitted_when_none() {
+        let criterion = Criterion {
+            name: "basic".to_string(),
+            description: "A basic criterion".to_string(),
+            cmd: Some("echo ok".to_string()),
+            path: None,
+            timeout: None,
+            enforcement: None,
+            kind: None,
+            prompt: None,
+        };
+
+        let toml_str = toml::to_string(&criterion).expect("serialize to TOML");
+        assert!(
+            !toml_str.contains("kind"),
+            "TOML should omit absent kind, got:\n{toml_str}"
+        );
+        assert!(
+            !toml_str.contains("prompt"),
+            "TOML should omit absent prompt, got:\n{toml_str}"
+        );
     }
 }

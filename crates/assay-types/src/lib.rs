@@ -7,7 +7,7 @@ pub mod gates_spec;
 pub mod schema_registry;
 pub mod session;
 
-pub use criterion::Criterion;
+pub use criterion::{Criterion, CriterionKind};
 pub use enforcement::{Enforcement, EnforcementSummary, GateSection};
 pub use feature_spec::FeatureSpec;
 pub use gate::{GateKind, GateResult};
