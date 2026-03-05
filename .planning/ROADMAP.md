@@ -46,7 +46,9 @@
   - [x] 16-02: Core evaluation dispatch and validation
   - [x] 16-03: MCP gate_report and gate_finalize tools
   - [x] 16-04: Visual distinction, schema snapshots, quality gate
-- [ ] Phase 17: MCP Hardening & Agent History
+- [x] Phase 17: MCP Hardening & Agent History — 2026-03-05
+  - [x] 17-01: MCP tool hardening (timeout, path validation, error envelope, enforcement counts)
+  - [x] 17-02: gate_history tool and response struct documentation
 - [ ] Phase 18: CLI Hardening & Enforcement Surface
 - [ ] Phase 19: Testing & Tooling
 - [ ] Phase 20: Session JSONL Parser & Token Diagnostics
@@ -61,7 +63,7 @@
 | Milestone | Status | Phases | Requirements | Complete |
 |-----------|--------|--------|--------------|----------|
 | v0.1.0 Proof of Concept | Shipped | 10 | 43 | 100% |
-| v0.2.0 Dual-Track Gates & Hardening | In Progress | 13 | 52 | 46% |
+| v0.2.0 Dual-Track Gates & Hardening | In Progress | 13 | 52 | 54% |
 | v0.3.0 | Planned | — | — | — |
 
 ---
