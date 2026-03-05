@@ -9,10 +9,10 @@ See: .planning/PROJECT.md (updated 2026-03-02)
 
 ## Current Position
 
-Phase: 15 — Run History CLI (complete)
+Phase: 15 — Run History CLI (VERIFIED & COMPLETE)
 Plan: 02 of 2 (complete)
-Status: Phase complete
-Last activity: 2026-03-05 — Completed 15-02-PLAN.md
+Status: Phase complete, verified, moved to completed/
+Last activity: 2026-03-05 — Phase 15 verified and completed
 
 Progress: v0.2.0 [█████░    ] ~38%
 
@@ -21,7 +21,7 @@ Progress: v0.2.0 [█████░    ] ~38%
 | Milestone | Phases | Requirements | Complete |
 |-----------|--------|--------------|----------|
 | v0.1.0 | 10 | 43 | 100% (shipped) |
-| v0.2.0 | 13 (11-23) | 52 | ~31% |
+| v0.2.0 | 13 (11-23) | 52 | ~38% |
 
 ## Accumulated Context
 
@@ -103,10 +103,10 @@ None.
 
 ### Next Actions
 
-Phase 15 complete. Next: Phase 16 or next pending phase.
+Phase 15 verified and complete. Next: Phase 16 — Agent Gate Recording
 
 ### Session Continuity
 
 Last session: 2026-03-05
-Stopped at: Completed 15-02-PLAN.md (Phase 15 complete)
+Stopped at: Phase 15 verified and completed, PR ready for review
 Resume file: None
