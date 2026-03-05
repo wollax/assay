@@ -60,6 +60,39 @@ pub fn generate_run_id(timestamp: &DateTime<Utc>) -> String {
     format!("{ts}-{suffix}")
 }
 
+/// Result of a save operation, including any pruning that occurred.
+#[derive(Debug)]
+pub struct SaveResult {
+    /// Path to the saved JSON file.
+    pub path: PathBuf,
+    /// Number of old run files that were pruned.
+    pub pruned: usize,
+}
+
+/// Remove oldest run files beyond `max_count` for a given spec.
+///
+/// Calls [`list()`] to get sorted IDs, then deletes the oldest files
+/// (those at the beginning of the sorted list) until only `max_count` remain.
+/// Returns the number of files deleted.
+fn prune(assay_dir: &Path, spec_name: &str, max_count: usize) -> Result<usize> {
+    let ids = list(assay_dir, spec_name)?;
+    if ids.len() <= max_count {
+        return Ok(0);
+    }
+    let to_remove = ids.len() - max_count;
+    let spec_dir = assay_dir.join("results").join(spec_name);
+    let mut removed = 0;
+    for id in ids.iter().take(to_remove) {
+        let path = spec_dir.join(format!("{id}.json"));
+        if let Err(e) = std::fs::remove_file(&path) {
+            eprintln!("Warning: could not prune {}: {e}", path.display());
+        } else {
+            removed += 1;
+        }
+    }
+    Ok(removed)
+}
+
 /// Persist a [`GateRunRecord`] as pretty-printed JSON.
 ///
 /// Writes atomically via tempfile-then-rename: a temporary file is created
@@ -68,8 +101,12 @@ pub fn generate_run_id(timestamp: &DateTime<Utc>) -> String {
 ///
 /// Auto-creates `.assay/results/<spec-name>/` on first save.
 ///
-/// Returns the path to the written file.
-pub fn save(assay_dir: &Path, record: &GateRunRecord) -> Result<PathBuf> {
+/// When `max_history` is `Some(n)` with `n > 0`, prunes oldest run files
+/// for this spec so that at most `n` files remain after the save. A value
+/// of `Some(0)` or `None` disables pruning.
+///
+/// Returns a [`SaveResult`] containing the path and pruning count.
+pub fn save(assay_dir: &Path, record: &GateRunRecord, max_history: Option<usize>) -> Result<SaveResult> {
     validate_path_component(&record.summary.spec_name, "spec name")?;
     validate_path_component(&record.run_id, "run ID")?;
     let results_dir = assay_dir.join("results").join(&record.summary.spec_name);
@@ -117,7 +154,15 @@ pub fn save(assay_dir: &Path, record: &GateRunRecord) -> Result<PathBuf> {
         source: e.error,
     })?;
 
-    Ok(final_path)
+    let pruned = match max_history {
+        Some(0) | None => 0,
+        Some(max) => prune(assay_dir, &record.summary.spec_name, max)?,
+    };
+
+    Ok(SaveResult {
+        path: final_path,
+        pruned,
+    })
 }
 
 /// Load a single [`GateRunRecord`] by spec name and run ID.
@@ -249,10 +294,10 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let record = make_test_record("save-test");
 
-        let path = save(dir.path(), &record).unwrap();
+        let result = save(dir.path(), &record, None).unwrap();
 
-        assert!(path.exists(), "saved file should exist at {path:?}");
-        assert_eq!(path.extension().unwrap(), "json");
+        assert!(result.path.exists(), "saved file should exist at {:?}", result.path);
+        assert_eq!(result.path.extension().unwrap(), "json");
     }
 
     #[test]
@@ -264,8 +309,8 @@ mod tests {
         let spec_dir = dir.path().join("results").join("new-spec");
         assert!(!spec_dir.exists());
 
-        let path = save(dir.path(), &record).unwrap();
-        assert!(path.exists());
+        let result = save(dir.path(), &record, None).unwrap();
+        assert!(result.path.exists());
         assert!(spec_dir.is_dir());
     }
 
@@ -274,7 +319,7 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let record = make_test_record("roundtrip-spec");
 
-        save(dir.path(), &record).unwrap();
+        save(dir.path(), &record, None).unwrap();
 
         let loaded = load(dir.path(), "roundtrip-spec", &record.run_id).unwrap();
 
@@ -308,8 +353,8 @@ mod tests {
         let r1 = make_test_record("sorted-spec");
         let r2 = make_test_record("sorted-spec");
 
-        save(dir.path(), &r1).unwrap();
-        save(dir.path(), &r2).unwrap();
+        save(dir.path(), &r1, None).unwrap();
+        save(dir.path(), &r2, None).unwrap();
 
         let ids = list(dir.path(), "sorted-spec").unwrap();
         assert_eq!(ids.len(), 2);
@@ -327,12 +372,12 @@ mod tests {
         let r1 = make_test_record("clobber-spec");
         let r2 = make_test_record("clobber-spec");
 
-        let p1 = save(dir.path(), &r1).unwrap();
-        let p2 = save(dir.path(), &r2).unwrap();
+        let r1_result = save(dir.path(), &r1, None).unwrap();
+        let r2_result = save(dir.path(), &r2, None).unwrap();
 
-        assert_ne!(p1, p2, "two saves should produce distinct files");
-        assert!(p1.exists());
-        assert!(p2.exists());
+        assert_ne!(r1_result.path, r2_result.path, "two saves should produce distinct files");
+        assert!(r1_result.path.exists());
+        assert!(r2_result.path.exists());
 
         // Both deserialize correctly.
         let l1 = load(dir.path(), "clobber-spec", &r1.run_id).unwrap();
@@ -356,8 +401,8 @@ mod tests {
                 let name = spec_name.to_string();
                 thread::spawn(move || {
                     let record = make_test_record(&name);
-                    let saved_path = save(&path, &record).unwrap();
-                    (record.run_id, saved_path)
+                    let result = save(&path, &record, None).unwrap();
+                    (record.run_id, result.path)
                 })
             })
             .collect();
@@ -401,8 +446,8 @@ mod tests {
 
         // A valid save still works fine alongside the debris.
         let record = make_test_record(spec_name);
-        let path = save(dir.path(), &record).unwrap();
-        assert!(path.exists());
+        let result = save(dir.path(), &record, None).unwrap();
+        assert!(result.path.exists());
 
         // Load the valid record.
         let loaded = load(dir.path(), spec_name, &record.run_id).unwrap();
@@ -496,7 +541,7 @@ mod tests {
         };
 
         // Save and load back.
-        save(dir.path(), &record).unwrap();
+        save(dir.path(), &record, None).unwrap();
         let loaded = load(dir.path(), "fidelity-spec", &record.run_id).unwrap();
 
         // Full structural equality.
@@ -522,11 +567,11 @@ mod tests {
 
         // spec_name with traversal
         let mut record = make_test_record("../escape");
-        assert!(save(dir.path(), &record).is_err());
+        assert!(save(dir.path(), &record, None).is_err());
 
         // spec_name with slash
         record.summary.spec_name = "foo/bar".to_string();
-        assert!(save(dir.path(), &record).is_err());
+        assert!(save(dir.path(), &record, None).is_err());
 
         // load with traversal
         assert!(load(dir.path(), "..", "some-id").is_err());
@@ -534,5 +579,121 @@ mod tests {
 
         // list with traversal
         assert!(list(dir.path(), "..").is_err());
+    }
+
+    /// Build a `GateRunRecord` with a specific timestamp for deterministic ordering.
+    fn make_test_record_at(spec_name: &str, timestamp: DateTime<Utc>) -> GateRunRecord {
+        GateRunRecord {
+            run_id: generate_run_id(&timestamp),
+            assay_version: env!("CARGO_PKG_VERSION").to_string(),
+            timestamp,
+            working_dir: None,
+            summary: make_test_summary(spec_name),
+        }
+    }
+
+    #[test]
+    fn test_prune_removes_oldest() {
+        use chrono::Duration;
+
+        let dir = TempDir::new().unwrap();
+        let spec = "prune-oldest";
+        let base = DateTime::parse_from_rfc3339("2026-01-01T00:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+
+        // Save 5 records with distinct timestamps (1-second offsets).
+        let mut run_ids = Vec::new();
+        for i in 0..5 {
+            let ts = base + Duration::seconds(i);
+            let record = make_test_record_at(spec, ts);
+            run_ids.push(record.run_id.clone());
+            save(dir.path(), &record, None).unwrap();
+        }
+
+        // Prune to keep only 3.
+        let pruned = prune(dir.path(), spec, 3).unwrap();
+        assert_eq!(pruned, 2, "should prune 2 oldest files");
+
+        let remaining = list(dir.path(), spec).unwrap();
+        assert_eq!(remaining.len(), 3, "should have 3 files remaining");
+
+        // The 3 newest should remain (ids at index 2, 3, 4).
+        for id in &run_ids[2..] {
+            assert!(remaining.contains(id), "newest run {id} should remain");
+        }
+        // The 2 oldest should be gone.
+        for id in &run_ids[..2] {
+            assert!(!remaining.contains(id), "oldest run {id} should be pruned");
+        }
+    }
+
+    #[test]
+    fn test_prune_zero_means_unlimited() {
+        use chrono::Duration;
+
+        let dir = TempDir::new().unwrap();
+        let spec = "prune-zero";
+        let base = DateTime::parse_from_rfc3339("2026-02-01T00:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+
+        for i in 0..5 {
+            let ts = base + Duration::seconds(i);
+            let record = make_test_record_at(spec, ts);
+            save(dir.path(), &record, Some(0)).unwrap();
+        }
+
+        let ids = list(dir.path(), spec).unwrap();
+        assert_eq!(ids.len(), 5, "max_history=0 should not prune");
+    }
+
+    #[test]
+    fn test_prune_none_means_no_pruning() {
+        use chrono::Duration;
+
+        let dir = TempDir::new().unwrap();
+        let spec = "prune-none";
+        let base = DateTime::parse_from_rfc3339("2026-03-01T00:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+
+        for i in 0..5 {
+            let ts = base + Duration::seconds(i);
+            let record = make_test_record_at(spec, ts);
+            save(dir.path(), &record, None).unwrap();
+        }
+
+        let ids = list(dir.path(), spec).unwrap();
+        assert_eq!(ids.len(), 5, "max_history=None should not prune");
+    }
+
+    #[test]
+    fn test_save_result_contains_pruned_count() {
+        use chrono::Duration;
+
+        let dir = TempDir::new().unwrap();
+        let spec = "prune-count";
+        let base = DateTime::parse_from_rfc3339("2026-04-01T00:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+
+        // Save 5 records without pruning.
+        for i in 0..5 {
+            let ts = base + Duration::seconds(i);
+            let record = make_test_record_at(spec, ts);
+            save(dir.path(), &record, None).unwrap();
+        }
+
+        // Save a 6th with max_history=3 — should prune 3 (6 total, keep 3).
+        let ts6 = base + Duration::seconds(5);
+        let record6 = make_test_record_at(spec, ts6);
+        let result = save(dir.path(), &record6, Some(3)).unwrap();
+
+        assert_eq!(result.pruned, 3, "SaveResult.pruned should be 3");
+        assert!(result.path.exists(), "saved file should exist");
+
+        let remaining = list(dir.path(), spec).unwrap();
+        assert_eq!(remaining.len(), 3, "should have 3 files remaining");
     }
 }
