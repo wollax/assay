@@ -2,10 +2,10 @@
 
 ## Run History
 
-- [ ] **HIST-01**: Gate run results are persisted to `.assay/results/<spec>/<timestamp>.json` after every evaluation
+- [x] **HIST-01**: Gate run results are persisted to `.assay/results/<spec>/<timestamp>.json` after every evaluation
 - [ ] **HIST-02**: User can view recent gate run history for a spec via `assay history <spec>`
 - [ ] **HIST-03**: Run history has a configurable retention policy (per-spec file count limit) enforced on save
-- [ ] **HIST-04**: Run history files use atomic write (tempfile-then-rename) to prevent corruption from concurrent writes
+- [x] **HIST-04**: Run history files use atomic write (tempfile-then-rename) to prevent corruption from concurrent writes
 
 ## Gate Enforcement
 
@@ -122,10 +122,10 @@
 | ENFC-02 | 13 | Complete |
 | ENFC-03 | 18 | Pending |
 | ENFC-04 | 17 | Pending |
-| HIST-01 | 14 | Pending |
+| HIST-01 | 14 | Complete |
 | HIST-02 | 15 | Pending |
 | HIST-03 | 15 | Pending |
-| HIST-04 | 14 | Pending |
+| HIST-04 | 14 | Complete |
 | AGNT-01 | 16 | Pending |
 | AGNT-02 | 16 | Pending |
 | AGNT-03 | 16 | Pending |
