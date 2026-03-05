@@ -14,6 +14,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Duration;
 
 use chrono::Utc;
 use rmcp::{
@@ -57,6 +58,14 @@ struct GateRunParams {
     )]
     #[serde(default)]
     include_evidence: bool,
+
+    /// Maximum seconds to wait for gate evaluation.
+    #[schemars(
+        description = "Maximum seconds to wait for gate evaluation (default: 300). \
+            Returns a timeout error if exceeded."
+    )]
+    #[serde(default)]
+    timeout: Option<u64>,
 }
 
 /// Parameters for the `gate_report` tool.
@@ -310,8 +319,18 @@ impl AssayServer {
             Err(err_result) => return Ok(err_result),
         };
         let include_evidence = params.0.include_evidence;
+        let gate_timeout = Duration::from_secs(params.0.timeout.unwrap_or(300));
 
         let working_dir = resolve_working_dir(&cwd, &config);
+
+        // Validate working directory exists before spawning evaluation.
+        if !working_dir.is_dir() {
+            return Ok(CallToolResult::error(vec![Content::text(format!(
+                "working directory does not exist or is not a directory: {}",
+                working_dir.display()
+            ))]));
+        }
+
         let config_timeout = config.gates.as_ref().map(|g| g.default_timeout);
 
         // Extract agent criteria info before moving entry into spawn_blocking.
@@ -319,7 +338,7 @@ impl AssayServer {
 
         let working_dir_owned = working_dir.clone();
 
-        let summary = tokio::task::spawn_blocking(move || match entry {
+        let eval_future = tokio::task::spawn_blocking(move || match entry {
             SpecEntry::Legacy { spec, .. } => {
                 assay_core::gate::evaluate_all(&spec, &working_dir_owned, None, config_timeout)
             }
@@ -329,9 +348,23 @@ impl AssayServer {
                 None,
                 config_timeout,
             ),
-        })
-        .await
-        .map_err(|e| McpError::internal_error(format!("gate evaluation panicked: {e}"), None))?;
+        });
+
+        let summary = match tokio::time::timeout(gate_timeout, eval_future).await {
+            Ok(Ok(summary)) => summary,
+            Ok(Err(e)) => {
+                return Err(McpError::internal_error(
+                    format!("gate evaluation panicked: {e}"),
+                    None,
+                ));
+            }
+            Err(_elapsed) => {
+                return Ok(CallToolResult::error(vec![Content::text(format!(
+                    "gate evaluation timed out after {}s",
+                    gate_timeout.as_secs()
+                ))]));
+            }
+        };
 
         let mut response = format_gate_response(&summary, include_evidence);
 
@@ -1632,5 +1665,29 @@ cmd = "echo ok"
         assert_eq!(cr.kind_label.as_deref(), Some("agent"));
         assert_eq!(cr.status, "passed");
         assert_eq!(cr.enforcement, "advisory");
+    }
+
+    #[test]
+    fn test_gate_run_params_with_timeout() {
+        let json = serde_json::json!({
+            "name": "test-spec",
+            "include_evidence": true,
+            "timeout": 60
+        });
+        let params: GateRunParams = serde_json::from_value(json).unwrap();
+        assert_eq!(params.name, "test-spec");
+        assert!(params.include_evidence);
+        assert_eq!(params.timeout, Some(60));
+    }
+
+    #[test]
+    fn test_gate_run_params_without_timeout() {
+        let json = serde_json::json!({
+            "name": "test-spec"
+        });
+        let params: GateRunParams = serde_json::from_value(json).unwrap();
+        assert_eq!(params.name, "test-spec");
+        assert!(!params.include_evidence);
+        assert_eq!(params.timeout, None);
     }
 }
