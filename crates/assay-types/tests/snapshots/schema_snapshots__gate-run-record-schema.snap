@@ -1,0 +1,382 @@
+---
+source: crates/assay-types/tests/schema_snapshots.rs
+expression: schema.to_value()
+---
+{
+  "$defs": {
+    "Confidence": {
+      "description": "Agent confidence level in an evaluation.",
+      "oneOf": [
+        {
+          "const": "high",
+          "description": "High confidence — clear evidence supports the conclusion.",
+          "type": "string"
+        },
+        {
+          "const": "medium",
+          "description": "Medium confidence — evidence is suggestive but not conclusive.",
+          "type": "string"
+        },
+        {
+          "const": "low",
+          "description": "Low confidence — uncertain; evaluation may need human review.",
+          "type": "string"
+        }
+      ]
+    },
+    "CriterionResult": {
+      "description": "A criterion paired with its evaluation result.",
+      "properties": {
+        "criterion_name": {
+          "description": "The name of the criterion that was evaluated.",
+          "type": "string"
+        },
+        "enforcement": {
+          "$ref": "#/$defs/Enforcement",
+          "default": "required",
+          "description": "Resolved enforcement level for this criterion (Required or Advisory)."
+        },
+        "result": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/GateResult"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The gate result, or `None` if skipped (no cmd)."
+        }
+      },
+      "required": [
+        "criterion_name"
+      ],
+      "type": "object"
+    },
+    "Enforcement": {
+      "description": "Enforcement level for a gate criterion.\n\nDetermines whether a criterion failure blocks the gate (required)\nor is informational only (advisory).",
+      "oneOf": [
+        {
+          "const": "required",
+          "description": "Failure blocks the gate. This is the default.",
+          "type": "string"
+        },
+        {
+          "const": "advisory",
+          "description": "Failure is informational; does not block the gate.",
+          "type": "string"
+        }
+      ]
+    },
+    "EnforcementSummary": {
+      "description": "Enforcement breakdown in a gate run summary.\n\nAlways present on `GateRunSummary`, with counts defaulting to 0.\nOnly counts executable criteria (skipped criteria are excluded).",
+      "properties": {
+        "advisory_failed": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "advisory_passed": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "required_failed": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "required_passed": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "required_passed",
+        "required_failed",
+        "advisory_passed",
+        "advisory_failed"
+      ],
+      "type": "object"
+    },
+    "EvaluatorRole": {
+      "description": "The role of the evaluator who produced a gate result.\n\nDetermines trust level and audit requirements:\n- `SelfEval` (\"self\"): the coding agent evaluates its own work (default for v0.2).\n- `Independent`: a separate agent evaluates (planned for v0.3).\n- `Human`: a human performed the evaluation.",
+      "oneOf": [
+        {
+          "const": "self",
+          "description": "The coding agent evaluates its own work.",
+          "type": "string"
+        },
+        {
+          "const": "independent",
+          "description": "A separate, independent agent evaluates.",
+          "type": "string"
+        },
+        {
+          "const": "human",
+          "description": "A human performed the evaluation.",
+          "type": "string"
+        }
+      ]
+    },
+    "GateKind": {
+      "description": "The kind of gate to evaluate.\n\nUses internal tagging (`#[serde(tag = \"kind\")]`) so TOML output includes\na `kind = \"Command\"` or `kind = \"AlwaysPass\"` discriminator field.",
+      "oneOf": [
+        {
+          "description": "A gate that runs a shell command and checks its exit code.",
+          "properties": {
+            "cmd": {
+              "description": "The shell command to execute.",
+              "type": "string"
+            },
+            "kind": {
+              "const": "Command",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "cmd"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A gate that always passes — useful for placeholder or manual gates.",
+          "properties": {
+            "kind": {
+              "const": "AlwaysPass",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A gate that checks whether a file exists at the given path.",
+          "properties": {
+            "kind": {
+              "const": "FileExists",
+              "type": "string"
+            },
+            "path": {
+              "description": "Path to check, relative to the working directory.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "path"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A gate evaluated by an agent via structured reasoning.",
+          "properties": {
+            "kind": {
+              "const": "AgentReport",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "GateResult": {
+      "description": "The result of evaluating a gate.\n\nCaptures whether the gate passed, the command output (if any), timing,\nand which kind of gate produced this result (self-describing via `kind`).",
+      "properties": {
+        "confidence": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Confidence"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Agent's confidence level in the evaluation.\nOnly populated for `AgentReport` gates."
+        },
+        "duration_ms": {
+          "description": "How long the gate took to evaluate, in milliseconds.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "evaluator_role": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EvaluatorRole"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Role of the evaluator who produced this result.\nOnly populated for `AgentReport` gates."
+        },
+        "evidence": {
+          "description": "What the agent observed (concrete facts).\nOnly populated for `AgentReport` gates.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "exit_code": {
+          "description": "Exit code from the gate command, if applicable.\nOmitted from serialized output when `None` (e.g., for `AlwaysPass` gates).",
+          "format": "int32",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "kind": {
+          "$ref": "#/$defs/GateKind",
+          "description": "Which gate kind produced this result."
+        },
+        "original_bytes": {
+          "description": "Original byte count before truncation.\nOmitted from serialized output when `None`.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "passed": {
+          "description": "Whether the gate passed.",
+          "type": "boolean"
+        },
+        "reasoning": {
+          "description": "Why those facts lead to pass/fail.\nOnly populated for `AgentReport` gates.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "stderr": {
+          "description": "Standard error captured from the gate command.\nOmitted from serialized output when empty.",
+          "type": "string"
+        },
+        "stdout": {
+          "description": "Standard output captured from the gate command.\nOmitted from serialized output when empty.",
+          "type": "string"
+        },
+        "timestamp": {
+          "description": "When the gate evaluation completed.",
+          "format": "date-time",
+          "type": "string"
+        },
+        "truncated": {
+          "description": "Whether stdout or stderr was truncated due to size limits.\nOmitted from serialized output when false.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "passed",
+        "kind",
+        "duration_ms",
+        "timestamp"
+      ],
+      "type": "object"
+    },
+    "GateRunSummary": {
+      "description": "Summary of evaluating all criteria in a spec.",
+      "properties": {
+        "enforcement": {
+          "$ref": "#/$defs/EnforcementSummary",
+          "default": {
+            "advisory_failed": 0,
+            "advisory_passed": 0,
+            "required_failed": 0,
+            "required_passed": 0
+          },
+          "description": "Enforcement-level breakdown of results (excludes skipped criteria)."
+        },
+        "failed": {
+          "description": "Number of criteria that failed.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "passed": {
+          "description": "Number of criteria that passed.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "results": {
+          "description": "Results for each criterion that was evaluated or skipped.",
+          "items": {
+            "$ref": "#/$defs/CriterionResult"
+          },
+          "type": "array"
+        },
+        "skipped": {
+          "description": "Number of criteria skipped (descriptive-only, no cmd).",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "spec_name": {
+          "description": "Spec name that was evaluated.",
+          "type": "string"
+        },
+        "total_duration_ms": {
+          "description": "Total wall-clock duration for all evaluations in milliseconds.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "spec_name",
+        "passed",
+        "failed",
+        "skipped",
+        "total_duration_ms"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "A complete, versioned record of a single gate evaluation run.\n\nWraps [`GateRunSummary`] with metadata for persistence and audit.\nUses `deny_unknown_fields` — records are versioned artifacts;\nfield mismatches should fail loudly. `assay_version` supports\nfuture schema migration.",
+  "properties": {
+    "assay_version": {
+      "description": "Version of assay that produced this record (from `env!(\"CARGO_PKG_VERSION\")`).",
+      "type": "string"
+    },
+    "run_id": {
+      "description": "Unique run identifier: `<timestamp>-<6-char-hex>` (e.g., `20260304T223015Z-a3f1b2`).",
+      "type": "string"
+    },
+    "summary": {
+      "$ref": "#/$defs/GateRunSummary",
+      "description": "The complete gate run summary with all criterion results."
+    },
+    "timestamp": {
+      "description": "UTC timestamp when the evaluation started.",
+      "format": "date-time",
+      "type": "string"
+    },
+    "working_dir": {
+      "description": "Working directory used for evaluation, if available.",
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "run_id",
+    "assay_version",
+    "timestamp",
+    "summary"
+  ],
+  "title": "GateRunRecord",
+  "type": "object"
+}

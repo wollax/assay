@@ -106,3 +106,39 @@ fn enforcement_summary_schema_snapshot() {
     let schema = schemars::schema_for!(assay_types::EnforcementSummary);
     assert_json_snapshot!("enforcement-summary-schema", schema.to_value());
 }
+
+#[test]
+fn criterion_kind_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::CriterionKind);
+    assert_json_snapshot!("criterion-kind-schema", schema.to_value());
+}
+
+#[test]
+fn evaluator_role_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::EvaluatorRole);
+    assert_json_snapshot!("evaluator-role-schema", schema.to_value());
+}
+
+#[test]
+fn confidence_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::Confidence);
+    assert_json_snapshot!("confidence-schema", schema.to_value());
+}
+
+#[test]
+fn agent_evaluation_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::AgentEvaluation);
+    assert_json_snapshot!("agent-evaluation-schema", schema.to_value());
+}
+
+#[test]
+fn agent_session_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::AgentSession);
+    assert_json_snapshot!("agent-session-schema", schema.to_value());
+}
+
+#[test]
+fn gate_run_record_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::GateRunRecord);
+    assert_json_snapshot!("gate-run-record-schema", schema.to_value());
+}
