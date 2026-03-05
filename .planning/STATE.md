@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 2026-03-02)
 
 ## Current Position
 
-Phase: 14 — Run History Core (VERIFIED & COMPLETE)
-Plan: 02 of 2 (complete)
-Status: Phase complete, verified, moved to completed/
-Last activity: 2026-03-05 — Phase 14 verified and completed
+Phase: 15 — Run History CLI
+Plan: 01 of 2 (complete)
+Status: In progress
+Last activity: 2026-03-05 — Completed 15-01-PLAN.md
 
-Progress: v0.2.0 [████      ] ~31%
+Progress: v0.2.0 [████░     ] ~35%
 
 ## Milestone Progress
 
@@ -82,6 +82,12 @@ v0.2.0 decisions (from 14-01 execution):
 v0.2.0 decisions (from 14-02 execution):
 - PartialEq derived on GateRunRecord, GateRunSummary, CriterionResult, GateResult (non-breaking, enables structural equality assertions)
 
+v0.2.0 decisions (from 15-01 execution):
+- max_history defaults to None (no pruning); CLI will apply default_max_history() (1000) when absent
+- Some(0) and None both skip pruning — zero is treated as unlimited
+- prune() is private to the history module — only save() calls it
+- SaveResult replaces PathBuf as save() return type
+
 ### Pending Issues
 
 38 open issues (expanded from 30 after Phase 8-10 PR reviews)
@@ -92,10 +98,10 @@ None.
 
 ### Next Actions
 
-Phase 14 verified and complete. Next: Phase 15 — Run History CLI
+Phase 15 Plan 01 complete. Next: Phase 15 Plan 02 — CLI history subcommand and save() wiring.
 
 ### Session Continuity
 
 Last session: 2026-03-05
-Stopped at: Phase 14 verified and completed, PR ready for review
+Stopped at: Completed 15-01-PLAN.md
 Resume file: None
