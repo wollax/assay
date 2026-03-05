@@ -862,6 +862,7 @@ cmd = "echo ok"
             gates: Some(assay_types::GatesConfig {
                 default_timeout: 300,
                 working_dir: Some("subdir".to_string()),
+                max_history: None,
             }),
         };
 
@@ -882,6 +883,7 @@ cmd = "echo ok"
             gates: Some(assay_types::GatesConfig {
                 default_timeout: 300,
                 working_dir: Some("/tmp/custom".to_string()),
+                max_history: None,
             }),
         };
 
