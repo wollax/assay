@@ -4,6 +4,8 @@ use chrono::{DateTime, Utc};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::session::{Confidence, EvaluatorRole};
+
 /// The kind of gate to evaluate.
 ///
 /// Uses internal tagging (`#[serde(tag = "kind")]`) so TOML output includes
@@ -25,6 +27,9 @@ pub enum GateKind {
         /// Path to check, relative to the working directory.
         path: String,
     },
+
+    /// A gate evaluated by an agent via structured reasoning.
+    AgentReport,
 }
 
 inventory::submit! {
@@ -76,6 +81,26 @@ pub struct GateResult {
     /// Omitted from serialized output when `None`.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub original_bytes: Option<u64>,
+
+    /// What the agent observed (concrete facts).
+    /// Only populated for `AgentReport` gates.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub evidence: Option<String>,
+
+    /// Why those facts lead to pass/fail.
+    /// Only populated for `AgentReport` gates.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub reasoning: Option<String>,
+
+    /// Agent's confidence level in the evaluation.
+    /// Only populated for `AgentReport` gates.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub confidence: Option<Confidence>,
+
+    /// Role of the evaluator who produced this result.
+    /// Only populated for `AgentReport` gates.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub evaluator_role: Option<EvaluatorRole>,
 }
 
 inventory::submit! {
@@ -158,6 +183,10 @@ mod tests {
             timestamp: Utc::now(),
             truncated: false,
             original_bytes: None,
+            evidence: None,
+            reasoning: None,
+            confidence: None,
+            evaluator_role: None,
         };
 
         let json = serde_json::to_string(&result).expect("serialize to JSON");
@@ -197,6 +226,10 @@ mod tests {
             timestamp: Utc::now(),
             truncated: false,
             original_bytes: None,
+            evidence: None,
+            reasoning: None,
+            confidence: None,
+            evaluator_role: None,
         };
 
         let json = serde_json::to_string(&result).expect("serialize to JSON");
@@ -228,6 +261,10 @@ mod tests {
             timestamp: Utc::now(),
             truncated: true,
             original_bytes: Some(131_072),
+            evidence: None,
+            reasoning: None,
+            confidence: None,
+            evaluator_role: None,
         };
 
         let json = serde_json::to_string(&result).expect("serialize to JSON");
@@ -239,5 +276,111 @@ mod tests {
             json.contains("original_bytes"),
             "JSON should include original_bytes when Some, got:\n{json}"
         );
+    }
+
+    #[test]
+    fn gate_kind_agent_report_toml_roundtrip() {
+        let kind = GateKind::AgentReport;
+
+        let toml_str = toml::to_string(&kind).expect("serialize to TOML");
+        assert!(
+            toml_str.contains(r#"kind = "AgentReport""#),
+            "TOML should contain kind = \"AgentReport\", got:\n{toml_str}"
+        );
+
+        let roundtripped: GateKind = toml::from_str(&toml_str).expect("deserialize from TOML");
+        let re_serialized = toml::to_string(&roundtripped).expect("re-serialize to TOML");
+        assert_eq!(toml_str, re_serialized);
+    }
+
+    #[test]
+    fn gate_result_agent_fields_json_skipped_when_none() {
+        let result = GateResult {
+            passed: true,
+            kind: GateKind::AgentReport,
+            stdout: String::new(),
+            stderr: String::new(),
+            exit_code: None,
+            duration_ms: 0,
+            timestamp: Utc::now(),
+            truncated: false,
+            original_bytes: None,
+            evidence: None,
+            reasoning: None,
+            confidence: None,
+            evaluator_role: None,
+        };
+
+        let json = serde_json::to_string(&result).expect("serialize to JSON");
+        assert!(
+            !json.contains("evidence"),
+            "JSON should omit None evidence, got:\n{json}"
+        );
+        assert!(
+            !json.contains("reasoning"),
+            "JSON should omit None reasoning, got:\n{json}"
+        );
+        assert!(
+            !json.contains("confidence"),
+            "JSON should omit None confidence, got:\n{json}"
+        );
+        assert!(
+            !json.contains("evaluator_role"),
+            "JSON should omit None evaluator_role, got:\n{json}"
+        );
+    }
+
+    #[test]
+    fn gate_result_agent_fields_json_included_when_set() {
+        let result = GateResult {
+            passed: true,
+            kind: GateKind::AgentReport,
+            stdout: String::new(),
+            stderr: String::new(),
+            exit_code: None,
+            duration_ms: 50,
+            timestamp: Utc::now(),
+            truncated: false,
+            original_bytes: None,
+            evidence: Some("Found auth module with JWT validation".to_string()),
+            reasoning: Some("JWT validation present and tests pass".to_string()),
+            confidence: Some(Confidence::High),
+            evaluator_role: Some(EvaluatorRole::SelfEval),
+        };
+
+        let json = serde_json::to_string(&result).expect("serialize to JSON");
+        assert!(json.contains("evidence"), "JSON should include evidence");
+        assert!(json.contains("reasoning"), "JSON should include reasoning");
+        assert!(
+            json.contains("confidence"),
+            "JSON should include confidence"
+        );
+        assert!(
+            json.contains("evaluator_role"),
+            "JSON should include evaluator_role"
+        );
+    }
+
+    #[test]
+    fn gate_result_agent_json_roundtrip() {
+        let result = GateResult {
+            passed: false,
+            kind: GateKind::AgentReport,
+            stdout: String::new(),
+            stderr: String::new(),
+            exit_code: None,
+            duration_ms: 120,
+            timestamp: Utc::now(),
+            truncated: false,
+            original_bytes: None,
+            evidence: Some("No error handling found in auth module".to_string()),
+            reasoning: Some("Missing try/catch blocks around DB calls".to_string()),
+            confidence: Some(Confidence::Medium),
+            evaluator_role: Some(EvaluatorRole::Independent),
+        };
+
+        let json = serde_json::to_string_pretty(&result).expect("serialize");
+        let roundtripped: GateResult = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(result, roundtripped);
     }
 }

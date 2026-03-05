@@ -9,19 +9,19 @@ See: .planning/PROJECT.md (updated 2026-03-02)
 
 ## Current Position
 
-Phase: 15 — Run History CLI (VERIFIED & COMPLETE)
-Plan: 02 of 2 (complete)
+Phase: 16 — Agent Gate Recording (VERIFIED & COMPLETE)
+Plan: 04 of 4 (complete)
 Status: Phase complete, verified, moved to completed/
-Last activity: 2026-03-05 — Phase 15 verified and completed
+Last activity: 2026-03-05 — Phase 16 verified and completed
 
-Progress: v0.2.0 [█████░    ] ~38%
+Progress: v0.2.0 [██████░   ] ~46%
 
 ## Milestone Progress
 
 | Milestone | Phases | Requirements | Complete |
 |-----------|--------|--------------|----------|
 | v0.1.0 | 10 | 43 | 100% (shipped) |
-| v0.2.0 | 13 (11-23) | 52 | ~38% |
+| v0.2.0 | 13 (11-23) | 52 | ~46% |
 
 ## Accumulated Context
 
@@ -93,6 +93,34 @@ v0.2.0 decisions (from 15-02 execution):
 - Streaming mode records have empty results vec and zero total_duration_ms (no per-criterion timing)
 - handle_gate_run_all() streaming path tracks per-spec counters via before/after delta
 
+v0.2.0 decisions (from 16-01 execution):
+- CriterionKind enum is simple (not internally tagged) — single variant AgentReport for now
+- Agent fields on GateResult are all Option<T> with skip_serializing_if for backward compat
+- AgentSession uses HashMap/HashSet for flexible keying (O(1) criterion lookup)
+- EvaluatorRole::SelfEval serializes as "self" via serde rename
+- Downstream compile errors (assay-core, assay-mcp) deferred to Plan 02
+
+v0.2.0 decisions (from 16-02 execution):
+- evaluate() returns InvalidCriterion error for AgentReport (not evaluable standalone)
+- evaluate_all/evaluate_all_gates skip AgentReport criteria as pending (result: None)
+- finalize_as_timed_out() does NOT save — caller decides persistence
+- Unevaluated advisory criteria in timed-out sessions are skipped (not failed)
+- AgentReport criteria count as "executable" for at-least-one-required validation
+- Evaluator priority: Human > Independent > SelfEval (highest wins)
+
+v0.2.0 decisions (from 16-03 execution):
+- AssayServer holds Arc<Mutex<HashMap<String, AgentSession>>> for in-memory session state
+- gate_run auto-creates sessions when spec contains AgentReport criteria
+- Session timeout is 30 minutes; timed-out sessions are auto-finalized and persisted
+- CriterionSummary gains kind_label field (cmd/file/agent) for agent-aware formatting
+- GateRunResponse gains optional session_id/pending_criteria for session-aware responses
+
+v0.2.0 decisions (from 16-04 execution):
+- CLI streaming output prepends [cmd]/[file]/[agent]/[auto] labels to criterion names
+- AgentReport criteria show as "pending" in streaming mode (not skipped)
+- History detail view displays evaluator_role, confidence, evidence (200 chars), reasoning (200 chars) when present
+- 6 new schema snapshots added for Phase 16 types (total: 23)
+
 ### Pending Issues
 
 38 open issues (expanded from 30 after Phase 8-10 PR reviews)
@@ -103,10 +131,10 @@ None.
 
 ### Next Actions
 
-Phase 15 verified and complete. Next: Phase 16 — Agent Gate Recording
+Phase 16 verified and complete. Next: Phase 17 — MCP Hardening & Agent History
 
 ### Session Continuity
 
 Last session: 2026-03-05
-Stopped at: Phase 15 verified and completed, PR ready for review
+Stopped at: Completed 16-04-PLAN.md (Phase 16 complete)
 Resume file: None

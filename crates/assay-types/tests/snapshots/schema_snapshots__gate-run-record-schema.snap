@@ -24,6 +24,35 @@ expression: schema.to_value()
         }
       ]
     },
+    "CriterionResult": {
+      "description": "A criterion paired with its evaluation result.",
+      "properties": {
+        "criterion_name": {
+          "description": "The name of the criterion that was evaluated.",
+          "type": "string"
+        },
+        "enforcement": {
+          "$ref": "#/$defs/Enforcement",
+          "default": "required",
+          "description": "Resolved enforcement level for this criterion (Required or Advisory)."
+        },
+        "result": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/GateResult"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The gate result, or `None` if skipped (no cmd)."
+        }
+      },
+      "required": [
+        "criterion_name"
+      ],
+      "type": "object"
+    },
     "Enforcement": {
       "description": "Enforcement level for a gate criterion.\n\nDetermines whether a criterion failure blocks the gate (required)\nor is informational only (advisory).",
       "oneOf": [
@@ -38,6 +67,38 @@ expression: schema.to_value()
           "type": "string"
         }
       ]
+    },
+    "EnforcementSummary": {
+      "description": "Enforcement breakdown in a gate run summary.\n\nAlways present on `GateRunSummary`, with counts defaulting to 0.\nOnly counts executable criteria (skipped criteria are excluded).",
+      "properties": {
+        "advisory_failed": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "advisory_passed": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "required_failed": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "required_passed": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "required_passed",
+        "required_failed",
+        "advisory_passed",
+        "advisory_failed"
+      ],
+      "type": "object"
     },
     "EvaluatorRole": {
       "description": "The role of the evaluator who produced a gate result.\n\nDetermines trust level and audit requirements:\n- `SelfEval` (\"self\"): the coding agent evaluates its own work (default for v0.2).\n- `Independent`: a separate agent evaluates (planned for v0.3).\n- `Human`: a human performed the evaluation.",
@@ -221,35 +282,101 @@ expression: schema.to_value()
         "timestamp"
       ],
       "type": "object"
+    },
+    "GateRunSummary": {
+      "description": "Summary of evaluating all criteria in a spec.",
+      "properties": {
+        "enforcement": {
+          "$ref": "#/$defs/EnforcementSummary",
+          "default": {
+            "advisory_failed": 0,
+            "advisory_passed": 0,
+            "required_failed": 0,
+            "required_passed": 0
+          },
+          "description": "Enforcement-level breakdown of results (excludes skipped criteria)."
+        },
+        "failed": {
+          "description": "Number of criteria that failed.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "passed": {
+          "description": "Number of criteria that passed.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "results": {
+          "description": "Results for each criterion that was evaluated or skipped.",
+          "items": {
+            "$ref": "#/$defs/CriterionResult"
+          },
+          "type": "array"
+        },
+        "skipped": {
+          "description": "Number of criteria skipped (descriptive-only, no cmd).",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "spec_name": {
+          "description": "Spec name that was evaluated.",
+          "type": "string"
+        },
+        "total_duration_ms": {
+          "description": "Total wall-clock duration for all evaluations in milliseconds.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "spec_name",
+        "passed",
+        "failed",
+        "skipped",
+        "total_duration_ms"
+      ],
+      "type": "object"
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "description": "A criterion paired with its evaluation result.",
+  "additionalProperties": false,
+  "description": "A complete, versioned record of a single gate evaluation run.\n\nWraps [`GateRunSummary`] with metadata for persistence and audit.\nUses `deny_unknown_fields` — records are versioned artifacts;\nfield mismatches should fail loudly. `assay_version` supports\nfuture schema migration.",
   "properties": {
-    "criterion_name": {
-      "description": "The name of the criterion that was evaluated.",
+    "assay_version": {
+      "description": "Version of assay that produced this record (from `env!(\"CARGO_PKG_VERSION\")`).",
       "type": "string"
     },
-    "enforcement": {
-      "$ref": "#/$defs/Enforcement",
-      "default": "required",
-      "description": "Resolved enforcement level for this criterion (Required or Advisory)."
+    "run_id": {
+      "description": "Unique run identifier: `<timestamp>-<6-char-hex>` (e.g., `20260304T223015Z-a3f1b2`).",
+      "type": "string"
     },
-    "result": {
-      "anyOf": [
-        {
-          "$ref": "#/$defs/GateResult"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "description": "The gate result, or `None` if skipped (no cmd)."
+    "summary": {
+      "$ref": "#/$defs/GateRunSummary",
+      "description": "The complete gate run summary with all criterion results."
+    },
+    "timestamp": {
+      "description": "UTC timestamp when the evaluation started.",
+      "format": "date-time",
+      "type": "string"
+    },
+    "working_dir": {
+      "description": "Working directory used for evaluation, if available.",
+      "type": [
+        "string",
+        "null"
+      ]
     }
   },
   "required": [
-    "criterion_name"
+    "run_id",
+    "assay_version",
+    "timestamp",
+    "summary"
   ],
-  "title": "CriterionResult",
+  "title": "GateRunRecord",
   "type": "object"
 }

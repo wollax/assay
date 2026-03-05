@@ -41,7 +41,11 @@
 - [x] Phase 15: Run History CLI — 2026-03-05
   - [x] 15-01: Config extension, pruning, and save() update
   - [x] 15-02: CLI history command, table/detail views, gate run integration
-- [ ] Phase 16: Agent Gate Recording
+- [x] Phase 16: Agent Gate Recording — 2026-03-05
+  - [x] 16-01: Agent gate types and criterion extension
+  - [x] 16-02: Core evaluation dispatch and validation
+  - [x] 16-03: MCP gate_report and gate_finalize tools
+  - [x] 16-04: Visual distinction, schema snapshots, quality gate
 - [ ] Phase 17: MCP Hardening & Agent History
 - [ ] Phase 18: CLI Hardening & Enforcement Surface
 - [ ] Phase 19: Testing & Tooling
@@ -57,7 +61,7 @@
 | Milestone | Status | Phases | Requirements | Complete |
 |-----------|--------|--------|--------------|----------|
 | v0.1.0 Proof of Concept | Shipped | 10 | 43 | 100% |
-| v0.2.0 Dual-Track Gates & Hardening | In Progress | 13 | 52 | 38% |
+| v0.2.0 Dual-Track Gates & Hardening | In Progress | 13 | 52 | 46% |
 | v0.3.0 | Planned | — | — | — |
 
 ---

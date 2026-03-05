@@ -4,6 +4,51 @@ expression: schema.to_value()
 ---
 {
   "$defs": {
+    "AgentEvaluation": {
+      "description": "A structured evaluation produced by an agent for a single criterion.",
+      "properties": {
+        "confidence": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Confidence"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Agent's confidence level in the evaluation."
+        },
+        "evaluator_role": {
+          "$ref": "#/$defs/EvaluatorRole",
+          "description": "Role of the evaluator who produced this evaluation."
+        },
+        "evidence": {
+          "description": "Concrete facts the agent observed (what was seen).",
+          "type": "string"
+        },
+        "passed": {
+          "description": "Whether the criterion passed according to this evaluation.",
+          "type": "boolean"
+        },
+        "reasoning": {
+          "description": "Why those facts lead to pass/fail (the agent's reasoning chain).",
+          "type": "string"
+        },
+        "timestamp": {
+          "description": "When this evaluation was produced.",
+          "format": "date-time",
+          "type": "string"
+        }
+      },
+      "required": [
+        "passed",
+        "evidence",
+        "reasoning",
+        "evaluator_role",
+        "timestamp"
+      ],
+      "type": "object"
+    },
     "Confidence": {
       "description": "Agent confidence level in an evaluation.",
       "oneOf": [
@@ -23,6 +68,35 @@ expression: schema.to_value()
           "type": "string"
         }
       ]
+    },
+    "CriterionResult": {
+      "description": "A criterion paired with its evaluation result.",
+      "properties": {
+        "criterion_name": {
+          "description": "The name of the criterion that was evaluated.",
+          "type": "string"
+        },
+        "enforcement": {
+          "$ref": "#/$defs/Enforcement",
+          "default": "required",
+          "description": "Resolved enforcement level for this criterion (Required or Advisory)."
+        },
+        "result": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/GateResult"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The gate result, or `None` if skipped (no cmd)."
+        }
+      },
+      "required": [
+        "criterion_name"
+      ],
+      "type": "object"
     },
     "Enforcement": {
       "description": "Enforcement level for a gate criterion.\n\nDetermines whether a criterion failure blocks the gate (required)\nor is informational only (advisory).",
@@ -224,32 +298,59 @@ expression: schema.to_value()
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "description": "A criterion paired with its evaluation result.",
+  "description": "A crash-recoverable agent session for gate evaluation.\n\nTracks in-progress evaluations so that a session can be resumed\nafter an unexpected interruption without losing completed work.",
   "properties": {
-    "criterion_name": {
-      "description": "The name of the criterion that was evaluated.",
+    "agent_evaluations": {
+      "additionalProperties": {
+        "items": {
+          "$ref": "#/$defs/AgentEvaluation"
+        },
+        "type": "array"
+      },
+      "description": "Agent evaluations keyed by criterion name. Multiple evaluations\nper criterion are allowed (e.g., re-evaluation after fix).",
+      "type": "object"
+    },
+    "command_results": {
+      "description": "Results from deterministic (command-based) criterion evaluations.",
+      "items": {
+        "$ref": "#/$defs/CriterionResult"
+      },
+      "type": "array"
+    },
+    "created_at": {
+      "description": "When this session was created.",
+      "format": "date-time",
       "type": "string"
     },
-    "enforcement": {
-      "$ref": "#/$defs/Enforcement",
-      "default": "required",
-      "description": "Resolved enforcement level for this criterion (Required or Advisory)."
+    "criteria_names": {
+      "description": "Names of all criteria in the spec (for completeness tracking).",
+      "items": {
+        "type": "string"
+      },
+      "type": "array",
+      "uniqueItems": true
     },
-    "result": {
-      "anyOf": [
-        {
-          "$ref": "#/$defs/GateResult"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "description": "The gate result, or `None` if skipped (no cmd)."
+    "session_id": {
+      "description": "Unique session identifier.",
+      "type": "string"
+    },
+    "spec_enforcement": {
+      "additionalProperties": {
+        "$ref": "#/$defs/Enforcement"
+      },
+      "description": "Resolved enforcement level per criterion name.",
+      "type": "object"
+    },
+    "spec_name": {
+      "description": "Name of the spec being evaluated.",
+      "type": "string"
     }
   },
   "required": [
-    "criterion_name"
+    "session_id",
+    "spec_name",
+    "created_at"
   ],
-  "title": "CriterionResult",
+  "title": "AgentSession",
   "type": "object"
 }
