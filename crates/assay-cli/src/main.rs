@@ -1817,11 +1817,7 @@ fn handle_context_list(
 }
 
 /// Handle `assay checkpoint save [--trigger T] [--session S] [--json]`.
-fn handle_checkpoint_save(
-    trigger: &str,
-    session: Option<&str>,
-    json: bool,
-) -> anyhow::Result<i32> {
+fn handle_checkpoint_save(trigger: &str, session: Option<&str>, json: bool) -> anyhow::Result<i32> {
     let root = project_root()?;
     let ad = assay_dir(&root);
     if !ad.is_dir() {
@@ -1835,8 +1831,8 @@ fn handle_checkpoint_save(
         .map_err(|e| anyhow::anyhow!("{e}"))?;
 
     if json {
-        let output = serde_json::to_string_pretty(&checkpoint)
-            .context("failed to serialize checkpoint")?;
+        let output =
+            serde_json::to_string_pretty(&checkpoint).context("failed to serialize checkpoint")?;
         println!("{output}");
     } else {
         let rel = archive_path.strip_prefix(&root).unwrap_or(&archive_path);
@@ -1868,8 +1864,8 @@ fn handle_checkpoint_show(json: bool) -> anyhow::Result<i32> {
     if json {
         let checkpoint = assay_core::checkpoint::load_latest_checkpoint(&ad)
             .map_err(|e| anyhow::anyhow!("{e}"))?;
-        let output = serde_json::to_string_pretty(&checkpoint)
-            .context("failed to serialize checkpoint")?;
+        let output =
+            serde_json::to_string_pretty(&checkpoint).context("failed to serialize checkpoint")?;
         println!("{output}");
     } else {
         let content =
@@ -1888,8 +1884,8 @@ fn handle_checkpoint_list(limit: usize) -> anyhow::Result<i32> {
         bail!("No Assay project found. Run `assay init` first.");
     }
 
-    let entries = assay_core::checkpoint::list_checkpoints(&ad, limit)
-        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    let entries =
+        assay_core::checkpoint::list_checkpoints(&ad, limit).map_err(|e| anyhow::anyhow!("{e}"))?;
 
     if entries.is_empty() {
         println!("No checkpoints found.");
