@@ -774,10 +774,7 @@ mod tests {
         .unwrap();
 
         let result = load(dir.path(), "bad-json-spec", "20260101T000000Z-abc123");
-        assert!(
-            result.is_err(),
-            "loading invalid JSON should return error"
-        );
+        assert!(result.is_err(), "loading invalid JSON should return error");
     }
 
     #[test]
