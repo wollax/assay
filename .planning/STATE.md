@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 2026-03-02)
 
 ## Current Position
 
-Phase: 19 — Testing & Tooling (VERIFIED & COMPLETE)
-Plan: 03 of 3 (complete)
-Status: Phase complete, verified, moved to completed/
-Last activity: 2026-03-06 — Phase 19 verified and completed
+Phase: 20 — Session JSONL Parser & Token Diagnostics
+Plan: 01 of 5 (complete)
+Status: Context types module created in assay-types
+Last activity: 2026-03-06 — Plan 20-01 executed (context types)
 
-Progress: v0.2.0 [█████████░] ~69%
+Progress: v0.2.0 [█████████░] ~71%
 
 ## Milestone Progress
 
@@ -159,10 +159,10 @@ None.
 
 ### Next Actions
 
-Phase 19 verified and complete. Next: Phase 20 — Session JSONL Parser & Token Diagnostics
+Phase 20 plan 01 complete. Next: Plan 20-02 (JSONL parser in assay-core)
 
 ### Session Continuity
 
 Last session: 2026-03-06
-Stopped at: Completed 19-03-PLAN.md (phase 19 complete)
+Stopped at: Completed 20-01-PLAN.md (context types)
 Resume file: None
