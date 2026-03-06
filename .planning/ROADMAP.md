@@ -49,7 +49,9 @@
 - [x] Phase 17: MCP Hardening & Agent History — 2026-03-05
   - [x] 17-01: MCP tool hardening (timeout, path validation, error envelope, enforcement counts)
   - [x] 17-02: gate_history tool and response struct documentation
-- [ ] Phase 18: CLI Hardening & Enforcement Surface
+- [x] Phase 18: CLI Hardening & Enforcement Surface — 2026-03-05
+  - [x] 18-01: CLI error propagation foundation (anyhow, ASSAY_DIR_NAME, run() pattern)
+  - [x] 18-02: Enforcement-aware streaming output (warned counter, advisory labels)
 - [ ] Phase 19: Testing & Tooling
 - [ ] Phase 20: Session JSONL Parser & Token Diagnostics
 - [ ] Phase 21: Team State Checkpointing
@@ -63,7 +65,7 @@
 | Milestone | Status | Phases | Requirements | Complete |
 |-----------|--------|--------|--------------|----------|
 | v0.1.0 Proof of Concept | Shipped | 10 | 43 | 100% |
-| v0.2.0 Dual-Track Gates & Hardening | In Progress | 13 | 52 | 54% |
+| v0.2.0 Dual-Track Gates & Hardening | In Progress | 13 | 52 | 62% |
 | v0.3.0 | Planned | — | — | — |
 
 ---
