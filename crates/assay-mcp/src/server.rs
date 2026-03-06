@@ -2296,16 +2296,13 @@ cmd = "echo ok"
             .await
             .unwrap();
 
-        assert!(
-            !result.is_error.unwrap_or(false),
-            "spec_get should succeed"
-        );
+        assert!(!result.is_error.unwrap_or(false), "spec_get should succeed");
         let text = extract_text(&result);
         let json: serde_json::Value = serde_json::from_str(&text).unwrap();
 
         assert_eq!(json["format"], "legacy");
         assert_eq!(json["name"], "auth-flow");
-        assert!(json["criteria"].as_array().unwrap().len() > 0);
+        assert!(!json["criteria"].as_array().unwrap().is_empty());
     }
 
     #[tokio::test]

@@ -7,9 +7,7 @@
 use std::io::Write as _;
 use std::path::Path;
 
-use assay_mcp::{
-    AssayServer, GateFinalizeParams, GateReportParams, GateRunParams, Parameters,
-};
+use assay_mcp::{AssayServer, GateFinalizeParams, GateReportParams, GateRunParams, Parameters};
 use assay_types::{Confidence, EvaluatorRole};
 use rmcp::model::RawContent;
 use serial_test::serial;
