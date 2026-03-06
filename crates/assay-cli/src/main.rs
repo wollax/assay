@@ -1578,10 +1578,7 @@ fn handle_context_diagnose(
             pct_colored,
             health_label
         );
-        println!(
-            "Output tokens:     {}",
-            format_number(usage.output_tokens)
-        );
+        println!("Output tokens:     {}", format_number(usage.output_tokens));
     } else {
         println!("Context tokens:    (no usage data)");
     }
@@ -1719,12 +1716,16 @@ fn handle_context_list(
         } else {
             session.session_id.clone()
         };
-        let id_pad = if color { id_width + ANSI_COLOR_OVERHEAD } else { id_width };
+        let id_pad = if color {
+            id_width + ANSI_COLOR_OVERHEAD
+        } else {
+            id_width
+        };
 
         if tokens {
             let token_str = session
                 .token_count
-                .map(|t| format_number(t))
+                .map(format_number)
                 .unwrap_or_else(|| "-".to_string());
             println!(
                 "{:<iw$}  {:>sw$}  {:>ew$}  {:>tw$}  {:<mw$}",
