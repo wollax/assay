@@ -7,6 +7,14 @@ use std::path::Path;
 /// `\x1b[32m` = 5 bytes, `\x1b[0m` = 4 bytes, total = 9.
 const ANSI_COLOR_OVERHEAD: usize = 9;
 
+/// Name of the Assay project directory relative to project root.
+const ASSAY_DIR_NAME: &str = ".assay";
+
+/// Build an absolute path to the Assay project directory under `root`.
+fn assay_dir(root: &std::path::Path) -> std::path::PathBuf {
+    root.join(ASSAY_DIR_NAME)
+}
+
 #[derive(Parser)]
 #[command(
     name = "assay",
@@ -77,7 +85,7 @@ Examples:
         #[command(subcommand)]
         command: SpecCommand,
     },
-    /// Run quality gates for a spec
+    /// Manage quality gates
     #[command(after_long_help = "\
 Examples:
   Run gates for a spec:
@@ -309,7 +317,7 @@ fn handle_spec_show(name: &str, json: bool) {
             std::process::exit(1);
         }
     };
-    let specs_dir = root.join(".assay").join(&config.specs_dir);
+    let specs_dir = assay_dir(&root).join(&config.specs_dir);
 
     let entry = match assay_core::spec::load_spec_entry(name, &specs_dir) {
         Ok(e) => e,
@@ -494,7 +502,7 @@ fn handle_spec_list() {
             std::process::exit(1);
         }
     };
-    let specs_dir = root.join(".assay").join(&config.specs_dir);
+    let specs_dir = assay_dir(&root).join(&config.specs_dir);
 
     let result = match assay_core::spec::scan(&specs_dir) {
         Ok(r) => r,
@@ -560,7 +568,7 @@ fn handle_spec_new(name: &str) {
             std::process::exit(1);
         }
     };
-    let specs_dir = root.join(".assay").join(&config.specs_dir);
+    let specs_dir = assay_dir(&root).join(&config.specs_dir);
     let spec_dir = specs_dir.join(name);
 
     if spec_dir.exists() {
@@ -762,7 +770,7 @@ fn print_gate_summary(counters: &StreamCounters, color: bool, label: &str) {
 /// Exits 0 if all specs pass, exits 1 if any spec has required failures.
 fn handle_gate_run_all(cli_timeout: Option<u64>, verbose: bool, json: bool) {
     let (root, config, working_dir, config_timeout) = load_gate_context();
-    let specs_dir = root.join(".assay").join(&config.specs_dir);
+    let specs_dir = assay_dir(&root).join(&config.specs_dir);
 
     let result = match assay_core::spec::scan(&specs_dir) {
         Ok(r) => r,
@@ -785,7 +793,7 @@ fn handle_gate_run_all(cli_timeout: Option<u64>, verbose: bool, json: bool) {
         return;
     }
 
-    let assay_dir = root.join(".assay");
+    let assay_dir = assay_dir(&root);
     let max_history = config.gates.as_ref().and_then(|g| g.max_history);
 
     if json {
@@ -917,7 +925,7 @@ fn handle_gate_run_all(cli_timeout: Option<u64>, verbose: bool, json: bool) {
 /// Handle `assay gate run <name> [--timeout N] [--verbose] [--json]`.
 fn handle_gate_run(name: &str, cli_timeout: Option<u64>, verbose: bool, json: bool) {
     let (root, config, working_dir, config_timeout) = load_gate_context();
-    let specs_dir = root.join(".assay").join(&config.specs_dir);
+    let specs_dir = assay_dir(&root).join(&config.specs_dir);
 
     let entry = match assay_core::spec::load_spec_entry(name, &specs_dir) {
         Ok(e) => e,
@@ -931,7 +939,7 @@ fn handle_gate_run(name: &str, cli_timeout: Option<u64>, verbose: bool, json: bo
         }
     };
 
-    let assay_dir = root.join(".assay");
+    let assay_dir = assay_dir(&root);
     let max_history = config.gates.as_ref().and_then(|g| g.max_history);
 
     if json {
@@ -1136,7 +1144,7 @@ fn handle_gate_history(name: &str, json: bool, limit: usize) {
             std::process::exit(1);
         }
     };
-    let assay_dir = root.join(".assay");
+    let assay_dir = assay_dir(&root);
 
     // Verify spec exists
     let specs_dir = assay_dir.join(&config.specs_dir);
@@ -1277,7 +1285,7 @@ fn handle_gate_history_detail(name: &str, run_id: &str, json: bool) {
             std::process::exit(1);
         }
     };
-    let assay_dir = root.join(".assay");
+    let assay_dir = assay_dir(&root);
 
     // Verify spec exists
     let specs_dir = assay_dir.join(&config.specs_dir);
@@ -1438,7 +1446,7 @@ fn show_status(root: &Path) -> Result<(), String> {
     );
     println!();
 
-    let specs_dir = root.join(".assay").join(&config.specs_dir);
+    let specs_dir = assay_dir(&root).join(&config.specs_dir);
     let result = match assay_core::spec::scan(&specs_dir) {
         Ok(r) => r,
         Err(e) => {
@@ -1598,7 +1606,7 @@ async fn main() {
                         std::process::exit(1);
                     }
                 };
-                let assay_dir = root.join(".assay");
+                let assay_dir = assay_dir(&root);
                 let specs_dir = assay_dir.join(&config.specs_dir);
                 match assay_core::spec::load_spec_entry(&name, &specs_dir) {
                     Ok(_) => {}
@@ -1639,7 +1647,7 @@ async fn main() {
             // Note: project detection checks cwd only — no upward traversal.
             // Running `assay` from a subdirectory of a project shows the hint.
             let root = project_root();
-            if root.join(".assay").is_dir() {
+            if assay_dir(&root).is_dir() {
                 if let Err(e) = show_status(&root) {
                     eprintln!("Error: {e}");
                     std::process::exit(1);
