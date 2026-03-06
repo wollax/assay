@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 2026-03-02)
 
 ## Current Position
 
-Phase: 20 — Session JSONL Parser & Token Diagnostics (VERIFIED & COMPLETE)
-Plan: 05 of 5 (complete)
-Status: Phase complete, verified, moved to completed/
-Last activity: 2026-03-06 — Phase 20 verified and completed
+Phase: 21 — Team State Checkpointing
+Plan: 01 of 3
+Status: In progress
+Last activity: 2026-03-06 — Completed 21-01-PLAN.md (checkpoint types + core logic)
 
-Progress: v0.2.0 [██████████] ~77%
+Progress: v0.2.0 [██████████░] ~79%
 
 ## Milestone Progress
 
@@ -155,6 +155,13 @@ v0.2.0 decisions (from 20-02 execution):
 - `deny.toml` updated: MPL-2.0 allowed (option-ext via dirs-sys), getrandom@0.2 skipped (redox_users via dirs-sys)
 - Context module constants (`DEFAULT_CONTEXT_WINDOW`, `SYSTEM_OVERHEAD_TOKENS`) are `pub(super)` for intra-module sharing
 
+v0.2.0 decisions (from 21-01 execution):
+- ParsedEntry imported via pub re-export (`crate::context::ParsedEntry`), not private parser module
+- `merge_team_config` is a no-op until team config.json format stabilizes; session-extracted state is authoritative
+- JSON frontmatter (not YAML) between `---` delimiters for checkpoint files
+- Archive filenames use ISO 8601 with colons replaced by dashes for filesystem compatibility
+- Context health uses fixed 200K context window (same as tokens module)
+
 ### Pending Issues
 
 19 open issues (reduced from 38 after triaging 19 test-related issues in 19-02)
@@ -165,10 +172,10 @@ None.
 
 ### Next Actions
 
-Phase 20 verified and complete. Next: Phase 21 — Team State Checkpointing
+Phase 21 plan 01 complete. Next: 21-02 (CLI commands) and 21-03 (hook integration)
 
 ### Session Continuity
 
 Last session: 2026-03-06
-Stopped at: Phase 20 verified and completed
+Stopped at: Completed 21-01-PLAN.md
 Resume file: None
