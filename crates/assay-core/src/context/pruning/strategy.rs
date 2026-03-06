@@ -60,6 +60,8 @@ pub fn apply_strategy(
         PruneStrategy::ThinkingBlocks => {
             super::strategies::thinking_blocks::thinking_blocks(entries, _tier, _protected)
         }
-        PruneStrategy::ToolOutputTrim => StrategyResult::noop(entries),
+        PruneStrategy::ToolOutputTrim => {
+            super::strategies::tool_output_trim::tool_output_trim(entries, _tier, _protected)
+        }
     }
 }

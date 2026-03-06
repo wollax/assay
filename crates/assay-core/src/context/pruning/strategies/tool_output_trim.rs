@@ -5,7 +5,7 @@
 
 use std::collections::HashSet;
 
-use assay_types::context::PrescriptionTier;
+use assay_types::context::{EntryMetadata, PrescriptionTier, PruneSample, SessionEntry, UserEntry};
 
 use super::super::super::parser::ParsedEntry;
 use super::super::strategy::StrategyResult;
@@ -19,6 +19,76 @@ const KEEP_HEAD_LINES: usize = 20;
 /// Number of lines to keep from the end of a large tool result.
 const KEEP_TAIL_LINES: usize = 20;
 
+/// Truncate a string if it exceeds the line threshold.
+///
+/// Returns `Some(truncated)` if truncation occurred, `None` otherwise.
+fn truncate_content(content: &str) -> Option<String> {
+    let lines: Vec<&str> = content.lines().collect();
+    if lines.len() <= TRIM_THRESHOLD_LINES {
+        return None;
+    }
+
+    let truncated_count = lines.len() - KEEP_HEAD_LINES - KEEP_TAIL_LINES;
+    let head = &lines[..KEEP_HEAD_LINES];
+    let tail = &lines[lines.len() - KEEP_TAIL_LINES..];
+
+    let mut result = String::new();
+    for line in head {
+        result.push_str(line);
+        result.push('\n');
+    }
+    result.push_str(&format!("[...{truncated_count} lines truncated...]\n"));
+    for (i, line) in tail.iter().enumerate() {
+        result.push_str(line);
+        if i < tail.len() - 1 {
+            result.push('\n');
+        }
+    }
+
+    Some(result)
+}
+
+/// Try to trim tool_result blocks in a user entry's message.
+///
+/// Returns `Some(new_message_value)` if any blocks were trimmed, `None` otherwise.
+fn trim_user_message(message: &serde_json::Value) -> Option<serde_json::Value> {
+    let blocks = message.as_array()?;
+    let mut modified = false;
+    let mut new_blocks: Vec<serde_json::Value> = Vec::with_capacity(blocks.len());
+
+    for block in blocks {
+        let block_type = block.get("type").and_then(|t| t.as_str());
+        if block_type == Some("tool_result")
+            && let Some(content_str) = block.get("content").and_then(|c| c.as_str())
+            && let Some(truncated) = truncate_content(content_str)
+        {
+            let mut new_block = block.clone();
+            new_block["content"] = serde_json::Value::String(truncated);
+            new_blocks.push(new_block);
+            modified = true;
+            continue;
+        }
+        new_blocks.push(block.clone());
+    }
+
+    modified.then_some(serde_json::Value::Array(new_blocks))
+}
+
+/// Extract a trimmed message from a user entry, if applicable.
+///
+/// Returns `Some((new_message, cloned_meta))` if any tool result blocks were
+/// trimmed, `None` if the entry is not a user entry or has no trimmable content.
+fn extract_trimmed_message(
+    entry: &ParsedEntry,
+) -> Option<(serde_json::Value, EntryMetadata)> {
+    let SessionEntry::User(u) = &entry.entry else {
+        return None;
+    };
+    let msg = u.message.as_ref()?;
+    let new_msg = trim_user_message(msg)?;
+    Some((new_msg, u.meta.clone()))
+}
+
 /// Truncate large tool result content in user entries.
 ///
 /// For each User entry containing `tool_result` blocks whose text content
@@ -27,11 +97,63 @@ const KEEP_TAIL_LINES: usize = 20;
 ///
 /// Protected entries are preserved unchanged and counted in `protected_skipped`.
 pub fn tool_output_trim(
-    _entries: Vec<ParsedEntry>,
+    entries: Vec<ParsedEntry>,
     _tier: PrescriptionTier,
-    _protected: &HashSet<usize>,
+    protected: &HashSet<usize>,
 ) -> StrategyResult {
-    todo!()
+    let mut result_entries = Vec::with_capacity(entries.len());
+    let mut lines_modified: usize = 0;
+    let mut bytes_saved: u64 = 0;
+    let mut protected_skipped: usize = 0;
+    let mut samples: Vec<PruneSample> = Vec::new();
+
+    for mut entry in entries {
+        // Extract trimmed message if this is a user entry with trimmable tool results.
+        let trimmed = extract_trimmed_message(&entry);
+
+        match trimmed {
+            None => {
+                // Not a user entry with tool results, or content is small enough.
+                result_entries.push(entry);
+            }
+            Some(trimmed_msg) if protected.contains(&entry.line_number) => {
+                drop(trimmed_msg);
+                protected_skipped += 1;
+                result_entries.push(entry);
+            }
+            Some((new_msg, meta)) => {
+                let original_bytes = entry.raw_bytes;
+                let new_entry = SessionEntry::User(UserEntry {
+                    meta,
+                    message: Some(new_msg),
+                });
+                entry.update_content(new_entry);
+
+                let saved = original_bytes.saturating_sub(entry.raw_bytes) as u64;
+                bytes_saved += saved;
+                lines_modified += 1;
+
+                if samples.len() < 3 {
+                    samples.push(PruneSample {
+                        line_number: entry.line_number,
+                        description: "Tool output trimmed".into(),
+                        bytes: saved,
+                    });
+                }
+
+                result_entries.push(entry);
+            }
+        }
+    }
+
+    StrategyResult {
+        entries: result_entries,
+        lines_removed: 0,
+        lines_modified,
+        bytes_saved,
+        protected_skipped,
+        samples,
+    }
 }
 
 #[cfg(test)]
