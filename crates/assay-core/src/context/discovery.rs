@@ -51,11 +51,7 @@ pub fn discover_sessions(session_dir: &Path) -> crate::Result<Vec<PathBuf>> {
 
     let mut files: Vec<(PathBuf, std::time::SystemTime)> = entries
         .filter_map(|e| e.ok())
-        .filter(|e| {
-            e.path()
-                .extension()
-                .is_some_and(|ext| ext == "jsonl")
-        })
+        .filter(|e| e.path().extension().is_some_and(|ext| ext == "jsonl"))
         .filter_map(|e| {
             let path = e.path();
             let mtime = e.metadata().ok()?.modified().ok()?;
@@ -73,10 +69,7 @@ pub fn discover_sessions(session_dir: &Path) -> crate::Result<Vec<PathBuf>> {
 ///
 /// If `session_id` is `Some`, looks for `{session_id}.jsonl` in the directory.
 /// Otherwise, returns the most recently modified `.jsonl` file.
-pub fn resolve_session(
-    session_dir: &Path,
-    session_id: Option<&str>,
-) -> crate::Result<PathBuf> {
+pub fn resolve_session(session_dir: &Path, session_id: Option<&str>) -> crate::Result<PathBuf> {
     match session_id {
         Some(id) => {
             let path = session_dir.join(format!("{id}.jsonl"));
@@ -88,14 +81,12 @@ pub fn resolve_session(
         }
         None => {
             let sessions = discover_sessions(session_dir)?;
-            sessions.into_iter().next().ok_or_else(|| {
-                AssayError::SessionDirNotFound {
-                    message: format!(
-                        "no JSONL session files found in {}",
-                        session_dir.display()
-                    ),
-                }
-            })
+            sessions
+                .into_iter()
+                .next()
+                .ok_or_else(|| AssayError::SessionDirNotFound {
+                    message: format!("no JSONL session files found in {}", session_dir.display()),
+                })
         }
     }
 }
@@ -103,6 +94,7 @@ pub fn resolve_session(
 /// Parse `~/.claude/history.jsonl` to find sessions for a project.
 ///
 /// Best-effort: returns an empty vec on any error.
+#[allow(dead_code)]
 pub fn sessions_from_history(project_path: &Path) -> Vec<ClaudeHistoryEntry> {
     let Some(home) = dirs::home_dir() else {
         return Vec::new();

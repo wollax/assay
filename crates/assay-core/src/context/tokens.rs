@@ -4,7 +4,7 @@ use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 
-use assay_types::context::{SessionEntry, TokenEstimate, ContextHealth, UsageData};
+use assay_types::context::{ContextHealth, SessionEntry, TokenEstimate, UsageData};
 
 use super::parser::ParsedEntry;
 
@@ -61,6 +61,7 @@ pub fn extract_model(entries: &[ParsedEntry]) -> Option<String> {
 /// Heuristic token estimate from byte count.
 ///
 /// Uses the empirical ratio of ~3.7 bytes per token for English text.
+#[allow(dead_code)]
 pub fn estimate_tokens_from_bytes(bytes: u64) -> u64 {
     (bytes as f64 / 3.7).ceil() as u64
 }
@@ -93,17 +94,13 @@ pub fn quick_token_estimate(path: &Path) -> std::io::Result<Option<UsageData>> {
         if line.trim().is_empty() {
             continue;
         }
-        if let Ok(entry) = serde_json::from_str::<SessionEntry>(line) {
-            if let SessionEntry::Assistant(a) = entry {
-                if !a.meta.is_sidechain {
-                    if let Some(msg) = a.message {
-                        if let Some(usage) = msg.usage {
-                            last_usage = Some(usage);
-                            break;
-                        }
-                    }
-                }
-            }
+        if let Ok(SessionEntry::Assistant(a)) = serde_json::from_str::<SessionEntry>(line)
+            && !a.meta.is_sidechain
+            && let Some(msg) = a.message
+            && let Some(usage) = msg.usage
+        {
+            last_usage = Some(usage);
+            break;
         }
     }
 
