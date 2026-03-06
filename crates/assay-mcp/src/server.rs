@@ -36,20 +36,20 @@ use assay_types::{
 
 /// Parameters for the `spec_get` tool.
 #[derive(Deserialize, JsonSchema)]
-struct SpecGetParams {
+pub struct SpecGetParams {
     /// The spec to retrieve.
     #[schemars(description = "Spec name (filename without .toml extension, e.g. 'auth-flow')")]
-    name: String,
+    pub name: String,
 }
 
 /// Parameters for the `gate_run` tool.
 #[derive(Deserialize, JsonSchema)]
-struct GateRunParams {
+pub struct GateRunParams {
     /// The spec whose criteria to evaluate.
     #[schemars(
         description = "Spec name to evaluate gates for (filename without .toml extension, e.g. 'auth-flow')"
     )]
-    name: String,
+    pub name: String,
 
     /// Whether to include full evidence in the response.
     #[schemars(
@@ -58,7 +58,7 @@ struct GateRunParams {
             When true, adds stdout and stderr fields to each criterion result."
     )]
     #[serde(default)]
-    include_evidence: bool,
+    pub include_evidence: bool,
 
     /// Maximum seconds to wait for gate evaluation.
     #[schemars(
@@ -66,72 +66,72 @@ struct GateRunParams {
             Returns a timeout error if exceeded."
     )]
     #[serde(default)]
-    timeout: Option<u64>,
+    pub timeout: Option<u64>,
 }
 
 /// Parameters for the `gate_report` tool.
 #[derive(Deserialize, JsonSchema)]
-struct GateReportParams {
+pub struct GateReportParams {
     /// Session ID returned by gate_run.
     #[schemars(description = "Session ID returned by gate_run")]
-    session_id: String,
+    pub session_id: String,
 
     /// Name of the criterion being evaluated (must match a criterion in the spec).
     #[schemars(
         description = "Name of the criterion being evaluated (must match a criterion in the spec)"
     )]
-    criterion_name: String,
+    pub criterion_name: String,
 
     /// Whether the criterion passed.
     #[schemars(description = "Whether the criterion passed")]
-    passed: bool,
+    pub passed: bool,
 
     /// What the agent observed (concrete facts).
     #[schemars(description = "What the agent observed (concrete facts)")]
-    evidence: String,
+    pub evidence: String,
 
     /// Why those facts lead to pass/fail.
     #[schemars(description = "Why those facts lead to pass/fail")]
-    reasoning: String,
+    pub reasoning: String,
 
     /// Confidence in the evaluation (high, medium, low).
     #[schemars(description = "Confidence in the evaluation (high, medium, low)")]
     #[serde(default)]
-    confidence: Option<Confidence>,
+    pub confidence: Option<Confidence>,
 
     /// Role of the evaluator (self, independent, human).
     #[schemars(description = "Role of the evaluator (self, independent, human)")]
-    evaluator_role: EvaluatorRole,
+    pub evaluator_role: EvaluatorRole,
 }
 
 /// Parameters for the `gate_finalize` tool.
 #[derive(Deserialize, JsonSchema)]
-struct GateFinalizeParams {
+pub struct GateFinalizeParams {
     /// Session ID to finalize.
     #[schemars(description = "Session ID to finalize")]
-    session_id: String,
+    pub session_id: String,
 }
 
 /// Parameters for the `gate_history` tool.
 #[derive(Deserialize, JsonSchema)]
-struct GateHistoryParams {
+pub struct GateHistoryParams {
     /// Spec name to query history for.
     #[schemars(description = "Spec name to query history for (filename without .toml extension)")]
-    name: String,
+    pub name: String,
 
     /// Optional run ID to retrieve a specific record. When omitted, returns a list of recent runs.
     #[schemars(
         description = "Specific run ID to retrieve full details for. Omit to list recent runs."
     )]
     #[serde(default)]
-    run_id: Option<String>,
+    pub run_id: Option<String>,
 
     /// Maximum number of runs to return in list mode (default: 10).
     #[schemars(
         description = "Maximum number of runs to return (default: 10, ignored when run_id is set)"
     )]
     #[serde(default)]
-    limit: Option<usize>,
+    pub limit: Option<usize>,
 }
 
 // ── Response structs ─────────────────────────────────────────────────
@@ -314,7 +314,7 @@ impl AssayServer {
     #[tool(
         description = "List all specs in the current Assay project. Returns {specs, errors?} where specs is an array of {name, description?, criteria_count, format, has_feature_spec?} objects and errors lists any spec files that failed to parse. Use this to discover available specs before calling spec_get or gate_run."
     )]
-    async fn spec_list(&self) -> Result<CallToolResult, McpError> {
+    pub async fn spec_list(&self) -> Result<CallToolResult, McpError> {
         let cwd = resolve_cwd()?;
         let config = match load_config(&cwd) {
             Ok(c) => c,
@@ -372,7 +372,7 @@ impl AssayServer {
     #[tool(
         description = "Get a spec by name. Returns the full spec definition as JSON. For legacy specs: {format, name, description, criteria}. For directory specs: {format, gates, feature_spec?}. Use spec_list first to find available spec names."
     )]
-    async fn spec_get(
+    pub async fn spec_get(
         &self,
         params: Parameters<SpecGetParams>,
     ) -> Result<CallToolResult, McpError> {
@@ -419,7 +419,7 @@ impl AssayServer {
     #[tool(
         description = "Run quality gate checks for a spec. Evaluates all executable criteria (shell commands, file checks) and returns pass/fail status per criterion with enforcement-level counts (required_passed, required_failed, advisory_passed, advisory_failed) and a blocked flag. Set timeout (seconds, default 300) to limit evaluation time. Set include_evidence=true for full stdout/stderr. If the spec contains agent-evaluated criteria (kind=AgentReport), a session_id and pending_criteria are returned — use gate_report for each, then gate_finalize to persist."
     )]
-    async fn gate_run(
+    pub async fn gate_run(
         &self,
         params: Parameters<GateRunParams>,
     ) -> Result<CallToolResult, McpError> {
@@ -551,7 +551,7 @@ impl AssayServer {
     #[tool(
         description = "Submit an agent evaluation for a single criterion in an active gate session. Call gate_run first to start a session, then gate_report for each agent-evaluated criterion, then gate_finalize to persist results."
     )]
-    async fn gate_report(
+    pub async fn gate_report(
         &self,
         params: Parameters<GateReportParams>,
     ) -> Result<CallToolResult, McpError> {
@@ -608,7 +608,7 @@ impl AssayServer {
     #[tool(
         description = "Finalize an active gate session, persisting all accumulated evaluations as a GateRunRecord. Missing required criteria cause the gate to fail. Call this after submitting all gate_report evaluations."
     )]
-    async fn gate_finalize(
+    pub async fn gate_finalize(
         &self,
         params: Parameters<GateFinalizeParams>,
     ) -> Result<CallToolResult, McpError> {
@@ -664,7 +664,7 @@ impl AssayServer {
     #[tool(
         description = "Query gate run history for a spec. Without run_id, returns a list of recent runs with summary counts. With run_id, returns the full gate run record including all criterion results. Use this to check past gate outcomes and track quality trends."
     )]
-    async fn gate_history(
+    pub async fn gate_history(
         &self,
         params: Parameters<GateHistoryParams>,
     ) -> Result<CallToolResult, McpError> {
@@ -2004,6 +2004,75 @@ cmd = "echo ok"
         assert!(
             !response.blocked,
             "blocked should be false when no required failures"
+        );
+    }
+
+    #[test]
+    fn test_format_gate_response_advisory_failed_not_blocked() {
+        let summary = GateRunSummary {
+            spec_name: "advisory-fail".to_string(),
+            results: vec![
+                CriterionResult {
+                    criterion_name: "req-pass".to_string(),
+                    result: Some(GateResult {
+                        passed: true,
+                        kind: GateKind::Command {
+                            cmd: "true".to_string(),
+                        },
+                        stdout: String::new(),
+                        stderr: String::new(),
+                        exit_code: Some(0),
+                        duration_ms: 10,
+                        timestamp: Utc::now(),
+                        truncated: false,
+                        original_bytes: None,
+                        evidence: None,
+                        reasoning: None,
+                        confidence: None,
+                        evaluator_role: None,
+                    }),
+                    enforcement: Enforcement::Required,
+                },
+                CriterionResult {
+                    criterion_name: "adv-fail".to_string(),
+                    result: Some(GateResult {
+                        passed: false,
+                        kind: GateKind::Command {
+                            cmd: "false".to_string(),
+                        },
+                        stdout: String::new(),
+                        stderr: "lint warning".to_string(),
+                        exit_code: Some(1),
+                        duration_ms: 10,
+                        timestamp: Utc::now(),
+                        truncated: false,
+                        original_bytes: None,
+                        evidence: None,
+                        reasoning: None,
+                        confidence: None,
+                        evaluator_role: None,
+                    }),
+                    enforcement: Enforcement::Advisory,
+                },
+            ],
+            passed: 1,
+            failed: 1,
+            skipped: 0,
+            total_duration_ms: 20,
+            enforcement: EnforcementSummary {
+                required_passed: 1,
+                required_failed: 0,
+                advisory_passed: 0,
+                advisory_failed: 1,
+            },
+        };
+
+        let response = format_gate_response(&summary, false);
+        assert_eq!(response.advisory_failed, 1);
+        assert_eq!(response.required_failed, 0);
+        assert!(
+            !response.blocked,
+            "blocked should be false when advisory fails but required passes"
         );
     }
 

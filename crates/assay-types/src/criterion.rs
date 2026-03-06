@@ -212,4 +212,37 @@ mod tests {
             "TOML should omit absent prompt, got:\n{toml_str}"
         );
     }
+
+    #[test]
+    fn criterion_enforcement_toml_roundtrip() {
+        let criterion = Criterion {
+            name: "enforced".to_string(),
+            description: "Criterion with enforcement".to_string(),
+            cmd: Some("echo ok".to_string()),
+            path: None,
+            timeout: None,
+            enforcement: Some(Enforcement::Advisory),
+            kind: None,
+            prompt: None,
+        };
+
+        let toml_str = toml::to_string(&criterion).expect("serialize to TOML");
+        assert!(
+            toml_str.contains("enforcement"),
+            "TOML should include enforcement, got:\n{toml_str}"
+        );
+        let roundtripped: Criterion = toml::from_str(&toml_str).expect("deserialize from TOML");
+        assert_eq!(criterion, roundtripped);
+    }
+
+    #[test]
+    fn criterion_missing_required_fields_deser_fails() {
+        // name without description should fail
+        let toml_str = r#"name = "test""#;
+        let result = toml::from_str::<Criterion>(toml_str);
+        assert!(
+            result.is_err(),
+            "criterion without description should fail deserialization"
+        );
+    }
 }

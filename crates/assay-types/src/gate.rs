@@ -383,4 +383,65 @@ mod tests {
         let roundtripped: GateResult = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(result, roundtripped);
     }
+
+    #[test]
+    fn gate_kind_unknown_variant_deser_fails() {
+        let toml_str = r#"kind = "Unknown""#;
+        let err = toml::from_str::<GateKind>(toml_str);
+        assert!(
+            err.is_err(),
+            "unknown GateKind variant should fail deserialization"
+        );
+    }
+
+    #[test]
+    fn gate_kind_unknown_variant_json_deser_fails() {
+        let json = r#"{"kind":"Bogus"}"#;
+        let err = serde_json::from_str::<GateKind>(json);
+        assert!(
+            err.is_err(),
+            "unknown GateKind variant in JSON should fail deserialization"
+        );
+    }
+
+    #[test]
+    fn gate_result_json_roundtrip_with_skip_fields() {
+        // Test that skip_serializing_if + default pairing roundtrips correctly
+        let result = GateResult {
+            passed: true,
+            kind: GateKind::Command {
+                cmd: "echo ok".to_string(),
+            },
+            stdout: String::new(), // empty — skipped in serialization
+            stderr: String::new(), // empty — skipped in serialization
+            exit_code: None,       // None — skipped in serialization
+            duration_ms: 50,
+            timestamp: Utc::now(),
+            truncated: false, // false — skipped in serialization
+            original_bytes: None,
+            evidence: None,
+            reasoning: None,
+            confidence: None,
+            evaluator_role: None,
+        };
+
+        let json = serde_json::to_string(&result).expect("serialize");
+        // Verify skip_serializing_if works
+        assert!(
+            !json.contains("stdout"),
+            "empty stdout should be omitted: {json}"
+        );
+        assert!(
+            !json.contains("exit_code"),
+            "None exit_code should be omitted: {json}"
+        );
+        assert!(
+            !json.contains("truncated"),
+            "false truncated should be omitted: {json}"
+        );
+
+        // Verify roundtrip back to original
+        let roundtripped: GateResult = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(result, roundtripped);
+    }
 }

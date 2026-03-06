@@ -11,6 +11,14 @@
 
 mod server;
 
+pub use server::{
+    AssayServer, GateFinalizeParams, GateHistoryParams, GateReportParams, GateRunParams,
+    SpecGetParams,
+};
+
+/// Re-export the `Parameters` wrapper from rmcp for use by integration tests.
+pub use rmcp::handler::server::wrapper::Parameters;
+
 /// Start the MCP server on stdio transport.
 ///
 /// Delegates to the internal server module. Serves JSON-RPC on stdin/stdout

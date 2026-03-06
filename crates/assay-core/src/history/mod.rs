@@ -751,4 +751,95 @@ mod tests {
         let remaining = list(dir.path(), spec).unwrap();
         assert_eq!(remaining.len(), 3, "should have 3 files remaining");
     }
+
+    #[test]
+    fn test_load_file_not_found() {
+        let dir = TempDir::new().unwrap();
+        let result = load(dir.path(), "nonexistent-spec", "20260101T000000Z-abc123");
+        assert!(
+            result.is_err(),
+            "loading nonexistent file should return error"
+        );
+    }
+
+    #[test]
+    fn test_load_invalid_json() {
+        let dir = TempDir::new().unwrap();
+        let spec_dir = dir.path().join("results").join("bad-json-spec");
+        std::fs::create_dir_all(&spec_dir).unwrap();
+        std::fs::write(
+            spec_dir.join("20260101T000000Z-abc123.json"),
+            "this is not valid JSON {{{",
+        )
+        .unwrap();
+
+        let result = load(dir.path(), "bad-json-spec", "20260101T000000Z-abc123");
+        assert!(
+            result.is_err(),
+            "loading invalid JSON should return error"
+        );
+    }
+
+    #[test]
+    fn test_load_roundtrip_with_results() {
+        use assay_types::{CriterionResult, Enforcement, GateKind, GateResult};
+
+        let dir = TempDir::new().unwrap();
+        let ts = Utc::now();
+        let record = GateRunRecord {
+            run_id: generate_run_id(&ts),
+            assay_version: env!("CARGO_PKG_VERSION").to_string(),
+            timestamp: ts,
+            working_dir: Some("/tmp/test".to_string()),
+            summary: GateRunSummary {
+                spec_name: "results-test".to_string(),
+                results: vec![CriterionResult {
+                    criterion_name: "unit-tests".to_string(),
+                    result: Some(GateResult {
+                        passed: true,
+                        kind: GateKind::Command {
+                            cmd: "cargo test".to_string(),
+                        },
+                        stdout: "ok".to_string(),
+                        stderr: String::new(),
+                        exit_code: Some(0),
+                        duration_ms: 100,
+                        timestamp: ts,
+                        truncated: false,
+                        original_bytes: None,
+                        evidence: None,
+                        reasoning: None,
+                        confidence: None,
+                        evaluator_role: None,
+                    }),
+                    enforcement: Enforcement::Required,
+                }],
+                passed: 1,
+                failed: 0,
+                skipped: 0,
+                total_duration_ms: 100,
+                enforcement: EnforcementSummary {
+                    required_passed: 1,
+                    required_failed: 0,
+                    advisory_passed: 0,
+                    advisory_failed: 0,
+                },
+            },
+        };
+
+        let save_result = save(dir.path(), &record, None).unwrap();
+        let loaded = load(dir.path(), "results-test", &record.run_id).unwrap();
+
+        assert_eq!(loaded.summary.results.len(), 1);
+        assert_eq!(
+            loaded.summary.results[0].criterion_name, "unit-tests",
+            "criterion name should roundtrip"
+        );
+        assert!(
+            loaded.summary.results[0].result.as_ref().unwrap().passed,
+            "result.passed should roundtrip"
+        );
+        assert_eq!(loaded, record);
+        let _ = save_result;
+    }
 }
