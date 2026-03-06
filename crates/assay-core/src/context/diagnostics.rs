@@ -9,9 +9,9 @@ use assay_types::context::{
     BloatBreakdown, BloatCategory, BloatEntry, ContentBlock, DiagnosticsReport, SessionEntry,
 };
 
-use super::parser::{parse_session, ParsedEntry};
+use super::parser::{ParsedEntry, parse_session};
 use super::tokens::{
-    context_window_for_model, extract_model, extract_usage, is_sidechain, SYSTEM_OVERHEAD_TOKENS,
+    SYSTEM_OVERHEAD_TOKENS, context_window_for_model, extract_model, extract_usage, is_sidechain,
 };
 
 /// Analyze a parsed session and produce a `DiagnosticsReport`.
@@ -96,17 +96,14 @@ fn categorize_bloat(entries: &[ParsedEntry], file_size: u64) -> BloatBreakdown {
                     for block in &msg.content {
                         match block {
                             ContentBlock::Thinking { thinking } => {
-                                let e = counts
-                                    .entry(BloatCategory::ThinkingBlocks)
-                                    .or_default();
+                                let e = counts.entry(BloatCategory::ThinkingBlocks).or_default();
                                 e.0 += thinking.len() as u64;
                                 e.1 += 1;
                             }
                             ContentBlock::Text { text } => {
                                 if system_reminder_re.is_match(text) {
-                                    let e = counts
-                                        .entry(BloatCategory::SystemReminders)
-                                        .or_default();
+                                    let e =
+                                        counts.entry(BloatCategory::SystemReminders).or_default();
                                     e.0 += text.len() as u64;
                                     e.1 += 1;
                                 }
@@ -129,24 +126,16 @@ fn categorize_bloat(entries: &[ParsedEntry], file_size: u64) -> BloatBreakdown {
                             if block_type == Some("tool_use") {
                                 let tool_name =
                                     block.get("name").and_then(|n| n.as_str()).unwrap_or("");
-                                if tool_name == "Read" || tool_name == "read" {
-                                    if let Some(input) = block.get("input") {
-                                        if let Some(file_path) =
-                                            input.get("file_path").and_then(|p| p.as_str())
-                                        {
-                                            if !read_paths.insert(file_path.to_string()) {
-                                                // Already read this file -> stale read
-                                                let e = counts
-                                                    .entry(BloatCategory::StaleReads)
-                                                    .or_default();
-                                                e.0 += block
-                                                    .to_string()
-                                                    .len()
-                                                    as u64;
-                                                e.1 += 1;
-                                            }
-                                        }
-                                    }
+                                if (tool_name == "Read" || tool_name == "read")
+                                    && let Some(input) = block.get("input")
+                                    && let Some(file_path) =
+                                        input.get("file_path").and_then(|p| p.as_str())
+                                    && !read_paths.insert(file_path.to_string())
+                                {
+                                    // Already read this file -> stale read
+                                    let e = counts.entry(BloatCategory::StaleReads).or_default();
+                                    e.0 += block.to_string().len() as u64;
+                                    e.1 += 1;
                                 }
                             }
 
@@ -156,25 +145,19 @@ fn categorize_bloat(entries: &[ParsedEntry], file_size: u64) -> BloatBreakdown {
                                     .get("content")
                                     .map(|c| c.to_string().len() as u64)
                                     .unwrap_or(0);
-                                let e =
-                                    counts.entry(BloatCategory::ToolOutput).or_default();
+                                let e = counts.entry(BloatCategory::ToolOutput).or_default();
                                 e.0 += content_size;
                                 e.1 += 1;
                             }
 
                             // Check text content for system reminders
-                            if block_type == Some("text") {
-                                if let Some(text) =
-                                    block.get("text").and_then(|t| t.as_str())
-                                {
-                                    if system_reminder_re.is_match(text) {
-                                        let e = counts
-                                            .entry(BloatCategory::SystemReminders)
-                                            .or_default();
-                                        e.0 += text.len() as u64;
-                                        e.1 += 1;
-                                    }
-                                }
+                            if block_type == Some("text")
+                                && let Some(text) = block.get("text").and_then(|t| t.as_str())
+                                && system_reminder_re.is_match(text)
+                            {
+                                let e = counts.entry(BloatCategory::SystemReminders).or_default();
+                                e.0 += text.len() as u64;
+                                e.1 += 1;
                             }
                         }
                     }
@@ -225,9 +208,7 @@ mod tests {
     }
 
     fn meta_json(uuid: &str, session_id: &str) -> String {
-        format!(
-            r#""uuid":"{uuid}","timestamp":"2026-01-01T00:00:00Z","sessionId":"{session_id}""#
-        )
+        format!(r#""uuid":"{uuid}","timestamp":"2026-01-01T00:00:00Z","sessionId":"{session_id}""#)
     }
 
     #[test]

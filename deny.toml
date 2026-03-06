@@ -10,6 +10,7 @@ allow = [
     "ISC",
     "Zlib",
     "Unicode-3.0",
+    "MPL-2.0",
     "Unicode-DFS-2016",
 ]
 
@@ -27,6 +28,9 @@ skip = [
 
     # ahash (via jsonschema) pulls in getrandom 0.3; newer crates use 0.4
     { crate = "getrandom@0.3", reason = "ahash in jsonschema uses getrandom 0.3; rest of tree uses 0.4" },
+
+    # dirs-sys -> redox_users -> getrandom 0.2; rest of tree uses 0.4
+    { crate = "getrandom@0.2", reason = "redox_users (via dirs-sys) uses getrandom 0.2" },
 
     # crossterm 0.28 -> polling 3.x -> rustix 0.38 -> linux-raw-sys 0.4
     { crate = "linux-raw-sys@0.4", reason = "rustix 0.38 (via crossterm 0.28/polling) needs linux-raw-sys 0.4" },

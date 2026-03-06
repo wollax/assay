@@ -15,7 +15,7 @@ mod tokens;
 
 pub use diagnostics::diagnose;
 pub use discovery::{discover_sessions, find_session_dir, resolve_session};
-pub use parser::{parse_session, ParsedEntry};
+pub use parser::{ParsedEntry, parse_session};
 pub use tokens::{estimate_tokens, extract_usage, quick_token_estimate};
 
 /// List session files for a project (or all projects), optionally including token counts.
@@ -30,14 +30,11 @@ pub fn list_sessions(
 ) -> crate::Result<Vec<SessionInfo>> {
     let session_dir = match project_dir {
         Some(dir) => find_session_dir(dir)?,
-        None => {
-            let projects_dir = discovery::claude_projects_dir().ok_or_else(|| {
-                crate::AssayError::SessionDirNotFound {
-                    message: "home directory not found".into(),
-                }
-            })?;
-            projects_dir
-        }
+        None => discovery::claude_projects_dir().ok_or_else(|| {
+            crate::AssayError::SessionDirNotFound {
+                message: "home directory not found".into(),
+            }
+        })?,
     };
 
     let paths = discover_sessions(&session_dir)?;
@@ -52,13 +49,10 @@ pub fn list_sessions(
 
         let metadata = std::fs::metadata(&path).ok();
         let file_size_bytes = metadata.as_ref().map(|m| m.len()).unwrap_or(0);
-        let last_modified = metadata
-            .as_ref()
-            .and_then(|m| m.modified().ok())
-            .map(|t| {
-                let dt: chrono::DateTime<chrono::Utc> = t.into();
-                dt.to_rfc3339()
-            });
+        let last_modified = metadata.as_ref().and_then(|m| m.modified().ok()).map(|t| {
+            let dt: chrono::DateTime<chrono::Utc> = t.into();
+            dt.to_rfc3339()
+        });
 
         let entry_count = quick_line_count(&path);
 
@@ -96,7 +90,7 @@ fn quick_line_count(path: &Path) -> u64 {
     let reader = std::io::BufReader::new(file);
     reader
         .lines()
-        .filter_map(|l| l.ok())
+        .map_while(Result::ok)
         .filter(|l| !l.trim().is_empty())
         .count() as u64
 }

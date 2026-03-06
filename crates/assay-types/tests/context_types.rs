@@ -54,7 +54,8 @@ fn deserialize_assistant_entry_with_usage() {
             "stop_reason": "end_turn"
         }
     }"#;
-    let entry: SessionEntry = serde_json::from_str(json).expect("should deserialize assistant entry");
+    let entry: SessionEntry =
+        serde_json::from_str(json).expect("should deserialize assistant entry");
     match &entry {
         SessionEntry::Assistant(a) => {
             assert_eq!(a.meta.uuid, "def-456");
@@ -82,7 +83,8 @@ fn deserialize_progress_entry() {
         "isSidechain": false,
         "data": { "type": "hook_progress", "status": "running" }
     }"#;
-    let entry: SessionEntry = serde_json::from_str(json).expect("should deserialize progress entry");
+    let entry: SessionEntry =
+        serde_json::from_str(json).expect("should deserialize progress entry");
     match &entry {
         SessionEntry::Progress(p) => {
             assert_eq!(p.meta.uuid, "prog-001");
