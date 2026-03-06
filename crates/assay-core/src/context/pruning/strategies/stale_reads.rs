@@ -109,9 +109,7 @@ fn extract_read_path(entry: &ParsedEntry) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use assay_types::context::{
-        AssistantEntry, EntryMetadata, ProgressEntry, UserEntry,
-    };
+    use assay_types::context::{AssistantEntry, EntryMetadata, ProgressEntry, UserEntry};
 
     fn make_meta() -> EntryMetadata {
         EntryMetadata {
@@ -253,10 +251,7 @@ mod tests {
 
     #[test]
     fn non_read_user_entries_not_affected() {
-        let entries = vec![
-            make_user_text(1, 50),
-            make_user_text(2, 60),
-        ];
+        let entries = vec![make_user_text(1, 50), make_user_text(2, 60)];
         let result = stale_reads(entries, PrescriptionTier::Standard, &HashSet::new());
         assert_eq!(result.entries.len(), 2);
         assert_eq!(result.lines_removed, 0);
