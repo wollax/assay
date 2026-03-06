@@ -5,12 +5,49 @@
 //! repeatedly throughout a session. This strategy removes duplicate entries,
 //! keeping only the last occurrence of each unique reminder.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
-use assay_types::context::PrescriptionTier;
+use regex_lite::Regex;
+
+use assay_types::context::{ContentBlock, PrescriptionTier, PruneSample, SessionEntry};
 
 use super::super::super::parser::ParsedEntry;
 use super::super::strategy::StrategyResult;
+
+/// Extract system reminder text from an entry, if present.
+///
+/// Checks both assistant content blocks (typed `ContentBlock::Text`) and
+/// user message array blocks (untyped JSON with `"type": "text"`).
+/// Returns the full text block content as the dedup key.
+fn extract_reminder_text(entry: &ParsedEntry, re: &Regex) -> Option<String> {
+    match &entry.entry {
+        SessionEntry::Assistant(a) => {
+            let msg = a.message.as_ref()?;
+            for block in &msg.content {
+                if let ContentBlock::Text { text } = block
+                    && re.is_match(text)
+                {
+                    return Some(text.clone());
+                }
+            }
+            None
+        }
+        SessionEntry::User(u) => {
+            let msg = u.message.as_ref()?;
+            let blocks = msg.as_array()?;
+            for block in blocks {
+                if block.get("type").and_then(|t| t.as_str()) == Some("text")
+                    && let Some(text) = block.get("text").and_then(|t| t.as_str())
+                    && re.is_match(text)
+                {
+                    return Some(text.to_string());
+                }
+            }
+            None
+        }
+        _ => None,
+    }
+}
 
 /// Remove entries containing duplicate system reminders, keeping only the last
 /// occurrence of each unique reminder.
@@ -21,11 +58,63 @@ use super::super::strategy::StrategyResult;
 ///
 /// Protected entries are preserved and counted in `protected_skipped`.
 pub fn system_reminder_dedup(
-    _entries: Vec<ParsedEntry>,
+    entries: Vec<ParsedEntry>,
     _tier: PrescriptionTier,
-    _protected: &HashSet<usize>,
+    protected: &HashSet<usize>,
 ) -> StrategyResult {
-    todo!()
+    let re = Regex::new(r"<system-reminder>").expect("valid regex");
+
+    // Pass 1: reverse scan to find the last occurrence of each unique reminder.
+    let mut last_occurrence: HashMap<String, usize> = HashMap::new();
+    for entry in entries.iter().rev() {
+        if let Some(text) = extract_reminder_text(entry, &re) {
+            last_occurrence.entry(text).or_insert(entry.line_number);
+        }
+    }
+
+    // Build the set of line numbers that are the "last" for their reminder.
+    let keep_lines: HashSet<usize> = last_occurrence.values().copied().collect();
+
+    // Pass 2: forward scan, removing duplicates.
+    let mut result_entries = Vec::with_capacity(entries.len());
+    let mut lines_removed: usize = 0;
+    let mut bytes_saved: u64 = 0;
+    let mut protected_skipped: usize = 0;
+    let mut samples: Vec<PruneSample> = Vec::new();
+
+    for entry in entries {
+        let reminder_text = extract_reminder_text(&entry, &re);
+
+        if reminder_text.is_some() && !keep_lines.contains(&entry.line_number) {
+            // This is a duplicate (not the last occurrence).
+            if protected.contains(&entry.line_number) {
+                protected_skipped += 1;
+                result_entries.push(entry);
+            } else {
+                let entry_bytes = entry.raw_bytes as u64;
+                if samples.len() < 3 {
+                    samples.push(PruneSample {
+                        line_number: entry.line_number,
+                        description: "Duplicate system reminder".into(),
+                        bytes: entry_bytes,
+                    });
+                }
+                bytes_saved += entry_bytes;
+                lines_removed += 1;
+            }
+        } else {
+            result_entries.push(entry);
+        }
+    }
+
+    StrategyResult {
+        entries: result_entries,
+        lines_removed,
+        lines_modified: 0,
+        bytes_saved,
+        protected_skipped,
+        samples,
+    }
 }
 
 #[cfg(test)]
@@ -133,8 +222,7 @@ mod tests {
             make_assistant_no_reminder(2),
             make_user_plain(3),
         ];
-        let result =
-            system_reminder_dedup(entries, PrescriptionTier::Gentle, &HashSet::new());
+        let result = system_reminder_dedup(entries, PrescriptionTier::Gentle, &HashSet::new());
         assert_eq!(result.entries.len(), 3);
         assert_eq!(result.lines_removed, 0);
         assert_eq!(result.bytes_saved, 0);
@@ -147,8 +235,7 @@ mod tests {
             make_assistant_with_reminder(2, "Remember this"),
             make_user_plain(3),
         ];
-        let result =
-            system_reminder_dedup(entries, PrescriptionTier::Gentle, &HashSet::new());
+        let result = system_reminder_dedup(entries, PrescriptionTier::Gentle, &HashSet::new());
         assert_eq!(result.entries.len(), 3);
         assert_eq!(result.lines_removed, 0);
     }
@@ -161,8 +248,7 @@ mod tests {
             make_assistant_with_reminder(3, "Remember this"),
         ];
         let original_bytes = entries[0].raw_bytes;
-        let result =
-            system_reminder_dedup(entries, PrescriptionTier::Gentle, &HashSet::new());
+        let result = system_reminder_dedup(entries, PrescriptionTier::Gentle, &HashSet::new());
         assert_eq!(result.entries.len(), 2);
         // Line 1 should be removed (first occurrence), line 3 kept (last)
         assert_eq!(result.entries[0].line_number, 2); // plain user
@@ -178,8 +264,7 @@ mod tests {
             make_assistant_with_reminder(2, "Same reminder"),
             make_assistant_with_reminder(3, "Same reminder"),
         ];
-        let result =
-            system_reminder_dedup(entries, PrescriptionTier::Gentle, &HashSet::new());
+        let result = system_reminder_dedup(entries, PrescriptionTier::Gentle, &HashSet::new());
         assert_eq!(result.entries.len(), 1);
         assert_eq!(result.entries[0].line_number, 3);
         assert_eq!(result.lines_removed, 2);
@@ -193,8 +278,7 @@ mod tests {
             make_assistant_with_reminder(3, "Reminder A"),
             make_assistant_with_reminder(4, "Reminder B"),
         ];
-        let result =
-            system_reminder_dedup(entries, PrescriptionTier::Gentle, &HashSet::new());
+        let result = system_reminder_dedup(entries, PrescriptionTier::Gentle, &HashSet::new());
         assert_eq!(result.entries.len(), 2);
         assert_eq!(result.entries[0].line_number, 3); // last A
         assert_eq!(result.entries[1].line_number, 4); // last B
@@ -208,8 +292,7 @@ mod tests {
             make_user_plain(2),
             make_assistant_with_reminder(3, "Check this"),
         ];
-        let result =
-            system_reminder_dedup(entries, PrescriptionTier::Gentle, &HashSet::new());
+        let result = system_reminder_dedup(entries, PrescriptionTier::Gentle, &HashSet::new());
         assert_eq!(result.entries.len(), 2);
         assert_eq!(result.lines_removed, 1);
     }
@@ -221,8 +304,7 @@ mod tests {
             make_user_plain(2),
             make_user_with_reminder(3, "User reminder"),
         ];
-        let result =
-            system_reminder_dedup(entries, PrescriptionTier::Gentle, &HashSet::new());
+        let result = system_reminder_dedup(entries, PrescriptionTier::Gentle, &HashSet::new());
         assert_eq!(result.entries.len(), 2);
         assert_eq!(result.entries[0].line_number, 2); // plain
         assert_eq!(result.entries[1].line_number, 3); // last reminder
@@ -238,8 +320,7 @@ mod tests {
             make_user_plain(2),
             make_assistant_with_reminder(3, "Protected"),
         ];
-        let result =
-            system_reminder_dedup(entries, PrescriptionTier::Gentle, &protected);
+        let result = system_reminder_dedup(entries, PrescriptionTier::Gentle, &protected);
         // Line 1 is protected so kept even though it's a duplicate
         assert_eq!(result.entries.len(), 3);
         assert_eq!(result.protected_skipped, 1);
@@ -253,8 +334,7 @@ mod tests {
             make_assistant_with_reminder(2, "Dedup me"),
         ];
         let first_bytes = entries[0].raw_bytes as u64;
-        let result =
-            system_reminder_dedup(entries, PrescriptionTier::Gentle, &HashSet::new());
+        let result = system_reminder_dedup(entries, PrescriptionTier::Gentle, &HashSet::new());
         assert_eq!(result.bytes_saved, first_bytes);
         assert_eq!(result.lines_removed, 1);
     }
