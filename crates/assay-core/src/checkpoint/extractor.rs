@@ -43,10 +43,9 @@ pub fn extract_team_state(
         .flatten()
         .map(|usage| {
             let context_tokens = usage.context_tokens();
-            let context_window =
-                crate::context::extract_usage(&entries)
-                    .map(|_| 200_000u64)
-                    .unwrap_or(200_000);
+            let context_window = crate::context::extract_usage(&entries)
+                .map(|_| 200_000u64)
+                .unwrap_or(200_000);
             let utilization_pct = if context_window > 0 {
                 (context_tokens as f64 / context_window as f64) * 100.0
             } else {
@@ -125,17 +124,18 @@ pub(crate) fn extract_agents(entries: &[ParsedEntry]) -> Vec<AgentState> {
                     if let Some(data) = &p.data
                         && let Some(agent_id) = data.get("agentId").and_then(|a| a.as_str())
                     {
-                        let agent = agents.entry(agent_id.to_string()).or_insert_with(|| {
-                            AgentState {
-                                agent_id: agent_id.to_string(),
-                                model: None,
-                                status: AgentStatus::Active,
-                                current_task: None,
-                                working_dir: None,
-                                is_sidechain: true,
-                                last_activity: None,
-                            }
-                        });
+                        let agent =
+                            agents
+                                .entry(agent_id.to_string())
+                                .or_insert_with(|| AgentState {
+                                    agent_id: agent_id.to_string(),
+                                    model: None,
+                                    status: AgentStatus::Active,
+                                    current_task: None,
+                                    working_dir: None,
+                                    is_sidechain: true,
+                                    last_activity: None,
+                                });
                         agent.last_activity = Some(p.meta.timestamp.clone());
                         if p.meta.cwd.is_some() {
                             agent.working_dir = p.meta.cwd.clone();
@@ -220,14 +220,9 @@ pub(crate) fn extract_tasks(entries: &[ParsedEntry]) -> Vec<TaskState> {
                 }
                 "TaskUpdate" => {
                     if let Some(input) = input {
-                        let task_id_str = input
-                            .get("taskId")
-                            .and_then(|s| s.as_str())
-                            .unwrap_or("");
-                        let status_str = input
-                            .get("status")
-                            .and_then(|s| s.as_str())
-                            .unwrap_or("");
+                        let task_id_str =
+                            input.get("taskId").and_then(|s| s.as_str()).unwrap_or("");
+                        let status_str = input.get("status").and_then(|s| s.as_str()).unwrap_or("");
 
                         let status = match status_str {
                             "in_progress" => TaskStatus::InProgress,
@@ -299,11 +294,7 @@ mod tests {
         AssistantEntry, AssistantMessage, EntryMetadata, ProgressEntry, SystemEntry,
     };
 
-    fn make_meta(
-        is_sidechain: bool,
-        timestamp: &str,
-        cwd: Option<&str>,
-    ) -> EntryMetadata {
+    fn make_meta(is_sidechain: bool, timestamp: &str, cwd: Option<&str>) -> EntryMetadata {
         EntryMetadata {
             uuid: "test-uuid".into(),
             timestamp: timestamp.into(),
@@ -560,20 +551,18 @@ mod tests {
     #[test]
     fn solo_agent_produces_valid_checkpoint() {
         // Only primary agent entries, no sidechain
-        let entries = vec![
-            make_parsed(
-                SessionEntry::Assistant(AssistantEntry {
-                    meta: make_meta(false, "2026-03-06T10:00:00Z", Some("/project")),
-                    message: Some(AssistantMessage {
-                        model: Some("claude-opus-4-6".into()),
-                        content: vec![],
-                        usage: None,
-                        stop_reason: None,
-                    }),
+        let entries = vec![make_parsed(
+            SessionEntry::Assistant(AssistantEntry {
+                meta: make_meta(false, "2026-03-06T10:00:00Z", Some("/project")),
+                message: Some(AssistantMessage {
+                    model: Some("claude-opus-4-6".into()),
+                    content: vec![],
+                    usage: None,
+                    stop_reason: None,
                 }),
-                1,
-            ),
-        ];
+            }),
+            1,
+        )];
 
         let agents = extract_agents(&entries);
         assert_eq!(agents.len(), 1);

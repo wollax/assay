@@ -35,10 +35,7 @@ pub struct CheckpointEntry {
 /// at most 50 entries.
 ///
 /// Returns the path to the archived copy.
-pub fn save_checkpoint(
-    assay_dir: &Path,
-    checkpoint: &TeamCheckpoint,
-) -> crate::Result<PathBuf> {
+pub fn save_checkpoint(assay_dir: &Path, checkpoint: &TeamCheckpoint) -> crate::Result<PathBuf> {
     let checkpoints_dir = assay_dir.join("checkpoints");
     let archive_dir = checkpoints_dir.join("archive");
 
@@ -77,21 +74,17 @@ pub fn save_checkpoint(
 pub fn load_latest_checkpoint(assay_dir: &Path) -> crate::Result<TeamCheckpoint> {
     let latest_path = assay_dir.join("checkpoints").join("latest.md");
 
-    let content = std::fs::read_to_string(&latest_path).map_err(|e| {
-        AssayError::CheckpointRead {
+    let content =
+        std::fs::read_to_string(&latest_path).map_err(|e| AssayError::CheckpointRead {
             path: latest_path.clone(),
             message: format!("reading file: {e}"),
-        }
-    })?;
+        })?;
 
     parse_frontmatter(&latest_path, &content)
 }
 
 /// List archived checkpoints, sorted newest first.
-pub fn list_checkpoints(
-    assay_dir: &Path,
-    limit: usize,
-) -> crate::Result<Vec<CheckpointEntry>> {
+pub fn list_checkpoints(assay_dir: &Path, limit: usize) -> crate::Result<Vec<CheckpointEntry>> {
     let archive_dir = assay_dir.join("checkpoints").join("archive");
 
     if !archive_dir.is_dir() {
@@ -104,11 +97,7 @@ pub fn list_checkpoints(
             message: format!("reading archive directory: {e}"),
         })?
         .filter_map(|e| e.ok())
-        .filter(|e| {
-            e.path()
-                .extension()
-                .is_some_and(|ext| ext == "md")
-        })
+        .filter(|e| e.path().extension().is_some_and(|ext| ext == "md"))
         .map(|e| e.path())
         .collect();
 
@@ -226,10 +215,12 @@ fn parse_frontmatter(path: &Path, content: &str) -> crate::Result<TeamCheckpoint
 
     // Skip first ---
     let after_first = &trimmed[3..].trim_start_matches('\n');
-    let end_pos = after_first.find("\n---").ok_or_else(|| AssayError::CheckpointRead {
-        path: path.to_path_buf(),
-        message: "missing closing frontmatter delimiter".into(),
-    })?;
+    let end_pos = after_first
+        .find("\n---")
+        .ok_or_else(|| AssayError::CheckpointRead {
+            path: path.to_path_buf(),
+            message: "missing closing frontmatter delimiter".into(),
+        })?;
 
     let frontmatter = &after_first[..end_pos];
 
@@ -267,10 +258,12 @@ fn atomic_write(path: &Path, content: &str) -> crate::Result<()> {
             message: format!("syncing file: {e}"),
         })?;
 
-    tmpfile.persist(path).map_err(|e| AssayError::CheckpointWrite {
-        path: path.to_path_buf(),
-        message: format!("persisting file: {e}"),
-    })?;
+    tmpfile
+        .persist(path)
+        .map_err(|e| AssayError::CheckpointWrite {
+            path: path.to_path_buf(),
+            message: format!("persisting file: {e}"),
+        })?;
 
     Ok(())
 }
@@ -283,11 +276,7 @@ fn prune_archive(archive_dir: &Path) -> crate::Result<()> {
             message: format!("reading archive for pruning: {e}"),
         })?
         .filter_map(|e| e.ok())
-        .filter(|e| {
-            e.path()
-                .extension()
-                .is_some_and(|ext| ext == "md")
-        })
+        .filter(|e| e.path().extension().is_some_and(|ext| ext == "md"))
         .map(|e| e.path())
         .collect();
 

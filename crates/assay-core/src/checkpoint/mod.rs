@@ -9,4 +9,4 @@ pub mod persistence;
 
 pub use config::{discover_team_config, merge_team_config};
 pub use extractor::extract_team_state;
-pub use persistence::{list_checkpoints, load_latest_checkpoint, save_checkpoint, CheckpointEntry};
+pub use persistence::{CheckpointEntry, list_checkpoints, load_latest_checkpoint, save_checkpoint};

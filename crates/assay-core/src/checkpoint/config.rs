@@ -178,7 +178,10 @@ mod tests {
         merge_team_config(&mut checkpoint, Some(&team_config));
 
         // Verify session-extracted data is preserved
-        assert_eq!(checkpoint.agents[0].model.as_deref(), Some("claude-opus-4-6"));
+        assert_eq!(
+            checkpoint.agents[0].model.as_deref(),
+            Some("claude-opus-4-6")
+        );
         assert_eq!(checkpoint.agents[0].status, AgentStatus::Active);
     }
 }
