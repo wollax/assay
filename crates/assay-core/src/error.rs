@@ -180,6 +180,24 @@ pub enum AssayError {
         /// The parse error message.
         message: String,
     },
+
+    /// Checkpoint file write failed.
+    #[error("writing checkpoint at `{path}`: {message}")]
+    CheckpointWrite {
+        /// The file path that failed to write.
+        path: PathBuf,
+        /// Description of the write error.
+        message: String,
+    },
+
+    /// Checkpoint file read or parse failed.
+    #[error("reading checkpoint at `{path}`: {message}")]
+    CheckpointRead {
+        /// The file path that failed to read or parse.
+        path: PathBuf,
+        /// Description of the read/parse error.
+        message: String,
+    },
 }
 
 /// Convenience result alias for Assay operations.
