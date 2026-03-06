@@ -78,9 +78,7 @@ fn trim_user_message(message: &serde_json::Value) -> Option<serde_json::Value> {
 ///
 /// Returns `Some((new_message, cloned_meta))` if any tool result blocks were
 /// trimmed, `None` if the entry is not a user entry or has no trimmable content.
-fn extract_trimmed_message(
-    entry: &ParsedEntry,
-) -> Option<(serde_json::Value, EntryMetadata)> {
+fn extract_trimmed_message(entry: &ParsedEntry) -> Option<(serde_json::Value, EntryMetadata)> {
     let SessionEntry::User(u) = &entry.entry else {
         return None;
     };

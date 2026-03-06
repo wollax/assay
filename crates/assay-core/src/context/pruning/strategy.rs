@@ -22,20 +22,6 @@ pub struct StrategyResult {
     pub samples: Vec<PruneSample>,
 }
 
-impl StrategyResult {
-    /// Create a no-op result that passes entries through unchanged.
-    fn noop(entries: Vec<ParsedEntry>) -> Self {
-        Self {
-            entries,
-            lines_removed: 0,
-            lines_modified: 0,
-            bytes_saved: 0,
-            protected_skipped: 0,
-            samples: Vec::new(),
-        }
-    }
-}
-
 /// Apply a pruning strategy to a set of parsed entries.
 ///
 /// Dispatches to the appropriate strategy function. Protected line numbers
@@ -50,7 +36,11 @@ pub fn apply_strategy(
         PruneStrategy::ProgressCollapse => {
             super::strategies::progress_collapse::progress_collapse(entries, _tier, _protected)
         }
-        PruneStrategy::SystemReminderDedup => StrategyResult::noop(entries),
+        PruneStrategy::SystemReminderDedup => {
+            super::strategies::system_reminder_dedup::system_reminder_dedup(
+                entries, _tier, _protected,
+            )
+        }
         PruneStrategy::MetadataStrip => {
             super::strategies::metadata_strip::metadata_strip(entries, _tier, _protected)
         }
