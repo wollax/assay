@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 2026-03-02)
 
 ## Current Position
 
-Phase: 18 — CLI Hardening & Enforcement Surface
-Plan: 01 of 2 (complete)
-Status: In progress
-Last activity: 2026-03-06 — Completed 18-01-PLAN.md
+Phase: 18 — CLI Hardening & Enforcement Surface (COMPLETE)
+Plan: 02 of 2 (complete)
+Status: Phase complete
+Last activity: 2026-03-06 — Completed 18-02-PLAN.md
 
-Progress: v0.2.0 [███████░  ] ~58%
+Progress: v0.2.0 [████████░ ] ~62%
 
 ## Milestone Progress
 
@@ -138,6 +138,12 @@ v0.2.0 decisions (from 18-01 execution):
 - Bare invocation outside project returns Ok(1) not Err (expected condition, not error)
 - Gate business logic failures return Ok(1) (exit code) not Err (error propagation)
 
+v0.2.0 decisions (from 18-02 execution):
+- counters.failed tracks only required failures; counters.warned tracks advisory failures
+- Advisory criteria always labeled [advisory] in streaming output (pass or fail)
+- Summary line includes warned category between failed and skipped
+- Post-hoc has_required_failure tracking removed; exit code driven by counters.failed > 0
+
 ### Pending Issues
 
 38 open issues (expanded from 30 after Phase 8-10 PR reviews)
@@ -148,10 +154,10 @@ None.
 
 ### Next Actions
 
-Phase 18 Plan 01 complete. Next: Phase 18 Plan 02 — Enforcement Surface & CLI Output
+Phase 18 complete. Next: Phase 19
 
 ### Session Continuity
 
 Last session: 2026-03-06
-Stopped at: Completed 18-01-PLAN.md
+Stopped at: Completed 18-02-PLAN.md
 Resume file: None
