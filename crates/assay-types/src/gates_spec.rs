@@ -317,4 +317,43 @@ unknown_crit_key = true
             Some(CriterionKind::AgentReport)
         );
     }
+
+    #[test]
+    fn gates_spec_gate_section_toml_roundtrip() {
+        let spec = GatesSpec {
+            name: "gated-spec".to_string(),
+            description: "Spec with gate section".to_string(),
+            gate: Some(GateSection {
+                enforcement: Enforcement::Advisory,
+            }),
+            criteria: vec![GateCriterion {
+                name: "check".to_string(),
+                description: "A check".to_string(),
+                cmd: Some("echo ok".to_string()),
+                path: None,
+                timeout: None,
+                enforcement: None,
+                kind: None,
+                prompt: None,
+                requirements: vec![],
+            }],
+        };
+
+        let toml_str = toml::to_string(&spec).expect("serialize to TOML");
+        assert!(
+            toml_str.contains("[gate]"),
+            "TOML should include [gate] section, got:\n{toml_str}"
+        );
+        assert!(
+            toml_str.contains("advisory"),
+            "TOML should include advisory enforcement, got:\n{toml_str}"
+        );
+
+        let roundtripped: GatesSpec = toml::from_str(&toml_str).expect("deserialize from TOML");
+        assert_eq!(spec, roundtripped);
+        assert_eq!(
+            roundtripped.gate.unwrap().enforcement,
+            Enforcement::Advisory
+        );
+    }
 }

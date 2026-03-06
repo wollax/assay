@@ -64,3 +64,49 @@ inventory::submit! {
         generate: || schemars::schema_for!(EnforcementSummary),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn enforcement_invalid_value_deser_fails() {
+        let result = toml::from_str::<Enforcement>(r#""strict""#);
+        assert!(
+            result.is_err(),
+            "invalid enforcement value 'strict' should fail deserialization"
+        );
+    }
+
+    #[test]
+    fn enforcement_toml_roundtrip_via_gate_section() {
+        // TOML cannot serialize a bare enum at top level — use GateSection as wrapper.
+        let section = GateSection {
+            enforcement: Enforcement::Advisory,
+        };
+        let toml_str = toml::to_string(&section).expect("serialize");
+        assert!(
+            toml_str.contains("advisory"),
+            "TOML should contain advisory, got:\n{toml_str}"
+        );
+        let roundtripped: GateSection = toml::from_str(&toml_str).expect("deserialize");
+        assert_eq!(section, roundtripped);
+
+        // Also test Required
+        let section_req = GateSection {
+            enforcement: Enforcement::Required,
+        };
+        let toml_str_req = toml::to_string(&section_req).expect("serialize");
+        let roundtripped_req: GateSection = toml::from_str(&toml_str_req).expect("deserialize");
+        assert_eq!(section_req, roundtripped_req);
+    }
+
+    #[test]
+    fn enforcement_json_roundtrip() {
+        for e in [Enforcement::Required, Enforcement::Advisory] {
+            let json = serde_json::to_string(&e).expect("serialize");
+            let roundtripped: Enforcement = serde_json::from_str(&json).expect("deserialize");
+            assert_eq!(e, roundtripped);
+        }
+    }
+}
