@@ -745,16 +745,17 @@ fn stream_criterion(
     }
 }
 
-/// Print a gate summary line (pass/fail/skip counts).
+/// Print a gate summary line (pass/fail/warn/skip counts).
 fn print_gate_summary(counters: &StreamCounters, color: bool, label: &str) {
-    let total = counters.passed + counters.failed + counters.skipped;
+    let total = counters.passed + counters.failed + counters.warned + counters.skipped;
     let passed_str = format_count(counters.passed, "\x1b[32m", color);
     let failed_str = format_count(counters.failed, "\x1b[31m", color);
+    let warned_str = format_count(counters.warned, "\x1b[33m", color);
     let skipped_str = format_count(counters.skipped, "\x1b[33m", color);
 
     println!();
     println!(
-        "{label}: {passed_str} passed, {failed_str} failed, {skipped_str} skipped (of {total} total)"
+        "{label}: {passed_str} passed, {failed_str} failed, {warned_str} warned, {skipped_str} skipped (of {total} total)"
     );
 }
 
