@@ -10,9 +10,9 @@ See: .planning/PROJECT.md (updated 2026-03-02)
 ## Current Position
 
 Phase: 20 — Session JSONL Parser & Token Diagnostics
-Plan: 01 of 5 (complete)
-Status: Context types module created in assay-types
-Last activity: 2026-03-06 — Plan 20-01 executed (context types)
+Plan: 02 of 5 (complete)
+Status: Session diagnostics engine implemented in assay-core
+Last activity: 2026-03-06 — Plan 20-02 executed (session diagnostics engine)
 
 Progress: v0.2.0 [█████████░] ~71%
 
@@ -149,6 +149,12 @@ v0.2.0 decisions (from 19-02 execution):
 - Integration tests require --test-threads=1 due to CWD dependency
 - Insta snapshots use manual normalization (no redactions feature)
 
+v0.2.0 decisions (from 20-02 execution):
+- `sessions_from_history()` and `estimate_tokens_from_bytes()` are public API marked `#[allow(dead_code)]` until consumed by CLI/MCP
+- Stale read detection uses HashSet of file_path strings; second read of same path counts as stale
+- `deny.toml` updated: MPL-2.0 allowed (option-ext via dirs-sys), getrandom@0.2 skipped (redox_users via dirs-sys)
+- Context module constants (`DEFAULT_CONTEXT_WINDOW`, `SYSTEM_OVERHEAD_TOKENS`) are `pub(super)` for intra-module sharing
+
 ### Pending Issues
 
 19 open issues (reduced from 38 after triaging 19 test-related issues in 19-02)
@@ -159,10 +165,10 @@ None.
 
 ### Next Actions
 
-Phase 20 plan 01 complete. Next: Plan 20-02 (JSONL parser in assay-core)
+Phase 20 plan 02 complete. Next: Plan 20-03 (CLI context commands)
 
 ### Session Continuity
 
 Last session: 2026-03-06
-Stopped at: Completed 20-01-PLAN.md (context types)
+Stopped at: Completed 20-02-PLAN.md (session diagnostics engine)
 Resume file: None
