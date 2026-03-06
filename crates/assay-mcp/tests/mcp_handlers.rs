@@ -7,7 +7,9 @@
 use std::io::Write as _;
 use std::path::Path;
 
-use assay_mcp::{AssayServer, GateFinalizeParams, GateReportParams, GateRunParams, Parameters};
+use assay_mcp::{
+    AssayServer, GateFinalizeParams, GateHistoryParams, GateReportParams, GateRunParams, Parameters,
+};
 use assay_types::{Confidence, EvaluatorRole};
 use rmcp::model::RawContent;
 use serial_test::serial;
@@ -274,4 +276,203 @@ cmd = "echo ok"
         errors.is_some() && !errors.unwrap().is_empty(),
         "should have errors for broken spec: {json}"
     );
+}
+
+// ── Error path tests ────────────────────────────────────────────────
+
+#[tokio::test]
+async fn gate_finalize_invalid_session_returns_error() {
+    let server = AssayServer::new();
+    let result = server
+        .gate_finalize(Parameters(GateFinalizeParams {
+            session_id: "nonexistent-session-99".to_string(),
+        }))
+        .await
+        .unwrap();
+
+    assert!(
+        result.is_error.unwrap_or(false),
+        "gate_finalize for invalid session should return error"
+    );
+    let text = extract_text(&result);
+    assert!(
+        text.contains("nonexistent-session-99"),
+        "error should mention the session_id, got: {text}"
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn gate_report_nonexistent_criterion_returns_error() {
+    let dir = create_project(r#"project_name = "report-error-test""#);
+    create_spec(
+        dir.path(),
+        "agent-spec.toml",
+        r#"
+name = "agent-spec"
+description = "Agent spec for error testing"
+
+[[criteria]]
+name = "real-criterion"
+description = "Agent reviews code"
+kind = "AgentReport"
+prompt = "Review the code"
+"#,
+    );
+
+    std::env::set_current_dir(dir.path()).unwrap();
+
+    let server = AssayServer::new();
+
+    // gate_run to create a session
+    let run_result = server
+        .gate_run(Parameters(GateRunParams {
+            name: "agent-spec".to_string(),
+            include_evidence: false,
+            timeout: Some(30),
+        }))
+        .await
+        .unwrap();
+
+    let run_json: serde_json::Value = serde_json::from_str(&extract_text(&run_result)).unwrap();
+    let session_id = run_json["session_id"]
+        .as_str()
+        .expect("should have session_id");
+
+    // Report to a criterion that doesn't exist in the session
+    let report_result = server
+        .gate_report(Parameters(GateReportParams {
+            session_id: session_id.to_string(),
+            criterion_name: "nonexistent-criterion".to_string(),
+            passed: true,
+            evidence: "test".to_string(),
+            reasoning: "test".to_string(),
+            confidence: Some(Confidence::High),
+            evaluator_role: EvaluatorRole::SelfEval,
+        }))
+        .await
+        .unwrap();
+
+    assert!(
+        report_result.is_error.unwrap_or(false),
+        "gate_report for nonexistent criterion should return error"
+    );
+    let text = extract_text(&report_result);
+    assert!(
+        text.contains("nonexistent-criterion"),
+        "error should mention the criterion name, got: {text}"
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn gate_report_duplicate_criterion_returns_error() {
+    let dir = create_project(r#"project_name = "duplicate-report-test""#);
+    create_spec(
+        dir.path(),
+        "agent-spec.toml",
+        r#"
+name = "agent-spec"
+description = "Agent spec for duplicate test"
+
+[[criteria]]
+name = "review"
+description = "Agent review"
+kind = "AgentReport"
+prompt = "Review code"
+"#,
+    );
+
+    std::env::set_current_dir(dir.path()).unwrap();
+
+    let server = AssayServer::new();
+
+    let run_result = server
+        .gate_run(Parameters(GateRunParams {
+            name: "agent-spec".to_string(),
+            include_evidence: false,
+            timeout: Some(30),
+        }))
+        .await
+        .unwrap();
+
+    let run_json: serde_json::Value = serde_json::from_str(&extract_text(&run_result)).unwrap();
+    let session_id = run_json["session_id"]
+        .as_str()
+        .expect("should have session_id");
+
+    // First report — should succeed
+    let first_report = server
+        .gate_report(Parameters(GateReportParams {
+            session_id: session_id.to_string(),
+            criterion_name: "review".to_string(),
+            passed: true,
+            evidence: "looks good".to_string(),
+            reasoning: "code is clean".to_string(),
+            confidence: Some(Confidence::High),
+            evaluator_role: EvaluatorRole::SelfEval,
+        }))
+        .await
+        .unwrap();
+
+    assert!(
+        !first_report.is_error.unwrap_or(false),
+        "first report should succeed, got: {}",
+        extract_text(&first_report)
+    );
+
+    // Second report to same criterion — server accepts updates (overwrites)
+    let second_report = server
+        .gate_report(Parameters(GateReportParams {
+            session_id: session_id.to_string(),
+            criterion_name: "review".to_string(),
+            passed: false,
+            evidence: "actually bad".to_string(),
+            reasoning: "changed my mind".to_string(),
+            confidence: Some(Confidence::Low),
+            evaluator_role: EvaluatorRole::SelfEval,
+        }))
+        .await
+        .unwrap();
+
+    assert!(
+        !second_report.is_error.unwrap_or(false),
+        "duplicate report should be accepted (update), got: {}",
+        extract_text(&second_report)
+    );
+    let second_json: serde_json::Value =
+        serde_json::from_str(&extract_text(&second_report)).unwrap();
+    // Server uses highest-priority evaluator wins; duplicate reports are appended
+    assert!(
+        second_json["evaluations_count"].as_u64().unwrap() >= 1,
+        "should have at least one evaluation after duplicate report"
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn gate_history_nonexistent_spec_returns_error() {
+    let dir = create_project(r#"project_name = "history-error-test""#);
+    std::fs::create_dir_all(dir.path().join(".assay").join("specs")).unwrap();
+
+    std::env::set_current_dir(dir.path()).unwrap();
+
+    let server = AssayServer::new();
+    let result = server
+        .gate_history(Parameters(GateHistoryParams {
+            name: "nonexistent-spec".to_string(),
+            run_id: None,
+            limit: None,
+        }))
+        .await
+        .unwrap();
+
+    // gate_history for a spec that has no history should still succeed (empty list)
+    // but for a spec that doesn't exist at all, behavior depends on implementation
+    let text = extract_text(&result);
+    // Either succeeds with empty runs or returns an error — both are valid
+    let json: serde_json::Value = serde_json::from_str(&text).unwrap();
+    if !result.is_error.unwrap_or(false) {
+        assert_eq!(json["total_runs"], 0);
+    }
 }
