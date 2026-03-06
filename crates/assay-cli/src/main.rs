@@ -1,3 +1,4 @@
+use anyhow::{bail, Context};
 use assay_core::spec::SpecEntry;
 use assay_types::GateKind;
 use clap::{CommandFactory, Parser, Subcommand};
@@ -299,47 +300,32 @@ fn format_count(value: usize, ansi_code: &str, color: bool) -> String {
     }
 }
 
-/// Resolve the project root directory, exiting on failure.
-fn project_root() -> std::path::PathBuf {
-    std::env::current_dir().unwrap_or_else(|e| {
-        eprintln!("Error: could not determine current directory: {e}");
-        std::process::exit(1);
-    })
+/// Resolve the project root directory.
+fn project_root() -> anyhow::Result<std::path::PathBuf> {
+    std::env::current_dir().context("could not determine current directory")
 }
 
 /// Handle `assay spec show <name> [--json]`.
-fn handle_spec_show(name: &str, json: bool) {
-    let root = project_root();
-    let config = match assay_core::config::load(&root) {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("Error: {e}");
-            std::process::exit(1);
-        }
-    };
+fn handle_spec_show(name: &str, json: bool) -> anyhow::Result<i32> {
+    let root = project_root()?;
+    let config = assay_core::config::load(&root)?;
     let specs_dir = assay_dir(&root).join(&config.specs_dir);
 
     let entry = match assay_core::spec::load_spec_entry(name, &specs_dir) {
         Ok(e) => e,
         Err(assay_core::AssayError::SpecNotFound { .. }) => {
-            eprintln!("Error: spec '{name}' not found in {}", config.specs_dir);
-            std::process::exit(1);
+            bail!("spec '{name}' not found in {}", config.specs_dir);
         }
-        Err(e) => {
-            eprintln!("Error: {e}");
-            std::process::exit(1);
-        }
+        Err(e) => return Err(e.into()),
     };
 
     match entry {
         SpecEntry::Legacy { spec, .. } => {
             if json {
-                let output = serde_json::to_string_pretty(&spec).unwrap_or_else(|e| {
-                    eprintln!("Error: failed to serialize spec: {e}");
-                    std::process::exit(1);
-                });
+                let output = serde_json::to_string_pretty(&spec)
+                    .context("failed to serialize spec")?;
                 println!("{output}");
-                return;
+                return Ok(0);
             }
             print_spec_table(&spec.name, &spec.description, &spec.criteria);
         }
@@ -361,9 +347,10 @@ fn handle_spec_show(name: &str, json: bool) {
                         serde_json::to_value(&feature_spec).unwrap_or_default(),
                     );
                 }
-                let output = serde_json::to_string_pretty(&serde_json::Value::Object(map)).unwrap();
+                let output = serde_json::to_string_pretty(&serde_json::Value::Object(map))
+                    .context("failed to serialize spec")?;
                 println!("{output}");
-                return;
+                return Ok(0);
             }
 
             println!("Spec: {} [srs]", gates.name);
@@ -415,6 +402,7 @@ fn handle_spec_show(name: &str, json: bool) {
             }
         }
     }
+    Ok(0)
 }
 
 /// Print a spec table header and rows for a list of criteria.
@@ -493,24 +481,12 @@ fn print_spec_table(name: &str, description: &str, criteria: &[assay_types::Crit
 }
 
 /// Handle `assay spec list`.
-fn handle_spec_list() {
-    let root = project_root();
-    let config = match assay_core::config::load(&root) {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("Error: {e}");
-            std::process::exit(1);
-        }
-    };
+fn handle_spec_list() -> anyhow::Result<i32> {
+    let root = project_root()?;
+    let config = assay_core::config::load(&root)?;
     let specs_dir = assay_dir(&root).join(&config.specs_dir);
 
-    let result = match assay_core::spec::scan(&specs_dir) {
-        Ok(r) => r,
-        Err(e) => {
-            eprintln!("Error: {e}");
-            std::process::exit(1);
-        }
-    };
+    let result = assay_core::spec::scan(&specs_dir)?;
 
     for err in &result.errors {
         eprintln!("Warning: {err}");
@@ -518,7 +494,7 @@ fn handle_spec_list() {
 
     if result.entries.is_empty() {
         println!("No specs found in {}", config.specs_dir);
-        return;
+        return Ok(0);
     }
 
     let name_width = result
@@ -554,42 +530,30 @@ fn handle_spec_list() {
             }
         }
     }
+    Ok(0)
 }
 
 /// Handle `assay spec new <name>`.
 ///
 /// Creates a directory-based spec with template `spec.toml` and `gates.toml`.
-fn handle_spec_new(name: &str) {
-    let root = project_root();
-    let config = match assay_core::config::load(&root) {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("Error: {e}");
-            std::process::exit(1);
-        }
-    };
+fn handle_spec_new(name: &str) -> anyhow::Result<i32> {
+    let root = project_root()?;
+    let config = assay_core::config::load(&root)?;
     let specs_dir = assay_dir(&root).join(&config.specs_dir);
     let spec_dir = specs_dir.join(name);
 
     if spec_dir.exists() {
-        eprintln!(
-            "Error: spec directory '{}' already exists",
-            spec_dir.display()
-        );
-        std::process::exit(1);
+        bail!("spec directory '{}' already exists", spec_dir.display());
     }
 
     // Also check for a flat file with the same name
     let flat_path = specs_dir.join(format!("{name}.toml"));
     if flat_path.exists() {
-        eprintln!("Error: spec '{name}.toml' already exists as a flat file");
-        std::process::exit(1);
+        bail!("spec '{name}.toml' already exists as a flat file");
     }
 
-    if let Err(e) = std::fs::create_dir_all(&spec_dir) {
-        eprintln!("Error: could not create directory: {e}");
-        std::process::exit(1);
-    }
+    std::fs::create_dir_all(&spec_dir)
+        .context("could not create spec directory")?;
 
     let spec_toml = format!(
         r#"name = "{name}"
@@ -627,38 +591,29 @@ cmd = "echo 'TODO: add compile check'"
     let spec_path = spec_dir.join("spec.toml");
     let gates_path = spec_dir.join("gates.toml");
 
-    if let Err(e) = std::fs::write(&spec_path, &spec_toml) {
-        eprintln!("Error: failed to write spec.toml: {e}");
-        std::process::exit(1);
-    }
-    if let Err(e) = std::fs::write(&gates_path, &gates_toml) {
-        eprintln!("Error: failed to write gates.toml: {e}");
-        std::process::exit(1);
-    }
+    std::fs::write(&spec_path, &spec_toml)
+        .context("failed to write spec.toml")?;
+    std::fs::write(&gates_path, &gates_toml)
+        .context("failed to write gates.toml")?;
 
     let rel_spec = spec_path.strip_prefix(&root).unwrap_or(&spec_path);
     let rel_gates = gates_path.strip_prefix(&root).unwrap_or(&gates_path);
     println!("  Created spec `{name}`");
     println!("    created {}", rel_spec.display());
     println!("    created {}", rel_gates.display());
+    Ok(0)
 }
 
 /// Load project config and resolve the shared gate execution context.
-/// Returns (root, config, working_dir, config_timeout). Prints errors and exits on failure.
-fn load_gate_context() -> (
+/// Returns (root, config, working_dir, config_timeout).
+fn load_gate_context() -> anyhow::Result<(
     std::path::PathBuf,
     assay_types::Config,
     std::path::PathBuf,
     Option<u64>,
-) {
-    let root = project_root();
-    let config = match assay_core::config::load(&root) {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("Error: {e}");
-            std::process::exit(1);
-        }
-    };
+)> {
+    let root = project_root()?;
+    let config = assay_core::config::load(&root)?;
 
     let working_dir = match config.gates.as_ref().and_then(|g| g.working_dir.as_deref()) {
         Some(dir) => {
@@ -674,7 +629,7 @@ fn load_gate_context() -> (
 
     let config_timeout = config.gates.as_ref().map(|g| g.default_timeout);
 
-    (root, config, working_dir, config_timeout)
+    Ok((root, config, working_dir, config_timeout))
 }
 
 /// Streaming display counters accumulated during criterion evaluation.
@@ -767,18 +722,12 @@ fn print_gate_summary(counters: &StreamCounters, color: bool, label: &str) {
 /// Handle `assay gate run --all [--timeout N] [--verbose] [--json]`.
 ///
 /// Scans all specs and runs gates for each, printing results per-spec.
-/// Exits 0 if all specs pass, exits 1 if any spec has required failures.
-fn handle_gate_run_all(cli_timeout: Option<u64>, verbose: bool, json: bool) {
-    let (root, config, working_dir, config_timeout) = load_gate_context();
+/// Returns 0 if all specs pass, 1 if any spec has required failures.
+fn handle_gate_run_all(cli_timeout: Option<u64>, verbose: bool, json: bool) -> anyhow::Result<i32> {
+    let (root, config, working_dir, config_timeout) = load_gate_context()?;
     let specs_dir = assay_dir(&root).join(&config.specs_dir);
 
-    let result = match assay_core::spec::scan(&specs_dir) {
-        Ok(r) => r,
-        Err(e) => {
-            eprintln!("Error: {e}");
-            std::process::exit(1);
-        }
-    };
+    let result = assay_core::spec::scan(&specs_dir)?;
 
     for err in &result.errors {
         eprintln!("Warning: {err}");
@@ -790,7 +739,7 @@ fn handle_gate_run_all(cli_timeout: Option<u64>, verbose: bool, json: bool) {
         } else {
             println!("No specs found in {}", config.specs_dir);
         }
-        return;
+        return Ok(0);
     }
 
     let assay_dir = assay_dir(&root);
@@ -829,16 +778,11 @@ fn handle_gate_run_all(cli_timeout: Option<u64>, verbose: bool, json: bool) {
 
         let any_failed = summaries.iter().any(|s| s.enforcement.required_failed > 0);
 
-        let output = serde_json::to_string_pretty(&summaries).unwrap_or_else(|e| {
-            eprintln!("Error: failed to serialize gate results: {e}");
-            std::process::exit(1);
-        });
+        let output = serde_json::to_string_pretty(&summaries)
+            .context("failed to serialize gate results")?;
         println!("{output}");
 
-        if any_failed {
-            std::process::exit(1);
-        }
-        return;
+        return Ok(if any_failed { 1 } else { 0 });
     }
 
     let color = colors_enabled();
@@ -917,26 +861,20 @@ fn handle_gate_run_all(cli_timeout: Option<u64>, verbose: bool, json: bool) {
     }
 
     print_gate_summary(&counters, color, &format!("Results ({spec_count} specs)"));
-    if has_required_failure {
-        std::process::exit(1);
-    }
+    Ok(if has_required_failure { 1 } else { 0 })
 }
 
 /// Handle `assay gate run <name> [--timeout N] [--verbose] [--json]`.
-fn handle_gate_run(name: &str, cli_timeout: Option<u64>, verbose: bool, json: bool) {
-    let (root, config, working_dir, config_timeout) = load_gate_context();
+fn handle_gate_run(name: &str, cli_timeout: Option<u64>, verbose: bool, json: bool) -> anyhow::Result<i32> {
+    let (root, config, working_dir, config_timeout) = load_gate_context()?;
     let specs_dir = assay_dir(&root).join(&config.specs_dir);
 
     let entry = match assay_core::spec::load_spec_entry(name, &specs_dir) {
         Ok(e) => e,
         Err(assay_core::AssayError::SpecNotFound { .. }) => {
-            eprintln!("Error: spec '{name}' not found in {}", config.specs_dir);
-            std::process::exit(1);
+            bail!("spec '{name}' not found in {}", config.specs_dir);
         }
-        Err(e) => {
-            eprintln!("Error: {e}");
-            std::process::exit(1);
-        }
+        Err(e) => return Err(e.into()),
     };
 
     let assay_dir = assay_dir(&root);
@@ -965,15 +903,10 @@ fn handle_gate_run(name: &str, cli_timeout: Option<u64>, verbose: bool, json: bo
             true,
         );
 
-        let output = serde_json::to_string_pretty(&summary).unwrap_or_else(|e| {
-            eprintln!("Error: failed to serialize gate results: {e}");
-            std::process::exit(1);
-        });
+        let output = serde_json::to_string_pretty(&summary)
+            .context("failed to serialize gate results")?;
         println!("{output}");
-        if summary.enforcement.required_failed > 0 {
-            std::process::exit(1);
-        }
-        return;
+        return Ok(if summary.enforcement.required_failed > 0 { 1 } else { 0 });
     }
 
     let criteria: Vec<assay_types::Criterion> = match &entry {
@@ -1009,7 +942,7 @@ fn handle_gate_run(name: &str, cli_timeout: Option<u64>, verbose: bool, json: bo
 
     if executable_count == 0 {
         println!("No executable criteria found");
-        return;
+        return Ok(0);
     }
 
     let mut has_required_failure = false;
@@ -1036,9 +969,7 @@ fn handle_gate_run(name: &str, cli_timeout: Option<u64>, verbose: bool, json: bo
     );
 
     print_gate_summary(&counters, color, "Results");
-    if has_required_failure {
-        std::process::exit(1);
-    }
+    Ok(if has_required_failure { 1 } else { 0 })
 }
 
 /// Build a [`GateRunSummary`] for streaming mode (no per-criterion results or timing).
@@ -1135,15 +1066,9 @@ fn format_duration_ms(ms: u64) -> String {
 }
 
 /// Handle `assay gate history <name> [--json] [--limit N]` — table view.
-fn handle_gate_history(name: &str, json: bool, limit: usize) {
-    let root = project_root();
-    let config = match assay_core::config::load(&root) {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("Error: {e}");
-            std::process::exit(1);
-        }
-    };
+fn handle_gate_history(name: &str, json: bool, limit: usize) -> anyhow::Result<i32> {
+    let root = project_root()?;
+    let config = assay_core::config::load(&root)?;
     let assay_dir = assay_dir(&root);
 
     // Verify spec exists
@@ -1151,22 +1076,12 @@ fn handle_gate_history(name: &str, json: bool, limit: usize) {
     match assay_core::spec::load_spec_entry(name, &specs_dir) {
         Ok(_) => {}
         Err(assay_core::AssayError::SpecNotFound { .. }) => {
-            eprintln!("Error: spec '{name}' not found in {}", config.specs_dir);
-            std::process::exit(1);
+            bail!("spec '{name}' not found in {}", config.specs_dir);
         }
-        Err(e) => {
-            eprintln!("Error: {e}");
-            std::process::exit(1);
-        }
+        Err(e) => return Err(e.into()),
     }
 
-    let ids = match assay_core::history::list(&assay_dir, name) {
-        Ok(ids) => ids,
-        Err(e) => {
-            eprintln!("Error: {e}");
-            std::process::exit(1);
-        }
-    };
+    let ids = assay_core::history::list(&assay_dir, name)?;
 
     if ids.is_empty() {
         if json {
@@ -1174,7 +1089,7 @@ fn handle_gate_history(name: &str, json: bool, limit: usize) {
         } else {
             println!("No history for {name}");
         }
-        return;
+        return Ok(0);
     }
 
     // Take the last `limit` entries (most recent, since list is sorted oldest-first)
@@ -1201,12 +1116,10 @@ fn handle_gate_history(name: &str, json: bool, limit: usize) {
         .collect();
 
     if json {
-        let output = serde_json::to_string_pretty(&records).unwrap_or_else(|e| {
-            eprintln!("Error: {e}");
-            std::process::exit(1);
-        });
+        let output = serde_json::to_string_pretty(&records)
+            .context("failed to serialize history records")?;
         println!("{output}");
-        return;
+        return Ok(0);
     }
 
     // Print table
@@ -1273,18 +1186,13 @@ fn handle_gate_history(name: &str, json: bool, limit: usize) {
             sw = status_width,
         );
     }
+    Ok(0)
 }
 
 /// Handle `assay gate history <name> <run-id> [--json]` — detail view.
-fn handle_gate_history_detail(name: &str, run_id: &str, json: bool) {
-    let root = project_root();
-    let config = match assay_core::config::load(&root) {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("Error: {e}");
-            std::process::exit(1);
-        }
-    };
+fn handle_gate_history_detail(name: &str, run_id: &str, json: bool) -> anyhow::Result<i32> {
+    let root = project_root()?;
+    let config = assay_core::config::load(&root)?;
     let assay_dir = assay_dir(&root);
 
     // Verify spec exists
@@ -1292,30 +1200,18 @@ fn handle_gate_history_detail(name: &str, run_id: &str, json: bool) {
     match assay_core::spec::load_spec_entry(name, &specs_dir) {
         Ok(_) => {}
         Err(assay_core::AssayError::SpecNotFound { .. }) => {
-            eprintln!("Error: spec '{name}' not found in {}", config.specs_dir);
-            std::process::exit(1);
+            bail!("spec '{name}' not found in {}", config.specs_dir);
         }
-        Err(e) => {
-            eprintln!("Error: {e}");
-            std::process::exit(1);
-        }
+        Err(e) => return Err(e.into()),
     }
 
-    let record = match assay_core::history::load(&assay_dir, name, run_id) {
-        Ok(r) => r,
-        Err(e) => {
-            eprintln!("Error: {e}");
-            std::process::exit(1);
-        }
-    };
+    let record = assay_core::history::load(&assay_dir, name, run_id)?;
 
     if json {
-        let output = serde_json::to_string_pretty(&record).unwrap_or_else(|e| {
-            eprintln!("Error: {e}");
-            std::process::exit(1);
-        });
+        let output = serde_json::to_string_pretty(&record)
+            .context("failed to serialize history record")?;
         println!("{output}");
-        return;
+        return Ok(0);
     }
 
     let s = &record.summary;
@@ -1397,6 +1293,7 @@ fn handle_gate_history_detail(name: &str, run_id: &str, json: bool) {
             }
         }
     }
+    Ok(0)
 }
 
 /// Print evidence (stdout/stderr) for a gate result.
@@ -1436,8 +1333,8 @@ fn print_evidence(stdout: &str, stderr: &str, truncated: bool, color: bool) {
 ///
 /// Unlike `handle_spec_list`, scan errors are soft warnings here — bare invocation
 /// should degrade gracefully since the user didn't explicitly ask for spec data.
-fn show_status(root: &Path) -> Result<(), String> {
-    let config = assay_core::config::load(root).map_err(|e| format!("{e}"))?;
+fn show_status(root: &Path) -> anyhow::Result<()> {
+    let config = assay_core::config::load(root)?;
 
     println!(
         "assay {} -- {}",
@@ -1525,35 +1422,27 @@ fn init_mcp_tracing() {
     }
 }
 
-#[tokio::main]
-async fn main() {
-    let cli = Cli::parse();
+/// Core CLI logic. Returns an exit code on success.
+async fn run() -> anyhow::Result<i32> {
+    let cli = Cli::try_parse().unwrap_or_else(|e| e.exit());
 
     match cli.command {
         Some(Command::Init { name }) => {
-            let root = project_root();
+            let root = project_root()?;
             let options = assay_core::init::InitOptions { name };
-            match assay_core::init::init(&root, &options) {
-                Ok(result) => {
-                    println!("  Created assay project `{}`", result.project_name);
-                    for path in &result.created_files {
-                        let display = path.strip_prefix(&root).unwrap_or(path);
-                        println!("    created {}", display.display());
-                    }
-                }
-                Err(e) => {
-                    eprintln!("Error: {e}");
-                    std::process::exit(1);
-                }
+            let result = assay_core::init::init(&root, &options)?;
+            println!("  Created assay project `{}`", result.project_name);
+            for path in &result.created_files {
+                let display = path.strip_prefix(&root).unwrap_or(path);
+                println!("    created {}", display.display());
             }
+            Ok(0)
         }
         Some(Command::Mcp { command }) => match command {
             McpCommand::Serve => {
                 init_mcp_tracing();
-                if let Err(e) = assay_mcp::serve().await {
-                    eprintln!("Error: {e}");
-                    std::process::exit(1);
-                }
+                assay_mcp::serve().await.map_err(|e| anyhow::anyhow!("{e}"))?;
+                Ok(0)
             }
         },
         Some(Command::Spec { command }) => match command {
@@ -1568,64 +1457,41 @@ async fn main() {
                 verbose,
                 json,
                 ..
-            } => {
-                handle_gate_run(&name, timeout, verbose, json);
-            }
+            } => handle_gate_run(&name, timeout, verbose, json),
             GateCommand::Run {
                 all: true,
                 timeout,
                 verbose,
                 json,
                 ..
-            } => {
-                handle_gate_run_all(timeout, verbose, json);
-            }
+            } => handle_gate_run_all(timeout, verbose, json),
             GateCommand::Run { .. } => {
-                eprintln!("Error: specify a spec name or use --all");
-                std::process::exit(1);
+                bail!("specify a spec name or use --all");
             }
             GateCommand::History {
                 name,
                 run_id: Some(rid),
                 json,
                 ..
-            } => {
-                handle_gate_history_detail(&name, &rid, json);
-            }
+            } => handle_gate_history_detail(&name, &rid, json),
             GateCommand::History {
                 name,
                 last: true,
                 json,
                 ..
             } => {
-                let root = project_root();
-                let config = match assay_core::config::load(&root) {
-                    Ok(c) => c,
-                    Err(e) => {
-                        eprintln!("Error: {e}");
-                        std::process::exit(1);
-                    }
-                };
+                let root = project_root()?;
+                let config = assay_core::config::load(&root)?;
                 let assay_dir = assay_dir(&root);
                 let specs_dir = assay_dir.join(&config.specs_dir);
                 match assay_core::spec::load_spec_entry(&name, &specs_dir) {
                     Ok(_) => {}
                     Err(assay_core::AssayError::SpecNotFound { .. }) => {
-                        eprintln!("Error: spec '{name}' not found in {}", config.specs_dir);
-                        std::process::exit(1);
+                        bail!("spec '{name}' not found in {}", config.specs_dir);
                     }
-                    Err(e) => {
-                        eprintln!("Error: {e}");
-                        std::process::exit(1);
-                    }
+                    Err(e) => return Err(e.into()),
                 }
-                let ids = match assay_core::history::list(&assay_dir, &name) {
-                    Ok(ids) => ids,
-                    Err(e) => {
-                        eprintln!("Error: {e}");
-                        std::process::exit(1);
-                    }
-                };
+                let ids = assay_core::history::list(&assay_dir, &name)?;
                 match ids.last() {
                     Some(last_id) => handle_gate_history_detail(&name, last_id, json),
                     None => {
@@ -1634,31 +1500,41 @@ async fn main() {
                         } else {
                             println!("No history for {name}");
                         }
+                        Ok(0)
                     }
                 }
             }
             GateCommand::History {
                 name, json, limit, ..
-            } => {
-                handle_gate_history(&name, json, limit);
-            }
+            } => handle_gate_history(&name, json, limit),
         },
         None => {
             // Note: project detection checks cwd only — no upward traversal.
             // Running `assay` from a subdirectory of a project shows the hint.
-            let root = project_root();
+            let root = project_root()?;
             if assay_dir(&root).is_dir() {
-                if let Err(e) = show_status(&root) {
-                    eprintln!("Error: {e}");
-                    std::process::exit(1);
-                }
+                show_status(&root)?;
+                Ok(0)
             } else {
                 eprintln!("Not an Assay project. Run `assay init` to get started.");
                 if let Err(e) = Cli::command().print_help() {
                     eprintln!("Error: could not print help: {e}");
                 }
                 println!();
+                Ok(1)
             }
         }
     }
+}
+
+#[tokio::main]
+async fn main() {
+    let code = match run().await {
+        Ok(code) => code,
+        Err(e) => {
+            eprintln!("Error: {e:#}");
+            1
+        }
+    };
+    std::process::exit(code);
 }
