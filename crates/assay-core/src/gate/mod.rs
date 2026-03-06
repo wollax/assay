@@ -1614,4 +1614,38 @@ mod tests {
         assert_eq!(summary.enforcement.advisory_passed, 0);
         assert_eq!(summary.enforcement.advisory_failed, 1);
     }
+
+    #[test]
+    fn evaluate_all_gates_captures_spawn_failure() {
+        let dir = tempfile::tempdir().unwrap();
+        let gates = GatesSpec {
+            name: "bad-gates-cmd".to_string(),
+            description: String::new(),
+            gate: None,
+            criteria: vec![GateCriterion {
+                name: "impossible".to_string(),
+                description: "nonexistent binary".to_string(),
+                cmd: Some("/nonexistent/binary/that/does/not/exist".to_string()),
+                path: None,
+                timeout: None,
+                enforcement: None,
+                kind: None,
+                prompt: None,
+                requirements: vec![],
+            }],
+        };
+
+        let summary = evaluate_all_gates(&gates, dir.path(), None, None);
+
+        assert_eq!(
+            summary.failed, 1,
+            "spawn failure should count as failed in gates path"
+        );
+        let result = summary.results[0].result.as_ref().unwrap();
+        assert!(!result.passed, "spawn failure should not pass");
+        assert!(
+            !result.stderr.is_empty(),
+            "stderr should contain error message"
+        );
+    }
 }

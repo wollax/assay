@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 2026-03-02)
 
 ## Current Position
 
-Phase: 18 — CLI Hardening & Enforcement Surface (VERIFIED & COMPLETE)
-Plan: 02 of 2 (complete)
+Phase: 19 — Testing & Tooling (VERIFIED & COMPLETE)
+Plan: 03 of 3 (complete)
 Status: Phase complete, verified, moved to completed/
-Last activity: 2026-03-05 — Phase 18 verified and completed
+Last activity: 2026-03-06 — Phase 19 verified and completed
 
-Progress: v0.2.0 [████████░ ] ~62%
+Progress: v0.2.0 [█████████░] ~69%
 
 ## Milestone Progress
 
@@ -144,9 +144,14 @@ v0.2.0 decisions (from 18-02 execution):
 - Summary line includes warned category between failed and skipped
 - Post-hoc has_required_failure tracking removed; exit code driven by counters.failed > 0
 
+v0.2.0 decisions (from 19-02 execution):
+- MCP handler methods and param types made pub for integration test access
+- Integration tests require --test-threads=1 due to CWD dependency
+- Insta snapshots use manual normalization (no redactions feature)
+
 ### Pending Issues
 
-38 open issues (expanded from 30 after Phase 8-10 PR reviews)
+19 open issues (reduced from 38 after triaging 19 test-related issues in 19-02)
 
 ### Blockers
 
@@ -154,10 +159,10 @@ None.
 
 ### Next Actions
 
-Phase 18 verified and complete. Next: Phase 19 — Testing & Tooling
+Phase 19 verified and complete. Next: Phase 20 — Session JSONL Parser & Token Diagnostics
 
 ### Session Continuity
 
 Last session: 2026-03-06
-Stopped at: Completed 18-02-PLAN.md
+Stopped at: Completed 19-03-PLAN.md (phase 19 complete)
 Resume file: None

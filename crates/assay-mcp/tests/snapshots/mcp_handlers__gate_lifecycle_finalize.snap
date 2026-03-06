@@ -1,0 +1,15 @@
+---
+source: crates/assay-mcp/tests/mcp_handlers.rs
+assertion_line: 165
+expression: "{\n    let mut snap = finalize_json.clone(); snap[\"run_id\"] =\n    serde_json::json!(\"[run_id]\"); snap\n}"
+---
+{
+  "advisory_failed": 0,
+  "failed": 0,
+  "passed": 1,
+  "persisted": true,
+  "required_failed": 0,
+  "run_id": "[run_id]",
+  "skipped": 1,
+  "spec_name": "mixed-spec"
+}

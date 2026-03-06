@@ -36,20 +36,20 @@ use assay_types::{
 
 /// Parameters for the `spec_get` tool.
 #[derive(Deserialize, JsonSchema)]
-struct SpecGetParams {
+pub struct SpecGetParams {
     /// The spec to retrieve.
     #[schemars(description = "Spec name (filename without .toml extension, e.g. 'auth-flow')")]
-    name: String,
+    pub name: String,
 }
 
 /// Parameters for the `gate_run` tool.
 #[derive(Deserialize, JsonSchema)]
-struct GateRunParams {
+pub struct GateRunParams {
     /// The spec whose criteria to evaluate.
     #[schemars(
         description = "Spec name to evaluate gates for (filename without .toml extension, e.g. 'auth-flow')"
     )]
-    name: String,
+    pub name: String,
 
     /// Whether to include full evidence in the response.
     #[schemars(
@@ -58,7 +58,7 @@ struct GateRunParams {
             When true, adds stdout and stderr fields to each criterion result."
     )]
     #[serde(default)]
-    include_evidence: bool,
+    pub include_evidence: bool,
 
     /// Maximum seconds to wait for gate evaluation.
     #[schemars(
@@ -66,72 +66,72 @@ struct GateRunParams {
             Returns a timeout error if exceeded."
     )]
     #[serde(default)]
-    timeout: Option<u64>,
+    pub timeout: Option<u64>,
 }
 
 /// Parameters for the `gate_report` tool.
 #[derive(Deserialize, JsonSchema)]
-struct GateReportParams {
+pub struct GateReportParams {
     /// Session ID returned by gate_run.
     #[schemars(description = "Session ID returned by gate_run")]
-    session_id: String,
+    pub session_id: String,
 
     /// Name of the criterion being evaluated (must match a criterion in the spec).
     #[schemars(
         description = "Name of the criterion being evaluated (must match a criterion in the spec)"
     )]
-    criterion_name: String,
+    pub criterion_name: String,
 
     /// Whether the criterion passed.
     #[schemars(description = "Whether the criterion passed")]
-    passed: bool,
+    pub passed: bool,
 
     /// What the agent observed (concrete facts).
     #[schemars(description = "What the agent observed (concrete facts)")]
-    evidence: String,
+    pub evidence: String,
 
     /// Why those facts lead to pass/fail.
     #[schemars(description = "Why those facts lead to pass/fail")]
-    reasoning: String,
+    pub reasoning: String,
 
     /// Confidence in the evaluation (high, medium, low).
     #[schemars(description = "Confidence in the evaluation (high, medium, low)")]
     #[serde(default)]
-    confidence: Option<Confidence>,
+    pub confidence: Option<Confidence>,
 
     /// Role of the evaluator (self, independent, human).
     #[schemars(description = "Role of the evaluator (self, independent, human)")]
-    evaluator_role: EvaluatorRole,
+    pub evaluator_role: EvaluatorRole,
 }
 
 /// Parameters for the `gate_finalize` tool.
 #[derive(Deserialize, JsonSchema)]
-struct GateFinalizeParams {
+pub struct GateFinalizeParams {
     /// Session ID to finalize.
     #[schemars(description = "Session ID to finalize")]
-    session_id: String,
+    pub session_id: String,
 }
 
 /// Parameters for the `gate_history` tool.
 #[derive(Deserialize, JsonSchema)]
-struct GateHistoryParams {
+pub struct GateHistoryParams {
     /// Spec name to query history for.
     #[schemars(description = "Spec name to query history for (filename without .toml extension)")]
-    name: String,
+    pub name: String,
 
     /// Optional run ID to retrieve a specific record. When omitted, returns a list of recent runs.
     #[schemars(
         description = "Specific run ID to retrieve full details for. Omit to list recent runs."
     )]
     #[serde(default)]
-    run_id: Option<String>,
+    pub run_id: Option<String>,
 
     /// Maximum number of runs to return in list mode (default: 10).
     #[schemars(
         description = "Maximum number of runs to return (default: 10, ignored when run_id is set)"
     )]
     #[serde(default)]
-    limit: Option<usize>,
+    pub limit: Option<usize>,
 }
 
 // ── Response structs ─────────────────────────────────────────────────
@@ -314,7 +314,7 @@ impl AssayServer {
     #[tool(
         description = "List all specs in the current Assay project. Returns {specs, errors?} where specs is an array of {name, description?, criteria_count, format, has_feature_spec?} objects and errors lists any spec files that failed to parse. Use this to discover available specs before calling spec_get or gate_run."
     )]
-    async fn spec_list(&self) -> Result<CallToolResult, McpError> {
+    pub async fn spec_list(&self) -> Result<CallToolResult, McpError> {
         let cwd = resolve_cwd()?;
         let config = match load_config(&cwd) {
             Ok(c) => c,
@@ -372,7 +372,7 @@ impl AssayServer {
     #[tool(
         description = "Get a spec by name. Returns the full spec definition as JSON. For legacy specs: {format, name, description, criteria}. For directory specs: {format, gates, feature_spec?}. Use spec_list first to find available spec names."
     )]
-    async fn spec_get(
+    pub async fn spec_get(
         &self,
         params: Parameters<SpecGetParams>,
     ) -> Result<CallToolResult, McpError> {
@@ -419,7 +419,7 @@ impl AssayServer {
     #[tool(
         description = "Run quality gate checks for a spec. Evaluates all executable criteria (shell commands, file checks) and returns pass/fail status per criterion with enforcement-level counts (required_passed, required_failed, advisory_passed, advisory_failed) and a blocked flag. Set timeout (seconds, default 300) to limit evaluation time. Set include_evidence=true for full stdout/stderr. If the spec contains agent-evaluated criteria (kind=AgentReport), a session_id and pending_criteria are returned — use gate_report for each, then gate_finalize to persist."
     )]
-    async fn gate_run(
+    pub async fn gate_run(
         &self,
         params: Parameters<GateRunParams>,
     ) -> Result<CallToolResult, McpError> {
@@ -551,7 +551,7 @@ impl AssayServer {
     #[tool(
         description = "Submit an agent evaluation for a single criterion in an active gate session. Call gate_run first to start a session, then gate_report for each agent-evaluated criterion, then gate_finalize to persist results."
     )]
-    async fn gate_report(
+    pub async fn gate_report(
         &self,
         params: Parameters<GateReportParams>,
     ) -> Result<CallToolResult, McpError> {
@@ -608,7 +608,7 @@ impl AssayServer {
     #[tool(
         description = "Finalize an active gate session, persisting all accumulated evaluations as a GateRunRecord. Missing required criteria cause the gate to fail. Call this after submitting all gate_report evaluations."
     )]
-    async fn gate_finalize(
+    pub async fn gate_finalize(
         &self,
         params: Parameters<GateFinalizeParams>,
     ) -> Result<CallToolResult, McpError> {
@@ -664,7 +664,7 @@ impl AssayServer {
     #[tool(
         description = "Query gate run history for a spec. Without run_id, returns a list of recent runs with summary counts. With run_id, returns the full gate run record including all criterion results. Use this to check past gate outcomes and track quality trends."
     )]
-    async fn gate_history(
+    pub async fn gate_history(
         &self,
         params: Parameters<GateHistoryParams>,
     ) -> Result<CallToolResult, McpError> {
@@ -985,6 +985,7 @@ mod tests {
         CriterionResult, Enforcement, EnforcementSummary, GateKind, GateResult, GateRunSummary,
     };
     use chrono::Utc;
+    use serial_test::serial;
     use std::io::Write as _;
 
     fn sample_summary() -> GateRunSummary {
@@ -2008,6 +2009,75 @@ cmd = "echo ok"
     }
 
     #[test]
+    fn test_format_gate_response_advisory_failed_not_blocked() {
+        let summary = GateRunSummary {
+            spec_name: "advisory-fail".to_string(),
+            results: vec![
+                CriterionResult {
+                    criterion_name: "req-pass".to_string(),
+                    result: Some(GateResult {
+                        passed: true,
+                        kind: GateKind::Command {
+                            cmd: "true".to_string(),
+                        },
+                        stdout: String::new(),
+                        stderr: String::new(),
+                        exit_code: Some(0),
+                        duration_ms: 10,
+                        timestamp: Utc::now(),
+                        truncated: false,
+                        original_bytes: None,
+                        evidence: None,
+                        reasoning: None,
+                        confidence: None,
+                        evaluator_role: None,
+                    }),
+                    enforcement: Enforcement::Required,
+                },
+                CriterionResult {
+                    criterion_name: "adv-fail".to_string(),
+                    result: Some(GateResult {
+                        passed: false,
+                        kind: GateKind::Command {
+                            cmd: "false".to_string(),
+                        },
+                        stdout: String::new(),
+                        stderr: "lint warning".to_string(),
+                        exit_code: Some(1),
+                        duration_ms: 10,
+                        timestamp: Utc::now(),
+                        truncated: false,
+                        original_bytes: None,
+                        evidence: None,
+                        reasoning: None,
+                        confidence: None,
+                        evaluator_role: None,
+                    }),
+                    enforcement: Enforcement::Advisory,
+                },
+            ],
+            passed: 1,
+            failed: 1,
+            skipped: 0,
+            total_duration_ms: 20,
+            enforcement: EnforcementSummary {
+                required_passed: 1,
+                required_failed: 0,
+                advisory_passed: 0,
+                advisory_failed: 1,
+            },
+        };
+
+        let response = format_gate_response(&summary, false);
+        assert_eq!(response.advisory_failed, 1);
+        assert_eq!(response.required_failed, 0);
+        assert!(
+            !response.blocked,
+            "blocked should be false when advisory fails but required passes"
+        );
+    }
+
+    #[test]
     fn test_gate_run_params_with_timeout() {
         let json = serde_json::json!({
             "name": "test-spec",
@@ -2135,5 +2205,339 @@ cmd = "echo ok"
             !nonexistent.is_dir(),
             "test precondition: path must not exist"
         );
+    }
+
+    // ── Handler test helpers ─────────────────────────────────────────
+
+    /// Extract text content from a CallToolResult for assertion purposes.
+    fn extract_text(result: &CallToolResult) -> String {
+        result
+            .content
+            .iter()
+            .filter_map(|c| match &c.raw {
+                RawContent::Text(t) => Some(t.text.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join("")
+    }
+
+    // ── Async handler tests ──────────────────────────────────────────
+
+    #[tokio::test]
+    #[serial]
+    async fn spec_list_valid_project_returns_specs() {
+        let dir = create_project(r#"project_name = "handler-test""#);
+        create_spec(
+            dir.path(),
+            "specs",
+            "auth-flow.toml",
+            r#"
+name = "auth-flow"
+description = "Authentication flow"
+
+[[criteria]]
+name = "unit-tests"
+description = "Tests pass"
+cmd = "echo ok"
+
+[[criteria]]
+name = "lint"
+description = "Lint passes"
+cmd = "echo lint-ok"
+"#,
+        );
+
+        std::env::set_current_dir(dir.path()).unwrap();
+
+        let server = AssayServer::new();
+        let result = server.spec_list().await.unwrap();
+
+        assert!(
+            !result.is_error.unwrap_or(false),
+            "spec_list should succeed"
+        );
+        let text = extract_text(&result);
+        let json: serde_json::Value = serde_json::from_str(&text).unwrap();
+
+        assert_eq!(json["specs"][0]["name"], "auth-flow");
+        assert_eq!(json["specs"][0]["criteria_count"], 2);
+        assert_eq!(json["specs"][0]["format"], "legacy");
+
+        insta::assert_json_snapshot!("spec_list_valid_project", json);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn spec_get_valid_spec_returns_content() {
+        let dir = create_project(r#"project_name = "handler-test""#);
+        create_spec(
+            dir.path(),
+            "specs",
+            "auth-flow.toml",
+            r#"
+name = "auth-flow"
+description = "Auth spec"
+
+[[criteria]]
+name = "unit-tests"
+description = "Tests pass"
+cmd = "echo ok"
+"#,
+        );
+
+        std::env::set_current_dir(dir.path()).unwrap();
+
+        let server = AssayServer::new();
+        let result = server
+            .spec_get(Parameters(SpecGetParams {
+                name: "auth-flow".to_string(),
+            }))
+            .await
+            .unwrap();
+
+        assert!(!result.is_error.unwrap_or(false), "spec_get should succeed");
+        let text = extract_text(&result);
+        let json: serde_json::Value = serde_json::from_str(&text).unwrap();
+
+        assert_eq!(json["format"], "legacy");
+        assert_eq!(json["name"], "auth-flow");
+        assert!(!json["criteria"].as_array().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn spec_get_missing_spec_returns_error() {
+        let dir = create_project(r#"project_name = "handler-test""#);
+        std::fs::create_dir_all(dir.path().join(".assay").join("specs")).unwrap();
+
+        std::env::set_current_dir(dir.path()).unwrap();
+
+        let server = AssayServer::new();
+        let result = server
+            .spec_get(Parameters(SpecGetParams {
+                name: "nonexistent".to_string(),
+            }))
+            .await
+            .unwrap();
+
+        assert!(
+            result.is_error.unwrap_or(false),
+            "spec_get for missing spec should return error"
+        );
+        let text = extract_text(&result);
+        assert!(
+            text.contains("nonexistent"),
+            "error should mention the spec name, got: {text}"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn gate_run_command_spec_returns_results() {
+        let dir = create_project(r#"project_name = "handler-test""#);
+        create_spec(
+            dir.path(),
+            "specs",
+            "cmd-spec.toml",
+            r#"
+name = "cmd-spec"
+description = "Command spec"
+
+[[criteria]]
+name = "echo-check"
+description = "Echo passes"
+cmd = "echo ok"
+"#,
+        );
+
+        std::env::set_current_dir(dir.path()).unwrap();
+
+        let server = AssayServer::new();
+        let result = server
+            .gate_run(Parameters(GateRunParams {
+                name: "cmd-spec".to_string(),
+                include_evidence: false,
+                timeout: Some(30),
+            }))
+            .await
+            .unwrap();
+
+        assert!(
+            !result.is_error.unwrap_or(false),
+            "gate_run should succeed, got: {}",
+            extract_text(&result)
+        );
+        let text = extract_text(&result);
+        let json: serde_json::Value = serde_json::from_str(&text).unwrap();
+
+        assert_eq!(json["spec_name"], "cmd-spec");
+        assert_eq!(json["passed"], 1);
+        assert_eq!(json["failed"], 0);
+        assert!(!json["blocked"].as_bool().unwrap());
+
+        // Normalize dynamic fields for snapshot stability.
+        let mut snap = json.clone();
+        snap["total_duration_ms"] = serde_json::json!("[duration]");
+        if let Some(criteria) = snap["criteria"].as_array_mut() {
+            for c in criteria {
+                if c.get("duration_ms").is_some() {
+                    c["duration_ms"] = serde_json::json!("[duration]");
+                }
+            }
+        }
+        insta::assert_json_snapshot!("gate_run_command_spec", snap);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn gate_run_nonexistent_spec_returns_error() {
+        let dir = create_project(r#"project_name = "handler-test""#);
+        std::fs::create_dir_all(dir.path().join(".assay").join("specs")).unwrap();
+
+        std::env::set_current_dir(dir.path()).unwrap();
+
+        let server = AssayServer::new();
+        let result = server
+            .gate_run(Parameters(GateRunParams {
+                name: "nonexistent".to_string(),
+                include_evidence: false,
+                timeout: None,
+            }))
+            .await
+            .unwrap();
+
+        assert!(
+            result.is_error.unwrap_or(false),
+            "gate_run for missing spec should return error"
+        );
+        let text = extract_text(&result);
+        assert!(
+            text.contains("nonexistent"),
+            "error should mention the spec name, got: {text}"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn gate_run_nonexistent_working_dir_returns_error() {
+        let dir = create_project(
+            r#"
+project_name = "handler-test"
+
+[gates]
+working_dir = "/tmp/assay-nonexistent-test-dir-99999"
+"#,
+        );
+        create_spec(
+            dir.path(),
+            "specs",
+            "cmd-spec.toml",
+            r#"
+name = "cmd-spec"
+description = "Command spec"
+
+[[criteria]]
+name = "check"
+description = "Check"
+cmd = "echo ok"
+"#,
+        );
+
+        std::env::set_current_dir(dir.path()).unwrap();
+
+        let server = AssayServer::new();
+        let result = server
+            .gate_run(Parameters(GateRunParams {
+                name: "cmd-spec".to_string(),
+                include_evidence: false,
+                timeout: None,
+            }))
+            .await
+            .unwrap();
+
+        assert!(
+            result.is_error.unwrap_or(false),
+            "gate_run with nonexistent working_dir should return error"
+        );
+        let text = extract_text(&result);
+        assert!(
+            text.contains("does not exist") || text.contains("not a directory"),
+            "error should mention missing working dir, got: {text}"
+        );
+    }
+
+    #[tokio::test]
+    async fn gate_report_invalid_session_returns_error() {
+        let server = AssayServer::new();
+        let result = server
+            .gate_report(Parameters(GateReportParams {
+                session_id: "fake-session-id-12345".to_string(),
+                criterion_name: "some-criterion".to_string(),
+                passed: true,
+                evidence: "observed something".to_string(),
+                reasoning: "therefore it passes".to_string(),
+                confidence: Some(Confidence::High),
+                evaluator_role: EvaluatorRole::SelfEval,
+            }))
+            .await
+            .unwrap();
+
+        assert!(
+            result.is_error.unwrap_or(false),
+            "gate_report for invalid session should return error"
+        );
+        let text = extract_text(&result);
+        assert!(
+            text.contains("fake-session-id-12345"),
+            "error should mention the session_id, got: {text}"
+        );
+        assert!(
+            text.contains("not found"),
+            "error should say session not found, got: {text}"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn gate_history_no_history_returns_empty() {
+        let dir = create_project(r#"project_name = "handler-test""#);
+        create_spec(
+            dir.path(),
+            "specs",
+            "no-runs.toml",
+            r#"
+name = "no-runs"
+
+[[criteria]]
+name = "check"
+description = "Check"
+cmd = "echo ok"
+"#,
+        );
+
+        std::env::set_current_dir(dir.path()).unwrap();
+
+        let server = AssayServer::new();
+        let result = server
+            .gate_history(Parameters(GateHistoryParams {
+                name: "no-runs".to_string(),
+                run_id: None,
+                limit: None,
+            }))
+            .await
+            .unwrap();
+
+        assert!(
+            !result.is_error.unwrap_or(false),
+            "gate_history should succeed even with no history, got: {}",
+            extract_text(&result)
+        );
+        let text = extract_text(&result);
+        let json: serde_json::Value = serde_json::from_str(&text).unwrap();
+
+        assert_eq!(json["spec_name"], "no-runs");
+        assert_eq!(json["total_runs"], 0);
+        assert!(json["runs"].as_array().unwrap().is_empty());
     }
 }

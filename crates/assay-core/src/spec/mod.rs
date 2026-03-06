@@ -1915,4 +1915,38 @@ cmd = "true"
             "should reject AgentReport with path, got: {errors:?}"
         );
     }
+
+    #[test]
+    fn scan_empty_directory_returns_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        let specs_dir = dir.path().join("specs");
+        std::fs::create_dir_all(&specs_dir).unwrap();
+
+        let result = scan(&specs_dir).unwrap();
+        assert!(
+            result.entries.is_empty(),
+            "empty directory should produce no entries"
+        );
+        assert!(
+            result.errors.is_empty(),
+            "empty directory should produce no errors"
+        );
+    }
+
+    #[test]
+    fn spec_error_display_format() {
+        let err = SpecError {
+            field: "criteria[0].name".to_string(),
+            message: "cannot be empty".to_string(),
+        };
+        let display = err.to_string();
+        assert!(
+            display.contains("criteria[0].name"),
+            "Display should contain field, got: {display}"
+        );
+        assert!(
+            display.contains("cannot be empty"),
+            "Display should contain message, got: {display}"
+        );
+    }
 }

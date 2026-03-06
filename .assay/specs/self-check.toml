@@ -1,0 +1,32 @@
+name = "self-check"
+description = "Assay's own quality gates — dogfooding spec"
+
+[gate]
+enforcement = "required"
+
+[[criteria]]
+name = "formatting"
+description = "Code is formatted with rustfmt"
+cmd = "cargo fmt --check"
+
+[[criteria]]
+name = "linting"
+description = "No clippy warnings"
+cmd = "cargo clippy --workspace -- -D warnings"
+
+[[criteria]]
+name = "tests"
+description = "All tests pass"
+cmd = "cargo test --workspace"
+
+[[criteria]]
+name = "deny"
+description = "Dependency policies pass (licenses, advisories, bans, sources)"
+cmd = "cargo deny check"
+
+[[criteria]]
+name = "code-quality-review"
+description = "Agent reviews code quality and architecture"
+kind = "AgentReport"
+enforcement = "advisory"
+prompt = "Review the codebase for architectural issues, code smells, and potential improvements. Focus on module boundaries, error handling patterns, and test coverage."
