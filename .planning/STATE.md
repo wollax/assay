@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 2026-03-02)
 
 ## Current Position
 
-Phase: 21 — Team State Checkpointing (VERIFIED & COMPLETE)
-Plan: 03 of 3 (complete)
-Status: Phase complete, verified, moved to completed/
-Last activity: 2026-03-06 — Phase 21 verified and completed
+Phase: 22 — Pruning Engine (IN PROGRESS)
+Plan: 01 of 5 (complete)
+Status: Plan 01 complete, plan 02 next
+Last activity: 2026-03-06 — Plan 01 executed (foundation types, module skeleton, protection set)
 
-Progress: v0.2.0 [████████████] ~85%
+Progress: v0.2.0 [████████████] ~87%
 
 ## Milestone Progress
 
@@ -170,12 +170,25 @@ v0.2.0 decisions (from 21-01 execution):
 
 None.
 
+v0.2.0 decisions (from 22-01 execution):
+- PruneStrategy::label() lives on enum in assay-types; apply_strategy() is a free function in assay-core (orphan rule)
+- ParsedEntry::update_content() re-serializes entry for content-modifying strategies
+- Protection set uses stable line_number identifiers (no re-indexing between strategies)
+
+### Pending Issues
+
+19 open issues (reduced from 38 after triaging 19 test-related issues in 19-02)
+
+### Blockers
+
+None.
+
 ### Next Actions
 
-Phase 21 verified and complete. Next: Phase 22 — Pruning Engine
+Plan 22-01 complete. Next: Plan 22-02 — Line-deletion strategies (progress-collapse, stale-reads)
 
 ### Session Continuity
 
 Last session: 2026-03-06
-Stopped at: Phase 21 verified and completed
-Resume file: None
+Stopped at: Phase 22, Plan 01 complete
+Resume file: .planning/phases/active/22-pruning-engine/22-01-SUMMARY.md
