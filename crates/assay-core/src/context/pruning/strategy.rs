@@ -52,7 +52,9 @@ pub fn apply_strategy(
         }
         PruneStrategy::SystemReminderDedup => StrategyResult::noop(entries),
         PruneStrategy::MetadataStrip => StrategyResult::noop(entries),
-        PruneStrategy::StaleReads => StrategyResult::noop(entries),
+        PruneStrategy::StaleReads => {
+            super::strategies::stale_reads::stale_reads(entries, _tier, _protected)
+        }
         PruneStrategy::ThinkingBlocks => StrategyResult::noop(entries),
         PruneStrategy::ToolOutputTrim => StrategyResult::noop(entries),
     }
