@@ -1,3 +1,4 @@
+pub mod checkpoint;
 pub mod context;
 pub mod criterion;
 pub mod enforcement;
@@ -8,6 +9,9 @@ pub mod gates_spec;
 pub mod schema_registry;
 pub mod session;
 
+pub use checkpoint::{
+    AgentState, AgentStatus, ContextHealthSnapshot, TaskState, TaskStatus, TeamCheckpoint,
+};
 pub use context::{
     BloatCategory, ContextHealth, DiagnosticsReport, SessionEntry, SessionInfo, TokenEstimate,
     UsageData,

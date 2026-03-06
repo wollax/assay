@@ -62,7 +62,10 @@
   - [x] 20-03: CLI `assay context diagnose` and `assay context list` commands
   - [x] 20-04: MCP `context_diagnose` and `estimate_tokens` tools
   - [x] 20-05: Quality gate verification and smoke tests
-- [ ] Phase 21: Team State Checkpointing
+- [x] Phase 21: Team State Checkpointing — 2026-03-06
+  - [x] 21-01: Checkpoint types (assay-types) and core extraction + persistence (assay-core)
+  - [x] 21-02: CLI `assay checkpoint save|show|list` commands
+  - [x] 21-03: Plugin checkpoint hook script and hooks.json integration
 - [ ] Phase 22: Pruning Engine
 - [ ] Phase 23: Guard Daemon & Recovery
 
@@ -73,7 +76,7 @@
 | Milestone | Status | Phases | Requirements | Complete |
 |-----------|--------|--------|--------------|----------|
 | v0.1.0 Proof of Concept | Shipped | 10 | 43 | 100% |
-| v0.2.0 Dual-Track Gates & Hardening | In Progress | 13 | 52 | 69% |
+| v0.2.0 Dual-Track Gates & Hardening | In Progress | 13 | 52 | 77% |
 | v0.3.0 | Planned | — | — | — |
 
 ---
