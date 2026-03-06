@@ -11,12 +11,13 @@
 
 mod server;
 
+#[cfg(any(test, feature = "testing"))]
 pub use server::{
     AssayServer, GateFinalizeParams, GateHistoryParams, GateReportParams, GateRunParams,
     SpecGetParams,
 };
 
-/// Re-export the `Parameters` wrapper from rmcp for use by integration tests.
+#[cfg(any(test, feature = "testing"))]
 pub use rmcp::handler::server::wrapper::Parameters;
 
 /// Start the MCP server on stdio transport.
