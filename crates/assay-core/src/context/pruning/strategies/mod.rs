@@ -7,3 +7,4 @@ pub mod metadata_strip;
 pub mod progress_collapse;
 pub mod stale_reads;
 pub mod thinking_blocks;
+pub mod tool_output_trim;
