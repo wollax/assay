@@ -10,9 +10,9 @@ See: .planning/PROJECT.md (updated 2026-03-02)
 ## Current Position
 
 Phase: 19 — Testing & Tooling
-Plan: 01 of 3
+Plan: 02 of 3
 Status: In progress
-Last activity: 2026-03-06 — Completed 19-01-PLAN.md
+Last activity: 2026-03-06 — Completed 19-02-PLAN.md
 
 Progress: v0.2.0 [████████░ ] ~62%
 
@@ -144,9 +144,14 @@ v0.2.0 decisions (from 18-02 execution):
 - Summary line includes warned category between failed and skipped
 - Post-hoc has_required_failure tracking removed; exit code driven by counters.failed > 0
 
+v0.2.0 decisions (from 19-02 execution):
+- MCP handler methods and param types made pub for integration test access
+- Integration tests require --test-threads=1 due to CWD dependency
+- Insta snapshots use manual normalization (no redactions feature)
+
 ### Pending Issues
 
-38 open issues (expanded from 30 after Phase 8-10 PR reviews)
+19 open issues (reduced from 38 after triaging 19 test-related issues in 19-02)
 
 ### Blockers
 
@@ -154,10 +159,10 @@ None.
 
 ### Next Actions
 
-Phase 19 in progress. Next: 19-02-PLAN.md (snapshot tests)
+Phase 19 in progress. Next: 19-03-PLAN.md
 
 ### Session Continuity
 
 Last session: 2026-03-06
-Stopped at: Completed 19-01-PLAN.md
+Stopped at: Completed 19-02-PLAN.md
 Resume file: None
