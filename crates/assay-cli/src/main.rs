@@ -1,4 +1,4 @@
-use anyhow::{bail, Context};
+use anyhow::{Context, bail};
 use assay_core::spec::SpecEntry;
 use assay_types::GateKind;
 use clap::{CommandFactory, Parser, Subcommand};
@@ -322,8 +322,8 @@ fn handle_spec_show(name: &str, json: bool) -> anyhow::Result<i32> {
     match entry {
         SpecEntry::Legacy { spec, .. } => {
             if json {
-                let output = serde_json::to_string_pretty(&spec)
-                    .context("failed to serialize spec")?;
+                let output =
+                    serde_json::to_string_pretty(&spec).context("failed to serialize spec")?;
                 println!("{output}");
                 return Ok(0);
             }
@@ -552,8 +552,7 @@ fn handle_spec_new(name: &str) -> anyhow::Result<i32> {
         bail!("spec '{name}.toml' already exists as a flat file");
     }
 
-    std::fs::create_dir_all(&spec_dir)
-        .context("could not create spec directory")?;
+    std::fs::create_dir_all(&spec_dir).context("could not create spec directory")?;
 
     let spec_toml = format!(
         r#"name = "{name}"
@@ -591,10 +590,8 @@ cmd = "echo 'TODO: add compile check'"
     let spec_path = spec_dir.join("spec.toml");
     let gates_path = spec_dir.join("gates.toml");
 
-    std::fs::write(&spec_path, &spec_toml)
-        .context("failed to write spec.toml")?;
-    std::fs::write(&gates_path, &gates_toml)
-        .context("failed to write gates.toml")?;
+    std::fs::write(&spec_path, &spec_toml).context("failed to write spec.toml")?;
+    std::fs::write(&gates_path, &gates_toml).context("failed to write gates.toml")?;
 
     let rel_spec = spec_path.strip_prefix(&root).unwrap_or(&spec_path);
     let rel_gates = gates_path.strip_prefix(&root).unwrap_or(&gates_path);
@@ -778,8 +775,8 @@ fn handle_gate_run_all(cli_timeout: Option<u64>, verbose: bool, json: bool) -> a
 
         let any_failed = summaries.iter().any(|s| s.enforcement.required_failed > 0);
 
-        let output = serde_json::to_string_pretty(&summaries)
-            .context("failed to serialize gate results")?;
+        let output =
+            serde_json::to_string_pretty(&summaries).context("failed to serialize gate results")?;
         println!("{output}");
 
         return Ok(if any_failed { 1 } else { 0 });
@@ -865,7 +862,12 @@ fn handle_gate_run_all(cli_timeout: Option<u64>, verbose: bool, json: bool) -> a
 }
 
 /// Handle `assay gate run <name> [--timeout N] [--verbose] [--json]`.
-fn handle_gate_run(name: &str, cli_timeout: Option<u64>, verbose: bool, json: bool) -> anyhow::Result<i32> {
+fn handle_gate_run(
+    name: &str,
+    cli_timeout: Option<u64>,
+    verbose: bool,
+    json: bool,
+) -> anyhow::Result<i32> {
     let (root, config, working_dir, config_timeout) = load_gate_context()?;
     let specs_dir = assay_dir(&root).join(&config.specs_dir);
 
@@ -903,10 +905,14 @@ fn handle_gate_run(name: &str, cli_timeout: Option<u64>, verbose: bool, json: bo
             true,
         );
 
-        let output = serde_json::to_string_pretty(&summary)
-            .context("failed to serialize gate results")?;
+        let output =
+            serde_json::to_string_pretty(&summary).context("failed to serialize gate results")?;
         println!("{output}");
-        return Ok(if summary.enforcement.required_failed > 0 { 1 } else { 0 });
+        return Ok(if summary.enforcement.required_failed > 0 {
+            1
+        } else {
+            0
+        });
     }
 
     let criteria: Vec<assay_types::Criterion> = match &entry {
@@ -1208,8 +1214,8 @@ fn handle_gate_history_detail(name: &str, run_id: &str, json: bool) -> anyhow::R
     let record = assay_core::history::load(&assay_dir, name, run_id)?;
 
     if json {
-        let output = serde_json::to_string_pretty(&record)
-            .context("failed to serialize history record")?;
+        let output =
+            serde_json::to_string_pretty(&record).context("failed to serialize history record")?;
         println!("{output}");
         return Ok(0);
     }
@@ -1343,7 +1349,7 @@ fn show_status(root: &Path) -> anyhow::Result<()> {
     );
     println!();
 
-    let specs_dir = assay_dir(&root).join(&config.specs_dir);
+    let specs_dir = assay_dir(root).join(&config.specs_dir);
     let result = match assay_core::spec::scan(&specs_dir) {
         Ok(r) => r,
         Err(e) => {
@@ -1441,7 +1447,9 @@ async fn run() -> anyhow::Result<i32> {
         Some(Command::Mcp { command }) => match command {
             McpCommand::Serve => {
                 init_mcp_tracing();
-                assay_mcp::serve().await.map_err(|e| anyhow::anyhow!("{e}"))?;
+                assay_mcp::serve()
+                    .await
+                    .map_err(|e| anyhow::anyhow!("{e}"))?;
                 Ok(0)
             }
         },
