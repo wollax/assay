@@ -1,11 +1,12 @@
 //! MCP server implementation with spec and gate tools.
 //!
-//! Provides the [`AssayServer`] which exposes five tools over MCP:
+//! Provides the [`AssayServer`] which exposes six tools over MCP:
 //! - `spec_list` — discover available specs
 //! - `spec_get` — read a full spec definition
 //! - `gate_run` — evaluate quality gate criteria (auto-creates sessions for agent criteria)
 //! - `gate_report` — submit agent evaluation for a criterion in an active session
 //! - `gate_finalize` — finalize a session, persisting all evaluations as a GateRunRecord
+//! - `gate_history` — query past gate run results for a spec
 //!
 //! All domain errors are returned as `CallToolResult` with `isError: true`
 //! so that agents can see and self-correct. Protocol errors (`McpError`)
@@ -14,6 +15,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Duration;
 
 use chrono::Utc;
 use rmcp::{
@@ -57,6 +59,14 @@ struct GateRunParams {
     )]
     #[serde(default)]
     include_evidence: bool,
+
+    /// Maximum seconds to wait for gate evaluation.
+    #[schemars(
+        description = "Maximum seconds to wait for gate evaluation (default: 300). \
+            Returns a timeout error if exceeded."
+    )]
+    #[serde(default)]
+    timeout: Option<u64>,
 }
 
 /// Parameters for the `gate_report` tool.
@@ -102,67 +112,170 @@ struct GateFinalizeParams {
     session_id: String,
 }
 
+/// Parameters for the `gate_history` tool.
+#[derive(Deserialize, JsonSchema)]
+struct GateHistoryParams {
+    /// Spec name to query history for.
+    #[schemars(description = "Spec name to query history for (filename without .toml extension)")]
+    name: String,
+
+    /// Optional run ID to retrieve a specific record. When omitted, returns a list of recent runs.
+    #[schemars(
+        description = "Specific run ID to retrieve full details for. Omit to list recent runs."
+    )]
+    #[serde(default)]
+    run_id: Option<String>,
+
+    /// Maximum number of runs to return in list mode (default: 10).
+    #[schemars(
+        description = "Maximum number of runs to return (default: 10, ignored when run_id is set)"
+    )]
+    #[serde(default)]
+    limit: Option<usize>,
+}
+
 // ── Response structs ─────────────────────────────────────────────────
 
 /// A single entry in the `spec_list` response.
 #[derive(Serialize)]
 struct SpecListEntry {
+    /// Spec name (filename stem without `.toml` extension).
     name: String,
+    /// Human-readable description of the spec. Omitted from JSON when empty.
     #[serde(skip_serializing_if = "String::is_empty")]
     description: String,
+    /// Number of criteria defined in the spec.
     criteria_count: usize,
-    /// "legacy" for flat .toml files, "directory" for directory-based specs.
+    /// Spec format: `"legacy"` for flat `.toml` files, `"directory"` for directory-based specs.
     format: String,
-    /// Whether a companion `spec.toml` (feature spec) exists.
+    /// Whether a companion `spec.toml` (feature spec) exists. Omitted from JSON when `false`.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     has_feature_spec: bool,
 }
 
-/// Aggregate gate run response.
+/// Response envelope for `spec_list`, including scan errors.
+#[derive(Serialize)]
+struct SpecListResponse {
+    /// Successfully parsed specs.
+    specs: Vec<SpecListEntry>,
+    /// Spec files that failed to parse. Omitted from JSON when empty.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    errors: Vec<SpecListError>,
+}
+
+/// A spec file that failed to parse during scanning.
+#[derive(Serialize)]
+struct SpecListError {
+    /// Human-readable error description including the filename and parse error.
+    message: String,
+}
+
+/// Aggregate gate run response returned by the `gate_run` tool.
 #[derive(Serialize)]
 struct GateRunResponse {
+    /// Name of the spec that was evaluated.
     spec_name: String,
+    /// Total number of criteria that passed.
     passed: usize,
+    /// Total number of criteria that failed.
     failed: usize,
+    /// Number of criteria skipped (descriptive-only, no command or path).
     skipped: usize,
+    /// Number of required-enforcement criteria that passed.
+    required_passed: usize,
+    /// Number of required-enforcement criteria that failed.
     required_failed: usize,
+    /// Number of advisory-enforcement criteria that passed.
+    advisory_passed: usize,
+    /// Number of advisory-enforcement criteria that failed.
     advisory_failed: usize,
+    /// Whether the gate is blocked — `true` when any required criterion failed.
+    blocked: bool,
+    /// Total wall-clock duration for all evaluations in milliseconds.
     total_duration_ms: u64,
+    /// Per-criterion results with status, enforcement, and optional evidence.
     criteria: Vec<CriterionSummary>,
-    /// Session ID when agent criteria are present (requires gate_report + gate_finalize).
+    /// Session ID when agent criteria are present. Omitted for command-only specs.
+    /// Use with `gate_report` and `gate_finalize` to complete agent evaluations.
     #[serde(skip_serializing_if = "Option::is_none")]
     session_id: Option<String>,
-    /// Criteria pending agent evaluation (names only).
+    /// Names of criteria pending agent evaluation. Omitted when no session is active.
     #[serde(skip_serializing_if = "Option::is_none")]
     pending_criteria: Option<Vec<String>>,
 }
 
-/// Response from the `gate_report` tool.
+/// Response from the `gate_report` tool confirming an evaluation was recorded.
 #[derive(Serialize)]
 struct GateReportResponse {
+    /// Session ID the evaluation was submitted to.
     session_id: String,
+    /// Name of the criterion that was evaluated.
     criterion_name: String,
+    /// Whether the evaluation was accepted (always `true` on success).
     accepted: bool,
+    /// Total number of evaluations recorded for this criterion (supports multiple evaluator roles).
     evaluations_count: usize,
+    /// Names of criteria still pending agent evaluation in this session.
     pending_criteria: Vec<String>,
+}
+
+/// Response for `gate_history` in list mode — returns recent run summaries.
+#[derive(Serialize)]
+struct GateHistoryListResponse {
+    /// Spec name that was queried.
+    spec_name: String,
+    /// Total number of runs available for this spec (before limit is applied).
+    total_runs: usize,
+    /// Run summaries, most recent first.
+    runs: Vec<GateHistoryEntry>,
+}
+
+/// A single run entry in the history list.
+#[derive(Serialize)]
+struct GateHistoryEntry {
+    /// Unique run identifier.
+    run_id: String,
+    /// ISO 8601 timestamp of the run.
+    timestamp: String,
+    /// Number of criteria that passed.
+    passed: usize,
+    /// Number of criteria that failed.
+    failed: usize,
+    /// Number of criteria that were skipped.
+    skipped: usize,
+    /// Number of required criteria that failed.
+    required_failed: usize,
+    /// Number of advisory criteria that failed.
+    advisory_failed: usize,
+    /// Whether the gate was blocked (any required criterion failed).
+    blocked: bool,
 }
 
 /// Per-criterion result within a gate run response.
 #[derive(Serialize)]
 struct CriterionSummary {
+    /// Criterion name as defined in the spec.
     name: String,
+    /// Evaluation status: `"passed"`, `"failed"`, or `"skipped"`.
     status: String,
+    /// Enforcement level: `"required"` or `"advisory"`.
     enforcement: String,
+    /// Criterion kind label: `"cmd"`, `"file"`, or `"agent"`. Omitted for skipped criteria.
     #[serde(skip_serializing_if = "Option::is_none")]
     kind_label: Option<String>,
+    /// Process exit code. Present for command criteria, absent for file-exists and skipped.
     #[serde(skip_serializing_if = "Option::is_none")]
     exit_code: Option<i32>,
+    /// Evaluation duration in milliseconds. Absent for skipped criteria.
     #[serde(skip_serializing_if = "Option::is_none")]
     duration_ms: Option<u64>,
+    /// First non-empty line of stderr for failed criteria. Absent for passed/skipped.
     #[serde(skip_serializing_if = "Option::is_none")]
     reason: Option<String>,
+    /// Full stdout output. Only present when `include_evidence=true`.
     #[serde(skip_serializing_if = "Option::is_none")]
     stdout: Option<String>,
+    /// Full stderr output. Only present when `include_evidence=true`.
     #[serde(skip_serializing_if = "Option::is_none")]
     stderr: Option<String>,
 }
@@ -199,7 +312,7 @@ impl AssayServer {
 
     /// List all specs in the current Assay project.
     #[tool(
-        description = "List all specs in the current Assay project. Returns an array of {name, description, criteria_count} objects. Use this to discover available specs before calling spec_get or gate_run."
+        description = "List all specs in the current Assay project. Returns {specs, errors?} where specs is an array of {name, description?, criteria_count, format, has_feature_spec?} objects and errors lists any spec files that failed to parse. Use this to discover available specs before calling spec_get or gate_run."
     )]
     async fn spec_list(&self) -> Result<CallToolResult, McpError> {
         let cwd = resolve_cwd()?;
@@ -214,7 +327,7 @@ impl AssayServer {
             Err(e) => return Ok(domain_error(&e)),
         };
 
-        let entries: Vec<SpecListEntry> = scan_result
+        let specs: Vec<SpecListEntry> = scan_result
             .entries
             .iter()
             .map(|entry| match entry {
@@ -239,7 +352,17 @@ impl AssayServer {
             })
             .collect();
 
-        let json = serde_json::to_string(&entries)
+        let errors: Vec<SpecListError> = scan_result
+            .errors
+            .iter()
+            .map(|e| SpecListError {
+                message: e.to_string(),
+            })
+            .collect();
+
+        let response = SpecListResponse { specs, errors };
+
+        let json = serde_json::to_string(&response)
             .map_err(|e| McpError::internal_error(format!("serialization failed: {e}"), None))?;
 
         Ok(CallToolResult::success(vec![Content::text(json)]))
@@ -294,7 +417,7 @@ impl AssayServer {
 
     /// Run quality gate checks for a spec.
     #[tool(
-        description = "Run quality gate checks for a spec. Evaluates all executable criteria (shell commands) and returns pass/fail status per criterion with aggregate counts. If the spec contains agent-evaluated criteria (kind=AgentReport), a session is auto-created and a session_id is returned — use gate_report to submit evaluations, then gate_finalize to persist results. Set include_evidence=true for full stdout/stderr output per criterion."
+        description = "Run quality gate checks for a spec. Evaluates all executable criteria (shell commands, file checks) and returns pass/fail status per criterion with enforcement-level counts (required_passed, required_failed, advisory_passed, advisory_failed) and a blocked flag. Set timeout (seconds, default 300) to limit evaluation time. Set include_evidence=true for full stdout/stderr. If the spec contains agent-evaluated criteria (kind=AgentReport), a session_id and pending_criteria are returned — use gate_report for each, then gate_finalize to persist."
     )]
     async fn gate_run(
         &self,
@@ -310,8 +433,18 @@ impl AssayServer {
             Err(err_result) => return Ok(err_result),
         };
         let include_evidence = params.0.include_evidence;
+        let gate_timeout = Duration::from_secs(params.0.timeout.unwrap_or(300));
 
         let working_dir = resolve_working_dir(&cwd, &config);
+
+        // Validate working directory exists before spawning evaluation.
+        if !working_dir.is_dir() {
+            return Ok(CallToolResult::error(vec![Content::text(format!(
+                "working directory does not exist or is not a directory: {}",
+                working_dir.display()
+            ))]));
+        }
+
         let config_timeout = config.gates.as_ref().map(|g| g.default_timeout);
 
         // Extract agent criteria info before moving entry into spawn_blocking.
@@ -319,7 +452,7 @@ impl AssayServer {
 
         let working_dir_owned = working_dir.clone();
 
-        let summary = tokio::task::spawn_blocking(move || match entry {
+        let eval_future = tokio::task::spawn_blocking(move || match entry {
             SpecEntry::Legacy { spec, .. } => {
                 assay_core::gate::evaluate_all(&spec, &working_dir_owned, None, config_timeout)
             }
@@ -329,9 +462,23 @@ impl AssayServer {
                 None,
                 config_timeout,
             ),
-        })
-        .await
-        .map_err(|e| McpError::internal_error(format!("gate evaluation panicked: {e}"), None))?;
+        });
+
+        let summary = match tokio::time::timeout(gate_timeout, eval_future).await {
+            Ok(Ok(summary)) => summary,
+            Ok(Err(e)) => {
+                return Err(McpError::internal_error(
+                    format!("gate evaluation panicked: {e}"),
+                    None,
+                ));
+            }
+            Err(_elapsed) => {
+                return Ok(CallToolResult::error(vec![Content::text(format!(
+                    "gate evaluation timed out after {}s",
+                    gate_timeout.as_secs()
+                ))]));
+            }
+        };
 
         let mut response = format_gate_response(&summary, include_evidence);
 
@@ -512,6 +659,77 @@ impl AssayServer {
 
         Ok(CallToolResult::success(vec![Content::text(json)]))
     }
+
+    /// Query gate run history for a spec.
+    #[tool(
+        description = "Query gate run history for a spec. Without run_id, returns a list of recent runs with summary counts. With run_id, returns the full gate run record including all criterion results. Use this to check past gate outcomes and track quality trends."
+    )]
+    async fn gate_history(
+        &self,
+        params: Parameters<GateHistoryParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let cwd = resolve_cwd()?;
+        let _config = match load_config(&cwd) {
+            Ok(c) => c,
+            Err(err_result) => return Ok(err_result),
+        };
+        let assay_dir = cwd.join(".assay");
+
+        // Detail mode: return full record for a specific run.
+        if let Some(ref run_id) = params.0.run_id {
+            let record = match assay_core::history::load(&assay_dir, &params.0.name, run_id) {
+                Ok(r) => r,
+                Err(e) => return Ok(domain_error(&e)),
+            };
+            let json = serde_json::to_string(&record).map_err(|e| {
+                McpError::internal_error(format!("serialization failed: {e}"), None)
+            })?;
+            return Ok(CallToolResult::success(vec![Content::text(json)]));
+        }
+
+        // List mode: return recent run summaries.
+        let all_ids = match assay_core::history::list(&assay_dir, &params.0.name) {
+            Ok(ids) => ids,
+            Err(e) => return Ok(domain_error(&e)),
+        };
+
+        let total_runs = all_ids.len();
+        let limit = params.0.limit.unwrap_or(10);
+
+        // list() returns oldest-first; take the last `limit` entries and reverse for most-recent-first.
+        let selected_ids: Vec<&String> = all_ids.iter().rev().take(limit).collect();
+
+        let mut runs = Vec::with_capacity(selected_ids.len());
+        for id in &selected_ids {
+            match assay_core::history::load(&assay_dir, &params.0.name, id) {
+                Ok(record) => {
+                    runs.push(GateHistoryEntry {
+                        run_id: record.run_id,
+                        timestamp: record.timestamp.to_rfc3339(),
+                        passed: record.summary.passed,
+                        failed: record.summary.failed,
+                        skipped: record.summary.skipped,
+                        required_failed: record.summary.enforcement.required_failed,
+                        advisory_failed: record.summary.enforcement.advisory_failed,
+                        blocked: record.summary.enforcement.required_failed > 0,
+                    });
+                }
+                Err(e) => {
+                    tracing::warn!(run_id = %id, "skipping unreadable history entry: {e}");
+                }
+            }
+        }
+
+        let response = GateHistoryListResponse {
+            spec_name: params.0.name,
+            total_runs,
+            runs,
+        };
+
+        let json = serde_json::to_string(&response)
+            .map_err(|e| McpError::internal_error(format!("serialization failed: {e}"), None))?;
+        Ok(CallToolResult::success(vec![Content::text(json)]))
+    }
 }
 
 #[tool_handler]
@@ -526,7 +744,8 @@ impl ServerHandler for AssayServer {
                  (quality checks). Use spec_list to discover specs, spec_get to \
                  read one, gate_run to evaluate criteria. For specs with agent \
                  criteria: gate_run returns a session_id, then call gate_report \
-                 for each criterion, and gate_finalize to persist results."
+                 for each criterion, and gate_finalize to persist results. \
+                 Use gate_history to query past run results and track quality trends."
                     .to_string(),
             ),
         }
@@ -727,8 +946,11 @@ fn format_gate_response(
         passed: summary.passed,
         failed: summary.failed,
         skipped: summary.skipped,
+        required_passed: summary.enforcement.required_passed,
         required_failed: summary.enforcement.required_failed,
+        advisory_passed: summary.enforcement.advisory_passed,
         advisory_failed: summary.enforcement.advisory_failed,
+        blocked: summary.enforcement.required_failed > 0,
         total_duration_ms: summary.total_duration_ms,
         criteria,
         session_id: None,
@@ -821,7 +1043,12 @@ mod tests {
             failed: 1,
             skipped: 1,
             total_duration_ms: 2000,
-            enforcement: EnforcementSummary::default(),
+            enforcement: EnforcementSummary {
+                required_passed: 1,
+                required_failed: 1,
+                advisory_passed: 0,
+                advisory_failed: 0,
+            },
         }
     }
 
@@ -835,6 +1062,14 @@ mod tests {
         assert_eq!(response.failed, 1);
         assert_eq!(response.skipped, 1);
         assert_eq!(response.total_duration_ms, 2000);
+        assert_eq!(response.required_passed, 1);
+        assert_eq!(response.required_failed, 1);
+        assert_eq!(response.advisory_passed, 0);
+        assert_eq!(response.advisory_failed, 0);
+        assert!(
+            response.blocked,
+            "blocked should be true when required_failed > 0"
+        );
         assert_eq!(response.criteria.len(), 3);
         assert!(
             response.session_id.is_none(),
@@ -1024,7 +1259,12 @@ mod tests {
             failed: 1,
             skipped: 0,
             total_duration_ms: 50,
-            enforcement: EnforcementSummary::default(),
+            enforcement: EnforcementSummary {
+                required_passed: 0,
+                required_failed: 1,
+                advisory_passed: 0,
+                advisory_failed: 0,
+            },
         };
 
         let response = format_gate_response(&summary, false);
@@ -1033,6 +1273,10 @@ mod tests {
             failed.reason.as_deref(),
             Some("unknown"),
             "failed with empty stderr should have 'unknown' reason"
+        );
+        assert!(
+            response.blocked,
+            "blocked should be true when required_failed > 0"
         );
     }
 
@@ -1310,8 +1554,11 @@ cmd = "echo ok"
             passed: 2,
             failed: 1,
             skipped: 1,
+            required_passed: 1,
             required_failed: 1,
+            advisory_passed: 0,
             advisory_failed: 0,
+            blocked: true,
             total_duration_ms: 1500,
             criteria: vec![
                 CriterionSummary {
@@ -1359,6 +1606,11 @@ cmd = "echo ok"
         assert_eq!(json["passed"], 2);
         assert_eq!(json["failed"], 1);
         assert_eq!(json["skipped"], 1);
+        assert_eq!(json["required_passed"], 1);
+        assert_eq!(json["required_failed"], 1);
+        assert_eq!(json["advisory_passed"], 0);
+        assert_eq!(json["advisory_failed"], 0);
+        assert_eq!(json["blocked"], true);
         assert_eq!(json["total_duration_ms"], 1500);
 
         // No session fields when no agent criteria
@@ -1428,8 +1680,11 @@ cmd = "echo ok"
             passed: 1,
             failed: 0,
             skipped: 0,
+            required_passed: 1,
             required_failed: 0,
+            advisory_passed: 0,
             advisory_failed: 0,
+            blocked: false,
             total_duration_ms: 500,
             criteria: vec![CriterionSummary {
                 name: "check".to_string(),
@@ -1483,8 +1738,11 @@ cmd = "echo ok"
             passed: 1,
             failed: 0,
             skipped: 1,
+            required_passed: 1,
             required_failed: 0,
+            advisory_passed: 0,
             advisory_failed: 0,
+            blocked: false,
             total_duration_ms: 500,
             criteria: vec![],
             session_id: Some("20260305T220000Z-abc123".to_string()),
@@ -1632,5 +1890,247 @@ cmd = "echo ok"
         assert_eq!(cr.kind_label.as_deref(), Some("agent"));
         assert_eq!(cr.status, "passed");
         assert_eq!(cr.enforcement, "advisory");
+    }
+
+    #[test]
+    fn test_spec_list_response_serialization_with_errors() {
+        let response = SpecListResponse {
+            specs: vec![SpecListEntry {
+                name: "auth".to_string(),
+                description: "Auth flow".to_string(),
+                criteria_count: 2,
+                format: "legacy".to_string(),
+                has_feature_spec: false,
+            }],
+            errors: vec![SpecListError {
+                message: "failed to parse broken.toml: invalid key".to_string(),
+            }],
+        };
+
+        let json = serde_json::to_value(&response).unwrap();
+        assert_eq!(json["specs"][0]["name"], "auth");
+        assert_eq!(
+            json["errors"][0]["message"],
+            "failed to parse broken.toml: invalid key"
+        );
+    }
+
+    #[test]
+    fn test_spec_list_response_serialization_without_errors() {
+        let response = SpecListResponse {
+            specs: vec![SpecListEntry {
+                name: "clean".to_string(),
+                description: String::new(),
+                criteria_count: 1,
+                format: "legacy".to_string(),
+                has_feature_spec: false,
+            }],
+            errors: vec![],
+        };
+
+        let json = serde_json::to_value(&response).unwrap();
+        assert_eq!(json["specs"][0]["name"], "clean");
+        assert!(
+            json.get("errors").is_none(),
+            "empty errors should be omitted via skip_serializing_if"
+        );
+    }
+
+    #[test]
+    fn test_format_gate_response_enforcement_counts() {
+        let summary = GateRunSummary {
+            spec_name: "enforcement-test".to_string(),
+            results: vec![
+                CriterionResult {
+                    criterion_name: "req-pass".to_string(),
+                    result: Some(GateResult {
+                        passed: true,
+                        kind: GateKind::Command {
+                            cmd: "true".to_string(),
+                        },
+                        stdout: String::new(),
+                        stderr: String::new(),
+                        exit_code: Some(0),
+                        duration_ms: 10,
+                        timestamp: Utc::now(),
+                        truncated: false,
+                        original_bytes: None,
+                        evidence: None,
+                        reasoning: None,
+                        confidence: None,
+                        evaluator_role: None,
+                    }),
+                    enforcement: Enforcement::Required,
+                },
+                CriterionResult {
+                    criterion_name: "adv-pass".to_string(),
+                    result: Some(GateResult {
+                        passed: true,
+                        kind: GateKind::Command {
+                            cmd: "true".to_string(),
+                        },
+                        stdout: String::new(),
+                        stderr: String::new(),
+                        exit_code: Some(0),
+                        duration_ms: 10,
+                        timestamp: Utc::now(),
+                        truncated: false,
+                        original_bytes: None,
+                        evidence: None,
+                        reasoning: None,
+                        confidence: None,
+                        evaluator_role: None,
+                    }),
+                    enforcement: Enforcement::Advisory,
+                },
+            ],
+            passed: 2,
+            failed: 0,
+            skipped: 0,
+            total_duration_ms: 20,
+            enforcement: EnforcementSummary {
+                required_passed: 1,
+                required_failed: 0,
+                advisory_passed: 1,
+                advisory_failed: 0,
+            },
+        };
+
+        let response = format_gate_response(&summary, false);
+        assert_eq!(response.required_passed, 1);
+        assert_eq!(response.required_failed, 0);
+        assert_eq!(response.advisory_passed, 1);
+        assert_eq!(response.advisory_failed, 0);
+        assert!(
+            !response.blocked,
+            "blocked should be false when no required failures"
+        );
+    }
+
+    #[test]
+    fn test_gate_run_params_with_timeout() {
+        let json = serde_json::json!({
+            "name": "test-spec",
+            "include_evidence": true,
+            "timeout": 60
+        });
+        let params: GateRunParams = serde_json::from_value(json).unwrap();
+        assert_eq!(params.name, "test-spec");
+        assert!(params.include_evidence);
+        assert_eq!(params.timeout, Some(60));
+    }
+
+    #[test]
+    fn test_gate_run_params_without_timeout() {
+        let json = serde_json::json!({
+            "name": "test-spec"
+        });
+        let params: GateRunParams = serde_json::from_value(json).unwrap();
+        assert_eq!(params.name, "test-spec");
+        assert!(!params.include_evidence);
+        assert_eq!(params.timeout, None);
+    }
+
+    // ── gate_history tests ──────────────────────────────────────────
+
+    #[test]
+    fn test_gate_history_params_name_only() {
+        let json = serde_json::json!({ "name": "auth-flow" });
+        let params: GateHistoryParams = serde_json::from_value(json).unwrap();
+        assert_eq!(params.name, "auth-flow");
+        assert_eq!(params.run_id, None);
+        assert_eq!(params.limit, None);
+    }
+
+    #[test]
+    fn test_gate_history_params_with_run_id() {
+        let json = serde_json::json!({
+            "name": "auth-flow",
+            "run_id": "20260305T120000Z-abc123"
+        });
+        let params: GateHistoryParams = serde_json::from_value(json).unwrap();
+        assert_eq!(params.name, "auth-flow");
+        assert_eq!(params.run_id, Some("20260305T120000Z-abc123".to_string()));
+        assert_eq!(params.limit, None);
+    }
+
+    #[test]
+    fn test_gate_history_params_with_limit() {
+        let json = serde_json::json!({
+            "name": "auth-flow",
+            "limit": 5
+        });
+        let params: GateHistoryParams = serde_json::from_value(json).unwrap();
+        assert_eq!(params.name, "auth-flow");
+        assert_eq!(params.run_id, None);
+        assert_eq!(params.limit, Some(5));
+    }
+
+    #[test]
+    fn test_gate_history_list_response_serialization() {
+        let response = GateHistoryListResponse {
+            spec_name: "auth-flow".to_string(),
+            total_runs: 25,
+            runs: vec![
+                GateHistoryEntry {
+                    run_id: "20260305T120000Z-abc123".to_string(),
+                    timestamp: "2026-03-05T12:00:00+00:00".to_string(),
+                    passed: 3,
+                    failed: 1,
+                    skipped: 0,
+                    required_failed: 1,
+                    advisory_failed: 0,
+                    blocked: true,
+                },
+                GateHistoryEntry {
+                    run_id: "20260305T110000Z-def456".to_string(),
+                    timestamp: "2026-03-05T11:00:00+00:00".to_string(),
+                    passed: 4,
+                    failed: 0,
+                    skipped: 0,
+                    required_failed: 0,
+                    advisory_failed: 0,
+                    blocked: false,
+                },
+            ],
+        };
+
+        let json = serde_json::to_value(&response).unwrap();
+        assert_eq!(json["spec_name"], "auth-flow");
+        assert_eq!(json["total_runs"], 25);
+        assert_eq!(json["runs"].as_array().unwrap().len(), 2);
+
+        let first = &json["runs"][0];
+        assert_eq!(first["run_id"], "20260305T120000Z-abc123");
+        assert_eq!(first["passed"], 3);
+        assert_eq!(first["failed"], 1);
+        assert_eq!(first["required_failed"], 1);
+        assert_eq!(first["blocked"], true);
+
+        let second = &json["runs"][1];
+        assert_eq!(second["blocked"], false);
+        assert_eq!(second["required_failed"], 0);
+    }
+
+    #[test]
+    fn test_gate_history_list_response_empty() {
+        let response = GateHistoryListResponse {
+            spec_name: "no-history".to_string(),
+            total_runs: 0,
+            runs: vec![],
+        };
+
+        let json = serde_json::to_value(&response).unwrap();
+        assert_eq!(json["spec_name"], "no-history");
+        assert_eq!(json["total_runs"], 0);
+        assert!(json["runs"].as_array().unwrap().is_empty());
+    }
+
+    // ── working_dir validation test ─────────────────────────────────
+
+    #[test]
+    fn test_working_dir_nonexistent_is_not_dir() {
+        let nonexistent = std::path::PathBuf::from("/tmp/assay-nonexistent-dir-12345");
+        assert!(!nonexistent.is_dir(), "test precondition: path must not exist");
     }
 }
