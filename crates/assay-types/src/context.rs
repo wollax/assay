@@ -368,6 +368,146 @@ pub enum ContextHealth {
 // Claude History Entry
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Pruning Types
+// ---------------------------------------------------------------------------
+
+/// A pruning strategy that can be applied to session JSONL entries.
+///
+/// Each strategy targets a specific category of bloat. Strategies compose
+/// sequentially in a pipeline: line-deletion strategies run first, then
+/// content-modification strategies.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum PruneStrategy {
+    /// Remove all progress tick entries (hook, agent, bash progress).
+    ProgressCollapse,
+    /// Keep only the last occurrence of each system reminder.
+    SystemReminderDedup,
+    /// Strip metadata entries (file-history-snapshot, queue-operation, system boilerplate).
+    MetadataStrip,
+    /// Remove all but the last read of each file path.
+    StaleReads,
+    /// Remove extended thinking blocks entirely.
+    ThinkingBlocks,
+    /// Trim large tool output to first/last N lines.
+    ToolOutputTrim,
+}
+
+impl PruneStrategy {
+    /// Human-readable label for this strategy.
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::ProgressCollapse => "Progress collapse",
+            Self::SystemReminderDedup => "System reminder dedup",
+            Self::MetadataStrip => "Metadata strip",
+            Self::StaleReads => "Stale reads",
+            Self::ThinkingBlocks => "Thinking blocks",
+            Self::ToolOutputTrim => "Tool output trim",
+        }
+    }
+}
+
+/// Prescription tier controlling which strategies are applied and their intensity.
+///
+/// Each tier is a superset of the previous one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum PrescriptionTier {
+    /// Conservative: progress-collapse, system-reminder-dedup.
+    Gentle,
+    /// Balanced: gentle + metadata-strip, stale-reads.
+    Standard,
+    /// Maximum reduction: standard + thinking-blocks, tool-output-trim.
+    Aggressive,
+}
+
+impl PrescriptionTier {
+    /// Returns the strategies for this tier in execution order.
+    ///
+    /// Line-deletion strategies come first, then content-modification strategies.
+    pub fn strategies(&self) -> &[PruneStrategy] {
+        match self {
+            Self::Gentle => &[
+                PruneStrategy::ProgressCollapse,
+                PruneStrategy::SystemReminderDedup,
+            ],
+            Self::Standard => &[
+                PruneStrategy::ProgressCollapse,
+                PruneStrategy::StaleReads,
+                PruneStrategy::SystemReminderDedup,
+                PruneStrategy::MetadataStrip,
+            ],
+            Self::Aggressive => &[
+                PruneStrategy::ProgressCollapse,
+                PruneStrategy::StaleReads,
+                PruneStrategy::ThinkingBlocks,
+                PruneStrategy::ToolOutputTrim,
+                PruneStrategy::SystemReminderDedup,
+                PruneStrategy::MetadataStrip,
+            ],
+        }
+    }
+}
+
+/// Summary of a single strategy's effect during pruning.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct PruneSummary {
+    /// The strategy that was applied.
+    pub strategy: PruneStrategy,
+    /// Number of lines removed entirely.
+    pub lines_removed: usize,
+    /// Number of lines modified (content trimmed).
+    pub lines_modified: usize,
+    /// Total bytes saved by this strategy.
+    pub bytes_saved: u64,
+    /// Number of protected lines skipped.
+    pub protected_skipped: usize,
+    /// Sample removals for dry-run display (up to 3).
+    pub samples: Vec<PruneSample>,
+}
+
+/// A sample of what was pruned, for dry-run display.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct PruneSample {
+    /// 1-based line number in the original file.
+    pub line_number: usize,
+    /// Human-readable description of what was pruned.
+    pub description: String,
+    /// Bytes saved by removing/trimming this entry.
+    pub bytes: u64,
+}
+
+/// Full pruning report for a session file.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct PruneReport {
+    /// Session UUID.
+    pub session_id: String,
+    /// Original file size in bytes.
+    pub original_size: u64,
+    /// Final file size in bytes (after pruning).
+    pub final_size: u64,
+    /// Original number of JSONL entries.
+    pub original_entries: usize,
+    /// Final number of JSONL entries.
+    pub final_entries: usize,
+    /// Per-strategy summaries.
+    pub strategies: Vec<PruneSummary>,
+    /// Whether the pruning was actually executed (true) or dry-run (false).
+    pub executed: bool,
+}
+
+inventory::submit! {
+    crate::schema_registry::SchemaEntry {
+        name: "prune-report",
+        generate: || schemars::schema_for!(PruneReport),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Claude History Entry
+// ---------------------------------------------------------------------------
+
 /// An entry from `~/.claude/history.jsonl` (session index).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ClaudeHistoryEntry {
