@@ -10,9 +10,9 @@ See: .planning/PROJECT.md (updated 2026-03-02)
 ## Current Position
 
 Phase: 20 — Session JSONL Parser & Token Diagnostics
-Plan: 02 of 5 (complete)
-Status: Session diagnostics engine implemented in assay-core
-Last activity: 2026-03-06 — Plan 20-02 executed (session diagnostics engine)
+Plan: 03 of 5 (complete)
+Status: CLI context commands implemented (diagnose + list)
+Last activity: 2026-03-06 — Plan 20-03 executed (CLI context commands)
 
 Progress: v0.2.0 [█████████░] ~71%
 
@@ -165,10 +165,10 @@ None.
 
 ### Next Actions
 
-Phase 20 plan 02 complete. Next: Plan 20-03 (CLI context commands)
+Phase 20 plan 03 complete. Next: Plan 20-04 (MCP context tools) or Plan 20-05 (integration tests)
 
 ### Session Continuity
 
 Last session: 2026-03-06
-Stopped at: Completed 20-02-PLAN.md (session diagnostics engine)
+Stopped at: Completed 20-03-PLAN.md (CLI context commands)
 Resume file: None
