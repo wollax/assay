@@ -9,10 +9,10 @@ See: .planning/PROJECT.md (updated 2026-03-02)
 
 ## Current Position
 
-Phase: 18 — CLI Hardening & Enforcement Surface (COMPLETE)
+Phase: 18 — CLI Hardening & Enforcement Surface (VERIFIED & COMPLETE)
 Plan: 02 of 2 (complete)
-Status: Phase complete
-Last activity: 2026-03-06 — Completed 18-02-PLAN.md
+Status: Phase complete, verified, moved to completed/
+Last activity: 2026-03-05 — Phase 18 verified and completed
 
 Progress: v0.2.0 [████████░ ] ~62%
 
@@ -21,7 +21,7 @@ Progress: v0.2.0 [████████░ ] ~62%
 | Milestone | Phases | Requirements | Complete |
 |-----------|--------|--------------|----------|
 | v0.1.0 | 10 | 43 | 100% (shipped) |
-| v0.2.0 | 13 (11-23) | 52 | ~54% |
+| v0.2.0 | 13 (11-23) | 52 | ~62% |
 
 ## Accumulated Context
 
@@ -154,7 +154,7 @@ None.
 
 ### Next Actions
 
-Phase 18 complete. Next: Phase 19
+Phase 18 verified and complete. Next: Phase 19 — Testing & Tooling
 
 ### Session Continuity
 
