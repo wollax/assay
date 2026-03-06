@@ -46,10 +46,10 @@ pub fn apply_strategy(
     _tier: PrescriptionTier,
     _protected: &HashSet<usize>,
 ) -> StrategyResult {
-    // Individual strategy implementations will be added in plans 02/03.
-    // For now, all strategies are no-ops that pass entries through unchanged.
     match strategy {
-        PruneStrategy::ProgressCollapse => StrategyResult::noop(entries),
+        PruneStrategy::ProgressCollapse => {
+            super::strategies::progress_collapse::progress_collapse(entries, _tier, _protected)
+        }
         PruneStrategy::SystemReminderDedup => StrategyResult::noop(entries),
         PruneStrategy::MetadataStrip => StrategyResult::noop(entries),
         PruneStrategy::StaleReads => StrategyResult::noop(entries),
