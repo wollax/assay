@@ -1,3 +1,4 @@
+pub mod context;
 pub mod criterion;
 pub mod enforcement;
 pub mod feature_spec;
@@ -7,6 +8,10 @@ pub mod gates_spec;
 pub mod schema_registry;
 pub mod session;
 
+pub use context::{
+    BloatCategory, ContextHealth, DiagnosticsReport, SessionEntry, SessionInfo, TokenEstimate,
+    UsageData,
+};
 pub use criterion::{Criterion, CriterionKind};
 pub use enforcement::{Enforcement, EnforcementSummary, GateSection};
 pub use feature_spec::FeatureSpec;
