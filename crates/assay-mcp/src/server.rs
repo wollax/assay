@@ -985,6 +985,7 @@ mod tests {
         CriterionResult, Enforcement, EnforcementSummary, GateKind, GateResult, GateRunSummary,
     };
     use chrono::Utc;
+    use serial_test::serial;
     use std::io::Write as _;
 
     fn sample_summary() -> GateRunSummary {
@@ -2224,6 +2225,7 @@ cmd = "echo ok"
     // ── Async handler tests ──────────────────────────────────────────
 
     #[tokio::test]
+    #[serial]
     async fn spec_list_valid_project_returns_specs() {
         let dir = create_project(r#"project_name = "handler-test""#);
         create_spec(
@@ -2266,6 +2268,7 @@ cmd = "echo lint-ok"
     }
 
     #[tokio::test]
+    #[serial]
     async fn spec_get_valid_spec_returns_content() {
         let dir = create_project(r#"project_name = "handler-test""#);
         create_spec(
@@ -2306,6 +2309,7 @@ cmd = "echo ok"
     }
 
     #[tokio::test]
+    #[serial]
     async fn spec_get_missing_spec_returns_error() {
         let dir = create_project(r#"project_name = "handler-test""#);
         std::fs::create_dir_all(dir.path().join(".assay").join("specs")).unwrap();
@@ -2332,6 +2336,7 @@ cmd = "echo ok"
     }
 
     #[tokio::test]
+    #[serial]
     async fn gate_run_command_spec_returns_results() {
         let dir = create_project(r#"project_name = "handler-test""#);
         create_spec(
@@ -2388,6 +2393,7 @@ cmd = "echo ok"
     }
 
     #[tokio::test]
+    #[serial]
     async fn gate_run_nonexistent_spec_returns_error() {
         let dir = create_project(r#"project_name = "handler-test""#);
         std::fs::create_dir_all(dir.path().join(".assay").join("specs")).unwrap();
@@ -2416,6 +2422,7 @@ cmd = "echo ok"
     }
 
     #[tokio::test]
+    #[serial]
     async fn gate_run_nonexistent_working_dir_returns_error() {
         let dir = create_project(
             r#"
@@ -2495,6 +2502,7 @@ cmd = "echo ok"
     }
 
     #[tokio::test]
+    #[serial]
     async fn gate_history_no_history_returns_empty() {
         let dir = create_project(r#"project_name = "handler-test""#);
         create_spec(

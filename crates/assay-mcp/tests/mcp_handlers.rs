@@ -12,6 +12,7 @@ use assay_mcp::{
 };
 use assay_types::{Confidence, EvaluatorRole};
 use rmcp::model::RawContent;
+use serial_test::serial;
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -40,11 +41,6 @@ fn create_project(config_toml: &str) -> tempfile::TempDir {
     dir
 }
 
-/// Get the canonical path for a tempdir (avoids macOS /var -> /private/var symlink issues).
-fn canonical(dir: &tempfile::TempDir) -> std::path::PathBuf {
-    dir.path().canonicalize().unwrap()
-}
-
 /// Create a spec file inside a project's specs directory.
 fn create_spec(project_dir: &Path, filename: &str, content: &str) {
     let specs_path = project_dir.join(".assay").join("specs");
@@ -56,6 +52,7 @@ fn create_spec(project_dir: &Path, filename: &str, content: &str) {
 // ── Lifecycle tests ──────────────────────────────────────────────────
 
 #[tokio::test]
+#[serial]
 async fn gate_lifecycle_run_report_finalize() {
     let dir = create_project(r#"project_name = "lifecycle-test""#);
     create_spec(
@@ -188,6 +185,7 @@ prompt = "Review the code for quality issues"
 }
 
 #[tokio::test]
+#[serial]
 async fn gate_run_with_timeout() {
     let dir = create_project(r#"project_name = "timeout-test""#);
     create_spec(
@@ -226,6 +224,7 @@ cmd = "echo ok"
 }
 
 #[tokio::test]
+#[serial]
 async fn spec_list_with_parse_errors() {
     let dir = create_project(r#"project_name = "error-test""#);
 
