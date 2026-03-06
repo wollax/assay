@@ -17,11 +17,34 @@ allow = [
 ignore = true
 
 [bans]
-multiple-versions = "warn"
+multiple-versions = "deny"
 wildcards = "allow"
 
+skip = [
+    # ratatui 0.30 uses ratatui-crossterm which depends on crossterm 0.29;
+    # assay-tui directly depends on crossterm 0.28 for terminal handling
+    { crate = "crossterm@0.28", reason = "ratatui-crossterm uses 0.29; direct dep is 0.28" },
+
+    # ahash (via jsonschema) pulls in getrandom 0.3; newer crates use 0.4
+    { crate = "getrandom@0.3", reason = "ahash in jsonschema uses getrandom 0.3; rest of tree uses 0.4" },
+
+    # crossterm 0.28 -> polling 3.x -> rustix 0.38 -> linux-raw-sys 0.4
+    { crate = "linux-raw-sys@0.4", reason = "rustix 0.38 (via crossterm 0.28/polling) needs linux-raw-sys 0.4" },
+
+    # crossterm 0.28 -> polling 3.x -> rustix 0.38; newer crates use rustix 1.x
+    { crate = "rustix@0.38", reason = "crossterm 0.28 transitively requires rustix 0.38 via polling" },
+]
+
+skip-tree = [
+    # Windows platform crates have version fragmentation across the ecosystem;
+    # windows-sys 0.59/0.60/0.61 and their windows-targets/windows_* sub-crates
+    # are all pulled in by different transitive dependencies
+    { crate = "windows-sys@0.59", reason = "Windows platform crate version fragmentation across transitive deps" },
+    { crate = "windows-sys@0.60", reason = "Windows platform crate version fragmentation across transitive deps" },
+]
+
 [sources]
-unknown-registry = "warn"
-unknown-git = "warn"
+unknown-registry = "deny"
+unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
 allow-git = []
