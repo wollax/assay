@@ -28,10 +28,7 @@ pub fn progress_collapse(
     let mut samples: Vec<PruneSample> = Vec::new();
 
     for entry in entries {
-        if matches!(
-            entry.entry,
-            assay_types::context::SessionEntry::Progress(_)
-        ) {
+        if matches!(entry.entry, assay_types::context::SessionEntry::Progress(_)) {
             if protected.contains(&entry.line_number) {
                 protected_skipped += 1;
                 result_entries.push(entry);
