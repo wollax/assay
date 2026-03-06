@@ -292,11 +292,7 @@ fn format_fail(color: bool) -> &'static str {
 
 /// Format "WARN" with optional yellow color.
 fn format_warn(color: bool) -> &'static str {
-    if color {
-        "\x1b[33mWARN\x1b[0m"
-    } else {
-        "WARN"
-    }
+    if color { "\x1b[33mWARN\x1b[0m" } else { "WARN" }
 }
 
 /// Format a number with optional ANSI color, only applying color when
@@ -682,8 +678,7 @@ fn stream_criterion(
         return;
     }
 
-    let enforcement =
-        assay_core::gate::resolve_enforcement(criterion.enforcement, gate_section);
+    let enforcement = assay_core::gate::resolve_enforcement(criterion.enforcement, gate_section);
     let is_advisory = enforcement == assay_types::Enforcement::Advisory;
 
     let label = criterion_label(criterion);
