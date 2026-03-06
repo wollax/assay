@@ -766,10 +766,8 @@ impl AssayServer {
 
         let report = tokio::task::spawn_blocking(move || {
             let session_dir = assay_core::context::find_session_dir(&cwd)?;
-            let session_path = assay_core::context::resolve_session(
-                &session_dir,
-                session_id_owned.as_deref(),
-            )?;
+            let session_path =
+                assay_core::context::resolve_session(&session_dir, session_id_owned.as_deref())?;
             let file_session_id = session_path
                 .file_stem()
                 .unwrap_or_default()
@@ -807,10 +805,8 @@ impl AssayServer {
 
         let estimate = tokio::task::spawn_blocking(move || {
             let session_dir = assay_core::context::find_session_dir(&cwd)?;
-            let session_path = assay_core::context::resolve_session(
-                &session_dir,
-                session_id_owned.as_deref(),
-            )?;
+            let session_path =
+                assay_core::context::resolve_session(&session_dir, session_id_owned.as_deref())?;
             let file_session_id = session_path
                 .file_stem()
                 .unwrap_or_default()
