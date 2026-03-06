@@ -2643,4 +2643,78 @@ cmd = "echo ok"
         assert_eq!(json["total_runs"], 0);
         assert!(json["runs"].as_array().unwrap().is_empty());
     }
+
+    // ── context_diagnose / estimate_tokens param tests ───────────────
+
+    #[test]
+    fn test_context_diagnose_params_without_session_id() {
+        let json = serde_json::json!({});
+        let params: ContextDiagnoseParams = serde_json::from_value(json).unwrap();
+        assert_eq!(params.session_id, None);
+    }
+
+    #[test]
+    fn test_context_diagnose_params_with_session_id() {
+        let json = serde_json::json!({
+            "session_id": "3201041c-df85-4c91-a485-7b8c189f7636"
+        });
+        let params: ContextDiagnoseParams = serde_json::from_value(json).unwrap();
+        assert_eq!(
+            params.session_id,
+            Some("3201041c-df85-4c91-a485-7b8c189f7636".to_string())
+        );
+    }
+
+    #[test]
+    fn test_estimate_tokens_params_without_session_id() {
+        let json = serde_json::json!({});
+        let params: EstimateTokensParams = serde_json::from_value(json).unwrap();
+        assert_eq!(params.session_id, None);
+    }
+
+    #[test]
+    fn test_estimate_tokens_params_with_session_id() {
+        let json = serde_json::json!({
+            "session_id": "abc-def-123"
+        });
+        let params: EstimateTokensParams = serde_json::from_value(json).unwrap();
+        assert_eq!(params.session_id, Some("abc-def-123".to_string()));
+    }
+
+    #[tokio::test]
+    async fn context_diagnose_no_session_dir_returns_error() {
+        // Use a temp dir that has no Claude Code sessions
+        let dir = tempfile::tempdir().unwrap();
+        std::env::set_current_dir(dir.path()).unwrap();
+
+        let server = AssayServer::new();
+        let result = server
+            .context_diagnose(Parameters(ContextDiagnoseParams { session_id: None }))
+            .await
+            .unwrap();
+
+        assert!(
+            result.is_error.unwrap_or(false),
+            "context_diagnose should return error when no session dir exists, got: {}",
+            extract_text(&result)
+        );
+    }
+
+    #[tokio::test]
+    async fn estimate_tokens_no_session_dir_returns_error() {
+        let dir = tempfile::tempdir().unwrap();
+        std::env::set_current_dir(dir.path()).unwrap();
+
+        let server = AssayServer::new();
+        let result = server
+            .estimate_tokens(Parameters(EstimateTokensParams { session_id: None }))
+            .await
+            .unwrap();
+
+        assert!(
+            result.is_error.unwrap_or(false),
+            "estimate_tokens should return error when no session dir exists, got: {}",
+            extract_text(&result)
+        );
+    }
 }
