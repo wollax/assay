@@ -155,6 +155,31 @@ pub enum AssayError {
         /// Description of the error.
         message: String,
     },
+
+    /// Claude Code session directory not found.
+    #[error("session directory not found: {message}")]
+    SessionDirNotFound {
+        /// Description of why the directory was not found.
+        message: String,
+    },
+
+    /// Session JSONL file not found.
+    #[error("session file not found: {path}")]
+    SessionFileNotFound {
+        /// The path that was looked up.
+        path: PathBuf,
+    },
+
+    /// JSONL parse error (non-fatal per line, but surfaced for diagnostics).
+    #[error("parsing session JSONL at {path} line {line}: {message}")]
+    SessionParse {
+        /// The file being parsed.
+        path: PathBuf,
+        /// The 1-based line number.
+        line: usize,
+        /// The parse error message.
+        message: String,
+    },
 }
 
 /// Convenience result alias for Assay operations.
