@@ -1,12 +1,14 @@
-//! MCP server implementation with spec and gate tools.
+//! MCP server implementation with spec, gate, and context tools.
 //!
-//! Provides the [`AssayServer`] which exposes six tools over MCP:
+//! Provides the [`AssayServer`] which exposes eight tools over MCP:
 //! - `spec_list` — discover available specs
 //! - `spec_get` — read a full spec definition
 //! - `gate_run` — evaluate quality gate criteria (auto-creates sessions for agent criteria)
 //! - `gate_report` — submit agent evaluation for a criterion in an active session
 //! - `gate_finalize` — finalize a session, persisting all evaluations as a GateRunRecord
 //! - `gate_history` — query past gate run results for a spec
+//! - `context_diagnose` — diagnose token usage and bloat in a Claude Code session
+//! - `estimate_tokens` — estimate current token usage and context window health
 //!
 //! All domain errors are returned as `CallToolResult` with `isError: true`
 //! so that agents can see and self-correct. Protocol errors (`McpError`)
@@ -132,6 +134,24 @@ pub struct GateHistoryParams {
     )]
     #[serde(default)]
     pub limit: Option<usize>,
+}
+
+/// Parameters for the `context_diagnose` tool.
+#[derive(Deserialize, JsonSchema)]
+pub struct ContextDiagnoseParams {
+    /// Session ID to diagnose. Defaults to the most recent session.
+    #[schemars(
+        description = "Session UUID (e.g. '3201041c-df85-4c91-a485-7b8c189f7636'). Omit for most recent session."
+    )]
+    pub session_id: Option<String>,
+}
+
+/// Parameters for the `estimate_tokens` tool.
+#[derive(Deserialize, JsonSchema)]
+pub struct EstimateTokensParams {
+    /// Session ID to estimate. Defaults to the most recent session.
+    #[schemars(description = "Session UUID. Omit for most recent session.")]
+    pub session_id: Option<String>,
 }
 
 // ── Response structs ─────────────────────────────────────────────────
@@ -730,6 +750,87 @@ impl AssayServer {
             .map_err(|e| McpError::internal_error(format!("serialization failed: {e}"), None))?;
         Ok(CallToolResult::success(vec![Content::text(json)]))
     }
+
+    /// Diagnose token usage and bloat in a Claude Code session.
+    #[tool(
+        description = "Diagnose token usage, bloat breakdown, and context utilization for a Claude Code session. \
+            Returns a full DiagnosticsReport with entry counts, usage data, bloat categories, and utilization percentage. \
+            Omit session_id to diagnose the most recent session for this project."
+    )]
+    pub async fn context_diagnose(
+        &self,
+        params: Parameters<ContextDiagnoseParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let cwd = resolve_cwd()?;
+        let session_id_owned = params.0.session_id.clone();
+
+        let report = tokio::task::spawn_blocking(move || {
+            let session_dir = assay_core::context::find_session_dir(&cwd)?;
+            let session_path = assay_core::context::resolve_session(
+                &session_dir,
+                session_id_owned.as_deref(),
+            )?;
+            let file_session_id = session_path
+                .file_stem()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string();
+            assay_core::context::diagnose(&session_path, &file_session_id)
+        })
+        .await
+        .map_err(|e| McpError::internal_error(format!("task join failed: {e}"), None))?;
+
+        match report {
+            Ok(report) => {
+                let json = serde_json::to_string(&report).map_err(|e| {
+                    McpError::internal_error(format!("serialization failed: {e}"), None)
+                })?;
+                Ok(CallToolResult::success(vec![Content::text(json)]))
+            }
+            Err(e) => Ok(domain_error(&e)),
+        }
+    }
+
+    /// Estimate current token usage and context window health (fast, tail-read).
+    #[tool(
+        description = "Estimate current token usage and context window health for a Claude Code session. \
+            Returns context tokens, output tokens, utilization percentage, and a health indicator \
+            (healthy/warning/critical). Fast: reads only the tail of the session file. \
+            Omit session_id to estimate the most recent session for this project."
+    )]
+    pub async fn estimate_tokens(
+        &self,
+        params: Parameters<EstimateTokensParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let cwd = resolve_cwd()?;
+        let session_id_owned = params.0.session_id.clone();
+
+        let estimate = tokio::task::spawn_blocking(move || {
+            let session_dir = assay_core::context::find_session_dir(&cwd)?;
+            let session_path = assay_core::context::resolve_session(
+                &session_dir,
+                session_id_owned.as_deref(),
+            )?;
+            let file_session_id = session_path
+                .file_stem()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string();
+            assay_core::context::estimate_tokens(&session_path, &file_session_id)
+        })
+        .await
+        .map_err(|e| McpError::internal_error(format!("task join failed: {e}"), None))?;
+
+        match estimate {
+            Ok(estimate) => {
+                let json = serde_json::to_string(&estimate).map_err(|e| {
+                    McpError::internal_error(format!("serialization failed: {e}"), None)
+                })?;
+                Ok(CallToolResult::success(vec![Content::text(json)]))
+            }
+            Err(e) => Ok(domain_error(&e)),
+        }
+    }
 }
 
 #[tool_handler]
@@ -745,7 +846,9 @@ impl ServerHandler for AssayServer {
                  read one, gate_run to evaluate criteria. For specs with agent \
                  criteria: gate_run returns a session_id, then call gate_report \
                  for each criterion, and gate_finalize to persist results. \
-                 Use gate_history to query past run results and track quality trends."
+                 Use gate_history to query past run results and track quality trends. \
+                 Use context_diagnose for full session diagnostics with bloat analysis, \
+                 or estimate_tokens for a quick context health check."
                     .to_string(),
             ),
         }
