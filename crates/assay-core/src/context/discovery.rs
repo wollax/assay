@@ -8,13 +8,11 @@ use crate::AssayError;
 
 /// Convert an absolute path to Claude Code's project slug format.
 ///
-/// Claude Code uses the absolute path with `/` replaced by `-` as the
-/// directory name under `~/.claude/projects/`.
+/// Claude Code uses the absolute path with every `/` replaced by `-` as the
+/// directory name under `~/.claude/projects/`. This includes the leading `/`,
+/// so `/Users/dev/project` becomes `-Users-dev-project`.
 pub fn path_to_project_slug(path: &Path) -> String {
-    let s = path.to_string_lossy();
-    // Claude strips the leading slash, then replaces remaining slashes with hyphens
-    let stripped = s.strip_prefix('/').unwrap_or(&s);
-    stripped.replace('/', "-")
+    path.to_string_lossy().replace('/', "-")
 }
 
 /// Find the Claude Code projects directory (`~/.claude/projects/`).
@@ -125,18 +123,18 @@ mod tests {
     #[test]
     fn slug_from_absolute_path() {
         let slug = path_to_project_slug(Path::new("/Users/dev/projects/myapp"));
-        assert_eq!(slug, "Users-dev-projects-myapp");
+        assert_eq!(slug, "-Users-dev-projects-myapp");
     }
 
     #[test]
     fn slug_from_root_path() {
         let slug = path_to_project_slug(Path::new("/"));
-        assert_eq!(slug, "");
+        assert_eq!(slug, "-");
     }
 
     #[test]
     fn slug_from_relative_path() {
-        // Relative paths have no leading slash to strip
+        // Relative paths have no leading slash — no leading dash
         let slug = path_to_project_slug(Path::new("relative/path"));
         assert_eq!(slug, "relative-path");
     }
