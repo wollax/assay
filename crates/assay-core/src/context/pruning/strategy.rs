@@ -1,0 +1,59 @@
+//! Strategy enum dispatch and result types.
+
+use std::collections::HashSet;
+
+use assay_types::context::{PrescriptionTier, PruneSample, PruneStrategy};
+
+use super::super::parser::ParsedEntry;
+
+/// Result of applying a single pruning strategy.
+pub struct StrategyResult {
+    /// The entries after this strategy has been applied.
+    pub entries: Vec<ParsedEntry>,
+    /// Number of lines removed by this strategy.
+    pub lines_removed: usize,
+    /// Number of lines modified (content trimmed) by this strategy.
+    pub lines_modified: usize,
+    /// Bytes saved by this strategy.
+    pub bytes_saved: u64,
+    /// Number of protected lines skipped.
+    pub protected_skipped: usize,
+    /// Sample removals for dry-run display (up to 3).
+    pub samples: Vec<PruneSample>,
+}
+
+impl StrategyResult {
+    /// Create a no-op result that passes entries through unchanged.
+    fn noop(entries: Vec<ParsedEntry>) -> Self {
+        Self {
+            entries,
+            lines_removed: 0,
+            lines_modified: 0,
+            bytes_saved: 0,
+            protected_skipped: 0,
+            samples: Vec::new(),
+        }
+    }
+}
+
+/// Apply a pruning strategy to a set of parsed entries.
+///
+/// Dispatches to the appropriate strategy function. Protected line numbers
+/// are skipped by all strategies.
+pub fn apply_strategy(
+    strategy: &PruneStrategy,
+    entries: Vec<ParsedEntry>,
+    _tier: PrescriptionTier,
+    _protected: &HashSet<usize>,
+) -> StrategyResult {
+    // Individual strategy implementations will be added in plans 02/03.
+    // For now, all strategies are no-ops that pass entries through unchanged.
+    match strategy {
+        PruneStrategy::ProgressCollapse => StrategyResult::noop(entries),
+        PruneStrategy::SystemReminderDedup => StrategyResult::noop(entries),
+        PruneStrategy::MetadataStrip => StrategyResult::noop(entries),
+        PruneStrategy::StaleReads => StrategyResult::noop(entries),
+        PruneStrategy::ThinkingBlocks => StrategyResult::noop(entries),
+        PruneStrategy::ToolOutputTrim => StrategyResult::noop(entries),
+    }
+}
