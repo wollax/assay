@@ -56,7 +56,12 @@
   - [x] 19-01: Tighten cargo-deny policies (multiple-versions deny, sources deny)
   - [x] 19-02: MCP handler tests & open issue triage
   - [x] 19-03: Dogfooding spec (self-check.toml)
-- [ ] Phase 20: Session JSONL Parser & Token Diagnostics
+- [x] Phase 20: Session JSONL Parser & Token Diagnostics — 2026-03-06
+  - [x] 20-01: Context types in assay-types (SessionEntry, UsageData, DiagnosticsReport, etc.)
+  - [x] 20-02: Core session parser, discovery, token extraction, diagnostics engine
+  - [x] 20-03: CLI `assay context diagnose` and `assay context list` commands
+  - [x] 20-04: MCP `context_diagnose` and `estimate_tokens` tools
+  - [x] 20-05: Quality gate verification and smoke tests
 - [ ] Phase 21: Team State Checkpointing
 - [ ] Phase 22: Pruning Engine
 - [ ] Phase 23: Guard Daemon & Recovery
@@ -68,7 +73,7 @@
 | Milestone | Status | Phases | Requirements | Complete |
 |-----------|--------|--------|--------------|----------|
 | v0.1.0 Proof of Concept | Shipped | 10 | 43 | 100% |
-| v0.2.0 Dual-Track Gates & Hardening | In Progress | 13 | 52 | 62% |
+| v0.2.0 Dual-Track Gates & Hardening | In Progress | 13 | 52 | 69% |
 | v0.3.0 | Planned | — | — | — |
 
 ---

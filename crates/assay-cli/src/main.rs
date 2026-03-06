@@ -104,6 +104,27 @@ Examples:
         #[command(subcommand)]
         command: GateCommand,
     },
+    /// Context window diagnostics for Claude Code sessions
+    #[command(after_long_help = "\
+Examples:
+  Analyze the most recent session:
+    assay context diagnose
+
+  Analyze a specific session:
+    assay context diagnose 3201041c-df85-4c91-a485-7b8c189f7636
+
+  List sessions for the current project:
+    assay context list
+
+  List all sessions with token counts:
+    assay context list --all --tokens
+
+  Output diagnostics as JSON:
+    assay context diagnose --json")]
+    Context {
+        #[command(subcommand)]
+        command: ContextCommand,
+    },
 }
 
 #[derive(Subcommand)]
@@ -223,6 +244,65 @@ Examples:
         /// Maximum number of runs to display (default: 20)
         #[arg(long, default_value = "20")]
         limit: usize,
+    },
+}
+
+#[derive(Subcommand)]
+enum ContextCommand {
+    /// Analyze token usage and bloat in a Claude Code session
+    #[command(after_long_help = "\
+Examples:
+  Analyze the most recent session for this project:
+    assay context diagnose
+
+  Analyze a specific session by ID:
+    assay context diagnose 3201041c-df85-4c91-a485-7b8c189f7636
+
+  Output as JSON:
+    assay context diagnose --json
+
+  Plain output (no color, no Unicode):
+    assay context diagnose --plain")]
+    Diagnose {
+        /// Session ID (defaults to most recent session)
+        session_id: Option<String>,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+        /// Plain output (no color, no Unicode symbols)
+        #[arg(long)]
+        plain: bool,
+    },
+    /// List Claude Code sessions with metadata
+    #[command(after_long_help = "\
+Examples:
+  List recent sessions:
+    assay context list
+
+  List all sessions:
+    assay context list --all
+
+  Include token counts (slower):
+    assay context list --tokens
+
+  Output as JSON:
+    assay context list --json")]
+    List {
+        /// Maximum number of sessions to show
+        #[arg(long, default_value = "20")]
+        limit: usize,
+        /// Show all sessions (overrides --limit)
+        #[arg(long)]
+        all: bool,
+        /// Include token counts (slower, reads session tails)
+        #[arg(long)]
+        tokens: bool,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+        /// Plain output (no color, no Unicode symbols)
+        #[arg(long)]
+        plain: bool,
     },
 }
 
@@ -1354,6 +1434,336 @@ fn print_evidence(stdout: &str, stderr: &str, truncated: bool, color: bool) {
     }
 }
 
+/// Format a byte count as a human-readable size string (e.g., "2.4 MB").
+fn format_size(bytes: u64) -> String {
+    const KB: u64 = 1024;
+    const MB: u64 = 1024 * 1024;
+    const GB: u64 = 1024 * 1024 * 1024;
+
+    if bytes >= GB {
+        format!("{:.1} GB", bytes as f64 / GB as f64)
+    } else if bytes >= MB {
+        format!("{:.1} MB", bytes as f64 / MB as f64)
+    } else if bytes >= KB {
+        format!("{:.1} KB", bytes as f64 / KB as f64)
+    } else {
+        format!("{bytes} B")
+    }
+}
+
+/// Format a number with thousands separators (e.g., 156234 -> "156,234").
+fn format_number(n: u64) -> String {
+    let s = n.to_string();
+    let mut result = String::with_capacity(s.len() + s.len() / 3);
+    for (i, ch) in s.chars().rev().enumerate() {
+        if i > 0 && i % 3 == 0 {
+            result.push(',');
+        }
+        result.push(ch);
+    }
+    result.chars().rev().collect()
+}
+
+/// Format a relative time string from an ISO 8601 timestamp (e.g., "2h ago").
+fn format_relative_time(iso: &str) -> String {
+    match iso.parse::<chrono::DateTime<chrono::Utc>>() {
+        Ok(dt) => {
+            let now = chrono::Utc::now();
+            let delta = now.signed_duration_since(dt);
+            let secs = delta.num_seconds();
+            if secs < 0 {
+                return dt.format("%Y-%m-%d %H:%M").to_string();
+            }
+            if secs < 60 {
+                format!("{secs}s ago")
+            } else if secs < 3600 {
+                format!("{}m ago", secs / 60)
+            } else if secs < 86400 {
+                format!("{}h ago", secs / 3600)
+            } else if secs < 604800 {
+                format!("{}d ago", secs / 86400)
+            } else {
+                dt.format("%Y-%m-%d %H:%M").to_string()
+            }
+        }
+        Err(_) => iso.to_string(),
+    }
+}
+
+/// Color a string with an ANSI code, respecting the `color` flag.
+fn colorize(text: &str, ansi_code: &str, color: bool) -> String {
+    if color {
+        format!("{ansi_code}{text}\x1b[0m")
+    } else {
+        text.to_string()
+    }
+}
+
+/// Handle `assay context diagnose [session_id] [--json] [--plain]`.
+fn handle_context_diagnose(
+    session_id: Option<&str>,
+    json: bool,
+    plain: bool,
+) -> anyhow::Result<i32> {
+    let cwd = std::env::current_dir().context("could not determine current directory")?;
+    let session_dir = assay_core::context::find_session_dir(&cwd)?;
+    let session_path = assay_core::context::resolve_session(&session_dir, session_id)?;
+
+    let resolved_id = session_path
+        .file_stem()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_string();
+
+    let report = assay_core::context::diagnose(&session_path, &resolved_id)?;
+
+    if json {
+        let output = serde_json::to_string_pretty(&report)
+            .context("failed to serialize diagnostics report")?;
+        println!("{output}");
+        return Ok(0);
+    }
+
+    let color = !plain && colors_enabled();
+    let divider = if plain { "-" } else { "\u{2500}" };
+    let section = |title: &str| {
+        let pad = 60usize.saturating_sub(title.len() + 4);
+        format!(
+            "{d}{d} {title} {rest}",
+            d = divider,
+            rest = divider.repeat(pad)
+        )
+    };
+
+    // Header
+    println!("{}", section("Context Diagnostics"));
+    println!("Session:  {}", report.session_id);
+    if let Some(ref model) = report.model {
+        println!("Model:    {model}");
+    }
+    println!(
+        "File:     {} ({})",
+        report.file_path,
+        format_size(report.file_size_bytes)
+    );
+
+    // Overview
+    println!();
+    println!("{}", section("Overview"));
+
+    if let Some(ref usage) = report.usage {
+        let context_tokens = usage.context_tokens();
+        let pct = report.context_utilization_pct.unwrap_or(0.0);
+        let health_label = if pct >= 85.0 {
+            colorize("Critical", "\x1b[31m", color)
+        } else if pct >= 60.0 {
+            colorize("Warning", "\x1b[33m", color)
+        } else {
+            colorize("Healthy", "\x1b[32m", color)
+        };
+
+        let pct_display = format!("{pct:.1}%");
+        let pct_colored = if pct >= 85.0 {
+            colorize(&pct_display, "\x1b[31m", color)
+        } else if pct >= 60.0 {
+            colorize(&pct_display, "\x1b[33m", color)
+        } else {
+            colorize(&pct_display, "\x1b[32m", color)
+        };
+
+        println!(
+            "Context tokens:    {} / {} ({})   {}",
+            format_number(context_tokens),
+            format_number(report.context_window),
+            pct_colored,
+            health_label
+        );
+        println!("Output tokens:     {}", format_number(usage.output_tokens));
+    } else {
+        println!("Context tokens:    (no usage data)");
+    }
+
+    println!(
+        "Total entries:     {} ({} messages)",
+        format_number(report.total_entries),
+        format_number(report.message_count)
+    );
+
+    // Bloat Breakdown
+    println!();
+    println!("{}", section("Bloat Breakdown"));
+
+    // Table header
+    let cat_width = 20;
+    let bytes_width = 12;
+    let count_width = 8;
+    let pct_width = 10;
+    println!(
+        "{:<cw$}{:>bw$}{:>cow$}{:>pw$}",
+        "Category",
+        "Bytes",
+        "Count",
+        "% of File",
+        cw = cat_width,
+        bw = bytes_width,
+        cow = count_width,
+        pw = pct_width,
+    );
+
+    // Only show categories with non-zero counts, sorted by bytes descending
+    let mut entries: Vec<_> = report
+        .bloat
+        .entries
+        .iter()
+        .filter(|e| e.count > 0)
+        .collect();
+    entries.sort_by(|a, b| b.bytes.cmp(&a.bytes));
+
+    if entries.is_empty() {
+        println!("  (no bloat detected)");
+    } else {
+        for entry in &entries {
+            let pct_str = format!("{:.1}%", entry.percentage);
+            println!(
+                "{:<cw$}{:>bw$}{:>cow$}{:>pw$}",
+                entry.category.label(),
+                format_size(entry.bytes),
+                entry.count,
+                pct_str,
+                cw = cat_width,
+                bw = bytes_width,
+                cow = count_width,
+                pw = pct_width,
+            );
+        }
+    }
+
+    Ok(0)
+}
+
+/// Handle `assay context list [--limit N] [--all] [--tokens] [--json] [--plain]`.
+fn handle_context_list(
+    limit: usize,
+    all: bool,
+    tokens: bool,
+    json: bool,
+    plain: bool,
+) -> anyhow::Result<i32> {
+    let cwd = std::env::current_dir().context("could not determine current directory")?;
+    let effective_limit = if all { usize::MAX } else { limit };
+
+    let sessions = assay_core::context::list_sessions(Some(&cwd), effective_limit, tokens)?;
+
+    if json {
+        let output =
+            serde_json::to_string_pretty(&sessions).context("failed to serialize session list")?;
+        println!("{output}");
+        return Ok(0);
+    }
+
+    if sessions.is_empty() {
+        println!("No sessions found for this project.");
+        return Ok(0);
+    }
+
+    let color = !plain && colors_enabled();
+
+    // Column widths
+    let id_width = 36; // UUID length
+    let size_width = 10;
+    let entries_width = 8;
+    let modified_width = 20;
+
+    // Header
+    if tokens {
+        println!(
+            "{:<iw$}  {:>sw$}  {:>ew$}  {:>tw$}  {:<mw$}",
+            "Session ID",
+            "Size",
+            "Entries",
+            "Tokens",
+            "Modified",
+            iw = id_width,
+            sw = size_width,
+            ew = entries_width,
+            tw = 10,
+            mw = modified_width,
+        );
+    } else {
+        println!(
+            "{:<iw$}  {:>sw$}  {:>ew$}  {:<mw$}",
+            "Session ID",
+            "Size",
+            "Entries",
+            "Modified",
+            iw = id_width,
+            sw = size_width,
+            ew = entries_width,
+            mw = modified_width,
+        );
+    }
+
+    for session in &sessions {
+        let size = format_size(session.file_size_bytes);
+        let modified = session
+            .last_modified
+            .as_deref()
+            .map(format_relative_time)
+            .unwrap_or_else(|| "unknown".to_string());
+
+        let id_display = if color {
+            colorize(&session.session_id, "\x1b[36m", true)
+        } else {
+            session.session_id.clone()
+        };
+        let id_pad = if color {
+            id_width + ANSI_COLOR_OVERHEAD
+        } else {
+            id_width
+        };
+
+        if tokens {
+            let token_str = session
+                .token_count
+                .map(format_number)
+                .unwrap_or_else(|| "-".to_string());
+            println!(
+                "{:<iw$}  {:>sw$}  {:>ew$}  {:>tw$}  {:<mw$}",
+                id_display,
+                size,
+                session.entry_count,
+                token_str,
+                modified,
+                iw = id_pad,
+                sw = size_width,
+                ew = entries_width,
+                tw = 10,
+                mw = modified_width,
+            );
+        } else {
+            println!(
+                "{:<iw$}  {:>sw$}  {:>ew$}  {:<mw$}",
+                id_display,
+                size,
+                session.entry_count,
+                modified,
+                iw = id_pad,
+                sw = size_width,
+                ew = entries_width,
+                mw = modified_width,
+            );
+        }
+    }
+
+    let shown = sessions.len();
+    if !all && shown == limit {
+        println!();
+        println!("Showing {shown} sessions. Use --all to see all sessions.");
+    }
+
+    Ok(0)
+}
+
 /// Display project status for bare `assay` invocation inside an initialized project.
 ///
 /// Shows the binary version, project name, and a spec inventory with criteria counts.
@@ -1537,6 +1947,20 @@ async fn run() -> anyhow::Result<i32> {
             GateCommand::History {
                 name, json, limit, ..
             } => handle_gate_history(&name, json, limit),
+        },
+        Some(Command::Context { command }) => match command {
+            ContextCommand::Diagnose {
+                session_id,
+                json,
+                plain,
+            } => handle_context_diagnose(session_id.as_deref(), json, plain),
+            ContextCommand::List {
+                limit,
+                all,
+                tokens,
+                json,
+                plain,
+            } => handle_context_list(limit, all, tokens, json, plain),
         },
         None => {
             // Note: project detection checks cwd only — no upward traversal.
