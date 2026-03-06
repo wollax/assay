@@ -9,19 +9,19 @@ See: .planning/PROJECT.md (updated 2026-03-02)
 
 ## Current Position
 
-Phase: 16 — Agent Gate Recording (VERIFIED & COMPLETE)
-Plan: 04 of 4 (complete)
+Phase: 17 — MCP Hardening & Agent History (VERIFIED & COMPLETE)
+Plan: 02 of 2 (complete)
 Status: Phase complete, verified, moved to completed/
-Last activity: 2026-03-05 — Phase 16 verified and completed
+Last activity: 2026-03-05 — Phase 17 verified and completed
 
-Progress: v0.2.0 [██████░   ] ~46%
+Progress: v0.2.0 [██████░   ] ~54%
 
 ## Milestone Progress
 
 | Milestone | Phases | Requirements | Complete |
 |-----------|--------|--------------|----------|
 | v0.1.0 | 10 | 43 | 100% (shipped) |
-| v0.2.0 | 13 (11-23) | 52 | ~46% |
+| v0.2.0 | 13 (11-23) | 52 | ~54% |
 
 ## Accumulated Context
 
@@ -121,6 +121,18 @@ v0.2.0 decisions (from 16-04 execution):
 - History detail view displays evaluator_role, confidence, evidence (200 chars), reasoning (200 chars) when present
 - 6 new schema snapshots added for Phase 16 types (total: 23)
 
+v0.2.0 decisions (from 17-01 execution):
+- gate_run timeout defaults to 300s, returns CallToolResult error (not McpError) on expiry
+- working_dir validation via is_dir() check before spawn_blocking — early return with domain error
+- spec_list uses SpecListResponse envelope with skip_serializing_if on errors vec
+- GateRunResponse gains required_passed, advisory_passed, blocked fields computed from EnforcementSummary
+
+v0.2.0 decisions (from 17-02 execution):
+- gate_history loads config for validation consistency, prefixes _config (not directly needed)
+- List mode reverses history::list() output for most-recent-first agent ergonomics
+- Detail mode passes through full GateRunRecord JSON without mapping
+- Default limit is 10 runs; unreadable entries skipped with tracing::warn
+
 ### Pending Issues
 
 38 open issues (expanded from 30 after Phase 8-10 PR reviews)
@@ -131,10 +143,10 @@ None.
 
 ### Next Actions
 
-Phase 16 verified and complete. Next: Phase 17 — MCP Hardening & Agent History
+Phase 17 verified and complete. Next: Phase 18 — CLI Hardening & Enforcement Surface
 
 ### Session Continuity
 
 Last session: 2026-03-05
-Stopped at: Completed 16-04-PLAN.md (Phase 16 complete)
+Stopped at: Completed 17-02-PLAN.md (Phase 17 complete)
 Resume file: None
