@@ -24,5 +24,8 @@ pub mod history;
 /// Project initialization.
 pub mod init;
 
+/// Team state checkpointing: extraction, persistence, and team config discovery.
+pub mod checkpoint;
+
 /// Claude Code session parsing, discovery, and token diagnostics.
 pub mod context;
