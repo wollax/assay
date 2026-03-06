@@ -290,6 +290,15 @@ fn format_fail(color: bool) -> &'static str {
     }
 }
 
+/// Format "WARN" with optional yellow color.
+fn format_warn(color: bool) -> &'static str {
+    if color {
+        "\x1b[33mWARN\x1b[0m"
+    } else {
+        "WARN"
+    }
+}
+
 /// Format a number with optional ANSI color, only applying color when
 /// the value is non-zero.
 fn format_count(value: usize, ansi_code: &str, color: bool) -> String {
@@ -633,6 +642,7 @@ fn load_gate_context() -> anyhow::Result<(
 struct StreamCounters {
     passed: usize,
     failed: usize,
+    warned: usize,
     skipped: usize,
 }
 
@@ -644,12 +654,16 @@ struct StreamConfig {
     color: bool,
 }
 
-/// Stream a single criterion's evaluation with live "running" -> "PASS/FAIL" display.
+/// Stream a single criterion's evaluation with live "running" -> "PASS/FAIL/WARN" display.
+///
+/// Enforcement is resolved per-criterion: advisory failures increment `warned` (not `failed`)
+/// and display as yellow WARN. Advisory criteria (pass or fail) are labeled `[advisory]`.
 fn stream_criterion(
     criterion: &assay_types::Criterion,
     working_dir: &std::path::Path,
     cfg: &StreamConfig,
     counters: &mut StreamCounters,
+    gate_section: Option<&assay_types::GateSection>,
 ) {
     if criterion.cmd.is_none()
         && criterion.path.is_none()
@@ -668,6 +682,10 @@ fn stream_criterion(
         return;
     }
 
+    let enforcement =
+        assay_core::gate::resolve_enforcement(criterion.enforcement, gate_section);
+    let is_advisory = enforcement == assay_types::Enforcement::Advisory;
+
     let label = criterion_label(criterion);
     let cr = if cfg.color { "\r\x1b[K" } else { "\r" };
     eprint!("{cr}  {label} {} ... running", criterion.name);
@@ -675,29 +693,53 @@ fn stream_criterion(
     let timeout =
         assay_core::gate::resolve_timeout(cfg.cli_timeout, criterion.timeout, cfg.config_timeout);
 
+    let advisory_tag = if is_advisory { " [advisory]" } else { "" };
+
     match assay_core::gate::evaluate(criterion, working_dir, timeout) {
         Ok(result) => {
-            let status_label = if result.passed {
+            if result.passed {
                 counters.passed += 1;
-                format_pass(cfg.color)
+                eprintln!(
+                    "{cr}  {label}{advisory_tag} {} ... {}",
+                    criterion.name,
+                    format_pass(cfg.color)
+                );
+            } else if is_advisory {
+                counters.warned += 1;
+                eprintln!(
+                    "{cr}  {label}{advisory_tag} {} ... {}",
+                    criterion.name,
+                    format_warn(cfg.color)
+                );
             } else {
                 counters.failed += 1;
-                format_fail(cfg.color)
-            };
-
-            eprintln!("{cr}  {label} {} ... {}", criterion.name, status_label);
+                eprintln!(
+                    "{cr}  {label} {} ... {}",
+                    criterion.name,
+                    format_fail(cfg.color)
+                );
+            }
 
             if !result.passed || cfg.verbose {
                 print_evidence(&result.stdout, &result.stderr, result.truncated, cfg.color);
             }
         }
         Err(err) => {
-            counters.failed += 1;
-            eprintln!(
-                "{cr}  {label} {} ... {}",
-                criterion.name,
-                format_fail(cfg.color)
-            );
+            if is_advisory {
+                counters.warned += 1;
+                eprintln!(
+                    "{cr}  {label}{advisory_tag} {} ... {}",
+                    criterion.name,
+                    format_warn(cfg.color)
+                );
+            } else {
+                counters.failed += 1;
+                eprintln!(
+                    "{cr}  {label} {} ... {}",
+                    criterion.name,
+                    format_fail(cfg.color)
+                );
+            }
             eprintln!("    error: {err}");
         }
     }
@@ -792,10 +834,10 @@ fn handle_gate_run_all(cli_timeout: Option<u64>, verbose: bool, json: bool) -> a
     let mut counters = StreamCounters {
         passed: 0,
         failed: 0,
+        warned: 0,
         skipped: 0,
     };
     let spec_count = result.entries.len();
-    let mut has_required_failure = false;
 
     for (i, entry) in result.entries.iter().enumerate() {
         if i > 0 {
@@ -832,15 +874,7 @@ fn handle_gate_run_all(cli_timeout: Option<u64>, verbose: bool, json: bool) -> a
         let before_skipped = counters.skipped;
 
         for criterion in &criteria {
-            let pre_fail = counters.failed;
-            stream_criterion(criterion, &working_dir, &cfg, &mut counters);
-            if counters.failed > pre_fail {
-                let enforcement =
-                    assay_core::gate::resolve_enforcement(criterion.enforcement, gate_section);
-                if enforcement == assay_types::Enforcement::Required {
-                    has_required_failure = true;
-                }
-            }
+            stream_criterion(criterion, &working_dir, &cfg, &mut counters, gate_section);
         }
 
         // Save per-spec history (streaming mode)
@@ -858,7 +892,7 @@ fn handle_gate_run_all(cli_timeout: Option<u64>, verbose: bool, json: bool) -> a
     }
 
     print_gate_summary(&counters, color, &format!("Results ({spec_count} specs)"));
-    Ok(if has_required_failure { 1 } else { 0 })
+    Ok(if counters.failed > 0 { 1 } else { 0 })
 }
 
 /// Handle `assay gate run <name> [--timeout N] [--verbose] [--json]`.
@@ -939,6 +973,7 @@ fn handle_gate_run(
     let mut counters = StreamCounters {
         passed: 0,
         failed: 0,
+        warned: 0,
         skipped: 0,
     };
     let executable_count = criteria
@@ -951,17 +986,8 @@ fn handle_gate_run(
         return Ok(0);
     }
 
-    let mut has_required_failure = false;
     for criterion in &criteria {
-        let before_failed = counters.failed;
-        stream_criterion(criterion, &working_dir, &cfg, &mut counters);
-        if counters.failed > before_failed {
-            let enforcement =
-                assay_core::gate::resolve_enforcement(criterion.enforcement, gate_section);
-            if enforcement == assay_types::Enforcement::Required {
-                has_required_failure = true;
-            }
-        }
+        stream_criterion(criterion, &working_dir, &cfg, &mut counters, gate_section);
     }
 
     // Save history (streaming mode has no per-criterion results)
@@ -975,7 +1001,7 @@ fn handle_gate_run(
     );
 
     print_gate_summary(&counters, color, "Results");
-    Ok(if has_required_failure { 1 } else { 0 })
+    Ok(if counters.failed > 0 { 1 } else { 0 })
 }
 
 /// Build a [`GateRunSummary`] for streaming mode (no per-criterion results or timing).
