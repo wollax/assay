@@ -10,9 +10,9 @@ See: .planning/PROJECT.md (updated 2026-03-02)
 ## Current Position
 
 Phase: 20 — Session JSONL Parser & Token Diagnostics
-Plan: 03 of 5 (complete)
-Status: CLI context commands implemented (diagnose + list)
-Last activity: 2026-03-06 — Plan 20-03 executed (CLI context commands)
+Plan: 04 of 5 (complete)
+Status: MCP context tools implemented (context_diagnose + estimate_tokens)
+Last activity: 2026-03-06 — Plan 20-04 executed (MCP context tools)
 
 Progress: v0.2.0 [█████████░] ~71%
 
@@ -165,10 +165,10 @@ None.
 
 ### Next Actions
 
-Phase 20 plan 03 complete. Next: Plan 20-04 (MCP context tools) or Plan 20-05 (integration tests)
+Phase 20 plan 04 complete. Next: Plan 20-05 (integration tests)
 
 ### Session Continuity
 
 Last session: 2026-03-06
-Stopped at: Completed 20-03-PLAN.md (CLI context commands)
+Stopped at: Completed 20-04-PLAN.md (MCP context tools)
 Resume file: None
