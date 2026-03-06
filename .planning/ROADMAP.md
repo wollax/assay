@@ -52,7 +52,10 @@
 - [x] Phase 18: CLI Hardening & Enforcement Surface — 2026-03-05
   - [x] 18-01: CLI error propagation foundation (anyhow, ASSAY_DIR_NAME, run() pattern)
   - [x] 18-02: Enforcement-aware streaming output (warned counter, advisory labels)
-- [ ] Phase 19: Testing & Tooling
+- [ ] Phase 19: Testing & Tooling (3 plans, 2 waves)
+  - [ ] 19-01: Tighten cargo-deny policies (multiple-versions deny, sources deny)
+  - [ ] 19-02: MCP handler tests & open issue triage
+  - [ ] 19-03: Dogfooding spec (self-check.toml)
 - [ ] Phase 20: Session JSONL Parser & Token Diagnostics
 - [ ] Phase 21: Team State Checkpointing
 - [ ] Phase 22: Pruning Engine
