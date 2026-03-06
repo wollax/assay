@@ -5,7 +5,9 @@
 
 use std::collections::HashSet;
 
-use assay_types::context::{PrescriptionTier, PruneSample};
+use assay_types::context::{
+    AssistantEntry, ContentBlock, PrescriptionTier, PruneSample, SessionEntry,
+};
 
 use super::super::super::parser::ParsedEntry;
 use super::super::strategy::StrategyResult;
@@ -23,7 +25,73 @@ pub fn thinking_blocks(
     _tier: PrescriptionTier,
     protected: &HashSet<usize>,
 ) -> StrategyResult {
-    todo!()
+    let mut result_entries = Vec::with_capacity(entries.len());
+    let mut lines_modified: usize = 0;
+    let mut bytes_saved: u64 = 0;
+    let mut protected_skipped: usize = 0;
+    let mut samples: Vec<PruneSample> = Vec::new();
+
+    for mut entry in entries {
+        let dominated_by_thinking = matches!(&entry.entry, SessionEntry::Assistant(a)
+            if a.message.as_ref().is_some_and(|m|
+                m.content.iter().any(|b| matches!(b, ContentBlock::Thinking { .. }))));
+
+        if dominated_by_thinking {
+            if protected.contains(&entry.line_number) {
+                protected_skipped += 1;
+                result_entries.push(entry);
+                continue;
+            }
+
+            let original_bytes = entry.raw_bytes;
+
+            // Extract and rebuild the assistant entry without thinking blocks
+            if let SessionEntry::Assistant(a) = &entry.entry {
+                let msg = a.message.as_ref().unwrap();
+                let filtered_content: Vec<ContentBlock> = msg
+                    .content
+                    .iter()
+                    .filter(|b| !matches!(b, ContentBlock::Thinking { .. }))
+                    .cloned()
+                    .collect();
+
+                let new_entry = SessionEntry::Assistant(AssistantEntry {
+                    meta: a.meta.clone(),
+                    message: Some(assay_types::context::AssistantMessage {
+                        model: msg.model.clone(),
+                        content: filtered_content,
+                        usage: msg.usage.clone(),
+                        stop_reason: msg.stop_reason.clone(),
+                    }),
+                });
+
+                entry.update_content(new_entry);
+            }
+
+            let saved = original_bytes.saturating_sub(entry.raw_bytes) as u64;
+            bytes_saved += saved;
+            lines_modified += 1;
+
+            if samples.len() < 3 {
+                samples.push(PruneSample {
+                    line_number: entry.line_number,
+                    description: "Thinking block removed".into(),
+                    bytes: saved,
+                });
+            }
+        }
+
+        result_entries.push(entry);
+    }
+
+    StrategyResult {
+        entries: result_entries,
+        lines_removed: 0,
+        lines_modified,
+        bytes_saved,
+        protected_skipped,
+        samples,
+    }
 }
 
 #[cfg(test)]
@@ -143,10 +211,11 @@ mod tests {
         // Verify no thinking blocks remain
         if let SessionEntry::Assistant(a) = &result.entries[0].entry {
             let msg = a.message.as_ref().unwrap();
-            assert!(msg
-                .content
-                .iter()
-                .all(|b| !matches!(b, ContentBlock::Thinking { .. })));
+            assert!(
+                msg.content
+                    .iter()
+                    .all(|b| !matches!(b, ContentBlock::Thinking { .. }))
+            );
         } else {
             panic!("expected assistant entry");
         }
@@ -160,7 +229,9 @@ mod tests {
         if let SessionEntry::Assistant(a) = &result.entries[0].entry {
             let msg = a.message.as_ref().unwrap();
             assert_eq!(msg.content.len(), 1);
-            assert!(matches!(&msg.content[0], ContentBlock::Text { text } if text == "visible response"));
+            assert!(
+                matches!(&msg.content[0], ContentBlock::Text { text } if text == "visible response")
+            );
         } else {
             panic!("expected assistant entry");
         }

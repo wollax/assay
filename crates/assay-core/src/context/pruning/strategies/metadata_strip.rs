@@ -5,10 +5,32 @@
 
 use std::collections::HashSet;
 
-use assay_types::context::{PrescriptionTier, PruneSample};
+use assay_types::context::{PrescriptionTier, PruneSample, SessionEntry};
 
 use super::super::super::parser::ParsedEntry;
 use super::super::strategy::StrategyResult;
+
+/// Returns true if this entry is a metadata type that should be stripped.
+fn is_metadata(entry: &SessionEntry) -> bool {
+    matches!(
+        entry,
+        SessionEntry::System(_)
+            | SessionEntry::FileHistorySnapshot(_)
+            | SessionEntry::QueueOperation(_)
+            | SessionEntry::PrLink(_)
+    )
+}
+
+/// Label for a metadata entry type (used in sample descriptions).
+fn metadata_label(entry: &SessionEntry) -> &'static str {
+    match entry {
+        SessionEntry::System(_) => "System entry",
+        SessionEntry::FileHistorySnapshot(_) => "File history snapshot",
+        SessionEntry::QueueOperation(_) => "Queue operation",
+        SessionEntry::PrLink(_) => "PR link",
+        _ => "Metadata",
+    }
+}
 
 /// Remove all unprotected metadata entries from the session.
 ///
@@ -21,7 +43,42 @@ pub fn metadata_strip(
     _tier: PrescriptionTier,
     protected: &HashSet<usize>,
 ) -> StrategyResult {
-    todo!()
+    let mut result_entries = Vec::new();
+    let mut lines_removed: usize = 0;
+    let mut bytes_saved: u64 = 0;
+    let mut protected_skipped: usize = 0;
+    let mut samples: Vec<PruneSample> = Vec::new();
+
+    for entry in entries {
+        if is_metadata(&entry.entry) {
+            if protected.contains(&entry.line_number) {
+                protected_skipped += 1;
+                result_entries.push(entry);
+            } else {
+                let entry_bytes = entry.raw_bytes as u64;
+                if samples.len() < 3 {
+                    samples.push(PruneSample {
+                        line_number: entry.line_number,
+                        description: metadata_label(&entry.entry).into(),
+                        bytes: entry_bytes,
+                    });
+                }
+                bytes_saved += entry_bytes;
+                lines_removed += 1;
+            }
+        } else {
+            result_entries.push(entry);
+        }
+    }
+
+    StrategyResult {
+        entries: result_entries,
+        lines_removed,
+        lines_modified: 0,
+        bytes_saved,
+        protected_skipped,
+        samples,
+    }
 }
 
 #[cfg(test)]

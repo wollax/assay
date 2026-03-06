@@ -51,11 +51,15 @@ pub fn apply_strategy(
             super::strategies::progress_collapse::progress_collapse(entries, _tier, _protected)
         }
         PruneStrategy::SystemReminderDedup => StrategyResult::noop(entries),
-        PruneStrategy::MetadataStrip => StrategyResult::noop(entries),
+        PruneStrategy::MetadataStrip => {
+            super::strategies::metadata_strip::metadata_strip(entries, _tier, _protected)
+        }
         PruneStrategy::StaleReads => {
             super::strategies::stale_reads::stale_reads(entries, _tier, _protected)
         }
-        PruneStrategy::ThinkingBlocks => StrategyResult::noop(entries),
+        PruneStrategy::ThinkingBlocks => {
+            super::strategies::thinking_blocks::thinking_blocks(entries, _tier, _protected)
+        }
         PruneStrategy::ToolOutputTrim => StrategyResult::noop(entries),
     }
 }
