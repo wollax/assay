@@ -63,6 +63,9 @@
   - [x] 20-04: MCP `context_diagnose` and `estimate_tokens` tools
   - [x] 20-05: Quality gate verification and smoke tests
 - [ ] Phase 21: Team State Checkpointing
+  - [ ] 21-01: Checkpoint types (assay-types) and core extraction + persistence (assay-core)
+  - [ ] 21-02: CLI `assay checkpoint save|show|list` commands
+  - [ ] 21-03: Plugin checkpoint hook script and hooks.json integration
 - [ ] Phase 22: Pruning Engine
 - [ ] Phase 23: Guard Daemon & Recovery
 
