@@ -2131,6 +2131,9 @@ cmd = "echo ok"
     #[test]
     fn test_working_dir_nonexistent_is_not_dir() {
         let nonexistent = std::path::PathBuf::from("/tmp/assay-nonexistent-dir-12345");
-        assert!(!nonexistent.is_dir(), "test precondition: path must not exist");
+        assert!(
+            !nonexistent.is_dir(),
+            "test precondition: path must not exist"
+        );
     }
 }

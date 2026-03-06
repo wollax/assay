@@ -9,19 +9,19 @@ See: .planning/PROJECT.md (updated 2026-03-02)
 
 ## Current Position
 
-Phase: 17 — MCP Hardening & Agent History (VERIFIED & COMPLETE)
+Phase: 18 — CLI Hardening & Enforcement Surface (VERIFIED & COMPLETE)
 Plan: 02 of 2 (complete)
 Status: Phase complete, verified, moved to completed/
-Last activity: 2026-03-05 — Phase 17 verified and completed
+Last activity: 2026-03-05 — Phase 18 verified and completed
 
-Progress: v0.2.0 [██████░   ] ~54%
+Progress: v0.2.0 [████████░ ] ~62%
 
 ## Milestone Progress
 
 | Milestone | Phases | Requirements | Complete |
 |-----------|--------|--------------|----------|
 | v0.1.0 | 10 | 43 | 100% (shipped) |
-| v0.2.0 | 13 (11-23) | 52 | ~54% |
+| v0.2.0 | 13 (11-23) | 52 | ~62% |
 
 ## Accumulated Context
 
@@ -133,6 +133,17 @@ v0.2.0 decisions (from 17-02 execution):
 - Detail mode passes through full GateRunRecord JSON without mapping
 - Default limit is 10 runs; unreadable entries skipped with tracing::warn
 
+v0.2.0 decisions (from 18-01 execution):
+- assay_mcp::serve() error wrapped via anyhow::anyhow! (Box<dyn Error> lacks Send+Sync for anyhow)
+- Bare invocation outside project returns Ok(1) not Err (expected condition, not error)
+- Gate business logic failures return Ok(1) (exit code) not Err (error propagation)
+
+v0.2.0 decisions (from 18-02 execution):
+- counters.failed tracks only required failures; counters.warned tracks advisory failures
+- Advisory criteria always labeled [advisory] in streaming output (pass or fail)
+- Summary line includes warned category between failed and skipped
+- Post-hoc has_required_failure tracking removed; exit code driven by counters.failed > 0
+
 ### Pending Issues
 
 38 open issues (expanded from 30 after Phase 8-10 PR reviews)
@@ -143,10 +154,10 @@ None.
 
 ### Next Actions
 
-Phase 17 verified and complete. Next: Phase 18 — CLI Hardening & Enforcement Surface
+Phase 18 verified and complete. Next: Phase 19 — Testing & Tooling
 
 ### Session Continuity
 
-Last session: 2026-03-05
-Stopped at: Completed 17-02-PLAN.md (Phase 17 complete)
+Last session: 2026-03-06
+Stopped at: Completed 18-02-PLAN.md
 Resume file: None
