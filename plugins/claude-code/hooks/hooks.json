@@ -10,6 +10,27 @@
             "timeout": 5
           }
         ]
+      },
+      {
+        "matcher": "Task|TaskCreate|TaskUpdate",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/scripts/checkpoint-hook.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/scripts/checkpoint-hook.sh",
+            "timeout": 10
+          }
+        ]
       }
     ],
     "Stop": [
@@ -19,6 +40,11 @@
             "type": "command",
             "command": "bash ${CLAUDE_PLUGIN_ROOT}/scripts/stop-gate-check.sh",
             "timeout": 120
+          },
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/scripts/checkpoint-hook.sh",
+            "timeout": 10
           }
         ]
       }
