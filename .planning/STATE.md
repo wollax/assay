@@ -9,19 +9,19 @@ See: .planning/PROJECT.md (updated 2026-03-02)
 
 ## Current Position
 
-Phase: 19 — Testing & Tooling (VERIFIED & COMPLETE)
-Plan: 03 of 3 (complete)
+Phase: 20 — Session JSONL Parser & Token Diagnostics (VERIFIED & COMPLETE)
+Plan: 05 of 5 (complete)
 Status: Phase complete, verified, moved to completed/
-Last activity: 2026-03-06 — Phase 19 verified and completed
+Last activity: 2026-03-06 — Phase 20 verified and completed
 
-Progress: v0.2.0 [█████████░] ~69%
+Progress: v0.2.0 [██████████] ~77%
 
 ## Milestone Progress
 
 | Milestone | Phases | Requirements | Complete |
 |-----------|--------|--------------|----------|
 | v0.1.0 | 10 | 43 | 100% (shipped) |
-| v0.2.0 | 13 (11-23) | 52 | ~62% |
+| v0.2.0 | 13 (11-23) | 52 | ~69% |
 
 ## Accumulated Context
 
@@ -149,6 +149,12 @@ v0.2.0 decisions (from 19-02 execution):
 - Integration tests require --test-threads=1 due to CWD dependency
 - Insta snapshots use manual normalization (no redactions feature)
 
+v0.2.0 decisions (from 20-02 execution):
+- `sessions_from_history()` and `estimate_tokens_from_bytes()` are public API marked `#[allow(dead_code)]` until consumed by CLI/MCP
+- Stale read detection uses HashSet of file_path strings; second read of same path counts as stale
+- `deny.toml` updated: MPL-2.0 allowed (option-ext via dirs-sys), getrandom@0.2 skipped (redox_users via dirs-sys)
+- Context module constants (`DEFAULT_CONTEXT_WINDOW`, `SYSTEM_OVERHEAD_TOKENS`) are `pub(super)` for intra-module sharing
+
 ### Pending Issues
 
 19 open issues (reduced from 38 after triaging 19 test-related issues in 19-02)
@@ -159,10 +165,10 @@ None.
 
 ### Next Actions
 
-Phase 19 verified and complete. Next: Phase 20 — Session JSONL Parser & Token Diagnostics
+Phase 20 verified and complete. Next: Phase 21 — Team State Checkpointing
 
 ### Session Continuity
 
 Last session: 2026-03-06
-Stopped at: Completed 19-03-PLAN.md (phase 19 complete)
+Stopped at: Phase 20 verified and completed
 Resume file: None

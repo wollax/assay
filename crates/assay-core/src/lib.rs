@@ -23,3 +23,6 @@ pub mod history;
 
 /// Project initialization.
 pub mod init;
+
+/// Claude Code session parsing, discovery, and token diagnostics.
+pub mod context;
