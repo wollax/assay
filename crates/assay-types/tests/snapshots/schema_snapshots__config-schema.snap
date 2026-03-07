@@ -33,6 +33,64 @@ expression: schema.to_value()
         }
       },
       "type": "object"
+    },
+    "GuardConfig": {
+      "additionalProperties": false,
+      "description": "Guard daemon configuration.\n\nControls thresholds, polling interval, and circuit breaker behavior\nfor the background context protection daemon.",
+      "properties": {
+        "hard_threshold": {
+          "default": 0.8,
+          "description": "Hard threshold as percentage of context window (0.0-1.0). Default: 0.8.",
+          "format": "double",
+          "type": "number"
+        },
+        "hard_threshold_bytes": {
+          "description": "Hard threshold as file size in bytes. Optional, whichever fires first wins.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "max_recoveries": {
+          "default": 3,
+          "description": "Maximum recovery attempts before circuit breaker trips. Default: 3.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "poll_interval_secs": {
+          "default": 5,
+          "description": "Polling interval in seconds. Default: 5.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "recovery_window_secs": {
+          "default": 600,
+          "description": "Time window in seconds for counting recoveries. Default: 600 (10 minutes).",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "soft_threshold": {
+          "default": 0.6,
+          "description": "Soft threshold as percentage of context window (0.0-1.0). Default: 0.6.",
+          "format": "double",
+          "type": "number"
+        },
+        "soft_threshold_bytes": {
+          "description": "Soft threshold as file size in bytes. Optional, whichever fires first wins.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -49,6 +107,17 @@ expression: schema.to_value()
         }
       ],
       "description": "Gate execution configuration."
+    },
+    "guard": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/GuardConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Guard daemon configuration."
     },
     "project_name": {
       "description": "Project name (required, non-empty after trim).",

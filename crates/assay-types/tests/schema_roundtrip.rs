@@ -100,6 +100,7 @@ fn config_validates() {
             working_dir: Some(".".to_string()),
             max_history: None,
         }),
+        guard: None,
     });
 }
 

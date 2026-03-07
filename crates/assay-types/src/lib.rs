@@ -118,6 +118,10 @@ pub struct Config {
     /// Gate execution configuration.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub gates: Option<GatesConfig>,
+
+    /// Guard daemon configuration.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub guard: Option<GuardConfig>,
 }
 
 inventory::submit! {
@@ -151,6 +155,65 @@ inventory::submit! {
         name: "gates-config",
         generate: || schemars::schema_for!(GatesConfig),
     }
+}
+
+/// Guard daemon configuration.
+///
+/// Controls thresholds, polling interval, and circuit breaker behavior
+/// for the background context protection daemon.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct GuardConfig {
+    /// Soft threshold as percentage of context window (0.0-1.0). Default: 0.6.
+    #[serde(default = "default_soft_threshold")]
+    pub soft_threshold: f64,
+
+    /// Hard threshold as percentage of context window (0.0-1.0). Default: 0.8.
+    #[serde(default = "default_hard_threshold")]
+    pub hard_threshold: f64,
+
+    /// Soft threshold as file size in bytes. Optional, whichever fires first wins.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub soft_threshold_bytes: Option<u64>,
+
+    /// Hard threshold as file size in bytes. Optional, whichever fires first wins.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hard_threshold_bytes: Option<u64>,
+
+    /// Polling interval in seconds. Default: 5.
+    #[serde(default = "default_poll_interval")]
+    pub poll_interval_secs: u64,
+
+    /// Maximum recovery attempts before circuit breaker trips. Default: 3.
+    #[serde(default = "default_max_recoveries")]
+    pub max_recoveries: u32,
+
+    /// Time window in seconds for counting recoveries. Default: 600 (10 minutes).
+    #[serde(default = "default_recovery_window")]
+    pub recovery_window_secs: u64,
+}
+
+inventory::submit! {
+    schema_registry::SchemaEntry {
+        name: "guard-config",
+        generate: || schemars::schema_for!(GuardConfig),
+    }
+}
+
+fn default_soft_threshold() -> f64 {
+    0.6
+}
+fn default_hard_threshold() -> f64 {
+    0.8
+}
+fn default_poll_interval() -> u64 {
+    5
+}
+fn default_max_recoveries() -> u32 {
+    3
+}
+fn default_recovery_window() -> u64 {
+    600
 }
 
 fn default_specs_dir() -> String {
