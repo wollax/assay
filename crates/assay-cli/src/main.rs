@@ -2413,9 +2413,9 @@ fn handle_guard_start(session: Option<&str>) -> anyhow::Result<i32> {
 
     // Load config
     let config = assay_core::config::load(&root)?;
-    let guard_config = config.guard.unwrap_or_else(|| {
-        serde_json::from_str("{}").expect("default GuardConfig should parse")
-    });
+    let guard_config = config
+        .guard
+        .unwrap_or_else(|| serde_json::from_str("{}").expect("default GuardConfig should parse"));
 
     // Validate guard config
     let errors = assay_core::guard::config::validate(&guard_config);
@@ -2448,10 +2448,7 @@ fn handle_guard_start(session: Option<&str>) -> anyhow::Result<i32> {
         .with_ansi(false)
         .init();
 
-    eprintln!(
-        "[guard] Starting — watching {}",
-        session_path.display()
-    );
+    eprintln!("[guard] Starting — watching {}", session_path.display());
     eprintln!(
         "[guard] Soft: {:.0}%, Hard: {:.0}%, Poll: {}s",
         guard_config.soft_threshold * 100.0,
