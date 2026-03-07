@@ -11,6 +11,7 @@ use assay_types::context::SessionInfo;
 mod diagnostics;
 mod discovery;
 mod parser;
+pub mod pruning;
 mod tokens;
 
 pub use diagnostics::diagnose;

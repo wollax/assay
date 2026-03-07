@@ -180,6 +180,7 @@ mod tests {
             }),
             line_number: 1,
             raw_bytes: 100,
+            raw_line: String::new(),
         }
     }
 
