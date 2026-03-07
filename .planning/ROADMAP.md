@@ -79,9 +79,9 @@
   - [x] 23-04: CLI `assay context guard` commands, schema snapshots, quality gate
 - [x] Phase 24: MCP History Persistence Fix — 2026-03-07
   - [x] 24-01: Add history save to MCP gate_run for command-only specs, integration test
-- [ ] Phase 25: Tech Debt Cleanup
-  - [ ] 25-01: Missing VERIFICATION.md backfill (phases 16, 19, 20)
-  - [ ] 25-02: Open issues triage and cleanup
+- [x] Phase 25: Tech Debt Cleanup — 2026-03-07
+  - [x] 25-01: Missing VERIFICATION.md backfill (phases 16, 19, 20)
+  - [x] 25-02: Open issues triage and cleanup
 
 ---
 
@@ -90,7 +90,7 @@
 | Milestone | Status | Phases | Requirements | Complete |
 |-----------|--------|--------|--------------|----------|
 | v0.1.0 Proof of Concept | Shipped | 10 | 43 | 100% |
-| v0.2.0 Dual-Track Gates & Hardening | In Progress | 15 | 52 | ~93% |
+| v0.2.0 Dual-Track Gates & Hardening | Complete | 15 | 52 | 100% |
 | v0.3.0 | Planned | — | — | — |
 
 ---

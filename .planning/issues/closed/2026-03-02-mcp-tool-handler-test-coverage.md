@@ -19,8 +19,3 @@ The E2E verification covered this manually, but there are no automated integrati
 Either:
 1. Add composed helper-sequence tests that mirror what each tool handler does
 2. Or add JSON-RPC transport integration tests that start the server and send messages via stdin/stdout
-
-
-## Resolution
-
-Resolved in Phase 19 Plan 02 (2026-03-06). Tests added in the appropriate crate test modules.
