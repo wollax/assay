@@ -328,6 +328,54 @@ Examples:
         #[arg(long)]
         plain: bool,
     },
+    /// Prune session bloat using composable strategies
+    #[command(after_long_help = "\
+Examples:
+  Dry-run with standard tier (default):
+    assay context prune 3201041c-df85-4c91-a485-7b8c189f7636
+
+  Dry-run with aggressive tier:
+    assay context prune 3201041c --tier aggressive
+
+  Run a single strategy:
+    assay context prune 3201041c --strategy thinking-blocks
+
+  Actually modify the session file:
+    assay context prune 3201041c --execute
+
+  List available backups for restore:
+    assay context prune 3201041c --restore
+
+  Output as JSON:
+    assay context prune 3201041c --json")]
+    Prune {
+        /// Session ID (required)
+        session_id: String,
+
+        /// Prescription tier: gentle, standard, aggressive
+        #[arg(long, default_value = "standard")]
+        tier: String,
+
+        /// Run a single strategy instead of a prescription
+        #[arg(long, conflicts_with = "tier")]
+        strategy: Option<String>,
+
+        /// Actually modify the session file (default is dry-run)
+        #[arg(long)]
+        execute: bool,
+
+        /// List and restore from a previous backup
+        #[arg(long, conflicts_with_all = ["tier", "strategy", "execute"])]
+        restore: bool,
+
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+
+        /// Plain output (no color, no Unicode)
+        #[arg(long)]
+        plain: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -1693,6 +1741,110 @@ fn handle_context_diagnose(
     Ok(0)
 }
 
+/// Handle `assay context prune <session_id> [--tier T] [--strategy S] [--execute] [--restore] [--json] [--plain]`.
+fn handle_context_prune(
+    session_id: &str,
+    tier_str: &str,
+    strategy_str: Option<&str>,
+    execute: bool,
+    restore: bool,
+    json: bool,
+    plain: bool,
+) -> anyhow::Result<i32> {
+    use assay_types::context::{PrescriptionTier, PruneStrategy};
+
+    let cwd = std::env::current_dir().context("could not determine current directory")?;
+    let session_dir = assay_core::context::find_session_dir(&cwd)?;
+    let session_path = assay_core::context::resolve_session(&session_dir, Some(session_id))?;
+
+    let root = project_root()?;
+    let backup_dir = assay_dir(&root).join("backups");
+
+    // Restore mode: list available backups
+    if restore {
+        let resolved_id = session_path
+            .file_stem()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
+        let backups =
+            assay_core::context::pruning::backup::list_backups(&backup_dir, &resolved_id)?;
+
+        if backups.is_empty() {
+            if json {
+                println!("[]");
+            } else {
+                println!("No backups found for session {session_id}");
+            }
+            return Ok(0);
+        }
+
+        if json {
+            let paths: Vec<String> = backups
+                .iter()
+                .map(|p| p.to_string_lossy().into_owned())
+                .collect();
+            let output =
+                serde_json::to_string_pretty(&paths).context("failed to serialize backups")?;
+            println!("{output}");
+        } else {
+            println!("Available backups for session {session_id}:");
+            for (i, path) in backups.iter().enumerate() {
+                println!("  {}. {}", i + 1, path.display());
+            }
+        }
+
+        return Ok(0);
+    }
+
+    // Parse tier
+    let tier = match tier_str {
+        "gentle" => PrescriptionTier::Gentle,
+        "standard" => PrescriptionTier::Standard,
+        "aggressive" => PrescriptionTier::Aggressive,
+        _ => bail!("unknown prescription tier: '{tier_str}'. Valid: gentle, standard, aggressive"),
+    };
+
+    // Determine strategies
+    let strategies: Vec<PruneStrategy> = if let Some(s) = strategy_str {
+        let single = match s {
+            "progress-collapse" => PruneStrategy::ProgressCollapse,
+            "stale-reads" => PruneStrategy::StaleReads,
+            "thinking-blocks" => PruneStrategy::ThinkingBlocks,
+            "tool-output-trim" => PruneStrategy::ToolOutputTrim,
+            "metadata-strip" => PruneStrategy::MetadataStrip,
+            "system-reminder-dedup" => PruneStrategy::SystemReminderDedup,
+            _ => bail!(
+                "unknown strategy: '{s}'. Valid: progress-collapse, stale-reads, thinking-blocks, tool-output-trim, metadata-strip, system-reminder-dedup"
+            ),
+        };
+        vec![single]
+    } else {
+        tier.strategies().to_vec()
+    };
+
+    // Run pruning
+    let report = assay_core::context::pruning::prune_session(
+        &session_path,
+        &strategies,
+        tier,
+        execute,
+        Some(&backup_dir),
+    )?;
+
+    if json {
+        let output =
+            serde_json::to_string_pretty(&report).context("failed to serialize prune report")?;
+        println!("{output}");
+    } else {
+        let color = !plain && colors_enabled();
+        let output = assay_core::context::pruning::report::format_dry_run_report(&report, color);
+        print!("{output}");
+    }
+
+    Ok(0)
+}
+
 /// Handle `assay context list [--limit N] [--all] [--tokens] [--json] [--plain]`.
 fn handle_context_list(
     limit: usize,
@@ -2137,6 +2289,23 @@ async fn run() -> anyhow::Result<i32> {
                 json,
                 plain,
             } => handle_context_list(limit, all, tokens, json, plain),
+            ContextCommand::Prune {
+                session_id,
+                tier,
+                strategy,
+                execute,
+                restore,
+                json,
+                plain,
+            } => handle_context_prune(
+                &session_id,
+                &tier,
+                strategy.as_deref(),
+                execute,
+                restore,
+                json,
+                plain,
+            ),
         },
         Some(Command::Checkpoint { command }) => match command {
             CheckpointCommand::Save {
