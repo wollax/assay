@@ -14,3 +14,7 @@ files:
 ## Solution
 
 This is already planned as FND-02 and FND-03 in Phase 3 (Error Types and Domain Model). Track here as a backlog reminder in case Phase 3 scope changes.
+
+## Resolution
+
+Resolved during v0.2.0 development. `AssayError` fully established with 20+ variants.

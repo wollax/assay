@@ -19,10 +19,10 @@
 
 | # | Must-Have | Status | Evidence |
 |---|-----------|--------|----------|
-| 1 | Every issue in .planning/issues/open/ has been read and triaged | PASS | TRIAGE-SUMMARY.md reports 143 total issues reviewed; 107 remaining open each categorized into priority tiers and functional areas |
+| 1 | Every issue in .planning/issues/open/ has been read and triaged | PASS | TRIAGE-SUMMARY.md reports 142 total issues reviewed; 106 remaining open each categorized into priority tiers and functional areas |
 | 2 | Resolved issues are moved to .planning/issues/closed/ with a resolution note | PASS | 17 newly closed issues, all 17 contain `## Resolution` section; 36 total files in closed/ (19 previously closed + 17 new) |
 | 3 | TRIAGE-SUMMARY.md exists with issue counts, closure stats, and remaining issues grouped by priority tier then functional area | PASS | `.planning/issues/TRIAGE-SUMMARY.md` has: total/closed/open counts, closure table with resolution, 3 priority tiers (Must-Fix/Should-Fix/Nice-to-Have) each subdivided by area (Types, Evaluation, CLI, MCP, Guard, History, Testing, etc.), summary statistics tables |
-| 4 | Each remaining open issue is categorized into must-fix, should-fix, or nice-to-have | PASS | All 107 open issues appear in exactly one priority tier: 31 must-fix + 22 should-fix + 54 nice-to-have = 107 (note: TRIAGE-SUMMARY says 32+24+51=107 in area breakdown; the per-tier counts 31+22+54 match the tier section totals) |
+| 4 | Each remaining open issue is categorized into must-fix, should-fix, or nice-to-have | PASS | All 106 open issues appear in exactly one priority tier: 32 must-fix + 23 should-fix + 51 nice-to-have = 106 |
 | 5 | Each remaining open issue has a target milestone (v0.2.1, v0.3.0, or backlog) | PASS | Must-Fix targets v0.2.1, Should-Fix targets v0.3.0, Nice-to-Have targets backlog -- stated in each tier heading |
 
 ## Quality Gate
@@ -35,14 +35,9 @@
 | Criterion | Status | Evidence |
 |-----------|--------|----------|
 | Phases 16, 19, and 20 each have a VERIFICATION.md document | PASS | All three exist in `.planning/phases/completed/` |
-| Open issues triaged: resolved issues closed, remaining categorized | PASS | 17 issues newly closed with resolutions; 107 remaining categorized by priority and area |
-| Issue count reduced to actionable items only | PASS | All 107 remaining issues have priority tier and target milestone; duplicate groups identified |
-
-## Observations
-
-- **Minor bookkeeping:** `2026-03-01-test-coverage-gaps-phase6.md` exists in both `open/` and `closed/` directories. The closed copy tracks resolved items while the open copy tracks remaining gaps. Not a blocking issue but the dual presence inflates the open count by 1.
-- **Count discrepancy:** TRIAGE-SUMMARY priority-tier counts (31+22+54=107) differ slightly from area-breakdown totals (32+24+51=107) -- both sum to 107, suggesting a minor categorization shift between the two views. Non-blocking.
+| Open issues triaged: resolved issues closed, remaining categorized | PASS | 17 issues newly closed with resolutions; 106 remaining categorized by priority and area |
+| Issue count reduced to actionable items only | PASS | All 106 remaining issues have priority tier and target milestone; duplicate groups identified |
 
 ## Gaps
 
-None blocking. The two observations above are cosmetic bookkeeping issues.
+None.

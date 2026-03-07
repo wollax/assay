@@ -20,3 +20,7 @@ Also, `resolve_working_dir` comment says "matching CLI behavior" which will rot 
 ## Solution
 
 Add field-level doc comments explaining non-obvious behaviors. Consider a `CriterionStatus` enum for compile-time guarantees on valid status values.
+
+## Resolution
+
+Resolved during Phase 17. All response structs have field-level doc comments.

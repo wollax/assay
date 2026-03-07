@@ -14,3 +14,7 @@ The MCP server defines private response structs `GateRunResponse` and `Criterion
 ## Solution
 
 Add doc comments to `GateRunResponse` and `CriterionSummary` explaining their role in the MCP response serialization flow.
+
+## Resolution
+
+Resolved during Phase 17. `GateRunResponse` and `CriterionSummary` have doc comments.

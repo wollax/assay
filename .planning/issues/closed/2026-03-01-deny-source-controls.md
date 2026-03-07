@@ -14,3 +14,7 @@ files:
 ## Solution
 
 Change both to `"deny"` to enforce supply chain integrity. The existing `allow-registry` and `allow-git` lists will then act as proper allowlists.
+
+## Resolution
+
+Resolved during Phase 19-01. `deny.toml` uses `unknown-registry = "deny"`.

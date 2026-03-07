@@ -1,10 +1,10 @@
 # Triage Summary
 
 **Date:** 2026-03-07
-**Total issues reviewed:** 143
+**Total issues reviewed:** 142
 **Previously closed:** 19
 **Closed in this triage:** 17
-**Remaining open:** 107
+**Remaining open:** 106
 
 ## Closed Issues (17 newly closed)
 
@@ -19,7 +19,6 @@ All closures verified against current source code.
 | dogfood-checkpoint | `self-check.toml` exists in `.assay/specs/` (Phase 19) |
 | phase3-serde-hygiene | 89 `skip_serializing_if` annotations across 8 type files |
 | phase3-truncation-metadata | `truncated` and `original_bytes` fields exist on `GateResult` |
-| test-coverage-gaps-phase3 | Deserialization failure tests + JSON roundtrip tests added |
 | assay-dir-string-literal | `ASSAY_DIR_NAME` constant extracted and used |
 | bare-invocation-exit-code | Returns `Ok(1)` for bare invocation outside project |
 | mcp-gate-run-timeout-param | `timeout: Option<u64>` on `GateRunParams` |
@@ -27,7 +26,6 @@ All closures verified against current source code.
 | mcp-spec-list-silent-errors | `SpecListResponse` includes `errors` field |
 | mcp-spec-not-found-unused | `SpecNotFound` now constructed in `load_spec_entry()` |
 | mcp-tool-description-accuracy | Descriptions mention optional fields and skipped criteria |
-| mcp-tool-handler-test-coverage | Integration tests in `crates/assay-mcp/tests/` |
 | mcp-working-dir-validation | `is_dir()` check before gate evaluation |
 | cli-advisory-failure-display | Advisory failures display as WARN with separate `warned` counter |
 | mcp-response-struct-docs | `GateRunResponse` and `CriterionSummary` have doc comments |
@@ -165,7 +163,6 @@ Code quality, duplication, naming, and ergonomics improvements.
 
 | Issue | Area | Summary |
 |-------|------|---------|
-| test-coverage-gaps-phase6 | testing | Missing edge case tests (empty dir partially resolved, others remain) |
 | gate-pr-review-suggestions | testing | Gate module PR review: missing pipe error, thread panic, process group tests |
 
 ### Nice-to-Have (backlog)
@@ -276,10 +273,10 @@ Doc comments, minor tests, cosmetic improvements.
 
 | Priority | Count | Target |
 |----------|-------|--------|
-| Must-Fix | 31 | v0.2.1 |
-| Should-Fix | 22 | v0.3.0 |
-| Nice-to-Have | 54 | backlog |
-| **Total** | **107** | |
+| Must-Fix | 32 | v0.2.1 |
+| Should-Fix | 23 | v0.3.0 |
+| Nice-to-Have | 51 | backlog |
+| **Total** | **106** | |
 
 | Area | Must | Should | Nice | Total |
 |------|------|--------|------|-------|
@@ -289,7 +286,7 @@ Doc comments, minor tests, cosmetic improvements.
 | MCP | 7 | 1 | 1 | 9 |
 | Guard | 8 | 2 | 8 | 18 |
 | History | 4 | 3 | 2 | 9 |
-| Testing | 0 | 2 | 9 | 11 |
+| Testing | 0 | 1 | 9 | 10 |
 | Spec/Config | 0 | 3 | 0 | 3 |
 | Tooling/Design | 0 | 0 | 8 | 8 |
-| **Total** | **32** | **24** | **51** | **107** |
+| **Total** | **32** | **23** | **51** | **106** |

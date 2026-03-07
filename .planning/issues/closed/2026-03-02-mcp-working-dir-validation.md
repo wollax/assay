@@ -15,3 +15,7 @@ If `config.gates.working_dir` is set to a non-existent directory, `resolve_worki
 ## Solution
 
 Add a `Path::exists()` check in `resolve_working_dir` (or in `gate_run` after calling it) and return a domain error before running any gates if the directory doesn't exist.
+
+## Resolution
+
+Resolved during Phase 17-01. `is_dir()` check before gate evaluation.

@@ -15,3 +15,7 @@ Advisory enforcement failures are displayed as "FAILED" in streaming output and 
 ## Solution
 
 Introduce a distinct label (e.g., "ADVISORY" or "WARNING") for advisory failures, or separate the advisory counter from the `failed` counter in the summary line to clarify the distinction.
+
+## Resolution
+
+Resolved during Phase 18-02. Advisory failures display as WARN with separate `warned` counter.

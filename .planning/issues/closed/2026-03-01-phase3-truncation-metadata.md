@@ -25,3 +25,7 @@ pub struct GateResult {
 ```
 
 Apply `#[serde(skip_serializing_if)]` so `truncated: false` and `original_bytes: None` don't appear in serialized JSON.
+
+## Resolution
+
+Resolved during v0.2.0 development. `truncated` and `original_bytes` fields exist on `GateResult`.

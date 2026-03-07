@@ -12,3 +12,7 @@ The string literal `".assay"` appears in multiple handler functions throughout t
 ## Solution
 
 Define a module-level constant (e.g., `const ASSAY_DIR: &str = ".assay"`) and use it throughout the handler functions instead of the raw string literal. This centralizes the value and makes it easier to maintain and reason about.
+
+## Resolution
+
+Resolved during Phase 18-01. `ASSAY_DIR_NAME` constant extracted and used.
