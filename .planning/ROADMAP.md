@@ -72,11 +72,11 @@
   - [x] 22-03: Content-modification strategies (thinking-blocks, metadata-strip, tool-output-trim, system-reminder-dedup)
   - [x] 22-04: Pipeline executor, backup/restore, dry-run report
   - [x] 22-05: CLI `assay context prune` integration
-- [ ] Phase 23: Guard Daemon & Recovery
-  - [ ] 23-01: Guard config types, PID file management, threshold evaluation, error variants
-  - [ ] 23-02: Circuit breaker state machine and escalating prescriptions
-  - [ ] 23-03: Daemon event loop, file system watcher, public API (start/stop/status)
-  - [ ] 23-04: CLI `assay context guard` commands, schema snapshots, quality gate
+- [x] Phase 23: Guard Daemon & Recovery — 2026-03-07
+  - [x] 23-01: Guard config types, PID file management, threshold evaluation, error variants
+  - [x] 23-02: Circuit breaker state machine and escalating prescriptions
+  - [x] 23-03: Daemon event loop, file system watcher, public API (start/stop/status)
+  - [x] 23-04: CLI `assay context guard` commands, schema snapshots, quality gate
 
 ---
 
@@ -85,7 +85,7 @@
 | Milestone | Status | Phases | Requirements | Complete |
 |-----------|--------|--------|--------------|----------|
 | v0.1.0 Proof of Concept | Shipped | 10 | 43 | 100% |
-| v0.2.0 Dual-Track Gates & Hardening | In Progress | 13 | 52 | 85% |
+| v0.2.0 Dual-Track Gates & Hardening | Complete | 13 | 52 | 100% |
 | v0.3.0 | Planned | — | — | — |
 
 ---
