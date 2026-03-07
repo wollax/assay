@@ -198,6 +198,26 @@ pub enum AssayError {
         /// Description of the read/parse error.
         message: String,
     },
+
+    /// Guard daemon is already running.
+    #[error("guard daemon already running (PID {pid})")]
+    GuardAlreadyRunning {
+        /// The PID of the running guard process.
+        pid: u32,
+    },
+
+    /// Guard daemon is not running (no PID file or process dead).
+    #[error("guard daemon is not running")]
+    GuardNotRunning,
+
+    /// Guard circuit breaker tripped after too many recoveries.
+    #[error("guard circuit breaker tripped: {recoveries} recoveries in {window_secs}s")]
+    GuardCircuitBreakerTripped {
+        /// Number of recoveries that triggered the breaker.
+        recoveries: u32,
+        /// The time window in seconds.
+        window_secs: u64,
+    },
 }
 
 /// Convenience result alias for Assay operations.
