@@ -4,3 +4,4 @@ pub mod circuit_breaker;
 pub mod config;
 pub mod pid;
 pub mod thresholds;
+pub mod watcher;
