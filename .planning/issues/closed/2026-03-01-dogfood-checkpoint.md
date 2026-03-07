@@ -28,3 +28,7 @@ Introduce a dogfooding checkpoint once enough infrastructure exists. The natural
 - After Phase 7 completes, create a self-referential spec (`.assay/specs/self.toml`) with criteria like `just ready`, `just fmt-check`, `just lint`
 - Wire it into the development workflow before building Phase 8+
 - Track friction points as issues — they represent real user experience problems
+
+## Resolution
+
+Resolved during Phase 19-03. `self-check.toml` exists in `.assay/specs/`.

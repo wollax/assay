@@ -20,3 +20,7 @@ Examples:
 - `#[serde(skip_serializing_if = "Option::is_none")]`
 - `#[serde(skip_serializing_if = "String::is_empty")]`
 - `#[serde(skip_serializing_if = "Vec::is_empty")]`
+
+## Resolution
+
+Resolved during Phase 11. 89 `skip_serializing_if` annotations across 8 type files.

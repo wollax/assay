@@ -14,3 +14,7 @@ files:
 ## Solution
 
 Change `main()` to return `color_eyre::Result<()>` (color-eyre is already a workspace dependency). Add `color_eyre::install()?` and return `Ok(())`.
+
+## Resolution
+
+Resolved during Phase 18 (CLI hardening). `main()` uses async with `run() -> Result<i32>`.

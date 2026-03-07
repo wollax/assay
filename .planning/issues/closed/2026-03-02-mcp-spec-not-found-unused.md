@@ -24,3 +24,7 @@ Either:
 1. Construct `SpecNotFound` in `load_spec` when the Io kind is `NotFound`
 2. Or have `spec::load` itself return `SpecNotFound` when the file doesn't exist
 3. Update the test to use an actually-exercised error variant
+
+## Resolution
+
+Resolved during v0.2.0 development. `SpecNotFound` now constructed in `load_spec_entry()`.

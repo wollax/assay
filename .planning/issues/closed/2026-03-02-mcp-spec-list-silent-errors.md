@@ -20,3 +20,7 @@ Surface errors in the response. Options:
 1. Append warnings as additional `Content::text` items in the `CallToolResult`
 2. Add a `warnings` or `errors` field to the response JSON
 3. Return `CallToolResult::error` when errors are present alongside an empty spec list
+
+## Resolution
+
+Resolved during Phase 17-01. `SpecListResponse` includes `errors` field.

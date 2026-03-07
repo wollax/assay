@@ -14,3 +14,7 @@ files:
 ## Solution
 
 Change to `multiple-versions = "deny"` and add explicit `[[bans.skip]]` entries with justification comments for known unavoidable duplicates (crossterm pin until ratatui aligns, thiserror transitive dep).
+
+## Resolution
+
+Resolved during Phase 19-01. `deny.toml` uses `multiple-versions = "deny"`.

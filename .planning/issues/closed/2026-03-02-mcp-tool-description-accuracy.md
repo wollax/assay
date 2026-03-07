@@ -21,3 +21,7 @@ Two tool description inaccuracies:
 
 1. Update spec_list: "Returns an array of {name, criteria_count, description?} objects where description is omitted when empty."
 2. Update gate_run: Add "Criteria without a command are skipped and counted separately."
+
+## Resolution
+
+Resolved during Phase 17. Descriptions mention optional fields and skipped criteria.

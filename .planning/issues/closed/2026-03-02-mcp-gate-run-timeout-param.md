@@ -16,3 +16,7 @@ files:
 ## Solution
 
 Add `timeout_secs: Option<u64>` with `#[serde(default)]` to `GateRunParams` and pass it as the `cli_timeout` argument to `evaluate_all`. Update the tool description to mention the timeout parameter.
+
+## Resolution
+
+Resolved during Phase 17-01. `timeout: Option<u64>` on `GateRunParams`.
