@@ -376,6 +376,48 @@ Examples:
         #[arg(long)]
         plain: bool,
     },
+    /// Background context protection daemon
+    #[command(after_long_help = "\
+Examples:
+  Start the guard daemon:
+    assay context guard start
+
+  Start with a specific session:
+    assay context guard start --session /path/to/session.jsonl
+
+  Check daemon status:
+    assay context guard status
+
+  Stop the daemon:
+    assay context guard stop
+
+  View daemon logs:
+    assay context guard logs
+    assay context guard logs --level warn")]
+    Guard {
+        #[command(subcommand)]
+        command: GuardCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum GuardCommand {
+    /// Start the guard daemon (runs in foreground)
+    Start {
+        /// Session file path (auto-discovers if omitted)
+        #[arg(long)]
+        session: Option<String>,
+    },
+    /// Stop the running guard daemon
+    Stop,
+    /// Show guard daemon status
+    Status,
+    /// View guard daemon logs
+    Logs {
+        /// Filter by log level (trace, debug, info, warn, error)
+        #[arg(long, default_value = "info")]
+        level: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -2306,6 +2348,12 @@ async fn run() -> anyhow::Result<i32> {
                 json,
                 plain,
             ),
+            ContextCommand::Guard { command } => match command {
+                GuardCommand::Start { session } => handle_guard_start(session.as_deref()),
+                GuardCommand::Stop => handle_guard_stop(),
+                GuardCommand::Status => handle_guard_status(),
+                GuardCommand::Logs { level } => handle_guard_logs(&level),
+            },
         },
         Some(Command::Checkpoint { command }) => match command {
             CheckpointCommand::Save {
@@ -2333,6 +2381,176 @@ async fn run() -> anyhow::Result<i32> {
             }
         }
     }
+}
+
+// ── Guard daemon handlers ─────────────────────────────────────────
+
+/// Minimum severity rank for log level filtering.
+fn log_level_rank(level: &str) -> u8 {
+    match level.to_uppercase().as_str() {
+        "TRACE" => 0,
+        "DEBUG" => 1,
+        "INFO" => 2,
+        "WARN" => 3,
+        "ERROR" => 4,
+        _ => 2, // default to INFO
+    }
+}
+
+/// All log level names at or above the given rank.
+fn levels_at_or_above(min_rank: u8) -> Vec<&'static str> {
+    ["TRACE", "DEBUG", "INFO", "WARN", "ERROR"]
+        .into_iter()
+        .filter(|l| log_level_rank(l) >= min_rank)
+        .collect()
+}
+
+/// Handle `assay context guard start [--session <path>]`.
+#[cfg(unix)]
+fn handle_guard_start(session: Option<&str>) -> anyhow::Result<i32> {
+    let root = project_root()?;
+    let assay = assay_dir(&root);
+
+    // Load config
+    let config = assay_core::config::load(&root)?;
+    let guard_config = config.guard.unwrap_or_else(|| {
+        serde_json::from_str("{}").expect("default GuardConfig should parse")
+    });
+
+    // Validate guard config
+    let errors = assay_core::guard::config::validate(&guard_config);
+    if !errors.is_empty() {
+        eprintln!("Guard configuration errors:");
+        for e in &errors {
+            eprintln!("  - {e}");
+        }
+        return Ok(1);
+    }
+
+    // Resolve session path
+    let session_path = match session {
+        Some(s) => std::path::PathBuf::from(s),
+        None => {
+            let session_dir = assay_core::context::find_session_dir(&root)?;
+            assay_core::context::resolve_session(&session_dir, None)?
+        }
+    };
+
+    // Set up guard log directory and tracing
+    let guard_dir = assay.join("guard");
+    std::fs::create_dir_all(&guard_dir)
+        .with_context(|| format!("creating guard log directory: {}", guard_dir.display()))?;
+
+    let file_appender = tracing_appender::rolling::never(&guard_dir, "guard.log");
+    let (non_blocking, _appender_guard) = tracing_appender::non_blocking(file_appender);
+    tracing_subscriber::fmt()
+        .with_writer(non_blocking)
+        .with_ansi(false)
+        .init();
+
+    eprintln!(
+        "[guard] Starting — watching {}",
+        session_path.display()
+    );
+    eprintln!(
+        "[guard] Soft: {:.0}%, Hard: {:.0}%, Poll: {}s",
+        guard_config.soft_threshold * 100.0,
+        guard_config.hard_threshold * 100.0,
+        guard_config.poll_interval_secs,
+    );
+
+    let rt = tokio::runtime::Runtime::new()?;
+    let result = rt.block_on(assay_core::guard::start_guard(
+        &session_path,
+        &assay,
+        guard_config,
+    ));
+
+    match result {
+        Ok(()) => {
+            eprintln!("[guard] Stopped cleanly.");
+            Ok(0)
+        }
+        Err(ref e) if matches!(e, assay_core::AssayError::GuardCircuitBreakerTripped { .. }) => {
+            eprintln!("{e}");
+            Ok(2)
+        }
+        Err(e) => Err(e.into()),
+    }
+}
+
+#[cfg(not(unix))]
+fn handle_guard_start(_session: Option<&str>) -> anyhow::Result<i32> {
+    eprintln!("Guard daemon is only supported on Unix platforms.");
+    Ok(1)
+}
+
+/// Handle `assay context guard stop`.
+#[cfg(unix)]
+fn handle_guard_stop() -> anyhow::Result<i32> {
+    let root = project_root()?;
+    let assay = assay_dir(&root);
+
+    match assay_core::guard::stop_guard(&assay) {
+        Ok(()) => {
+            println!("[guard] Daemon stopped.");
+            Ok(0)
+        }
+        Err(assay_core::AssayError::GuardNotRunning) => {
+            println!("Guard daemon is not running.");
+            Ok(1)
+        }
+        Err(e) => Err(e.into()),
+    }
+}
+
+#[cfg(not(unix))]
+fn handle_guard_stop() -> anyhow::Result<i32> {
+    eprintln!("Guard daemon is only supported on Unix platforms.");
+    Ok(1)
+}
+
+/// Handle `assay context guard status`.
+fn handle_guard_status() -> anyhow::Result<i32> {
+    let root = project_root()?;
+    let assay = assay_dir(&root);
+
+    match assay_core::guard::guard_status(&assay) {
+        assay_core::guard::GuardStatus::Running { pid } => {
+            println!("Guard daemon running (PID {pid})");
+            Ok(0)
+        }
+        assay_core::guard::GuardStatus::Stopped => {
+            println!("Guard daemon is not running");
+            Ok(1)
+        }
+    }
+}
+
+/// Handle `assay context guard logs [--level <level>]`.
+fn handle_guard_logs(level: &str) -> anyhow::Result<i32> {
+    let root = project_root()?;
+    let assay = assay_dir(&root);
+    let log_path = assay.join("guard").join("guard.log");
+
+    if !log_path.is_file() {
+        println!("No guard logs found.");
+        return Ok(1);
+    }
+
+    let contents = std::fs::read_to_string(&log_path)
+        .with_context(|| format!("reading guard log: {}", log_path.display()))?;
+
+    let min_rank = log_level_rank(level);
+    let visible = levels_at_or_above(min_rank);
+
+    for line in contents.lines() {
+        if visible.iter().any(|l| line.contains(l)) {
+            println!("{line}");
+        }
+    }
+
+    Ok(0)
 }
 
 #[tokio::main]
