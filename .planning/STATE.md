@@ -10,9 +10,9 @@ See: .planning/PROJECT.md (updated 2026-03-02)
 ## Current Position
 
 Phase: 23 — Guard Daemon & Recovery
-Plan: 01, 02 of 4 (complete)
-Status: Plans 01 (guard foundation) and 02 (circuit breaker) complete; Plans 03, 04 pending
-Last activity: 2026-03-07 — Plan 23-01 guard foundation complete
+Plan: 01, 02, 03 of 4 (complete)
+Status: Plans 01-03 complete; Plan 04 (CLI integration) pending
+Last activity: 2026-03-06 — Plan 23-03 daemon event loop complete
 
 Progress: v0.2.0 [█████████████] ~92%
 
@@ -153,7 +153,7 @@ v0.2.0 decisions (from 20-02 execution):
 - `sessions_from_history()` and `estimate_tokens_from_bytes()` are public API marked `#[allow(dead_code)]` until consumed by CLI/MCP
 - Stale read detection uses HashSet of file_path strings; second read of same path counts as stale
 - `deny.toml` updated: MPL-2.0 allowed (option-ext via dirs-sys), getrandom@0.2 skipped (redox_users via dirs-sys)
-- Context module constants (`DEFAULT_CONTEXT_WINDOW`, `SYSTEM_OVERHEAD_TOKENS`) are `pub(super)` for intra-module sharing
+- Context module constants (`DEFAULT_CONTEXT_WINDOW`, `SYSTEM_OVERHEAD_TOKENS`) widened to `pub(crate)` for guard daemon access
 
 v0.2.0 decisions (from 21-01 execution):
 - ParsedEntry imported via pub re-export (`crate::context::ParsedEntry`), not private parser module
@@ -175,12 +175,27 @@ v0.2.0 decisions (from 22-01 execution):
 
 None.
 
+v0.2.0 decisions (from 23-03 execution):
+- Context tokens module widened from `pub(super)` to `pub(crate)` for guard daemon access
+- `estimate_tokens_from_bytes` changed from `pub` + `#[allow(dead_code)]` to `pub(crate)` (consumed by daemon)
+- SessionWatcher watches both file (Modify via kqueue) and parent directory (Create for atomic writes)
+- Guard daemon event loop uses `tokio::select!` with 1s debounce on watcher events
+- Hard threshold enforces minimum Standard tier (overrides Gentle from circuit breaker)
+
+### Pending Issues
+
+19 open issues (reduced from 38 after triaging 19 test-related issues in 19-02)
+
+### Blockers
+
+None.
+
 ### Next Actions
 
-Phase 22 complete. Next: Phase 23 — Guard Daemon & Recovery
+Phase 23 Plan 04 (CLI integration) pending.
 
 ### Session Continuity
 
 Last session: 2026-03-06
-Stopped at: Phase 22 complete
-Resume file: .planning/phases/completed/22-pruning-engine/
+Stopped at: Phase 23 Plan 03 complete
+Resume file: .planning/phases/active/23-guard-daemon-recovery/
