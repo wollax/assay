@@ -9,19 +9,19 @@ See: .planning/PROJECT.md (updated 2026-03-02)
 
 ## Current Position
 
-Phase: 24 — MCP History Persistence Fix (IN PROGRESS)
-Plan: 1 of 1 (complete)
-Status: Phase 24 complete
-Last activity: 2026-03-07 — Completed 24-01-PLAN.md
+Phase: 25 — Tech Debt Cleanup (PENDING)
+Plan: not yet started
+Status: Phase 24 complete, phase 25 next
+Last activity: 2026-03-07 — Completed Phase 24
 
-Progress: v0.2.0 [████████████░░] ~87%
+Progress: v0.2.0 [█████████████░] ~93%
 
 ## Milestone Progress
 
 | Milestone | Phases | Requirements | Complete |
 |-----------|--------|--------------|----------|
 | v0.1.0 | 10 | 43 | 100% (shipped) |
-| v0.2.0 | 15 (11-25) | 52 | ~87% |
+| v0.2.0 | 15 (11-25) | 52 | ~93% |
 
 ## Accumulated Context
 
@@ -196,7 +196,7 @@ v0.2.0 decisions (from 24-01 execution):
 
 ### Next Actions
 
-Phase 24 complete. Next: execute phase 25 (schema roundtrip).
+Phase 24 complete. Next: `/kata-execute-phase 25` for tech debt cleanup.
 
 ### Session Continuity
 
