@@ -73,6 +73,10 @@
   - [x] 22-04: Pipeline executor, backup/restore, dry-run report
   - [x] 22-05: CLI `assay context prune` integration
 - [ ] Phase 23: Guard Daemon & Recovery
+  - [ ] 23-01: Guard config types, PID file management, threshold evaluation, error variants
+  - [ ] 23-02: Circuit breaker state machine and escalating prescriptions
+  - [ ] 23-03: Daemon event loop, file system watcher, public API (start/stop/status)
+  - [ ] 23-04: CLI `assay context guard` commands, schema snapshots, quality gate
 
 ---
 
