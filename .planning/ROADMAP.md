@@ -77,6 +77,11 @@
   - [x] 23-02: Circuit breaker state machine and escalating prescriptions
   - [x] 23-03: Daemon event loop, file system watcher, public API (start/stop/status)
   - [x] 23-04: CLI `assay context guard` commands, schema snapshots, quality gate
+- [x] Phase 24: MCP History Persistence Fix — 2026-03-07
+  - [x] 24-01: Add history save to MCP gate_run for command-only specs, integration test
+- [ ] Phase 25: Tech Debt Cleanup
+  - [ ] 25-01: Missing VERIFICATION.md backfill (phases 16, 19, 20)
+  - [ ] 25-02: Open issues triage and cleanup
 
 ---
 
@@ -85,7 +90,7 @@
 | Milestone | Status | Phases | Requirements | Complete |
 |-----------|--------|--------|--------------|----------|
 | v0.1.0 Proof of Concept | Shipped | 10 | 43 | 100% |
-| v0.2.0 Dual-Track Gates & Hardening | Complete | 13 | 52 | 100% |
+| v0.2.0 Dual-Track Gates & Hardening | In Progress | 15 | 52 | ~93% |
 | v0.3.0 | Planned | — | — | — |
 
 ---
@@ -358,6 +363,34 @@
 6. Circuit breaker trips after configurable max recoveries in time window, halts with final checkpoint
 7. Escalating prescriptions: recovery #1=gentle, #2=standard, #3=aggressive before breaker trips
 8. `Ctrl+C` on guard writes a final checkpoint before exiting
+
+---
+
+### Phase 24: MCP History Persistence Fix
+
+**Goal:** Fix the integration asymmetry where MCP `gate_run` does not persist history for command-only specs, unlike the CLI which always saves.
+
+**Depends on:** Phase 14, Phase 17
+
+**Gap Closure:** Closes integration gap from v0.2.0 audit
+
+**Success Criteria:**
+1. An agent calling `gate_run` on a command-only spec sees the run appear in `gate_history` results
+2. MCP `gate_run` calls `history::save()` for all specs, not just those with agent criteria
+3. Integration test verifies history persistence for command-only MCP gate runs
+
+---
+
+### Phase 25: Tech Debt Cleanup
+
+**Goal:** Address accumulated tech debt from v0.2.0 development: backfill missing verification documents and triage open issues.
+
+**Depends on:** None
+
+**Success Criteria:**
+1. Phases 16, 19, and 20 each have a VERIFICATION.md document
+2. Open issues in `.planning/issues/open/` are triaged: resolved issues closed, remaining categorized
+3. Issue count reduced to actionable items only
 
 ---
 
