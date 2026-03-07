@@ -20,8 +20,3 @@ Phase 3 tests cover happy-path serialization but miss several important cases id
 ## Solution
 
 Add ~5 tests to assay-types and consider relaxing the exact Display assertion in assay-core.
-
-
-## Resolution
-
-Partially resolved in Phase 19 Plan 02 (2026-03-06). Key gaps addressed: GateKind unknown variant test, GateResult JSON roundtrip with skip fields, Criterion deser failure, scan empty directory, SpecError Display format. Remaining items (assert_eq Display brittleness, whitespace-only criterion name, multi-error criteria) are low-priority suggestions.
