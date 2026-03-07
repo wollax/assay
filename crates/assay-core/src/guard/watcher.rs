@@ -167,7 +167,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn watcher_ignores_unrelated_files() {
         let dir = TempDir::new().unwrap();
-        let session_path = dir.path().join("session.jsonl");
+        let _session_path = dir.path().join("session.jsonl");
 
         // Create the session file and a sentinel approach:
         // We use a separate subdirectory so that only events for
