@@ -9,19 +9,19 @@ See: .planning/PROJECT.md (updated 2026-03-02)
 
 ## Current Position
 
-Phase: 23 — Guard Daemon & Recovery (COMPLETE)
-Plan: 04 of 4 (all complete)
-Status: Phase 23 verified & complete, moved to completed/
-Last activity: 2026-03-07 — Phase 23 verified and completed
+Phase: 24 — MCP History Persistence Fix (PENDING)
+Plan: not yet planned
+Status: Gap closure phases 24-25 created from audit
+Last activity: 2026-03-07 — Gap closure phases created
 
-Progress: v0.2.0 [██████████████] ~100%
+Progress: v0.2.0 [████████████░░] ~87%
 
 ## Milestone Progress
 
 | Milestone | Phases | Requirements | Complete |
 |-----------|--------|--------------|----------|
 | v0.1.0 | 10 | 43 | 100% (shipped) |
-| v0.2.0 | 13 (11-23) | 52 | ~69% |
+| v0.2.0 | 15 (11-25) | 52 | ~87% |
 
 ## Accumulated Context
 
@@ -192,10 +192,10 @@ None.
 
 ### Next Actions
 
-v0.2.0 milestone complete (all 13 phases, 52 requirements). Next: audit milestone.
+Gap closure phases 24-25 created from audit. Next: `/kata-plan-phase 24` then execute.
 
 ### Session Continuity
 
 Last session: 2026-03-07
-Stopped at: Phase 23 verified and completed
-Resume file: .planning/phases/completed/23-guard-daemon-recovery/
+Stopped at: Gap closure phases created from audit
+Resume file: .planning/phases/pending/24-mcp-history-persistence/
