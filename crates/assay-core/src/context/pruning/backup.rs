@@ -103,3 +103,141 @@ pub fn prune_old_backups(
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    fn create_session_file(dir: &Path, name: &str, content: &str) -> PathBuf {
+        let path = dir.join(name);
+        let mut f = std::fs::File::create(&path).unwrap();
+        write!(f, "{content}").unwrap();
+        path
+    }
+
+    fn create_fake_backup(backup_dir: &Path, session_id: &str, timestamp: &str) -> PathBuf {
+        std::fs::create_dir_all(backup_dir).unwrap();
+        let name = format!("{session_id}_{timestamp}.jsonl");
+        let path = backup_dir.join(&name);
+        std::fs::write(&path, "backup content").unwrap();
+        path
+    }
+
+    #[test]
+    fn backup_session_creates_copy_in_backup_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let session = create_session_file(dir.path(), "sess1.jsonl", "original content");
+        let backup_dir = dir.path().join("backups");
+
+        let backup_path = backup_session(&session, &backup_dir).unwrap();
+
+        assert!(backup_path.exists());
+        let backup_content = std::fs::read_to_string(&backup_path).unwrap();
+        assert_eq!(backup_content, "original content");
+        // Filename should contain session name and timestamp
+        let name = backup_path.file_name().unwrap().to_str().unwrap();
+        assert!(name.starts_with("sess1_"));
+        assert!(name.ends_with(".jsonl"));
+    }
+
+    #[test]
+    fn backup_session_creates_backup_dir_if_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        let session = create_session_file(dir.path(), "sess2.jsonl", "data");
+        let backup_dir = dir.path().join("nested").join("backups");
+
+        assert!(!backup_dir.exists());
+        let _backup_path = backup_session(&session, &backup_dir).unwrap();
+        assert!(backup_dir.exists());
+    }
+
+    #[test]
+    fn list_backups_returns_session_backups_newest_first() {
+        let dir = tempfile::tempdir().unwrap();
+        let backup_dir = dir.path().join("backups");
+
+        let _b1 = create_fake_backup(&backup_dir, "sess1", "20260101T100000Z");
+        let _b2 = create_fake_backup(&backup_dir, "sess1", "20260101T120000Z");
+        let _b3 = create_fake_backup(&backup_dir, "sess1", "20260101T110000Z");
+
+        let backups = list_backups(&backup_dir, "sess1").unwrap();
+        assert_eq!(backups.len(), 3);
+        // Newest first
+        let names: Vec<String> = backups
+            .iter()
+            .map(|p| p.file_name().unwrap().to_str().unwrap().to_string())
+            .collect();
+        assert!(names[0].contains("120000"));
+        assert!(names[1].contains("110000"));
+        assert!(names[2].contains("100000"));
+    }
+
+    #[test]
+    fn list_backups_returns_empty_for_no_backups() {
+        let dir = tempfile::tempdir().unwrap();
+        let backup_dir = dir.path().join("backups");
+        std::fs::create_dir_all(&backup_dir).unwrap();
+
+        let backups = list_backups(&backup_dir, "nonexistent").unwrap();
+        assert!(backups.is_empty());
+    }
+
+    #[test]
+    fn list_backups_returns_empty_for_missing_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let backup_dir = dir.path().join("no-such-dir");
+
+        let backups = list_backups(&backup_dir, "sess1").unwrap();
+        assert!(backups.is_empty());
+    }
+
+    #[test]
+    fn restore_backup_copies_to_session_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let session = create_session_file(dir.path(), "session.jsonl", "modified content");
+        let backup = create_session_file(dir.path(), "backup.jsonl", "original content");
+
+        restore_backup(&backup, &session).unwrap();
+
+        let content = std::fs::read_to_string(&session).unwrap();
+        assert_eq!(content, "original content");
+    }
+
+    #[test]
+    fn prune_old_backups_with_limit_2_deletes_oldest() {
+        let dir = tempfile::tempdir().unwrap();
+        let backup_dir = dir.path().join("backups");
+
+        let _b1 = create_fake_backup(&backup_dir, "sess1", "20260101T100000Z");
+        let _b2 = create_fake_backup(&backup_dir, "sess1", "20260101T110000Z");
+        let _b3 = create_fake_backup(&backup_dir, "sess1", "20260101T120000Z");
+        let _b4 = create_fake_backup(&backup_dir, "sess1", "20260101T130000Z");
+
+        prune_old_backups(&backup_dir, "sess1", 2).unwrap();
+
+        let remaining = list_backups(&backup_dir, "sess1").unwrap();
+        assert_eq!(remaining.len(), 2);
+        // Only newest 2 remain
+        let names: Vec<String> = remaining
+            .iter()
+            .map(|p| p.file_name().unwrap().to_str().unwrap().to_string())
+            .collect();
+        assert!(names[0].contains("130000"));
+        assert!(names[1].contains("120000"));
+    }
+
+    #[test]
+    fn prune_old_backups_with_fewer_than_limit_deletes_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let backup_dir = dir.path().join("backups");
+
+        let b1 = create_fake_backup(&backup_dir, "sess1", "20260101T100000Z");
+        let b2 = create_fake_backup(&backup_dir, "sess1", "20260101T110000Z");
+
+        prune_old_backups(&backup_dir, "sess1", 5).unwrap();
+
+        assert!(b1.exists());
+        assert!(b2.exists());
+    }
+}
