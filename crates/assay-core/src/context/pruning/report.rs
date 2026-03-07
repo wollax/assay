@@ -156,8 +156,7 @@ mod tests {
             original_size: 100_000,
             final_size: 100_000 - total_removed,
             original_entries: 500,
-            final_entries: 500
-                - strategies.iter().map(|s| s.lines_removed).sum::<usize>(),
+            final_entries: 500 - strategies.iter().map(|s| s.lines_removed).sum::<usize>(),
             strategies,
             executed,
         }
@@ -200,9 +199,15 @@ mod tests {
             false,
         );
         let output = format_dry_run_report(&report, false);
-        assert!(output.contains("Progress collapse"), "Should contain strategy label");
+        assert!(
+            output.contains("Progress collapse"),
+            "Should contain strategy label"
+        );
         assert!(output.contains("42"), "Should contain lines removed");
-        assert!(output.contains("12,450") || output.contains("12450"), "Should contain bytes saved");
+        assert!(
+            output.contains("12,450") || output.contains("12450"),
+            "Should contain bytes saved"
+        );
     }
 
     #[test]
@@ -235,7 +240,10 @@ mod tests {
             false,
         );
         let output = format_dry_run_report(&report, false);
-        assert!(output.contains("Line 15"), "Should show sample line numbers");
+        assert!(
+            output.contains("Line 15"),
+            "Should show sample line numbers"
+        );
         assert!(output.contains("Line 23"));
         assert!(output.contains("Line 47"));
     }
@@ -306,10 +314,7 @@ mod tests {
             false,
         );
         let output = format_dry_run_report(&report, false);
-        assert!(
-            output.contains("3"),
-            "Should show protected skipped count"
-        );
+        assert!(output.contains("3"), "Should show protected skipped count");
     }
 
     #[test]

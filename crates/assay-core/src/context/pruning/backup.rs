@@ -86,11 +86,7 @@ pub fn restore_backup(backup_path: &Path, session_path: &Path) -> crate::Result<
 /// Lists backups for `session_name`, sorted newest first, and deletes
 /// any beyond `limit`. If fewer backups exist than `limit`, nothing
 /// is deleted.
-pub fn prune_old_backups(
-    backup_dir: &Path,
-    session_name: &str,
-    limit: usize,
-) -> crate::Result<()> {
+pub fn prune_old_backups(backup_dir: &Path, session_name: &str, limit: usize) -> crate::Result<()> {
     let backups = list_backups(backup_dir, session_name)?;
 
     for old_backup in backups.iter().skip(limit) {
