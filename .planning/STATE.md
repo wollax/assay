@@ -9,10 +9,10 @@ See: .planning/PROJECT.md (updated 2026-03-02)
 
 ## Current Position
 
-Phase: 24 — MCP History Persistence Fix (PENDING)
-Plan: not yet planned
-Status: Gap closure phases 24-25 created from audit
-Last activity: 2026-03-07 — Gap closure phases created
+Phase: 24 — MCP History Persistence Fix (IN PROGRESS)
+Plan: 1 of 1 (complete)
+Status: Phase 24 complete
+Last activity: 2026-03-07 — Completed 24-01-PLAN.md
 
 Progress: v0.2.0 [████████████░░] ~87%
 
@@ -190,12 +190,16 @@ v0.2.0 decisions (from 23-03 execution):
 
 None.
 
+v0.2.0 decisions (from 24-01 execution):
+- format_gate_response takes &GateRunSummary; no clone needed before history save
+- Command-only gate_run save failures are non-fatal (tracing::warn, not error return)
+
 ### Next Actions
 
-Gap closure phases 24-25 created from audit. Next: `/kata-plan-phase 24` then execute.
+Phase 24 complete. Next: execute phase 25 (schema roundtrip).
 
 ### Session Continuity
 
-Last session: 2026-03-07
-Stopped at: Gap closure phases created from audit
-Resume file: .planning/phases/pending/24-mcp-history-persistence/
+Last session: 2026-03-07T14:41Z
+Stopped at: Completed 24-01-PLAN.md
+Resume file: None
