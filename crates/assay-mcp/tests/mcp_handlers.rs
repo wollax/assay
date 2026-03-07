@@ -225,6 +225,89 @@ cmd = "echo ok"
 
 #[tokio::test]
 #[serial]
+async fn gate_run_command_only_persists_history() {
+    let dir = create_project(r#"project_name = "cmd-history-test""#);
+    create_spec(
+        dir.path(),
+        "cmd-only-spec.toml",
+        r#"
+name = "cmd-only-spec"
+description = "Command-only spec for history persistence test"
+
+[[criteria]]
+name = "echo-check"
+description = "Echo passes"
+cmd = "echo ok"
+"#,
+    );
+
+    std::env::set_current_dir(dir.path()).unwrap();
+
+    let server = AssayServer::new();
+    let result = server
+        .gate_run(Parameters(GateRunParams {
+            name: "cmd-only-spec".to_string(),
+            include_evidence: false,
+            timeout: Some(30),
+        }))
+        .await
+        .unwrap();
+
+    assert!(
+        !result.is_error.unwrap_or(false),
+        "gate_run should succeed, got: {}",
+        extract_text(&result)
+    );
+
+    let json: serde_json::Value = serde_json::from_str(&extract_text(&result)).unwrap();
+    assert_eq!(json["passed"], 1);
+    assert!(
+        json["session_id"].is_null(),
+        "command-only spec should not have a session_id"
+    );
+
+    // Verify history file exists on disk
+    let results_dir = dir
+        .path()
+        .join(".assay")
+        .join("results")
+        .join("cmd-only-spec");
+    assert!(
+        results_dir.exists(),
+        "results directory should exist at {:?}",
+        results_dir
+    );
+
+    let result_files: Vec<_> = std::fs::read_dir(&results_dir)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().extension().is_some_and(|ext| ext == "json"))
+        .collect();
+    assert_eq!(
+        result_files.len(),
+        1,
+        "should have exactly one history file"
+    );
+
+    // Read and verify the history record contents
+    let record_path = result_files[0].path();
+    let record_json: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&record_path).unwrap()).unwrap();
+
+    assert_eq!(record_json["summary"]["spec_name"], "cmd-only-spec");
+    assert_eq!(record_json["summary"]["passed"], 1);
+    assert!(
+        record_json["run_id"].as_str().is_some_and(|s| !s.is_empty()),
+        "run_id should be a non-empty string"
+    );
+    assert!(
+        record_json["working_dir"].as_str().is_some(),
+        "working_dir should be present"
+    );
+}
+
+#[tokio::test]
+#[serial]
 async fn spec_list_with_parse_errors() {
     let dir = create_project(r#"project_name = "error-test""#);
 
