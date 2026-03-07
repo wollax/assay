@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-03-02)
 
 **Core value:** Dual-track quality gates (deterministic + agent-evaluated) for AI coding agents
-**Current focus:** v0.2.0 Dual-Track Gates & Hardening
+**Current focus:** v0.2.0 Dual-Track Gates & Hardening (COMPLETE)
 
 ## Current Position
 
-Phase: 22 — Pruning Engine (VERIFIED & COMPLETE)
-Plan: 05 of 5 (complete)
-Status: Phase complete, verified, moved to completed/
-Last activity: 2026-03-06 — Phase 22 verified and completed
+Phase: 23 — Guard Daemon & Recovery (COMPLETE)
+Plan: 04 of 4 (all complete)
+Status: Phase 23 verified & complete, moved to completed/
+Last activity: 2026-03-07 — Phase 23 verified and completed
 
-Progress: v0.2.0 [█████████████] ~92%
+Progress: v0.2.0 [██████████████] ~100%
 
 ## Milestone Progress
 
@@ -153,7 +153,7 @@ v0.2.0 decisions (from 20-02 execution):
 - `sessions_from_history()` and `estimate_tokens_from_bytes()` are public API marked `#[allow(dead_code)]` until consumed by CLI/MCP
 - Stale read detection uses HashSet of file_path strings; second read of same path counts as stale
 - `deny.toml` updated: MPL-2.0 allowed (option-ext via dirs-sys), getrandom@0.2 skipped (redox_users via dirs-sys)
-- Context module constants (`DEFAULT_CONTEXT_WINDOW`, `SYSTEM_OVERHEAD_TOKENS`) are `pub(super)` for intra-module sharing
+- Context module constants (`DEFAULT_CONTEXT_WINDOW`, `SYSTEM_OVERHEAD_TOKENS`) widened to `pub(crate)` for guard daemon access
 
 v0.2.0 decisions (from 21-01 execution):
 - ParsedEntry imported via pub re-export (`crate::context::ParsedEntry`), not private parser module
@@ -175,12 +175,27 @@ v0.2.0 decisions (from 22-01 execution):
 
 None.
 
+v0.2.0 decisions (from 23-03 execution):
+- Context tokens module widened from `pub(super)` to `pub(crate)` for guard daemon access
+- `estimate_tokens_from_bytes` changed from `pub` + `#[allow(dead_code)]` to `pub(crate)` (consumed by daemon)
+- SessionWatcher watches both file (Modify via kqueue) and parent directory (Create for atomic writes)
+- Guard daemon event loop uses `tokio::select!` with 1s debounce on watcher events
+- Hard threshold enforces minimum Standard tier (overrides Gentle from circuit breaker)
+
+### Pending Issues
+
+19 open issues (reduced from 38 after triaging 19 test-related issues in 19-02)
+
+### Blockers
+
+None.
+
 ### Next Actions
 
-Phase 22 complete. Next: Phase 23 — Guard Daemon & Recovery
+v0.2.0 milestone complete (all 13 phases, 52 requirements). Next: audit milestone.
 
 ### Session Continuity
 
-Last session: 2026-03-06
-Stopped at: Phase 22 complete
-Resume file: .planning/phases/completed/22-pruning-engine/
+Last session: 2026-03-07
+Stopped at: Phase 23 verified and completed
+Resume file: .planning/phases/completed/23-guard-daemon-recovery/

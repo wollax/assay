@@ -12,7 +12,7 @@ mod diagnostics;
 mod discovery;
 mod parser;
 pub mod pruning;
-mod tokens;
+pub(crate) mod tokens;
 
 pub use diagnostics::diagnose;
 pub use discovery::{discover_sessions, find_session_dir, resolve_session};

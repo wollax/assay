@@ -35,3 +35,5 @@ anyhow = "1"
 serial_test = "3"
 dirs = "6"
 regex-lite = "0.1"
+notify = { version = "7", default-features = false, features = ["macos_kqueue"] }
+tracing-appender = "0.2"
