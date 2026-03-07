@@ -1542,6 +1542,7 @@ cmd = "echo ok"
             project_name: "test".to_string(),
             specs_dir: "specs/".to_string(),
             gates: None,
+            guard: None,
         };
 
         let result = resolve_working_dir(&cwd, &config);
@@ -1559,6 +1560,7 @@ cmd = "echo ok"
                 working_dir: Some("subdir".to_string()),
                 max_history: None,
             }),
+            guard: None,
         };
 
         let result = resolve_working_dir(&cwd, &config);
@@ -1580,6 +1582,7 @@ cmd = "echo ok"
                 working_dir: Some("/tmp/custom".to_string()),
                 max_history: None,
             }),
+            guard: None,
         };
 
         let result = resolve_working_dir(&cwd, &config);
