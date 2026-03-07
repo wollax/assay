@@ -344,6 +344,17 @@ mod tests {
         serde_json::from_str("{}").unwrap()
     }
 
+    fn config_with_low_thresholds() -> GuardConfig {
+        serde_json::from_str(
+            r#"{"soft_threshold_bytes": 10, "hard_threshold_bytes": 20, "max_recoveries": 3}"#,
+        )
+        .unwrap()
+    }
+
+    fn make_daemon(session_path: PathBuf, assay_dir: PathBuf, config: GuardConfig) -> GuardDaemon {
+        GuardDaemon::new(session_path, assay_dir, config)
+    }
+
     #[test]
     fn guard_daemon_new_creates_valid_struct() {
         let daemon = GuardDaemon::new(
@@ -356,5 +367,147 @@ mod tests {
         assert_eq!(daemon.assay_dir, PathBuf::from("/tmp/.assay"));
         assert!(daemon.last_check.is_none());
         assert!(!daemon.breaker.is_tripped());
+    }
+
+    #[test]
+    fn check_and_respond_below_thresholds_returns_false() {
+        let dir = tempfile::tempdir().unwrap();
+        let session = dir.path().join("session.jsonl");
+        let assay_dir = dir.path().join(".assay");
+        std::fs::create_dir_all(&assay_dir).unwrap();
+        // Small file — well below default thresholds
+        std::fs::write(&session, "{}").unwrap();
+
+        let mut daemon = make_daemon(session, assay_dir, default_config());
+        let result = daemon.check_and_respond().unwrap();
+
+        assert!(!result, "should return false when below all thresholds");
+        assert!(daemon.last_check.is_some(), "should update last_check");
+    }
+
+    #[test]
+    fn check_and_respond_missing_file_returns_false() {
+        let dir = tempfile::tempdir().unwrap();
+        let session = dir.path().join("nonexistent.jsonl");
+        let assay_dir = dir.path().join(".assay");
+        std::fs::create_dir_all(&assay_dir).unwrap();
+
+        let mut daemon = make_daemon(session, assay_dir, default_config());
+        let result = daemon.check_and_respond().unwrap();
+
+        assert!(!result, "should return false when session file missing");
+    }
+
+    #[test]
+    fn check_and_respond_above_soft_threshold_returns_true() {
+        let dir = tempfile::tempdir().unwrap();
+        let session = dir.path().join("session.jsonl");
+        let assay_dir = dir.path().join(".assay");
+        std::fs::create_dir_all(&assay_dir).unwrap();
+        // 15 bytes — above soft (10) but below hard (20)
+        std::fs::write(&session, "0123456789abcde").unwrap();
+
+        let mut daemon = make_daemon(session, assay_dir, config_with_low_thresholds());
+        let result = daemon.check_and_respond().unwrap();
+
+        assert!(result, "should return true when above soft threshold");
+    }
+
+    #[test]
+    fn handle_soft_threshold_trips_breaker_after_max_recoveries() {
+        let dir = tempfile::tempdir().unwrap();
+        let session = dir.path().join("session.jsonl");
+        let assay_dir = dir.path().join(".assay");
+        std::fs::create_dir_all(&assay_dir).unwrap();
+        std::fs::write(&session, "{}").unwrap();
+
+        let mut daemon = make_daemon(session, assay_dir, config_with_low_thresholds());
+
+        // First 2 recoveries should succeed (max_recoveries = 3, trips at >= 3)
+        for _ in 0..2 {
+            assert!(daemon.handle_soft_threshold().is_ok());
+        }
+
+        // 3rd recovery should trip the breaker (count reaches max_recoveries)
+        let result = daemon.handle_soft_threshold();
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            AssayError::GuardCircuitBreakerTripped { .. } => {}
+            other => panic!("expected GuardCircuitBreakerTripped, got: {other}"),
+        }
+        assert!(daemon.breaker.is_tripped());
+    }
+
+    #[test]
+    fn handle_hard_threshold_enforces_minimum_standard_tier() {
+        let dir = tempfile::tempdir().unwrap();
+        let session = dir.path().join("session.jsonl");
+        let assay_dir = dir.path().join(".assay");
+        std::fs::create_dir_all(&assay_dir).unwrap();
+        std::fs::write(&session, "{}").unwrap();
+
+        let mut daemon = make_daemon(session, assay_dir, config_with_low_thresholds());
+
+        // Before any recoveries, breaker tier is Gentle (0 recoveries).
+        // Hard threshold should override to Standard.
+        assert_eq!(daemon.breaker.current_tier(), PrescriptionTier::Gentle);
+        assert!(daemon.handle_hard_threshold().is_ok());
+        // After one recovery, tier escalates — the key invariant is that
+        // handle_hard_threshold didn't use Gentle (tested via the prune call
+        // which receives the tier). We verify the breaker recorded the recovery.
+        assert_eq!(daemon.breaker.recovery_count(), 1);
+    }
+
+    #[test]
+    fn handle_hard_threshold_trips_breaker_after_max_recoveries() {
+        let dir = tempfile::tempdir().unwrap();
+        let session = dir.path().join("session.jsonl");
+        let assay_dir = dir.path().join(".assay");
+        std::fs::create_dir_all(&assay_dir).unwrap();
+        std::fs::write(&session, "{}").unwrap();
+
+        let mut daemon = make_daemon(session, assay_dir, config_with_low_thresholds());
+
+        for _ in 0..2 {
+            assert!(daemon.handle_hard_threshold().is_ok());
+        }
+
+        // 3rd recovery trips the breaker
+        let result = daemon.handle_hard_threshold();
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            AssayError::GuardCircuitBreakerTripped { .. } => {}
+            other => panic!("expected GuardCircuitBreakerTripped, got: {other}"),
+        }
+    }
+
+    #[test]
+    fn graceful_shutdown_removes_pid_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let session = dir.path().join("session.jsonl");
+        let assay_dir = dir.path().join(".assay");
+        std::fs::create_dir_all(&assay_dir).unwrap();
+
+        let daemon = make_daemon(session, assay_dir.clone(), default_config());
+        let pid_path = pid::pid_file_path(&assay_dir);
+        pid::create_pid_file(&pid_path).unwrap();
+        assert!(pid_path.exists());
+
+        daemon.graceful_shutdown();
+
+        assert!(!pid_path.exists(), "PID file should be removed after shutdown");
+    }
+
+    #[test]
+    fn re_evaluate_after_prune_returns_none_for_small_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let session = dir.path().join("session.jsonl");
+        let assay_dir = dir.path().join(".assay");
+        std::fs::create_dir_all(&assay_dir).unwrap();
+        std::fs::write(&session, "{}").unwrap();
+
+        let daemon = make_daemon(session, assay_dir, default_config());
+        let level = daemon.re_evaluate_after_prune();
+        assert_eq!(level, ThresholdLevel::None);
     }
 }

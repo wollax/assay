@@ -24,6 +24,9 @@ pub async fn start_guard(
 }
 
 /// Stop a running guard daemon by reading its PID file and sending SIGTERM.
+///
+/// Polls `check_running` with a timeout rather than unconditionally removing
+/// the PID file, so the daemon's own graceful shutdown can clean up properly.
 #[cfg(unix)]
 pub fn stop_guard(assay_dir: &Path) -> crate::Result<()> {
     let pid_path = pid::pid_file_path(assay_dir);
@@ -32,10 +35,30 @@ pub fn stop_guard(assay_dir: &Path) -> crate::Result<()> {
             let pid_i32 = i32::try_from(pid).map_err(|_| crate::AssayError::GuardNotRunning)?;
             // SAFETY: kill(pid, SIGTERM) is a standard POSIX operation to request
             // graceful termination of a process.
-            unsafe {
-                libc::kill(pid_i32, libc::SIGTERM);
+            let ret = unsafe { libc::kill(pid_i32, libc::SIGTERM) };
+            if ret != 0 {
+                let err = std::io::Error::last_os_error();
+                // ESRCH means process already gone — clean up PID file
+                if err.raw_os_error() == Some(libc::ESRCH) {
+                    let _ = pid::remove_pid_file(&pid_path);
+                    return Ok(());
+                }
+                return Err(crate::AssayError::Io {
+                    operation: "sending SIGTERM to guard daemon".into(),
+                    path: pid_path,
+                    source: err,
+                });
             }
-            std::thread::sleep(std::time::Duration::from_millis(500));
+
+            // Poll for process exit with timeout (up to 3 seconds)
+            for _ in 0..6 {
+                std::thread::sleep(std::time::Duration::from_millis(500));
+                if pid::check_running(&pid_path).is_none() {
+                    return Ok(());
+                }
+            }
+
+            // Process didn't exit in time — clean up stale PID file
             let _ = pid::remove_pid_file(&pid_path);
             Ok(())
         }
