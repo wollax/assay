@@ -153,7 +153,10 @@ pub fn prune_session(
     };
 
     if execute {
-        let default_backup = session_path.parent().unwrap_or(Path::new(".")).to_path_buf();
+        let default_backup = session_path
+            .parent()
+            .unwrap_or(Path::new("."))
+            .to_path_buf();
         let bdir = backup_dir.unwrap_or(&default_backup);
         backup::backup_session(session_path, bdir)?;
         write_session(&pipeline.entries, session_path)?;
@@ -212,8 +215,7 @@ mod tests {
     fn pipeline_empty_strategies_returns_entries_unchanged() {
         let entries = vec![make_user_entry(1, "line1"), make_user_entry(2, "line2")];
         let protected = HashSet::new();
-        let result =
-            execute_pipeline(entries, &[], PrescriptionTier::Gentle, &protected);
+        let result = execute_pipeline(entries, &[], PrescriptionTier::Gentle, &protected);
 
         assert_eq!(result.entries.len(), 2);
         assert!(result.strategy_results.is_empty());
@@ -238,7 +240,10 @@ mod tests {
         // Progress entry removed
         assert_eq!(result.entries.len(), 2);
         assert_eq!(result.strategy_results.len(), 1);
-        assert_eq!(result.strategy_results[0].0, PruneStrategy::ProgressCollapse);
+        assert_eq!(
+            result.strategy_results[0].0,
+            PruneStrategy::ProgressCollapse
+        );
         assert_eq!(result.strategy_results[0].1.lines_removed, 1);
     }
 
@@ -252,7 +257,10 @@ mod tests {
         let protected = HashSet::new();
         let result = execute_pipeline(
             entries,
-            &[PruneStrategy::ProgressCollapse, PruneStrategy::MetadataStrip],
+            &[
+                PruneStrategy::ProgressCollapse,
+                PruneStrategy::MetadataStrip,
+            ],
             PrescriptionTier::Standard,
             &protected,
         );
@@ -309,11 +317,17 @@ mod tests {
         let entries = vec![make_user_entry(1, "test")];
         let protected = HashSet::new();
 
-        let strategies = [PruneStrategy::MetadataStrip, PruneStrategy::ProgressCollapse];
+        let strategies = [
+            PruneStrategy::MetadataStrip,
+            PruneStrategy::ProgressCollapse,
+        ];
         let result = execute_pipeline(entries, &strategies, PrescriptionTier::Standard, &protected);
 
         assert_eq!(result.strategy_results[0].0, PruneStrategy::MetadataStrip);
-        assert_eq!(result.strategy_results[1].0, PruneStrategy::ProgressCollapse);
+        assert_eq!(
+            result.strategy_results[1].0,
+            PruneStrategy::ProgressCollapse
+        );
     }
 
     // ---------- write_session tests ----------
