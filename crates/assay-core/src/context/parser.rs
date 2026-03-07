@@ -15,6 +15,17 @@ pub struct ParsedEntry {
     pub line_number: usize,
     /// Raw byte length of the source line.
     pub raw_bytes: usize,
+    /// The original JSON line, preserved for lossless write-back.
+    pub raw_line: String,
+}
+
+impl ParsedEntry {
+    /// Re-serialize the entry after modification, updating raw_line and raw_bytes.
+    pub fn update_content(&mut self, new_entry: SessionEntry) {
+        self.raw_line = serde_json::to_string(&new_entry).unwrap_or_default();
+        self.raw_bytes = self.raw_line.len();
+        self.entry = new_entry;
+    }
 }
 
 /// Parse a session JSONL file, tolerating per-line errors.
@@ -44,6 +55,7 @@ pub fn parse_session(path: &Path) -> crate::Result<(Vec<ParsedEntry>, usize)> {
                 entry,
                 line_number: line_num + 1,
                 raw_bytes: line.len(),
+                raw_line: line,
             }),
             Err(_) => skipped += 1,
         }

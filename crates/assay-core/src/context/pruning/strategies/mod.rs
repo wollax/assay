@@ -1,0 +1,11 @@
+//! Individual pruning strategy implementations.
+//!
+//! Each strategy is a standalone function with signature:
+//! `fn(Vec<ParsedEntry>, PrescriptionTier, &HashSet<usize>) -> StrategyResult`
+
+pub mod metadata_strip;
+pub mod progress_collapse;
+pub mod stale_reads;
+pub mod system_reminder_dedup;
+pub mod thinking_blocks;
+pub mod tool_output_trim;

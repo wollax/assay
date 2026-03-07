@@ -311,6 +311,7 @@ mod tests {
             entry,
             line_number: line,
             raw_bytes: 100,
+            raw_line: String::new(),
         }
     }
 
