@@ -1,5 +1,8 @@
 [advisories]
-ignore = []
+ignore = [
+    # notify-types -> instant: unmaintained, no replacement available in notify 7.x
+    "RUSTSEC-2024-0384",
+]
 
 [licenses]
 allow = [
@@ -12,6 +15,8 @@ allow = [
     "Unicode-3.0",
     "MPL-2.0",
     "Unicode-DFS-2016",
+    "CC0-1.0",
+    "Artistic-2.0",
 ]
 
 [licenses.private]
@@ -37,12 +42,16 @@ skip = [
 
     # crossterm 0.28 -> polling 3.x -> rustix 0.38; newer crates use rustix 1.x
     { crate = "rustix@0.38", reason = "crossterm 0.28 transitively requires rustix 0.38 via polling" },
+
+    # notify -> inotify -> bitflags 1.x; rest of tree uses bitflags 2.x
+    { crate = "bitflags@1", reason = "inotify (via notify) uses bitflags 1.x" },
 ]
 
 skip-tree = [
     # Windows platform crates have version fragmentation across the ecosystem;
     # windows-sys 0.59/0.60/0.61 and their windows-targets/windows_* sub-crates
     # are all pulled in by different transitive dependencies
+    { crate = "windows-sys@0.52", reason = "notify uses windows-sys 0.52; rest of tree uses newer versions" },
     { crate = "windows-sys@0.59", reason = "Windows platform crate version fragmentation across transitive deps" },
     { crate = "windows-sys@0.60", reason = "Windows platform crate version fragmentation across transitive deps" },
 ]
