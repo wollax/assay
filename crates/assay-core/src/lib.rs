@@ -29,3 +29,6 @@ pub mod checkpoint;
 
 /// Claude Code session parsing, discovery, and token diagnostics.
 pub mod context;
+
+/// Guard daemon: background context protection with threshold-based pruning.
+pub mod guard;
