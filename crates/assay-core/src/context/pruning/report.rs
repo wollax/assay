@@ -3,13 +3,145 @@
 //! Produces human-readable summaries showing per-strategy savings,
 //! sample removals, and aggregate totals.
 
+use std::fmt::Write;
+
 use assay_types::context::PruneReport;
 
 /// Format a pruning report as a human-readable string.
 ///
 /// When `_color` is true, ANSI color codes may be included (deferred).
-pub fn format_dry_run_report(_report: &PruneReport, _color: bool) -> String {
-    todo!("Implemented in GREEN phase")
+pub fn format_dry_run_report(report: &PruneReport, _color: bool) -> String {
+    let mut out = String::new();
+
+    // Header
+    writeln!(out, "Session: {}", report.session_id).unwrap();
+    writeln!(
+        out,
+        "Original: {} ({} entries)",
+        format_bytes(report.original_size),
+        report.original_entries
+    )
+    .unwrap();
+
+    if report.strategies.is_empty() {
+        writeln!(out).unwrap();
+        writeln!(out, "No strategies applied").unwrap();
+        writeln!(out).unwrap();
+        write_mode_line(&mut out, report);
+        return out;
+    }
+
+    writeln!(out, "Strategies: {}", report.strategies.len()).unwrap();
+    writeln!(out).unwrap();
+
+    // Per-strategy details
+    for summary in &report.strategies {
+        writeln!(out, "Strategy: {}", summary.strategy.label()).unwrap();
+        writeln!(out, "  Lines removed: {}", summary.lines_removed).unwrap();
+        let pct = if report.original_size > 0 {
+            (summary.bytes_saved as f64 / report.original_size as f64) * 100.0
+        } else {
+            0.0
+        };
+        writeln!(
+            out,
+            "  Bytes saved: {} ({:.1}%)",
+            format_number(summary.bytes_saved),
+            pct
+        )
+        .unwrap();
+        if summary.protected_skipped > 0 {
+            writeln!(out, "  Protected skipped: {}", summary.protected_skipped).unwrap();
+        }
+        if summary.lines_modified > 0 {
+            writeln!(out, "  Lines modified: {}", summary.lines_modified).unwrap();
+        }
+        if !summary.samples.is_empty() {
+            writeln!(out, "  Samples:").unwrap();
+            for sample in &summary.samples {
+                writeln!(
+                    out,
+                    "    Line {}: {} ({} bytes)",
+                    sample.line_number, sample.description, sample.bytes
+                )
+                .unwrap();
+            }
+            if summary.lines_removed > summary.samples.len() {
+                writeln!(
+                    out,
+                    "    ...and {} more",
+                    summary.lines_removed - summary.samples.len()
+                )
+                .unwrap();
+            }
+        }
+        writeln!(out).unwrap();
+    }
+
+    // Aggregate summary
+    let total_bytes_saved: u64 = report.strategies.iter().map(|s| s.bytes_saved).sum();
+    let total_lines_removed: usize = report.strategies.iter().map(|s| s.lines_removed).sum();
+    let total_lines_modified: usize = report.strategies.iter().map(|s| s.lines_modified).sum();
+    let total_pct = if report.original_size > 0 {
+        (total_bytes_saved as f64 / report.original_size as f64) * 100.0
+    } else {
+        0.0
+    };
+
+    writeln!(out, "Summary:").unwrap();
+    writeln!(
+        out,
+        "  Total bytes saved: {} ({:.1}%)",
+        format_number(total_bytes_saved),
+        total_pct
+    )
+    .unwrap();
+    writeln!(out, "  Total lines removed: {}", total_lines_removed).unwrap();
+    if total_lines_modified > 0 {
+        writeln!(out, "  Total lines modified: {}", total_lines_modified).unwrap();
+    }
+    writeln!(
+        out,
+        "  Final size: {} ({} entries)",
+        format_bytes(report.final_size),
+        report.final_entries
+    )
+    .unwrap();
+    write_mode_line(&mut out, report);
+
+    out
+}
+
+fn write_mode_line(out: &mut String, report: &PruneReport) {
+    if report.executed {
+        writeln!(out, "  Mode: executed").unwrap();
+    } else {
+        writeln!(out, "  Mode: dry-run (use --execute to apply)").unwrap();
+    }
+}
+
+/// Format a byte count as human-readable (e.g., "1.2 MB", "45.3 KB").
+fn format_bytes(bytes: u64) -> String {
+    if bytes >= 1_000_000 {
+        format!("{:.1} MB", bytes as f64 / 1_000_000.0)
+    } else if bytes >= 1_000 {
+        format!("{:.1} KB", bytes as f64 / 1_000.0)
+    } else {
+        format!("{bytes} B")
+    }
+}
+
+/// Format a number with comma separators.
+fn format_number(n: u64) -> String {
+    let s = n.to_string();
+    let mut result = String::new();
+    for (i, c) in s.chars().rev().enumerate() {
+        if i > 0 && i % 3 == 0 {
+            result.push(',');
+        }
+        result.push(c);
+    }
+    result.chars().rev().collect()
 }
 
 #[cfg(test)]
@@ -154,9 +286,7 @@ mod tests {
             false,
         );
         let output = format_dry_run_report(&report, false);
-        // Should contain summary section with totals
         assert!(output.contains("Summary"), "Should have summary section");
-        // Total bytes saved
         assert!(
             output.contains("15,000") || output.contains("15000"),
             "Should show total bytes saved: {output}"
@@ -196,7 +326,6 @@ mod tests {
     fn report_executed_mode_indicator() {
         let report = make_report(vec![], true);
         let output = format_dry_run_report(&report, false);
-        // Should NOT say dry-run when executed
         assert!(
             !output.contains("dry-run") || output.contains("executed"),
             "Should indicate executed mode: {output}"
