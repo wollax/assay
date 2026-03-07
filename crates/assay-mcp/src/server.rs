@@ -559,6 +559,25 @@ impl AssayServer {
                     let _ = wd_string; // suppress unused warning (captured for future use)
                 }
             });
+        } else {
+            // Command-only spec (no agent criteria) — persist history immediately.
+            let assay_dir = cwd.join(".assay");
+            let max_history = config.gates.as_ref().and_then(|g| g.max_history);
+            let timestamp = Utc::now();
+            let run_id = assay_core::history::generate_run_id(&timestamp);
+            let record = assay_types::GateRunRecord {
+                run_id,
+                assay_version: env!("CARGO_PKG_VERSION").to_string(),
+                timestamp,
+                working_dir: Some(working_dir.to_string_lossy().to_string()),
+                summary: summary.clone(),
+            };
+            if let Err(e) = assay_core::history::save(&assay_dir, &record, max_history) {
+                tracing::warn!(
+                    spec_name = %record.summary.spec_name,
+                    "failed to save command-only gate run history: {e}"
+                );
+            }
         }
 
         let json = serde_json::to_string(&response)
