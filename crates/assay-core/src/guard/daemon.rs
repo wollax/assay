@@ -495,7 +495,10 @@ mod tests {
 
         daemon.graceful_shutdown();
 
-        assert!(!pid_path.exists(), "PID file should be removed after shutdown");
+        assert!(
+            !pid_path.exists(),
+            "PID file should be removed after shutdown"
+        );
     }
 
     #[test]
