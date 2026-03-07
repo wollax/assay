@@ -9,10 +9,10 @@ use assay_types::context::{ContextHealth, SessionEntry, TokenEstimate, UsageData
 use super::parser::ParsedEntry;
 
 /// Default context window size for all current Claude models.
-pub(super) const DEFAULT_CONTEXT_WINDOW: u64 = 200_000;
+pub(crate) const DEFAULT_CONTEXT_WINDOW: u64 = 200_000;
 
 /// Estimated system overhead (system prompt, tool definitions, etc.).
-pub(super) const SYSTEM_OVERHEAD_TOKENS: u64 = 21_000;
+pub(crate) const SYSTEM_OVERHEAD_TOKENS: u64 = 21_000;
 
 /// Look up context window size for a model string.
 ///
@@ -61,8 +61,7 @@ pub fn extract_model(entries: &[ParsedEntry]) -> Option<String> {
 /// Heuristic token estimate from byte count.
 ///
 /// Uses the empirical ratio of ~3.7 bytes per token for English text.
-#[allow(dead_code)]
-pub fn estimate_tokens_from_bytes(bytes: u64) -> u64 {
+pub(crate) fn estimate_tokens_from_bytes(bytes: u64) -> u64 {
     (bytes as f64 / 3.7).ceil() as u64
 }
 
