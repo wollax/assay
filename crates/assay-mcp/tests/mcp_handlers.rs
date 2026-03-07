@@ -297,7 +297,9 @@ cmd = "echo ok"
     assert_eq!(record_json["summary"]["spec_name"], "cmd-only-spec");
     assert_eq!(record_json["summary"]["passed"], 1);
     assert!(
-        record_json["run_id"].as_str().is_some_and(|s| !s.is_empty()),
+        record_json["run_id"]
+            .as_str()
+            .is_some_and(|s| !s.is_empty()),
         "run_id should be a non-empty string"
     );
     assert!(
