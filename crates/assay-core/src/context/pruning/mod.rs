@@ -37,12 +37,39 @@ pub struct PipelineResult {
 /// results are tracked for reporting. The protection set is passed to every
 /// strategy so team coordination messages are never modified.
 pub fn execute_pipeline(
-    _entries: Vec<ParsedEntry>,
-    _strategies: &[PruneStrategy],
-    _tier: PrescriptionTier,
-    _protected_lines: &HashSet<usize>,
+    entries: Vec<ParsedEntry>,
+    strategies: &[PruneStrategy],
+    tier: PrescriptionTier,
+    protected_lines: &HashSet<usize>,
 ) -> PipelineResult {
-    todo!("Implemented in GREEN phase")
+    let original_size: u64 = entries.iter().map(|e| e.raw_bytes as u64).sum();
+    let mut current = entries;
+    let mut strategy_results = Vec::new();
+
+    for strategy in strategies {
+        let result = apply_strategy(strategy, current, tier, protected_lines);
+        current = result.entries;
+        strategy_results.push((
+            *strategy,
+            StrategyResult {
+                entries: Vec::new(), // entries moved to `current`
+                lines_removed: result.lines_removed,
+                lines_modified: result.lines_modified,
+                bytes_saved: result.bytes_saved,
+                protected_skipped: result.protected_skipped,
+                samples: result.samples,
+            },
+        ));
+    }
+
+    let final_size: u64 = current.iter().map(|e| e.raw_bytes as u64).sum();
+
+    PipelineResult {
+        entries: current,
+        strategy_results,
+        original_size,
+        final_size,
+    }
 }
 
 /// Write entries as JSONL to `target` using atomic temp+rename.
@@ -50,8 +77,32 @@ pub fn execute_pipeline(
 /// Creates a temporary file in the same directory as `target`, writes all
 /// entries' `raw_line` values as lines, then persists atomically. This
 /// prevents data loss if the process crashes mid-write.
-pub fn write_session(_entries: &[ParsedEntry], _target: &Path) -> crate::Result<()> {
-    todo!("Implemented in GREEN phase")
+pub fn write_session(entries: &[ParsedEntry], target: &Path) -> crate::Result<()> {
+    use std::io::Write;
+    use tempfile::NamedTempFile;
+
+    let dir = target.parent().unwrap_or(Path::new("."));
+    let mut tmp = NamedTempFile::new_in(dir).map_err(|source| crate::AssayError::Io {
+        operation: "creating temp file for session write".into(),
+        path: target.to_path_buf(),
+        source,
+    })?;
+
+    for entry in entries {
+        writeln!(tmp, "{}", entry.raw_line).map_err(|source| crate::AssayError::Io {
+            operation: "writing session entry".into(),
+            path: target.to_path_buf(),
+            source,
+        })?;
+    }
+
+    tmp.persist(target).map_err(|e| crate::AssayError::Io {
+        operation: "persisting session file".into(),
+        path: target.to_path_buf(),
+        source: e.error,
+    })?;
+
+    Ok(())
 }
 
 /// Top-level pruning API: parse, protect, pipeline, optionally write.
@@ -60,13 +111,55 @@ pub fn write_session(_entries: &[ParsedEntry], _target: &Path) -> crate::Result<
 /// If `execute` is true, a backup is created first, then the pruned
 /// session is written atomically.
 pub fn prune_session(
-    _session_path: &Path,
-    _strategies: &[PruneStrategy],
-    _tier: PrescriptionTier,
-    _execute: bool,
-    _backup_dir: Option<&Path>,
+    session_path: &Path,
+    strategies: &[PruneStrategy],
+    tier: PrescriptionTier,
+    execute: bool,
+    backup_dir: Option<&Path>,
 ) -> crate::Result<PruneReport> {
-    todo!("Implemented in GREEN phase")
+    let (entries, _skipped) = super::parser::parse_session(session_path)?;
+
+    let original_entries = entries.len();
+    let protected = protection::build_protection_set(&entries);
+    let pipeline = execute_pipeline(entries, strategies, tier, &protected);
+
+    let session_id = session_path
+        .file_stem()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .into_owned();
+
+    let summaries: Vec<PruneSummary> = pipeline
+        .strategy_results
+        .iter()
+        .map(|(strategy, result)| PruneSummary {
+            strategy: *strategy,
+            lines_removed: result.lines_removed,
+            lines_modified: result.lines_modified,
+            bytes_saved: result.bytes_saved,
+            protected_skipped: result.protected_skipped,
+            samples: result.samples.clone(),
+        })
+        .collect();
+
+    let report = PruneReport {
+        session_id,
+        original_size: pipeline.original_size,
+        final_size: pipeline.final_size,
+        original_entries,
+        final_entries: pipeline.entries.len(),
+        strategies: summaries,
+        executed: execute,
+    };
+
+    if execute {
+        let default_backup = session_path.parent().unwrap_or(Path::new(".")).to_path_buf();
+        let bdir = backup_dir.unwrap_or(&default_backup);
+        backup::backup_session(session_path, bdir)?;
+        write_session(&pipeline.entries, session_path)?;
+    }
+
+    Ok(report)
 }
 
 #[cfg(test)]
