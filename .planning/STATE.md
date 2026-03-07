@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 2026-03-02)
 
 ## Current Position
 
-Phase: 22 — Pruning Engine (IN PROGRESS)
-Plan: 01 of 5 (complete)
-Status: Plan 01 complete, plan 02 next
-Last activity: 2026-03-06 — Plan 01 executed (foundation types, module skeleton, protection set)
+Phase: 22 — Pruning Engine (VERIFIED & COMPLETE)
+Plan: 05 of 5 (complete)
+Status: Phase complete, verified, moved to completed/
+Last activity: 2026-03-06 — Phase 22 verified and completed
 
-Progress: v0.2.0 [████████████] ~87%
+Progress: v0.2.0 [█████████████] ~92%
 
 ## Milestone Progress
 
@@ -162,14 +162,6 @@ v0.2.0 decisions (from 21-01 execution):
 - Archive filenames use ISO 8601 with colons replaced by dashes for filesystem compatibility
 - Context health uses fixed 200K context window (same as tokens module)
 
-### Pending Issues
-
-19 open issues (reduced from 38 after triaging 19 test-related issues in 19-02)
-
-### Blockers
-
-None.
-
 v0.2.0 decisions (from 22-01 execution):
 - PruneStrategy::label() lives on enum in assay-types; apply_strategy() is a free function in assay-core (orphan rule)
 - ParsedEntry::update_content() re-serializes entry for content-modifying strategies
@@ -185,10 +177,10 @@ None.
 
 ### Next Actions
 
-Plan 22-01 complete. Next: Plan 22-02 — Line-deletion strategies (progress-collapse, stale-reads)
+Phase 22 complete. Next: Phase 23 — Guard Daemon & Recovery
 
 ### Session Continuity
 
 Last session: 2026-03-06
-Stopped at: Phase 22, Plan 01 complete
-Resume file: .planning/phases/active/22-pruning-engine/22-01-SUMMARY.md
+Stopped at: Phase 22 complete
+Resume file: .planning/phases/completed/22-pruning-engine/
