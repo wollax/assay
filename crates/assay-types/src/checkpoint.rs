@@ -79,6 +79,18 @@ pub enum AgentStatus {
     Unknown,
 }
 
+
+impl std::fmt::Display for AgentStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Active => write!(f, "active"),
+            Self::Idle => write!(f, "idle"),
+            Self::Done => write!(f, "done"),
+            Self::Unknown => write!(f, "unknown"),
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Task State
 // ---------------------------------------------------------------------------
@@ -115,6 +127,18 @@ pub enum TaskStatus {
     Completed,
     /// Task has been cancelled.
     Cancelled,
+}
+
+
+impl std::fmt::Display for TaskStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Pending => write!(f, "pending"),
+            Self::InProgress => write!(f, "in_progress"),
+            Self::Completed => write!(f, "completed"),
+            Self::Cancelled => write!(f, "cancelled"),
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

@@ -208,6 +208,12 @@ pub enum BloatCategory {
     SystemReminders,
 }
 
+impl std::fmt::Display for BloatCategory {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.label())
+    }
+}
+
 impl BloatCategory {
     /// Human-readable label for this category.
     pub fn label(&self) -> &'static str {
@@ -235,6 +241,7 @@ impl BloatCategory {
 }
 
 /// Breakdown of bloat by category.
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 pub struct BloatBreakdown {
     /// Individual bloat entries by category.
@@ -242,6 +249,7 @@ pub struct BloatBreakdown {
 }
 
 /// A single bloat category measurement.
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct BloatEntry {
     /// The bloat category.
@@ -261,6 +269,7 @@ pub struct BloatEntry {
 /// Full diagnostics report for a session file.
 ///
 /// Output of the `context diagnose` CLI command and `context_diagnose` MCP tool.
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct DiagnosticsReport {
     /// Session UUID.
@@ -329,6 +338,7 @@ inventory::submit! {
 // ---------------------------------------------------------------------------
 
 /// Token estimate for an active session (MCP `estimate_tokens` response).
+#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct TokenEstimate {
     /// Session UUID.
@@ -364,6 +374,17 @@ pub enum ContextHealth {
     Critical,
 }
 
+impl std::fmt::Display for ContextHealth {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Healthy => write!(f, "healthy"),
+            Self::Warning => write!(f, "warning"),
+            Self::Critical => write!(f, "critical"),
+        }
+    }
+}
+
+
 // ---------------------------------------------------------------------------
 // Claude History Entry
 // ---------------------------------------------------------------------------
@@ -394,6 +415,12 @@ pub enum PruneStrategy {
     ToolOutputTrim,
 }
 
+impl std::fmt::Display for PruneStrategy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.label())
+    }
+}
+
 impl PruneStrategy {
     /// Human-readable label for this strategy.
     pub fn label(&self) -> &'static str {
@@ -420,6 +447,16 @@ pub enum PrescriptionTier {
     Standard,
     /// Maximum reduction: standard + thinking-blocks, tool-output-trim.
     Aggressive,
+}
+
+impl std::fmt::Display for PrescriptionTier {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Gentle => write!(f, "gentle"),
+            Self::Standard => write!(f, "standard"),
+            Self::Aggressive => write!(f, "aggressive"),
+        }
+    }
 }
 
 impl PrescriptionTier {
