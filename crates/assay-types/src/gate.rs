@@ -32,6 +32,18 @@ pub enum GateKind {
     AgentReport,
 }
 
+
+impl std::fmt::Display for GateKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Command { .. } => write!(f, "Command"),
+            Self::AlwaysPass => write!(f, "AlwaysPass"),
+            Self::FileExists { .. } => write!(f, "FileExists"),
+            Self::AgentReport => write!(f, "AgentReport"),
+        }
+    }
+}
+
 inventory::submit! {
     crate::schema_registry::SchemaEntry {
         name: "gate-kind",

@@ -21,6 +21,20 @@ pub enum SpecStatus {
     Deprecated,
 }
 
+
+impl std::fmt::Display for SpecStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Draft => write!(f, "draft"),
+            Self::Proposed => write!(f, "proposed"),
+            Self::Planned => write!(f, "planned"),
+            Self::InProgress => write!(f, "in-progress"),
+            Self::Verified => write!(f, "verified"),
+            Self::Deprecated => write!(f, "deprecated"),
+        }
+    }
+}
+
 /// RFC 2119 obligation level for a requirement.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
@@ -29,6 +43,17 @@ pub enum Obligation {
     Shall,
     Should,
     May,
+}
+
+
+impl std::fmt::Display for Obligation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Shall => write!(f, "shall"),
+            Self::Should => write!(f, "should"),
+            Self::May => write!(f, "may"),
+        }
+    }
 }
 
 /// MoSCoW priority for a requirement.
@@ -42,6 +67,18 @@ pub enum Priority {
     Wont,
 }
 
+
+impl std::fmt::Display for Priority {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Must => write!(f, "must"),
+            Self::Should => write!(f, "should"),
+            Self::Could => write!(f, "could"),
+            Self::Wont => write!(f, "wont"),
+        }
+    }
+}
+
 /// Verification method for a requirement.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
@@ -53,6 +90,18 @@ pub enum VerificationMethod {
     Demonstration,
 }
 
+
+impl std::fmt::Display for VerificationMethod {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Test => write!(f, "test"),
+            Self::Analysis => write!(f, "analysis"),
+            Self::Inspection => write!(f, "inspection"),
+            Self::Demonstration => write!(f, "demonstration"),
+        }
+    }
+}
+
 /// Acceptance criterion type for a requirement.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
@@ -61,6 +110,17 @@ pub enum AcceptanceCriterionType {
     Ears,
     #[default]
     Plain,
+}
+
+
+impl std::fmt::Display for AcceptanceCriterionType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Gherkin => write!(f, "gherkin"),
+            Self::Ears => write!(f, "ears"),
+            Self::Plain => write!(f, "plain"),
+        }
+    }
 }
 
 /// A single acceptance criterion attached to a requirement.
@@ -243,6 +303,18 @@ pub enum ImpactLevel {
     Critical,
 }
 
+
+impl std::fmt::Display for ImpactLevel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Low => write!(f, "low"),
+            Self::Medium => write!(f, "medium"),
+            Self::High => write!(f, "high"),
+            Self::Critical => write!(f, "critical"),
+        }
+    }
+}
+
 /// Likelihood level for risk assessment.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
@@ -251,6 +323,17 @@ pub enum LikelihoodLevel {
     #[default]
     Medium,
     High,
+}
+
+
+impl std::fmt::Display for LikelihoodLevel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Low => write!(f, "low"),
+            Self::Medium => write!(f, "medium"),
+            Self::High => write!(f, "high"),
+        }
+    }
 }
 
 /// A risk associated with this feature.

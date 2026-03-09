@@ -30,6 +30,17 @@ pub enum EvaluatorRole {
     Human,
 }
 
+
+impl std::fmt::Display for EvaluatorRole {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::SelfEval => write!(f, "self"),
+            Self::Independent => write!(f, "independent"),
+            Self::Human => write!(f, "human"),
+        }
+    }
+}
+
 inventory::submit! {
     crate::schema_registry::SchemaEntry {
         name: "evaluator-role",
@@ -47,6 +58,17 @@ pub enum Confidence {
     Medium,
     /// Low confidence — uncertain; evaluation may need human review.
     Low,
+}
+
+
+impl std::fmt::Display for Confidence {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::High => write!(f, "high"),
+            Self::Medium => write!(f, "medium"),
+            Self::Low => write!(f, "low"),
+        }
+    }
 }
 
 inventory::submit! {

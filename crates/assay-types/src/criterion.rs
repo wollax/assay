@@ -16,6 +16,15 @@ pub enum CriterionKind {
     AgentReport,
 }
 
+
+impl std::fmt::Display for CriterionKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::AgentReport => write!(f, "AgentReport"),
+        }
+    }
+}
+
 inventory::submit! {
     crate::schema_registry::SchemaEntry {
         name: "criterion-kind",

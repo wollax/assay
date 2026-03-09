@@ -20,6 +20,16 @@ pub enum Enforcement {
     Advisory,
 }
 
+
+impl std::fmt::Display for Enforcement {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Required => write!(f, "required"),
+            Self::Advisory => write!(f, "advisory"),
+        }
+    }
+}
+
 inventory::submit! {
     crate::schema_registry::SchemaEntry {
         name: "enforcement",
