@@ -56,6 +56,9 @@
 **Goal:** Extract the CLI monolith into modules, add assay-core dependency to TUI, and establish error sub-enum pattern — unblocking all subsequent feature and hardening work.
 **Dependencies:** None (first phase)
 **Requirements:** CORE-01, CORE-05
+**Plans:** 2 plans in 1 wave
+  - **26-01** (Wave 1): CLI monolith extraction — split main.rs into commands/ modules (2 tasks)
+  - **26-02** (Wave 1): Error variant + constructors + TUI wiring (2 tasks)
 **Success Criteria** (what must be TRUE):
   1. CLI source is split into `commands/` modules with one module per subcommand group
   2. `assay-tui` has `assay-core` in its `Cargo.toml` dependencies and can import core types
