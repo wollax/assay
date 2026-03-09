@@ -90,8 +90,48 @@
 
 ## Traceability
 
-_Filled by roadmap creation._
-
-| Requirement | Phase |
-|-------------|-------|
-| | |
+| Requirement | Phase | Phase Name |
+|-------------|-------|------------|
+| ORCH-01 | 28 | Worktree Manager |
+| ORCH-02 | 28 | Worktree Manager |
+| ORCH-03 | 28 | Worktree Manager |
+| ORCH-04 | 28 | Worktree Manager |
+| ORCH-05 | 28 | Worktree Manager |
+| ORCH-06 | 28 | Worktree Manager |
+| ORCH-07 | 28 | Worktree Manager |
+| CLI-01 | 32 | CLI Polish |
+| CLI-02 | 32 | CLI Polish |
+| CLI-03 | 32 | CLI Polish |
+| CLI-04 | 32 | CLI Polish |
+| CLI-05 | 32 | CLI Polish |
+| CLI-06 | 32 | CLI Polish |
+| CLI-07 | 32 | CLI Polish |
+| CLI-08 | 32 | CLI Polish |
+| MCP-01 | 33 | MCP Validation |
+| MCP-02 | 33 | MCP Validation |
+| MCP-03 | 33 | MCP Validation |
+| MCP-04 | 33 | MCP Validation |
+| MCP-05 | 33 | MCP Validation |
+| TYPE-01 | 27 | Types Hygiene |
+| TYPE-02 | 27 | Types Hygiene |
+| TYPE-03 | 27 | Types Hygiene |
+| TYPE-04 | 27 | Types Hygiene |
+| TYPE-05 | 27 | Types Hygiene |
+| TYPE-06 | 27 | Types Hygiene |
+| GATE-01 | 29 | Gate Output Truncation |
+| GATE-02 | 29 | Gate Output Truncation |
+| GATE-03 | 29 | Gate Output Truncation |
+| GATE-04 | 29 | Gate Output Truncation |
+| GATE-05 | 29 | Gate Output Truncation |
+| ERR-01 | 31 | Error Messages |
+| ERR-02 | 31 | Error Messages |
+| ERR-03 | 31 | Error Messages |
+| CORE-01 | 26 | Structural Prerequisites |
+| CORE-02 | 30 | Core Tech Debt |
+| CORE-03 | 30 | Core Tech Debt |
+| CORE-04 | 30 | Core Tech Debt |
+| CORE-05 | 26 | Structural Prerequisites |
+| CORE-06 | 30 | Core Tech Debt |
+| CORE-07 | 30 | Core Tech Debt |
+| CORE-08 | 30 | Core Tech Debt |
+| CORE-09 | 30 | Core Tech Debt |

@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 2026-03-08)
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: 26 — Structural Prerequisites
 Plan: —
-Status: Defining requirements
-Last activity: 2026-03-08 — Milestone v0.3.0 started
+Status: Not started
+Last activity: 2026-03-08 — Roadmap created for v0.3.0
 
-Progress: v0.3.0 [░░░░░░░░░░░░░░░░] 0%
+Progress: v0.3.0 [░░░░░░░░░░░░░░░░] 0% (0/8 phases)
 
 ## Milestone Progress
 
@@ -22,7 +22,18 @@ Progress: v0.3.0 [░░░░░░░░░░░░░░░░] 0%
 |-----------|--------|--------------|----------|
 | v0.1.0 | 10 | 43 | 100% (shipped) |
 | v0.2.0 | 15 (11-25) | 52 | 100% (shipped) |
-| v0.3.0 | — | — | 0% (defining) |
+| v0.3.0 | 8 (26-33) | 43 | 0% |
+
+## Phase Checklist
+
+- [ ] Phase 26: Structural Prerequisites (CORE-01, CORE-05)
+- [ ] Phase 27: Types Hygiene (TYPE-01 through TYPE-06)
+- [ ] Phase 28: Worktree Manager (ORCH-01 through ORCH-07)
+- [ ] Phase 29: Gate Output Truncation (GATE-01 through GATE-05)
+- [ ] Phase 30: Core Tech Debt (CORE-02, CORE-03, CORE-04, CORE-06, CORE-07, CORE-08, CORE-09)
+- [ ] Phase 31: Error Messages (ERR-01, ERR-02, ERR-03)
+- [ ] Phase 32: CLI Polish (CLI-01 through CLI-08)
+- [ ] Phase 33: MCP Validation (MCP-01 through MCP-05)
 
 ## Accumulated Context
 
@@ -35,6 +46,11 @@ v0.2.0 decisions archived to .planning/milestones/v0.2.0-ROADMAP.md
 - Concrete Claude Code module, NOT an agent launcher trait (premature abstraction)
 - Merge-back pipeline deferred to v0.4.0 (premature without orchestrator)
 - Spec provider trait deferred (one implementation = premature abstraction)
+- CLI monolith extraction is prerequisite for all v0.3.0 feature work
+- TUI assay-core dependency added in Phase 26 (structural prerequisite)
+- Sub-enum error pattern for new error categories (WorktreeError, etc.)
+- Zero new workspace dependencies (hard constraint from research)
+- Launcher, session record, gate_evaluate, TUI viewer, composable gates, spec preconditions, gate history summary — all deferred to v0.4.0+
 
 ### Pending Issues
 
@@ -46,4 +62,4 @@ None.
 
 ### Next Actions
 
-Define requirements, then create roadmap.
+Start Phase 26: Structural Prerequisites — extract CLI monolith, add TUI dep, establish error sub-enums.
