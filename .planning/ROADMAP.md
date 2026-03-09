@@ -51,19 +51,7 @@
 
 **Goal:** Build the foundation for agent orchestration — worktree isolation, independent gate evaluation infrastructure, and CLI/MCP/types/core hardening — while closing tech debt from v0.2.0.
 
-#### Phase 26: Structural Prerequisites
-
-**Goal:** Extract the CLI monolith into modules, add assay-core dependency to TUI, and establish error sub-enum pattern — unblocking all subsequent feature and hardening work.
-**Dependencies:** None (first phase)
-**Requirements:** CORE-01, CORE-05
-**Plans:** 2 plans in 1 wave
-  - **26-01** (Wave 1): CLI monolith extraction — split main.rs into commands/ modules (2 tasks)
-  - **26-02** (Wave 1): Error variant + constructors + TUI wiring (2 tasks)
-**Success Criteria** (what must be TRUE):
-  1. CLI source is split into `commands/` modules with one module per subcommand group
-  2. `assay-tui` has `assay-core` in its `Cargo.toml` dependencies and can import core types
-  3. `AssayError` distinguishes `serde_json` errors from I/O errors via separate variants
-  4. Error construction uses ergonomic helpers (e.g., `AssayError::io()`, `AssayError::json()`) instead of raw variant construction
+- [x] Phase 26: Structural Prerequisites (2 plans) — 2026-03-09
 
 #### Phase 27: Types Hygiene
 
@@ -153,4 +141,4 @@
 |-----------|--------|--------|--------------|----------|
 | v0.1.0 Proof of Concept | ✅ Shipped | 10 | 43 | 100% |
 | v0.2.0 Dual-Track Gates & Hardening | ✅ Shipped | 15 | 52 | 100% |
-| v0.3.0 Orchestration Foundation | 🔄 In Progress | 8 (26-33) | 43 | 0% |
+| v0.3.0 Orchestration Foundation | 🔄 In Progress | 8 (26-33) | 43 | 12% |

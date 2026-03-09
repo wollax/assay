@@ -54,11 +54,11 @@
 
 ## Core Tech Debt
 
-- [ ] **CORE-01**: `AssayError` construction ergonomics improved
+- [x] **CORE-01**: `AssayError` construction ergonomics improved
 - [ ] **CORE-02**: Enforcement validation duplication eliminated between `validate()` and `validate_gates_spec()`
 - [ ] **CORE-03**: `evaluate_all` and `evaluate_all_gates` shared logic extracted
 - [ ] **CORE-04**: History `list()` handles unreadable directory entries with warning instead of silent drop
-- [ ] **CORE-05**: `serde_json` errors distinguished from I/O errors in `AssayError`
+- [x] **CORE-05**: `serde_json` errors distinguished from I/O errors in `AssayError`
 - [ ] **CORE-06**: `generate_run_id` visibility changed to `pub(crate)`
 - [ ] **CORE-07**: Guard daemon PID file write followed by `fsync()`
 - [ ] **CORE-08**: `try_save_checkpoint` uses stored project dir instead of `current_dir()`

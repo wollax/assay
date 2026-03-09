@@ -9,10 +9,10 @@ See: .planning/PROJECT.md (updated 2026-03-08)
 
 ## Current Position
 
-Phase: 26 — Structural Prerequisites
-Plan: 01 + 02 (both complete)
-Status: Complete
-Last activity: 2026-03-09 — Plan 01 complete (CLI monolith extraction)
+Phase: 27 — Types Hygiene
+Plan: —
+Status: Not started
+Last activity: 2026-03-09 — Completed Phase 26: Structural Prerequisites
 
 Progress: v0.3.0 [██░░░░░░░░░░░░░░] 12% (1/8 phases)
 
@@ -22,7 +22,7 @@ Progress: v0.3.0 [██░░░░░░░░░░░░░░] 12% (1/8 pha
 |-----------|--------|--------------|----------|
 | v0.1.0 | 10 | 43 | 100% (shipped) |
 | v0.2.0 | 15 (11-25) | 52 | 100% (shipped) |
-| v0.3.0 | 8 (26-33) | 43 | 0% |
+| v0.3.0 | 8 (26-33) | 43 | 12% |
 
 ## Phase Checklist
 
@@ -46,9 +46,12 @@ v0.2.0 decisions archived to .planning/milestones/v0.2.0-ROADMAP.md
 - Concrete Claude Code module, NOT an agent launcher trait (premature abstraction)
 - Merge-back pipeline deferred to v0.4.0 (premature without orchestrator)
 - Spec provider trait deferred (one implementation = premature abstraction)
-- CLI monolith extraction is prerequisite for all v0.3.0 feature work (DONE — 26-01)
+- CLI monolith extraction is prerequisite for all v0.3.0 feature work (DONE — Phase 26)
 - CLI commands/ module: flat files, one per subcommand group, shared helpers in mod.rs
-- TUI assay-core dependency added in Phase 26 (structural prerequisite)
+- Each command module exposes pub(crate) handle() for dispatch
+- main.rs is 182 lines (help text attributes tightly coupled to Command enum)
+- TUI assay-core dependency verified (Phase 26)
+- AssayError::Json variant added; existing Io call sites kept as-is, new code uses constructors
 - Sub-enum error pattern for new error categories (WorktreeError, etc.)
 - Zero new workspace dependencies (hard constraint from research)
 - Launcher, session record, gate_evaluate, TUI viewer, composable gates, spec preconditions, gate history summary — all deferred to v0.4.0+
@@ -63,4 +66,4 @@ None.
 
 ### Next Actions
 
-Phase 26 complete. Begin Phase 27: Types Hygiene.
+Start Phase 27: Types Hygiene — Eq derives, Display impls, doc comments, Default on GateSection, Criterion dedup.
