@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// Determines whether a criterion failure blocks the gate (required)
 /// or is informational only (advisory).
-#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum Enforcement {
     /// Failure blocks the gate. This is the default.
@@ -40,7 +40,7 @@ inventory::submit! {
 ///
 /// Parsed from `[gate]` in spec TOML files. Provides spec-wide defaults
 /// that individual criteria can override.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct GateSection {
     /// Default enforcement level for all criteria in this spec.
@@ -59,7 +59,7 @@ inventory::submit! {
 ///
 /// Always present on `GateRunSummary`, with counts defaulting to 0.
 /// Only counts executable criteria (skipped criteria are excluded).
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct EnforcementSummary {
     pub required_passed: usize,
     pub required_failed: usize,

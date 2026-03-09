@@ -14,7 +14,7 @@ use crate::enforcement::{Enforcement, GateSection};
 ///
 /// Extends the concept of [`crate::Criterion`] with a `requirements` field
 /// that links criteria to specific requirement IDs (e.g., `REQ-FUNC-001`).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct GateCriterion {
     /// Human-readable name for this criterion.
@@ -59,7 +59,7 @@ pub struct GateCriterion {
 ///
 /// Parallel to [`crate::Spec`] but designed for the directory layout where
 /// criteria live in `gates.toml` alongside a `spec.toml`.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct GatesSpec {
     /// Display name for this gate spec (must match directory name / feature spec name).

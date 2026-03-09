@@ -30,7 +30,6 @@ pub enum EvaluatorRole {
     Human,
 }
 
-
 impl std::fmt::Display for EvaluatorRole {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -60,7 +59,6 @@ pub enum Confidence {
     Low,
 }
 
-
 impl std::fmt::Display for Confidence {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -79,7 +77,7 @@ inventory::submit! {
 }
 
 /// A structured evaluation produced by an agent for a single criterion.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct AgentEvaluation {
     /// Whether the criterion passed according to this evaluation.
     pub passed: bool,
@@ -107,7 +105,7 @@ inventory::submit! {
 ///
 /// Tracks in-progress evaluations so that a session can be resumed
 /// after an unexpected interruption without losing completed work.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct AgentSession {
     /// Unique session identifier.
     pub session_id: String,
