@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-03-08)
 ## Current Position
 
 Phase: 27 — Types Hygiene
-Plan: 3 of 4
-Status: In progress
-Last activity: 2026-03-09 — Completed Plan 27-03: Doc comments and deny(missing_docs)
+Plan: 4 of 4
+Status: Phase complete
+Last activity: 2026-03-09 — Completed Plan 27-04: Criterion dedup
 
-Progress: v0.3.0 [██░░░░░░░░░░░░░░] 12% (1/8 phases)
+Progress: v0.3.0 [████░░░░░░░░░░░░] 25% (2/8 phases)
 
 ## Milestone Progress
 
@@ -22,12 +22,12 @@ Progress: v0.3.0 [██░░░░░░░░░░░░░░] 12% (1/8 pha
 |-----------|--------|--------------|----------|
 | v0.1.0 | 10 | 43 | 100% (shipped) |
 | v0.2.0 | 15 (11-25) | 52 | 100% (shipped) |
-| v0.3.0 | 8 (26-33) | 43 | 12% |
+| v0.3.0 | 8 (26-33) | 43 | 25% |
 
 ## Phase Checklist
 
 - [x] Phase 26: Structural Prerequisites (CORE-01, CORE-05)
-- [ ] Phase 27: Types Hygiene (TYPE-01 through TYPE-06)
+- [x] Phase 27: Types Hygiene (TYPE-01 through TYPE-06)
 - [ ] Phase 28: Worktree Manager (ORCH-01 through ORCH-07)
 - [ ] Phase 29: Gate Output Truncation (GATE-01 through GATE-05)
 - [ ] Phase 30: Core Tech Debt (CORE-02, CORE-03, CORE-04, CORE-06, CORE-07, CORE-08, CORE-09)
@@ -66,4 +66,4 @@ None.
 
 ### Next Actions
 
-Start Phase 27: Types Hygiene — Eq derives, Display impls, doc comments, Default on GateSection, Criterion dedup.
+Start Phase 28: Worktree Manager (ORCH-01 through ORCH-07).
