@@ -31,12 +31,12 @@
 
 ## Types Hygiene
 
-- [ ] **TYPE-01**: All types without float fields derive `Eq` alongside `PartialEq`
-- [ ] **TYPE-02**: `Enforcement`, `GateKind`, and other key enums implement `Display`
-- [ ] **TYPE-03**: All public types and fields have doc comments
-- [ ] **TYPE-04**: `GateSection` derives `Default`
-- [ ] **TYPE-05**: `GateCriterion` / `Criterion` structural duplication reduced
-- [ ] **TYPE-06**: `EnforcementSummary` fields have doc comments
+- [x] **TYPE-01**: All types without float fields derive `Eq` alongside `PartialEq`
+- [x] **TYPE-02**: `Enforcement`, `GateKind`, and other key enums implement `Display`
+- [x] **TYPE-03**: All public types and fields have doc comments
+- [x] **TYPE-04**: `GateSection` derives `Default`
+- [x] **TYPE-05**: `GateCriterion` / `Criterion` structural duplication reduced
+- [x] **TYPE-06**: `EnforcementSummary` fields have doc comments
 
 ## Gate Output
 

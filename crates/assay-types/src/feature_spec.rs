@@ -9,62 +9,137 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// Status of a feature spec or individual requirement through its lifecycle.
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum SpecStatus {
+    /// Initial authoring state; not yet ready for review.
     #[default]
     Draft,
+    /// Submitted for review but not yet approved.
     Proposed,
+    /// Approved and scheduled for implementation.
     Planned,
+    /// Currently being implemented.
     InProgress,
+    /// Implementation verified against acceptance criteria.
     Verified,
+    /// No longer active; superseded or removed.
     Deprecated,
 }
 
+impl std::fmt::Display for SpecStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Draft => write!(f, "draft"),
+            Self::Proposed => write!(f, "proposed"),
+            Self::Planned => write!(f, "planned"),
+            Self::InProgress => write!(f, "in-progress"),
+            Self::Verified => write!(f, "verified"),
+            Self::Deprecated => write!(f, "deprecated"),
+        }
+    }
+}
+
 /// RFC 2119 obligation level for a requirement.
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum Obligation {
+    /// Mandatory requirement (MUST/SHALL in RFC 2119).
     #[default]
     Shall,
+    /// Recommended requirement (SHOULD in RFC 2119).
     Should,
+    /// Optional requirement (MAY in RFC 2119).
     May,
 }
 
+impl std::fmt::Display for Obligation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Shall => write!(f, "shall"),
+            Self::Should => write!(f, "should"),
+            Self::May => write!(f, "may"),
+        }
+    }
+}
+
 /// MoSCoW priority for a requirement.
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum Priority {
+    /// Non-negotiable for the current release.
     #[default]
     Must,
+    /// Important but not critical; can be deferred if necessary.
     Should,
+    /// Desirable if time and resources permit.
     Could,
+    /// Explicitly excluded from the current release.
     Wont,
 }
 
+impl std::fmt::Display for Priority {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Must => write!(f, "must"),
+            Self::Should => write!(f, "should"),
+            Self::Could => write!(f, "could"),
+            Self::Wont => write!(f, "wont"),
+        }
+    }
+}
+
 /// Verification method for a requirement.
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum VerificationMethod {
+    /// Verified by automated or manual tests.
     #[default]
     Test,
+    /// Verified by static analysis or formal review.
     Analysis,
+    /// Verified by visual or manual inspection.
     Inspection,
+    /// Verified by running the feature and observing behavior.
     Demonstration,
 }
 
+impl std::fmt::Display for VerificationMethod {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Test => write!(f, "test"),
+            Self::Analysis => write!(f, "analysis"),
+            Self::Inspection => write!(f, "inspection"),
+            Self::Demonstration => write!(f, "demonstration"),
+        }
+    }
+}
+
 /// Acceptance criterion type for a requirement.
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum AcceptanceCriterionType {
+    /// Given/When/Then format (BDD-style).
     Gherkin,
+    /// Easy Approach to Requirements Syntax format.
     Ears,
+    /// Free-form plain text.
     #[default]
     Plain,
 }
 
+impl std::fmt::Display for AcceptanceCriterionType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Gherkin => write!(f, "gherkin"),
+            Self::Ears => write!(f, "ears"),
+            Self::Plain => write!(f, "plain"),
+        }
+    }
+}
+
 /// A single acceptance criterion attached to a requirement.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct AcceptanceCriterion {
     /// The criterion statement (Gherkin, EARS, or plain text).
@@ -76,7 +151,7 @@ pub struct AcceptanceCriterion {
 }
 
 /// A structured requirement within a feature spec.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Requirement {
     /// Unique requirement ID in `REQ-[AREA]-[NNN]` format.
@@ -114,7 +189,7 @@ pub struct Requirement {
 }
 
 /// Overview section of a feature spec.
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct FeatureOverview {
     /// How this feature fits into the larger system.
@@ -131,7 +206,7 @@ pub struct FeatureOverview {
 }
 
 /// Constraints that bound the feature implementation.
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Constraints {
     /// Technology constraints.
@@ -148,7 +223,7 @@ pub struct Constraints {
 }
 
 /// A user class that interacts with this feature.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct UserClass {
     /// Name of this user class.
@@ -168,7 +243,7 @@ pub struct UserClass {
 }
 
 /// A quality attribute (non-functional requirement).
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct QualityAttribute {
     /// Description of this quality requirement.
@@ -185,7 +260,7 @@ pub struct QualityAttribute {
 }
 
 /// Quality attributes section keyed by category.
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
 pub struct QualityAttributes {
     /// Performance quality attributes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -205,7 +280,7 @@ pub struct QualityAttributes {
 }
 
 /// An assumption that, if false, affects the feature.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Assumption {
     /// Description of the assumption.
@@ -217,7 +292,7 @@ pub struct Assumption {
 }
 
 /// An external dependency of this feature.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Dependency {
     /// Name of the dependency.
@@ -233,28 +308,56 @@ pub struct Dependency {
 }
 
 /// Impact level for risk assessment.
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum ImpactLevel {
+    /// Minimal impact on the feature or project.
     Low,
+    /// Moderate impact; workarounds may exist.
     #[default]
     Medium,
+    /// Significant impact on functionality or timeline.
     High,
+    /// Severe impact; may block the entire feature.
     Critical,
 }
 
+impl std::fmt::Display for ImpactLevel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Low => write!(f, "low"),
+            Self::Medium => write!(f, "medium"),
+            Self::High => write!(f, "high"),
+            Self::Critical => write!(f, "critical"),
+        }
+    }
+}
+
 /// Likelihood level for risk assessment.
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum LikelihoodLevel {
+    /// Unlikely to occur.
     Low,
+    /// May occur under certain conditions.
     #[default]
     Medium,
+    /// Likely to occur without mitigation.
     High,
 }
 
+impl std::fmt::Display for LikelihoodLevel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Low => write!(f, "low"),
+            Self::Medium => write!(f, "medium"),
+            Self::High => write!(f, "high"),
+        }
+    }
+}
+
 /// A risk associated with this feature.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Risk {
     /// Description of the risk.
@@ -274,7 +377,7 @@ pub struct Risk {
 }
 
 /// Verification strategy for the feature as a whole.
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct VerificationStrategy {
     /// Overall verification strategy description.
@@ -291,7 +394,7 @@ pub struct VerificationStrategy {
 /// Loaded from `.assay/specs/<feature>/spec.toml`. Captures the full
 /// requirements context for a feature: what to build, who it's for,
 /// constraints, quality attributes, risks, and verification strategy.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct FeatureSpec {
     /// Feature name (must match the directory name / gates.toml name).

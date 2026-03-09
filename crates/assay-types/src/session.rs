@@ -30,6 +30,16 @@ pub enum EvaluatorRole {
     Human,
 }
 
+impl std::fmt::Display for EvaluatorRole {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::SelfEval => write!(f, "self"),
+            Self::Independent => write!(f, "independent"),
+            Self::Human => write!(f, "human"),
+        }
+    }
+}
+
 inventory::submit! {
     crate::schema_registry::SchemaEntry {
         name: "evaluator-role",
@@ -49,6 +59,16 @@ pub enum Confidence {
     Low,
 }
 
+impl std::fmt::Display for Confidence {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::High => write!(f, "high"),
+            Self::Medium => write!(f, "medium"),
+            Self::Low => write!(f, "low"),
+        }
+    }
+}
+
 inventory::submit! {
     crate::schema_registry::SchemaEntry {
         name: "confidence",
@@ -57,7 +77,7 @@ inventory::submit! {
 }
 
 /// A structured evaluation produced by an agent for a single criterion.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct AgentEvaluation {
     /// Whether the criterion passed according to this evaluation.
     pub passed: bool,
@@ -85,7 +105,7 @@ inventory::submit! {
 ///
 /// Tracks in-progress evaluations so that a session can be resumed
 /// after an unexpected interruption without losing completed work.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct AgentSession {
     /// Unique session identifier.
     pub session_id: String,

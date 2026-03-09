@@ -131,18 +131,29 @@ pub struct SystemEntry {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ContentBlock {
     /// Text response block.
-    Text { text: String },
+    Text {
+        /// The text content of this block.
+        text: String,
+    },
     /// Extended thinking block (ephemeral, not counted in context window).
-    Thinking { thinking: String },
+    Thinking {
+        /// The thinking content of this block.
+        thinking: String,
+    },
     /// Tool invocation block.
     ToolUse {
+        /// Unique identifier for this tool use (correlates with `ToolResult::tool_use_id`).
         id: String,
+        /// Name of the tool being invoked.
         name: String,
+        /// Tool input parameters as a JSON value.
         input: serde_json::Value,
     },
     /// Tool result block.
     ToolResult {
+        /// Identifier of the tool use that produced this result.
         tool_use_id: String,
+        /// Result content as a JSON value.
         content: serde_json::Value,
     },
     /// Catch-all for future content block types.
@@ -157,7 +168,7 @@ pub enum ContentBlock {
 /// Token usage data from the Anthropic API response.
 ///
 /// Present on the final assistant entry of each turn (the one with `stop_reason`).
-#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct UsageData {
     /// Fresh (non-cached) input tokens.
     #[serde(default)]
@@ -208,6 +219,12 @@ pub enum BloatCategory {
     SystemReminders,
 }
 
+impl std::fmt::Display for BloatCategory {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.label())
+    }
+}
+
 impl BloatCategory {
     /// Human-readable label for this category.
     pub fn label(&self) -> &'static str {
@@ -235,14 +252,15 @@ impl BloatCategory {
 }
 
 /// Breakdown of bloat by category.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct BloatBreakdown {
     /// Individual bloat entries by category.
     pub entries: Vec<BloatEntry>,
 }
 
 /// A single bloat category measurement.
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct BloatEntry {
     /// The bloat category.
     pub category: BloatCategory,
@@ -261,7 +279,8 @@ pub struct BloatEntry {
 /// Full diagnostics report for a session file.
 ///
 /// Output of the `context diagnose` CLI command and `context_diagnose` MCP tool.
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DiagnosticsReport {
     /// Session UUID.
     pub session_id: String,
@@ -299,7 +318,7 @@ inventory::submit! {
 // ---------------------------------------------------------------------------
 
 /// Summary metadata for a session file (used by `context list`).
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct SessionInfo {
     /// Session UUID.
     pub session_id: String,
@@ -329,7 +348,8 @@ inventory::submit! {
 // ---------------------------------------------------------------------------
 
 /// Token estimate for an active session (MCP `estimate_tokens` response).
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct TokenEstimate {
     /// Session UUID.
     pub session_id: String,
@@ -364,6 +384,16 @@ pub enum ContextHealth {
     Critical,
 }
 
+impl std::fmt::Display for ContextHealth {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Healthy => write!(f, "healthy"),
+            Self::Warning => write!(f, "warning"),
+            Self::Critical => write!(f, "critical"),
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Claude History Entry
 // ---------------------------------------------------------------------------
@@ -394,6 +424,12 @@ pub enum PruneStrategy {
     ToolOutputTrim,
 }
 
+impl std::fmt::Display for PruneStrategy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.label())
+    }
+}
+
 impl PruneStrategy {
     /// Human-readable label for this strategy.
     pub fn label(&self) -> &'static str {
@@ -420,6 +456,16 @@ pub enum PrescriptionTier {
     Standard,
     /// Maximum reduction: standard + thinking-blocks, tool-output-trim.
     Aggressive,
+}
+
+impl std::fmt::Display for PrescriptionTier {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Gentle => write!(f, "gentle"),
+            Self::Standard => write!(f, "standard"),
+            Self::Aggressive => write!(f, "aggressive"),
+        }
+    }
 }
 
 impl PrescriptionTier {
@@ -451,7 +497,7 @@ impl PrescriptionTier {
 }
 
 /// Summary of a single strategy's effect during pruning.
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct PruneSummary {
     /// The strategy that was applied.
     pub strategy: PruneStrategy,
@@ -468,7 +514,7 @@ pub struct PruneSummary {
 }
 
 /// A sample of what was pruned, for dry-run display.
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct PruneSample {
     /// 1-based line number in the original file.
     pub line_number: usize,
@@ -479,7 +525,7 @@ pub struct PruneSample {
 }
 
 /// Full pruning report for a session file.
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct PruneReport {
     /// Session UUID.
     pub session_id: String,
@@ -523,4 +569,39 @@ pub struct ClaudeHistoryEntry {
     /// Timestamp in milliseconds since epoch.
     #[serde(default)]
     pub timestamp: Option<u64>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bloat_category_display_delegates_to_label() {
+        assert_eq!(BloatCategory::ProgressTicks.to_string(), "Progress ticks");
+        assert_eq!(BloatCategory::ThinkingBlocks.to_string(), "Thinking blocks");
+        assert_eq!(BloatCategory::Metadata.to_string(), "Metadata");
+    }
+
+    #[test]
+    fn prune_strategy_display_delegates_to_label() {
+        assert_eq!(
+            PruneStrategy::ProgressCollapse.to_string(),
+            "Progress collapse"
+        );
+        assert_eq!(PruneStrategy::StaleReads.to_string(), "Stale reads");
+    }
+
+    #[test]
+    fn context_health_display() {
+        assert_eq!(ContextHealth::Healthy.to_string(), "healthy");
+        assert_eq!(ContextHealth::Warning.to_string(), "warning");
+        assert_eq!(ContextHealth::Critical.to_string(), "critical");
+    }
+
+    #[test]
+    fn prescription_tier_display() {
+        assert_eq!(PrescriptionTier::Gentle.to_string(), "gentle");
+        assert_eq!(PrescriptionTier::Standard.to_string(), "standard");
+        assert_eq!(PrescriptionTier::Aggressive.to_string(), "aggressive");
+    }
 }

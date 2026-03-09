@@ -306,18 +306,10 @@ pub fn evaluate_all_gates(
 
 /// Convert a `GateCriterion` to a `Criterion` for evaluation.
 ///
-/// Drops the `requirements` field (traceability metadata, not used in evaluation).
+/// Now that `GateCriterion` is a type alias for `Criterion`, this is a
+/// trivial clone. Kept as a named function for call-site readability.
 pub fn to_criterion(gc: &GateCriterion) -> Criterion {
-    Criterion {
-        name: gc.name.clone(),
-        description: gc.description.clone(),
-        cmd: gc.cmd.clone(),
-        path: gc.path.clone(),
-        timeout: gc.timeout,
-        enforcement: gc.enforcement,
-        kind: gc.kind,
-        prompt: gc.prompt.clone(),
-    }
+    gc.clone()
 }
 
 /// Derive the `GateKind` for error reporting from a criterion's fields.
@@ -673,6 +665,7 @@ mod tests {
             enforcement: None,
             kind: None,
             prompt: None,
+            requirements: vec![],
         };
 
         let result = evaluate(&criterion, dir.path(), Duration::from_secs(10)).unwrap();
@@ -703,6 +696,7 @@ mod tests {
             enforcement: None,
             kind: None,
             prompt: None,
+            requirements: vec![],
         };
 
         let result = evaluate(&criterion, dir.path(), Duration::from_secs(10)).unwrap();
@@ -729,6 +723,7 @@ mod tests {
             enforcement: None,
             kind: None,
             prompt: None,
+            requirements: vec![],
         };
 
         let result = evaluate(&criterion, dir.path(), Duration::from_secs(1)).unwrap();
@@ -756,6 +751,7 @@ mod tests {
             enforcement: None,
             kind: None,
             prompt: None,
+            requirements: vec![],
         };
 
         let result = evaluate(&criterion, dir.path(), Duration::from_secs(10)).unwrap();
@@ -810,6 +806,7 @@ mod tests {
             enforcement: None,
             kind: None,
             prompt: None,
+            requirements: vec![],
         };
 
         let result = evaluate(&criterion, dir.path(), Duration::from_secs(10)).unwrap();
@@ -905,6 +902,7 @@ mod tests {
                     enforcement: None,
                     kind: None,
                     prompt: None,
+                    requirements: vec![],
                 },
                 Criterion {
                     name: "descriptive".to_string(),
@@ -915,6 +913,7 @@ mod tests {
                     enforcement: None,
                     kind: None,
                     prompt: None,
+                    requirements: vec![],
                 },
                 Criterion {
                     name: "fails".to_string(),
@@ -925,6 +924,7 @@ mod tests {
                     enforcement: None,
                     kind: None,
                     prompt: None,
+                    requirements: vec![],
                 },
             ],
         };
@@ -957,6 +957,7 @@ mod tests {
                 enforcement: None,
                 kind: None,
                 prompt: None,
+                requirements: vec![],
             }],
         };
 
@@ -1042,6 +1043,7 @@ mod tests {
                 enforcement: None,
                 kind: None,
                 prompt: None,
+                requirements: vec![],
             }],
         };
 
@@ -1134,6 +1136,7 @@ mod tests {
             enforcement: None,
             kind: None,
             prompt: None,
+            requirements: vec![],
         };
 
         let result = evaluate(&criterion, dir.path(), Duration::from_secs(10)).unwrap();
@@ -1155,6 +1158,7 @@ mod tests {
             enforcement: None,
             kind: None,
             prompt: None,
+            requirements: vec![],
         };
 
         let result = evaluate(&criterion, dir.path(), Duration::from_secs(10)).unwrap();
@@ -1182,6 +1186,7 @@ mod tests {
                     enforcement: None,
                     kind: None,
                     prompt: None,
+                    requirements: vec![],
                 },
                 Criterion {
                     name: "descriptive only".to_string(),
@@ -1192,6 +1197,7 @@ mod tests {
                     enforcement: None,
                     kind: None,
                     prompt: None,
+                    requirements: vec![],
                 },
             ],
         };
@@ -1219,6 +1225,7 @@ mod tests {
             enforcement: None,
             kind: None,
             prompt: None,
+            requirements: vec![],
         };
 
         let result = evaluate(&criterion, dir.path(), Duration::from_secs(10)).unwrap();
@@ -1337,6 +1344,7 @@ mod tests {
                     enforcement: Some(Enforcement::Required),
                     kind: None,
                     prompt: None,
+                    requirements: vec![],
                 },
                 Criterion {
                     name: "advisory-fail".to_string(),
@@ -1347,6 +1355,7 @@ mod tests {
                     enforcement: Some(Enforcement::Advisory),
                     kind: None,
                     prompt: None,
+                    requirements: vec![],
                 },
             ],
         };
@@ -1385,6 +1394,7 @@ mod tests {
                     enforcement: Some(Enforcement::Required),
                     kind: None,
                     prompt: None,
+                    requirements: vec![],
                 },
                 Criterion {
                     name: "descriptive-only".to_string(),
@@ -1395,6 +1405,7 @@ mod tests {
                     enforcement: Some(Enforcement::Required),
                     kind: None,
                     prompt: None,
+                    requirements: vec![],
                 },
             ],
         };
@@ -1480,6 +1491,7 @@ mod tests {
                     enforcement: Some(Enforcement::Required),
                     kind: None,
                     prompt: None,
+                    requirements: vec![],
                 },
                 Criterion {
                     name: "advisory-fail".to_string(),
@@ -1490,6 +1502,7 @@ mod tests {
                     enforcement: Some(Enforcement::Advisory),
                     kind: None,
                     prompt: None,
+                    requirements: vec![],
                 },
                 Criterion {
                     name: "advisory-pass".to_string(),
@@ -1500,6 +1513,7 @@ mod tests {
                     enforcement: Some(Enforcement::Advisory),
                     kind: None,
                     prompt: None,
+                    requirements: vec![],
                 },
             ],
         };
@@ -1531,6 +1545,7 @@ mod tests {
             enforcement: None,
             kind: Some(CriterionKind::AgentReport),
             prompt: Some("Review the auth module".to_string()),
+            requirements: vec![],
         };
 
         let result = evaluate(&criterion, dir.path(), Duration::from_secs(10));
@@ -1564,6 +1579,7 @@ mod tests {
                     enforcement: Some(Enforcement::Required),
                     kind: None,
                     prompt: None,
+                    requirements: vec![],
                 },
                 Criterion {
                     name: "agent-review".to_string(),
@@ -1574,6 +1590,7 @@ mod tests {
                     enforcement: Some(Enforcement::Advisory),
                     kind: Some(CriterionKind::AgentReport),
                     prompt: Some("Check code quality".to_string()),
+                    requirements: vec![],
                 },
                 Criterion {
                     name: "cmd-fail".to_string(),
@@ -1584,6 +1601,7 @@ mod tests {
                     enforcement: Some(Enforcement::Advisory),
                     kind: None,
                     prompt: None,
+                    requirements: vec![],
                 },
             ],
         };

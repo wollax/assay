@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// Determines whether a criterion failure blocks the gate (required)
 /// or is informational only (advisory).
-#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum Enforcement {
     /// Failure blocks the gate. This is the default.
@@ -18,6 +18,15 @@ pub enum Enforcement {
     Required,
     /// Failure is informational; does not block the gate.
     Advisory,
+}
+
+impl std::fmt::Display for Enforcement {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Required => write!(f, "required"),
+            Self::Advisory => write!(f, "advisory"),
+        }
+    }
 }
 
 inventory::submit! {
@@ -31,7 +40,7 @@ inventory::submit! {
 ///
 /// Parsed from `[gate]` in spec TOML files. Provides spec-wide defaults
 /// that individual criteria can override.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct GateSection {
     /// Default enforcement level for all criteria in this spec.
@@ -50,11 +59,15 @@ inventory::submit! {
 ///
 /// Always present on `GateRunSummary`, with counts defaulting to 0.
 /// Only counts executable criteria (skipped criteria are excluded).
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct EnforcementSummary {
+    /// Number of required criteria that passed.
     pub required_passed: usize,
+    /// Number of required criteria that failed.
     pub required_failed: usize,
+    /// Number of advisory criteria that passed.
     pub advisory_passed: usize,
+    /// Number of advisory criteria that failed.
     pub advisory_failed: usize,
 }
 
@@ -108,5 +121,11 @@ mod tests {
             let roundtripped: Enforcement = serde_json::from_str(&json).expect("deserialize");
             assert_eq!(e, roundtripped);
         }
+    }
+
+    #[test]
+    fn enforcement_display_matches_serde() {
+        assert_eq!(Enforcement::Required.to_string(), "required");
+        assert_eq!(Enforcement::Advisory.to_string(), "advisory");
     }
 }

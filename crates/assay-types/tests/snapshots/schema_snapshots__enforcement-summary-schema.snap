@@ -7,21 +7,25 @@ expression: schema.to_value()
   "description": "Enforcement breakdown in a gate run summary.\n\nAlways present on `GateRunSummary`, with counts defaulting to 0.\nOnly counts executable criteria (skipped criteria are excluded).",
   "properties": {
     "advisory_failed": {
+      "description": "Number of advisory criteria that failed.",
       "format": "uint",
       "minimum": 0,
       "type": "integer"
     },
     "advisory_passed": {
+      "description": "Number of advisory criteria that passed.",
       "format": "uint",
       "minimum": 0,
       "type": "integer"
     },
     "required_failed": {
+      "description": "Number of required criteria that failed.",
       "format": "uint",
       "minimum": 0,
       "type": "integer"
     },
     "required_passed": {
+      "description": "Number of required criteria that passed.",
       "format": "uint",
       "minimum": 0,
       "type": "integer"

@@ -7,59 +7,21 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::criterion::CriterionKind;
-use crate::enforcement::{Enforcement, GateSection};
+use crate::enforcement::GateSection;
 
-/// A single gate criterion with optional requirement traceability.
+/// Backward-compatible alias: `GateCriterion` is now [`crate::Criterion`].
 ///
-/// Extends the concept of [`crate::Criterion`] with a `requirements` field
-/// that links criteria to specific requirement IDs (e.g., `REQ-FUNC-001`).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct GateCriterion {
-    /// Human-readable name for this criterion.
-    pub name: String,
-
-    /// Detailed description of what this criterion checks.
-    pub description: String,
-
-    /// Optional shell command to verify this criterion.
-    #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub cmd: Option<String>,
-
-    /// Optional file path to check for existence.
-    /// When set (and `cmd` is `None`), the criterion evaluates as a `FileExists` gate.
-    #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub path: Option<String>,
-
-    /// Optional timeout in seconds for this criterion's command.
-    #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub timeout: Option<u64>,
-
-    /// Enforcement level override for this criterion. `None` means "use the
-    /// spec-level default from `[gate]` section" (which itself defaults to `required`).
-    #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub enforcement: Option<Enforcement>,
-
-    /// Criterion evaluation kind. When set to `AgentReport`, this criterion
-    /// is evaluated by an agent. Mutually exclusive with `cmd` and `path`.
-    #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub kind: Option<CriterionKind>,
-
-    /// Instruction prompt for agent-evaluated criteria.
-    #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub prompt: Option<String>,
-
-    /// Requirement IDs this criterion traces to (e.g., `["REQ-FUNC-001"]`).
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub requirements: Vec<String>,
-}
+/// Previously a separate struct with an extra `requirements` field.
+/// After the criterion-dedup merge, `Criterion` gained `requirements`
+/// directly, making the two types identical. This alias preserves API
+/// compatibility for existing consumers.
+pub type GateCriterion = crate::Criterion;
 
 /// A gate specification loaded from `gates.toml` in a directory-based spec.
 ///
 /// Parallel to [`crate::Spec`] but designed for the directory layout where
 /// criteria live in `gates.toml` alongside a `spec.toml`.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct GatesSpec {
     /// Display name for this gate spec (must match directory name / feature spec name).
@@ -87,13 +49,15 @@ inventory::submit! {
 inventory::submit! {
     crate::schema_registry::SchemaEntry {
         name: "gate-criterion",
-        generate: || schemars::schema_for!(GateCriterion),
+        generate: || schemars::schema_for!(crate::Criterion),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::criterion::CriterionKind;
+    use crate::enforcement::Enforcement;
 
     #[test]
     fn minimal_gates_spec_toml_roundtrip() {
