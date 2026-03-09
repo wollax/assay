@@ -10,9 +10,9 @@ See: .planning/PROJECT.md (updated 2026-03-08)
 ## Current Position
 
 Phase: 26 — Structural Prerequisites
-Plan: —
-Status: Not started
-Last activity: 2026-03-08 — Roadmap created for v0.3.0
+Plan: 02 (complete)
+Status: In progress
+Last activity: 2026-03-09 — Plan 02 complete (Json error variant + TUI import)
 
 Progress: v0.3.0 [░░░░░░░░░░░░░░░░] 0% (0/8 phases)
 
@@ -62,4 +62,4 @@ None.
 
 ### Next Actions
 
-Start Phase 26: Structural Prerequisites — extract CLI monolith, add TUI dep, establish error sub-enums.
+Continue Phase 26: Plan 01 (CLI monolith extraction) pending.
