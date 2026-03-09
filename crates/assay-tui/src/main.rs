@@ -1,3 +1,6 @@
+// Verify TUI can import core error types (used in future phases).
+#[allow(unused_imports)]
+use assay_core::AssayError;
 use crossterm::event::{self, Event, KeyCode};
 use ratatui::{
     DefaultTerminal,
