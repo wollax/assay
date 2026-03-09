@@ -1,5 +1,6 @@
 //! Worktree lifecycle management for agent sessions.
 
+pub mod orphan;
 pub mod state;
 
 use std::path::{Path, PathBuf};
@@ -10,6 +11,19 @@ use crate::error::{Result, SmeltError};
 use crate::git::GitOps;
 
 pub use state::{GitWorktreeEntry, SessionStatus, WorktreeState, parse_porcelain};
+
+/// Result of a worktree removal operation.
+#[derive(Debug, Clone)]
+pub struct RemoveResult {
+    /// Session name that was removed.
+    pub session_name: String,
+    /// Whether the git worktree was removed.
+    pub worktree_removed: bool,
+    /// Whether the branch was deleted.
+    pub branch_deleted: bool,
+    /// Whether the state file was removed.
+    pub state_file_removed: bool,
+}
 
 /// Options for creating a new worktree.
 #[derive(Debug, Clone)]
@@ -219,6 +233,141 @@ impl<G: GitOps> WorktreeManager<G> {
         // Future: detect orphaned state by checking git presence + PID liveness.
         // For now, return the stored status.
         state.status.clone()
+    }
+
+    /// Remove a worktree, its branch, and its state file.
+    ///
+    /// If `force` is false:
+    /// - Returns `WorktreeDirty` if the worktree has uncommitted changes
+    /// - Returns `BranchUnmerged` if the branch has unmerged commits
+    ///
+    /// If `force` is true, removes regardless of dirty/unmerged status.
+    pub async fn remove(&self, name: &str, force: bool) -> Result<RemoveResult> {
+        // 1. Load state file
+        let state_file = self
+            .smelt_dir
+            .join("worktrees")
+            .join(format!("{name}.toml"));
+
+        if !state_file.exists() {
+            return Err(SmeltError::WorktreeNotFound {
+                name: name.to_string(),
+            });
+        }
+
+        let state = WorktreeState::load(&state_file)?;
+
+        // 2. Resolve worktree_path to absolute
+        let abs_path = self.repo_root.join(&state.worktree_path);
+
+        let mut result = RemoveResult {
+            session_name: name.to_string(),
+            worktree_removed: false,
+            branch_deleted: false,
+            state_file_removed: false,
+        };
+
+        // 3. Check if worktree is dirty (only if it exists on disk)
+        if abs_path.exists() {
+            if !force {
+                let dirty = self.git.worktree_is_dirty(&abs_path).await?;
+                if dirty {
+                    return Err(SmeltError::WorktreeDirty {
+                        name: name.to_string(),
+                    });
+                }
+            }
+
+            // 4. Remove worktree
+            self.git.worktree_remove(&abs_path, force).await?;
+            result.worktree_removed = true;
+        }
+
+        // 5. Check branch merge status and delete branch
+        if self.git.branch_exists(&state.branch_name).await? {
+            if !force {
+                // Use the default branch or HEAD as base for merge check
+                let is_merged = self
+                    .git
+                    .branch_is_merged(&state.branch_name, "HEAD")
+                    .await?;
+                if !is_merged {
+                    return Err(SmeltError::BranchUnmerged {
+                        branch: state.branch_name.clone(),
+                    });
+                }
+            }
+            self.git.branch_delete(&state.branch_name, force).await?;
+            result.branch_deleted = true;
+        }
+
+        // 6. Remove state file
+        std::fs::remove_file(&state_file)
+            .map_err(|e| SmeltError::io("removing state file", &state_file, e))?;
+        result.state_file_removed = true;
+
+        // 7. Prune stale git worktree metadata
+        self.git.worktree_prune().await?;
+
+        Ok(result)
+    }
+
+    /// Detect orphaned worktree sessions.
+    ///
+    /// Cross-references state files with git worktree list and PID liveness
+    /// to identify sessions that are likely abandoned.
+    pub async fn detect_orphans(&self) -> Result<Vec<(String, WorktreeState)>> {
+        let worktrees_dir = self.smelt_dir.join("worktrees");
+        if !worktrees_dir.exists() {
+            return Ok(Vec::new());
+        }
+
+        let entries = std::fs::read_dir(&worktrees_dir)
+            .map_err(|e| SmeltError::io("reading worktrees directory", &worktrees_dir, e))?;
+
+        let git_worktrees = self.git.worktree_list().await?;
+        let threshold = chrono::Duration::hours(orphan::DEFAULT_STALENESS_HOURS);
+
+        let mut orphans = Vec::new();
+
+        for entry in entries {
+            let entry =
+                entry.map_err(|e| SmeltError::io("reading directory entry", &worktrees_dir, e))?;
+            let path = entry.path();
+
+            if path.extension().and_then(|e| e.to_str()) != Some("toml") {
+                continue;
+            }
+
+            let state = WorktreeState::load(&path)?;
+
+            if orphan::is_likely_orphan(&state, &git_worktrees, threshold, &self.repo_root) {
+                orphans.push((state.session_name.clone(), state));
+            }
+        }
+
+        Ok(orphans)
+    }
+
+    /// Remove all orphaned worktrees.
+    ///
+    /// Detects orphans and removes each one with `force=true` (orphans are
+    /// already dead sessions).
+    pub async fn prune(&self) -> Result<Vec<String>> {
+        let orphans = self.detect_orphans().await?;
+
+        if orphans.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let mut pruned = Vec::new();
+        for (name, _state) in &orphans {
+            // Orphans are removed with force since their owning process is gone
+            self.remove(name, true).await?;
+            pruned.push(name.clone());
+        }
+
+        Ok(pruned)
     }
 }
 
@@ -433,5 +582,189 @@ mod tests {
         let manager = WorktreeManager::new(git, repo_path);
         let list = manager.list().await.expect("list");
         assert!(list.is_empty());
+    }
+
+    #[tokio::test]
+    async fn remove_cleans_up_worktree_branch_and_state() {
+        let (tmp, git, repo_path) = setup_test_repo();
+        init_smelt(&repo_path);
+
+        let manager = WorktreeManager::new(git, repo_path.clone());
+        let info = manager
+            .create(CreateWorktreeOpts {
+                session_name: "remove-me".to_string(),
+                base: "HEAD".to_string(),
+                dir_name: None,
+                task_description: None,
+                file_scope: None,
+            })
+            .await
+            .expect("create should succeed");
+
+        assert!(info.worktree_path.exists());
+
+        // Remove with force (branch won't be merged)
+        let result = manager
+            .remove("remove-me", true)
+            .await
+            .expect("remove should succeed");
+
+        assert!(result.worktree_removed);
+        assert!(result.branch_deleted);
+        assert!(result.state_file_removed);
+
+        // Verify cleanup
+        assert!(!info.worktree_path.exists(), "worktree dir should be gone");
+        let state_file = repo_path.join(".smelt/worktrees/remove-me.toml");
+        assert!(!state_file.exists(), "state file should be gone");
+
+        // List should be empty
+        let list = manager.list().await.expect("list");
+        assert!(list.is_empty());
+
+        drop(tmp);
+    }
+
+    #[tokio::test]
+    async fn remove_dirty_worktree_without_force_returns_error() {
+        let (tmp, git, repo_path) = setup_test_repo();
+        init_smelt(&repo_path);
+
+        let manager = WorktreeManager::new(git, repo_path.clone());
+        let info = manager
+            .create(CreateWorktreeOpts {
+                session_name: "dirty-wt".to_string(),
+                base: "HEAD".to_string(),
+                dir_name: None,
+                task_description: None,
+                file_scope: None,
+            })
+            .await
+            .expect("create should succeed");
+
+        // Make the worktree dirty
+        std::fs::write(info.worktree_path.join("dirty.txt"), "dirty\n").unwrap();
+
+        let err = manager
+            .remove("dirty-wt", false)
+            .await
+            .expect_err("remove should fail on dirty worktree");
+
+        assert!(
+            matches!(err, SmeltError::WorktreeDirty { .. }),
+            "expected WorktreeDirty, got: {err}",
+        );
+
+        // Cleanup
+        let _ = std::fs::remove_dir_all(&info.worktree_path);
+        drop(tmp);
+    }
+
+    #[tokio::test]
+    async fn remove_dirty_worktree_with_force_succeeds() {
+        let (tmp, git, repo_path) = setup_test_repo();
+        init_smelt(&repo_path);
+
+        let manager = WorktreeManager::new(git, repo_path.clone());
+        let info = manager
+            .create(CreateWorktreeOpts {
+                session_name: "force-dirty".to_string(),
+                base: "HEAD".to_string(),
+                dir_name: None,
+                task_description: None,
+                file_scope: None,
+            })
+            .await
+            .expect("create should succeed");
+
+        // Make the worktree dirty
+        std::fs::write(info.worktree_path.join("dirty.txt"), "dirty\n").unwrap();
+
+        let result = manager
+            .remove("force-dirty", true)
+            .await
+            .expect("force remove should succeed");
+
+        assert!(result.worktree_removed);
+        assert!(result.branch_deleted);
+        assert!(result.state_file_removed);
+
+        drop(tmp);
+    }
+
+    #[tokio::test]
+    async fn remove_nonexistent_returns_not_found() {
+        let (_tmp, git, repo_path) = setup_test_repo();
+        init_smelt(&repo_path);
+
+        let manager = WorktreeManager::new(git, repo_path);
+        let err = manager
+            .remove("does-not-exist", false)
+            .await
+            .expect_err("remove nonexistent should fail");
+
+        assert!(
+            matches!(err, SmeltError::WorktreeNotFound { .. }),
+            "expected WorktreeNotFound, got: {err}",
+        );
+    }
+
+    #[tokio::test]
+    async fn detect_orphans_finds_running_session_with_dead_pid() {
+        let (_tmp, git, repo_path) = setup_test_repo();
+        init_smelt(&repo_path);
+
+        // Manually create a state file for a "running" session with a dead PID
+        let state = WorktreeState {
+            session_name: "dead-session".to_string(),
+            branch_name: "smelt/dead-session".to_string(),
+            worktree_path: PathBuf::from("../test-repo-smelt-dead-session"),
+            base_ref: "HEAD".to_string(),
+            status: SessionStatus::Running,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            pid: Some(4_000_000), // Very unlikely to be alive
+            exit_code: None,
+            task_description: None,
+            file_scope: None,
+        };
+
+        let state_file = repo_path.join(".smelt/worktrees/dead-session.toml");
+        state.save(&state_file).expect("save state");
+
+        let manager = WorktreeManager::new(git, repo_path);
+        let orphans = manager.detect_orphans().await.expect("detect_orphans");
+
+        assert_eq!(orphans.len(), 1);
+        assert_eq!(orphans[0].0, "dead-session");
+    }
+
+    #[tokio::test]
+    async fn detect_orphans_ignores_created_sessions() {
+        let (_tmp, git, repo_path) = setup_test_repo();
+        init_smelt(&repo_path);
+
+        // Created session should not be orphaned even without git entry
+        let state = WorktreeState {
+            session_name: "created-session".to_string(),
+            branch_name: "smelt/created-session".to_string(),
+            worktree_path: PathBuf::from("../test-repo-smelt-created-session"),
+            base_ref: "HEAD".to_string(),
+            status: SessionStatus::Created,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            pid: None,
+            exit_code: None,
+            task_description: None,
+            file_scope: None,
+        };
+
+        let state_file = repo_path.join(".smelt/worktrees/created-session.toml");
+        state.save(&state_file).expect("save state");
+
+        let manager = WorktreeManager::new(git, repo_path);
+        let orphans = manager.detect_orphans().await.expect("detect_orphans");
+
+        assert!(orphans.is_empty());
     }
 }
