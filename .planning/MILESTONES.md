@@ -1,5 +1,41 @@
 # Project Milestones: Assay
 
+## v0.3.0 Orchestration Foundation (In Progress)
+
+**Goal:** Build worktree isolation foundation and close tech debt from v0.2.0 — types hygiene, CLI polish, MCP validation, error messages, and gate output truncation.
+
+**Phases planned:** 26-33 (8 phases)
+
+**See:** `.planning/ROADMAP.md` for detailed phase breakdown, `.planning/REQUIREMENTS.md` for full requirement IDs.
+
+---
+
+## v0.2.0 Dual-Track Gates & Hardening (Shipped: 2026-03-08)
+
+**Delivered:** Full dual-track quality gate platform with agent-evaluated criteria, run history persistence, enforcement levels, session diagnostics, team context protection, and comprehensive hardening.
+
+**Phases completed:** 11-25 (38 plans total)
+
+**Key accomplishments:**
+
+- Dual-track gate system combining deterministic shell commands with agent-evaluated criteria via MCP gate_report/gate_finalize
+- Required/advisory enforcement levels with separate tracking across CLI, MCP, and history
+- Complete run history subsystem with atomic persistence, retention pruning, and query tools (CLI + MCP)
+- Token-aware session diagnostics with JSONL parsing, bloat categorization, and context % visualization
+- Composable pruning engine with 6 strategies, dry-run default, and team message protection
+- Guard daemon with threshold-based pruning, circuit breaker, kqueue/inotify reactive recovery
+
+**Stats:**
+
+- 58 Rust files, 23,385 lines of Rust
+- 15 phases, 38 plans
+- 493 tests
+- 6 days from start to ship (2026-03-03 → 2026-03-08)
+
+**Git range:** `feat(11-01)` → `fix(25): address PR review findings`
+
+---
+
 ## v0.1.0 Proof of Concept (Shipped: 2026-03-02)
 
 **Delivered:** Thin vertical slice proving spec-driven gates with MCP server and Claude Code plugin integration.
@@ -23,25 +59,5 @@
 - 3 days from start to ship (2026-02-28 → 2026-03-02)
 
 **Git range:** initial commit → `fix(10): address second review round`
-
----
-
-## v0.2.0 Dual-Track Gates & Hardening (In Progress)
-
-**Goal:** Ship agent-evaluated gates (via MCP `gate_report` tool), run history persistence, required/advisory gate enforcement, and comprehensive hardening of the v0.1 foundation.
-
-**Phases:** 11-19 (9 phases, 31 requirements)
-
-**Target features:**
-
-- Type system foundation: relocate result types to assay-types, serde hygiene
-- Enforcement levels: required/advisory on criteria with enforcement-aware evaluation
-- Run history: JSON persistence with atomic writes, retention policy, CLI viewer
-- Agent gate recording: `gate_report` MCP tool, `GateKind::AgentReport`, evaluator metadata
-- MCP hardening: timeout param, path validation, error handling, `gate_history` tool
-- CLI hardening: error propagation, exit codes, constants, enforcement-aware output
-- Testing & tooling: MCP handler tests, coverage gaps, cargo-deny tightening, dogfooding
-
-**Roadmap:** See .planning/ROADMAP.md
 
 ---

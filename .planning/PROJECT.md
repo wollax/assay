@@ -114,27 +114,26 @@ The `assay-mcp` crate provides MCP server functionality. Future crates may inclu
 - Binary crates are thin wrappers that delegate to `assay-core`
 - Run `just ready` before considering work complete
 
-## Current Milestone: v0.2.0 Dual-Track Gates & Hardening
+## Current Milestone: v0.3.0 Orchestration Foundation
 
-**Goal:** Ship agent-evaluated gates (via MCP `gate_report` tool), run history persistence, required/advisory gate enforcement, and comprehensive hardening of the v0.1 foundation.
+**Goal:** Build the foundation for agent orchestration — worktree isolation, headless agent launching, session tracking, independent gate evaluation, and a minimal TUI — while closing tech debt from v0.2.0.
 
 **Target features:**
 
-- Run History — JSON persistence of gate results for audit trail and iteration
-- Required/Advisory gates — enforcement level on criteria for flexible quality policies
-- Agent gate recording — `gate_report` MCP tool for agents to submit evaluations
-- Foundation hardening — test coverage, type hygiene, MCP hardening, CLI polish, tooling
-- Dogfooding — use Assay to build Assay
-- Token-aware session diagnostics — exact token counts from session files, context % visualization, bloat categorization
-- Agent team context protection — checkpointing, team-aware pruning, guard daemon, reactive overflow recovery
+- Worktree Manager: git worktree lifecycle for agent isolation
+- Quick wins: CLI correctness, MCP validation, types hygiene, error messages, output truncation
+
+**Deferred to v0.4.0+:** Claude Code launcher, session record, gate_evaluate, TUI viewer, composable gates, spec preconditions, gate history summary.
+
+**Workflow target:** Worktree foundation + quality hardening. Headless sequential orchestration is v0.4.0.
 
 ## Current State
 
-**Shipped:** v0.1.0 Proof of Concept (2026-03-02)
+**Shipped:** v0.2.0 Dual-Track Gates & Hardening (2026-03-08)
 
-5,028 lines of Rust across 5 crates (types, core, cli, tui, mcp). 119 tests. Claude Code plugin with MCP integration, skills, and hooks.
+23,385 lines of Rust across 5 crates (types, core, cli, tui, mcp). 493 tests. Full dual-track quality gate platform with agent-evaluated criteria, run history, enforcement levels, session diagnostics, team context protection, and guard daemon.
 
-**Current:** v0.2.0 in progress
+**Previous:** v0.1.0 Proof of Concept (2026-03-02)
 
 ## Requirements
 
@@ -154,34 +153,44 @@ The `assay-mcp` crate provides MCP server functionality. Future crates may inclu
 - ✓ CLI subcommands: init, gate run, spec show/list, mcp serve — v0.1.0
 - ✓ MCP server: stdio via rmcp, 3 tools (spec_get, spec_list, gate_run) — v0.1.0
 - ✓ Claude Code plugin: .mcp.json, skills, hooks, CLAUDE.md — v0.1.0
+- ✓ Run history: JSON persistence with atomic writes, retention pruning, CLI viewer — v0.2.0
+- ✓ Required/advisory enforcement levels on criteria — v0.2.0
+- ✓ Agent gate recording: gate_report MCP tool, GateKind::AgentReport, evaluator metadata — v0.2.0
+- ✓ FileExists gate kind wired into evaluate() dispatch — v0.2.0
+- ✓ Type system hygiene: serde skip_serializing_if, backward compat, schema snapshots — v0.2.0
+- ✓ MCP hardening: timeout, working_dir validation, error envelopes, gate_history tool — v0.2.0
+- ✓ CLI hardening: error propagation, exit codes, enforcement-aware streaming — v0.2.0
+- ✓ Testing & tooling: MCP handler tests, cargo-deny tightened, dogfooding spec — v0.2.0
+- ✓ Token-aware session diagnostics: JSONL parser, bloat categorization, context % — v0.2.0
+- ✓ Agent team context protection: checkpointing, pruning engine, guard daemon, overflow recovery — v0.2.0
 
 ### Active
 
-- [ ] Run History: persist gate results to `.assay/results/` as JSON — v0.2.0
-- [ ] Required/Advisory gates: enforcement level on Criterion — v0.2.0
-- [ ] Agent gate recording: `gate_report` MCP tool, `GateKind::AgentReported` — v0.2.0
-- [ ] Wire FileExists gate kind into evaluate() — v0.2.0
-- [ ] Dogfooding: use Assay's own gates on Assay development — v0.2.0
-- [ ] Test coverage: MCP handler tests, edge case tests — v0.2.0
-- [ ] Type system hygiene: serde skip_serializing_if, OutputDetail, invariants — v0.2.0
-- [ ] MCP hardening: timeout param, working_dir validation, error handling — v0.2.0
-- [ ] CLI polish: error propagation, exit codes, help, constants — v0.2.0
-- [ ] Tooling: cargo-deny warn→deny, schema validation — v0.2.0
-- [ ] Token-aware session diagnostics: JSONL parser, token extraction, context %, bloat categorization — v0.2.0
-- [ ] Agent team context protection: checkpointing, pruning engine, guard daemon, overflow recovery — v0.2.0
+- [ ] Git worktree lifecycle management (create, list, status, cleanup) — v0.3.0
+- [ ] CLI correctness sprint (NO_COLOR, help duplication, enforcement duplication) — v0.3.0
+- [ ] MCP parameter validation with actionable error messages — v0.3.0
+- [ ] Types hygiene Tier A (Eq derives, Display impls, doc comments) — v0.3.0
+- [ ] Gate/spec error message improvements — v0.3.0
+- [ ] Gate output truncation with head+tail capture — v0.3.0
 
 ### Future
 
-- [ ] Domain model redesign: spec provider trait, workflow phases
-- [ ] Pluggable spec provider interface with built-in default implementation
-- [ ] Programmable gate framework: file, threshold, composite
-- [ ] Context-controlled agent evaluation (`gate_evaluate` with context assembly)
-- [ ] Per-agent worktree management (create, isolate, clean up)
-- [ ] tmux session/pane management for agent lifecycle
-- [ ] Orchestrator/daemon managing concurrent sessions
+- [ ] Claude Code headless launcher (`--print` mode in worktrees)
+- [ ] Session record persistence linking worktrees, agents, and gate runs
+- [ ] Independent gate evaluation with context isolation and diff assembly
+- [ ] Minimal TUI gate results viewer
+- [ ] Composable gate definitions (`gate.extends`)
+- [ ] Spec preconditions section
+- [ ] Gate history summary with pass/fail rates
+- [ ] tmux session/pane management for interactive agent lifecycle
+- [ ] MCP-integrated iterative workflow (agents call gates during implementation)
 - [ ] Merge-back workflow: feature branch creation, conflict resolution, gate enforcement
+- [ ] Multi-session orchestrator/daemon managing concurrent sessions
+- [ ] Full TUI dashboard for multi-session supervision
+- [ ] Agent launcher trait (extract from concrete Claude Code implementation)
 - [ ] Branch strategy configuration
-- [ ] TUI dashboard for multi-session supervision
+- [ ] Pluggable spec provider interface with built-in default implementation
+- [ ] Trust scores: quantified agent reliability from gate history
 
 ### Out of Scope
 
@@ -207,15 +216,15 @@ The `assay-mcp` crate provides MCP server functionality. Future crates may inclu
 | assay-mcp as library crate, single `assay` binary | All surfaces through one binary, MCP server started via `assay mcp serve` | ✓ Good — v0.1.0 |
 | spawn() + reader threads + try_wait for gate timeout | Command::output() can't enforce timeouts; polling with kill on timeout | ✓ Good — v0.1.0 |
 | Skills use MCP tool orchestration, not shell commands | Agent calls MCP tools directly rather than shelling out to CLI | ✓ Good — v0.1.0 |
-| Agent gates receive evaluations, not call LLMs | Agents already have LLM access; Assay records results via `gate_report` MCP tool | Decided — v0.2.0 brainstorm |
-| Self-evaluation + audit trail for v0.2, independent evaluator for v0.3 | Trust problem is real but unsolvable without orchestrator; history enables human audit | Decided — v0.2.0 brainstorm |
-| Keep core types domain-agnostic | Gate evaluation and evidence capture should work for any domain, not just code | Decided — v0.2.0 brainstorm |
-| No built-in LLM client | `gate_report` → `gate_evaluate` progression may make it unnecessary; avoid HTTP/API key complexity | Decided — v0.2.0 brainstorm |
-| No SpecProvider trait yet | One implementation = premature abstraction; wait for concrete second provider | Decided — v0.2.0 brainstorm |
-| Cozempic-inspired features in Rust, not Python | Full native performance; avoids Python dependency; aligns with workspace | Decided — v0.2.0 |
-| Session diagnostics + team protection appended to v0.2.0 | Orthogonal to gates (phases 20-23); fits "hardening" theme; no disruption to 11-19 | Decided — v0.2.0 |
-| Guard daemon with kqueue/inotify, not polling-only | Sub-second reactive recovery for inbox-flood overflow (Cozempic's key insight) | Decided — v0.2.0 |
-| Composable pruning strategies, dry-run default | Safety first — never modify without `--execute`; team messages always protected | Decided — v0.2.0 |
+| Agent gates receive evaluations, not call LLMs | Agents already have LLM access; Assay records results via `gate_report` MCP tool | ✓ Good — v0.2.0 |
+| Self-evaluation + audit trail for v0.2, independent evaluator for v0.3 | Trust problem is real but unsolvable without orchestrator; history enables human audit | ✓ Good — v0.2.0 |
+| Keep core types domain-agnostic | Gate evaluation and evidence capture should work for any domain, not just code | ✓ Good — v0.2.0 |
+| No built-in LLM client | `gate_report` → `gate_evaluate` progression may make it unnecessary; avoid HTTP/API key complexity | ✓ Good — v0.2.0 |
+| No SpecProvider trait yet | One implementation = premature abstraction; wait for concrete second provider | ✓ Good — v0.2.0 |
+| Cozempic-inspired features in Rust, not Python | Full native performance; avoids Python dependency; aligns with workspace | ✓ Good — v0.2.0 |
+| Session diagnostics + team protection appended to v0.2.0 | Orthogonal to gates (phases 20-23); fits "hardening" theme; no disruption to 11-19 | ✓ Good — v0.2.0 |
+| Guard daemon with kqueue/inotify, not polling-only | Sub-second reactive recovery for inbox-flood overflow (Cozempic's key insight) | ✓ Good — v0.2.0 |
+| Composable pruning strategies, dry-run default | Safety first — never modify without `--execute`; team messages always protected | ✓ Good — v0.2.0 |
 
 ## Reference Material
 
@@ -223,7 +232,8 @@ The `assay-mcp` crate provides MCP server functionality. Future crates may inclu
 - Brainstorm session 1: `.planning/brainstorms/2026-02-28T16-37-brainstorm/SUMMARY.md`
 - Brainstorm session 2: `.planning/brainstorms/2026-02-28T17-45-brainstorm/SUMMARY.md`
 - Brainstorm session 3: `.planning/brainstorms/2026-03-02T20-53-brainstorm/SUMMARY.md`
+- Brainstorm session 4: `.planning/brainstorms/2026-03-08T21-22-brainstorm/SUMMARY.md`
 - [Cozempic](https://github.com/Ruya-AI/cozempic) — Reference for token-aware diagnostics and agent team context loss protection
 
 ---
-*Last updated: 2026-03-03 after adding Cozempic-inspired phases 20-23 to v0.2.0*
+*Last updated: 2026-03-08 after v0.3.0 milestone started*
