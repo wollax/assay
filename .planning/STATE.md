@@ -10,9 +10,9 @@ See: .planning/PROJECT.md (updated 2026-03-08)
 ## Current Position
 
 Phase: 27 — Types Hygiene
-Plan: —
-Status: Not started
-Last activity: 2026-03-09 — Completed Phase 26: Structural Prerequisites
+Plan: 2 of 4
+Status: In progress
+Last activity: 2026-03-09 — Completed Plan 27-02: Display impls for public enums
 
 Progress: v0.3.0 [██░░░░░░░░░░░░░░] 12% (1/8 phases)
 
