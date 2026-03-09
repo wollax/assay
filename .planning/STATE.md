@@ -2,18 +2,18 @@
 
 ## Current Position
 
-Phase: 1 of 10 — Project Bootstrap & Git Operations Layer
-Plan: 3 of 3 complete
-Status: Phase 1 complete
-Progress: █░░░░░░░░░ 1/10
+Phase: 2 of 10 — Worktree Manager
+Plan: 1 of 3 complete
+Status: In progress
+Progress: █▒░░░░░░░░ 1.3/10
 
-Last activity: 2026-03-09 — Completed 01-03-PLAN.md (CLI entry point + integration tests)
+Last activity: 2026-03-09 — Completed 02-01-PLAN.md (foundation types & git abstraction)
 
 ## Session Continuity
 
 Last session: 2026-03-09
-Stopped at: Completed phase 1 (all 3 plans)
-Resume file: (next phase)
+Stopped at: Completed 02-01 (dependencies, error variants, domain types, GitOps extension)
+Resume file: .planning/phases/active/02-worktree-manager/02-02-PLAN.md
 
 ## Performance Metrics
 
@@ -21,7 +21,7 @@ Resume file: (next phase)
 |--------|-------|
 | Phases completed | 1 |
 | Phases remaining | 9 |
-| Plans completed (phase 1) | 3/3 |
+| Plans completed (phase 2) | 1/3 |
 | Requirements covered | 1/12 |
 | Blockers | 0 |
 | Technical debt items | 0 |
@@ -43,10 +43,14 @@ Resume file: (next phase)
 - Binary named "smelt" via [[bin]] in smelt-cli
 - GitOps trait uses native async fn (RPITIT) — no async-trait or trait_variant crate needed
 - preflight() is synchronous (std::process::Command) — runs before tokio runtime
-- SmeltError has 5 variants: GitNotFound, NotAGitRepo, GitExecution, AlreadyInitialized, Io
+- SmeltError has 12 variants: original 5 + 7 worktree-specific (WorktreeExists, WorktreeNotFound, BranchExists, WorktreeDirty, BranchUnmerged, NotInitialized, StateDeserialization)
 - CLI uses clap derive with Optional subcommand for context-aware no-args behavior
 - Tracing subscriber writes to stderr; stdout reserved for structured output
 - `--no-color` disables console colors on both stdout and stderr
+- GitOps trait extended with 8 worktree/branch methods (worktree_add/remove/list/prune/is_dirty, branch_delete/is_merged/exists)
+- WorktreeState serializes to per-session TOML files in .smelt/worktrees/
+- SessionStatus enum: Created/Running/Completed/Failed/Orphaned (serde rename_all lowercase)
+- parse_porcelain() handles git worktree list --porcelain output including bare, detached, locked states
 
 ### Blockers
 
