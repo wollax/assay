@@ -114,6 +114,22 @@ The `assay-mcp` crate provides MCP server functionality. Future crates may inclu
 - Binary crates are thin wrappers that delegate to `assay-core`
 - Run `just ready` before considering work complete
 
+## Current Milestone: v0.3.0 Orchestration Foundation
+
+**Goal:** Build the foundation for agent orchestration — worktree isolation, headless agent launching, session tracking, independent gate evaluation, and a minimal TUI — while closing tech debt from v0.2.0.
+
+**Target features:**
+
+- Worktree Manager: git worktree lifecycle for agent isolation
+- Claude Code Launcher: headless `--print` mode agent launching in worktrees
+- Session Record: minimal tracking linking worktrees, agents, and gate runs
+- Gate Evaluate: independent (non-self) evaluation with context isolation and diff assembly
+- Minimal TUI: interactive gate results viewer
+- Quick wins: CLI correctness, MCP validation, types hygiene, error messages, output truncation
+- Radical seeds: composable gate definitions, spec preconditions, gate history summary
+
+**Workflow target:** Headless sequential (agent runs once → gates run after → human reviews). Full interactive orchestration is v0.4.0.
+
 ## Current State
 
 **Shipped:** v0.2.0 Dual-Track Gates & Hardening (2026-03-08)
@@ -121,8 +137,6 @@ The `assay-mcp` crate provides MCP server functionality. Future crates may inclu
 23,385 lines of Rust across 5 crates (types, core, cli, tui, mcp). 493 tests. Full dual-track quality gate platform with agent-evaluated criteria, run history, enforcement levels, session diagnostics, team context protection, and guard daemon.
 
 **Previous:** v0.1.0 Proof of Concept (2026-03-02)
-
-**Next:** v0.3.0 (planned)
 
 ## Requirements
 
@@ -155,20 +169,31 @@ The `assay-mcp` crate provides MCP server functionality. Future crates may inclu
 
 ### Active
 
-(None — next milestone not yet defined)
+- [ ] Git worktree lifecycle management (create, list, status, cleanup) — v0.3.0
+- [ ] Claude Code headless launcher (`--print` mode in worktrees) — v0.3.0
+- [ ] Session record persistence linking worktrees, agents, and gate runs — v0.3.0
+- [ ] Independent gate evaluation with context isolation and diff assembly — v0.3.0
+- [ ] Minimal TUI gate results viewer — v0.3.0
+- [ ] CLI correctness sprint (NO_COLOR, help duplication, enforcement duplication) — v0.3.0
+- [ ] MCP parameter validation with actionable error messages — v0.3.0
+- [ ] Types hygiene Tier A (Eq derives, Display impls, doc comments) — v0.3.0
+- [ ] Gate/spec error message improvements — v0.3.0
+- [ ] Gate output truncation with head+tail capture — v0.3.0
+- [ ] Composable gate definitions (`gate.extends`) — v0.3.0
+- [ ] Spec preconditions section — v0.3.0
+- [ ] Gate history summary with pass/fail rates — v0.3.0
 
 ### Future
 
-- [ ] Domain model redesign: spec provider trait, workflow phases
-- [ ] Pluggable spec provider interface with built-in default implementation
-- [ ] Programmable gate framework: file, threshold, composite
-- [ ] Context-controlled agent evaluation (`gate_evaluate` with context assembly)
-- [ ] Per-agent worktree management (create, isolate, clean up)
-- [ ] tmux session/pane management for agent lifecycle
-- [ ] Orchestrator/daemon managing concurrent sessions
+- [ ] tmux session/pane management for interactive agent lifecycle
+- [ ] MCP-integrated iterative workflow (agents call gates during implementation)
 - [ ] Merge-back workflow: feature branch creation, conflict resolution, gate enforcement
+- [ ] Multi-session orchestrator/daemon managing concurrent sessions
+- [ ] Full TUI dashboard for multi-session supervision
+- [ ] Agent launcher trait (extract from concrete Claude Code implementation)
 - [ ] Branch strategy configuration
-- [ ] TUI dashboard for multi-session supervision
+- [ ] Pluggable spec provider interface with built-in default implementation
+- [ ] Trust scores: quantified agent reliability from gate history
 
 ### Out of Scope
 
@@ -210,7 +235,8 @@ The `assay-mcp` crate provides MCP server functionality. Future crates may inclu
 - Brainstorm session 1: `.planning/brainstorms/2026-02-28T16-37-brainstorm/SUMMARY.md`
 - Brainstorm session 2: `.planning/brainstorms/2026-02-28T17-45-brainstorm/SUMMARY.md`
 - Brainstorm session 3: `.planning/brainstorms/2026-03-02T20-53-brainstorm/SUMMARY.md`
+- Brainstorm session 4: `.planning/brainstorms/2026-03-08T21-22-brainstorm/SUMMARY.md`
 - [Cozempic](https://github.com/Ruya-AI/cozempic) — Reference for token-aware diagnostics and agent team context loss protection
 
 ---
-*Last updated: 2026-03-08 after v0.2.0 milestone*
+*Last updated: 2026-03-08 after v0.3.0 milestone started*

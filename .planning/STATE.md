@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-03-08)
 
 **Core value:** Dual-track quality gates (deterministic + agent-evaluated) for AI coding agents
-**Current focus:** Planning next milestone (v0.3.0)
+**Current focus:** v0.3.0 Orchestration Foundation
 
 ## Current Position
 
-Phase: —
+Phase: Not started (defining requirements)
 Plan: —
-Status: Between milestones
-Last activity: 2026-03-08 — v0.2.0 milestone complete
+Status: Defining requirements
+Last activity: 2026-03-08 — Milestone v0.3.0 started
 
-Progress: v0.2.0 [████████████████] 100% (shipped)
+Progress: v0.3.0 [░░░░░░░░░░░░░░░░] 0%
 
 ## Milestone Progress
 
@@ -22,6 +22,7 @@ Progress: v0.2.0 [████████████████] 100% (shippe
 |-----------|--------|--------------|----------|
 | v0.1.0 | 10 | 43 | 100% (shipped) |
 | v0.2.0 | 15 (11-25) | 52 | 100% (shipped) |
+| v0.3.0 | — | — | 0% (defining) |
 
 ## Accumulated Context
 
@@ -29,6 +30,11 @@ Progress: v0.2.0 [████████████████] 100% (shippe
 
 v0.1.0 decisions archived to .planning/milestones/v0.1.0-ROADMAP.md
 v0.2.0 decisions archived to .planning/milestones/v0.2.0-ROADMAP.md
+
+- v0.3.0 targets headless sequential workflow (not full interactive orchestration)
+- Concrete Claude Code module, NOT an agent launcher trait (premature abstraction)
+- Merge-back pipeline deferred to v0.4.0 (premature without orchestrator)
+- Spec provider trait deferred (one implementation = premature abstraction)
 
 ### Pending Issues
 
@@ -40,4 +46,4 @@ None.
 
 ### Next Actions
 
-Start next milestone with `/kata-add-milestone`.
+Define requirements, then create roadmap.
