@@ -52,6 +52,14 @@ Smelt is a multi-agent orchestration layer that coordinates AI coding sessions i
 3. On startup, orphaned worktrees (from prior crashes) are detected and reported to the user
 4. Attempting to create a worktree with a branch name that already exists produces a clear error (no silent corruption)
 
+**Plans:**
+
+| Plan | Wave | Title | Tasks |
+|------|------|-------|-------|
+| 02-01 | 1 | Foundation: deps, errors, GitOps extension, domain types | Error variants, WorktreeState/SessionStatus types, GitOps trait worktree methods, GitCli impl |
+| 02-02 | 2 | WorktreeManager create/list + CLI wiring | WorktreeManager struct, create/list operations, CLI subcommands with wt alias |
+| 02-03 | 3 | Remove, prune, orphan detection + integration tests | WorktreeManager remove/prune, orphan detection, dialoguer prompts, CLI wiring, integration tests |
+
 ### Phase 3: Session Manifest & Scripted Sessions
 
 **Goal:** Define the session manifest format (what each agent should work on) and implement the scripted/simulated session backend. Scripted sessions are the primary testing mechanism for the entire merge pipeline — they must support configurable behaviors: commit count, file patterns, deliberate conflict generation, and failure modes.
