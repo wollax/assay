@@ -1,324 +1,465 @@
-# Stack Research: v0.2.0 Feature Additions
+# Stack Research: v0.3.0 Orchestration Features
 
-**Research Date:** 2026-03-02
-**Scope:** Stack additions for run history persistence, required/advisory gate enforcement, and agent gate recording
-**Existing Stack:** Rust 1.93 stable (2024 edition), serde 1.x, serde_json 1.x, schemars 1.x, clap 4, rmcp 0.17, tokio 1, chrono 0.4, thiserror 2, tracing 0.1
+**Research Date:** 2026-03-08
+**Scope:** Stack additions for worktree management, Claude Code launching, diff assembly, and session tracking
+**Existing Stack:** Rust 1.93 stable (2024 edition), serde 1.x, serde_json 1.x, schemars 1.x, clap 4, rmcp 0.17, tokio 1 (full features), chrono 0.4, thiserror 2, tracing 0.1, tempfile 3, toml 0.8, regex-lite 0.1, notify 7, dirs 6, libc 0.2
+**Constraint:** Zero new workspace dependencies preferred; cargo-deny with `multiple-versions = "deny"` and strict source controls
 
 ---
 
 ## Executive Summary
 
-The v0.2.0 features require **zero new workspace dependencies**. The existing stack (serde_json, chrono, std::fs) covers all persistence needs. Run history uses one-JSON-file-per-run written to `.assay/results/`, not an append-only log. The required/advisory gate distinction is a pure type-level change with `#[serde(default)]`. The `gate_report` MCP tool fits cleanly into the existing rmcp 0.17 server with no API changes needed. The only workspace-level change is adding `serde_json` as a runtime dependency to `assay-core` (currently dev-only).
+The v0.3.0 features can be built with **zero new workspace dependencies**. Git worktree management should shell out to `git` CLI (not use git2/gix). Claude Code launching uses `std::process::Command` (existing pattern in `gate/mod.rs`). Diff generation shells out to `git diff`. Session tracking uses the established JSON-file-per-record pattern from `assay-core::history`.
 
-**Confidence:** High. All answers are verified against the current codebase, crates.io versions, and rmcp 0.17.0 release notes.
+The only workspace-level `Cargo.toml` change is: none. All required capabilities are covered by `std::process`, `tokio::task::spawn_blocking`, `serde_json`, `chrono`, `tempfile`, and `std::fs` -- all already in workspace dependencies.
+
+**Confidence:** High. Every recommendation is grounded in the existing codebase patterns (particularly `gate/mod.rs::evaluate_command`) and verified against current crate versions (2026-03-08).
 
 ---
 
-## Question 1: Run History JSON Persistence
+## Area 1: Git Worktree Management
 
-### What's Needed
+### The Decision: Shell Out to `git` CLI
 
-Run history writes `GateRunSummary` results as JSON files to `.assay/results/`. Each gate run produces one file.
+**Recommendation: Use `std::process::Command` to invoke the `git` CLI.** Do not add `git2` or `gix`.
 
-### Do We Need New Crates?
+### Why NOT git2
 
-**No.** The existing `serde_json` 1.x (already in workspace) and `std::fs` provide everything needed.
+| Factor | git2 0.20.4 | git CLI |
+|--------|------------|---------|
+| **Dependency weight** | C library (libgit2) linked via `libgit2-sys` -- adds ~80 transitive deps, C build toolchain requirement (`cmake` or `pkg-config + libgit2-dev`) | Zero deps. Git is a prerequisite for any developer using Assay |
+| **cargo-deny impact** | `libgit2-sys` pulls `cc`, `pkg-config`, `openssl-sys` (on Linux). Likely triggers `multiple-versions = "deny"` for `cc` and `libc` variants | No impact |
+| **Build time** | +15-30s for libgit2 C compilation on clean builds | Zero |
+| **Worktree API completeness** | Has `Repository::worktree()` (add), `worktrees()` (list), `find_worktree()` (open), `Worktree::prune()` (remove). Missing: `worktree remove` (must use `prune` which has different semantics). No `--porcelain` list equivalent | Full worktree API: `add`, `list --porcelain`, `remove`, `lock`, `move`, `repair` |
+| **Thread safety** | `Worktree` is `!Send + !Sync` -- cannot be passed across threads, complicates async integration | Subprocess-per-call, naturally thread-safe |
+| **Error quality** | libgit2 error codes + English messages | git CLI stderr, well-known format |
+| **Cross-platform** | Handles Windows path normalization | Git handles it too |
 
-| Capability | Provided By | Already in Workspace |
-|---|---|---|
-| JSON serialization | `serde_json::to_string_pretty` | Yes (`serde_json = "1"`) |
-| JSON deserialization (reading history) | `serde_json::from_str` | Yes |
-| File creation/write | `std::fs::write` | stdlib |
-| Directory creation | `std::fs::create_dir_all` | stdlib |
-| Timestamp for filenames | `chrono` 0.4 | Yes (`chrono = { version = "0.4", features = ["serde"] }`) |
-| Directory listing (history queries) | `std::fs::read_dir` | stdlib |
+**Critical issue with git2's Worktree API:** `Worktree` is `!Send` and `!Sync`. Since Assay uses `tokio::task::spawn_blocking` for blocking operations (established in gate evaluation), the worktree handle cannot be moved into the spawned closure. Every operation would need to open a fresh `Repository` + `find_worktree()`. This negates the primary advantage of a library binding (holding handles).
 
-**One change needed:** `assay-core` currently lists `serde_json` only in `[dev-dependencies]`. It needs to be promoted to `[dependencies]` since `assay-core` will own the `history::save()` and `history::list()` functions that serialize/deserialize `GateRunSummary`.
+### Why NOT gix (gitoxide)
 
-### Storage Strategy: One File Per Run (Not Append-Only Log)
+| Factor | gix 0.80.0 | Assessment |
+|--------|-----------|------------|
+| **Pure Rust** | Yes -- no C dependency | Advantage over git2 |
+| **Dependency weight** | ~150+ transitive deps (gix-hash, gix-object, gix-ref, gix-config, ...) | Worse than git2 |
+| **Worktree support** | Partial -- `gix::open()` detects worktrees, but worktree CRUD (create/remove) is not exposed as a high-level API. Would need `gix-command` (shelling out to git anyway) | Defeats the purpose |
+| **API stability** | Pre-1.0, breaking changes between 0.x releases | Risk |
+| **cargo-deny** | Would add 50+ new crate entries to the allow list | Unacceptable |
 
-**Recommendation:** Individual JSON files, not JSON Lines (NDJSON).
+### Shell-Out Pattern (Recommended)
 
-**File naming convention:**
-```
-.assay/results/{spec-name}_{ISO8601-timestamp}.json
-```
-
-Example:
-```
-.assay/results/auth-flow_2026-03-02T14-30-05Z.json
-```
-
-**Why individual files over append-only NDJSON:**
-
-| Factor | Individual Files | NDJSON Append Log |
-|---|---|---|
-| Concurrent safety | Atomic via `write` to unique filename | Requires file locking for append |
-| Partial corruption | One bad file, rest survive | Corrupted line can break tail parsing |
-| Querying by spec | Filter filenames, O(n) readdir | Must parse every line to filter |
-| Deletion/cleanup | `rm` individual files | Rewrite entire file |
-| Git friendliness | One file per change in diff | Entire file shows as modified |
-| Complexity | `std::fs::write` + `serde_json` | Need `OpenOptions::append` + `BufWriter` + newline discipline |
-
-The NDJSON approach (via `serde-jsonlines` 0.7 or manual `serde_json::to_writer` + `\n`) would add complexity without benefit. Individual files are simpler, safer, and more appropriate for a results store with <1000 entries per project.
-
-### Implementation Pattern
+The existing `evaluate_command()` in `gate/mod.rs` provides the exact pattern: `Command::new("sh").args(["-c", cmd])` with piped stdout/stderr, reader threads, and timeout enforcement. For git operations, use `Command::new("git")` directly (no shell wrapper needed).
 
 ```rust
-// In assay-core::history
+// In assay-core::worktree
 
+use std::process::{Command, Stdio};
 use std::path::Path;
-use chrono::Utc;
 
-/// Persist a gate run summary to `.assay/results/`.
-pub fn save(results_dir: &Path, summary: &GateRunSummary) -> Result<PathBuf> {
-    std::fs::create_dir_all(results_dir)?;
+/// Create a git worktree for the given branch at the target path.
+pub fn create(
+    repo_root: &Path,
+    worktree_path: &Path,
+    branch_name: &str,
+    base_ref: &str,
+) -> Result<()> {
+    let output = Command::new("git")
+        .args(["worktree", "add", "-b", branch_name])
+        .arg(worktree_path)
+        .arg(base_ref)
+        .current_dir(repo_root)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .map_err(|e| /* wrap in AssayError */)?;
 
-    let timestamp = Utc::now().format("%Y-%m-%dT%H-%M-%SZ");
-    let filename = format!("{}_{}.json", summary.spec_name, timestamp);
-    let path = results_dir.join(&filename);
-
-    let json = serde_json::to_string_pretty(summary)
-        .map_err(/* wrap in AssayError */)?;
-    std::fs::write(&path, json)
-        .map_err(/* wrap in AssayError */)?;
-
-    Ok(path)
-}
-```
-
-**Key details:**
-- Hyphens in timestamps (`T14-30-05Z`) avoid colons which are invalid in Windows filenames
-- `to_string_pretty` over `to_writer` for human readability (files are small, <100KB)
-- `create_dir_all` is idempotent -- safe to call on every save
-- No file locking needed -- filenames include timestamps so collisions require sub-second concurrent runs of the same spec
-
-### What NOT to Add
-
-| Crate | Why Considered | Why Rejected |
-|---|---|---|
-| `serde-jsonlines` 0.7 | NDJSON read/write for append-only log | Individual files are simpler and safer for this use case. No append log needed. |
-| `json-lines` 0.1.2 | Alternative NDJSON implementation | Same as above. |
-| `fs2` 0.4.3 / `fs4` 0.13.1 | Cross-platform file locking | Not needed with unique-filename-per-run strategy. File locking adds complexity for zero benefit. |
-| `uuid` 1.21.0 | Unique identifiers for run files | Timestamps provide sufficient uniqueness and are human-readable. UUID filenames are opaque. Consider adding only if we need stable run IDs for cross-referencing (not in v0.2 scope). |
-| `rusqlite` / `sled` / `redb` | Embedded database for results | Massive overkill. We have <1000 results per project. JSON files are debuggable, git-friendly, and zero-dependency. |
-
----
-
-## Question 2: Required/Advisory Gates (Serde Considerations)
-
-### The Change
-
-Add a `severity` field to the `Criterion` type in `assay-types`:
-
-```rust
-/// Whether a criterion failure blocks progression or is informational.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
-pub enum CriterionSeverity {
-    /// Failure blocks the workflow. This is the default.
-    #[default]
-    Required,
-    /// Failure is reported but does not block.
-    Advisory,
-}
-```
-
-### Serde Considerations for Backward Compatibility
-
-This is the critical question: can we add `severity` to `Criterion` without breaking existing `.toml` spec files that don't have the field?
-
-**Yes, cleanly.** Using `#[serde(default)]`:
-
-```rust
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct Criterion {
-    pub name: String,
-    pub description: String,
-    #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub cmd: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub timeout: Option<u64>,
-
-    // NEW: defaults to Required when absent
-    #[serde(default)]
-    pub severity: CriterionSeverity,
-}
-```
-
-**Why this works:**
-
-1. **`#[serde(default)]` on the field** -- When deserializing TOML/JSON that omits `severity`, serde calls `CriterionSeverity::default()` which returns `Required`. Existing spec files continue to work unchanged.
-
-2. **`#[derive(Default)]` on the enum** with `#[default]` on `Required` -- This is the standard pattern from serde docs. The `Default` trait impl is generated by the `#[default]` attribute on the variant (Rust 1.62+, well within our MSRV).
-
-3. **`deny_unknown_fields` interaction** -- The `Criterion` struct already uses `#[serde(deny_unknown_fields)]`. This is fine because we're adding a *known* field with a default, not dealing with unknown fields. Existing files without `severity` will deserialize correctly because `default` provides the value.
-
-4. **Serialization** -- We may want `#[serde(skip_serializing_if = "CriterionSeverity::is_required")]` to avoid cluttering spec files with `severity = "Required"` on every criterion. This keeps the output clean for the default case:
-
-```rust
-impl CriterionSeverity {
-    fn is_required(&self) -> bool {
-        matches!(self, Self::Required)
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(/* AssayError::WorktreeCreation { ... } */);
     }
+    Ok(())
+}
+
+/// List worktrees using porcelain format for stable parsing.
+pub fn list(repo_root: &Path) -> Result<Vec<WorktreeInfo>> {
+    let output = Command::new("git")
+        .args(["worktree", "list", "--porcelain"])
+        .current_dir(repo_root)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()?;
+    // Parse porcelain output: "worktree /path\nHEAD abc123\nbranch refs/heads/name\n\n"
+    parse_porcelain_list(&output.stdout)
 }
 ```
 
-5. **TOML representation** -- serde's default enum serialization produces `severity = "Required"` or `severity = "Advisory"` in TOML (unit variants as strings). This reads naturally in spec files:
+**Porcelain output format** (`git worktree list --porcelain`) is stable and machine-parseable:
 
-```toml
-[[criteria]]
-name = "lint-warnings"
-description = "No clippy warnings"
-cmd = "cargo clippy -- -D warnings"
-severity = "Advisory"
+```
+worktree /path/to/main
+HEAD abc123def456
+branch refs/heads/main
+
+worktree /path/to/feature
+HEAD def456abc123
+branch refs/heads/feature-branch
+
 ```
 
-6. **JSON representation** -- Identical pattern: `"severity": "Required"` or `"severity": "Advisory"`. JsonSchema generates an enum schema with the two string values.
+Each worktree is a block of key-value lines separated by blank lines. Parse with `regex-lite` (already in workspace) or simple line splitting.
 
-### No New Dependencies Needed
+### Git CLI Operations Needed
 
-This is purely a type change within existing serde/schemars derives. No new crates required.
-
-### Schema Impact
-
-The `schemars::JsonSchema` derive will automatically generate a schema for `CriterionSeverity` as a string enum. The existing `inventory::submit!` pattern in `assay-types` should include a new entry for the severity enum schema if we want it in the schema registry.
-
----
-
-## Question 3: `gate_report` MCP Tool
-
-### rmcp Status
-
-| Attribute | Value |
-|---|---|
-| **Current Version** | 0.17.0 |
-| **Released** | 2026-02-27 (3 days ago) |
-| **Is Latest** | Yes (verified via `cargo search rmcp`) |
-| **API Breaking Changes Since Our Integration** | None -- we built on 0.17.0 |
-
-### v0.17.0 New Features Relevant to v0.2
-
-| Feature | Relevance | Recommendation |
-|---|---|---|
-| **`Json<T>` structured output** | High -- `gate_report` could return typed JSON instead of stringified JSON | Consider adopting for `gate_report` response |
-| **Trait-based tool declaration** (PR #677) | Low -- alternative to `#[tool_router]`, not a replacement | Skip -- macro approach works well, no need to refactor |
-| **MCP SDK conformance tests** (PR #687) | None -- internal to rmcp | No action needed |
-| **Default value support in schemas** (PR #686) | Low -- for elicitation, not tool params | No action needed |
-
-### Adding `gate_report` to Existing Server
-
-Adding a new tool to the existing `AssayServer` requires zero API changes. The pattern is identical to the existing `gate_run` tool:
-
-```rust
-// In assay-mcp/src/server.rs
-
-/// Parameters for the `gate_report` tool.
-#[derive(Deserialize, JsonSchema)]
-struct GateReportParams {
-    /// Spec name to get history for.
-    #[schemars(description = "Spec name (filename without .toml extension)")]
-    name: String,
-    /// Maximum number of recent results to return.
-    #[schemars(description = "Max results to return (default: 10)")]
-    #[serde(default = "default_report_limit")]
-    limit: usize,
-}
-
-fn default_report_limit() -> usize { 10 }
-
-// Inside #[tool_router] impl AssayServer:
-#[tool(
-    description = "Get recent gate run history for a spec. Returns an array of \
-        past gate results with timestamps, pass/fail counts, and duration."
-)]
-async fn gate_report(
-    &self,
-    params: Parameters<GateReportParams>,
-) -> Result<CallToolResult, McpError> {
-    // delegate to assay_core::history::list()
-}
-```
-
-**No rmcp upgrade needed.** The `#[tool]` + `#[tool_router]` macros from 0.17.0 support adding any number of tools to the same impl block.
-
-### Consider: `Json<T>` Structured Output
-
-rmcp 0.17.0's `Json<T>` wrapper places the response in `structured_content` with an auto-generated schema. This is better for agent consumption than stringified JSON in a text content block.
-
-**Current pattern (v0.1.0):**
-```rust
-let json = serde_json::to_string(&response)?;
-Ok(CallToolResult::success(vec![Content::text(json)]))
-```
-
-**New pattern with `Json<T>`:**
-```rust
-Ok(Json(response))  // response type derives Serialize + JsonSchema
-```
-
-**Recommendation:** Use `Json<T>` for `gate_report` since it returns structured data that agents need to parse. Consider migrating existing tools (`spec_list`, `spec_get`, `gate_run`) to `Json<T>` in a follow-up, but do not block v0.2 on this -- it is a quality-of-life improvement, not a requirement.
-
-**Caveat:** `Json<T>` requires the response type to derive `JsonSchema` (in addition to `Serialize`). The `GateRunSummary` struct in `assay-core` currently only derives `Serialize`. If we want to use `Json<GateRunSummary>` from `assay-mcp`, we'd need to add `JsonSchema` to `GateRunSummary` and `CriterionResult`. This means `assay-core` would need `schemars` as a dependency. Alternatively, keep a separate response DTO in `assay-mcp` that derives both (current pattern with `GateRunResponse`/`CriterionSummary`).
-
-### rmcp API Surface Stability
-
-From the v0.16.0 and v0.17.0 release notes, the core tool API (`#[tool]`, `#[tool_router]`, `#[tool_handler]`, `Parameters<T>`, `CallToolResult`, `McpError`) has been stable. Changes have been in:
-- Streamable HTTP transport (we don't use)
-- Auth/OAuth (we don't use)
-- Schema generation internals (transparent to us)
-- Conformance testing (internal)
-
-**Risk of breakage on 0.18:** Low for our stdio tool server pattern.
-
----
-
-## Question 4: Audit Trail / Evidence Persistence Crates
-
-### Assessment
-
-There are no established Rust crates for "structured evidence persistence" or "audit trails" as a domain concept. The search surfaces:
-
-- **`cargo-auditable`** -- Embeds dependency metadata into binaries. Unrelated.
-- **`tracing` + JSON subscriber** -- Structured logging, not structured evidence storage.
-- **Various database crates** (SQLite, sled, redb) -- Overkill for file-per-run storage.
-
-### Why No External Crate is Needed
-
-Assay's "audit trail" is simply: gate run results saved as JSON files in `.assay/results/`. This is:
-
-1. **Self-describing** -- each JSON file contains the full `GateRunSummary` with spec name, criteria results, timestamps, stdout/stderr evidence, and duration.
-2. **Queryable** -- `std::fs::read_dir` + `serde_json::from_str` to list/filter results.
-3. **Immutable** -- write-once, never updated (new runs create new files).
-4. **Human-readable** -- pretty-printed JSON, inspectable with `cat` or `jq`.
-
-The `GateRunSummary` type already captures all the evidence fields needed for an audit trail:
-
-```rust
-pub struct GateResult {
-    pub passed: bool,
-    pub kind: GateKind,      // what was checked
-    pub stdout: String,      // evidence
-    pub stderr: String,      // evidence
-    pub exit_code: Option<i32>,
-    pub duration_ms: u64,
-    pub timestamp: DateTime<Utc>,
-    pub truncated: bool,
-    pub original_bytes: Option<u64>,
-}
-```
-
-This is already a structured evidence record. No additional abstraction needed.
+| Operation | Command | Notes |
+|-----------|---------|-------|
+| Create worktree | `git worktree add -b <branch> <path> <base>` | Creates branch + worktree in one command |
+| List worktrees | `git worktree list --porcelain` | Stable parseable format |
+| Remove worktree | `git worktree remove <path>` | Cleans up worktree + ref |
+| Check if in repo | `git rev-parse --git-dir` | Validates CWD is a git repo |
+| Get current branch | `git rev-parse --abbrev-ref HEAD` | For default base branch |
+| Get repo root | `git rev-parse --show-toplevel` | For resolving relative paths |
 
 ### What NOT to Add
 
-| Crate | Why Considered | Why Rejected |
-|---|---|---|
-| `rusqlite` 0.34 | Structured queries, transactions | Introduces C dependency (sqlite3), build complexity. JSON files are sufficient for <1000 records. |
-| `sled` 0.34 | Embedded key-value store | Unmaintained (last release 2022). Not suitable. |
-| `redb` 2.x | Modern embedded database | Pure Rust but adds 50KB+ to binary. Overkill for simple file storage. |
-| `fjall` 2.x | LSM-tree storage engine | Enterprise-grade, massive dependency tree. Wrong scale entirely. |
-| Custom audit trait/framework | Abstraction over evidence recording | YAGNI. The `GateRunSummary` type IS the evidence record. Adding an abstraction layer over it adds indirection without value at this scale. |
+| Crate | Version | Why Considered | Why Rejected |
+|-------|---------|----------------|--------------|
+| `git2` | 0.20.4 | Native git operations without CLI dependency | C build dep (libgit2-sys), `!Send` worktree handles, 80+ transitive deps, cargo-deny violations |
+| `gix` (gitoxide) | 0.80.0 | Pure Rust git implementation | 150+ transitive deps, no high-level worktree CRUD API, pre-1.0 instability |
+| `gix-command` | 0.4.3 | gitoxide's subprocess wrapper for git CLI | Adds a dependency just to shell out -- `std::process::Command` does the same thing |
+| `git-worktree` | (none) | Hypothetical worktree management crate | Does not exist |
+
+### Integration with Existing Stack
+
+- **Subprocess execution:** Follows `gate/mod.rs::evaluate_command()` pattern exactly
+- **Path handling:** `std::path::Path` + `std::path::PathBuf` (stdlib)
+- **Async bridge:** `tokio::task::spawn_blocking` for MCP handlers (existing pattern)
+- **Output parsing:** `String::from_utf8_lossy` + line splitting or `regex-lite` (workspace dep)
+- **Error handling:** New `AssayError` variants: `WorktreeCreation`, `WorktreeNotFound`, `GitNotAvailable`
+- **Temp paths:** `tempfile::tempdir()` for test fixtures (workspace dep)
+
+---
+
+## Area 2: Subprocess Management (Claude Code Launcher)
+
+### The Decision: `std::process::Command` with Monitoring
+
+**Recommendation: Use `std::process::Command` (synchronous) wrapped in `tokio::task::spawn_blocking`.** Do not use `tokio::process::Command`.
+
+### Why `std::process::Command` Over `tokio::process::Command`
+
+| Factor | `std::process::Command` | `tokio::process::Command` |
+|--------|------------------------|--------------------------|
+| **Existing pattern** | Used in `gate/mod.rs` for all command evaluation | Not used anywhere in the codebase |
+| **Timeout enforcement** | `try_wait` polling loop (proven in gate eval) | `tokio::time::timeout` + `child.wait()` |
+| **Process group kill** | `libc::killpg` (proven in gate eval) | Same, but need `unsafe` in async context |
+| **Reader threads** | `std::thread::spawn` for pipe draining | `tokio::spawn` + `AsyncReadExt` |
+| **Complexity** | Well-understood, battle-tested in this codebase | Would introduce a second subprocess pattern |
+
+**The critical argument:** The project already has a working, tested subprocess management pattern in `evaluate_command()`. The Claude Code launcher is a longer-running version of the same operation: spawn a process, capture output, enforce a timeout, kill on timeout. Introducing `tokio::process::Command` would create two divergent subprocess management paths in the same codebase with no benefit.
+
+### Claude Code `--print` Mode Integration
+
+Claude Code in `--print` mode (`claude -p "prompt"`) is a non-interactive, single-shot execution:
+
+```bash
+claude -p "Implement the auth flow per the spec" \
+    --output-format json \
+    --allowedTools "Edit,Write,Bash,Read,Glob,Grep" \
+    --max-tokens 100000
+```
+
+**Output formats:**
+- `--output-format text` (default): Plain text response, human-readable
+- `--output-format json`: Structured JSON with result, session_id, metadata, cost, duration
+- `--output-format stream-json`: NDJSON stream of events (real-time progress)
+
+**Recommendation:** Use `--output-format json` for the v0.3.0 sequential workflow. The JSON output provides structured completion data (exit status, token usage, cost) that feeds directly into the session record. Stream-json is useful for real-time TUI updates in v0.4.
+
+### Launcher Implementation Pattern
+
+```rust
+// In assay-core::launcher (or assay-core::claude_code)
+
+use std::process::{Command, Stdio};
+use std::path::Path;
+use std::time::Duration;
+
+pub struct LaunchConfig {
+    /// Working directory (worktree path).
+    pub working_dir: PathBuf,
+    /// The prompt to send to Claude Code.
+    pub prompt: String,
+    /// Maximum wall-clock time for the agent session.
+    pub timeout: Duration,
+    /// Allowed tools (subset of Claude Code tools).
+    pub allowed_tools: Vec<String>,
+}
+
+pub struct LaunchResult {
+    pub exit_code: Option<i32>,
+    pub stdout: String,
+    pub stderr: String,
+    pub duration_ms: u64,
+    pub timed_out: bool,
+}
+
+/// Launch Claude Code in --print mode.
+///
+/// Spawns `claude -p <prompt>` with the specified configuration.
+/// Uses the same timeout/kill pattern as gate command evaluation.
+pub fn launch(config: &LaunchConfig) -> Result<LaunchResult> {
+    let mut command = Command::new("claude");
+    command
+        .arg("-p")
+        .arg(&config.prompt)
+        .arg("--output-format")
+        .arg("json")
+        .current_dir(&config.working_dir)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    if !config.allowed_tools.is_empty() {
+        command.arg("--allowedTools")
+            .arg(config.allowed_tools.join(","));
+    }
+
+    // Same process group + timeout + reader thread pattern as evaluate_command()
+    // ...
+}
+```
+
+### Long-Running Process Considerations
+
+Unlike gate commands (typically seconds), Claude Code sessions can run for minutes to hours. Key differences from the gate evaluation pattern:
+
+| Concern | Gate Evaluation | Claude Code Launch |
+|---------|----------------|-------------------|
+| **Typical duration** | 1-60 seconds | 5-60 minutes |
+| **Timeout default** | 300 seconds | 30 minutes (configurable) |
+| **Output size** | KB range (test output) | MB range (full implementation log) |
+| **Kill semantics** | Kill on timeout | Kill on timeout + user cancel |
+| **PID tracking** | Not needed (short-lived) | Store in SessionRecord for status queries |
+
+**Output handling for long sessions:** The existing `MAX_OUTPUT_BYTES = 65_536` truncation in gate evaluation is appropriate for the final result capture. For the v0.3 sequential workflow, we only need the final output (not streaming). Stream-json parsing for real-time progress is a v0.4 concern.
+
+**PID tracking:** The `child.id()` value must be stored in the `SessionRecord` immediately after spawn, before waiting. This enables `assay session show <id>` to display whether the agent is still running (check PID liveness via `libc::kill(pid, 0)` on Unix, already available as a workspace dep).
+
+### What NOT to Add
+
+| Crate | Version | Why Considered | Why Rejected |
+|-------|---------|----------------|--------------|
+| `tokio-process` | (part of tokio) | Async subprocess management | Would create a second subprocess pattern. The sync `std::process::Command` + `spawn_blocking` approach is proven and consistent. |
+| `duct` | 0.13.7 | Ergonomic subprocess piping | Wrapper over `std::process::Command`. Adds a dependency for marginally cleaner syntax. Not worth it. |
+| `subprocess` | 0.2.10 | Alternative process library | Less maintained than std. No advantages. |
+| `nix` | 0.30.1 | Unix process management (signals, process groups) | `libc` (already in workspace) covers everything needed: `killpg`, `kill`, `waitpid`. `nix` is a safe wrapper but an unnecessary dep. |
+| `signal-hook` | 0.3.17 | Signal handling for graceful shutdown | Assay doesn't need to handle signals itself -- it sends them to child processes via `libc::killpg`. |
+
+### Integration with Existing Stack
+
+- **Subprocess:** Reuses the exact `evaluate_command()` pattern from `gate/mod.rs`
+- **Process group kill:** `libc::killpg` (workspace dep, already used in gate eval)
+- **PID liveness check:** `libc::kill(pid, 0)` (zero-signal probe, POSIX standard)
+- **Async bridge:** `tokio::task::spawn_blocking` (existing pattern in MCP handlers)
+- **Output parsing:** `serde_json::from_str` for `--output-format json` output (workspace dep)
+- **Timeout:** `std::time::Duration` + `Instant::elapsed()` polling (existing pattern)
+- **Session recording:** `serde_json::to_string_pretty` + `std::fs::write` (existing history pattern)
+
+---
+
+## Area 3: Diff Generation and Assembly
+
+### The Decision: Shell Out to `git diff`
+
+**Recommendation: Use `git diff` CLI for all diff operations.** Do not add a Rust diff library.
+
+### Why Shell Out to `git diff`
+
+The diff assembly for gate evaluation context needs:
+
+1. **File-level diff between base branch and worktree HEAD** -- what the agent changed
+2. **Stat summary** -- which files changed, insertions/deletions
+3. **Unified diff format** -- the standard patch format that LLMs understand well
+
+All of these are directly available from `git diff`:
+
+```bash
+# Full unified diff between base and worktree HEAD
+git diff main...HEAD
+
+# Stat summary only
+git diff --stat main...HEAD
+
+# Diff for specific files (token budget management)
+git diff main...HEAD -- src/auth.rs tests/auth_test.rs
+
+# Names only (for file list)
+git diff --name-only main...HEAD
+```
+
+### Why NOT a Rust Diff Library
+
+| Factor | `git diff` CLI | `similar` 2.7.0 | `diffy` 0.4.2 |
+|--------|---------------|-----------------|---------------|
+| **What it diffs** | Git object tree (handles renames, binary detection, .gitignore) | In-memory strings/bytes | In-memory strings |
+| **Rename detection** | Built-in (`-M` flag) | Manual | Not supported |
+| **Binary file handling** | Detects and skips automatically | Must handle manually | Must handle manually |
+| **Git context** | Knows about staging, branches, worktrees natively | No git awareness | No git awareness |
+| **Token budget** | `--stat` for summary, path filters for targeted diffs | Must read all files into memory first | Same |
+| **Dependencies** | Zero | +1 crate | +1 crate |
+| **Output format** | Unified diff (LLMs understand this natively) | Custom diff types, must format | Unified diff output available |
+
+**The case for `similar`/`diffy` would be:** if we needed to diff in-memory strings that don't come from git (e.g., comparing two spec versions, diffing MCP responses). That is not the v0.3.0 use case. Every diff in gate evaluation is between git commits/branches. Using `git diff` is both simpler and more correct.
+
+### Diff Assembly Module Design
+
+```rust
+// In assay-core::diff (or assay-core::context::diff)
+
+use std::process::Command;
+use std::path::Path;
+
+/// Context assembled for independent gate evaluation.
+pub struct EvaluationContext {
+    /// Summary of changes (file list with +/- counts).
+    pub stat_summary: String,
+    /// Full unified diff, potentially truncated to token budget.
+    pub unified_diff: String,
+    /// Files changed (for targeted evaluation).
+    pub changed_files: Vec<String>,
+    /// Base ref the diff is against.
+    pub base_ref: String,
+    /// Whether the diff was truncated to fit token budget.
+    pub truncated: bool,
+}
+
+/// Assemble evaluation context from a worktree's changes.
+pub fn assemble_context(
+    worktree_path: &Path,
+    base_ref: &str,
+    max_diff_bytes: usize,
+) -> Result<EvaluationContext> {
+    let stat = git_diff_stat(worktree_path, base_ref)?;
+    let changed_files = git_diff_name_only(worktree_path, base_ref)?;
+    let (diff, truncated) = git_diff_unified(worktree_path, base_ref, max_diff_bytes)?;
+
+    Ok(EvaluationContext {
+        stat_summary: stat,
+        unified_diff: diff,
+        changed_files,
+        base_ref: base_ref.to_string(),
+        truncated,
+    })
+}
+
+fn git_diff_stat(worktree: &Path, base: &str) -> Result<String> {
+    let output = Command::new("git")
+        .args(["diff", "--stat", &format!("{base}...HEAD")])
+        .current_dir(worktree)
+        .output()?;
+    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+}
+```
+
+### Token Budget Management for Diffs
+
+Large diffs can overwhelm the evaluating agent's context window. Strategy:
+
+1. **Always include `--stat` summary** (small, gives overview)
+2. **Always include `--name-only` file list** (small, identifies scope)
+3. **Prioritize spec-referenced files** in the full diff (files mentioned in criterion descriptions)
+4. **Prioritize test files** (strongest signal for quality evaluation)
+5. **Truncate remaining diff** to fit within budget, noting truncation
+
+The `max_diff_bytes` parameter allows the caller (gate_evaluate MCP tool) to set the budget based on the evaluating agent's available context. The existing `context::tokens` module (token estimation) can inform this.
+
+### What NOT to Add
+
+| Crate | Version | Why Considered | Why Rejected |
+|-------|---------|----------------|--------------|
+| `similar` | 2.7.0 | In-memory diff algorithm (Myers, patience) | All diffs are git-tracked. `git diff` is more correct (handles renames, binary, .gitignore) and adds zero deps. |
+| `diffy` | 0.4.2 | Unified diff generation from strings | Same reasoning. Would need to read files into memory that git already has indexed. |
+| `similar-asserts` | 1.7.0 | Test assertion diffs | Only useful in test code. `insta` (already in workspace) provides snapshot diffing for tests. |
+| `git-diff` | (none) | Hypothetical structured diff parsing | Does not exist as a crate. Parse `--porcelain` or `--stat` output directly. |
+| `patch` | 0.7.0 | Parse unified diff format | Only needed if we apply patches programmatically. v0.3 only reads/displays diffs. |
+| `unidiff` | 0.4.0 | Parse unified diff into structured hunks | Overkill for v0.3. We pass the raw diff to the evaluating agent as text. Structured hunk parsing would matter for a v0.4 TUI diff viewer. |
+
+### Integration with Existing Stack
+
+- **Subprocess:** Same `Command::new("git")` pattern as worktree module
+- **Output parsing:** `String::from_utf8_lossy` for diff text (stdlib)
+- **Token estimation:** Existing `assay-core::context::tokens` module
+- **Serialization:** `EvaluationContext` derives `Serialize` for inclusion in MCP responses and session records
+- **Path handling:** `std::path::Path` (stdlib)
+
+---
+
+## Area 4: Session Tracking
+
+### The Decision: JSON Files in `.assay/sessions/`
+
+**Recommendation: Follow the existing `assay-core::history` persistence pattern exactly.** No new dependencies needed.
+
+### Pattern Reuse from v0.2.0
+
+The session tracking module mirrors the run history module (`assay-core::history`) in every dimension:
+
+| Aspect | Run History (v0.2) | Session Record (v0.3) |
+|--------|-------------------|----------------------|
+| **Storage location** | `.assay/results/{spec}/{timestamp}_{id}.json` | `.assay/sessions/{timestamp}_{id}.json` |
+| **File format** | Pretty-printed JSON via `serde_json::to_string_pretty` | Same |
+| **ID generation** | `chrono::Utc::now()` + random hex suffix | Same (reuse `history::generate_run_id`) |
+| **Atomic writes** | `tempfile::NamedTempFile::persist()` | Same |
+| **Listing** | `std::fs::read_dir` + filename parsing + sort | Same |
+| **Deserialization** | `serde_json::from_str` | Same |
+| **Type location** | `SessionRecord` in `assay-types` | `SessionRecord` already sketched in brainstorm |
+| **Gitignore** | `.assay/.gitignore` excludes `results/` | Add `sessions/` to `.gitignore` template |
+
+### Session Record Type
+
+The `AgentSession` type already exists in `assay-types` (used by the v0.2 gate session lifecycle). For v0.3.0, the persisted `SessionRecord` is a superset:
+
+```rust
+// Already in assay-types or to be added
+pub struct SessionRecord {
+    pub id: String,                        // Reuse history::generate_run_id()
+    pub spec_name: String,
+    pub worktree_path: PathBuf,
+    pub branch_name: String,
+    pub agent_pid: Option<u32>,
+    pub status: SessionStatus,             // Active, Completed, Failed, Cancelled
+    pub started_at: DateTime<Utc>,         // chrono (workspace dep)
+    pub ended_at: Option<DateTime<Utc>>,
+    pub gate_run_ids: Vec<String>,         // Links to history records
+    pub launch_config: Option<LaunchConfigSummary>, // What was passed to claude
+}
+
+pub enum SessionStatus {
+    Active,
+    Completed,
+    Failed,
+    Cancelled,
+}
+```
+
+All types use existing derives: `Serialize`, `Deserialize`, `JsonSchema`, `Debug`, `Clone`.
+
+### What NOT to Add
+
+| Crate | Version | Why Considered | Why Rejected |
+|-------|---------|----------------|--------------|
+| `uuid` | 1.16.0 | Unique session IDs | Timestamp + random hex suffix (existing pattern in `history::generate_run_id`) provides sufficient uniqueness without a new dep |
+| `rusqlite` | 0.34.0 | Structured session queries | JSON files are sufficient for <100 concurrent sessions. Same reasoning as v0.2 history research. |
+| `sled` / `redb` | 0.34 / 2.x | Embedded key-value store | Overkill for simple session bookkeeping |
+
+### Integration with Existing Stack
+
+- **Serialization:** `serde_json` (workspace dep)
+- **Timestamps:** `chrono` (workspace dep)
+- **Atomic writes:** `tempfile::NamedTempFile::persist()` (workspace dep)
+- **ID generation:** Reuse `assay_core::history::generate_run_id()`
+- **File I/O:** `std::fs` (stdlib)
+- **Error handling:** New `AssayError` variants: `SessionWrite`, `SessionRead`
 
 ---
 
@@ -326,105 +467,134 @@ This is already a structured evidence record. No additional abstraction needed.
 
 ### Changes to Root `Cargo.toml` `[workspace.dependencies]`
 
-**None.** No new workspace dependencies for v0.2.0.
+**None.** Zero new workspace dependencies for v0.3.0.
 
 ### Per-Crate Dependency Changes
 
 | Crate | Change | Rationale |
-|---|---|---|
-| `assay-core` | Promote `serde_json` from `[dev-dependencies]` to `[dependencies]` | Core now serializes `GateRunSummary` to JSON for persistence |
-| `assay-types` | None | Severity enum uses existing serde/schemars derives |
-| `assay-mcp` | None | New `gate_report` tool uses existing rmcp macros |
-| `assay-cli` | None | CLI may add a `history` subcommand but uses only existing deps |
+|-------|--------|-----------|
+| `assay-core` | None | All needed deps (serde_json, chrono, tempfile, libc, tokio, tracing, regex-lite) are already dependencies |
+| `assay-types` | None | New types use existing serde/schemars/chrono derives |
+| `assay-mcp` | None | New MCP tools use existing rmcp macros |
+| `assay-cli` | None | New CLI commands use existing clap derives |
+| `assay-tui` | None | Minimal TUI uses existing ratatui + crossterm |
 
-### Concrete `Cargo.toml` Diff for `assay-core`
+### cargo-deny Impact
 
-```diff
- [dependencies]
- assay-types.workspace = true
- chrono.workspace = true
- serde.workspace = true
-+serde_json.workspace = true
- thiserror.workspace = true
- toml.workspace = true
-
- [dev-dependencies]
- tempfile.workspace = true
-```
-
-Note: `serde_json` is removed from `[dev-dependencies]` because it is now a regular dependency (cargo handles this automatically -- a crate listed in `[dependencies]` is available in tests without also being in `[dev-dependencies]`).
+**None.** No new crates means no new license entries, no new advisory checks, no new ban/skip entries. The existing `deny.toml` remains unchanged.
 
 ---
 
-## Integration Points with Existing Stack
+## Cross-Cutting: Subprocess Execution Patterns
 
-### History Module in `assay-core`
+### Existing Pattern (gate/mod.rs)
 
-New module: `assay-core::history` (alongside existing `gate`, `spec`, `config`, `review`, `workflow`).
+The codebase has a mature subprocess execution pattern in `evaluate_command()`:
 
-**Depends on:**
-- `serde_json` -- JSON serialization of `GateRunSummary`
-- `chrono` -- timestamp formatting for filenames
-- `std::fs` -- file I/O
-- `assay-types` -- `GateRunSummary` and related types (or keep `GateRunSummary` in `assay-core` as currently designed)
+1. `Command::new("sh").args(["-c", cmd])` -- shell wrapper for gate commands
+2. `.current_dir(working_dir)` -- explicit working directory
+3. `.stdout(Stdio::piped()).stderr(Stdio::piped())` -- capture output
+4. `.process_group(0)` -- Unix process group for clean kill
+5. Reader threads (`std::thread::spawn`) for deadlock-free pipe draining
+6. `try_wait` polling loop with `POLL_INTERVAL_MS = 50`
+7. `libc::killpg` on timeout
+8. Output truncation at `MAX_OUTPUT_BYTES = 65_536`
 
-**Does NOT need:**
-- `tokio` -- file I/O is sync, matching existing gate evaluation pattern
-- `tracing` -- optional instrumentation, defer to implementation
-- `rmcp` -- history is a domain concern, not an MCP concern
+### v0.3.0 Extensions to This Pattern
 
-### `GateRunSummary` Serialization
+| Feature | What Changes | Reuse |
+|---------|-------------|-------|
+| **Worktree ops** | `Command::new("git")` (no shell wrapper needed) | Steps 2-5, 8. Shorter timeouts, smaller output. |
+| **Claude Code launch** | `Command::new("claude")` (no shell wrapper) | Steps 2-8. Longer timeouts (30min default), PID tracking. |
+| **Diff generation** | `Command::new("git")` with `diff` subcommand | Steps 2-5. No timeout needed (git diff is fast). Larger output (MB range). |
 
-`GateRunSummary` currently derives `Serialize` but not `Deserialize`. For history reading, it needs `Deserialize` added:
+### Consider: Extract a Shared Subprocess Helper
+
+The `evaluate_command()` function is 100+ lines including timeout logic, reader threads, and process group management. v0.3.0 adds three more subprocess call sites. Consider extracting a shared helper:
 
 ```rust
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GateRunSummary { ... }
+// assay-core::process (new internal module, NOT a new crate)
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CriterionResult { ... }
+pub struct ProcessConfig {
+    pub program: String,
+    pub args: Vec<String>,
+    pub working_dir: PathBuf,
+    pub timeout: Duration,
+    pub max_output_bytes: usize,
+    pub use_process_group: bool,
+}
+
+pub struct ProcessResult {
+    pub exit_code: Option<i32>,
+    pub stdout: Vec<u8>,
+    pub stderr: Vec<u8>,
+    pub duration_ms: u64,
+    pub timed_out: bool,
+    pub truncated: bool,
+}
+
+/// Execute a process with timeout, output capture, and process group management.
+pub fn execute(config: &ProcessConfig) -> Result<ProcessResult> {
+    // Consolidation of evaluate_command() pattern
+}
 ```
 
-This is a backward-compatible change. `GateRunSummary` is in `assay-core` (not `assay-types`), so the `Deserialize` derive requires `serde` (already a dependency of `assay-core`).
+This is a **refactoring decision**, not a dependency decision. It can happen during week 1 (Worktree Manager) or be deferred to the integration phase. The subprocess pattern is the same regardless.
 
-### MCP Tool Registration
+---
 
-The `gate_report` tool follows the exact same pattern as `gate_run`:
-1. Define params struct with `Deserialize + JsonSchema`
-2. Add `#[tool(...)]` annotated async fn to the `#[tool_router] impl AssayServer` block
-3. Delegate to `assay_core::history::list()`
-4. Format response and return `CallToolResult`
+## External Tool Dependencies
 
-No changes to `ServerHandler` impl, `ServerCapabilities`, or transport configuration.
+### Required on Developer/CI Machines
+
+| Tool | Minimum Version | Used By | Detection |
+|------|----------------|---------|-----------|
+| `git` | 2.20+ (worktree `--porcelain` support) | Worktree manager, diff assembly | `git --version`, fail fast with `AssayError::GitNotAvailable` |
+| `claude` | Any (Claude Code CLI) | Claude Code launcher | `which claude`, fail fast with `AssayError::ClaudeNotAvailable` |
+
+### Detection Strategy
+
+Check for tool availability at command execution time, not at startup. Assay features that don't need git/claude should work without them installed.
+
+```rust
+fn ensure_git_available() -> Result<()> {
+    match Command::new("git").arg("--version").output() {
+        Ok(output) if output.status.success() => Ok(()),
+        _ => Err(AssayError::GitNotAvailable),
+    }
+}
+```
 
 ---
 
 ## Risk Assessment
 
 | Risk | Likelihood | Impact | Mitigation |
-|---|---|---|---|
-| Filename timestamp collisions (sub-second runs) | Very Low | Low | Could append a 4-char random suffix if needed; not worth pre-solving |
-| Large result files (huge stdout/stderr) | Low | Low | Already mitigated by existing 64KB truncation in gate evaluation |
-| `deny_unknown_fields` conflict with new `severity` field | None | None | `#[serde(default)]` provides the value; this is a known field, not unknown |
-| rmcp 0.18 breaking `#[tool]` macro API | Low | Medium | Pin to `0.17`, macro API has been stable across recent releases |
-| `GateRunSummary` schema drift (old JSON files vs new struct) | Low | Medium | Add `#[serde(default)]` to any new fields on `GateRunSummary` for forward compatibility |
+|------|-----------|--------|------------|
+| `git` CLI not available on target system | Very Low | High | Fail fast with clear error message. Git is a universal developer tool. |
+| `claude` CLI not available or wrong version | Low | High | Detect at launch time. Provide clear installation instructions in error. |
+| `git worktree list --porcelain` output format changes | Very Low | Medium | Pin to known format. Git is extraordinarily stable across versions. |
+| `git diff` output too large for evaluation context | Medium | Medium | Token budget management with truncation. Prioritize spec-referenced + test files. |
+| `--print` mode Claude Code limitations surface late | Medium | Medium | Research and validate `--print` behavior early (week 1). The brainstorm already identified this risk. |
+| Subprocess helper extraction causes churn in gate/mod.rs | Low | Low | Optional refactor. Can keep `evaluate_command()` as-is and duplicate the pattern for new call sites. |
 
 ---
 
 ## Sources
 
-- [rmcp v0.17.0 release notes](https://github.com/modelcontextprotocol/rust-sdk/releases/tag/rmcp-v0.17.0) -- released 2026-02-27, confirmed latest via `cargo search`
-- [rmcp v0.16.0 release notes](https://github.com/modelcontextprotocol/rust-sdk/releases/tag/rmcp-v0.16.0) -- API stability reference
-- [rmcp `Json<T>` structured output docs](https://docs.rs/rmcp/latest/rmcp/handler/server/wrapper/struct.Json.html) -- new in 0.17
-- [rmcp trait-based tool declaration PR #677](https://github.com/modelcontextprotocol/rust-sdk/pull/677) -- alternative to macros, not a replacement
-- [Serde field attributes: `#[serde(default)]`](https://serde.rs/field-attrs.html) -- backward-compatible field addition
-- [Serde variant attributes: `#[serde(other)]`](https://serde.rs/variant-attrs.html) -- forward-compatible enum deserialization
-- [Serde container attributes: `#[serde(default)]`](https://serde.rs/attr-default.html) -- default value patterns
-- [JSONL/NDJSON specification](https://ndjson.com/definition/) -- evaluated and rejected for this use case
-- [serde-jsonlines crate](https://crates.io/crates/serde-jsonlines) -- v0.7.0, evaluated and rejected
-- [uuid crate](https://crates.io/crates/uuid) -- v1.21.0, evaluated and rejected
-- [fs4 crate](https://crates.io/crates/fs4) -- v0.13.1, evaluated and rejected
-- Current codebase: `/Users/wollax/Git/personal/assay/Cargo.toml`, `crates/assay-core/Cargo.toml`, `crates/assay-mcp/src/server.rs`
+- [git2-rs API docs](https://docs.rs/git2/0.20.4/git2/) -- verified 0.20.4 is latest (2026-03-08)
+- [git2 Repository::worktree()](https://docs.rs/git2/0.20.4/git2/struct.Repository.html#method.worktree) -- worktree add API
+- [git2 Worktree struct](https://docs.rs/git2/0.20.4/git2/struct.Worktree.html) -- `!Send`, `!Sync` verified
+- [gix (gitoxide)](https://crates.io/crates/gix) -- 0.80.0 latest (2026-03-08)
+- [similar crate](https://crates.io/crates/similar) -- 2.7.0 latest
+- [diffy crate](https://crates.io/crates/diffy) -- 0.4.2 latest
+- [tokio::process::Command](https://docs.rs/tokio/1.49.0/tokio/process/struct.Command.html) -- async subprocess API
+- [Claude Code headless mode](https://code.claude.com/docs/en/headless) -- `--print` mode, output formats
+- [Claude Code common workflows](https://code.claude.com/docs/en/common-workflows) -- output format control
+- [git-worktree(1) man page](https://git-scm.com/docs/git-worktree) -- CLI reference
+- [git-diff(1) man page](https://git-scm.com/docs/git-diff) -- diff output formats
+- Current codebase: `crates/assay-core/src/gate/mod.rs` (subprocess pattern), `Cargo.toml` (workspace deps), `deny.toml` (cargo-deny config)
 
 ---
-*Stack research completed: 2026-03-02*
+
+*Stack research completed: 2026-03-08*
