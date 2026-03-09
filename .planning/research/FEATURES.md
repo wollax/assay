@@ -1,689 +1,616 @@
-# Features Research -- v0.2.0 (Run History, Gate Enforcement, Agent Evaluation, Hardening)
+# Features Research -- v0.3.0 (Worktrees, Headless Agents, Session Records, Independent Evaluation, TUI Viewer)
 
-**Research Date:** 2026-03-02
-**Scope:** How do run history, gate enforcement levels, and agent-submitted evaluations typically work in quality tools?
-**Existing Base:** v0.1.0 ships gate evaluation (command execution, timeout, streaming, structured evidence), MCP server with 3 tools (spec_list, spec_get, gate_run), CLI commands, Claude Code plugin, and serializable domain types.
+**Research Date:** 2026-03-08
+**Scope:** How do worktree lifecycle management, headless agent launching, session record tracking, independent gate evaluation with diff context, and minimal TUI viewers work in comparable tools?
+**Existing Base:** v0.2.0 ships dual-track quality gates (deterministic + agent-evaluated), MCP server with 8 tools (spec_list, spec_get, gate_run, gate_report, gate_finalize, gate_history, context_diagnose, estimate_tokens), run history with atomic persistence, required/advisory enforcement, session diagnostics, pruning engine, guard daemon, CLI (init, spec, gate, mcp serve), and Claude Code plugin with hooks.
 
 ---
 
 ## Executive Summary
 
-Research across CI/CD quality gate systems (SonarQube, GitHub Actions, GitLab CI), spec-driven agent tools (Kiro, agtx, agentic-orchestration), test result persistence patterns (nextest, dbt, Jest), and MCP ecosystem patterns reveals clear guidance for Assay's v0.2 features.
+Research across agent orchestration tools (agtx, Claude Code SDK), code review platforms (GitHub PR API, Gerrit), TUI frameworks (ratatui ecosystem), and multi-agent session patterns reveals clear guidance for Assay's v0.3.0 features.
 
 **Key findings:**
 
-1. **Run history:** The industry has converged on NDJSON/compressed JSON Lines for local file-based persistence. SQLite is overkill for single-project tools. Nextest's model (append-only event log + bounded cache + parent-child run relationships) is the gold standard for Rust CLI tools.
+1. **Git worktree lifecycle:** agtx provides the definitive reference implementation -- worktrees under `.agtx/worktrees/<task-slug>`, branch per task (`task/<slug>`), agent config directories auto-copied, init scripts, and `git worktree remove --force` for cleanup. The pattern is proven and Assay should adopt it with minimal deviation, storing worktrees under `.assay/worktrees/` instead.
 
-2. **Gate enforcement levels:** The ecosystem splits cleanly into two models -- SonarQube abandoned warnings (binary pass/fail since v7.6), while GitLab CI's `allow_failure` pattern (required/advisory with visual differentiation) is the dominant UX. For agent workflows, the rjmurillo/ai-agents framework demonstrates a three-tier model (MUST/SHOULD/MAY) that maps well to Assay's dual-track design.
+2. **Headless agent launching:** Claude Code's `--print` mode (also called non-interactive mode) is the industry-standard for programmatic agent invocation. It supports `--output-format json` for structured output (returning `session_id`, `result`, metadata), `--continue`/`--resume <session_id>` for conversation continuity, and piped input. agtx's `generate_text()` abstraction shows how to wrap this per-agent. For Assay, the key insight is that `--print` mode is sufficient for independent gate evaluation -- no tmux orchestration needed.
 
-3. **Agent evaluation submissions:** No MCP-native `gate_report` pattern exists yet. The closest analogs are agentic-orchestration's critic pattern (structured pass/fail + retry logic) and the evaluation-rubrics MCP skill pattern. Assay's `gate_report` tool would be genuinely novel in the MCP ecosystem.
+3. **Session record tracking:** agtx uses SQLite with UUID-based task IDs, per-project databases keyed by path hash, and a global index DB. For Assay's lighter-weight needs, the existing JSON file approach (atomic writes, `.assay/results/`) is the right persistence layer. Adding a session record type that tracks worktree path, branch name, agent identity, and Claude Code session_id provides the lineage without introducing SQLite.
 
-4. **Hardening:** Table stakes are actionable error messages, test coverage for all error paths, serde hygiene on all public types, and bounded MCP responses. The existing open issues inventory provides a ready-made hardening backlog.
+4. **Independent gate evaluation with diff context:** GitHub's unified diff format (via `git diff`) is the universal input for AI code review. The pattern is: assemble diff hunks, attach file paths and line ranges, and present as structured context alongside the gate criteria. No tool does this via MCP yet -- Assay's `gate_evaluate` would be genuinely novel.
+
+5. **Minimal TUI gate results viewer:** ratatui's `Table` widget with `TableState` for scrolling, color-coded pass/fail rows, and a `Paragraph` detail pane is the proven pattern for read-only results viewers. The existing Assay TUI is a scaffold -- it needs a `Table` + detail split layout, 4-5 keybindings, and nothing more.
+
+6. **Quick wins:** CLI correctness, MCP validation, types hygiene, error messages, and output truncation are table-stakes hardening. Every tool in the ecosystem that matured past v0.1 addressed these before adding features.
+
+7. **Radical seeds:** Composable gate definitions (like agtx's plugin TOML), spec preconditions (like CI pipeline `needs:`), and gate history summaries (like SonarQube trend dashboards) are differentiators that set up v0.4+.
 
 ---
 
-## 1. Run History Persistence
+## 1. Git Worktree Lifecycle Management
 
-### How Existing Tools Persist Run Results
+### How agtx Handles Worktrees
 
-| Tool | Storage Format | Location | Metadata Per Run | Retention |
-|------|---------------|----------|-----------------|-----------|
-| nextest | Zstd-compressed JSON Lines | `~/.cache/cargo-nextest/` | Run ID, timing, CLI args, env vars, parent run ID, pass/fail counts, compression stats | Bounded cache with auto-prune (daily, or 1.5x limit) |
-| dbt | JSON (`run_results.json`) | `target/` directory | elapsed_time, per-node status/timing/thread_id, compiled_code, adapter_response | Overwritten each run (single file) |
-| Jest | JSON (`--json` flag) | stdout or file | numPassedTestSuites, numFailedTests, startTime, testResults array | No built-in persistence |
-| SonarQube | PostgreSQL database | Server-side | Analysis timestamp, quality gate status, metric values per condition, new vs overall code | Full history (server-managed) |
-| agtx | SQLite database | `~/.local/share/agtx/` or `~/Library/Application Support/` | Task metadata, phase completion, worktree paths | Application-managed |
-| agentic-orchestration | JSON files (state.json, actions.log) | Project `.agentic/` directory | Codebase snapshots, workflow progress, step execution, timestamps | Append-only log + state snapshot |
+agtx is the most complete reference implementation for agent-orchestrated worktree management in the Rust ecosystem.
 
-### Key Design Patterns
+**Creation (`create_worktree`):**
+- Worktrees stored at `<project>/.agtx/worktrees/<task-slug>/`
+- Branches named `task/<slug>`, based off detected main branch (`main`/`master`/current)
+- Idempotent: returns existing worktree if valid (`.git` exists), cleans up partial state otherwise
+- Uses `git worktree add <path> -b <branch> <base>` -- single atomic git command
+- Deletes stale branches from previous failed attempts before creation
 
-**Pattern A: Single Summary File (dbt model)**
-- Overwrite `run_results.json` on each invocation
-- Pro: Simple, no cache management, easy to parse
-- Con: No history, no trend analysis, no parent-child runs
-- Confidence: HIGH -- well-proven for "last run" queries
+**Initialization (`initialize_worktree`):**
+- Copies agent config directories (`.claude/`, `.gemini/`, `.codex/`, `.github/agents/`, `.config/opencode/`) from project root via recursive copy
+- Copies plugin-specified extra directories
+- Copies user-specified files from `copy_files` config (comma-separated)
+- Runs `init_script` via `sh -c` in worktree directory
+- Returns warnings (not errors) for any failures -- never blocks worktree creation
+- Agent config constants defined as `AGENT_CONFIG_DIRS`
 
-**Pattern B: Append-Only Event Log (nextest model)**
-- NDJSON/JSON Lines with optional compression
-- Each run appends entries; cache bounded by count/size limits
-- Parent-child relationships enable rerun chains
-- Pro: Full history, crash recovery (partial events preserved), streaming-friendly
-- Con: Requires cache management, more complex implementation
-- Confidence: HIGH -- nextest proves this works for Rust CLI tools at scale
+**Removal (`remove_worktree`):**
+- `git worktree remove --force <path>` -- force flag handles uncommitted changes
+- Falls back to `git worktree prune` if remove fails
+- No branch cleanup (branches persist as references)
 
-**Pattern C: Database (agtx/SonarQube model)**
-- SQLite or PostgreSQL for structured queries
-- Pro: Complex queries, aggregation, joins
-- Con: Binary dependency, migration management, overkill for single-project local tool
-- Confidence: MEDIUM -- appropriate for server tools, overly complex for Assay's use case
+**Key Design Decisions:**
+- `.agtx/` added to `.gitignore` -- worktrees are local-only state
+- No symlink tricks -- real git worktrees with full checkout
+- Task slug used as directory name (sanitized from title)
+- Worktree path stored on `Task` model for later reference
 
-### Recommended Approach for Assay
+### Assay Adaptation
 
-**Phase 1 (v0.2): Pattern A with history extension** -- Write each gate run as a single JSON file in `.assay/runs/`. Filename encodes timestamp and spec name (e.g., `2026-03-02T14-30-00_auth-flow.json`). This is simpler than NDJSON and provides natural filesystem-based history without cache management.
+Assay should store worktrees under `.assay/worktrees/<spec-slug>/` to maintain the existing `.assay/` namespace. Key differences from agtx:
 
-**Phase 2 (v0.3+): Migrate to Pattern B** -- If run history grows large enough to matter, migrate to NDJSON with bounded cache. The JSON-per-run pattern makes migration straightforward (each file becomes a line).
+| Concern | agtx | Assay v0.3.0 |
+|---------|------|-------------|
+| Storage | `.agtx/worktrees/<slug>` | `.assay/worktrees/<slug>` |
+| Branch naming | `task/<slug>` | `assay/<spec-slug>` |
+| Config copy | Agent dirs + user files | `.assay/` dir (specs, config) |
+| Init script | User-configurable | Not needed for v0.3.0 |
+| DB tracking | SQLite with worktree_path column | JSON session record |
+| Cleanup | `git worktree remove --force` | Same, plus branch cleanup option |
 
-### Run Record Schema (Proposed)
+**Expected User Behavior:**
+1. `assay worktree create <spec-name>` -- creates worktree branched from current HEAD, copies `.assay/` config
+2. Agent works in worktree, runs gates, produces changes
+3. `assay worktree status` -- lists active worktrees with branch and diff summary
+4. `assay worktree remove <spec-name>` -- cleans up worktree and optionally the branch
+5. MCP tool `worktree_create` and `worktree_remove` for agent self-service
 
-```rust
-pub struct GateRunRecord {
-    /// Unique run identifier (ULID or UUID v7 for time-ordered IDs).
-    pub run_id: String,
-    /// Which spec was evaluated.
-    pub spec_name: String,
-    /// When the run started.
-    pub started_at: DateTime<Utc>,
-    /// When the run completed.
-    pub completed_at: DateTime<Utc>,
-    /// Total wall-clock duration in milliseconds.
-    pub duration_ms: u64,
-    /// Aggregate pass/fail/skip counts.
-    pub passed: usize,
-    pub failed: usize,
-    pub skipped: usize,
-    /// Per-criterion results (reuse existing CriterionResult).
-    pub criteria: Vec<CriterionResult>,
-    /// What triggered this run (cli, mcp, hook).
-    pub trigger: RunTrigger,
-    /// Optional parent run ID (for reruns).
-    pub parent_run_id: Option<String>,
-    /// Git context at time of run (optional).
-    pub git_ref: Option<String>,
-}
+### Risk: Worktree Lifecycle is Fragile
 
-pub enum RunTrigger {
-    Cli,
-    Mcp,
-    Hook,
+Git worktrees have sharp edges: locked worktrees, stale references, orphaned branches, and the `.git` file (not directory) that worktrees use can confuse tools. agtx handles this with `--force` and `prune` fallbacks, which is the pragmatic approach. Assay should do the same and provide `assay worktree prune` for manual cleanup.
+
+---
+
+## 2. Claude Code Headless Launcher (`--print` Mode)
+
+### How Claude Code's `--print` Mode Works
+
+Claude Code's non-interactive mode is invoked with `-p` or `--print`:
+
+```bash
+# Basic usage
+claude -p "Summarize this project"
+
+# Structured JSON output
+claude -p "List API endpoints" --output-format json
+
+# Streaming JSON (NDJSON)
+claude -p "Analyze performance" --output-format stream-json
+
+# Session continuation
+session_id=$(claude -p "Start review" --output-format json | jq -r '.session_id')
+claude -p "Continue review" --resume "$session_id"
+
+# Continue most recent session
+claude -p "Follow up" --continue
+```
+
+**Output format (JSON):**
+Returns structured data including `result` (text), `session_id`, and metadata. The `session_id` enables multi-turn conversations in headless mode.
+
+**How agtx Uses It:**
+agtx's `CodingAgent::generate_text()` dispatches per-agent:
+- Claude: `claude --print <prompt>`
+- Codex: `codex exec --full-auto <prompt>`
+- Copilot: `copilot -p <prompt>`
+- Gemini: `gemini -p <prompt>`
+
+For interactive sessions, agtx uses `claude --dangerously-skip-permissions` inside tmux windows. The `--session <task_id>` flag persists conversation context across restarts.
+
+### Assay's `gate_evaluate` Design
+
+For independent gate evaluation, Assay needs to launch a headless Claude Code instance that:
+1. Receives the gate criteria + diff context as input
+2. Evaluates each criterion against the code changes
+3. Returns structured pass/fail + evidence + reasoning
+
+The `--print` mode with `--output-format json` is the right interface. The flow:
+
+```
+assay gate evaluate <spec-name>
+  1. Compute git diff (working tree or branch comparison)
+  2. Load spec criteria (agent-evaluated ones)
+  3. Build prompt: criteria + diff context + evaluation rubric
+  4. Invoke: claude -p "<prompt>" --output-format json
+  5. Parse response, map to AgentEvaluation structs
+  6. Submit via gate_report / gate_finalize flow
+```
+
+**No tmux needed.** Unlike agtx's interactive sessions, Assay's independent evaluation is a request-response pattern. `--print` mode handles this cleanly.
+
+**Session continuation is optional but valuable.** If the evaluation needs follow-up ("explain why criterion X failed"), the session_id from the JSON output enables `--resume`.
+
+### Multi-Agent Support
+
+agtx's `AgentRegistry` pattern (trait-based dispatch with per-phase agent selection) is over-engineered for Assay's v0.3.0 needs. A simpler approach:
+
+- Default to `claude -p` for independent evaluation
+- Config key `evaluator_command` in `.assay/config.toml` for override
+- Future: trait-based dispatch if multi-agent becomes a real use case
+
+---
+
+## 3. Session Record Tracking
+
+### How Existing Tools Track Sessions
+
+| Tool | Session Model | Storage | Key Fields |
+|------|--------------|---------|------------|
+| agtx | `Task` + `RunningAgent` | SQLite (per-project DB keyed by path hash) | id, title, status, agent, worktree_path, branch_name, session_name, pr_url, plugin, cycle |
+| Claude Code | Session ID (UUID) | `~/.claude/projects/` transcript files | session_id, transcript_path, cwd, permission_mode |
+| GitHub Actions | Run + Job + Step | API (server-side) | run_id, workflow_name, status, conclusion, started_at, completed_at |
+
+### agtx Session Model (Deep Dive)
+
+agtx tracks sessions through two complementary models:
+
+**Task (persistent, SQLite):**
+- UUID-based `id`, human `title`, optional `description`
+- `status`: Backlog -> Planning -> Running -> Review -> Done
+- `agent`: which agent is assigned
+- `worktree_path`, `branch_name`: git context
+- `session_name`: tmux session identifier
+- `pr_number`, `pr_url`: PR lifecycle tracking
+- `plugin`: which workflow plugin governs this task
+- `cycle`: iteration count for cyclic workflows
+
+**RunningAgent (runtime, SQLite):**
+- `session_name`: tmux session (primary key)
+- `task_id`, `project_id`: foreign keys
+- `agent_name`: which agent is running
+- `started_at`: when the session began
+- `status`: Running / Waiting / Completed
+
+**PhaseStatus (runtime-only, not persisted):**
+- Working / Idle / Ready / Exited
+- Detected by monitoring tmux pane output and artifact files
+
+### Assay Adaptation: Session Records
+
+Assay already has `AgentSession` (in-memory, for accumulating gate evaluations) and `GateRunRecord` (persisted, the result). What's missing is a **session record** that ties together:
+
+1. The worktree used for this work
+2. The Claude Code session_id (for resumption)
+3. The spec being worked on
+4. The gate run results produced
+5. Timeline (created, last activity, completed)
+
+**Proposed type:**
+```
+SessionRecord {
+    session_id: String,          // Assay-generated, like run_id
+    spec_name: String,
+    worktree_path: Option<String>,
+    branch_name: Option<String>,
+    agent_session_id: Option<String>,  // Claude Code session_id for --resume
+    gate_run_ids: Vec<String>,   // References to GateRunRecord files
+    status: SessionStatus,       // Active / Completed / Abandoned
+    created_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
 }
 ```
 
-### Features
+**Storage:** JSON files under `.assay/sessions/<session-id>.json`, same atomic write pattern as run history. No SQLite -- consistent with existing Assay architecture.
 
-| Feature | Category | Complexity | Dependencies | Notes |
-|---------|----------|------------|-------------|-------|
-| JSON file per run in `.assay/runs/` | Table Stakes | Medium | GateRunRecord type in assay-types, file I/O in assay-core | Natural filesystem history; `.gitignore` the runs dir |
-| Run ID generation (ULID or UUID v7) | Table Stakes | Low | ulid or uuid crate | Time-ordered for natural sorting |
-| `gate_run` persists results automatically | Table Stakes | Low | Run persistence in assay-core | Hook into existing evaluate_all |
-| `assay history` CLI command (list recent runs) | Table Stakes | Medium | Run file scanning, display formatting | Show last N runs with pass/fail summary |
-| `assay history show <run-id>` (detail view) | Table Stakes | Low | Run file loading | Display full criterion results |
-| `gate_history` MCP tool (query run history) | Differentiator | Medium | Run persistence, MCP tool registration | Agents can ask "did this pass before?" |
-| Run trigger tracking (cli/mcp/hook) | Differentiator | Low | RunTrigger enum | Useful for usage analytics |
-| Git ref capture per run | Differentiator | Low | `git rev-parse HEAD` | Correlate runs with commits |
-| Parent-child run relationships | Differentiator | Low | parent_run_id field | Track rerun chains |
-| NDJSON migration with bounded cache | Anti-Feature (v0.2) | High | Compression, cache pruning | Defer until run volume justifies complexity |
-| SQLite storage | Anti-Feature | High | rusqlite dependency, migrations | Overkill for local file-based tool |
-| Run diffing (compare two runs) | Anti-Feature (v0.2) | Medium | Diff logic | Defer; the brainstorm noted agent context eviction makes delta refs unreliable |
+**Why not SQLite?** Assay is a single-project tool with low-volume session data (tens to hundreds of sessions, not thousands). JSON files are human-readable, git-diffable, and don't require a new dependency. agtx uses SQLite because it manages multiple projects from a global dashboard -- a different use case.
 
 ---
 
-## 2. Gate Enforcement Levels (Required vs Advisory)
+## 4. Independent Gate Evaluation (`gate_evaluate` with Diff Context)
 
-### How Existing Tools Handle Enforcement Levels
+### How Code Review Tools Assemble Diff Context
 
-**SonarQube (pass/fail only, since v7.6):**
-- Removed warning threshold in v7.6 -- all conditions are either met or failed
-- Quality gate is binary: "Passed" or "Failed"
-- No intermediate states. The community has requested warnings repeatedly (discussion #43998) but SonarQube has deliberately refused
-- Rationale: Warning thresholds were routinely ignored, creating false confidence
-- Confidence: HIGH
+**Git unified diff format:**
+The universal input for AI code review is `git diff` output -- unified diff with file paths, hunk headers (`@@ -start,count +start,count @@`), and context lines. Every tool that feeds code changes to an AI model uses this format or a close derivative.
 
-**GitLab CI (`allow_failure` model):**
-- Jobs default to `allow_failure: false` (required/blocking)
-- Setting `allow_failure: true` makes a job advisory
-- Advisory jobs that fail show an orange/yellow warning icon (not red)
-- Pipeline status: "passed with warnings" when advisory jobs fail
-- Pipeline continues to subsequent stages regardless of advisory failures
-- Use cases: linters, style checks, flaky tests, non-critical environments
-- Confidence: HIGH
+**GitHub Pull Request Reviews:**
+- `GET /repos/{owner}/{repo}/pulls/{number}/files` returns per-file patches
+- Each file includes `filename`, `status` (added/modified/removed), `patch` (unified diff), `additions`, `deletions`
+- Review comments reference specific diff positions via `position` (line within the diff) or `line` (file line number)
+- The diff includes 3 lines of context by default
 
-**GitHub Actions (required status checks):**
-- Branch protection rules define which checks are "required"
-- Non-required checks can fail without blocking merge
-- Annotations support three levels: `notice`, `warning`, `failure`
-- Community has requested a "warning" status for checks (discussion #11592) -- not implemented
-- Check runs have conclusion values: `success`, `failure`, `neutral`, `skipped`, `timed_out`, `action_required`
-- The `neutral` conclusion is the closest to "advisory" -- it does not block merge
-- Confidence: HIGH
+**Gerrit:**
+- Provides per-file diffs with configurable context lines
+- Comments anchor to file + line + side (left=old, right=new)
+- Supports "related changes" to show dependency chains
 
-**rjmurillo/ai-agents (three-tier RFC 2119 model):**
-- **MUST (blocking):** Pre-commit hooks, pre-push phases, CI required checks -- exit code 1 halts workflow
-- **SHOULD (advisory):** Memory export, retrospective documentation -- recommended but non-blocking
-- **MAY (informational):** Security warnings, suggestions -- displayed but ignored for pass/fail
-- Each requirement has a verification mechanism (file existence, tool output, exit code)
-- Confidence: HIGH
+**AI code review tools (CodeRabbit, PR-Agent, etc.):**
+- Fetch the full PR diff
+- Split into per-file chunks for token management
+- Include file metadata (language, path in project)
+- Provide the spec/guidelines as system context
+- Ask for structured output (pass/fail per criterion, with evidence)
 
-**agentic-orchestration (critic + retry model):**
-- Critic returns pass/fail per step
-- On fail, step retries up to 3 times automatically
-- After max retries, human approval gate activates
-- No advisory/warning tier -- everything is blocking or escalated
-- Confidence: MEDIUM
+### Diff Context Assembly for Assay
 
-**Kiro (spec-driven with hooks):**
-- Hooks enforce consistency and quality automatically
-- Agent hooks run on specific triggers (file changes, code commits)
-- Standards documented in steering docs rather than explicit enforcement tiers
-- Quality is baked into spec structure (EARS format requirements) rather than runtime enforcement
-- Confidence: MEDIUM
+For `gate_evaluate`, Assay needs to:
 
-### Enforcement Level Design Patterns
+1. **Compute the diff:**
+   - Default: `git diff HEAD` (uncommitted changes in working tree)
+   - With worktree: `git diff main...<branch>` (all changes on the feature branch)
+   - Configurable: `--base <ref>` flag for custom base
 
-| Pattern | Used By | Pros | Cons |
-|---------|---------|------|------|
-| Binary pass/fail | SonarQube, agentic-orchestration | Simple, unambiguous, no "warning fatigue" | All-or-nothing can frustrate incremental adoption |
-| Required + Advisory | GitLab CI, GitHub Actions | Flexible, supports incremental adoption, visual differentiation | Advisory gates often get permanently ignored |
-| Three-tier (MUST/SHOULD/MAY) | rjmurillo/ai-agents | Nuanced, maps to RFC 2119, good for documentation | Complex to implement, may confuse simple use cases |
-| Critic + retry | agentic-orchestration | Self-healing, reduces false negatives | Only works with agent-evaluated gates, not deterministic |
+2. **Structure the context:**
+   ```
+   [Spec: <name>]
+   [Description: <description>]
 
-### Recommended Approach for Assay
+   [Criteria to evaluate:]
+   1. <criterion-name>: <criterion-description> [enforcement: required/advisory]
+   2. ...
 
-**Two-tier enforcement: `required` (default) and `advisory`.**
+   [Code changes (unified diff):]
+   --- a/src/foo.rs
+   +++ b/src/foo.rs
+   @@ -10,5 +10,8 @@
+   ...
+   ```
 
-Rationale:
-- SonarQube's experience shows three-tier (with warnings) creates noise. Two tiers is the sweet spot.
-- GitLab CI's `allow_failure` pattern is the industry-proven UX for this.
-- For agent workflows, `required` gates block completion (Stop hook prevents agent from finishing), `advisory` gates report but don't block.
-- The default should be `required` -- making advisory opt-in prevents "everything is optional" drift.
+3. **Handle large diffs:**
+   - Truncate to fit context window (track token budget)
+   - Prioritize files that match criterion patterns (if any)
+   - Include file list even when diff is truncated
 
-### Spec-Level Configuration
+4. **Parse the response:**
+   - Expect structured JSON: `{ criteria: [{ name, passed, evidence, reasoning, confidence }] }`
+   - Use `--json-schema` flag with Claude Code `--print` mode for guaranteed structure
+   - Map to `AgentEvaluation` structs and feed into existing `gate_report` flow
+
+### MCP Tool Design: `gate_evaluate`
+
+```
+gate_evaluate {
+    name: String,         // spec name
+    base_ref: Option<String>,  // git ref for diff base (default: HEAD or main)
+    include_evidence: bool,
+    evaluator_role: Option<String>,  // "independent" (default), "self_eval"
+}
+```
+
+This tool would:
+1. Compute diff context
+2. Launch headless agent
+3. Collect evaluations
+4. Create session, report evaluations, finalize
+5. Return the GateRunRecord
+
+The key differentiator: this is a **single-tool invocation** that handles the entire evaluate-report-finalize lifecycle, unlike the current 3-step flow (gate_run -> gate_report -> gate_finalize) which requires the agent to self-orchestrate.
+
+---
+
+## 5. Minimal TUI Gate Results Viewer
+
+### ratatui Patterns for Results Viewers
+
+ratatui provides everything needed for a minimal gate results viewer:
+
+**Table widget:**
+- `Table::new(rows, widths)` with `Row` and `Cell` types
+- `TableState` for selection tracking and scrolling
+- `row_highlight_style` for selected row
+- Column widths via `Constraint::Length`, `Constraint::Min`, `Constraint::Percentage`
+- `Scrollbar` widget for long result lists
+
+**Layout:**
+- `Layout::vertical([Constraint::Min(5), Constraint::Length(N)])` for table + detail split
+- `Layout::horizontal([...])` for side-by-side panels
+
+**Styling for pass/fail:**
+- Green foreground for passed (`Style::default().fg(Color::Green)`)
+- Red foreground + `Modifier::BOLD` for failed
+- Yellow for skipped/advisory
+- Alternating row backgrounds for readability
+
+### Recommended TUI Architecture
+
+The existing Assay TUI (`crates/assay-tui/src/main.rs`) is a minimal scaffold. For a gate results viewer:
+
+**Layout:**
+```
++--------------------------------------------------+
+| Assay Gate Results: <spec-name>         [q] quit  |
++--------------------------------------------------+
+| # | Criterion      | Status | Enforcement | Time |
+|---|----------------|--------|-------------|------|
+| 1 | cargo-test     | PASS   | required    | 1.5s |
+| 2 | clippy-lint    | FAIL   | advisory    | 0.8s |
+| 3 | code-review    | PASS   | required    | agent|
+| 4 | readme-exists  | PASS   | required    | 0ms  |
++--------------------------------------------------+
+| Detail: clippy-lint                               |
+| Status: FAIL (advisory)                           |
+| stderr: warning: unused variable `x`              |
+| Exit code: 1 | Duration: 800ms | Truncated: yes  |
++--------------------------------------------------+
+| Summary: 3/4 passed | Required: 3/3 | Advisory: 0/1|
++--------------------------------------------------+
+```
+
+**Keybindings (minimal):**
+- `j`/`k` or arrows: navigate rows
+- `Enter`: toggle detail pane expansion
+- `q`/`Esc`: quit
+- `r`: re-run gates (optional, v0.3.0 stretch)
+
+**Data source:**
+- Load from `GateRunRecord` (most recent, or specified by run_id)
+- Or run gates live and display results as they arrive
+
+**Implementation approach:**
+- Single `App` struct with `TableState` and selected `GateRunRecord`
+- `Widget` trait implementation for the main view
+- ~200-300 lines total for a functional viewer
+
+### What agtx Does Differently
+
+agtx's TUI is a full kanban board with 5 columns, task creation, agent launching, tmux integration, sidebar panels, file search, and plugin selection. This is massively over-scoped for Assay v0.3.0. The key lesson is agtx's **column-based navigation pattern** (h/l for columns, j/k for items) which works well for status-oriented data.
+
+For Assay, the single-table-with-detail-pane pattern is more appropriate. It maps directly to gate results (one row per criterion) without the complexity of multi-column state management.
+
+---
+
+## 6. Quick Wins (Hardening)
+
+### CLI Correctness
+- **Table stakes.** Every mature CLI tool validates inputs, provides helpful error messages, and exits with correct codes.
+- Key items: argument validation before execution, consistent exit codes (0 = all gates pass, 1 = gate failure, 2 = infrastructure error), `--help` text accuracy.
+
+### MCP Validation
+- **Table stakes.** MCP tool parameters must be validated before execution -- reject malformed inputs with clear error messages rather than panicking.
+- Key items: parameter bounds checking, spec name existence validation before gate operations, session_id format validation.
+
+### Types Hygiene
+- **Table stakes.** `deny_unknown_fields` on all serialized types (already done), `#[non_exhaustive]` on public enums for forward compatibility, derive consistency across the types crate.
+- Key items: audit all public types in `assay-types` for missing derives, ensure `schemars::JsonSchema` coverage is complete.
+
+### Error Messages
+- **Table stakes.** Actionable errors that tell the user what went wrong AND what to do about it.
+- Pattern: "Failed to load spec 'foo': file not found at .assay/specs/foo.toml. Run `assay spec list` to see available specs."
+
+### Output Truncation
+- **Table stakes.** Gate command output is already truncated at 64KB (`MAX_OUTPUT_BYTES`). Ensure MCP responses are also bounded, and that truncation is clearly signaled to the agent.
+
+---
+
+## 7. Radical Seeds
+
+### 7a. Composable Gate Definitions
+
+**Inspiration:** agtx's plugin TOML framework, where a single TOML file defines phases, skills, prompts, and artifacts for an entire development methodology.
+
+**For Assay:** Gate definitions could be composed from reusable building blocks:
 
 ```toml
-# .assay/specs/auth-flow.toml
-name = "auth-flow"
+# .assay/gates/rust-quality.toml (reusable gate template)
+[gate]
+name = "rust-quality"
+criteria = [
+    { name = "format", cmd = "cargo fmt --check" },
+    { name = "lint", cmd = "cargo clippy -- -D warnings" },
+    { name = "test", cmd = "cargo test" },
+    { name = "deny", cmd = "cargo deny check" },
+]
 
-[[criteria]]
-name = "tests-pass"
-description = "All tests pass"
-cmd = "cargo test"
-# level defaults to "required" when omitted
-
-[[criteria]]
-name = "lint-clean"
-description = "No clippy warnings"
-cmd = "cargo clippy -- -D warnings"
-level = "advisory"  # Fails won't block the gate
-
-[[criteria]]
-name = "docs-reviewed"
-description = "API documentation is complete and accurate"
-# No cmd -- agent-evaluated criterion (v0.2)
-level = "required"
+# .assay/specs/auth-flow/gates.toml
+[gate]
+inherit = ["rust-quality"]  # Pull in all criteria from the template
+criteria = [
+    { name = "auth-review", description = "Security review of auth flow", kind = "agent" },
+]
 ```
 
-### UX Implications
+**Categorization:** Differentiator. No spec-driven agent tool offers composable gate templates yet. This would reduce boilerplate significantly for monorepos with many specs sharing common quality checks.
 
-| Scenario | Gate Result | CLI Display | MCP Response |
-|----------|------------|-------------|--------------|
-| All required pass, advisory pass | PASSED | Green checkmark per criterion | `"overall": "passed"` |
-| All required pass, advisory fail | PASSED (with warnings) | Green overall, orange/yellow for advisory | `"overall": "passed_with_warnings"` |
-| Any required fail | FAILED | Red for failed required criteria | `"overall": "failed"` |
-| No required criteria defined | PASSED (trivially) | Warning: "no required criteria" | `"overall": "passed"`, `"warning": "no required criteria"` |
+### 7b. Spec Preconditions
 
-### Features
+**Inspiration:** CI pipeline `needs:` / `depends_on` declarations (GitHub Actions, GitLab CI).
 
-| Feature | Category | Complexity | Dependencies | Notes |
-|---------|----------|------------|-------------|-------|
-| `level` field on Criterion (`required` / `advisory`) | Table Stakes | Low | Criterion type change in assay-types | Default to `required`; `#[serde(default)]` |
-| GateRunSummary includes advisory pass/fail counts | Table Stakes | Low | Summary type changes | Separate counts: `advisory_passed`, `advisory_failed` |
-| Overall gate status enum (Passed, PassedWithWarnings, Failed) | Table Stakes | Low | New enum in assay-types | Three-value rather than boolean |
-| CLI displays advisory failures as warnings (different color) | Table Stakes | Medium | CLI display logic, color support | Orange/yellow for advisory, red for required |
-| MCP response includes overall status + per-criterion level | Table Stakes | Low | Response struct changes | Agents need to know what's blocking vs informational |
-| `deny_unknown_fields` compatibility for `level` | Table Stakes | Low | Serde configuration | Existing specs without `level` must still parse |
-| Stop hook respects enforcement levels | Differentiator | Medium | Plugin hook logic | Only block on required failures |
-| Spec-level default enforcement | Differentiator | Low | Spec type extension | `default_level = "advisory"` on spec |
-| Enforcement override via CLI (`--all-required`) | Differentiator | Low | CLI flag, gate evaluation | Treat everything as required for CI mode |
-| Per-run enforcement level snapshot | Differentiator | Low | Run record extension | Record effective levels at time of run |
-| Three-tier enforcement (required/advisory/informational) | Anti-Feature | -- | -- | SonarQube's experience: warning fatigue. Two tiers is the sweet spot. |
-| Enforcement as separate config (not on criterion) | Anti-Feature | -- | -- | Co-locate enforcement with what it applies to. Separate config files create drift. |
+**For Assay:** Specs could declare dependencies on other specs' gates passing:
 
----
+```toml
+[spec]
+name = "deploy-auth"
+preconditions = ["auth-flow", "db-migration"]  # These specs' gates must pass first
+```
 
-## 3. Agent-Submitted Evaluations (gate_report MCP Tool)
+**Categorization:** Differentiator. This enables workflow DAGs without a separate orchestration layer. However, it adds complexity to the evaluation model (topological sort, cycle detection, partial evaluation).
 
-### How Existing Tools Handle Agent/External Evaluation Submissions
+### 7c. Gate History Summary
 
-**agentic-orchestration (critic pattern):**
-- After each workflow step, a critic agent validates the output
-- Returns structured pass/fail with scoring
-- Retry logic: on fail, step retries up to 3 times; after max retries, escalates to human
-- State persisted in `state.json` and `actions.log`
-- No explicit "submission" API -- the critic is an integral workflow step
-- Confidence: HIGH
+**Inspiration:** SonarQube's quality gate trend dashboard, showing pass/fail rates over time, flaky gate detection, and performance trends.
 
-**rjmurillo/ai-agents (session logs):**
-- Session creates `.agents/sessions/YYYY-MM-DD-session-NN.json`
-- Contains RFC 2119 compliance evidence (tool outputs, file modifications)
-- Checklist completion status for all MUST requirements
-- Exit code semantics (0=success, 1=logic error, 2=config error, 3=external failure, 4=auth failure)
-- Verification via `validate_session_json.py` script
-- Confidence: HIGH
-
-**MCPx-eval (structured evaluation):**
-- Judge prompt structured with `<settings>`, `<prompt>`, `<output>`, `<check>`, `<expected-tools>`
-- Evaluation criteria provided in `<check>` section
-- Judge reviews agent output against criteria and expected tool usage
-- Returns structured assessment
-- Confidence: MEDIUM
-
-**Kiro (specification-driven quality):**
-- Quality baked into spec structure (EARS format: "when X, system shall Y")
-- Hooks enforce quality on triggers (file changes, commits)
-- No explicit submission API -- enforcement is environmental
-- Confidence: MEDIUM
-
-**MCP ecosystem patterns for receiving structured data:**
-- MCP tools receive structured input via JSON Schema-validated `inputSchema`
-- Return `CallToolResult` with content array (text, images, embedded resources)
-- Error responses use `isError: true` with descriptive text
-- No standard "submission" or "report" pattern exists in the MCP spec
-- Confidence: HIGH
-
-### The gate_report Pattern (Novel)
-
-No existing MCP tool implements a "gate_report" submission pattern where an agent evaluates criteria and reports results back to the tool server. This makes Assay's `gate_report` genuinely novel.
-
-The closest analogs are:
-1. agentic-orchestration's critic pattern (but integrated, not submitted externally)
-2. MCPx-eval's judge pattern (but evaluation-focused, not quality-gate-focused)
-3. GitHub's Check Run API (external services submit check results, but via REST, not MCP)
-
-### Proposed gate_report MCP Tool Design
-
+**For Assay:** An MCP tool `gate_history_summary` that returns:
 ```json
 {
-  "name": "gate_report",
-  "description": "Submit an agent evaluation for criteria that require manual/AI assessment. Use this after reviewing code, documentation, or behavior against a criterion's description. Provide your assessment as passed/failed with evidence explaining your reasoning.",
-  "inputSchema": {
-    "type": "object",
-    "properties": {
-      "spec_name": {
-        "type": "string",
-        "description": "Spec being evaluated (filename without .toml)"
-      },
-      "criterion_name": {
-        "type": "string",
-        "description": "Criterion within the spec being assessed"
-      },
-      "passed": {
-        "type": "boolean",
-        "description": "Whether the criterion is met in your assessment"
-      },
-      "reasoning": {
-        "type": "string",
-        "description": "Explanation of your assessment with specific evidence (what you checked, what you found)"
-      },
-      "confidence": {
-        "type": "string",
-        "enum": ["high", "medium", "low"],
-        "description": "How confident you are in this assessment"
-      }
-    },
-    "required": ["spec_name", "criterion_name", "passed", "reasoning"]
-  }
+    "spec_name": "auth-flow",
+    "total_runs": 15,
+    "pass_rate": 0.73,
+    "criteria_stats": [
+        { "name": "cargo-test", "pass_rate": 1.0, "avg_duration_ms": 1500 },
+        { "name": "code-review", "pass_rate": 0.6, "avg_duration_ms": 0, "flaky": true }
+    ],
+    "trend": "improving",
+    "last_5_results": ["pass", "pass", "fail", "pass", "pass"]
 }
 ```
 
-### Agent Evaluation Record
+**Categorization:** Differentiator. Agents could use this to prioritize which criteria to focus on, identify flaky gates, and track quality trends. The data is already available in `.assay/results/` -- this is pure aggregation logic.
 
-```rust
-pub struct AgentEvaluation {
-    /// Which criterion was evaluated.
-    pub spec_name: String,
-    pub criterion_name: String,
-    /// Agent's assessment.
-    pub passed: bool,
-    pub reasoning: String,
-    pub confidence: Option<EvalConfidence>,
-    /// When the evaluation was submitted.
-    pub timestamp: DateTime<Utc>,
-    /// How this evaluation was submitted.
-    pub source: EvalSource,
-}
+---
 
-pub enum EvalConfidence {
-    High,
-    Medium,
-    Low,
-}
+## Feature Categorization
 
-pub enum EvalSource {
-    /// Submitted via gate_report MCP tool.
-    Mcp,
-    /// Submitted via CLI (future).
-    Cli,
+### Table Stakes (Must have for v0.3.0 credibility)
+
+| Feature | Rationale |
+|---------|-----------|
+| CLI correctness (exit codes, validation) | Every CLI tool does this |
+| MCP parameter validation | Prevents agent confusion from silent failures |
+| Types hygiene (`non_exhaustive`, derive audit) | Forward compatibility for plugins |
+| Actionable error messages | Users can't self-help with opaque errors |
+| Output truncation consistency | MCP responses must be bounded |
+| Session record tracking (basic) | Agents need to track what they're working on |
+
+### Differentiators (Unique to Assay, competitive advantage)
+
+| Feature | Rationale |
+|---------|-----------|
+| `gate_evaluate` with diff context | No MCP tool does single-invocation AI code review against spec criteria |
+| Composable gate definitions (radical seed) | Reduces boilerplate, no competitor offers this |
+| Gate history summary (radical seed) | Agents can use trend data for prioritization |
+| Spec preconditions (radical seed) | Workflow DAGs without external orchestration |
+| Minimal TUI gate viewer | Visual feedback loop for spec-driven development |
+
+### Anti-features (Avoid for v0.3.0)
+
+| Feature | Rationale |
+|---------|-----------|
+| Full kanban TUI (agtx-style) | Over-scoped; Assay is a quality gate tool, not a project manager |
+| SQLite for session storage | JSON files are sufficient for single-project scope; SQLite adds dependency and migration burden |
+| tmux-based agent orchestration | `--print` mode is simpler and more reliable for evaluation; tmux is for interactive sessions |
+| Multi-agent registry with per-phase dispatch | YAGNI for v0.3.0; single evaluator command is sufficient |
+| Worktree init scripts | Adds configuration surface without clear value for quality gate workflows |
+| Agent config directory auto-copy (agtx-style) | Assay's `.assay/` dir is the only config needed in worktrees |
+| Plugin framework (agtx-style TOML plugins) | Premature abstraction; composable gate definitions are the right first step |
+| PR lifecycle management | Out of scope; Assay evaluates quality, not manages PRs |
+| Cyclic workflow phases | Assay's workflow is linear: spec -> gate -> pass/fail, not a kanban loop |
+
+---
+
+## Implementation Priority Recommendations
+
+### Phase 1: Foundation (Quick Wins + Session Records)
+1. CLI correctness and error message improvements
+2. MCP parameter validation hardening
+3. Types hygiene audit
+4. Output truncation for MCP responses
+5. `SessionRecord` type in `assay-types`, persistence in `assay-core`
+
+### Phase 2: Core Features (Worktrees + Headless Evaluation)
+1. `assay worktree create/remove/status` CLI commands
+2. MCP tools: `worktree_create`, `worktree_remove`
+3. Diff context assembly (`git diff` parsing and structuring)
+4. `gate_evaluate` MCP tool (headless Claude Code launcher + diff context + auto-finalize)
+
+### Phase 3: Visualization (TUI Viewer)
+1. Table-based gate results viewer with pass/fail coloring
+2. Detail pane for selected criterion (stdout/stderr/evidence)
+3. Summary footer with enforcement breakdown
+4. Load from run history or live evaluation
+
+### Phase 4: Seeds (Radical Features for v0.4.0 Preparation)
+1. Composable gate definitions (`inherit` in gates.toml)
+2. Gate history summary aggregation
+3. Spec preconditions (dependency declaration, no execution yet)
+
+---
+
+## Appendix A: agtx Source Code Analysis
+
+### Key Files Examined
+- `src/git/worktree.rs` -- Full worktree lifecycle (create, initialize, remove, exists check)
+- `src/agent/mod.rs` -- Agent registry, `build_interactive_command()`, `build_spawn_args()`, `--print` mode dispatch
+- `src/agent/operations.rs` -- `AgentOperations` trait, `generate_text()` headless invocation, `AgentRegistry` pattern
+- `src/db/models.rs` -- `Task`, `Project`, `RunningAgent`, `PhaseStatus` data models
+- `src/db/schema.rs` -- SQLite schema (tasks, projects, running_agents tables), migration pattern
+- `src/tmux/operations.rs` -- `TmuxOperations` trait, window/session management, pane capture
+
+### Architecture Pattern
+```
+agtx TUI (ratatui) -> Board State -> Database (SQLite)
+                                  -> Git Operations (worktrees, branches)
+                                  -> Tmux Operations (sessions, windows)
+                                  -> Agent Operations (launch, generate_text)
+```
+
+Trait-based abstractions (`AgentOperations`, `TmuxOperations`, `GitOperations`) with `mockall` for testing. Production implementations dispatch to CLI commands (`git`, `tmux`, `claude`). This is a clean architecture but heavier than Assay needs.
+
+### Key Constants
+- Agent server name: `agtx` (tmux `-L agtx`)
+- Agent config dirs: `.claude/`, `.gemini/`, `.codex/`, `.github/agents/`, `.config/opencode/`
+- Branch naming: `task/<slug>`
+- Database path: `~/Library/Application Support/agtx/projects/<path-hash>.db`
+
+## Appendix B: Claude Code `--print` Mode Reference
+
+### Invocation Patterns
+```bash
+# Basic (text output)
+claude -p "<prompt>"
+
+# JSON output with session_id
+claude -p "<prompt>" --output-format json
+
+# Streaming NDJSON
+claude -p "<prompt>" --output-format stream-json
+
+# Session continuation
+claude -p "<follow-up>" --resume "<session_id>"
+claude -p "<follow-up>" --continue  # most recent session
+
+# With JSON schema for structured output
+claude -p "<prompt>" --output-format json --json-schema '<schema>'
+```
+
+### Output Structure (JSON mode)
+```json
+{
+    "result": "...",
+    "session_id": "abc123",
+    // additional metadata
 }
 ```
 
-### Integration with Gate Runs
+### Relevance to Assay
+- `--print` + `--output-format json` is the interface for `gate_evaluate`
+- `--json-schema` can enforce structured evaluation responses
+- `session_id` enables multi-turn evaluation if initial assessment is ambiguous
+- `--resume` enables "explain this failure" follow-ups
+- No tmux, no daemon, no persistent process -- clean request-response
 
-When `gate_run` encounters a criterion without `cmd`:
-- **v0.1 behavior (current):** Skipped, counted in `skipped` total
-- **v0.2 behavior (proposed):** Check if a recent `gate_report` exists for this criterion
-  - If yes and passed: count as passed
-  - If yes and failed: count as failed with agent's reasoning as evidence
-  - If no report: count as "pending" (new status, distinct from skipped)
+## Appendix C: ratatui Patterns for Gate Results Viewer
 
-This creates the dual-track evaluation model: deterministic gates auto-evaluate, agent-evaluated gates require explicit submission.
+### Recommended Widget Stack
+1. **Table** -- Main results grid (criterion name, status, enforcement, duration)
+2. **Paragraph** -- Detail pane for selected criterion (stdout, stderr, evidence, reasoning)
+3. **Block** -- Borders and titles for visual structure
+4. **Scrollbar** -- For long result lists
+5. **Layout** -- Vertical split: header + table + detail + footer
 
-### Features
+### State Management
+- `TableState` for selection and scroll position
+- Single `App` struct with `should_exit`, `table_state`, `record: GateRunRecord`
+- Event loop: `terminal.draw()` + `event::read()` + key dispatch
 
-| Feature | Category | Complexity | Dependencies | Notes |
-|---------|----------|------------|-------------|-------|
-| `gate_report` MCP tool (submit evaluation) | Table Stakes | Medium | AgentEvaluation type, run persistence | Core v0.2 differentiator |
-| AgentEvaluation type in assay-types | Table Stakes | Low | Serde + JsonSchema derives | Flat struct, no nested objects |
-| Evaluation persistence (JSON file per eval) | Table Stakes | Medium | File I/O in assay-core | Store in `.assay/evaluations/` |
-| gate_run integrates agent evaluations | Table Stakes | Medium | Evaluation lookup, gate evaluation changes | Check for recent reports when criterion has no cmd |
-| "pending" criterion status (no cmd, no report) | Table Stakes | Low | CriterionStatus changes | Distinct from "skipped" |
-| Confidence field on evaluations | Differentiator | Low | EvalConfidence enum | Agents self-report uncertainty |
-| Evaluation staleness (expire after N minutes/commits) | Differentiator | Medium | Timestamp comparison, optional git integration | Prevent stale evaluations from persisting |
-| `assay eval list` CLI command | Differentiator | Low | Evaluation file scanning | Show recent evaluations |
-| Evaluation history per criterion | Differentiator | Low | File naming convention | Track evaluation changes over time |
-| `prompt` field on Criterion (LLM-evaluated) | Anti-Feature (v0.2) | High | LLM API dependency, subprocess | v0.3+ feature; gate_report is the v0.2 mechanism |
-| Automated re-evaluation triggers | Anti-Feature | High | File watching, event system | YAGNI; agent decides when to re-evaluate |
-| Multi-agent consensus (multiple evaluations per criterion) | Anti-Feature (v0.2) | High | Aggregation logic | Interesting but complex; defer |
-
----
-
-## 4. Foundation Hardening
-
-### What Quality Gate Tools Need for Production Readiness
-
-Research across CI/CD tools, Rust CLI best practices, and the existing open issues inventory reveals consistent hardening requirements.
-
-**Error Message Quality (from quality gate UX research):**
-- Actionable: Tell the user what went wrong AND what to do about it
-- Contextual: Include file paths, line numbers, command that failed
-- Structured: Machine-parseable for agents, human-readable for developers
-- SonarQube: "detailed dashboards provide actionable insights"
-- JetBrains Qodana: "comprehensive reports highlighting potential issues"
-
-**Test Coverage (from Rust ecosystem):**
-- cargo-tarpaulin or grcov for coverage measurement
-- Coverage targets: 80%+ for libraries, 70%+ for CLI (integration tests)
-- Focus on error path coverage (the code that matters most is the code that fails)
-- nextest: "even at default Zstandard level 3, compression is very efficient" -- they test compression
-
-**Serde Hygiene (from compression brainstorm, already identified):**
-- `#[serde(skip_serializing_if)]` on all Option/String/Vec fields
-- `#[serde(deny_unknown_fields)]` on all input types
-- `#[serde(default)]` on optional fields for forward compatibility
-- Estimated 10-30% token savings on MCP responses
-
-**Error Type Completeness (from existing open issues):**
-- The `AssayError` enum needs variants for all failure modes
-- Error context chaining via thiserror `#[source]`
-- `#[non_exhaustive]` already present (good)
-
-### Existing Open Issues Relevant to Hardening
-
-From `.planning/issues/open/`:
-- `2026-03-01-core-error-types.md` -- Error type refinements
-- `2026-03-01-cli-error-propagation.md` -- CLI error handling
-- `2026-03-01-test-coverage-gaps-phase3.md` -- Phase 3 test gaps
-- `2026-03-01-test-coverage-gaps-phase6.md` -- Phase 6 test gaps
-- `2026-03-01-type-invariant-enforcement.md` -- Type safety improvements
-- `2026-03-01-error-ergonomics.md` -- Error UX improvements
-- `2026-03-01-serde-hygiene.md` (from compression brainstorm) -- Serialization cleanup
-- `2026-03-02-gate-pr-review-suggestions.md` -- Gate module quality improvements
-
-### Hardening Checklist
-
-| Area | Current State | v0.2 Target | Notes |
-|------|--------------|-------------|-------|
-| Error messages | Functional but inconsistent | All errors include context + suggestion | "Did you mean...?" for spec not found |
-| Test coverage | Good for happy paths, gaps in error paths | 80%+ overall, all error paths tested | Pipe read errors, thread panics, spawn failures |
-| Serde hygiene | Mostly done (`skip_serializing_if` present) | 100% coverage on all public types | Audit every struct in assay-types |
-| Type invariants | `deny_unknown_fields` on most types | All input types validated | Trim-then-validate for all string fields |
-| CLI error display | color-eyre | Consistent formatting, no raw panics | Error codes for scripting |
-| MCP error responses | `isError: true` with text | Structured error codes + suggestions | Agents need to know which errors are retryable |
-
-### Features
-
-| Feature | Category | Complexity | Dependencies | Notes |
-|---------|----------|------------|-------------|-------|
-| Audit and fix all error messages (context + suggestion) | Table Stakes | Medium | AssayError variants | "spec `foo` not found in .assay/specs/ -- did you mean `foo-bar`?" |
-| Test error paths: pipe read, thread panic, spawn failure | Table Stakes | Medium | Test infrastructure | From gate PR review suggestions |
-| Test truncation with multi-byte UTF-8 | Table Stakes | Low | Test case | From gate PR review suggestions |
-| Serde hygiene audit on all public types | Table Stakes | Low | Mechanical review | skip_serializing_if, default, deny_unknown_fields |
-| MCP error codes (retryable vs permanent) | Table Stakes | Medium | Error classification | Agents need to know if retry will help |
-| CLI exit codes (0=ok, 1=gate-fail, 2=config-error) | Table Stakes | Low | CLI main() changes | Standard Unix convention |
-| `GateRunSummary.total` convenience field | Table Stakes | Low | Type change | passed + failed + skipped |
-| CriterionStatus enum (Passed/Failed/Skipped) | Differentiator | Low | Type redesign | Stronger than Option<GateResult> |
-| Fuzzy spec name matching ("did you mean...?") | Differentiator | Medium | String similarity (strsim crate) | High UX value for agents |
-| Error telemetry / diagnostics dump | Anti-Feature | Medium | Privacy concerns | YAGNI for local tool |
-| Automated error reporting | Anti-Feature | -- | -- | Local tool, no telemetry |
-
----
-
-## 5. Agent Workflow Quality Enforcement Patterns
-
-### How Agent-First Tools Enforce Quality
-
-**agtx (artifact-based enforcement):**
-- Phase completion requires artifact file existence (e.g., `.agtx/plan.md`)
-- Polling-based detection: spinner shows checkmark when artifact appears
-- No structured quality assessment -- binary "artifact exists or not"
-- Worktree isolation per task prevents cross-contamination
-- Confidence: HIGH
-
-**Kiro (spec-driven enforcement):**
-- EARS format requirements ("when X, system shall Y") enable formal verification
-- Hooks run automatically on triggers (file changes, commits)
-- Steering docs define standards -- enforced by agent behavior, not runtime gates
-- Three autonomous agents: coding, security, DevOps -- each with quality focus
-- Confidence: HIGH
-
-**rjmurillo/ai-agents (defense-in-depth):**
-- Four layers: protocol docs, PreToolUse hooks, git hooks, CI/CD
-- Routing gates embedded in agent instructions (cannot be skipped unlike `--no-verify`)
-- Transcript evidence requirements: agent must show tool outputs proving compliance
-- Session validation script produces JSON compliance reports
-- Confidence: HIGH
-
-**Addy Osmani's "Agents Need a Manager" pattern:**
-- Mandatory test execution: agents must run tests and include output
-- Structured PR packets: changes, reasoning, files, tests, risks
-- Two-agent pattern: implementer + reviewer
-- Delegation levels: fully delegate / delegate with checkpoints / retain human ownership
-- Confidence: HIGH
-
-**agentic-orchestration (critic loop):**
-- Critic validates structure + semantic quality after each step
-- Pass/fail scoring with automatic retry (up to 3 attempts)
-- Human approval gates for high-impact decisions (architecture, tech stack)
-- Resumable execution from `state.json` -- no lost work on failure
-- Confidence: HIGH
-
-### Patterns Relevant to Assay v0.2
-
-| Pattern | Applicable? | How It Maps to Assay |
-|---------|------------|---------------------|
-| Artifact-based completion (agtx) | Partially | FileExists gate already exists; could extend to "spec completion = all gates pass" |
-| Hooks as enforcement (Kiro, rjmurillo) | Yes | PostToolUse and Stop hooks in Claude Code plugin |
-| Transcript evidence (rjmurillo) | Yes | gate_report reasoning field IS transcript evidence |
-| Critic + retry (agentic-orchestration) | Future | v0.3+ with LLM integration; v0.2 uses manual agent submission |
-| Two-agent pattern (Osmani) | Future | Assay could support reviewer agent as evaluator; not v0.2 scope |
-| Structured PR packets (Osmani) | Yes | GateRunSummary IS a structured quality report |
-| Resumable execution (agentic-orchestration) | Partially | Run history enables "resume from last gate" pattern |
-
-### Features
-
-| Feature | Category | Complexity | Dependencies | Notes |
-|---------|----------|------------|-------------|-------|
-| Stop hook blocks on required gate failures | Table Stakes | Medium | Plugin hook, gate_run integration | Core agent enforcement mechanism |
-| PostToolUse hook runs gates after code changes | Differentiator | Medium | Plugin hook, trigger detection | Auto-quality-check on file writes |
-| `gate_status` MCP tool (current pass/fail state) | Differentiator | Medium | Run history, evaluation persistence | Agents query "am I done?" without re-running |
-| Run history enables "last known state" queries | Differentiator | Low | Run persistence | "Did tests pass last time?" |
-| Structured quality summary in gate_run response | Table Stakes | Low | Already exists | GateRunSummary is the structured PR packet |
-| Agent evaluation as transcript evidence | Differentiator | Low | gate_report reasoning field | Agent must explain its assessment |
-| Auto-retry on gate failure (re-run after fix) | Anti-Feature (v0.2) | High | Workflow orchestration | Assay is a quality tool, not an orchestrator |
-| Multi-agent coordination | Anti-Feature (v0.2) | High | Agent management | Orchestration is agtx's job, not Assay's |
-| Workflow state machine | Anti-Feature (v0.2) | High | State management | Deferred; spec-driven, not workflow-driven |
-
----
-
-## Cross-Cutting Themes
-
-### 1. Two-Tier Enforcement Is The Industry Standard
-
-SonarQube tried three tiers (pass/warning/fail) and removed warnings. GitLab CI uses two tiers (required + advisory). GitHub Actions uses two tiers (required + non-required). Every tool that shipped warnings eventually regretted it. Assay should ship `required` (default) and `advisory`, nothing more.
-
-### 2. File-Based History Beats Databases for Local Tools
-
-Every local-first tool (nextest, dbt, agentic-orchestration) uses JSON/NDJSON files. Every server tool (SonarQube) uses a database. Assay is a local-first tool. JSON files in `.assay/runs/` is the correct choice.
-
-### 3. Agent Evaluation Is Genuinely Novel
-
-No MCP tool in the ecosystem implements a "gate_report" submission pattern. The closest analogs are integrated critic loops (agentic-orchestration) and evaluation frameworks (MCPx-eval). Assay's gate_report creates a new pattern: **externalized quality assessment with structured evidence, submitted by the same agent that did the work**. This is the v0.2 differentiator.
-
-### 4. Hardening Is Not Optional
-
-The existing open issues inventory contains 13+ hardening items. Every quality gate tool's credibility depends on its own quality. An error-prone quality tool is a contradiction. v0.2 must ship hardening alongside new features, not defer it.
-
-### 5. Enforcement Must Be Environmental, Not Trust-Based
-
-The rjmurillo/ai-agents framework's key insight: "labels like 'MANDATORY' are insufficient. Each requirement MUST have a verification mechanism." For Assay, this means:
-- Required gates must actually block (Stop hook, CLI exit code)
-- Advisory failures must be visually distinct (color, status text)
-- Agent evaluations must include reasoning (not just pass/fail)
-- Absence of evaluation is "pending," not "passed"
-
----
-
-## Dependency Map
-
-```
-Run History Persistence ────────────────────────────────┐
-     │                                                   │
-     ├─── GateRunRecord type (assay-types)               │
-     │         │                                         │
-     │         └─── Run file I/O (assay-core)            │
-     │               │                                   │
-     ├─── gate_run auto-persists ◄───────────────────────┤
-     │                                                   │
-     ▼                                                   │
-Enforcement Levels ──────────────────────────────────┐   │
-     │                                               │   │
-     ├─── `level` field on Criterion                 │   │
-     │         │                                     │   │
-     │         ├─── GateRunSummary changes            │   │
-     │         │                                     │   │
-     │         └─── OverallGateStatus enum            │   │
-     │               │                               │   │
-     │               ├─── CLI display (colors)        │   │
-     │               └─── MCP response changes        │   │
-     │                                               │   │
-     ▼                                               │   │
-Agent Evaluation (gate_report) ──────────────────┐   │   │
-     │                                           │   │   │
-     ├─── AgentEvaluation type                   │   │   │
-     │         │                                 │   │   │
-     │         ├─── Evaluation persistence        │   │   │
-     │         │                                 │   │   │
-     │         └─── gate_run integrates evals     │   │   │
-     │                                           │   │   │
-     ▼                                           │   │   │
-Hardening ◄──────────────────────────────────────┘───┘───┘
-     │    (applies to all above)
-     ├─── Error message audit
-     ├─── Test coverage for error paths
-     ├─── Serde hygiene audit
-     ├─── MCP error codes
-     └─── CLI exit codes
-```
-
-### Recommended Phase Ordering
-
-1. **Hardening first** -- Fix error types, test gaps, serde hygiene. This builds confidence for the type changes that follow.
-2. **Enforcement levels** -- Add `level` field to Criterion, update GateRunSummary. Small type change, big behavioral impact.
-3. **Run history** -- Add GateRunRecord, persistence, CLI commands. Depends on enforcement levels for correct status recording.
-4. **Agent evaluation** -- Add gate_report MCP tool, AgentEvaluation type, integration with gate_run. Depends on run history for persistence pattern.
-
----
-
-## Risk Assessment
-
-| Risk | Likelihood | Impact | Mitigation |
-|------|-----------|--------|------------|
-| `level` field breaks existing TOML specs | Low | Medium | `#[serde(default = "default_required")]` -- omitted field = required |
-| Agent evaluations are unreliable/hallucinated | Medium | Medium | Confidence field + reasoning requirement + staleness expiry |
-| Run history grows unbounded | Low | Low | Cache limits (count/size), or `.gitignore` the runs dir |
-| `gate_report` UX confuses agents | Medium | Medium | Clear tool description, schema validation, examples in SKILL.md |
-| Hardening scope creep delays features | Medium | Medium | Fixed hardening budget (e.g., 1 week), prioritize by open issues |
-| Breaking changes to GateRunSummary serialization | Low | Medium | Additive changes only (new fields with defaults), no field removals |
-
----
-
-## Summary: v0.2.0 Feature Set
-
-### Table Stakes (Must Ship)
-
-1. **Enforcement levels** -- `level` field on Criterion (required/advisory), OverallGateStatus enum
-2. **Run history persistence** -- JSON file per run in `.assay/runs/`, GateRunRecord type
-3. **gate_report MCP tool** -- Agent submits structured evaluation for non-command criteria
-4. **AgentEvaluation type** -- Flat struct with passed/reasoning/confidence/timestamp
-5. **gate_run integrates evaluations** -- Non-command criteria check for recent agent reports
-6. **"pending" criterion status** -- Distinct from "skipped" for unevaluated criteria
-7. **Error message audit** -- All errors include context + suggestion
-8. **Test error paths** -- Pipe read, thread panic, spawn failure, multi-byte truncation
-9. **Serde hygiene audit** -- 100% coverage on public types
-10. **CLI exit codes** -- 0=ok, 1=gate-fail, 2=config-error
-11. **`assay history` CLI command** -- List recent runs
-12. **MCP response includes enforcement level** -- Agents know what's blocking
-
-### Differentiators (Should Ship If Time Allows)
-
-1. **gate_history MCP tool** -- Agents query "did this pass before?"
-2. **gate_status MCP tool** -- Current pass/fail state without re-running
-3. **Evaluation staleness** -- Agent evaluations expire after N minutes/commits
-4. **Git ref capture per run** -- Correlate runs with commits
-5. **Fuzzy spec name matching** -- "did you mean...?" for typos
-6. **CriterionStatus enum** -- Replace Option<GateResult> with Passed/Failed/Skipped/Pending
-7. **Stop hook respects enforcement levels** -- Only block on required failures
-8. **PostToolUse hook auto-gates** -- Auto-quality-check after code changes
-9. **Confidence field on evaluations** -- Agents self-report uncertainty
-10. **CLI `--all-required` flag** -- Treat everything as required for CI mode
-
-### Anti-Features (Explicitly Out of Scope for v0.2)
-
-1. **SQLite storage** -- Overkill for local file-based tool
-2. **NDJSON with compression** -- Premature optimization; JSON-per-run sufficient
-3. **Three-tier enforcement** -- Warning fatigue; two tiers is the industry lesson
-4. **`prompt` field on Criterion** -- LLM API dependency; gate_report is the v0.2 mechanism
-5. **Automated re-evaluation triggers** -- Agent decides when to re-evaluate
-6. **Multi-agent consensus** -- Multiple evaluations per criterion is v0.3+ complexity
-7. **Workflow state machine** -- Assay is a quality tool, not an orchestrator
-8. **Auto-retry on gate failure** -- Orchestration is agtx's job
-9. **Run diffing** -- Agent context eviction makes delta refs unreliable
-10. **Error telemetry** -- Local tool, no phone-home
-
----
-
-## Sources
-
-- [SonarQube Quality Gates (2025.3)](https://docs.sonarsource.com/sonarqube-server/2025.3/quality-standards-administration/managing-quality-gates/introduction-to-quality-gates/)
-- [SonarQube Warning Threshold Discussion](https://community.sonarsource.com/t/quality-gate-condition-warning/43998)
-- [GitLab CI allow_failure](https://www.bestdevops.com/gitlab-pipeline-allow_failure-what-is-allow_failure-in-gitlab-ci-cd/)
-- [GitHub Actions Status Checks](https://docs.github.com/articles/about-status-checks)
-- [GitHub Warning Status Discussion](https://github.com/orgs/community/discussions/11592)
-- [GitHub Required Checks for Conditional Jobs](https://devopsdirective.com/posts/2025/08/github-actions-required-checks-for-conditional-jobs/)
-- [nextest Recording Runs](https://nexte.st/docs/design/architecture/recording-runs/)
-- [dbt Run Results JSON](https://docs.getdbt.com/reference/artifacts/run-results-json)
-- [agtx (GitHub)](https://github.com/fynnfluegge/agtx)
-- [agentic-orchestration (GitHub)](https://github.com/gbFinch/agentic-orchestration)
-- [rjmurillo/ai-agents Quality Gates](https://deepwiki.com/rjmurillo/ai-agents/7.1-skill-architecture-and-frontmatter)
-- [Kiro Spec-Driven Development (AWS)](https://www.infoq.com/news/2025/08/aws-kiro-spec-driven-agent/)
-- [Addy Osmani: Your AI Coding Agents Need a Manager](https://addyosmani.com/blog/coding-agents-manager/)
-- [MCPx-eval Evaluation Framework](https://docs.mcp.run/blog/2025/03/03/introducing-mcpx-eval/)
-- [MCP-Bench: Benchmarking Tool-Using Agents](https://arxiv.org/pdf/2508.20453)
-- [Augment Code: Autonomous Quality Gates](https://www.augmentcode.com/guides/autonomous-quality-gates-ai-powered-code-review)
-- [Quality Gates in Software Development (CEUR)](https://ceur-ws.org/Vol-3845/paper06.pdf)
-- [Rust Error Handling Guide 2025](https://markaicode.com/rust-error-handling-2025-guide/)
-- [cargo-tarpaulin (Rust Coverage)](https://github.com/xd009642/tarpaulin)
-- [NDJSON Serialization with Serde](https://users.rust-lang.org/t/serializing-to-ndjson-with-serde/35330)
-- [ndjson-stream Crate](https://docs.rs/ndjson-stream)
-
----
-
-*Research completed: 2026-03-02*
+### Color Scheme (Pass/Fail)
+- Pass: green foreground (`Color::Green`)
+- Fail + Required: red foreground + bold (`Color::Red` + `Modifier::BOLD`)
+- Fail + Advisory: yellow foreground (`Color::Yellow`)
+- Skipped: dark gray (`Color::DarkGray`)
+- Selected row: reversed or background highlight
+- Alternating row backgrounds for readability
