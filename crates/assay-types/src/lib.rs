@@ -1,3 +1,12 @@
+//! Shared serializable types for the Assay development kit.
+//!
+//! This crate defines the core data structures used across all Assay tools:
+//! specs, gates, reviews, workflows, configuration, and supporting types.
+//! All types derive `Serialize`/`Deserialize` (serde) and most derive
+//! `JsonSchema` (schemars) for automatic schema generation.
+
+#![deny(missing_docs)]
+
 pub mod checkpoint;
 pub mod context;
 pub mod criterion;
@@ -57,7 +66,9 @@ inventory::submit! {
 /// A quality gate that must pass before work proceeds.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct Gate {
+    /// Name of this quality gate.
     pub name: String,
+    /// Whether this gate passed.
     pub passed: bool,
 }
 
@@ -71,8 +82,11 @@ inventory::submit! {
 /// A review of completed work against a spec.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct Review {
+    /// Name of the spec that was reviewed.
     pub spec_name: String,
+    /// Whether the review approved the work.
     pub approved: bool,
+    /// Reviewer comments. Omitted from serialized output when empty.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub comments: Vec<String>,
 }
@@ -87,9 +101,12 @@ inventory::submit! {
 /// A workflow combining specs, gates, and reviews into a development pipeline.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct Workflow {
+    /// Name of this workflow.
     pub name: String,
+    /// Specs included in this workflow. Omitted from serialized output when empty.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub specs: Vec<Spec>,
+    /// Gates included in this workflow. Omitted from serialized output when empty.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub gates: Vec<Gate>,
 }

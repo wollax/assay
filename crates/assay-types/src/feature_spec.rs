@@ -12,12 +12,18 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum SpecStatus {
+    /// Initial authoring state; not yet ready for review.
     #[default]
     Draft,
+    /// Submitted for review but not yet approved.
     Proposed,
+    /// Approved and scheduled for implementation.
     Planned,
+    /// Currently being implemented.
     InProgress,
+    /// Implementation verified against acceptance criteria.
     Verified,
+    /// No longer active; superseded or removed.
     Deprecated,
 }
 
@@ -38,9 +44,12 @@ impl std::fmt::Display for SpecStatus {
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum Obligation {
+    /// Mandatory requirement (MUST/SHALL in RFC 2119).
     #[default]
     Shall,
+    /// Recommended requirement (SHOULD in RFC 2119).
     Should,
+    /// Optional requirement (MAY in RFC 2119).
     May,
 }
 
@@ -58,10 +67,14 @@ impl std::fmt::Display for Obligation {
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum Priority {
+    /// Non-negotiable for the current release.
     #[default]
     Must,
+    /// Important but not critical; can be deferred if necessary.
     Should,
+    /// Desirable if time and resources permit.
     Could,
+    /// Explicitly excluded from the current release.
     Wont,
 }
 
@@ -80,10 +93,14 @@ impl std::fmt::Display for Priority {
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum VerificationMethod {
+    /// Verified by automated or manual tests.
     #[default]
     Test,
+    /// Verified by static analysis or formal review.
     Analysis,
+    /// Verified by visual or manual inspection.
     Inspection,
+    /// Verified by running the feature and observing behavior.
     Demonstration,
 }
 
@@ -102,8 +119,11 @@ impl std::fmt::Display for VerificationMethod {
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum AcceptanceCriterionType {
+    /// Given/When/Then format (BDD-style).
     Gherkin,
+    /// Easy Approach to Requirements Syntax format.
     Ears,
+    /// Free-form plain text.
     #[default]
     Plain,
 }
@@ -291,10 +311,14 @@ pub struct Dependency {
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum ImpactLevel {
+    /// Minimal impact on the feature or project.
     Low,
+    /// Moderate impact; workarounds may exist.
     #[default]
     Medium,
+    /// Significant impact on functionality or timeline.
     High,
+    /// Severe impact; may block the entire feature.
     Critical,
 }
 
@@ -313,9 +337,12 @@ impl std::fmt::Display for ImpactLevel {
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum LikelihoodLevel {
+    /// Unlikely to occur.
     Low,
+    /// May occur under certain conditions.
     #[default]
     Medium,
+    /// Likely to occur without mitigation.
     High,
 }
 
