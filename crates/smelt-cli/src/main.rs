@@ -25,6 +25,13 @@ struct Cli {
 enum Commands {
     /// Initialize a new Smelt project in the current repository
     Init,
+
+    /// Manage worktrees for agent sessions
+    #[command(visible_alias = "wt")]
+    Worktree {
+        #[command(subcommand)]
+        command: commands::worktree::WorktreeCommands,
+    },
 }
 
 async fn run() -> anyhow::Result<i32> {
@@ -56,6 +63,23 @@ async fn run() -> anyhow::Result<i32> {
 
     match cli.command {
         Some(Commands::Init) => commands::init::execute(&repo_root),
+        Some(Commands::Worktree { command }) => {
+            let git = GitCli::new(git_binary, repo_root.clone());
+            match command {
+                commands::worktree::WorktreeCommands::Create {
+                    name,
+                    base,
+                    dir_name,
+                    task,
+                } => {
+                    commands::worktree::execute_create(git, repo_root, &name, &base, dir_name, task)
+                        .await
+                }
+                commands::worktree::WorktreeCommands::List { verbose } => {
+                    commands::worktree::execute_list(git, repo_root, verbose).await
+                }
+            }
+        }
         None => {
             let smelt_dir = repo_root.join(".smelt");
             if smelt_dir.exists() {
