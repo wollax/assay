@@ -45,15 +45,15 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SESS-01 | — | Pending |
-| SESS-02 | — | Pending |
-| SESS-03 | — | Pending |
-| SESS-04 | — | Pending |
-| MERGE-01 | — | Pending |
-| MERGE-02 | — | Pending |
-| MERGE-03 | — | Pending |
-| MERGE-04 | — | Pending |
-| ORCH-01 | — | Pending |
-| ORCH-02 | — | Pending |
-| ORCH-03 | — | Pending |
-| ORCH-04 | — | Pending |
+| SESS-01 | Phase 2: Worktree Manager | Pending |
+| SESS-02 | Phase 3: Session Manifest & Scripted Sessions | Pending |
+| SESS-03 | Phase 10: Real Agent Sessions | Pending |
+| SESS-04 | Phase 3: Session Manifest & Scripted Sessions | Pending |
+| MERGE-01 | Phase 4: Sequential Merge | Pending |
+| MERGE-02 | Phase 7: AI Conflict Resolution | Pending |
+| MERGE-03 | Phase 6: Human Fallback Resolution | Pending |
+| MERGE-04 | Phase 5: Merge Order Intelligence | Pending |
+| ORCH-01 | Phase 1: Project Bootstrap & Git Operations Layer | Pending |
+| ORCH-02 | Phase 9: Session Summary & Scope Isolation | Pending |
+| ORCH-03 | Phase 9: Session Summary & Scope Isolation | Pending |
+| ORCH-04 | Phase 8: Orchestration Plan & Task Graph | Pending |
