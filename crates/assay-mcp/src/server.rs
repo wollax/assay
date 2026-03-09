@@ -1926,6 +1926,7 @@ cmd = "echo ok"
                     enforcement: None,
                     kind: None,
                     prompt: None,
+                    requirements: vec![],
                 }],
             },
         };
@@ -1954,6 +1955,7 @@ cmd = "echo ok"
                         enforcement: None,
                         kind: None,
                         prompt: None,
+                        requirements: vec![],
                     },
                     assay_types::Criterion {
                         name: "code-review".to_string(),
@@ -1964,6 +1966,7 @@ cmd = "echo ok"
                         enforcement: None,
                         kind: Some(CriterionKind::AgentReport),
                         prompt: Some("Review for issues".to_string()),
+                        requirements: vec![],
                     },
                 ],
             },
