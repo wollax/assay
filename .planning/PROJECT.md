@@ -121,14 +121,11 @@ The `assay-mcp` crate provides MCP server functionality. Future crates may inclu
 **Target features:**
 
 - Worktree Manager: git worktree lifecycle for agent isolation
-- Claude Code Launcher: headless `--print` mode agent launching in worktrees
-- Session Record: minimal tracking linking worktrees, agents, and gate runs
-- Gate Evaluate: independent (non-self) evaluation with context isolation and diff assembly
-- Minimal TUI: interactive gate results viewer
 - Quick wins: CLI correctness, MCP validation, types hygiene, error messages, output truncation
-- Radical seeds: composable gate definitions, spec preconditions, gate history summary
 
-**Workflow target:** Headless sequential (agent runs once → gates run after → human reviews). Full interactive orchestration is v0.4.0.
+**Deferred to v0.4.0+:** Claude Code launcher, session record, gate_evaluate, TUI viewer, composable gates, spec preconditions, gate history summary.
+
+**Workflow target:** Worktree foundation + quality hardening. Headless sequential orchestration is v0.4.0.
 
 ## Current State
 
@@ -170,21 +167,21 @@ The `assay-mcp` crate provides MCP server functionality. Future crates may inclu
 ### Active
 
 - [ ] Git worktree lifecycle management (create, list, status, cleanup) — v0.3.0
-- [ ] Claude Code headless launcher (`--print` mode in worktrees) — v0.3.0
-- [ ] Session record persistence linking worktrees, agents, and gate runs — v0.3.0
-- [ ] Independent gate evaluation with context isolation and diff assembly — v0.3.0
-- [ ] Minimal TUI gate results viewer — v0.3.0
 - [ ] CLI correctness sprint (NO_COLOR, help duplication, enforcement duplication) — v0.3.0
 - [ ] MCP parameter validation with actionable error messages — v0.3.0
 - [ ] Types hygiene Tier A (Eq derives, Display impls, doc comments) — v0.3.0
 - [ ] Gate/spec error message improvements — v0.3.0
 - [ ] Gate output truncation with head+tail capture — v0.3.0
-- [ ] Composable gate definitions (`gate.extends`) — v0.3.0
-- [ ] Spec preconditions section — v0.3.0
-- [ ] Gate history summary with pass/fail rates — v0.3.0
 
 ### Future
 
+- [ ] Claude Code headless launcher (`--print` mode in worktrees)
+- [ ] Session record persistence linking worktrees, agents, and gate runs
+- [ ] Independent gate evaluation with context isolation and diff assembly
+- [ ] Minimal TUI gate results viewer
+- [ ] Composable gate definitions (`gate.extends`)
+- [ ] Spec preconditions section
+- [ ] Gate history summary with pass/fail rates
 - [ ] tmux session/pane management for interactive agent lifecycle
 - [ ] MCP-integrated iterative workflow (agents call gates during implementation)
 - [ ] Merge-back workflow: feature branch creation, conflict resolution, gate enforcement
