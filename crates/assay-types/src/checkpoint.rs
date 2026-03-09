@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 /// Captures which agents are active, what tasks are in progress,
 /// and the health of the context window. Written to `.assay/checkpoints/`
 /// as JSON frontmatter + markdown.
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct TeamCheckpoint {
     /// Schema version (always 1).
     pub version: u32,
@@ -42,7 +42,7 @@ pub struct TeamCheckpoint {
 // ---------------------------------------------------------------------------
 
 /// State of a single agent (primary or subagent) in the session.
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct AgentState {
     /// Agent identifier. `"primary"` for the main agent, or the `agentId`
     /// from JSONL entries for subagents.
@@ -79,12 +79,23 @@ pub enum AgentStatus {
     Unknown,
 }
 
+impl std::fmt::Display for AgentStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Active => write!(f, "active"),
+            Self::Idle => write!(f, "idle"),
+            Self::Done => write!(f, "done"),
+            Self::Unknown => write!(f, "unknown"),
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Task State
 // ---------------------------------------------------------------------------
 
 /// State of a task discovered from TaskCreate/TaskUpdate tool uses.
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct TaskState {
     /// Task identifier (sequential index from TaskCreate order, or taskId from TaskUpdate).
     pub task_id: String,
@@ -117,12 +128,24 @@ pub enum TaskStatus {
     Cancelled,
 }
 
+impl std::fmt::Display for TaskStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Pending => write!(f, "pending"),
+            Self::InProgress => write!(f, "in_progress"),
+            Self::Completed => write!(f, "completed"),
+            Self::Cancelled => write!(f, "cancelled"),
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Context Health
 // ---------------------------------------------------------------------------
 
 /// Snapshot of the context window health at checkpoint time.
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct ContextHealthSnapshot {
     /// Total tokens currently in the context window.
     pub context_tokens: u64,

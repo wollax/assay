@@ -10,7 +10,7 @@ use crate::session::{Confidence, EvaluatorRole};
 ///
 /// Uses internal tagging (`#[serde(tag = "kind")]`) so TOML output includes
 /// a `kind = "Command"` or `kind = "AlwaysPass"` discriminator field.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind")]
 pub enum GateKind {
     /// A gate that runs a shell command and checks its exit code.
@@ -32,6 +32,17 @@ pub enum GateKind {
     AgentReport,
 }
 
+impl std::fmt::Display for GateKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Command { .. } => write!(f, "Command"),
+            Self::AlwaysPass => write!(f, "AlwaysPass"),
+            Self::FileExists { .. } => write!(f, "FileExists"),
+            Self::AgentReport => write!(f, "AgentReport"),
+        }
+    }
+}
+
 inventory::submit! {
     crate::schema_registry::SchemaEntry {
         name: "gate-kind",
@@ -43,7 +54,7 @@ inventory::submit! {
 ///
 /// Captures whether the gate passed, the command output (if any), timing,
 /// and which kind of gate produced this result (self-describing via `kind`).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct GateResult {
     /// Whether the gate passed.
     pub passed: bool,
@@ -443,5 +454,22 @@ mod tests {
         // Verify roundtrip back to original
         let roundtripped: GateResult = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(result, roundtripped);
+    }
+
+    #[test]
+    fn gate_kind_display_shows_variant_name_only() {
+        assert_eq!(
+            GateKind::Command { cmd: "test".into() }.to_string(),
+            "Command"
+        );
+        assert_eq!(GateKind::AlwaysPass.to_string(), "AlwaysPass");
+        assert_eq!(
+            GateKind::FileExists {
+                path: "f.txt".into()
+            }
+            .to_string(),
+            "FileExists"
+        );
+        assert_eq!(GateKind::AgentReport.to_string(), "AgentReport");
     }
 }

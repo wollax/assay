@@ -769,6 +769,7 @@ unknown_crit_key = true
                 enforcement: None,
                 kind: None,
                 prompt: None,
+                requirements: vec![],
             }],
         }
     }
@@ -838,6 +839,7 @@ unknown_crit_key = true
                     enforcement: None,
                     kind: None,
                     prompt: None,
+                    requirements: vec![],
                 },
                 Criterion {
                     name: "dup".to_string(),
@@ -848,6 +850,7 @@ unknown_crit_key = true
                     enforcement: None,
                     kind: None,
                     prompt: None,
+                    requirements: vec![],
                 },
             ],
         };
@@ -875,6 +878,7 @@ unknown_crit_key = true
                 enforcement: None,
                 kind: None,
                 prompt: None,
+                requirements: vec![],
             }],
         };
 
@@ -1734,6 +1738,7 @@ cmd = "true"
                 enforcement: None, // inherits advisory from gate section
                 kind: None,
                 prompt: None,
+                requirements: vec![],
             }],
         };
         let errors = validate(&spec).unwrap_err();
@@ -1763,6 +1768,7 @@ cmd = "true"
                 enforcement: Some(Enforcement::Required),
                 kind: None,
                 prompt: None,
+                requirements: vec![],
             }],
         };
         assert!(validate(&spec).is_ok());
@@ -1784,6 +1790,7 @@ cmd = "true"
                 enforcement: None,
                 kind: None,
                 prompt: None,
+                requirements: vec![],
             }],
         };
         assert!(validate(&spec).is_ok());
@@ -1839,6 +1846,7 @@ cmd = "true"
                     enforcement: Some(Enforcement::Required),
                     kind: None,
                     prompt: None,
+                    requirements: vec![],
                 },
                 Criterion {
                     name: "advisory-executable".to_string(),
@@ -1849,6 +1857,7 @@ cmd = "true"
                     enforcement: Some(Enforcement::Advisory),
                     kind: None,
                     prompt: None,
+                    requirements: vec![],
                 },
             ],
         };
@@ -1877,6 +1886,7 @@ cmd = "true"
                 enforcement: Some(Enforcement::Required),
                 kind: Some(CriterionKind::AgentReport),
                 prompt: Some("Review code".to_string()),
+                requirements: vec![],
             }],
         };
 
@@ -1904,6 +1914,7 @@ cmd = "true"
                 enforcement: Some(Enforcement::Required),
                 kind: Some(CriterionKind::AgentReport),
                 prompt: Some("Check file".to_string()),
+                requirements: vec![],
             }],
         };
 

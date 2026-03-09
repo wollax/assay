@@ -52,18 +52,7 @@
 **Goal:** Build the foundation for agent orchestration — worktree isolation, independent gate evaluation infrastructure, and CLI/MCP/types/core hardening — while closing tech debt from v0.2.0.
 
 - [x] Phase 26: Structural Prerequisites (2 plans) — 2026-03-09
-
-#### Phase 27: Types Hygiene
-
-**Goal:** Bring all public types to production quality — Eq derives where safe, Display impls on key enums, doc comments on all public items, Default on GateSection, and structural dedup on Criterion types.
-**Dependencies:** Phase 26 (error sub-enum pattern established)
-**Requirements:** TYPE-01, TYPE-02, TYPE-03, TYPE-04, TYPE-05, TYPE-06
-**Success Criteria** (what must be TRUE):
-  1. All types without float fields derive `Eq` (verified by grep for `PartialEq` without `Eq`)
-  2. `Enforcement`, `GateKind`, and other key enums implement `Display` with human-readable output
-  3. `cargo doc --no-deps` produces zero "missing documentation" warnings for public items
-  4. `GateSection::default()` compiles and `GateCriterion`/`Criterion` structural overlap is reduced
-  5. `EnforcementSummary` fields have doc comments visible in generated docs
+- [x] Phase 27: Types Hygiene (4 plans) — 2026-03-09
 
 #### Phase 28: Worktree Manager
 
@@ -141,4 +130,4 @@
 |-----------|--------|--------|--------------|----------|
 | v0.1.0 Proof of Concept | ✅ Shipped | 10 | 43 | 100% |
 | v0.2.0 Dual-Track Gates & Hardening | ✅ Shipped | 15 | 52 | 100% |
-| v0.3.0 Orchestration Foundation | 🔄 In Progress | 8 (26-33) | 43 | 12% |
+| v0.3.0 Orchestration Foundation | 🔄 In Progress | 8 (26-33) | 43 | 25% |
