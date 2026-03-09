@@ -23,6 +23,17 @@ pub enum AssayError {
         source: std::io::Error,
     },
 
+    /// A JSON serialization or deserialization operation failed.
+    #[error("{operation} at `{path}`: {source}")]
+    Json {
+        /// What was being attempted (e.g., "serializing gate run record").
+        operation: String,
+        /// The file path involved.
+        path: PathBuf,
+        /// The underlying serde_json error.
+        source: serde_json::Error,
+    },
+
     /// Config file parsing failed (invalid TOML or schema mismatch).
     #[error("parsing config `{path}`: {message}")]
     ConfigParse {
@@ -220,6 +231,34 @@ pub enum AssayError {
     },
 }
 
+impl AssayError {
+    /// Create an I/O error with context.
+    pub fn io(
+        operation: impl Into<String>,
+        path: impl Into<PathBuf>,
+        source: std::io::Error,
+    ) -> Self {
+        Self::Io {
+            operation: operation.into(),
+            path: path.into(),
+            source,
+        }
+    }
+
+    /// Create a JSON serialization/deserialization error with context.
+    pub fn json(
+        operation: impl Into<String>,
+        path: impl Into<PathBuf>,
+        source: serde_json::Error,
+    ) -> Self {
+        Self::Json {
+            operation: operation.into(),
+            path: path.into(),
+            source,
+        }
+    }
+}
+
 /// Convenience result alias for Assay operations.
 pub type Result<T> = std::result::Result<T, AssayError>;
 
@@ -327,6 +366,40 @@ mod tests {
         let display = err.to_string();
 
         assert_eq!(display, "spec `auth-flow` not found in .assay/specs/");
+    }
+
+    #[test]
+    fn json_error_display_includes_all_context() {
+        let source = serde_json::from_str::<serde_json::Value>("invalid").unwrap_err();
+        let err = AssayError::json("deserializing config", "/tmp/config.json", source);
+        let display = err.to_string();
+        assert!(
+            display.contains("deserializing config"),
+            "Display should contain operation, got: {display}"
+        );
+        assert!(
+            display.contains("/tmp/config.json"),
+            "Display should contain path, got: {display}"
+        );
+    }
+
+    #[test]
+    fn json_error_source_chain() {
+        use std::error::Error;
+        let source = serde_json::from_str::<serde_json::Value>("invalid").unwrap_err();
+        let err = AssayError::json("parsing", "/tmp/data.json", source);
+        let src = err.source().expect("Json variant should have a source");
+        assert!(src.downcast_ref::<serde_json::Error>().is_some());
+    }
+
+    #[test]
+    fn io_constructor_matches_manual() {
+        let source = io::Error::new(io::ErrorKind::NotFound, "gone");
+        let err = AssayError::io("reading", "/tmp/f.txt", source);
+        let display = err.to_string();
+        assert!(display.contains("reading"));
+        assert!(display.contains("/tmp/f.txt"));
+        assert!(display.contains("gone"));
     }
 
     // `#[non_exhaustive]` is a compile-time property: external crates matching on

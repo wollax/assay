@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 2026-03-08)
 
 ## Current Position
 
-Phase: 26 — Structural Prerequisites
+Phase: 27 — Types Hygiene
 Plan: —
 Status: Not started
-Last activity: 2026-03-08 — Roadmap created for v0.3.0
+Last activity: 2026-03-09 — Completed Phase 26: Structural Prerequisites
 
-Progress: v0.3.0 [░░░░░░░░░░░░░░░░] 0% (0/8 phases)
+Progress: v0.3.0 [██░░░░░░░░░░░░░░] 12% (1/8 phases)
 
 ## Milestone Progress
 
@@ -22,11 +22,11 @@ Progress: v0.3.0 [░░░░░░░░░░░░░░░░] 0% (0/8 phas
 |-----------|--------|--------------|----------|
 | v0.1.0 | 10 | 43 | 100% (shipped) |
 | v0.2.0 | 15 (11-25) | 52 | 100% (shipped) |
-| v0.3.0 | 8 (26-33) | 43 | 0% |
+| v0.3.0 | 8 (26-33) | 43 | 12% |
 
 ## Phase Checklist
 
-- [ ] Phase 26: Structural Prerequisites (CORE-01, CORE-05)
+- [x] Phase 26: Structural Prerequisites (CORE-01, CORE-05)
 - [ ] Phase 27: Types Hygiene (TYPE-01 through TYPE-06)
 - [ ] Phase 28: Worktree Manager (ORCH-01 through ORCH-07)
 - [ ] Phase 29: Gate Output Truncation (GATE-01 through GATE-05)
@@ -46,8 +46,12 @@ v0.2.0 decisions archived to .planning/milestones/v0.2.0-ROADMAP.md
 - Concrete Claude Code module, NOT an agent launcher trait (premature abstraction)
 - Merge-back pipeline deferred to v0.4.0 (premature without orchestrator)
 - Spec provider trait deferred (one implementation = premature abstraction)
-- CLI monolith extraction is prerequisite for all v0.3.0 feature work
-- TUI assay-core dependency added in Phase 26 (structural prerequisite)
+- CLI monolith extraction is prerequisite for all v0.3.0 feature work (DONE — Phase 26)
+- CLI commands/ module: flat files, one per subcommand group, shared helpers in mod.rs
+- Each command module exposes pub(crate) handle() for dispatch
+- main.rs is 182 lines (help text attributes tightly coupled to Command enum)
+- TUI assay-core dependency verified (Phase 26)
+- AssayError::Json variant added; existing Io call sites kept as-is, new code uses constructors
 - Sub-enum error pattern for new error categories (WorktreeError, etc.)
 - Zero new workspace dependencies (hard constraint from research)
 - Launcher, session record, gate_evaluate, TUI viewer, composable gates, spec preconditions, gate history summary — all deferred to v0.4.0+
@@ -62,4 +66,4 @@ None.
 
 ### Next Actions
 
-Start Phase 26: Structural Prerequisites — extract CLI monolith, add TUI dep, establish error sub-enums.
+Start Phase 27: Types Hygiene — Eq derives, Display impls, doc comments, Default on GateSection, Criterion dedup.

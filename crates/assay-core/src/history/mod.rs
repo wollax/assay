@@ -121,11 +121,8 @@ pub fn save(
         source,
     })?;
 
-    let json = serde_json::to_string_pretty(record).map_err(|e| AssayError::Io {
-        operation: "serializing gate run record".into(),
-        path: results_dir.clone(),
-        source: std::io::Error::other(e),
-    })?;
+    let json = serde_json::to_string_pretty(record)
+        .map_err(|e| AssayError::json("serializing gate run record", results_dir.clone(), e))?;
 
     let mut tmpfile = NamedTempFile::new_in(&results_dir).map_err(|source| AssayError::Io {
         operation: "creating temp file for atomic write".into(),
@@ -188,11 +185,8 @@ pub fn load(assay_dir: &Path, spec_name: &str, run_id: &str) -> Result<GateRunRe
         source,
     })?;
 
-    serde_json::from_str(&content).map_err(|e| AssayError::Io {
-        operation: "deserializing gate run record".into(),
-        path,
-        source: std::io::Error::new(std::io::ErrorKind::InvalidData, e),
-    })
+    serde_json::from_str(&content)
+        .map_err(|e| AssayError::json("deserializing gate run record", path, e))
 }
 
 /// List run IDs for a spec, sorted chronologically (oldest first).
