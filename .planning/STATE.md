@@ -3,11 +3,17 @@
 ## Current Position
 
 Phase: 1 of 10 — Project Bootstrap & Git Operations Layer
-Plan: Establish Rust project, CLI skeleton, `SmeltGitOps` trait, `.smelt/` state directory, CI pipeline
-Status: Not started
-Progress: ░░░░░░░░░░ 0/10
+Plan: 1 of 3 complete
+Status: In progress
+Progress: █░░░░░░░░░ 1/10
 
-Last activity: 2026-03-09 — Roadmap created for v0.1.0
+Last activity: 2026-03-09 — Completed 01-01-PLAN.md (workspace + CI)
+
+## Session Continuity
+
+Last session: 2026-03-09T18:34Z
+Stopped at: Completed 01-01-PLAN.md
+Resume file: .planning/phases/active/01-project-bootstrap-git-ops/01-02-PLAN.md
 
 ## Performance Metrics
 
@@ -15,6 +21,7 @@ Last activity: 2026-03-09 — Roadmap created for v0.1.0
 |--------|-------|
 | Phases completed | 0 |
 | Phases remaining | 10 |
+| Plans completed (phase 1) | 1/3 |
 | Requirements covered | 0/12 |
 | Blockers | 0 |
 | Technical debt items | 0 |
@@ -31,6 +38,9 @@ Last activity: 2026-03-09 — Roadmap created for v0.1.0
 - Sequential merge strategy (not octopus) — isolates conflicts to specific branch pairs
 - No Assay integration in v0.1.0 — focus on core orchestration loop
 - No PR creation, notifications, or cost tracking in v0.1.0
+- Edition 2024 with rust-version 1.85 minimum
+- All dependency versions centralized in workspace root, inherited by crates
+- Binary named "smelt" via [[bin]] in smelt-cli
 
 ### Blockers
 
