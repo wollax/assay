@@ -59,6 +59,13 @@ expression: schema.to_value()
             "null"
           ]
         },
+        "requirements": {
+          "description": "Requirement IDs this criterion traces to (e.g., `[\"REQ-FUNC-001\"]`).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "timeout": {
           "description": "Optional timeout in seconds for this criterion's command.\nOverrides the global default but is overridden by CLI `--timeout`.",
           "format": "uint64",
