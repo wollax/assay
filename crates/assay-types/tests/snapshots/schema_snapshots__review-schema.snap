@@ -7,15 +7,18 @@ expression: schema.to_value()
   "description": "A review of completed work against a spec.",
   "properties": {
     "approved": {
+      "description": "Whether the review approved the work.",
       "type": "boolean"
     },
     "comments": {
+      "description": "Reviewer comments. Omitted from serialized output when empty.",
       "items": {
         "type": "string"
       },
       "type": "array"
     },
     "spec_name": {
+      "description": "Name of the spec that was reviewed.",
       "type": "string"
     }
   },
