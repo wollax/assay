@@ -25,7 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Guard daemon with threshold-based pruning, circuit breaker, and reactive overflow recovery
 
 ### Fixed
-- PR review findings for tech debt cleanup phase
+- Documentation inconsistencies in verification files, triage summary accuracy, and closed issue resolution sections (tech debt cleanup phase)
 
 ### Changed
 - CLI migrated to run() -> anyhow::Result<i32> pattern
@@ -48,3 +48,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - PR review findings across phases 6-10
+
+[0.2.0]: https://github.com/wollax/assay/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/wollax/assay/releases/tag/v0.1.0

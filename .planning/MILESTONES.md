@@ -1,5 +1,15 @@
 # Project Milestones: Assay
 
+## v0.3.0 Orchestration Foundation (In Progress)
+
+**Goal:** Build worktree isolation foundation and close tech debt from v0.2.0 — types hygiene, CLI polish, MCP validation, error messages, and gate output truncation.
+
+**Phases planned:** 26-33 (8 phases)
+
+**See:** `.planning/ROADMAP.md` for detailed phase breakdown, `.planning/REQUIREMENTS.md` for full requirement IDs.
+
+---
+
 ## v0.2.0 Dual-Track Gates & Hardening (Shipped: 2026-03-08)
 
 **Delivered:** Full dual-track quality gate platform with agent-evaluated criteria, run history persistence, enforcement levels, session diagnostics, team context protection, and comprehensive hardening.
