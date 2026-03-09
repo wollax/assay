@@ -2,6 +2,8 @@
 
 pub mod error;
 pub mod git;
+pub mod init;
 
 pub use error::{Result, SmeltError};
 pub use git::{preflight, GitCli, GitOps};
+pub use init::init_project;
