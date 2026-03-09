@@ -54,11 +54,14 @@
 - [x] Phase 26: Structural Prerequisites (2 plans) — 2026-03-09
 - [x] Phase 27: Types Hygiene (4 plans) — 2026-03-09
 
-#### Phase 28: Worktree Manager
+#### Phase 28: Worktree Manager (2 plans)
 
 **Goal:** Implement git worktree lifecycle management — create, list, status, cleanup — with CLI subcommands, MCP tools, and configurable paths.
 **Dependencies:** Phase 26 (CLI modules extracted, error pattern)
 **Requirements:** ORCH-01, ORCH-02, ORCH-03, ORCH-04, ORCH-05, ORCH-06, ORCH-07
+**Plans:**
+  - Plan 01 (Wave 1): Types + core module — WorktreeConfig/Info/Status types, error variants, git CLI integration with create/list/status/cleanup
+  - Plan 02 (Wave 2): CLI + MCP — worktree subcommands with --json/--force/--worktree-dir, 4 MCP tools
 **Success Criteria** (what must be TRUE):
   1. `assay worktree create <spec>` creates an isolated git worktree under the configured directory with a branch named `assay/<spec-slug>`
   2. `assay worktree list` shows all active worktrees with spec association, branch, and status
