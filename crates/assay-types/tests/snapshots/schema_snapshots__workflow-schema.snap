@@ -104,9 +104,11 @@ expression: schema.to_value()
       "description": "A quality gate that must pass before work proceeds.",
       "properties": {
         "name": {
+          "description": "Name of this quality gate.",
           "type": "string"
         },
         "passed": {
+          "description": "Whether this gate passed.",
           "type": "boolean"
         }
       },
@@ -170,15 +172,18 @@ expression: schema.to_value()
   "description": "A workflow combining specs, gates, and reviews into a development pipeline.",
   "properties": {
     "gates": {
+      "description": "Gates included in this workflow. Omitted from serialized output when empty.",
       "items": {
         "$ref": "#/$defs/Gate"
       },
       "type": "array"
     },
     "name": {
+      "description": "Name of this workflow.",
       "type": "string"
     },
     "specs": {
+      "description": "Specs included in this workflow. Omitted from serialized output when empty.",
       "items": {
         "$ref": "#/$defs/Spec"
       },

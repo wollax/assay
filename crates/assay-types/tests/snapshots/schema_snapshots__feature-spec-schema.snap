@@ -25,12 +25,23 @@ expression: schema.to_value()
     },
     "AcceptanceCriterionType": {
       "description": "Acceptance criterion type for a requirement.",
-      "enum": [
-        "gherkin",
-        "ears",
-        "plain"
-      ],
-      "type": "string"
+      "oneOf": [
+        {
+          "const": "gherkin",
+          "description": "Given/When/Then format (BDD-style).",
+          "type": "string"
+        },
+        {
+          "const": "ears",
+          "description": "Easy Approach to Requirements Syntax format.",
+          "type": "string"
+        },
+        {
+          "const": "plain",
+          "description": "Free-form plain text.",
+          "type": "string"
+        }
+      ]
     },
     "Assumption": {
       "additionalProperties": false,
@@ -124,41 +135,93 @@ expression: schema.to_value()
     },
     "ImpactLevel": {
       "description": "Impact level for risk assessment.",
-      "enum": [
-        "low",
-        "medium",
-        "high",
-        "critical"
-      ],
-      "type": "string"
+      "oneOf": [
+        {
+          "const": "low",
+          "description": "Minimal impact on the feature or project.",
+          "type": "string"
+        },
+        {
+          "const": "medium",
+          "description": "Moderate impact; workarounds may exist.",
+          "type": "string"
+        },
+        {
+          "const": "high",
+          "description": "Significant impact on functionality or timeline.",
+          "type": "string"
+        },
+        {
+          "const": "critical",
+          "description": "Severe impact; may block the entire feature.",
+          "type": "string"
+        }
+      ]
     },
     "LikelihoodLevel": {
       "description": "Likelihood level for risk assessment.",
-      "enum": [
-        "low",
-        "medium",
-        "high"
-      ],
-      "type": "string"
+      "oneOf": [
+        {
+          "const": "low",
+          "description": "Unlikely to occur.",
+          "type": "string"
+        },
+        {
+          "const": "medium",
+          "description": "May occur under certain conditions.",
+          "type": "string"
+        },
+        {
+          "const": "high",
+          "description": "Likely to occur without mitigation.",
+          "type": "string"
+        }
+      ]
     },
     "Obligation": {
       "description": "RFC 2119 obligation level for a requirement.",
-      "enum": [
-        "shall",
-        "should",
-        "may"
-      ],
-      "type": "string"
+      "oneOf": [
+        {
+          "const": "shall",
+          "description": "Mandatory requirement (MUST/SHALL in RFC 2119).",
+          "type": "string"
+        },
+        {
+          "const": "should",
+          "description": "Recommended requirement (SHOULD in RFC 2119).",
+          "type": "string"
+        },
+        {
+          "const": "may",
+          "description": "Optional requirement (MAY in RFC 2119).",
+          "type": "string"
+        }
+      ]
     },
     "Priority": {
       "description": "MoSCoW priority for a requirement.",
-      "enum": [
-        "must",
-        "should",
-        "could",
-        "wont"
-      ],
-      "type": "string"
+      "oneOf": [
+        {
+          "const": "must",
+          "description": "Non-negotiable for the current release.",
+          "type": "string"
+        },
+        {
+          "const": "should",
+          "description": "Important but not critical; can be deferred if necessary.",
+          "type": "string"
+        },
+        {
+          "const": "could",
+          "description": "Desirable if time and resources permit.",
+          "type": "string"
+        },
+        {
+          "const": "wont",
+          "description": "Explicitly excluded from the current release.",
+          "type": "string"
+        }
+      ]
     },
     "QualityAttribute": {
       "additionalProperties": false,
@@ -322,15 +385,38 @@ expression: schema.to_value()
     },
     "SpecStatus": {
       "description": "Status of a feature spec or individual requirement through its lifecycle.",
-      "enum": [
-        "draft",
-        "proposed",
-        "planned",
-        "in-progress",
-        "verified",
-        "deprecated"
-      ],
-      "type": "string"
+      "oneOf": [
+        {
+          "const": "draft",
+          "description": "Initial authoring state; not yet ready for review.",
+          "type": "string"
+        },
+        {
+          "const": "proposed",
+          "description": "Submitted for review but not yet approved.",
+          "type": "string"
+        },
+        {
+          "const": "planned",
+          "description": "Approved and scheduled for implementation.",
+          "type": "string"
+        },
+        {
+          "const": "in-progress",
+          "description": "Currently being implemented.",
+          "type": "string"
+        },
+        {
+          "const": "verified",
+          "description": "Implementation verified against acceptance criteria.",
+          "type": "string"
+        },
+        {
+          "const": "deprecated",
+          "description": "No longer active; superseded or removed.",
+          "type": "string"
+        }
+      ]
     },
     "UserClass": {
       "additionalProperties": false,
@@ -363,13 +449,28 @@ expression: schema.to_value()
     },
     "VerificationMethod": {
       "description": "Verification method for a requirement.",
-      "enum": [
-        "test",
-        "analysis",
-        "inspection",
-        "demonstration"
-      ],
-      "type": "string"
+      "oneOf": [
+        {
+          "const": "test",
+          "description": "Verified by automated or manual tests.",
+          "type": "string"
+        },
+        {
+          "const": "analysis",
+          "description": "Verified by static analysis or formal review.",
+          "type": "string"
+        },
+        {
+          "const": "inspection",
+          "description": "Verified by visual or manual inspection.",
+          "type": "string"
+        },
+        {
+          "const": "demonstration",
+          "description": "Verified by running the feature and observing behavior.",
+          "type": "string"
+        }
+      ]
     },
     "VerificationStrategy": {
       "additionalProperties": false,
