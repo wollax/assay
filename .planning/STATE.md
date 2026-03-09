@@ -22,7 +22,7 @@ Resume file: (next phase)
 | Phases completed | 1 |
 | Phases remaining | 9 |
 | Plans completed (phase 1) | 3/3 |
-| Requirements covered | 0/12 |
+| Requirements covered | 1/12 |
 | Blockers | 0 |
 | Technical debt items | 0 |
 
