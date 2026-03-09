@@ -20,7 +20,6 @@ pub enum Enforcement {
     Advisory,
 }
 
-
 impl std::fmt::Display for Enforcement {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -118,5 +117,11 @@ mod tests {
             let roundtripped: Enforcement = serde_json::from_str(&json).expect("deserialize");
             assert_eq!(e, roundtripped);
         }
+    }
+
+    #[test]
+    fn enforcement_display_matches_serde() {
+        assert_eq!(Enforcement::Required.to_string(), "required");
+        assert_eq!(Enforcement::Advisory.to_string(), "advisory");
     }
 }

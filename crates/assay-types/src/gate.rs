@@ -32,7 +32,6 @@ pub enum GateKind {
     AgentReport,
 }
 
-
 impl std::fmt::Display for GateKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -455,5 +454,22 @@ mod tests {
         // Verify roundtrip back to original
         let roundtripped: GateResult = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(result, roundtripped);
+    }
+
+    #[test]
+    fn gate_kind_display_shows_variant_name_only() {
+        assert_eq!(
+            GateKind::Command { cmd: "test".into() }.to_string(),
+            "Command"
+        );
+        assert_eq!(GateKind::AlwaysPass.to_string(), "AlwaysPass");
+        assert_eq!(
+            GateKind::FileExists {
+                path: "f.txt".into()
+            }
+            .to_string(),
+            "FileExists"
+        );
+        assert_eq!(GateKind::AgentReport.to_string(), "AgentReport");
     }
 }

@@ -384,7 +384,6 @@ impl std::fmt::Display for ContextHealth {
     }
 }
 
-
 // ---------------------------------------------------------------------------
 // Claude History Entry
 // ---------------------------------------------------------------------------
@@ -560,4 +559,39 @@ pub struct ClaudeHistoryEntry {
     /// Timestamp in milliseconds since epoch.
     #[serde(default)]
     pub timestamp: Option<u64>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bloat_category_display_delegates_to_label() {
+        assert_eq!(BloatCategory::ProgressTicks.to_string(), "Progress ticks");
+        assert_eq!(BloatCategory::ThinkingBlocks.to_string(), "Thinking blocks");
+        assert_eq!(BloatCategory::Metadata.to_string(), "Metadata");
+    }
+
+    #[test]
+    fn prune_strategy_display_delegates_to_label() {
+        assert_eq!(
+            PruneStrategy::ProgressCollapse.to_string(),
+            "Progress collapse"
+        );
+        assert_eq!(PruneStrategy::StaleReads.to_string(), "Stale reads");
+    }
+
+    #[test]
+    fn context_health_display() {
+        assert_eq!(ContextHealth::Healthy.to_string(), "healthy");
+        assert_eq!(ContextHealth::Warning.to_string(), "warning");
+        assert_eq!(ContextHealth::Critical.to_string(), "critical");
+    }
+
+    #[test]
+    fn prescription_tier_display() {
+        assert_eq!(PrescriptionTier::Gentle.to_string(), "gentle");
+        assert_eq!(PrescriptionTier::Standard.to_string(), "standard");
+        assert_eq!(PrescriptionTier::Aggressive.to_string(), "aggressive");
+    }
 }
