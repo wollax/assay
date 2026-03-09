@@ -14,7 +14,7 @@ use crate::GateResult;
 use crate::enforcement::{Enforcement, EnforcementSummary};
 
 /// Summary of evaluating all criteria in a spec.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct GateRunSummary {
     /// Spec name that was evaluated.
     pub spec_name: String,
@@ -35,7 +35,7 @@ pub struct GateRunSummary {
 }
 
 /// A criterion paired with its evaluation result.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct CriterionResult {
     /// The name of the criterion that was evaluated.
     pub criterion_name: String,
@@ -67,7 +67,7 @@ inventory::submit! {
 /// Uses `deny_unknown_fields` — records are versioned artifacts;
 /// field mismatches should fail loudly. `assay_version` supports
 /// future schema migration.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct GateRunRecord {
     /// Unique run identifier: `<timestamp>-<6-char-hex>` (e.g., `20260304T223015Z-a3f1b2`).

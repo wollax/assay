@@ -17,3 +17,6 @@ inventory.workspace = true
 toml.workspace = true
 insta.workspace = true
 jsonschema.workspace = true
+
+[lints]
+workspace = true

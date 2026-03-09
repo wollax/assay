@@ -16,7 +16,6 @@ pub enum CriterionKind {
     AgentReport,
 }
 
-
 impl std::fmt::Display for CriterionKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -37,7 +36,7 @@ inventory::submit! {
 /// Each criterion has a name, description, and an optional shell command
 /// that can verify it programmatically. When `kind` is `AgentReport`, the
 /// criterion is evaluated by an agent using the `prompt` field for guidance.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Criterion {
     /// Human-readable name for this criterion.

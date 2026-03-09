@@ -10,7 +10,7 @@ use crate::session::{Confidence, EvaluatorRole};
 ///
 /// Uses internal tagging (`#[serde(tag = "kind")]`) so TOML output includes
 /// a `kind = "Command"` or `kind = "AlwaysPass"` discriminator field.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind")]
 pub enum GateKind {
     /// A gate that runs a shell command and checks its exit code.
@@ -54,7 +54,7 @@ inventory::submit! {
 ///
 /// Captures whether the gate passed, the command output (if any), timing,
 /// and which kind of gate produced this result (self-describing via `kind`).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct GateResult {
     /// Whether the gate passed.
     pub passed: bool,

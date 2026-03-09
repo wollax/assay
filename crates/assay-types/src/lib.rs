@@ -28,7 +28,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// A specification that defines what should be built and its acceptance criteria.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Spec {
     /// Display name for this spec (required, must be unique across all specs).
@@ -55,7 +55,7 @@ inventory::submit! {
 }
 
 /// A quality gate that must pass before work proceeds.
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct Gate {
     pub name: String,
     pub passed: bool,
@@ -69,7 +69,7 @@ inventory::submit! {
 }
 
 /// A review of completed work against a spec.
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct Review {
     pub spec_name: String,
     pub approved: bool,
@@ -85,7 +85,7 @@ inventory::submit! {
 }
 
 /// A workflow combining specs, gates, and reviews into a development pipeline.
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct Workflow {
     pub name: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -104,7 +104,7 @@ inventory::submit! {
 /// Top-level configuration for an Assay project.
 ///
 /// Loaded from `.assay/config.toml`.
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
     /// Project name (required, non-empty after trim).
@@ -132,7 +132,7 @@ inventory::submit! {
 }
 
 /// Gate execution configuration.
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct GatesConfig {
     /// Default timeout for gate commands in seconds. Defaults to 300.
@@ -161,7 +161,8 @@ inventory::submit! {
 ///
 /// Controls thresholds, polling interval, and circuit breaker behavior
 /// for the background context protection daemon.
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct GuardConfig {
     /// Soft threshold as percentage of context window (0.0-1.0). Default: 0.6.

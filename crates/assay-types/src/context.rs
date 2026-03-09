@@ -157,7 +157,7 @@ pub enum ContentBlock {
 /// Token usage data from the Anthropic API response.
 ///
 /// Present on the final assistant entry of each turn (the one with `stop_reason`).
-#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct UsageData {
     /// Fresh (non-cached) input tokens.
     #[serde(default)]
@@ -241,8 +241,7 @@ impl BloatCategory {
 }
 
 /// Breakdown of bloat by category.
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct BloatBreakdown {
     /// Individual bloat entries by category.
     pub entries: Vec<BloatEntry>,
@@ -250,7 +249,7 @@ pub struct BloatBreakdown {
 
 /// A single bloat category measurement.
 #[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct BloatEntry {
     /// The bloat category.
     pub category: BloatCategory,
@@ -270,7 +269,7 @@ pub struct BloatEntry {
 ///
 /// Output of the `context diagnose` CLI command and `context_diagnose` MCP tool.
 #[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DiagnosticsReport {
     /// Session UUID.
     pub session_id: String,
@@ -308,7 +307,7 @@ inventory::submit! {
 // ---------------------------------------------------------------------------
 
 /// Summary metadata for a session file (used by `context list`).
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct SessionInfo {
     /// Session UUID.
     pub session_id: String,
@@ -339,7 +338,7 @@ inventory::submit! {
 
 /// Token estimate for an active session (MCP `estimate_tokens` response).
 #[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct TokenEstimate {
     /// Session UUID.
     pub session_id: String,
@@ -487,7 +486,7 @@ impl PrescriptionTier {
 }
 
 /// Summary of a single strategy's effect during pruning.
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct PruneSummary {
     /// The strategy that was applied.
     pub strategy: PruneStrategy,
@@ -504,7 +503,7 @@ pub struct PruneSummary {
 }
 
 /// A sample of what was pruned, for dry-run display.
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct PruneSample {
     /// 1-based line number in the original file.
     pub line_number: usize,
@@ -515,7 +514,7 @@ pub struct PruneSample {
 }
 
 /// Full pruning report for a session file.
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct PruneReport {
     /// Session UUID.
     pub session_id: String,
