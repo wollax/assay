@@ -47,6 +47,8 @@ Wire the CLI subcommands and MCP tools for worktree management, consuming the co
 
 Purpose: ORCH-01 through ORCH-06 (CLI surface), ORCH-05 (MCP surface) — complete user-facing and agent-facing interfaces.
 Output: commands/worktree.rs with 4 subcommands, 4 MCP tools on AssayServer, wiring in main.rs.
+
+Note: ORCH-07 (`detect_main_worktree`) is implemented in Plan 01 but not yet wired into gate/spec resolution. If feasible, wire it here so that CLI/MCP commands running inside a linked worktree auto-resolve to the main repo for spec lookup. Otherwise, explicitly defer to a follow-up phase.
 </objective>
 
 <execution_context>
@@ -136,11 +138,19 @@ Output: commands/worktree.rs with 4 subcommands, 4 MCP tools on AssayServer, wir
          Some(Command::Worktree { command }) => commands::worktree::handle(command),
          ```
        - Add help text examples covering create, list, status, cleanup
+
+    4. Add CLI integration smoke tests (in `crates/assay-cli/tests/` or inline):
+       - Create a temp dir with `git init` and a spec file
+       - Run `assay worktree create <spec>` via `assert_cmd` or `Command::cargo_bin` and verify exit code 0
+       - Run `assay worktree list --json` and verify JSON output contains the created worktree
+       - Run `assay worktree cleanup <spec> --force` and verify exit code 0
+       - Use `tempfile::TempDir` for isolation
   </action>
   <verify>
     cargo build -p assay-cli 2>&1 | tail -5
     cargo run -p assay-cli -- worktree --help 2>&1
     cargo run -p assay-cli -- worktree create --help 2>&1
+    cargo test -p assay-cli worktree 2>&1 | tail -20
   </verify>
   <done>
     - `assay worktree --help` shows all 4 subcommands
@@ -149,6 +159,7 @@ Output: commands/worktree.rs with 4 subcommands, 4 MCP tools on AssayServer, wir
     - Human output uses compact table for list, structured output for status
     - --json flag on all subcommands produces valid JSON
     - Non-interactive cleanup of dirty worktree without --force fails with actionable error
+    - CLI integration smoke tests pass (create, list --json, cleanup --force on temp git repo)
   </done>
 </task>
 
@@ -207,6 +218,12 @@ Output: commands/worktree.rs with 4 subcommands, 4 MCP tools on AssayServer, wir
     3. Register the 4 new tools in the `#[tool_router]` macro (or however tools are registered — follow existing pattern).
 
     4. Update the module-level doc comment to mention the new tools.
+
+    5. Add MCP handler tests following the existing pattern in `crates/assay-mcp/tests/mcp_handlers.rs`:
+       - Test `worktree_create` tool invocation returns WorktreeInfo JSON
+       - Test `worktree_list` tool invocation returns array JSON
+       - Test `worktree_cleanup` tool invocation returns success
+       - Tests should use temp git repos, same as core integration tests
   </action>
   <verify>
     cargo check -p assay-mcp 2>&1 | tail -5
@@ -218,6 +235,7 @@ Output: commands/worktree.rs with 4 subcommands, 4 MCP tools on AssayServer, wir
     - Parameter structs derive Deserialize + JsonSchema with schemars descriptions
     - Tools follow existing error handling pattern (domain errors as CallToolResult with isError)
     - MCP cleanup defaults force=true (non-interactive agent context)
+    - MCP handler tests pass for worktree tools
     - `just ready` passes
   </done>
 </task>

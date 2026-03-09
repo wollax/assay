@@ -49,6 +49,8 @@ Implement the foundation layer for worktree management: serializable types in as
 
 Purpose: ORCH-01 through ORCH-04, ORCH-06, ORCH-07 — git worktree lifecycle with configurable paths and spec resolution from worktree context.
 Output: WorktreeConfig/WorktreeInfo/WorktreeStatus types, 5 error variants, core worktree module with 6 public functions.
+
+Note: `detect_main_worktree()` is implemented here but NOT wired into gate/spec resolution flow. Plan 02 must integrate it so that gate evaluation running inside a linked worktree can resolve specs from the main repo (completing ORCH-07). If Plan 02 scope is too large, this wiring needs a follow-up phase.
 </objective>
 
 <execution_context>
@@ -85,7 +87,7 @@ Output: WorktreeConfig/WorktreeInfo/WorktreeStatus types, 5 error variants, core
        - Submit to schema_registry
 
        **WorktreeInfo** — information about a created/listed worktree:
-       - `spec_slug: String`, `path: PathBuf`, `branch: String`, `base_branch: String`
+       - `spec_slug: String`, `path: PathBuf`, `branch: String`, `base_branch: Option<String>` (populated on create, None when listing since `git worktree list --porcelain` doesn't expose it)
        - Derive: Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema
 
        **WorktreeStatus** — extends WorktreeInfo with runtime state:
@@ -151,7 +153,7 @@ Output: WorktreeConfig/WorktreeInfo/WorktreeStatus types, 5 error variants, core
 
        **create** (public):
        - Signature: `pub fn create(project_root: &Path, spec_slug: &str, base_branch: Option<&str>, worktree_base: &Path, specs_dir: &Path) -> Result<WorktreeInfo>`
-       - Validate spec exists: check `specs_dir.join(format!("{spec_slug}.toml"))` exists, else return `SpecNotFound`
+       - Validate spec exists: call `assay_core::spec::load_spec_entry(spec_slug, specs_dir)` and map `Err` to `SpecNotFound` (this handles both directory-based `{slug}/gates.toml` and legacy flat-file `{slug}.toml` formats)
        - Compute worktree_path = `worktree_base.join(spec_slug)`
        - If worktree_path already exists, return `WorktreeExists` error
        - Create worktree_base dir if needed (`create_dir_all`)
@@ -214,6 +216,7 @@ Output: WorktreeConfig/WorktreeInfo/WorktreeStatus types, 5 error variants, core
        - Test cleanup (verify worktree and branch removed)
        - Test create with nonexistent spec returns SpecNotFound
        - Test cleanup of dirty worktree without force returns WorktreeDirty
+       - Test create with directory-based spec (`specs_dir/{slug}/gates.toml`) succeeds (validates both spec formats work)
        - Use `tempfile::TempDir` for isolation
   </action>
   <verify>
