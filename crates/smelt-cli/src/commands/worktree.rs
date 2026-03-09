@@ -40,6 +40,27 @@ pub enum WorktreeCommands {
         #[arg(short, long)]
         verbose: bool,
     },
+
+    /// Remove a worktree and its branch
+    Remove {
+        /// Session name
+        name: String,
+
+        /// Force removal even with unmerged changes or dirty worktree
+        #[arg(short, long)]
+        force: bool,
+
+        /// Skip confirmation prompts
+        #[arg(short, long)]
+        yes: bool,
+    },
+
+    /// Clean up orphaned worktrees
+    Prune {
+        /// Skip confirmation prompts
+        #[arg(short, long)]
+        yes: bool,
+    },
 }
 
 /// Execute the `worktree create` subcommand.
@@ -140,5 +161,115 @@ pub async fn execute_list(
         }
     }
 
+    Ok(0)
+}
+
+/// Execute the `worktree remove` subcommand.
+pub async fn execute_remove(
+    git: GitCli,
+    repo_root: PathBuf,
+    name: &str,
+    force: bool,
+    yes: bool,
+) -> anyhow::Result<i32> {
+    let manager = WorktreeManager::new(git, repo_root);
+
+    // First attempt with the requested force level
+    match manager.remove(name, force).await {
+        Ok(result) => {
+            print_remove_result(&result);
+            Ok(0)
+        }
+        Err(SmeltError::WorktreeNotFound { name }) => {
+            eprintln!("Error: worktree '{name}' not found");
+            Ok(1)
+        }
+        Err(SmeltError::WorktreeDirty { name }) => {
+            // Prompt for confirmation if interactive
+            if !yes {
+                let confirmed = dialoguer::Confirm::new()
+                    .with_prompt(format!(
+                        "Worktree '{name}' has uncommitted changes. Remove anyway?"
+                    ))
+                    .default(false)
+                    .interact()
+                    .unwrap_or(false);
+
+                if confirmed {
+                    // Retry with force
+                    let result = manager.remove(&name, true).await?;
+                    print_remove_result(&result);
+                    return Ok(0);
+                }
+            }
+
+            eprintln!(
+                "Error: worktree '{name}' has uncommitted changes (use --force to override)"
+            );
+            Ok(1)
+        }
+        Err(SmeltError::BranchUnmerged { branch }) => {
+            eprintln!(
+                "Warning: branch '{branch}' has unmerged commits. Use --force to delete anyway."
+            );
+            Ok(1)
+        }
+        Err(e) => Err(e.into()),
+    }
+}
+
+/// Print details of a successful worktree removal.
+fn print_remove_result(result: &smelt_core::RemoveResult) {
+    println!("Removed worktree '{}'", result.session_name);
+    if result.worktree_removed {
+        println!("  Worktree directory removed");
+    }
+    if result.branch_deleted {
+        println!("  Branch deleted");
+    }
+    if result.state_file_removed {
+        println!("  State file removed");
+    }
+}
+
+/// Execute the `worktree prune` subcommand.
+pub async fn execute_prune(
+    git: GitCli,
+    repo_root: PathBuf,
+    yes: bool,
+) -> anyhow::Result<i32> {
+    let manager = WorktreeManager::new(git, repo_root);
+
+    let orphans = manager.detect_orphans().await?;
+
+    if orphans.is_empty() {
+        println!("No orphaned worktrees found.");
+        return Ok(0);
+    }
+
+    println!("Found {} orphaned worktree(s):", orphans.len());
+    for (name, _state) in &orphans {
+        println!("  - {name}");
+    }
+
+    if !yes {
+        let confirmed = dialoguer::Confirm::new()
+            .with_prompt("Remove all orphaned worktrees?")
+            .default(false)
+            .interact()
+            .unwrap_or(false);
+
+        if !confirmed {
+            println!("Aborted.");
+            return Ok(0);
+        }
+    }
+
+    let pruned = manager.prune().await?;
+    for name in &pruned {
+        println!("Pruned: {name}");
+    }
+
+    println!("Pruned {} orphaned worktree(s).", pruned.len());
     Ok(0)
 }

@@ -78,6 +78,13 @@ async fn run() -> anyhow::Result<i32> {
                 commands::worktree::WorktreeCommands::List { verbose } => {
                     commands::worktree::execute_list(git, repo_root, verbose).await
                 }
+                commands::worktree::WorktreeCommands::Remove { name, force, yes } => {
+                    commands::worktree::execute_remove(git, repo_root, &name, force, yes)
+                        .await
+                }
+                commands::worktree::WorktreeCommands::Prune { yes } => {
+                    commands::worktree::execute_prune(git, repo_root, yes).await
+                }
             }
         }
         None => {
