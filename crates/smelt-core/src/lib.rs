@@ -3,6 +3,7 @@
 pub mod error;
 pub mod git;
 pub mod init;
+pub mod worktree;
 
 pub use error::{Result, SmeltError};
 pub use git::{GitCli, GitOps, preflight};
