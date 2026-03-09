@@ -61,9 +61,13 @@ inventory::submit! {
 /// Only counts executable criteria (skipped criteria are excluded).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct EnforcementSummary {
+    /// Number of required criteria that passed.
     pub required_passed: usize,
+    /// Number of required criteria that failed.
     pub required_failed: usize,
+    /// Number of advisory criteria that passed.
     pub advisory_passed: usize,
+    /// Number of advisory criteria that failed.
     pub advisory_failed: usize,
 }
 

@@ -131,18 +131,29 @@ pub struct SystemEntry {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ContentBlock {
     /// Text response block.
-    Text { text: String },
+    Text {
+        /// The text content of this block.
+        text: String,
+    },
     /// Extended thinking block (ephemeral, not counted in context window).
-    Thinking { thinking: String },
+    Thinking {
+        /// The thinking content of this block.
+        thinking: String,
+    },
     /// Tool invocation block.
     ToolUse {
+        /// Unique identifier for this tool use (correlates with `ToolResult::tool_use_id`).
         id: String,
+        /// Name of the tool being invoked.
         name: String,
+        /// Tool input parameters as a JSON value.
         input: serde_json::Value,
     },
     /// Tool result block.
     ToolResult {
+        /// Identifier of the tool use that produced this result.
         tool_use_id: String,
+        /// Result content as a JSON value.
         content: serde_json::Value,
     },
     /// Catch-all for future content block types.
