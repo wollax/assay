@@ -70,7 +70,7 @@ Merge GateCriterion into Criterion by adding a `requirements` field to Criterion
        - Remove the `GateCriterion` struct definition entirely.
        - Replace it with a type alias: `pub type GateCriterion = crate::Criterion;`
        - Keep the doc comment explaining it's an alias for backward compatibility.
-       - Remove the `gate-criterion` schema registry entry (it's now identical to `criterion`).
+       - Keep the `gate-criterion` schema registry entry for backward compatibility — update it to generate the same schema as `criterion` (use `Criterion` instead of the removed `GateCriterion` struct). Both entries should produce identical schemas.
        - Update imports: remove `CriterionKind` and `Enforcement` imports if no longer needed by this file (GatesSpec still uses GateSection).
 
     3. In `lib.rs`:
@@ -132,7 +132,7 @@ Merge GateCriterion into Criterion by adding a `requirements` field to Criterion
   </files>
   <action>
     1. Verify the `criterion` schema registry entry now includes `requirements` as an optional array field.
-    2. Remove the duplicate `gate-criterion` schema registry entry from `gates_spec.rs` (if not already done in Task 1).
+    2. Verify the `gate-criterion` schema registry entry now generates the same schema as `criterion` (both use `Criterion` type).
     3. Run the schema generation to verify output is correct:
        ```bash
        cargo run -p assay-cli -- schema criterion
@@ -145,7 +145,7 @@ Merge GateCriterion into Criterion by adding a `requirements` field to Criterion
   </verify>
   <done>
     - Schema for `criterion` includes optional `requirements` array
-    - No duplicate `gate-criterion` schema entry
+    - Both `criterion` and `gate-criterion` schema entries produce identical schemas
     - `gates-spec` schema references merged Criterion type
   </done>
 </task>
@@ -162,6 +162,6 @@ just ready
 - [ ] Backward-compatible: TOML/JSON without `requirements` still deserializes
 - [ ] `to_criterion()` simplified or removed
 - [ ] `CriterionResult` naming reviewed and documented
-- [ ] Schema registry updated (no duplicate entries)
+- [ ] Schema registry updated (both `criterion` and `gate-criterion` produce identical schemas)
 - [ ] `just ready` passes
 </success_criteria>

@@ -5,6 +5,7 @@ wave: 1
 depends_on: []
 files_modified:
   - Cargo.toml
+  - crates/assay-types/Cargo.toml
   - crates/assay-types/src/lib.rs
   - crates/assay-types/src/criterion.rs
   - crates/assay-types/src/enforcement.rs
