@@ -12,7 +12,7 @@ See: .planning/PROJECT.md (updated 2026-03-08)
 Phase: 27 — Types Hygiene
 Plan: 3 of 4
 Status: In progress
-Last activity: 2026-03-09 — Completed Plan 27-01: Workspace clippy lint and Eq derives
+Last activity: 2026-03-09 — Completed Plan 27-03: Doc comments and deny(missing_docs)
 
 Progress: v0.3.0 [██░░░░░░░░░░░░░░] 12% (1/8 phases)
 
