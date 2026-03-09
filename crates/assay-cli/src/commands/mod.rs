@@ -5,6 +5,7 @@ pub mod init;
 pub mod mcp;
 pub mod spec;
 
+use anyhow::Context;
 use std::path::PathBuf;
 
 // ── Shared constants ──────────────────────────────────────────────
@@ -213,5 +214,3 @@ pub(crate) fn colorize(text: &str, ansi_code: &str, color: bool) -> String {
         text.to_string()
     }
 }
-
-use anyhow::Context;

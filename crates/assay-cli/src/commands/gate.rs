@@ -183,7 +183,7 @@ struct StreamCounters {
 }
 
 /// Display configuration for streaming criterion evaluation.
-pub(crate) struct StreamConfig {
+struct StreamConfig {
     cli_timeout: Option<u64>,
     config_timeout: Option<u64>,
     verbose: bool,
