@@ -43,6 +43,7 @@ fn spec_validates() {
             enforcement: None,
             kind: None,
             prompt: None,
+            requirements: vec![],
         }],
     });
 }
@@ -81,6 +82,7 @@ fn workflow_validates() {
                 enforcement: None,
                 kind: None,
                 prompt: None,
+                requirements: vec![],
             }],
         }],
         gates: vec![Gate {
@@ -176,6 +178,7 @@ fn criterion_with_cmd_validates() {
         enforcement: None,
         kind: None,
         prompt: None,
+        requirements: vec![],
     });
 }
 
@@ -190,6 +193,7 @@ fn criterion_without_cmd_validates() {
         enforcement: None,
         kind: None,
         prompt: None,
+        requirements: vec![],
     });
 }
 
@@ -204,6 +208,7 @@ fn criterion_with_timeout_validates() {
         enforcement: None,
         kind: None,
         prompt: None,
+        requirements: vec![],
     });
 }
 

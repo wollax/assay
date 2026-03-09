@@ -32,10 +32,10 @@ expression: schema.to_value()
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "description": "A single gate criterion with optional requirement traceability.\n\nExtends the concept of [`crate::Criterion`] with a `requirements` field\nthat links criteria to specific requirement IDs (e.g., `REQ-FUNC-001`).",
+  "description": "A single acceptance criterion attached to a spec.\n\nEach criterion has a name, description, and an optional shell command\nthat can verify it programmatically. When `kind` is `AgentReport`, the\ncriterion is evaluated by an agent using the `prompt` field for guidance.",
   "properties": {
     "cmd": {
-      "description": "Optional shell command to verify this criterion.",
+      "description": "Optional shell command to verify this criterion.\nOmitted from serialized output when `None`.\nMutually exclusive with `kind = AgentReport`.",
       "type": [
         "string",
         "null"
@@ -65,7 +65,7 @@ expression: schema.to_value()
           "type": "null"
         }
       ],
-      "description": "Criterion evaluation kind. When set to `AgentReport`, this criterion\nis evaluated by an agent. Mutually exclusive with `cmd` and `path`."
+      "description": "Criterion evaluation kind. When set to `AgentReport`, this criterion\nis evaluated by an agent (not a shell command). Mutually exclusive\nwith `cmd` and `path`."
     },
     "name": {
       "description": "Human-readable name for this criterion.",
@@ -79,7 +79,7 @@ expression: schema.to_value()
       ]
     },
     "prompt": {
-      "description": "Instruction prompt for agent-evaluated criteria.",
+      "description": "Instruction prompt for agent-evaluated criteria.\nProvides guidance to the agent on what to evaluate.",
       "type": [
         "string",
         "null"
@@ -93,7 +93,7 @@ expression: schema.to_value()
       "type": "array"
     },
     "timeout": {
-      "description": "Optional timeout in seconds for this criterion's command.",
+      "description": "Optional timeout in seconds for this criterion's command.\nOverrides the global default but is overridden by CLI `--timeout`.",
       "format": "uint64",
       "minimum": 0,
       "type": [
@@ -106,6 +106,6 @@ expression: schema.to_value()
     "name",
     "description"
   ],
-  "title": "GateCriterion",
+  "title": "Criterion",
   "type": "object"
 }

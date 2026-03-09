@@ -76,6 +76,10 @@ pub struct Criterion {
     /// Provides guidance to the agent on what to evaluate.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub prompt: Option<String>,
+
+    /// Requirement IDs this criterion traces to (e.g., `["REQ-FUNC-001"]`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub requirements: Vec<String>,
 }
 
 inventory::submit! {
@@ -100,6 +104,7 @@ mod tests {
             enforcement: None,
             kind: None,
             prompt: None,
+            requirements: vec![],
         };
 
         let toml_str = toml::to_string(&criterion).expect("serialize to TOML");
@@ -127,6 +132,7 @@ mod tests {
             enforcement: None,
             kind: None,
             prompt: None,
+            requirements: vec![],
         };
 
         let toml_str = toml::to_string(&criterion).expect("serialize to TOML");
@@ -150,6 +156,7 @@ mod tests {
             enforcement: None,
             kind: None,
             prompt: None,
+            requirements: vec![],
         };
 
         let toml_str = toml::to_string(&criterion).expect("serialize to TOML");
@@ -173,6 +180,7 @@ mod tests {
             enforcement: None,
             kind: Some(CriterionKind::AgentReport),
             prompt: Some("Review the auth module for SQL injection vulnerabilities".to_string()),
+            requirements: vec![],
         };
 
         let toml_str = toml::to_string(&criterion).expect("serialize to TOML");
@@ -208,6 +216,7 @@ mod tests {
             enforcement: None,
             kind: None,
             prompt: None,
+            requirements: vec![],
         };
 
         let toml_str = toml::to_string(&criterion).expect("serialize to TOML");
@@ -232,6 +241,7 @@ mod tests {
             enforcement: Some(Enforcement::Advisory),
             kind: None,
             prompt: None,
+            requirements: vec![],
         };
 
         let toml_str = toml::to_string(&criterion).expect("serialize to TOML");
