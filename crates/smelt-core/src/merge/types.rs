@@ -71,6 +71,8 @@ pub struct MergeReport {
     pub total_files_changed: usize,
     pub total_insertions: usize,
     pub total_deletions: usize,
+    /// The merge plan describing session ordering and overlap analysis.
+    pub plan: Option<MergePlan>,
 }
 
 impl MergeReport {
@@ -78,4 +80,37 @@ impl MergeReport {
     pub fn has_skipped(&self) -> bool {
         !self.sessions_skipped.is_empty()
     }
+}
+
+/// A merge plan showing the computed session order and overlap analysis.
+#[derive(Debug, Clone, Serialize)]
+pub struct MergePlan {
+    /// The strategy used for ordering.
+    pub strategy: MergeOrderStrategy,
+    /// Whether the strategy fell back to completion-time due to no meaningful differentiation.
+    pub fell_back: bool,
+    /// Ordered list of sessions to merge.
+    pub sessions: Vec<SessionPlanEntry>,
+    /// Pairwise overlap scores (only populated for FileOverlap strategy).
+    pub pairwise_overlaps: Vec<PairwiseOverlap>,
+}
+
+/// A session entry in the merge plan.
+#[derive(Debug, Clone, Serialize)]
+pub struct SessionPlanEntry {
+    pub session_name: String,
+    pub branch_name: String,
+    pub changed_files: Vec<String>,
+    pub file_count: usize,
+    /// Position in the original manifest order (0-indexed).
+    pub original_index: usize,
+}
+
+/// Pairwise file overlap between two sessions.
+#[derive(Debug, Clone, Serialize)]
+pub struct PairwiseOverlap {
+    pub session_a: String,
+    pub session_b: String,
+    pub overlapping_files: Vec<String>,
+    pub overlap_count: usize,
 }

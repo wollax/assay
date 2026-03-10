@@ -1,12 +1,17 @@
 //! Sequential merge engine for combining completed session worktrees.
 
+pub mod ordering;
 pub mod types;
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use tracing::{info, warn};
 
-pub use types::{DiffStat, MergeOpts, MergeOrderStrategy, MergeReport, MergeSessionResult};
+pub use types::{
+    DiffStat, MergeOpts, MergeOrderStrategy, MergePlan, MergeReport, MergeSessionResult,
+    PairwiseOverlap, SessionPlanEntry,
+};
 
 use crate::error::{Result, SmeltError};
 use crate::git::GitOps;
@@ -15,10 +20,12 @@ use crate::worktree::state::{SessionStatus, WorktreeState};
 use crate::worktree::WorktreeManager;
 
 /// A completed session ready for merging.
-struct CompletedSession {
-    session_name: String,
-    branch_name: String,
-    task_description: Option<String>,
+pub(crate) struct CompletedSession {
+    pub(crate) session_name: String,
+    pub(crate) branch_name: String,
+    pub(crate) task_description: Option<String>,
+    pub(crate) changed_files: HashSet<String>,
+    pub(crate) original_index: usize,
 }
 
 /// Orchestrates the full merge sequence: reads session states, creates a target
@@ -45,8 +52,26 @@ impl<G: GitOps + Clone> MergeRunner<G> {
             return Err(SmeltError::NotInitialized);
         }
 
-        // 2-6. Read session states and filter
-        let (completed, skipped) = self.collect_sessions(manifest, &smelt_dir)?;
+        // 2-6. Read session states and filter, populate changed files
+        let (completed, skipped) = self.collect_sessions(manifest, &smelt_dir).await?;
+
+        // Resolve effective strategy: CLI > manifest > default
+        let strategy = opts
+            .strategy
+            .or(manifest.manifest.merge_strategy)
+            .unwrap_or_default();
+
+        // Order sessions according to strategy
+        let (ordered, merge_plan) = ordering::order_sessions(completed, strategy);
+        info!(
+            "Merge order strategy: {:?}{}",
+            strategy,
+            if merge_plan.fell_back {
+                " (fell back to completion-time)"
+            } else {
+                ""
+            }
+        );
 
         // Phase B: Target branch setup
         // 7. Determine target branch name
@@ -94,7 +119,7 @@ impl<G: GitOps + Clone> MergeRunner<G> {
 
         // Phase D + E: Sequential merge loop + cleanup
         let result = self
-            .merge_sessions(&completed, &temp_path, &target_branch)
+            .merge_sessions(&ordered, &temp_path, &target_branch)
             .await;
 
         match result {
@@ -107,7 +132,7 @@ impl<G: GitOps + Clone> MergeRunner<G> {
 
                 // 16. Clean up session worktrees and branches
                 let manager = WorktreeManager::new(self.git.clone(), self.repo_root.clone());
-                for session in &completed {
+                for session in &ordered {
                     if let Err(e) = manager.remove(&session.session_name, true).await {
                         warn!(
                             "failed to clean up session '{}': {e}",
@@ -132,6 +157,7 @@ impl<G: GitOps + Clone> MergeRunner<G> {
                     total_files_changed,
                     total_insertions,
                     total_deletions,
+                    plan: Some(merge_plan),
                 })
             }
             Err(e) => {
@@ -150,7 +176,8 @@ impl<G: GitOps + Clone> MergeRunner<G> {
     }
 
     /// Collect completed sessions from manifest, checking for running sessions.
-    fn collect_sessions(
+    /// Populates `changed_files` for each session via `diff_name_only`.
+    async fn collect_sessions(
         &self,
         manifest: &Manifest,
         smelt_dir: &Path,
@@ -159,7 +186,7 @@ impl<G: GitOps + Clone> MergeRunner<G> {
         let mut completed = Vec::new();
         let mut skipped = Vec::new();
 
-        for session_def in &manifest.sessions {
+        for (idx, session_def) in manifest.sessions.iter().enumerate() {
             let state_file = worktrees_dir.join(format!("{}.toml", session_def.name));
             if !state_file.exists() {
                 warn!(
@@ -188,10 +215,31 @@ impl<G: GitOps + Clone> MergeRunner<G> {
                     });
                 }
                 SessionStatus::Completed => {
+                    // Determine the merge base for this session
+                    let base_ref = session_def
+                        .base_ref
+                        .as_deref()
+                        .unwrap_or(&manifest.manifest.base_ref);
+                    let changed_files = match self
+                        .git
+                        .diff_name_only(base_ref, &state.branch_name)
+                        .await
+                    {
+                        Ok(files) => files.into_iter().collect::<HashSet<String>>(),
+                        Err(e) => {
+                            warn!(
+                                "failed to get changed files for session '{}': {e}",
+                                session_def.name
+                            );
+                            HashSet::new()
+                        }
+                    };
                     completed.push(CompletedSession {
                         session_name: state.session_name.clone(),
                         branch_name: state.branch_name.clone(),
                         task_description: state.task_description.clone(),
+                        changed_files,
+                        original_index: idx,
                     });
                 }
                 ref status => {
