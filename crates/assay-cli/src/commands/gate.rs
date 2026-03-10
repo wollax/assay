@@ -570,16 +570,12 @@ fn save_run_record(
     max_history: Option<usize>,
     suppress_prune_msg: bool,
 ) {
-    let timestamp = chrono::Utc::now();
-    let run_id = assay_core::history::generate_run_id(&timestamp);
-    let record = assay_types::GateRunRecord {
-        run_id,
-        assay_version: env!("CARGO_PKG_VERSION").to_string(),
-        timestamp,
-        working_dir: Some(working_dir.display().to_string()),
+    match assay_core::history::save_run(
+        assay_dir,
         summary,
-    };
-    match assay_core::history::save(assay_dir, &record, max_history) {
+        Some(working_dir.display().to_string()),
+        max_history,
+    ) {
         Ok(result) => {
             if result.pruned > 0 && !suppress_prune_msg {
                 eprintln!("Pruned {} old run(s) for {name}", result.pruned);
