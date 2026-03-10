@@ -11,7 +11,7 @@ Assay enforces quality gates between AI agent output and your main branch. Defin
 
 Gates support **required/advisory enforcement levels**, persist results to **run history** for audit trails, and integrate with both CLI and MCP surfaces.
 
-**v0.2.0** adds the full dual-track gate system, session diagnostics, team context protection, and a guard daemon for automated context management.
+**v0.3.0** adds git worktree isolation for agents, gate output truncation, actionable error messages with fuzzy matching, and comprehensive quality hardening across all surfaces.
 
 ## Quick Start
 
@@ -46,6 +46,10 @@ assay gate run --all
 | `assay context list` | List sessions with sizes and token counts |
 | `assay context prune` | Dry-run pruning strategies on a session |
 | `assay context guard start` | Start the guard daemon for a session |
+| `assay worktree create <spec>` | Create isolated git worktree for a spec |
+| `assay worktree list` | List active worktrees |
+| `assay worktree status <spec>` | Check worktree branch/dirty/ahead status |
+| `assay worktree cleanup <spec>` | Remove a worktree |
 | `assay checkpoint save` | Save team state checkpoint |
 | `assay mcp serve` | Start the MCP server (stdio) |
 
@@ -61,6 +65,10 @@ Assay exposes tools via MCP (Model Context Protocol) for agent integration:
 - **gate_history** — Query past gate run results
 - **context_diagnose** — Full session diagnostics with bloat analysis
 - **estimate_tokens** — Quick token count and context %
+- **worktree_create** — Create isolated git worktree for agent work
+- **worktree_list** — List active worktrees
+- **worktree_status** — Check worktree branch and dirty state
+- **worktree_cleanup** — Remove a worktree
 
 ## Claude Code Plugin
 
@@ -90,7 +98,7 @@ schemas/         JSON Schemas (generated from assay-types)
 
 ```bash
 just build      # Build all crates
-just test       # Run tests (493 tests)
+just test       # Run tests (603 tests)
 just lint       # Clippy with -D warnings
 just fmt        # Format code
 just ready      # Full check suite: fmt + lint + test + deny
