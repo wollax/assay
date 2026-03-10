@@ -2,7 +2,7 @@ use anyhow::bail;
 use clap::Subcommand;
 use std::io::IsTerminal;
 
-use super::{assay_dir, colors_enabled, colorize, project_root};
+use super::{assay_dir, colorize, colors_enabled, project_root};
 
 #[derive(Subcommand)]
 pub(crate) enum WorktreeCommand {
@@ -260,8 +260,8 @@ fn handle_worktree_status(
     let (_root, worktree_dir, _specs_dir) = resolve_dirs(worktree_dir_override)?;
     let worktree_path = worktree_dir.join(name);
 
-    let st = assay_core::worktree::status(&worktree_path, name)
-        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    let st =
+        assay_core::worktree::status(&worktree_path, name).map_err(|e| anyhow::anyhow!("{e}"))?;
 
     if json {
         let output = serde_json::to_string_pretty(&st)?;
