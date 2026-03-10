@@ -322,6 +322,12 @@ fn stream_criterion(
     }
 }
 
+/// Determine the exit code after gate execution.
+/// Returns 1 if any required criteria failed (gate blocked), 0 otherwise.
+fn gate_exit_code(counters: &StreamCounters) -> i32 {
+    if counters.gate_blocked() { 1 } else { 0 }
+}
+
 /// Print a gate summary line (pass/fail/warn/skip counts).
 fn print_gate_summary(counters: &StreamCounters, color: bool, label: &str) {
     let total = counters.tally();
@@ -460,7 +466,7 @@ fn handle_gate_run_all(cli_timeout: Option<u64>, verbose: bool, json: bool) -> a
     }
 
     print_gate_summary(&counters, color, &format!("Results ({spec_count} specs)"));
-    Ok(if counters.gate_blocked() { 1 } else { 0 })
+    Ok(gate_exit_code(&counters))
 }
 
 /// Handle `assay gate run <name> [--timeout N] [--verbose] [--json]`.
@@ -553,7 +559,7 @@ fn handle_gate_run(
     );
 
     print_gate_summary(&counters, color, "Results");
-    Ok(if counters.gate_blocked() { 1 } else { 0 })
+    Ok(gate_exit_code(&counters))
 }
 
 /// Build a [`GateRunSummary`] for streaming mode (no per-criterion results or timing).
