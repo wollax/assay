@@ -195,9 +195,13 @@ impl StreamCounters {
 
 /// Display configuration for streaming criterion evaluation.
 struct StreamConfig {
+    /// Override timeout in seconds from the CLI `--timeout` flag.
     cli_timeout: Option<u64>,
+    /// Config-level default timeout in seconds (used as fallback).
     config_timeout: Option<u64>,
+    /// Whether to show evidence for all criteria, not just failures.
     verbose: bool,
+    /// Whether to use ANSI color codes in output.
     color: bool,
 }
 
