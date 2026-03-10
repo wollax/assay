@@ -310,7 +310,7 @@ pub fn load(path: &Path) -> Result<Spec> {
 
     let spec: Spec = toml::from_str(&content).map_err(|e| AssayError::SpecParse {
         path: path.to_path_buf(),
-        message: e.to_string(),
+        message: crate::config::format_toml_error(&content, &e),
     })?;
 
     if let Err(errors) = validate(&spec) {
@@ -333,7 +333,7 @@ pub fn load_gates(path: &Path) -> Result<GatesSpec> {
 
     let gates: GatesSpec = toml::from_str(&content).map_err(|e| AssayError::GatesSpecParse {
         path: path.to_path_buf(),
-        message: e.to_string(),
+        message: crate::config::format_toml_error(&content, &e),
     })?;
 
     if let Err(errors) = validate_gates_spec(&gates) {
@@ -356,7 +356,7 @@ pub fn load_feature_spec(path: &Path) -> Result<FeatureSpec> {
 
     let spec: FeatureSpec = toml::from_str(&content).map_err(|e| AssayError::FeatureSpecParse {
         path: path.to_path_buf(),
-        message: e.to_string(),
+        message: crate::config::format_toml_error(&content, &e),
     })?;
 
     if let Err(errors) = validate_feature_spec(&spec) {
@@ -1059,8 +1059,8 @@ cmd = "true"
                     "path should end with bad.toml, got: {p:?}"
                 );
                 assert!(
-                    message.contains("TOML parse error"),
-                    "message should contain parse error, got: {message}"
+                    message.contains("line"),
+                    "message should contain line info from format_toml_error, got: {message}"
                 );
             }
             other => panic!("expected SpecParse, got: {other:?}"),
