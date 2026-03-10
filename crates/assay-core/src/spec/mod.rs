@@ -11,6 +11,105 @@ use assay_types::{CriterionKind, Enforcement, FeatureSpec, GateSection, GatesSpe
 
 use crate::error::{AssayError, Result};
 
+/// Compute Levenshtein edit distance between two strings.
+///
+/// Uses a single-row DP approach for space efficiency.
+pub(crate) fn levenshtein(a: &str, b: &str) -> usize {
+    let b_len = b.chars().count();
+    let mut prev: Vec<usize> = (0..=b_len).collect();
+    let mut curr = vec![0; b_len + 1];
+
+    for (i, ca) in a.chars().enumerate() {
+        curr[0] = i + 1;
+        for (j, cb) in b.chars().enumerate() {
+            let cost = if ca == cb { 0 } else { 1 };
+            curr[j + 1] = (prev[j] + cost).min(prev[j + 1] + 1).min(curr[j] + 1);
+        }
+        std::mem::swap(&mut prev, &mut curr);
+    }
+    prev[b_len]
+}
+
+/// Find a single fuzzy match for `name` among `candidates`.
+///
+/// Returns `Some(candidate)` only when exactly one candidate has:
+/// - Levenshtein distance <= 2, AND
+/// - distance <= name.len() / 2 (avoids suggesting for very short names)
+///
+/// Returns `None` if zero or multiple candidates meet the threshold (ambiguous).
+pub(crate) fn find_fuzzy_match(name: &str, candidates: &[String]) -> Option<String> {
+    let threshold = (name.len() / 2).min(2);
+    let mut best: Option<(&str, usize)> = None;
+    let mut ambiguous = false;
+
+    for candidate in candidates {
+        let dist = levenshtein(name, candidate);
+        if dist <= threshold && dist > 0 {
+            if best.is_some() {
+                ambiguous = true;
+                break;
+            }
+            best = Some((candidate, dist));
+        }
+    }
+
+    if ambiguous {
+        return None;
+    }
+    best.map(|(c, _)| c.to_string())
+}
+
+/// Format a diagnostic message for a spec-not-found error.
+///
+/// Produces different output based on available information:
+/// - Zero specs: "No specs found in {specs_dir}."
+/// - With specs: "spec '{name}' not found. Available specs: ..."
+/// - With invalid specs: marks them as "(invalid)"
+/// - With suggestion: appends "Did you mean '{suggestion}'?"
+pub(crate) fn format_spec_not_found(
+    name: &str,
+    specs_dir: &Path,
+    available: &[String],
+    invalid: &[String],
+    suggestion: Option<&str>,
+) -> String {
+    if available.is_empty() && invalid.is_empty() {
+        return format!("No specs found in {}.", specs_dir.display());
+    }
+
+    let max_inline = 10;
+    let total = available.len() + invalid.len();
+
+    // Build the list of spec names (valid ones first, then invalid with marker)
+    let mut items: Vec<String> = Vec::with_capacity(total);
+    items.extend(available.iter().cloned());
+    items.extend(invalid.iter().map(|s| format!("{s} (invalid)")));
+
+    let list_part = if total <= max_inline {
+        items.join(", ")
+    } else {
+        let shown: Vec<&str> = items.iter().take(max_inline).map(|s| s.as_str()).collect();
+        let remaining = total - max_inline;
+        format!("{} (and {remaining} more)", shown.join(", "))
+    };
+
+    let mut msg = format!("spec '{name}' not found. Available specs: {list_part}");
+
+    if !invalid.is_empty() {
+        msg.push_str(&format!(
+            "\nWarning: {} spec(s) could not be parsed: {}",
+            invalid.len(),
+            invalid.join(", ")
+        ));
+    }
+
+    if let Some(suggestion) = suggestion {
+        msg.push_str(&format!("\nDid you mean '{suggestion}'?"));
+    }
+
+    msg
+}
+
 /// A single validation issue in a spec file.
 #[derive(Debug, Clone)]
 pub struct SpecError {
@@ -1905,6 +2004,166 @@ cmd = "true"
         assert!(
             display.contains("cannot be empty"),
             "Display should contain message, got: {display}"
+        );
+    }
+
+    // ── ERR-02: levenshtein ────────────────────────────────────────
+
+    #[test]
+    fn levenshtein_empty_empty() {
+        assert_eq!(levenshtein("", ""), 0);
+    }
+
+    #[test]
+    fn levenshtein_empty_to_abc() {
+        assert_eq!(levenshtein("", "abc"), 3);
+    }
+
+    #[test]
+    fn levenshtein_abc_to_empty() {
+        assert_eq!(levenshtein("abc", ""), 3);
+    }
+
+    #[test]
+    fn levenshtein_kitten_sitting() {
+        assert_eq!(levenshtein("kitten", "sitting"), 3);
+    }
+
+    #[test]
+    fn levenshtein_same_strings() {
+        assert_eq!(levenshtein("same", "same"), 0);
+    }
+
+    #[test]
+    fn levenshtein_single_char_diff() {
+        assert_eq!(levenshtein("a", "b"), 1);
+    }
+
+    // ── ERR-02: find_fuzzy_match ───────────────────────────────────
+
+    #[test]
+    fn find_fuzzy_match_close_match() {
+        let candidates = vec![
+            "auth-flow".to_string(),
+            "billing".to_string(),
+            "login".to_string(),
+        ];
+        assert_eq!(
+            find_fuzzy_match("auth-flw", &candidates),
+            Some("auth-flow".to_string())
+        );
+    }
+
+    #[test]
+    fn find_fuzzy_match_too_far() {
+        let candidates = vec!["auth-flow".to_string(), "billing".to_string()];
+        assert_eq!(find_fuzzy_match("xyz", &candidates), None);
+    }
+
+    #[test]
+    fn find_fuzzy_match_ambiguous() {
+        let candidates = vec!["ac".to_string(), "ad".to_string()];
+        // Both "ac" and "ad" are distance 1 from "ab" — ambiguous
+        assert_eq!(find_fuzzy_match("ab", &candidates), None);
+    }
+
+    #[test]
+    fn find_fuzzy_match_short_name_threshold() {
+        // distance 1, but 1 > len("a")/2 = 0, so threshold blocks
+        let candidates = vec!["b".to_string()];
+        assert_eq!(find_fuzzy_match("a", &candidates), None);
+    }
+
+    #[test]
+    fn find_fuzzy_match_empty_candidates() {
+        let candidates: Vec<String> = vec![];
+        assert_eq!(find_fuzzy_match("test", &candidates), None);
+    }
+
+    // ── ERR-02: format_spec_not_found ──────────────────────────────
+
+    #[test]
+    fn format_spec_not_found_zero_specs() {
+        let msg = format_spec_not_found(
+            "xyz",
+            Path::new(".assay/specs/"),
+            &[],
+            &[],
+            None,
+        );
+        assert_eq!(msg, "No specs found in .assay/specs/.");
+    }
+
+    #[test]
+    fn format_spec_not_found_three_specs() {
+        let available = vec![
+            "alpha".to_string(),
+            "beta".to_string(),
+            "gamma".to_string(),
+        ];
+        let msg = format_spec_not_found(
+            "xyz",
+            Path::new(".assay/specs/"),
+            &available,
+            &[],
+            None,
+        );
+        assert!(
+            msg.contains("spec 'xyz' not found"),
+            "should mention name, got: {msg}"
+        );
+        assert!(
+            msg.contains("alpha, beta, gamma"),
+            "should list specs, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn format_spec_not_found_eleven_specs_truncated() {
+        let available: Vec<String> = ('a'..='k').map(|c| c.to_string()).collect();
+        let msg = format_spec_not_found(
+            "xyz",
+            Path::new(".assay/specs/"),
+            &available,
+            &[],
+            None,
+        );
+        assert!(
+            msg.contains("(and 1 more)"),
+            "should truncate with count, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn format_spec_not_found_with_invalid() {
+        let available = vec!["alpha".to_string()];
+        let invalid = vec!["billing".to_string()];
+        let msg = format_spec_not_found(
+            "xyz",
+            Path::new(".assay/specs/"),
+            &available,
+            &invalid,
+            None,
+        );
+        assert!(
+            msg.contains("billing (invalid)"),
+            "should mark invalid specs, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn format_spec_not_found_with_suggestion() {
+        let available = vec!["auth-flow".to_string()];
+        let msg = format_spec_not_found(
+            "auth-flw",
+            Path::new(".assay/specs/"),
+            &available,
+            &[],
+            Some("auth-flow"),
+        );
+        assert!(
+            msg.contains("Did you mean 'auth-flow'?"),
+            "should suggest match, got: {msg}"
         );
     }
 }
