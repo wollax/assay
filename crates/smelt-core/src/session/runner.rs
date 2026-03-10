@@ -2,11 +2,14 @@
 
 use std::path::PathBuf;
 
+use tracing::warn;
+
 use crate::error::{Result, SmeltError};
 use crate::git::GitOps;
 use crate::session::manifest::Manifest;
 use crate::session::script::ScriptExecutor;
 use crate::session::types::{SessionOutcome, SessionResult};
+use crate::worktree::state::{SessionStatus, WorktreeState};
 use crate::worktree::{CreateWorktreeOpts, WorktreeManager};
 
 /// Coordinates manifest execution: creates worktrees, runs scripts,
@@ -101,6 +104,34 @@ impl<G: GitOps + Clone> SessionRunner<G> {
                     }
                 }
             };
+
+            // Update worktree state file with session outcome
+            let state_file = smelt_dir
+                .join("worktrees")
+                .join(format!("{}.toml", session.name));
+            if state_file.exists() {
+                match WorktreeState::load(&state_file) {
+                    Ok(mut state) => {
+                        state.status = match result.outcome {
+                            SessionOutcome::Completed => SessionStatus::Completed,
+                            _ => SessionStatus::Failed,
+                        };
+                        state.updated_at = chrono::Utc::now();
+                        if let Err(e) = state.save(&state_file) {
+                            warn!(
+                                "failed to update state file for session '{}': {e}",
+                                session.name
+                            );
+                        }
+                    }
+                    Err(e) => {
+                        warn!(
+                            "failed to load state file for session '{}': {e}",
+                            session.name
+                        );
+                    }
+                }
+            }
 
             results.push(result);
         }
