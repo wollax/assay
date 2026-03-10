@@ -5,6 +5,7 @@ pub mod ordering;
 pub mod types;
 
 use std::collections::HashSet;
+use std::future::Future;
 use std::path::{Path, PathBuf};
 
 use tracing::{info, warn};
@@ -20,6 +21,47 @@ use crate::git::GitOps;
 use crate::session::manifest::Manifest;
 use crate::worktree::state::{SessionStatus, WorktreeState};
 use crate::worktree::WorktreeManager;
+
+/// Trait for handling merge conflicts during the merge loop.
+///
+/// Implementors decide what to do when a squash merge produces conflicts:
+/// resolve them interactively, skip the session, or abort the entire merge.
+pub trait ConflictHandler: Send + Sync {
+    /// Called when a merge conflict is detected for a session.
+    ///
+    /// `session_name` — the session that conflicted.
+    /// `files` — list of conflicting file paths.
+    /// `scan` — conflict marker scan results.
+    /// `work_dir` — the temporary worktree where conflicts exist on disk.
+    fn handle_conflict(
+        &self,
+        session_name: &str,
+        files: &[String],
+        scan: &conflict::ConflictScan,
+        work_dir: &Path,
+    ) -> impl Future<Output = Result<ConflictAction>> + Send;
+}
+
+/// A conflict handler that always propagates the conflict as an error.
+///
+/// This preserves Phase 4 behavior — conflicts are fatal. Used by default
+/// in tests and non-interactive contexts.
+pub struct NoopConflictHandler;
+
+impl ConflictHandler for NoopConflictHandler {
+    async fn handle_conflict(
+        &self,
+        session_name: &str,
+        files: &[String],
+        _scan: &conflict::ConflictScan,
+        _work_dir: &Path,
+    ) -> Result<ConflictAction> {
+        Err(SmeltError::MergeConflict {
+            session: session_name.to_string(),
+            files: files.to_vec(),
+        })
+    }
+}
 
 /// A completed session ready for merging.
 pub(crate) struct CompletedSession {
@@ -72,7 +114,12 @@ impl<G: GitOps + Clone> MergeRunner<G> {
     }
 
     /// Run the full merge pipeline for a manifest.
-    pub async fn run(&self, manifest: &Manifest, opts: MergeOpts) -> Result<MergeReport> {
+    pub async fn run<H: ConflictHandler>(
+        &self,
+        manifest: &Manifest,
+        opts: MergeOpts,
+        handler: &H,
+    ) -> Result<MergeReport> {
         let smelt_dir = self.repo_root.join(".smelt");
 
         // Phase A: Preparation
@@ -145,7 +192,7 @@ impl<G: GitOps + Clone> MergeRunner<G> {
 
         // Phase D + E: Sequential merge loop + cleanup
         let result = self
-            .merge_sessions(&ordered, &temp_path, &target_branch)
+            .merge_sessions(&ordered, &temp_path, &target_branch, handler, &base_commit)
             .await;
 
         match result {
@@ -175,6 +222,18 @@ impl<G: GitOps + Clone> MergeRunner<G> {
                 let total_deletions: usize =
                     session_results.iter().map(|r| r.deletions).sum();
 
+                let sessions_conflict_skipped: Vec<String> = session_results
+                    .iter()
+                    .filter(|r| r.resolution == Some(ResolutionMethod::Skipped))
+                    .map(|r| r.session_name.clone())
+                    .collect();
+
+                let sessions_resolved: Vec<String> = session_results
+                    .iter()
+                    .filter(|r| r.resolution == Some(ResolutionMethod::Manual))
+                    .map(|r| r.session_name.clone())
+                    .collect();
+
                 Ok(MergeReport {
                     target_branch,
                     base_commit,
@@ -184,8 +243,8 @@ impl<G: GitOps + Clone> MergeRunner<G> {
                     total_insertions,
                     total_deletions,
                     plan: Some(merge_plan),
-                    sessions_conflict_skipped: vec![],
-                    sessions_resolved: vec![],
+                    sessions_conflict_skipped,
+                    sessions_resolved,
                 })
             }
             Err(e) => {
@@ -295,16 +354,32 @@ impl<G: GitOps + Clone> MergeRunner<G> {
     }
 
     /// Merge each completed session sequentially via squash merge.
-    async fn merge_sessions(
+    async fn merge_sessions<H: ConflictHandler>(
         &self,
         sessions: &[CompletedSession],
         temp_path: &Path,
         target_branch: &str,
+        handler: &H,
+        base_commit: &str,
     ) -> Result<Vec<MergeSessionResult>> {
         let total = sessions.len();
         let mut results = Vec::with_capacity(total);
 
         for (i, session) in sessions.iter().enumerate() {
+            // Resume detection: check if this session was already merged
+            let range = format!("{base_commit}..{target_branch}");
+            let prefix = format!("merge({}):", session.session_name);
+            let subjects = self.git.log_subjects(&range).await.unwrap_or_default();
+            if subjects.iter().any(|s| s.starts_with(&prefix)) {
+                info!(
+                    "[{}/{}] Session '{}' already merged, skipping",
+                    i + 1,
+                    total,
+                    session.session_name
+                );
+                continue;
+            }
+
             info!(
                 "[{}/{}] Merging session '{}'...",
                 i + 1,
@@ -313,60 +388,162 @@ impl<G: GitOps + Clone> MergeRunner<G> {
             );
 
             // Squash merge
-            self.git
+            let merge_result = self
+                .git
                 .merge_squash(temp_path, &session.branch_name)
-                .await
-                .map_err(|e| match e {
-                    SmeltError::MergeConflict { files, .. } => SmeltError::MergeConflict {
-                        session: session.session_name.clone(),
-                        files,
-                    },
-                    other => other,
-                })?;
+                .await;
 
-            // Commit
-            let commit_msg =
-                format_commit_message(&session.session_name, session.task_description.as_deref(), target_branch, &session.branch_name);
-            let commit_hash = self.git.commit(temp_path, &commit_msg).await?;
-
-            // Diff stats — resolve to full hash to avoid short-hash ambiguity
-            let full_hash = self.git.rev_parse(&commit_hash).await?;
-            let numstat = match self.git.diff_numstat(&format!("{full_hash}^"), &full_hash).await {
-                Ok(stats) => stats,
-                Err(e) => {
-                    warn!(
-                        "failed to get diff stats for session '{}': {e}",
-                        session.session_name
+            match merge_result {
+                Ok(()) => {
+                    // Clean merge — commit and record
+                    let commit_msg = format_commit_message(
+                        &session.session_name,
+                        session.task_description.as_deref(),
+                        target_branch,
+                        &session.branch_name,
+                        None,
                     );
-                    Vec::new()
+                    let result = self
+                        .commit_and_stat(temp_path, &session.session_name, &commit_msg, ResolutionMethod::Clean)
+                        .await?;
+                    results.push(result);
                 }
-            };
+                Err(SmeltError::MergeConflict { files: raw_files, .. }) => {
+                    let conflict_files = if raw_files.is_empty() {
+                        self.git.unmerged_files(temp_path).await.unwrap_or_default()
+                    } else {
+                        raw_files
+                    };
 
-            let diff_stats: Vec<DiffStat> = numstat
-                .iter()
-                .map(|(ins, del, file)| DiffStat {
-                    file: file.clone(),
-                    insertions: *ins,
-                    deletions: *del,
-                })
-                .collect();
+                    // Conflict handling loop
+                    let mut scan = conflict::scan_files_for_markers(temp_path, &conflict_files);
+                    loop {
+                        let action = handler
+                            .handle_conflict(
+                                &session.session_name,
+                                &conflict_files,
+                                &scan,
+                                temp_path,
+                            )
+                            .await?;
 
-            let files_changed = diff_stats.len();
-            let insertions: usize = diff_stats.iter().map(|d| d.insertions).sum();
-            let deletions: usize = diff_stats.iter().map(|d| d.deletions).sum();
-
-            results.push(MergeSessionResult {
-                session_name: session.session_name.clone(),
-                commit_hash,
-                diff_stats,
-                files_changed,
-                insertions,
-                deletions,
-                resolution: Some(ResolutionMethod::Clean),
-            });
+                        match action {
+                            ConflictAction::Resolved => {
+                                // Re-scan to validate resolution
+                                scan = conflict::scan_files_for_markers(temp_path, &conflict_files);
+                                if scan.has_markers {
+                                    // Still has markers — re-prompt
+                                    continue;
+                                }
+                                // Stage all files and commit
+                                self.git.add(temp_path, &["."]).await?;
+                                let commit_msg = format_commit_message(
+                                    &session.session_name,
+                                    session.task_description.as_deref(),
+                                    target_branch,
+                                    &session.branch_name,
+                                    Some(ResolutionMethod::Manual),
+                                );
+                                let result = self
+                                    .commit_and_stat(
+                                        temp_path,
+                                        &session.session_name,
+                                        &commit_msg,
+                                        ResolutionMethod::Manual,
+                                    )
+                                    .await?;
+                                info!(
+                                    "[{}/{}] Resolved conflicts in session '{}'",
+                                    i + 1,
+                                    total,
+                                    session.session_name
+                                );
+                                results.push(result);
+                                break;
+                            }
+                            ConflictAction::Skip => {
+                                self.git.reset_hard(temp_path, "HEAD").await?;
+                                info!(
+                                    "[{}/{}] Skipped session '{}' (conflict)",
+                                    i + 1,
+                                    total,
+                                    session.session_name
+                                );
+                                results.push(MergeSessionResult {
+                                    session_name: session.session_name.clone(),
+                                    commit_hash: String::new(),
+                                    diff_stats: vec![],
+                                    files_changed: 0,
+                                    insertions: 0,
+                                    deletions: 0,
+                                    resolution: Some(ResolutionMethod::Skipped),
+                                });
+                                break;
+                            }
+                            ConflictAction::Abort => {
+                                return Err(SmeltError::MergeAborted {
+                                    session: session.session_name.clone(),
+                                });
+                            }
+                        }
+                    }
+                }
+                Err(other) => return Err(other),
+            }
         }
 
         Ok(results)
+    }
+
+    /// Commit the current staged changes and collect diff stats.
+    async fn commit_and_stat(
+        &self,
+        temp_path: &Path,
+        session_name: &str,
+        commit_msg: &str,
+        resolution: ResolutionMethod,
+    ) -> Result<MergeSessionResult> {
+        let commit_hash = self.git.commit(temp_path, commit_msg).await?;
+
+        // Diff stats — resolve to full hash to avoid short-hash ambiguity
+        let full_hash = self.git.rev_parse(&commit_hash).await?;
+        let numstat = match self
+            .git
+            .diff_numstat(&format!("{full_hash}^"), &full_hash)
+            .await
+        {
+            Ok(stats) => stats,
+            Err(e) => {
+                warn!(
+                    "failed to get diff stats for session '{}': {e}",
+                    session_name
+                );
+                Vec::new()
+            }
+        };
+
+        let diff_stats: Vec<DiffStat> = numstat
+            .iter()
+            .map(|(ins, del, file)| DiffStat {
+                file: file.clone(),
+                insertions: *ins,
+                deletions: *del,
+            })
+            .collect();
+
+        let files_changed = diff_stats.len();
+        let insertions: usize = diff_stats.iter().map(|d| d.insertions).sum();
+        let deletions: usize = diff_stats.iter().map(|d| d.deletions).sum();
+
+        Ok(MergeSessionResult {
+            session_name: session_name.to_string(),
+            commit_hash,
+            diff_stats,
+            files_changed,
+            insertions,
+            deletions,
+            resolution: Some(resolution),
+        })
     }
 }
 
@@ -376,20 +553,25 @@ fn format_commit_message(
     task: Option<&str>,
     target_branch: &str,
     session_branch: &str,
+    resolution: Option<ResolutionMethod>,
 ) -> String {
+    let suffix = match resolution {
+        Some(ResolutionMethod::Manual) => " [resolved: manual]",
+        _ => "",
+    };
+
     let subject = match task {
         Some(desc) => {
             let prefix = format!("merge({session_name}): ");
-            let max_desc = 72_usize.saturating_sub(prefix.len());
+            let max_desc = 72_usize.saturating_sub(prefix.len() + suffix.len());
             if max_desc <= 3 || desc.len() <= max_desc {
-                // Prefix alone exceeds/meets limit, or desc fits — use full desc
-                format!("{prefix}{desc}")
+                format!("{prefix}{desc}{suffix}")
             } else {
                 let boundary = desc.floor_char_boundary(max_desc - 3);
-                format!("{prefix}{}...", &desc[..boundary])
+                format!("{prefix}{}...{suffix}", &desc[..boundary])
             }
         }
-        None => format!("merge({session_name}): squash merge into {target_branch}"),
+        None => format!("merge({session_name}): squash merge into {target_branch}{suffix}"),
     };
 
     format!(
@@ -538,7 +720,7 @@ mod tests {
 
         let manifest = make_manifest("two-clean", &[("alpha", Some("Add file a")), ("beta", Some("Add file b"))]);
         let runner = MergeRunner::new(git.clone(), repo_path.clone());
-        let report = runner.run(&manifest, MergeOpts::default()).await.expect("merge should succeed");
+        let report = runner.run(&manifest, MergeOpts::default(), &NoopConflictHandler).await.expect("merge should succeed");
 
         assert_eq!(report.target_branch, "smelt/merge/two-clean");
         assert_eq!(report.sessions_merged.len(), 2);
@@ -569,7 +751,7 @@ mod tests {
 
         let manifest = make_manifest("conflict-test", &[("conflict-a", None), ("conflict-b", None)]);
         let runner = MergeRunner::new(git.clone(), repo_path.clone());
-        let result = runner.run(&manifest, MergeOpts::default()).await;
+        let result = runner.run(&manifest, MergeOpts::default(), &NoopConflictHandler).await;
 
         assert!(result.is_err(), "merge should fail with conflict");
         let err = result.unwrap_err();
@@ -604,7 +786,7 @@ mod tests {
 
         let manifest = make_manifest("skip-test", &[("good-1", None), ("bad-one", None), ("good-2", None)]);
         let runner = MergeRunner::new(git.clone(), repo_path.clone());
-        let report = runner.run(&manifest, MergeOpts::default()).await.expect("merge should succeed");
+        let report = runner.run(&manifest, MergeOpts::default(), &NoopConflictHandler).await.expect("merge should succeed");
 
         assert_eq!(report.sessions_merged.len(), 2);
         assert_eq!(report.sessions_skipped.len(), 1);
@@ -627,7 +809,7 @@ mod tests {
 
         let manifest = make_manifest("no-complete", &[("all-failed", None)]);
         let runner = MergeRunner::new(git.clone(), repo_path.clone());
-        let result = runner.run(&manifest, MergeOpts::default()).await;
+        let result = runner.run(&manifest, MergeOpts::default(), &NoopConflictHandler).await;
 
         assert!(
             matches!(result, Err(SmeltError::NoCompletedSessions)),
@@ -647,7 +829,7 @@ mod tests {
 
         let manifest = make_manifest("target-exists", &[("exists-sess", None)]);
         let runner = MergeRunner::new(git.clone(), repo_path.clone());
-        let result = runner.run(&manifest, MergeOpts::default()).await;
+        let result = runner.run(&manifest, MergeOpts::default(), &NoopConflictHandler).await;
 
         assert!(
             matches!(&result, Err(SmeltError::MergeTargetExists { branch }) if branch == "smelt/merge/target-exists"),
@@ -669,7 +851,7 @@ mod tests {
 
         let manifest = make_manifest("running-block", &[("running-sess", None)]);
         let runner = MergeRunner::new(git.clone(), repo_path.clone());
-        let result = runner.run(&manifest, MergeOpts::default()).await;
+        let result = runner.run(&manifest, MergeOpts::default(), &NoopConflictHandler).await;
 
         assert!(
             matches!(&result, Err(SmeltError::SessionError { session, message })
@@ -691,6 +873,7 @@ mod tests {
             .run(
                 &manifest,
                 MergeOpts::with_target_branch("my-custom-branch".to_string()),
+                &NoopConflictHandler,
             )
             .await
             .expect("merge should succeed");
@@ -836,5 +1019,125 @@ mod tests {
 
         // CLI strategy should override manifest
         assert_eq!(plan.strategy, MergeOrderStrategy::FileOverlap);
+    }
+
+    /// A conflict handler that always returns Skip.
+    struct SkipConflictHandler;
+
+    impl ConflictHandler for SkipConflictHandler {
+        async fn handle_conflict(
+            &self,
+            _session_name: &str,
+            _files: &[String],
+            _scan: &conflict::ConflictScan,
+            _work_dir: &Path,
+        ) -> Result<ConflictAction> {
+            Ok(ConflictAction::Skip)
+        }
+    }
+
+    /// A conflict handler that always returns Abort.
+    struct AbortConflictHandler;
+
+    impl ConflictHandler for AbortConflictHandler {
+        async fn handle_conflict(
+            &self,
+            _session_name: &str,
+            _files: &[String],
+            _scan: &conflict::ConflictScan,
+            _work_dir: &Path,
+        ) -> Result<ConflictAction> {
+            Ok(ConflictAction::Abort)
+        }
+    }
+
+    #[tokio::test]
+    async fn test_merge_conflict_skip() {
+        let (_tmp, git, repo_path) = setup_test_repo();
+        init_smelt(&repo_path);
+
+        // Both sessions modify README.md differently — guaranteed conflict
+        create_test_session(
+            &git,
+            &repo_path,
+            "skip-a",
+            &[("README.md", "skip-a content\n"), ("a.txt", "a\n")],
+            Some("Add a"),
+        )
+        .await;
+        create_test_session(
+            &git,
+            &repo_path,
+            "skip-b",
+            &[("README.md", "skip-b content\n"), ("b.txt", "b\n")],
+            Some("Add b"),
+        )
+        .await;
+
+        let manifest = make_manifest(
+            "skip-conflict",
+            &[("skip-a", Some("Add a")), ("skip-b", Some("Add b"))],
+        );
+        let runner = MergeRunner::new(git.clone(), repo_path.clone());
+        let report = runner
+            .run(&manifest, MergeOpts::default(), &SkipConflictHandler)
+            .await
+            .expect("merge should succeed with skip handler");
+
+        // First session merges cleanly, second conflicts and is skipped
+        assert_eq!(report.sessions_merged.len(), 2);
+        assert_eq!(report.sessions_merged[0].session_name, "skip-a");
+        assert_eq!(report.sessions_merged[0].resolution, Some(ResolutionMethod::Clean));
+        assert_eq!(report.sessions_merged[1].session_name, "skip-b");
+        assert_eq!(report.sessions_merged[1].resolution, Some(ResolutionMethod::Skipped));
+        assert_eq!(report.sessions_merged[1].commit_hash, "");
+        assert_eq!(report.sessions_merged[1].files_changed, 0);
+
+        // Report fields
+        assert_eq!(report.sessions_conflict_skipped, vec!["skip-b"]);
+        assert!(report.sessions_resolved.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_merge_conflict_abort() {
+        let (_tmp, git, repo_path) = setup_test_repo();
+        init_smelt(&repo_path);
+
+        // Both sessions modify README.md differently — guaranteed conflict
+        create_test_session(
+            &git,
+            &repo_path,
+            "abort-a",
+            &[("README.md", "abort-a content\n")],
+            None,
+        )
+        .await;
+        create_test_session(
+            &git,
+            &repo_path,
+            "abort-b",
+            &[("README.md", "abort-b content\n")],
+            None,
+        )
+        .await;
+
+        let manifest = make_manifest("abort-test", &[("abort-a", None), ("abort-b", None)]);
+        let runner = MergeRunner::new(git.clone(), repo_path.clone());
+        let result = runner
+            .run(&manifest, MergeOpts::default(), &AbortConflictHandler)
+            .await;
+
+        assert!(result.is_err(), "merge should fail with abort");
+        let err = result.unwrap_err();
+        assert!(
+            matches!(&err, SmeltError::MergeAborted { session } if session == "abort-b"),
+            "expected MergeAborted for abort-b, got: {err:?}"
+        );
+
+        // Target branch should NOT exist (rolled back)
+        assert!(
+            !git.branch_exists("smelt/merge/abort-test").await.unwrap(),
+            "target branch should be rolled back"
+        );
     }
 }

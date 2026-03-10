@@ -79,6 +79,10 @@ pub enum SmeltError {
     /// No completed sessions available to merge.
     #[error("no completed sessions to merge — all sessions failed or are still running")]
     NoCompletedSessions,
+
+    /// Merge was aborted by the user during conflict resolution.
+    #[error("merge aborted by user during session '{session}'")]
+    MergeAborted { session: String },
 }
 
 impl SmeltError {
