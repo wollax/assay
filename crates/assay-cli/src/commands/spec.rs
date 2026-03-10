@@ -53,13 +53,7 @@ fn handle_spec_show(name: &str, json: bool) -> anyhow::Result<i32> {
     let config = assay_core::config::load(&root)?;
     let specs_dir = assay_dir(&root).join(&config.specs_dir);
 
-    let entry = match assay_core::spec::load_spec_entry(name, &specs_dir) {
-        Ok(e) => e,
-        Err(assay_core::AssayError::SpecNotFound { .. }) => {
-            bail!("spec '{name}' not found in {}", config.specs_dir);
-        }
-        Err(e) => return Err(e.into()),
-    };
+    let entry = assay_core::spec::load_spec_entry_with_diagnostics(name, &specs_dir)?;
 
     match entry {
         SpecEntry::Legacy { spec, .. } => {

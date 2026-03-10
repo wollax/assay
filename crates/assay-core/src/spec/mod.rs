@@ -14,7 +14,6 @@ use crate::error::{AssayError, Result};
 /// Compute Levenshtein edit distance between two strings.
 ///
 /// Uses a single-row DP approach for space efficiency.
-#[allow(dead_code)] // Wired into call sites in Plan 02
 pub(crate) fn levenshtein(a: &str, b: &str) -> usize {
     let b_len = b.chars().count();
     let mut prev: Vec<usize> = (0..=b_len).collect();
@@ -38,7 +37,6 @@ pub(crate) fn levenshtein(a: &str, b: &str) -> usize {
 /// - distance <= name.len() / 2 (avoids suggesting for very short names)
 ///
 /// Returns `None` if zero or multiple candidates meet the threshold (ambiguous).
-#[allow(dead_code)] // Wired into call sites in Plan 02
 pub(crate) fn find_fuzzy_match(name: &str, candidates: &[String]) -> Option<String> {
     let threshold = (name.len() / 2).min(2);
     let mut best: Option<(&str, usize)> = None;
@@ -408,6 +406,60 @@ pub fn load_spec_entry(slug: &str, specs_dir: &Path) -> Result<SpecEntry> {
         name: slug.to_string(),
         specs_dir: specs_dir.to_path_buf(),
     })
+}
+
+/// Load a spec entry with enriched diagnostics on not-found errors.
+///
+/// Wraps [`load_spec_entry`], enriching `SpecNotFound` with available spec
+/// names, invalid specs, and fuzzy-match suggestions. Falls back to the
+/// bare `SpecNotFound` error if scanning the directory fails.
+pub fn load_spec_entry_with_diagnostics(slug: &str, specs_dir: &Path) -> Result<SpecEntry> {
+    match load_spec_entry(slug, specs_dir) {
+        Ok(entry) => Ok(entry),
+        Err(AssayError::SpecNotFound { name, specs_dir }) => {
+            let scan_result = match scan(&specs_dir) {
+                Ok(r) => r,
+                Err(_) => {
+                    return Err(AssayError::SpecNotFound { name, specs_dir });
+                }
+            };
+
+            let available: Vec<String> = scan_result
+                .entries
+                .iter()
+                .map(|e| e.slug().to_string())
+                .collect();
+
+            let invalid: Vec<String> = scan_result
+                .errors
+                .iter()
+                .filter_map(|e| match e {
+                    AssayError::SpecParse { path, .. }
+                    | AssayError::GatesSpecParse { path, .. }
+                    | AssayError::FeatureSpecParse { path, .. }
+                    | AssayError::SpecValidation { path, .. }
+                    | AssayError::GatesSpecValidation { path, .. }
+                    | AssayError::FeatureSpecValidation { path, .. } => path
+                        .file_stem()
+                        .or_else(|| path.parent().and_then(|p| p.file_name()))
+                        .and_then(|s| s.to_str())
+                        .map(|s| s.to_string()),
+                    _ => None,
+                })
+                .collect();
+
+            let suggestion = find_fuzzy_match(&name, &available);
+
+            Err(AssayError::SpecNotFoundDiagnostic {
+                name,
+                specs_dir,
+                available,
+                invalid,
+                suggestion,
+            })
+        }
+        Err(other) => Err(other),
+    }
 }
 
 /// Validate a feature spec for semantic correctness.
