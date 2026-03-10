@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 2026-03-08)
 
 ## Current Position
 
-Phase: 31 — Error Messages
-Plan: 2 of 2
+Phase: 32 — CLI Polish
+Plan: 4 of 4
 Status: Complete
-Last activity: 2026-03-10 — Completed 31-02-PLAN.md (wired all error formatting into call sites)
+Last activity: 2026-03-10 — Completed 32-04-PLAN.md (enforcement dedup)
 
-Progress: v0.3.0 [████████████░░░░] 75% (6/8 phases)
+Progress: v0.3.0 [██████████████░░] 88% (7/8 phases)
 
 ## Milestone Progress
 
@@ -22,7 +22,7 @@ Progress: v0.3.0 [████████████░░░░] 75% (6/8 pha
 |-----------|--------|--------------|----------|
 | v0.1.0 | 10 | 43 | 100% (shipped) |
 | v0.2.0 | 15 (11-25) | 52 | 100% (shipped) |
-| v0.3.0 | 8 (26-33) | 43 | 75% |
+| v0.3.0 | 8 (26-33) | 43 | 88% |
 
 ## Phase Checklist
 
@@ -32,7 +32,7 @@ Progress: v0.3.0 [████████████░░░░] 75% (6/8 pha
 - [x] Phase 29: Gate Output Truncation (GATE-01 through GATE-05)
 - [x] Phase 30: Core Tech Debt (CORE-02, CORE-03, CORE-04, CORE-06, CORE-07, CORE-08, CORE-09)
 - [x] Phase 31: Error Messages (ERR-01, ERR-02, ERR-03)
-- [ ] Phase 32: CLI Polish (CLI-01 through CLI-08)
+- [x] Phase 32: CLI Polish (CLI-01 through CLI-08)
 - [ ] Phase 33: MCP Validation (MCP-01 through MCP-05)
 
 ## Accumulated Context
@@ -71,4 +71,4 @@ None.
 
 ### Next Actions
 
-Phase 31 complete. All error message improvements (ERR-01, ERR-02, ERR-03) wired into production. Ready for Phase 32: CLI Polish.
+Phase 32 complete (all 4 plans). Ready for Phase 33: MCP Validation.

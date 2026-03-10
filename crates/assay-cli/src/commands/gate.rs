@@ -168,20 +168,57 @@ fn load_gate_context() -> anyhow::Result<(
     Ok((root, config, working_dir, config_timeout))
 }
 
-/// Streaming display counters accumulated during criterion evaluation.
+/// Tracks pass/fail/warn/skip counts during streaming gate execution.
+#[derive(Default)]
 struct StreamCounters {
+    /// Number of criteria that passed evaluation.
     passed: usize,
+    /// Number of criteria that failed evaluation (required enforcement).
     failed: usize,
+    /// Number of criteria that failed evaluation (advisory enforcement).
     warned: usize,
+    /// Number of criteria skipped (agent-report or non-executable).
     skipped: usize,
+}
+
+impl StreamCounters {
+    /// Total number of criteria processed (passed + failed + warned + skipped).
+    fn tally(&self) -> usize {
+        self.passed + self.failed + self.warned + self.skipped
+    }
+
+    /// Whether any required criteria failed, blocking the gate.
+    fn gate_blocked(&self) -> bool {
+        self.failed > 0
+    }
 }
 
 /// Display configuration for streaming criterion evaluation.
 struct StreamConfig {
+    /// Override timeout in seconds from the CLI `--timeout` flag.
     cli_timeout: Option<u64>,
+    /// Config-level default timeout in seconds (used as fallback).
     config_timeout: Option<u64>,
+    /// Whether to show evidence for all criteria, not just failures.
     verbose: bool,
+    /// Whether to use ANSI color codes in output.
     color: bool,
+}
+
+impl StreamConfig {
+    fn new(
+        cli_timeout: Option<u64>,
+        config_timeout: Option<u64>,
+        verbose: bool,
+        color: bool,
+    ) -> Self {
+        Self {
+            cli_timeout,
+            config_timeout,
+            verbose,
+            color,
+        }
+    }
 }
 
 /// Stream a single criterion's evaluation with live "running" -> "PASS/FAIL/WARN" display.
@@ -264,30 +301,29 @@ fn stream_criterion(
             }
         }
         Err(err) => {
-            if is_advisory {
+            let (tag, status) = if is_advisory {
                 counters.warned += 1;
-                eprintln!(
-                    "{cr}  {label}{advisory_tag} {} ... {}",
-                    criterion.name,
-                    format_warn(cfg.color)
-                );
+                (advisory_tag, format_warn(cfg.color))
             } else {
                 counters.failed += 1;
-                eprintln!(
-                    "{cr}  {label} {} ... {}",
-                    criterion.name,
-                    format_fail(cfg.color)
-                );
-            }
+                ("", format_fail(cfg.color))
+            };
+            eprintln!("{cr}  {label}{tag} {} ... {status}", criterion.name);
             let display = assay_core::gate::enriched_error_display(&err, criterion.cmd.as_deref());
             eprintln!("    {display}");
         }
     }
 }
 
+/// Determine the exit code after gate execution.
+/// Returns 1 if any required criteria failed (gate blocked), 0 otherwise.
+fn gate_exit_code(counters: &StreamCounters) -> i32 {
+    if counters.gate_blocked() { 1 } else { 0 }
+}
+
 /// Print a gate summary line (pass/fail/warn/skip counts).
 fn print_gate_summary(counters: &StreamCounters, color: bool, label: &str) {
-    let total = counters.passed + counters.failed + counters.warned + counters.skipped;
+    let total = counters.tally();
     let passed_str = format_count(counters.passed, "\x1b[32m", color);
     let failed_str = format_count(counters.failed, "\x1b[31m", color);
     let warned_str = format_count(counters.warned, "\x1b[33m", color);
@@ -366,18 +402,8 @@ fn handle_gate_run_all(cli_timeout: Option<u64>, verbose: bool, json: bool) -> a
     }
 
     let color = colors_enabled();
-    let cfg = StreamConfig {
-        cli_timeout,
-        config_timeout,
-        verbose,
-        color,
-    };
-    let mut counters = StreamCounters {
-        passed: 0,
-        failed: 0,
-        warned: 0,
-        skipped: 0,
-    };
+    let cfg = StreamConfig::new(cli_timeout, config_timeout, verbose, color);
+    let mut counters = StreamCounters::default();
     let spec_count = result.entries.len();
 
     for (i, entry) in result.entries.iter().enumerate() {
@@ -433,7 +459,7 @@ fn handle_gate_run_all(cli_timeout: Option<u64>, verbose: bool, json: bool) -> a
     }
 
     print_gate_summary(&counters, color, &format!("Results ({spec_count} specs)"));
-    Ok(if counters.failed > 0 { 1 } else { 0 })
+    Ok(gate_exit_code(&counters))
 }
 
 /// Handle `assay gate run <name> [--timeout N] [--verbose] [--json]`.
@@ -499,18 +525,8 @@ fn handle_gate_run(
     };
 
     let color = colors_enabled();
-    let cfg = StreamConfig {
-        cli_timeout,
-        config_timeout,
-        verbose,
-        color,
-    };
-    let mut counters = StreamCounters {
-        passed: 0,
-        failed: 0,
-        warned: 0,
-        skipped: 0,
-    };
+    let cfg = StreamConfig::new(cli_timeout, config_timeout, verbose, color);
+    let mut counters = StreamCounters::default();
     let executable_count = criteria
         .iter()
         .filter(|c| c.cmd.is_some() || c.path.is_some())
@@ -536,7 +552,7 @@ fn handle_gate_run(
     );
 
     print_gate_summary(&counters, color, "Results");
-    Ok(if counters.failed > 0 { 1 } else { 0 })
+    Ok(gate_exit_code(&counters))
 }
 
 /// Build a [`GateRunSummary`] for streaming mode (no per-criterion results or timing).
@@ -608,15 +624,8 @@ fn handle_gate_history(name: &str, json: bool, limit: usize) -> anyhow::Result<i
     }
 
     // Take the last `limit` entries (most recent, since list is sorted oldest-first)
-    let display_ids: Vec<&str> = ids
-        .iter()
-        .rev()
-        .take(limit)
-        .collect::<Vec<_>>()
-        .into_iter()
-        .rev()
-        .map(|s| s.as_str())
-        .collect();
+    let start = ids.len().saturating_sub(limit);
+    let display_ids: Vec<&str> = ids[start..].iter().map(|s| s.as_str()).collect();
 
     // Load all records for display (warn on corrupt files)
     let records: Vec<assay_types::GateRunRecord> = display_ids
@@ -671,16 +680,15 @@ fn handle_gate_history(name: &str, json: bool, limit: usize) -> anyhow::Result<i
     for (i, record) in records.iter().enumerate() {
         let s = &record.summary;
         let ts = format_relative_timestamp(&record.timestamp);
-        let status = if s.failed == 0 {
-            if color {
-                "\x1b[32mpass\x1b[0m".to_string()
-            } else {
-                "pass".to_string()
-            }
-        } else if color {
-            "\x1b[31mfail\x1b[0m".to_string()
+        let (status_plain, status_color_code) = if s.failed == 0 {
+            ("pass", "\x1b[32m")
         } else {
-            "fail".to_string()
+            ("fail", "\x1b[31m")
+        };
+        let status = if color {
+            format!("{status_color_code}{status_plain}\x1b[0m")
+        } else {
+            status_plain.to_string()
         };
         let dur = format_duration_ms(s.total_duration_ms);
 
