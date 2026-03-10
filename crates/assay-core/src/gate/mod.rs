@@ -35,8 +35,7 @@ pub mod session;
 
 /// Classification of command execution errors based on shell exit codes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(dead_code)] // Wired into call sites in Plan 02
-pub(crate) enum CommandErrorKind {
+pub enum CommandErrorKind {
     /// Exit code 127: command not found in PATH.
     NotFound,
     /// Exit code 126: command found but not executable.
@@ -46,7 +45,6 @@ pub(crate) enum CommandErrorKind {
 /// Extract the binary name (first whitespace-delimited token) from a command string.
 ///
 /// Returns an empty string if the command is empty or whitespace-only.
-#[allow(dead_code)] // Wired into call sites in Plan 02
 pub(crate) fn extract_binary(cmd: &str) -> &str {
     cmd.split_whitespace().next().unwrap_or("")
 }
@@ -55,8 +53,7 @@ pub(crate) fn extract_binary(cmd: &str) -> &str {
 ///
 /// Returns `Some(CommandErrorKind)` for exit codes 127 (not found) and 126
 /// (not executable), `None` for all other codes.
-#[allow(dead_code)] // Wired into call sites in Plan 02
-pub(crate) fn classify_exit_code(code: i32) -> Option<CommandErrorKind> {
+pub fn classify_exit_code(code: i32) -> Option<CommandErrorKind> {
     match code {
         127 => Some(CommandErrorKind::NotFound),
         126 => Some(CommandErrorKind::NotExecutable),
@@ -68,8 +65,7 @@ pub(crate) fn classify_exit_code(code: i32) -> Option<CommandErrorKind> {
 ///
 /// Extracts the binary name from the command string and produces an
 /// actionable message based on the error kind.
-#[allow(dead_code)] // Wired into call sites in Plan 02
-pub(crate) fn format_command_error(cmd: &str, kind: CommandErrorKind) -> String {
+pub fn format_command_error(cmd: &str, kind: CommandErrorKind) -> String {
     let binary = extract_binary(cmd);
     match kind {
         CommandErrorKind::NotFound => {
@@ -239,7 +235,7 @@ fn evaluate_criteria(
         let timeout = resolve_timeout(cli_timeout, criterion.timeout, config_timeout);
 
         match evaluate(criterion, working_dir, timeout) {
-            Ok(gate_result) => {
+            Ok(mut gate_result) => {
                 if gate_result.passed {
                     passed += 1;
                     match resolved_enforcement {
@@ -247,6 +243,17 @@ fn evaluate_criteria(
                         Enforcement::Advisory => enforcement_summary.advisory_passed += 1,
                     }
                 } else {
+                    // Enrich stderr for exit code 127/126 when a command was run
+                    if let Some(code) = gate_result.exit_code
+                        && let Some(kind) = classify_exit_code(code)
+                        && let Some(cmd) = criterion.cmd.as_deref()
+                    {
+                        let hint = format_command_error(cmd, kind);
+                        if !gate_result.stderr.is_empty() {
+                            gate_result.stderr.push('\n');
+                        }
+                        gate_result.stderr.push_str(&hint);
+                    }
                     failed += 1;
                     match resolved_enforcement {
                         Enforcement::Required => enforcement_summary.required_failed += 1,
@@ -265,13 +272,14 @@ fn evaluate_criteria(
                     Enforcement::Required => enforcement_summary.required_failed += 1,
                     Enforcement::Advisory => enforcement_summary.advisory_failed += 1,
                 }
+                let stderr = enriched_error_display(&err, criterion.cmd.as_deref());
                 results.push(CriterionResult {
                     criterion_name: criterion.name.clone(),
                     result: Some(GateResult {
                         passed: false,
                         kind: gate_kind_for(criterion),
                         stdout: String::new(),
-                        stderr: format!("gate evaluation error: {err}"),
+                        stderr,
                         exit_code: None,
                         duration_ms: 0,
                         timestamp: Utc::now(),
@@ -297,6 +305,28 @@ fn evaluate_criteria(
         total_duration_ms: start.elapsed().as_millis() as u64,
         enforcement: enforcement_summary,
     }
+}
+
+/// Format an error message for gate evaluation failures, enriching spawn
+/// errors (NotFound / PermissionDenied) with actionable hints when a command
+/// is available.
+pub fn enriched_error_display(err: &AssayError, cmd: Option<&str>) -> String {
+    if let AssayError::GateExecution { source, .. } = err
+        && let Some(cmd) = cmd
+    {
+        let kind = match source.kind() {
+            std::io::ErrorKind::NotFound => Some(CommandErrorKind::NotFound),
+            std::io::ErrorKind::PermissionDenied => Some(CommandErrorKind::NotExecutable),
+            _ => None,
+        };
+        if let Some(kind) = kind {
+            return format!(
+                "gate evaluation error: {err}\n{}",
+                format_command_error(cmd, kind)
+            );
+        }
+    }
+    format!("gate evaluation error: {err}")
 }
 
 /// Convert a `GateCriterion` to a `Criterion` for evaluation.
