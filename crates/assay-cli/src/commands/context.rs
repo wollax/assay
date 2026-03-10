@@ -644,6 +644,7 @@ fn handle_guard_start(session: Option<&str>) -> anyhow::Result<i32> {
     let result = rt.block_on(assay_core::guard::start_guard(
         &session_path,
         &assay,
+        &root,
         guard_config,
     ));
 

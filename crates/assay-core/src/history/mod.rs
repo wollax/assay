@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use chrono::{DateTime, Utc};
 use tempfile::NamedTempFile;
 
-use assay_types::GateRunRecord;
+use assay_types::{GateRunRecord, GateRunSummary};
 
 use crate::error::{AssayError, Result};
 
@@ -44,7 +44,7 @@ fn validate_path_component(value: &str, label: &str) -> Result<()> {
 /// The hex suffix is derived from [`RandomState`] (OS-seeded SipHash)
 /// with thread ID and nanosecond counter mixed in, providing 24 bits
 /// of collision resistance within the same second.
-pub fn generate_run_id(timestamp: &DateTime<Utc>) -> String {
+pub(crate) fn generate_run_id(timestamp: &DateTime<Utc>) -> String {
     let ts = timestamp.format("%Y%m%dT%H%M%SZ");
     let mut hasher = RandomState::new().build_hasher();
     hasher.write_u64(
@@ -58,6 +58,29 @@ pub fn generate_run_id(timestamp: &DateTime<Utc>) -> String {
     std::thread::current().id().hash(&mut hasher);
     let suffix = format!("{:06x}", hasher.finish() & 0xFF_FFFF);
     format!("{ts}-{suffix}")
+}
+
+/// Persist a gate run as a [`GateRunRecord`] with auto-generated run ID.
+///
+/// This is the primary public API for saving gate run history. It handles
+/// run ID generation, timestamp capture, and record construction internally,
+/// then delegates to [`save()`] for atomic persistence and optional pruning.
+pub fn save_run(
+    assay_dir: &Path,
+    summary: GateRunSummary,
+    working_dir: Option<String>,
+    max_history: Option<usize>,
+) -> Result<SaveResult> {
+    let timestamp = chrono::Utc::now();
+    let run_id = generate_run_id(&timestamp);
+    let record = GateRunRecord {
+        run_id,
+        assay_version: env!("CARGO_PKG_VERSION").to_string(),
+        timestamp,
+        working_dir,
+        summary,
+    };
+    save(assay_dir, &record, max_history)
 }
 
 /// Result of a save operation, including any pruning that occurred.
@@ -832,5 +855,44 @@ mod tests {
         );
         assert_eq!(loaded, record);
         let _ = save_result;
+    }
+
+    #[test]
+    fn test_save_run_creates_record() {
+        let dir = TempDir::new().unwrap();
+        let summary = make_test_summary("save-run-spec");
+
+        let result = save_run(dir.path(), summary, Some("/tmp/wd".to_string()), None).unwrap();
+
+        assert!(result.path.exists(), "save_run should create a file");
+        assert_eq!(result.pruned, 0);
+
+        // Verify the record can be loaded and has correct fields.
+        let ids = list(dir.path(), "save-run-spec").unwrap();
+        assert_eq!(ids.len(), 1);
+
+        let loaded = load(dir.path(), "save-run-spec", &ids[0]).unwrap();
+        assert_eq!(loaded.summary.spec_name, "save-run-spec");
+        assert_eq!(loaded.working_dir, Some("/tmp/wd".to_string()));
+        assert_eq!(loaded.assay_version, env!("CARGO_PKG_VERSION"));
+        assert!(!loaded.run_id.is_empty());
+    }
+
+    #[test]
+    fn test_save_run_respects_max_history() {
+        let dir = TempDir::new().unwrap();
+
+        for _ in 0..5 {
+            let summary = make_test_summary("save-run-prune");
+            save_run(dir.path(), summary, None, None).unwrap();
+        }
+
+        // Save a 6th with max_history=3.
+        let summary = make_test_summary("save-run-prune");
+        let result = save_run(dir.path(), summary, None, Some(3)).unwrap();
+
+        assert_eq!(result.pruned, 3, "should prune 3 oldest files");
+        let remaining = list(dir.path(), "save-run-prune").unwrap();
+        assert_eq!(remaining.len(), 3);
     }
 }

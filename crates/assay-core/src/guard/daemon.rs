@@ -20,6 +20,7 @@ use crate::AssayError;
 pub struct GuardDaemon {
     session_path: PathBuf,
     assay_dir: PathBuf,
+    project_dir: PathBuf,
     config: GuardConfig,
     breaker: CircuitBreaker,
     /// Debounce: timestamp of last threshold check.
@@ -28,11 +29,17 @@ pub struct GuardDaemon {
 
 impl GuardDaemon {
     /// Create a new guard daemon.
-    pub fn new(session_path: PathBuf, assay_dir: PathBuf, config: GuardConfig) -> Self {
+    pub fn new(
+        session_path: PathBuf,
+        assay_dir: PathBuf,
+        project_dir: PathBuf,
+        config: GuardConfig,
+    ) -> Self {
         let breaker = CircuitBreaker::new(config.max_recoveries, config.recovery_window_secs);
         Self {
             session_path,
             assay_dir,
+            project_dir,
             config,
             breaker,
             last_check: None,
@@ -301,15 +308,7 @@ impl GuardDaemon {
 
     /// Attempt to save a checkpoint. Logs errors but does not propagate them.
     fn try_save_checkpoint(&self, trigger: &str) {
-        let project_dir = match std::env::current_dir() {
-            Ok(d) => d,
-            Err(e) => {
-                warn!("[guard] Cannot determine project dir for checkpoint: {e}");
-                return;
-            }
-        };
-
-        match crate::checkpoint::extract_team_state(&project_dir, None, trigger) {
+        match crate::checkpoint::extract_team_state(&self.project_dir, None, trigger) {
             Ok(checkpoint) => {
                 match crate::checkpoint::save_checkpoint(&self.assay_dir, &checkpoint) {
                     Ok(path) => {
@@ -352,7 +351,11 @@ mod tests {
     }
 
     fn make_daemon(session_path: PathBuf, assay_dir: PathBuf, config: GuardConfig) -> GuardDaemon {
-        GuardDaemon::new(session_path, assay_dir, config)
+        let project_dir = assay_dir
+            .parent()
+            .map(|p| p.to_path_buf())
+            .unwrap_or_else(|| assay_dir.clone());
+        GuardDaemon::new(session_path, assay_dir, project_dir, config)
     }
 
     #[test]
@@ -360,11 +363,13 @@ mod tests {
         let daemon = GuardDaemon::new(
             PathBuf::from("/tmp/session.jsonl"),
             PathBuf::from("/tmp/.assay"),
+            PathBuf::from("/tmp"),
             default_config(),
         );
 
         assert_eq!(daemon.session_path, PathBuf::from("/tmp/session.jsonl"));
         assert_eq!(daemon.assay_dir, PathBuf::from("/tmp/.assay"));
+        assert_eq!(daemon.project_dir, PathBuf::from("/tmp"));
         assert!(daemon.last_check.is_none());
         assert!(!daemon.breaker.is_tripped());
     }
