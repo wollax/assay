@@ -301,21 +301,14 @@ fn stream_criterion(
             }
         }
         Err(err) => {
-            if is_advisory {
+            let (tag, status) = if is_advisory {
                 counters.warned += 1;
-                eprintln!(
-                    "{cr}  {label}{advisory_tag} {} ... {}",
-                    criterion.name,
-                    format_warn(cfg.color)
-                );
+                (advisory_tag, format_warn(cfg.color))
             } else {
                 counters.failed += 1;
-                eprintln!(
-                    "{cr}  {label} {} ... {}",
-                    criterion.name,
-                    format_fail(cfg.color)
-                );
-            }
+                ("", format_fail(cfg.color))
+            };
+            eprintln!("{cr}  {label}{tag} {} ... {status}", criterion.name);
             let display = assay_core::gate::enriched_error_display(&err, criterion.cmd.as_deref());
             eprintln!("    {display}");
         }
@@ -631,15 +624,8 @@ fn handle_gate_history(name: &str, json: bool, limit: usize) -> anyhow::Result<i
     }
 
     // Take the last `limit` entries (most recent, since list is sorted oldest-first)
-    let display_ids: Vec<&str> = ids
-        .iter()
-        .rev()
-        .take(limit)
-        .collect::<Vec<_>>()
-        .into_iter()
-        .rev()
-        .map(|s| s.as_str())
-        .collect();
+    let start = ids.len().saturating_sub(limit);
+    let display_ids: Vec<&str> = ids[start..].iter().map(|s| s.as_str()).collect();
 
     // Load all records for display (warn on corrupt files)
     let records: Vec<assay_types::GateRunRecord> = display_ids
