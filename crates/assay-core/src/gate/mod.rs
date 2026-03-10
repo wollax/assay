@@ -627,6 +627,66 @@ fn evaluate_always_pass() -> Result<GateResult> {
     })
 }
 
+/// Result of applying head+tail truncation to a string.
+///
+/// When truncation is applied, the output contains the first portion (head)
+/// and last portion (tail) of the original input, separated by a marker
+/// indicating how many bytes were omitted.
+#[allow(dead_code)] // Used in tests; integrated in Plan 02
+struct TruncationResult {
+    /// The possibly-truncated output string.
+    output: String,
+    /// Whether truncation was applied.
+    truncated: bool,
+    /// Original byte length of the input.
+    original_bytes: usize,
+}
+
+/// Truncate output using a head+tail strategy with a byte budget.
+///
+/// If the input fits within `budget` bytes, it is returned unchanged.
+/// Otherwise, the output is split into a head (~33%) and tail (~67%)
+/// section separated by a `[truncated: X bytes omitted]` marker.
+///
+/// The marker itself is overhead and does not count against the budget.
+/// UTF-8 character boundaries are respected using `floor_char_boundary`
+/// and `ceil_char_boundary` to avoid splitting multi-byte sequences.
+#[allow(dead_code)] // Used in tests; integrated in Plan 02
+fn truncate_head_tail(input: &str, budget: usize) -> TruncationResult {
+    let original_bytes = input.len();
+
+    if original_bytes <= budget {
+        return TruncationResult {
+            output: input.to_string(),
+            truncated: false,
+            original_bytes,
+        };
+    }
+
+    let head_budget = budget / 3;
+    let tail_budget = budget - head_budget;
+
+    let head_end = input.floor_char_boundary(head_budget);
+    let tail_start = input.ceil_char_boundary(original_bytes.saturating_sub(tail_budget));
+
+    let (head, tail) = if tail_start <= head_end {
+        // Overlap: fall back to tail-only
+        let safe_start = input.ceil_char_boundary(original_bytes.saturating_sub(budget));
+        ("", &input[safe_start..])
+    } else {
+        (&input[..head_end], &input[tail_start..])
+    };
+
+    let omitted = original_bytes - head.len() - tail.len();
+    let output = format!("{head}\n[truncated: {omitted} bytes omitted]\n{tail}");
+
+    TruncationResult {
+        output,
+        truncated: true,
+        original_bytes,
+    }
+}
+
 /// Truncate output, keeping the tail (since errors appear at end).
 ///
 /// Returns `(possibly_truncated_string, was_truncated)`. If within
@@ -1664,6 +1724,163 @@ mod tests {
         assert!(
             !result.stderr.is_empty(),
             "stderr should contain error message"
+        );
+    }
+
+    // ── truncate_head_tail ──────────────────────────────────────────
+
+    #[test]
+    fn truncate_head_tail_within_budget() {
+        let input = "short string";
+        let result = truncate_head_tail(input, 1024);
+
+        assert_eq!(result.output, input);
+        assert!(!result.truncated);
+        assert_eq!(result.original_bytes, input.len());
+    }
+
+    #[test]
+    fn truncate_head_tail_exact_budget() {
+        let input = "exactly this long";
+        let result = truncate_head_tail(input, input.len());
+
+        assert_eq!(result.output, input);
+        assert!(!result.truncated);
+        assert_eq!(result.original_bytes, input.len());
+    }
+
+    #[test]
+    fn truncate_head_tail_over_budget() {
+        let input = "a".repeat(300);
+        let result = truncate_head_tail(&input, 100);
+
+        assert!(result.truncated);
+        assert_eq!(result.original_bytes, 300);
+        // The output should be shorter than the original
+        // (head + marker + tail, where head+tail = budget)
+        assert!(
+            result.output.len() < input.len(),
+            "truncated output should be shorter than input"
+        );
+    }
+
+    #[test]
+    fn truncate_head_tail_marker_format() {
+        let input = "a".repeat(300);
+        let result = truncate_head_tail(&input, 100);
+
+        assert!(
+            result.output.contains("[truncated: "),
+            "output should contain '[truncated: ', got: {:?}",
+            result.output
+        );
+        assert!(
+            result.output.contains(" bytes omitted]"),
+            "output should contain ' bytes omitted]', got: {:?}",
+            result.output
+        );
+    }
+
+    #[test]
+    fn truncate_head_tail_preserves_head_and_tail() {
+        // Use distinct head and tail content
+        let head_content = "HEAD_START_xxxxx";
+        let tail_content = "xxxxx_TAIL_END!!";
+        let middle = "m".repeat(300);
+        let input = format!("{head_content}{middle}{tail_content}");
+
+        let result = truncate_head_tail(&input, 100);
+
+        assert!(result.truncated);
+        // Head portion should appear before the marker
+        let marker_pos = result.output.find("[truncated: ").unwrap();
+        let before_marker = &result.output[..marker_pos];
+        assert!(
+            before_marker.contains("HEAD_START"),
+            "head portion should contain start of input, got: {:?}",
+            before_marker
+        );
+        // Tail portion should appear after the marker
+        let after_marker = &result.output[marker_pos..];
+        assert!(
+            after_marker.contains("TAIL_END"),
+            "tail portion should contain end of input, got: {:?}",
+            after_marker
+        );
+    }
+
+    #[test]
+    fn truncate_head_tail_utf8_multibyte() {
+        // '世' is 3 bytes in UTF-8
+        let input = "世".repeat(100); // 300 bytes
+        let result = truncate_head_tail(&input, 100);
+
+        assert!(result.truncated);
+        // Must be valid UTF-8 (this would panic if not)
+        let _ = result.output.as_str();
+        // Verify no partial characters by checking all chars are '世' or marker chars
+        for ch in result.output.chars() {
+            assert!(
+                ch == '世' || ch.is_ascii() || ch == '\n',
+                "unexpected character in output: {:?}",
+                ch
+            );
+        }
+    }
+
+    #[test]
+    fn truncate_head_tail_utf8_4byte() {
+        // '🦀' is 4 bytes in UTF-8
+        let input = "🦀".repeat(100); // 400 bytes
+        let result = truncate_head_tail(&input, 100);
+
+        assert!(result.truncated);
+        // Must be valid UTF-8
+        let _ = result.output.as_str();
+        for ch in result.output.chars() {
+            assert!(
+                ch == '🦀' || ch.is_ascii() || ch == '\n',
+                "unexpected character in output: {:?}",
+                ch
+            );
+        }
+    }
+
+    #[test]
+    fn truncate_head_tail_empty_input() {
+        let result = truncate_head_tail("", 1024);
+
+        assert_eq!(result.output, "");
+        assert!(!result.truncated);
+        assert_eq!(result.original_bytes, 0);
+    }
+
+    #[test]
+    fn truncate_head_tail_overlap_guard() {
+        // Input barely over budget — head+tail overlap
+        let input = "a".repeat(105);
+        let result = truncate_head_tail(&input, 100);
+
+        assert!(result.truncated);
+        // Must not panic and must be valid UTF-8
+        let _ = result.output.as_str();
+        assert!(
+            result.output.contains("[truncated: "),
+            "should still have truncation marker"
+        );
+    }
+
+    #[test]
+    fn truncate_head_tail_tiny_budget() {
+        let input = "hello world, this is a test string";
+        let result = truncate_head_tail(input, 1);
+
+        assert!(result.truncated);
+        // Must not panic and must be valid UTF-8
+        let _ = result.output.as_str();
+        assert!(
+            result.output.contains("[truncated: "),
+            "should have truncation marker"
         );
     }
 }
