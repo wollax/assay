@@ -1,15 +1,21 @@
 //! `smelt merge` command handler — run and plan subcommands.
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use clap::Subcommand;
 use comfy_table::{modifiers::UTF8_ROUND_CORNERS, presets::UTF8_FULL, Table};
+use similar::TextDiff;
 
+use smelt_core::ai::{
+    AiConfig, AiProvider, GenAiProvider, build_resolution_prompt, build_retry_prompt,
+    build_system_prompt,
+};
 use smelt_core::error::SmeltError;
 use smelt_core::merge::conflict::ConflictScan;
-use smelt_core::merge::{MergeOrderStrategy, MergePlan, MergeRunner};
+use smelt_core::merge::{AiConflictHandler, MergeOrderStrategy, MergePlan, MergeRunner};
 use smelt_core::{
-    ConflictAction, ConflictHandler, GitCli, Manifest, MergeOpts, ResolutionMethod,
+    ConflictAction, ConflictHandler, GitCli, GitOps, Manifest, MergeOpts, ResolutionMethod,
 };
 
 /// Subcommands for `smelt merge`.
@@ -28,6 +34,9 @@ pub enum MergeCommands {
         /// Show full conflict context when conflicts occur
         #[arg(long)]
         verbose: bool,
+        /// Disable AI conflict resolution (use manual resolution only)
+        #[arg(long)]
+        no_ai: bool,
     },
     /// Preview the merge order without executing
     Plan {
@@ -177,6 +186,446 @@ impl ConflictHandler for InteractiveConflictHandler {
     }
 }
 
+// ── AI Interactive Conflict Handler ──────────────────────────────────
+
+/// Composite handler that attempts AI resolution first, shows a colored
+/// unified diff, prompts the user to Accept/Edit/Reject, retries with
+/// feedback up to `max_retries`, and falls back to the manual
+/// `InteractiveConflictHandler` when AI is exhausted or fails.
+struct AiInteractiveConflictHandler<G: GitOps, P: AiProvider + 'static> {
+    ai_handler: AiConflictHandler<G, P>,
+    provider: Arc<P>,
+    config: AiConfig,
+    verbose: bool,
+}
+
+/// Format a colored unified diff between the original (conflicted) and
+/// resolved content for a single file.
+fn format_colored_diff(original: &str, resolved: &str, filename: &str) -> String {
+    let diff = TextDiff::from_lines(original, resolved);
+    let unified = diff
+        .unified_diff()
+        .context_radius(3)
+        .header(
+            &format!("a/{filename} (conflicted)"),
+            &format!("b/{filename} (ai-resolved)"),
+        )
+        .to_string();
+
+    let mut colored = String::new();
+    for line in unified.lines() {
+        if line.starts_with('+') && !line.starts_with("+++") {
+            colored.push_str(&format!("{}\n", console::style(line).green()));
+        } else if line.starts_with('-') && !line.starts_with("---") {
+            colored.push_str(&format!("{}\n", console::style(line).red()));
+        } else if line.starts_with("@@") {
+            colored.push_str(&format!("{}\n", console::style(line).cyan()));
+        } else {
+            colored.push_str(&format!("{line}\n"));
+        }
+    }
+    colored
+}
+
+/// Prompt the user to Accept, Edit, or Reject the AI resolution.
+/// Returns the selected index (0=Accept, 1=Edit, 2=Reject).
+async fn prompt_accept_edit_reject(session_name: &str) -> smelt_core::Result<usize> {
+    let session_owned = session_name.to_string();
+    tokio::task::spawn_blocking(move || {
+        let items = vec![
+            "Accept (use AI resolution as-is)",
+            "Edit (open files for manual tweaking, then continue)",
+            "Reject (provide feedback for retry, or fall back to manual)",
+        ];
+        dialoguer::Select::new()
+            .with_prompt("AI resolution action")
+            .items(&items)
+            .default(0)
+            .interact_on(&console::Term::stderr())
+            .map_err(|e| SmeltError::SessionError {
+                session: session_owned,
+                message: format!("failed to read user input: {e}"),
+            })
+    })
+    .await
+    .map_err(|e| SmeltError::SessionError {
+        session: session_name.to_string(),
+        message: format!("prompt task failed: {e}"),
+    })?
+}
+
+/// Prompt the user for optional feedback text when rejecting an AI resolution.
+async fn prompt_feedback(session_name: &str) -> smelt_core::Result<String> {
+    let session_owned = session_name.to_string();
+    tokio::task::spawn_blocking(move || {
+        dialoguer::Input::<String>::new()
+            .with_prompt("Feedback for AI (leave empty to skip)")
+            .allow_empty(true)
+            .interact_on(&console::Term::stderr())
+            .map_err(|e| SmeltError::SessionError {
+                session: session_owned,
+                message: format!("failed to read feedback: {e}"),
+            })
+    })
+    .await
+    .map_err(|e| SmeltError::SessionError {
+        session: session_name.to_string(),
+        message: format!("feedback prompt task failed: {e}"),
+    })?
+}
+
+/// Prompt the user to press Enter to continue after editing files.
+async fn prompt_continue_after_edit(
+    session_name: &str,
+    work_dir: &Path,
+) -> smelt_core::Result<()> {
+    eprintln!(
+        "Edit the resolved files in {}, then press Enter to continue.",
+        work_dir.display()
+    );
+    let session_owned = session_name.to_string();
+    tokio::task::spawn_blocking(move || {
+        dialoguer::Input::<String>::new()
+            .with_prompt("Press Enter when done")
+            .allow_empty(true)
+            .interact_on(&console::Term::stderr())
+            .map_err(|e| SmeltError::SessionError {
+                session: session_owned,
+                message: format!("failed to read input: {e}"),
+            })
+    })
+    .await
+    .map_err(|e| SmeltError::SessionError {
+        session: session_name.to_string(),
+        message: format!("edit prompt task failed: {e}"),
+    })?
+    .map(|_| ())
+}
+
+impl<G: GitOps + Send + Sync, P: AiProvider + 'static> AiInteractiveConflictHandler<G, P> {
+    /// Show the AI-proposed diff for each file and prompt Accept/Edit/Reject.
+    /// Returns the chosen `ConflictAction`.
+    async fn show_diff_and_prompt(
+        &self,
+        session_name: &str,
+        files: &[String],
+        original_contents: &[(String, String)],
+        work_dir: &Path,
+    ) -> smelt_core::Result<ConflictAction> {
+        // Show diff per file
+        eprintln!(
+            "\nAI proposed resolution for {} file(s):",
+            files.len()
+        );
+        for (file_path, original) in original_contents {
+            let resolved_path = work_dir.join(file_path);
+            let resolved = std::fs::read_to_string(&resolved_path).unwrap_or_default();
+            let diff_output = format_colored_diff(original, &resolved, file_path);
+            if diff_output.trim().is_empty() {
+                eprintln!("  {file_path}: (no changes)");
+            } else {
+                eprint!("{diff_output}");
+            }
+        }
+
+        let selection = prompt_accept_edit_reject(session_name).await?;
+        match selection {
+            0 => {
+                // Accept
+                Ok(ConflictAction::Resolved(ResolutionMethod::AiAssisted))
+            }
+            1 => {
+                // Edit
+                prompt_continue_after_edit(session_name, work_dir).await?;
+                Ok(ConflictAction::Resolved(ResolutionMethod::AiEdited))
+            }
+            _ => {
+                // Reject — handled by caller
+                Ok(ConflictAction::Abort) // Sentinel; caller checks for index 2
+            }
+        }
+    }
+
+    /// Attempt a retry: rebuild prompt with feedback, call LLM directly,
+    /// write resolved content to disk.
+    async fn retry_with_feedback(
+        &self,
+        session_name: &str,
+        files: &[String],
+        feedback: &str,
+        work_dir: &Path,
+    ) -> smelt_core::Result<()> {
+        let model = self
+            .config
+            .model
+            .as_deref()
+            .unwrap_or("claude-sonnet-4-20250514");
+
+        let system_prompt = build_system_prompt();
+
+        for file in files {
+            // Read the current conflicted content from disk to build the prompt.
+            // We use the working-tree content which may still have markers.
+            let conflicted = std::fs::read_to_string(work_dir.join(file))
+                .unwrap_or_default();
+
+            let original_prompt = build_resolution_prompt(
+                file,
+                "", // base — not available in retry context
+                &conflicted,
+                "", // theirs — not available in retry context
+                session_name,
+                None,
+                &[],
+            );
+
+            let retry_prompt = build_retry_prompt(&original_prompt, feedback);
+
+            let resolved = self
+                .provider
+                .complete(model, system_prompt, &retry_prompt)
+                .await
+                .map_err(|e| SmeltError::AiResolution {
+                    message: format!("retry failed for '{file}': {e}"),
+                })?;
+
+            tokio::fs::write(work_dir.join(file), &resolved)
+                .await
+                .map_err(|e| SmeltError::AiResolution {
+                    message: format!("failed to write retry result for '{file}': {e}"),
+                })?;
+        }
+
+        Ok(())
+    }
+
+    /// Restore original conflicted content to disk.
+    fn restore_original_files(
+        original_contents: &[(String, String)],
+        work_dir: &Path,
+    ) {
+        for (file_path, content) in original_contents {
+            if let Err(e) = std::fs::write(work_dir.join(file_path), content) {
+                eprintln!("Warning: failed to restore '{file_path}': {e}");
+            }
+        }
+    }
+}
+
+impl<G: GitOps + Send + Sync, P: AiProvider + 'static> ConflictHandler
+    for AiInteractiveConflictHandler<G, P>
+{
+    async fn handle_conflict(
+        &self,
+        session_name: &str,
+        files: &[String],
+        scan: &ConflictScan,
+        work_dir: &Path,
+    ) -> smelt_core::Result<ConflictAction> {
+        // If stderr is not a terminal, fall through to manual (which will
+        // propagate as an error in non-TTY mode).
+        if !console::Term::stderr().is_term() {
+            let fallback = InteractiveConflictHandler {
+                verbose: self.verbose,
+            };
+            return fallback
+                .handle_conflict(session_name, files, scan, work_dir)
+                .await;
+        }
+
+        // Save original conflicted content before AI resolution.
+        let original_contents: Vec<(String, String)> = files
+            .iter()
+            .filter_map(|f| {
+                std::fs::read_to_string(work_dir.join(f))
+                    .ok()
+                    .map(|content| (f.clone(), content))
+            })
+            .collect();
+
+        // Attempt AI resolution.
+        let ai_result = self
+            .ai_handler
+            .handle_conflict(session_name, files, scan, work_dir)
+            .await;
+
+        match ai_result {
+            Ok(_action) => {
+                // AI succeeded — enter accept/edit/reject loop with retries.
+                let mut retries_used: u8 = 0;
+
+                loop {
+                    let user_action = self
+                        .show_diff_and_prompt(
+                            session_name,
+                            files,
+                            &original_contents,
+                            work_dir,
+                        )
+                        .await?;
+
+                    match user_action {
+                        ConflictAction::Resolved(method) => {
+                            return Ok(ConflictAction::Resolved(method));
+                        }
+                        ConflictAction::Abort => {
+                            // User rejected — prompt for feedback.
+                            let feedback =
+                                prompt_feedback(session_name).await?;
+
+                            retries_used += 1;
+                            if retries_used < self.config.max_retries {
+                                let feedback_text = if feedback.is_empty() {
+                                    "Please try again with a different approach."
+                                        .to_string()
+                                } else {
+                                    feedback
+                                };
+
+                                eprintln!(
+                                    "Retrying AI resolution ({}/{})...",
+                                    retries_used, self.config.max_retries
+                                );
+
+                                match self
+                                    .retry_with_feedback(
+                                        session_name,
+                                        files,
+                                        &feedback_text,
+                                        work_dir,
+                                    )
+                                    .await
+                                {
+                                    Ok(()) => {
+                                        // Show diff again and re-prompt.
+                                        continue;
+                                    }
+                                    Err(e) => {
+                                        eprintln!(
+                                            "AI retry failed: {e}"
+                                        );
+                                        // Fall through to manual.
+                                        break;
+                                    }
+                                }
+                            } else {
+                                eprintln!(
+                                    "AI retries exhausted, falling back to manual resolution..."
+                                );
+                                break;
+                            }
+                        }
+                        // Skip is not an option in AI prompt; unreachable.
+                        _ => return Ok(user_action),
+                    }
+                }
+
+                // Retries exhausted or retry failed — fall back to manual.
+                Self::restore_original_files(&original_contents, work_dir);
+                let fallback = InteractiveConflictHandler {
+                    verbose: self.verbose,
+                };
+                fallback
+                    .handle_conflict(session_name, files, scan, work_dir)
+                    .await
+            }
+            Err(e) => {
+                // AI resolution failed — graceful fallback.
+                eprintln!("AI resolution failed: {e}");
+                eprintln!("Falling back to manual resolution...");
+                Self::restore_original_files(&original_contents, work_dir);
+                let fallback = InteractiveConflictHandler {
+                    verbose: self.verbose,
+                };
+                fallback
+                    .handle_conflict(session_name, files, scan, work_dir)
+                    .await
+            }
+        }
+    }
+}
+
+// ── Enum dispatcher to avoid RPITIT-no-dyn issue ─────────────────────
+
+/// Enum dispatcher for conflict handlers — avoids the RPITIT-no-dyn issue
+/// that prevents using `Box<dyn ConflictHandler>`.
+enum MergeConflictHandler {
+    AiInteractive(Box<AiInteractiveConflictHandler<GitCli, GenAiProvider>>),
+    Interactive(InteractiveConflictHandler),
+}
+
+impl ConflictHandler for MergeConflictHandler {
+    async fn handle_conflict(
+        &self,
+        session_name: &str,
+        files: &[String],
+        scan: &ConflictScan,
+        work_dir: &Path,
+    ) -> smelt_core::Result<ConflictAction> {
+        match self {
+            Self::AiInteractive(h) => {
+                h.handle_conflict(session_name, files, scan, work_dir)
+                    .await
+            }
+            Self::Interactive(h) => {
+                h.handle_conflict(session_name, files, scan, work_dir)
+                    .await
+            }
+        }
+    }
+}
+
+/// Build the appropriate conflict handler based on configuration and flags.
+fn build_conflict_handler(
+    git: GitCli,
+    repo_root: &Path,
+    no_ai: bool,
+    verbose: bool,
+    target_branch: &str,
+) -> MergeConflictHandler {
+    if no_ai || !console::Term::stderr().is_term() {
+        return MergeConflictHandler::Interactive(InteractiveConflictHandler { verbose });
+    }
+
+    let smelt_dir = repo_root.join(".smelt");
+    let ai_config = match AiConfig::load(&smelt_dir) {
+        Some(config) if config.enabled => config,
+        Some(_) => {
+            eprintln!("AI resolution disabled in config — using manual resolution.");
+            return MergeConflictHandler::Interactive(InteractiveConflictHandler { verbose });
+        }
+        None => {
+            // No AI config — use defaults (AI enabled by default).
+            AiConfig::default()
+        }
+    };
+
+    match GenAiProvider::new(&ai_config) {
+        Ok(provider) => {
+            let provider = Arc::new(provider);
+            let ai_handler = AiConflictHandler::new(
+                git,
+                Arc::clone(&provider),
+                ai_config.clone(),
+                target_branch.to_string(),
+            );
+            MergeConflictHandler::AiInteractive(Box::new(AiInteractiveConflictHandler {
+                ai_handler,
+                provider,
+                config: ai_config,
+                verbose,
+            }))
+        }
+        Err(e) => {
+            eprintln!("Warning: failed to initialize AI provider: {e}");
+            eprintln!("Falling back to manual resolution.");
+            MergeConflictHandler::Interactive(InteractiveConflictHandler { verbose })
+        }
+    }
+}
+
+// ── Public command functions ─────────────────────────────────────────
+
 /// Execute the `smelt merge run` command.
 ///
 /// Loads a manifest, runs the merge pipeline, prints progress to stderr
@@ -188,6 +637,7 @@ pub async fn execute_merge_run(
     target: Option<String>,
     strategy: Option<MergeOrderStrategy>,
     verbose: bool,
+    no_ai: bool,
 ) -> anyhow::Result<i32> {
     let manifest = match Manifest::load(std::path::Path::new(manifest_path)) {
         Ok(m) => m,
@@ -202,19 +652,38 @@ pub async fn execute_merge_run(
         manifest.manifest.name
     );
 
+    // Compute the effective target branch name for handler construction.
+    let effective_target = target
+        .clone()
+        .unwrap_or_else(|| format!("smelt/merge/{}", manifest.manifest.name));
+
+    let handler = build_conflict_handler(
+        git.clone(),
+        &repo_root,
+        no_ai,
+        verbose,
+        &effective_target,
+    );
+
     let runner = MergeRunner::new(git, repo_root);
     let opts = MergeOpts::new(target, strategy);
-    let handler = InteractiveConflictHandler { verbose };
 
     match runner.run(&manifest, opts, &handler).await {
         Ok(report) => {
             // Progress summary to stderr
             for (i, result) in report.sessions_merged.iter().enumerate() {
+                let method_note = match result.resolution {
+                    ResolutionMethod::AiAssisted => " (AI resolved)",
+                    ResolutionMethod::AiEdited => " (AI resolved, user-edited)",
+                    ResolutionMethod::Manual => " (manually resolved)",
+                    _ => "",
+                };
                 eprintln!(
-                    "[{}/{}] Merged '{}'",
+                    "[{}/{}] Merged '{}'{}",
                     i + 1,
                     report.sessions_merged.len(),
-                    result.session_name
+                    result.session_name,
+                    method_note,
                 );
             }
 
@@ -596,5 +1065,23 @@ mod tests {
 
         let output = format_plan_table(&plan);
         assert!(output.contains("... and 5 more"));
+    }
+
+    #[test]
+    fn test_format_colored_diff_produces_output() {
+        let original = "line 1\nline 2\nline 3\n";
+        let resolved = "line 1\nmodified line 2\nline 3\n";
+        let diff = format_colored_diff(original, resolved, "test.rs");
+        assert!(diff.contains("test.rs"));
+        // Should contain diff markers (may be styled but raw text is there)
+        assert!(!diff.is_empty());
+    }
+
+    #[test]
+    fn test_format_colored_diff_no_changes() {
+        let content = "same content\n";
+        let diff = format_colored_diff(content, content, "test.rs");
+        // No diff output when content is identical
+        assert!(diff.trim().is_empty());
     }
 }
