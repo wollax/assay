@@ -179,16 +179,21 @@ The `assay-mcp` crate provides MCP server functionality. Future crates may inclu
 - [ ] MCP observability: warnings field, filtered history, resolved config, growth rate — v0.4.0
 - [ ] Correctness: worktree base branch status, session error messages, diff context — v0.4.0
 - [ ] Tech debt batch cleanup — v0.4.0
+- [ ] `merge_check` MCP tool — read-only conflict detection via `git merge-tree` — v0.4.1
+- [ ] `merge_propose` MCP tool — PR creation with gate evidence, dry_run support — v0.4.1
+- [ ] Worktree fixes: canonical paths, default branch errors, prune failure surfacing — v0.4.1
 
 ### Future
 
 - [ ] Minimal TUI gate results viewer
 - [ ] Composable gate definitions (`gate.extends`)
+- [ ] Criteria libraries with `include` field
 - [ ] Spec preconditions section
 - [ ] Gate history summary with pass/fail rates
 - [ ] tmux session/pane management for interactive agent lifecycle
 - [ ] MCP-integrated iterative workflow (agents call gates during implementation)
-- [ ] Merge-back workflow: feature branch creation, conflict resolution, gate enforcement
+- [ ] WorkSession merge state machine (merge_ready → merged | conflict_detected)
+- [ ] Conflict resolution strategies (auto/rebase/agent/human escalation)
 - [ ] Multi-session orchestrator/daemon managing concurrent sessions
 - [ ] Full TUI dashboard for multi-session supervision
 - [ ] Agent launcher trait (extract from concrete Claude Code implementation)
