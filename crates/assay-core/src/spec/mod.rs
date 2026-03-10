@@ -2340,4 +2340,63 @@ cmd = "true"
             other => panic!("expected SpecNotFoundDiagnostic, got: {other:?}"),
         }
     }
+
+    // ── MCP-03: Spec-not-found Display includes available spec names ──
+
+    #[test]
+    fn spec_not_found_display_includes_available_specs() {
+        let dir = tempfile::tempdir().unwrap();
+        write_spec_in(
+            dir.path(),
+            "alpha.toml",
+            r#"
+name = "alpha"
+
+[[criteria]]
+name = "c1"
+description = "d1"
+cmd = "true"
+"#,
+        );
+        write_spec_in(
+            dir.path(),
+            "beta.toml",
+            r#"
+name = "beta"
+
+[[criteria]]
+name = "c1"
+description = "d1"
+cmd = "true"
+"#,
+        );
+
+        let err = load_spec_entry_with_diagnostics("nonexistent-xyz", dir.path()).unwrap_err();
+        let display = err.to_string();
+        assert!(
+            display.contains("not found"),
+            "Display should mention 'not found': {display}"
+        );
+        assert!(
+            display.contains("alpha"),
+            "Display should include available spec 'alpha': {display}"
+        );
+        assert!(
+            display.contains("beta"),
+            "Display should include available spec 'beta': {display}"
+        );
+    }
+
+    #[test]
+    fn spec_not_found_display_empty_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path()).unwrap();
+
+        let err = load_spec_entry_with_diagnostics("nonexistent-xyz", dir.path()).unwrap_err();
+        let display = err.to_string();
+        assert!(
+            display.contains("No specs found"),
+            "Display should mention no specs found: {display}"
+        );
+    }
 }
