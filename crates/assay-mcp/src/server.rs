@@ -571,11 +571,13 @@ impl AssayServer {
 
         // If spec has agent criteria, create a session and attach to response.
         if let Some(info) = agent_info {
+            // Move results out of summary instead of cloning the Vec<CriterionResult>.
+            let deterministic_results = summary.results;
             let session = assay_core::gate::session::create_session(
                 &summary.spec_name,
                 info.agent_criteria_names,
                 info.spec_enforcement,
-                summary.results.clone(),
+                deterministic_results,
             );
 
             let session_id = session.session_id.clone();
@@ -628,16 +630,18 @@ impl AssayServer {
             });
         } else {
             // Command-only spec (no agent criteria) — persist history immediately.
+            // Extract spec_name for the tracing warn before moving summary into save_run.
+            let spec_name_for_log = summary.spec_name.clone();
             let assay_dir = cwd.join(".assay");
             let max_history = config.gates.as_ref().and_then(|g| g.max_history);
             if let Err(e) = assay_core::history::save_run(
                 &assay_dir,
-                summary.clone(),
+                summary,
                 Some(working_dir.to_string_lossy().to_string()),
                 max_history,
             ) {
                 tracing::warn!(
-                    spec_name = %summary.spec_name,
+                    spec_name = %spec_name_for_log,
                     "failed to save command-only gate run history: {e}"
                 );
             }
