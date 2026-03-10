@@ -862,8 +862,7 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let summary = make_test_summary("save-run-spec");
 
-        let result =
-            save_run(dir.path(), summary, Some("/tmp/wd".to_string()), None).unwrap();
+        let result = save_run(dir.path(), summary, Some("/tmp/wd".to_string()), None).unwrap();
 
         assert!(result.path.exists(), "save_run should create a file");
         assert_eq!(result.pruned, 0);
