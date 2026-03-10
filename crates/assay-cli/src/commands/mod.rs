@@ -7,6 +7,7 @@ pub mod spec;
 pub mod worktree;
 
 use anyhow::Context;
+use std::io::IsTerminal;
 use std::path::PathBuf;
 
 // ── Shared constants ──────────────────────────────────────────────
@@ -28,9 +29,10 @@ pub(crate) fn assay_dir(root: &std::path::Path) -> PathBuf {
 /// Check whether terminal colors should be used.
 ///
 /// Returns `false` when the `NO_COLOR` environment variable is set
-/// (any value, including empty — per <https://no-color.org/>).
+/// (any value, including empty — per <https://no-color.org/>) or when
+/// stdout is not a terminal (e.g., piped to a file or another process).
 pub(crate) fn colors_enabled() -> bool {
-    std::env::var_os("NO_COLOR").is_none()
+    std::env::var_os("NO_COLOR").is_none() && std::io::stdout().is_terminal()
 }
 
 /// Resolve the project root directory.
