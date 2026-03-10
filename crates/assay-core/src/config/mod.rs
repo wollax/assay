@@ -14,9 +14,9 @@ use crate::error::{AssayError, Result};
 #[derive(Debug)]
 pub(crate) struct TruncatedLine {
     /// The (possibly truncated) text to display.
-    pub text: String,
+    pub(crate) text: String,
     /// The column offset where the caret should point within `text`.
-    pub caret_offset: usize,
+    pub(crate) caret_offset: usize,
 }
 
 /// Translate a byte offset in a string to a (line, column) pair.
@@ -25,7 +25,8 @@ pub(crate) struct TruncatedLine {
 /// (not bytes) to handle multi-byte UTF-8 correctly.
 pub(crate) fn translate_position(content: &str, byte_offset: usize) -> (usize, usize) {
     let clamped = byte_offset.min(content.len());
-    let before = &content[..clamped];
+    let safe = content.floor_char_boundary(clamped);
+    let before = &content[..safe];
     let line = before.matches('\n').count();
     let last_newline = before.rfind('\n').map(|p| p + 1).unwrap_or(0);
     let col = content[last_newline..clamped].chars().count();
@@ -45,6 +46,11 @@ pub(crate) fn truncate_source_line(line: &str, col: usize, budget: usize) -> Tru
             caret_offset: col,
         };
     }
+
+    debug_assert!(
+        budget >= 6,
+        "budget must be at least 6 to fit ellipsis markers"
+    );
 
     let ellipsis = "...";
     let elen = ellipsis.len();
@@ -417,8 +423,9 @@ default_timeout = 600
     #[test]
     fn translate_position_beyond_content() {
         // Clamp to end
-        let (line, _col) = super::translate_position("hello", 100);
+        let (line, col) = super::translate_position("hello", 100);
         assert_eq!(line, 0);
+        assert_eq!(col, 5);
     }
 
     // ── ERR-03: truncate_source_line ──────────────────────────────
@@ -507,6 +514,19 @@ default_timeout = 600
             result.contains("line"),
             "should contain line reference, got: {result}"
         );
+    }
+
+    #[test]
+    fn format_toml_error_no_span() {
+        // Type mismatch errors (e.g., integer where string expected) may lack span info.
+        // If the error has no span, format_toml_error should return just the message.
+        let content = "project_name = 42\n";
+        let err = toml::from_str::<assay_types::Config>(content).unwrap_err();
+        let result = super::format_toml_error(content, &err);
+        // Whether or not this particular error has a span, the function should not panic.
+        // If there's no span, result should be just the message (no "line" or "^").
+        // If there is a span, the caret display should still work.
+        assert!(!result.is_empty(), "should produce non-empty output");
     }
 
     #[test]

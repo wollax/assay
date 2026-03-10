@@ -38,7 +38,7 @@ pub(crate) fn levenshtein(a: &str, b: &str) -> usize {
 ///
 /// Returns `None` if zero or multiple candidates meet the threshold (ambiguous).
 pub(crate) fn find_fuzzy_match(name: &str, candidates: &[String]) -> Option<String> {
-    let threshold = (name.len() / 2).min(2);
+    let threshold = (name.chars().count() / 2).min(2);
     let mut best: Option<(&str, usize)> = None;
     let mut ambiguous = false;
 
@@ -76,6 +76,18 @@ pub(crate) fn format_spec_not_found(
 ) -> String {
     if available.is_empty() && invalid.is_empty() {
         return format!("No specs found in {}.", specs_dir.display());
+    }
+
+    if available.is_empty() && !invalid.is_empty() {
+        let list = invalid.join(", ");
+        let mut msg = format!(
+            "spec '{name}' not found. No valid specs found ({} could not be parsed: {list})",
+            invalid.len(),
+        );
+        if let Some(suggestion) = suggestion {
+            msg.push_str(&format!("\nDid you mean '{suggestion}'?"));
+        }
+        return msg;
     }
 
     let max_inline = 10;
@@ -434,14 +446,21 @@ pub fn load_spec_entry_with_diagnostics(slug: &str, specs_dir: &Path) -> Result<
                 .errors
                 .iter()
                 .filter_map(|e| match e {
+                    // Flat-file specs (e.g. specs/auth-flow.toml) → use file_stem
                     AssayError::SpecParse { path, .. }
-                    | AssayError::GatesSpecParse { path, .. }
-                    | AssayError::FeatureSpecParse { path, .. }
-                    | AssayError::SpecValidation { path, .. }
-                    | AssayError::GatesSpecValidation { path, .. }
-                    | AssayError::FeatureSpecValidation { path, .. } => path
+                    | AssayError::SpecValidation { path, .. } => path
                         .file_stem()
                         .or_else(|| path.parent().and_then(|p| p.file_name()))
+                        .and_then(|s| s.to_str())
+                        .map(|s| s.to_string()),
+                    // Directory-based specs (e.g. specs/auth-flow/gates.toml) → use parent dir name
+                    AssayError::GatesSpecParse { path, .. }
+                    | AssayError::FeatureSpecParse { path, .. }
+                    | AssayError::GatesSpecValidation { path, .. }
+                    | AssayError::FeatureSpecValidation { path, .. } => path
+                        .parent()
+                        .and_then(|p| p.file_name())
+                        .or_else(|| path.file_stem())
                         .and_then(|s| s.to_str())
                         .map(|s| s.to_string()),
                     _ => None,
@@ -2198,5 +2217,127 @@ cmd = "true"
             msg.contains("Did you mean 'auth-flow'?"),
             "should suggest match, got: {msg}"
         );
+    }
+
+    #[test]
+    fn format_spec_not_found_only_invalid_no_available() {
+        let invalid = vec!["bad-spec".to_string()];
+        let msg = format_spec_not_found("xyz", Path::new(".assay/specs/"), &[], &invalid, None);
+        assert!(
+            msg.contains("No valid specs found"),
+            "should say no valid specs, got: {msg}"
+        );
+        assert!(
+            msg.contains("could not be parsed"),
+            "should mention parse failures, got: {msg}"
+        );
+        assert!(
+            !msg.contains("Available specs:"),
+            "should NOT say 'Available specs:', got: {msg}"
+        );
+    }
+
+    // ── load_spec_entry_with_diagnostics tests ──────────────────────
+
+    #[test]
+    fn load_spec_entry_with_diagnostics_exists() {
+        let dir = tempfile::tempdir().unwrap();
+        write_spec_in(
+            dir.path(),
+            "alpha.toml",
+            r#"
+name = "alpha"
+
+[[criteria]]
+name = "c1"
+description = "d1"
+cmd = "true"
+"#,
+        );
+
+        let entry =
+            load_spec_entry_with_diagnostics("alpha", dir.path()).expect("should find spec");
+        assert_eq!(entry.slug(), "alpha");
+    }
+
+    #[test]
+    fn load_spec_entry_with_diagnostics_not_found_with_available() {
+        let dir = tempfile::tempdir().unwrap();
+        write_spec_in(
+            dir.path(),
+            "alpha.toml",
+            r#"
+name = "alpha"
+
+[[criteria]]
+name = "c1"
+description = "d1"
+cmd = "true"
+"#,
+        );
+
+        let err = load_spec_entry_with_diagnostics("xyz", dir.path()).unwrap_err();
+        match &err {
+            AssayError::SpecNotFoundDiagnostic {
+                available, invalid, ..
+            } => {
+                assert!(
+                    available.contains(&"alpha".to_string()),
+                    "should list alpha as available, got: {available:?}"
+                );
+                assert!(
+                    invalid.is_empty(),
+                    "should have no invalid specs, got: {invalid:?}"
+                );
+            }
+            other => panic!("expected SpecNotFoundDiagnostic, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn load_spec_entry_with_diagnostics_not_found_empty_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        // Create the specs dir but put nothing in it
+        std::fs::create_dir_all(dir.path()).unwrap();
+
+        let err = load_spec_entry_with_diagnostics("xyz", dir.path()).unwrap_err();
+        match &err {
+            AssayError::SpecNotFoundDiagnostic {
+                available, invalid, ..
+            } => {
+                assert!(available.is_empty(), "should have no available specs");
+                assert!(invalid.is_empty(), "should have no invalid specs");
+            }
+            other => panic!("expected SpecNotFoundDiagnostic, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn load_spec_entry_with_diagnostics_not_found_with_suggestion() {
+        let dir = tempfile::tempdir().unwrap();
+        write_spec_in(
+            dir.path(),
+            "auth-flow.toml",
+            r#"
+name = "auth-flow"
+
+[[criteria]]
+name = "c1"
+description = "d1"
+cmd = "true"
+"#,
+        );
+
+        let err = load_spec_entry_with_diagnostics("auth-flw", dir.path()).unwrap_err();
+        match &err {
+            AssayError::SpecNotFoundDiagnostic { suggestion, .. } => {
+                assert_eq!(
+                    suggestion.as_deref(),
+                    Some("auth-flow"),
+                    "should suggest auth-flow"
+                );
+            }
+            other => panic!("expected SpecNotFoundDiagnostic, got: {other:?}"),
+        }
     }
 }

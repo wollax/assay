@@ -243,7 +243,8 @@ fn evaluate_criteria(
                         Enforcement::Advisory => enforcement_summary.advisory_passed += 1,
                     }
                 } else {
-                    // Enrich stderr for exit code 127/126 when a command was run
+                    // Enrich stderr for exit code 127/126 when a command was run.
+                    // Integration-tested via classify_exit_code and format_command_error unit tests.
                     if let Some(code) = gate_result.exit_code
                         && let Some(kind) = classify_exit_code(code)
                         && let Some(cmd) = criterion.cmd.as_deref()
@@ -2018,6 +2019,94 @@ mod tests {
         assert!(
             msg.contains("not found"),
             "should say not found, got: {msg}"
+        );
+    }
+
+    // ── enriched_error_display tests ────────────────────────────────
+
+    #[test]
+    fn enriched_error_display_not_found_with_cmd() {
+        let err = AssayError::GateExecution {
+            cmd: "cargo test".to_string(),
+            working_dir: std::path::PathBuf::from("/tmp"),
+            source: std::io::Error::new(std::io::ErrorKind::NotFound, "not found"),
+        };
+        let msg = enriched_error_display(&err, Some("cargo test"));
+        assert!(
+            msg.contains("not found"),
+            "should contain not-found hint, got: {msg}"
+        );
+        assert!(msg.contains("PATH"), "should contain PATH hint, got: {msg}");
+    }
+
+    #[test]
+    fn enriched_error_display_permission_denied_with_cmd() {
+        let err = AssayError::GateExecution {
+            cmd: "cargo test".to_string(),
+            working_dir: std::path::PathBuf::from("/tmp"),
+            source: std::io::Error::new(std::io::ErrorKind::PermissionDenied, "permission denied"),
+        };
+        let msg = enriched_error_display(&err, Some("cargo test"));
+        assert!(
+            msg.contains("not executable"),
+            "should contain permission hint, got: {msg}"
+        );
+        assert!(
+            msg.contains("permissions"),
+            "should mention permissions, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn enriched_error_display_other_io_error_with_cmd() {
+        let err = AssayError::GateExecution {
+            cmd: "cargo test".to_string(),
+            working_dir: std::path::PathBuf::from("/tmp"),
+            source: std::io::Error::new(std::io::ErrorKind::BrokenPipe, "broken pipe"),
+        };
+        let msg = enriched_error_display(&err, Some("cargo test"));
+        assert!(
+            msg.starts_with("gate evaluation error:"),
+            "should be plain error message, got: {msg}"
+        );
+        assert!(
+            !msg.contains("PATH"),
+            "should not contain hint for other IO errors, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn enriched_error_display_non_gate_execution_error() {
+        let err = AssayError::SpecNotFound {
+            name: "missing".to_string(),
+            specs_dir: std::path::PathBuf::from("/tmp/specs"),
+        };
+        let msg = enriched_error_display(&err, Some("cargo test"));
+        assert!(
+            msg.starts_with("gate evaluation error:"),
+            "should be plain error message, got: {msg}"
+        );
+        assert!(
+            !msg.contains("PATH"),
+            "should not contain hint for non-GateExecution errors, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn enriched_error_display_gate_execution_no_cmd() {
+        let err = AssayError::GateExecution {
+            cmd: "cargo test".to_string(),
+            working_dir: std::path::PathBuf::from("/tmp"),
+            source: std::io::Error::new(std::io::ErrorKind::NotFound, "not found"),
+        };
+        let msg = enriched_error_display(&err, None);
+        assert!(
+            msg.starts_with("gate evaluation error:"),
+            "should be plain error message, got: {msg}"
+        );
+        assert!(
+            !msg.contains("PATH"),
+            "should not contain hint when cmd is None, got: {msg}"
         );
     }
 }
