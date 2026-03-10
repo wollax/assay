@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 2026-03-08)
 
 ## Current Position
 
-Phase: 32 — CLI Polish
-Plan: 4 of 4
-Status: Complete
-Last activity: 2026-03-10 — Completed 32-04-PLAN.md (enforcement dedup)
+Phase: 33 — MCP Validation
+Plan: 1 of 2
+Status: In progress
+Last activity: 2026-03-10 — Completed 33-01-PLAN.md (serde validation regression tests)
 
-Progress: v0.3.0 [██████████████░░] 88% (7/8 phases)
+Progress: v0.3.0 [██████████████░░] 88% (7/8 phases, plan 1/2 of phase 33)
 
 ## Milestone Progress
 
@@ -59,6 +59,8 @@ v0.2.0 decisions archived to .planning/milestones/v0.2.0-ROADMAP.md
 - Levenshtein fuzzy match threshold: distance <= 2 AND distance <= name.len() / 2
 - SpecNotFoundDiagnostic is a separate error variant (not enriching existing SpecNotFound)
 - ERR-01 detects exit codes 127/126 (not io::ErrorKind) since commands spawn via sh -c
+- MCP param validation tested at serde layer (not handler layer) — rmcp Parameters<T> handles it before handler executes
+- `.err().unwrap()` pattern preferred over `.unwrap_err()` when T lacks Debug
 
 ### Pending Issues
 
@@ -71,4 +73,10 @@ None.
 
 ### Next Actions
 
-Phase 32 complete (all 4 plans). Ready for Phase 33: MCP Validation.
+Phase 33 plan 01 complete. Plan 02 (MCP-04/MCP-05) ready to execute.
+
+### Session Continuity
+
+Last session: 2026-03-10T17:57Z
+Stopped at: Completed 33-01-PLAN.md
+Resume file: None
