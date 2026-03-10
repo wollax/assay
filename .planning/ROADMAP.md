@@ -55,18 +55,7 @@
 - [x] Phase 27: Types Hygiene (4 plans) — 2026-03-09
 - [x] Phase 28: Worktree Manager (2 plans) — 2026-03-09
 - [x] Phase 29: Gate Output Truncation (2 plans) — 2026-03-09
-
-#### Phase 30: Core Tech Debt
-
-**Goal:** Eliminate validation duplication, extract shared evaluation logic, harden history and daemon persistence, and tighten visibility on internal APIs.
-**Dependencies:** Phase 26 (error ergonomics)
-**Requirements:** CORE-02, CORE-03, CORE-04, CORE-06, CORE-07, CORE-08, CORE-09
-**Success Criteria** (what must be TRUE):
-  1. `validate()` and `validate_gates_spec()` share a single validation implementation (no duplicated enforcement logic)
-  2. `evaluate_all` and `evaluate_all_gates` use a shared extraction (no duplicated iteration/collection logic)
-  3. `history::list()` emits a warning for unreadable directory entries instead of silently dropping them
-  4. `generate_run_id` is `pub(crate)` (not `pub`)
-  5. Guard daemon PID file write is followed by `fsync()` and `try_save_checkpoint` uses stored project dir
+- [x] Phase 30: Core Tech Debt (3 plans) — 2026-03-10
 
 #### Phase 31: Error Messages
 
@@ -108,4 +97,4 @@
 |-----------|--------|--------|--------------|----------|
 | v0.1.0 Proof of Concept | ✅ Shipped | 10 | 43 | 100% |
 | v0.2.0 Dual-Track Gates & Hardening | ✅ Shipped | 15 | 52 | 100% |
-| v0.3.0 Orchestration Foundation | 🔄 In Progress | 8 (26-33) | 43 | 50% |
+| v0.3.0 Orchestration Foundation | 🔄 In Progress | 8 (26-33) | 43 | 63% |

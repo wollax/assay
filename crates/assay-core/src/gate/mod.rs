@@ -100,16 +100,72 @@ pub fn evaluate_all(
     cli_timeout: Option<u64>,
     config_timeout: Option<u64>,
 ) -> GateRunSummary {
+    let criteria: Vec<(Criterion, Enforcement)> = spec
+        .criteria
+        .iter()
+        .map(|c| {
+            let enforcement = resolve_enforcement(c.enforcement, spec.gate.as_ref());
+            (c.clone(), enforcement)
+        })
+        .collect();
+    evaluate_criteria(
+        &spec.name,
+        criteria,
+        working_dir,
+        cli_timeout,
+        config_timeout,
+    )
+}
+
+/// Evaluate all criteria in a `GatesSpec` sequentially.
+///
+/// Equivalent to [`evaluate_all`] but for the directory-based `GatesSpec`
+/// format. Each `GateCriterion` is converted to a `Criterion` for evaluation.
+/// The `requirements` field on `GateCriterion` is not used during evaluation
+/// (it's metadata for traceability).
+pub fn evaluate_all_gates(
+    gates: &GatesSpec,
+    working_dir: &Path,
+    cli_timeout: Option<u64>,
+    config_timeout: Option<u64>,
+) -> GateRunSummary {
+    let criteria: Vec<(Criterion, Enforcement)> = gates
+        .criteria
+        .iter()
+        .map(|gc| {
+            let enforcement = resolve_enforcement(gc.enforcement, gates.gate.as_ref());
+            (to_criterion(gc), enforcement)
+        })
+        .collect();
+    evaluate_criteria(
+        &gates.name,
+        criteria,
+        working_dir,
+        cli_timeout,
+        config_timeout,
+    )
+}
+
+/// Shared evaluation loop for both legacy specs and gate specs.
+///
+/// Each entry pairs a `Criterion` with its resolved `Enforcement` level.
+/// Handles AgentReport skipping, no-cmd-no-path skipping, timeout resolution,
+/// evaluation dispatch, and result/enforcement summary accumulation.
+fn evaluate_criteria(
+    spec_name: &str,
+    criteria: Vec<(Criterion, Enforcement)>,
+    working_dir: &Path,
+    cli_timeout: Option<u64>,
+    config_timeout: Option<u64>,
+) -> GateRunSummary {
     let start = Instant::now();
-    let mut results = Vec::with_capacity(spec.criteria.len());
+    let mut results = Vec::with_capacity(criteria.len());
     let mut passed = 0usize;
     let mut failed = 0usize;
     let mut skipped = 0usize;
     let mut enforcement_summary = EnforcementSummary::default();
 
-    for criterion in &spec.criteria {
-        let resolved_enforcement = resolve_enforcement(criterion.enforcement, spec.gate.as_ref());
-
+    for (criterion, resolved_enforcement) in &criteria {
         // AgentReport criteria are evaluated through the session lifecycle,
         // not the synchronous evaluate path. Mark as skipped (pending).
         if criterion.kind == Some(CriterionKind::AgentReport) {
@@ -117,7 +173,7 @@ pub fn evaluate_all(
             results.push(CriterionResult {
                 criterion_name: criterion.name.clone(),
                 result: None,
-                enforcement: resolved_enforcement,
+                enforcement: *resolved_enforcement,
             });
             continue;
         }
@@ -127,7 +183,7 @@ pub fn evaluate_all(
             results.push(CriterionResult {
                 criterion_name: criterion.name.clone(),
                 result: None,
-                enforcement: resolved_enforcement,
+                enforcement: *resolved_enforcement,
             });
             continue;
         }
@@ -152,7 +208,7 @@ pub fn evaluate_all(
                 results.push(CriterionResult {
                     criterion_name: criterion.name.clone(),
                     result: Some(gate_result),
-                    enforcement: resolved_enforcement,
+                    enforcement: *resolved_enforcement,
                 });
             }
             Err(err) => {
@@ -178,123 +234,14 @@ pub fn evaluate_all(
                         confidence: None,
                         evaluator_role: None,
                     }),
-                    enforcement: resolved_enforcement,
+                    enforcement: *resolved_enforcement,
                 });
             }
         }
     }
 
     GateRunSummary {
-        spec_name: spec.name.clone(),
-        results,
-        passed,
-        failed,
-        skipped,
-        total_duration_ms: start.elapsed().as_millis() as u64,
-        enforcement: enforcement_summary,
-    }
-}
-
-/// Evaluate all criteria in a `GatesSpec` sequentially.
-///
-/// Equivalent to [`evaluate_all`] but for the directory-based `GatesSpec`
-/// format. Each `GateCriterion` is converted to a `Criterion` for evaluation.
-/// The `requirements` field on `GateCriterion` is not used during evaluation
-/// (it's metadata for traceability).
-pub fn evaluate_all_gates(
-    gates: &GatesSpec,
-    working_dir: &Path,
-    cli_timeout: Option<u64>,
-    config_timeout: Option<u64>,
-) -> GateRunSummary {
-    let start = Instant::now();
-    let mut results = Vec::with_capacity(gates.criteria.len());
-    let mut passed = 0usize;
-    let mut failed = 0usize;
-    let mut skipped = 0usize;
-    let mut enforcement_summary = EnforcementSummary::default();
-
-    for gate_criterion in &gates.criteria {
-        let resolved_enforcement =
-            resolve_enforcement(gate_criterion.enforcement, gates.gate.as_ref());
-        let criterion = to_criterion(gate_criterion);
-
-        // AgentReport criteria are evaluated through the session lifecycle,
-        // not the synchronous evaluate path. Mark as skipped (pending).
-        if criterion.kind == Some(CriterionKind::AgentReport) {
-            skipped += 1;
-            results.push(CriterionResult {
-                criterion_name: criterion.name.clone(),
-                result: None,
-                enforcement: resolved_enforcement,
-            });
-            continue;
-        }
-
-        if criterion.cmd.is_none() && criterion.path.is_none() {
-            skipped += 1;
-            results.push(CriterionResult {
-                criterion_name: criterion.name.clone(),
-                result: None,
-                enforcement: resolved_enforcement,
-            });
-            continue;
-        }
-
-        let timeout = resolve_timeout(cli_timeout, criterion.timeout, config_timeout);
-
-        match evaluate(&criterion, working_dir, timeout) {
-            Ok(gate_result) => {
-                if gate_result.passed {
-                    passed += 1;
-                    match resolved_enforcement {
-                        Enforcement::Required => enforcement_summary.required_passed += 1,
-                        Enforcement::Advisory => enforcement_summary.advisory_passed += 1,
-                    }
-                } else {
-                    failed += 1;
-                    match resolved_enforcement {
-                        Enforcement::Required => enforcement_summary.required_failed += 1,
-                        Enforcement::Advisory => enforcement_summary.advisory_failed += 1,
-                    }
-                }
-                results.push(CriterionResult {
-                    criterion_name: criterion.name.clone(),
-                    result: Some(gate_result),
-                    enforcement: resolved_enforcement,
-                });
-            }
-            Err(err) => {
-                failed += 1;
-                match resolved_enforcement {
-                    Enforcement::Required => enforcement_summary.required_failed += 1,
-                    Enforcement::Advisory => enforcement_summary.advisory_failed += 1,
-                }
-                results.push(CriterionResult {
-                    criterion_name: criterion.name.clone(),
-                    result: Some(GateResult {
-                        passed: false,
-                        kind: gate_kind_for(&criterion),
-                        stdout: String::new(),
-                        stderr: format!("gate evaluation error: {err}"),
-                        exit_code: None,
-                        duration_ms: 0,
-                        timestamp: Utc::now(),
-                        truncated: false,
-                        original_bytes: None,
-                        evidence: None,
-                        reasoning: None,
-                        confidence: None,
-                        evaluator_role: None,
-                    }),
-                    enforcement: resolved_enforcement,
-                });
-            }
-        }
-    }
-
-    GateRunSummary {
-        spec_name: gates.name.clone(),
+        spec_name: spec_name.to_string(),
         results,
         passed,
         failed,

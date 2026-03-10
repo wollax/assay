@@ -1,6 +1,7 @@
 //! PID file management for single-instance guard daemon.
 
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use crate::AssayError;
@@ -55,8 +56,21 @@ pub fn create_pid_file(pid_path: &Path) -> crate::Result<()> {
         })?;
     }
 
-    fs::write(pid_path, std::process::id().to_string()).map_err(|source| AssayError::Io {
-        operation: "writing guard PID file".into(),
+    let mut file = fs::File::create(pid_path).map_err(|source| AssayError::Io {
+        operation: "creating guard PID file".into(),
+        path: pid_path.to_path_buf(),
+        source,
+    })?;
+
+    file.write_all(std::process::id().to_string().as_bytes())
+        .map_err(|source| AssayError::Io {
+            operation: "writing guard PID file".into(),
+            path: pid_path.to_path_buf(),
+            source,
+        })?;
+
+    file.sync_all().map_err(|source| AssayError::Io {
+        operation: "syncing guard PID file".into(),
         path: pid_path.to_path_buf(),
         source,
     })
