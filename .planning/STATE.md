@@ -3,26 +3,26 @@
 ## Current Position
 
 Phase: 8 of 10 — Orchestration Plan & Task Graph
-Plan: 2 of 3 complete
-Status: In progress
-Progress: ██████████░ 11/12
+Plan: 3 of 3 complete
+Status: Phase complete
+Progress: ████████████ 12/12
 
-Last activity: 2026-03-10 — Completed 08-02-PLAN.md (orchestrator execution engine)
+Last activity: 2026-03-10 — Completed 08-03-PLAN.md (CLI command & integration tests)
 
 ## Session Continuity
 
-Last session: 2026-03-10T22:45:00Z
-Stopped at: Completed 08-02-PLAN.md
+Last session: 2026-03-10T22:50:00Z
+Stopped at: Completed 08-03-PLAN.md
 Resume file: None
 
 ## Performance Metrics
 
 | Metric | Value |
 |--------|-------|
-| Phases completed | 7 |
-| Phases remaining | 3 |
-| Plans completed (phase 8) | 2/3 |
-| Requirements covered | 11/12 |
+| Phases completed | 8 |
+| Phases remaining | 2 |
+| Plans completed (phase 8) | 3/3 |
+| Requirements covered | 12/12 |
 | Blockers | 0 |
 | Technical debt items | 0 |
 
@@ -169,6 +169,14 @@ Resume file: None
 - CancellationToken child tokens created per session; parent cancel aborts all via join_set.abort_all()
 - Merge phase builds filtered Manifest with only Completed sessions, delegates to MergeRunner::run()
 - Orchestrator composes existing components (WorktreeManager, ScriptExecutor, MergeRunner) — no re-implementation
+- CLI `smelt orchestrate run <manifest>` with visible alias `orch`; flags: --target, --strategy, --verbose, --no-ai, --json
+- OrchestrateConflictHandler enum dispatcher (separate from MergeConflictHandler) — keeps modules decoupled
+- Live dashboard via indicatif::MultiProgress with per-session ProgressBar spinners; non-TTY falls back to eprintln line-by-line
+- Summary table via comfy-table; sessions sorted alphabetically for deterministic output
+- CancellationToken + tokio::signal::ctrl_c spawn for graceful Ctrl-C shutdown
+- Resume detection: RunStateManager::find_incomplete_run() + manifest hash validation + dialoguer::Confirm prompt (TTY only)
+- --json outputs OrchestrationReport via serde_json::to_string_pretty to stdout
+- Exit code 0 on success, 1 on any failure/skip/cancel
 
 ### Blockers
 
