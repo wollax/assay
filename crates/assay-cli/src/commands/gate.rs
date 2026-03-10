@@ -694,16 +694,15 @@ fn handle_gate_history(name: &str, json: bool, limit: usize) -> anyhow::Result<i
     for (i, record) in records.iter().enumerate() {
         let s = &record.summary;
         let ts = format_relative_timestamp(&record.timestamp);
-        let status = if s.failed == 0 {
-            if color {
-                "\x1b[32mpass\x1b[0m".to_string()
-            } else {
-                "pass".to_string()
-            }
-        } else if color {
-            "\x1b[31mfail\x1b[0m".to_string()
+        let (status_plain, status_color_code) = if s.failed == 0 {
+            ("pass", "\x1b[32m")
         } else {
-            "fail".to_string()
+            ("fail", "\x1b[31m")
+        };
+        let status = if color {
+            format!("{status_color_code}{status_plain}\x1b[0m")
+        } else {
+            status_plain.to_string()
         };
         let dur = format_duration_ms(s.total_duration_ms);
 
