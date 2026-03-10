@@ -33,6 +33,50 @@ use crate::error::{AssayError, Result};
 
 pub mod session;
 
+/// Classification of command execution errors based on shell exit codes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CommandErrorKind {
+    /// Exit code 127: command not found in PATH.
+    NotFound,
+    /// Exit code 126: command found but not executable.
+    NotExecutable,
+}
+
+/// Extract the binary name (first whitespace-delimited token) from a command string.
+///
+/// Returns an empty string if the command is empty or whitespace-only.
+pub(crate) fn extract_binary(cmd: &str) -> &str {
+    cmd.split_whitespace().next().unwrap_or("")
+}
+
+/// Classify a shell exit code into a known error kind.
+///
+/// Returns `Some(CommandErrorKind)` for exit codes 127 (not found) and 126
+/// (not executable), `None` for all other codes.
+pub(crate) fn classify_exit_code(code: i32) -> Option<CommandErrorKind> {
+    match code {
+        127 => Some(CommandErrorKind::NotFound),
+        126 => Some(CommandErrorKind::NotExecutable),
+        _ => None,
+    }
+}
+
+/// Format a user-facing error message for command execution failures.
+///
+/// Extracts the binary name from the command string and produces an
+/// actionable message based on the error kind.
+pub(crate) fn format_command_error(cmd: &str, kind: CommandErrorKind) -> String {
+    let binary = extract_binary(cmd);
+    match kind {
+        CommandErrorKind::NotFound => {
+            format!("command '{binary}' not found. Is it installed and in PATH?")
+        }
+        CommandErrorKind::NotExecutable => {
+            format!("command '{binary}' found but not executable. Check file permissions.")
+        }
+    }
+}
+
 /// Byte budget per output stream (stdout/stderr) for head+tail truncation (32 KiB).
 const STREAM_BUDGET: usize = 32_768;
 
@@ -1848,5 +1892,86 @@ mod tests {
             result.output.contains("[truncated: "),
             "should have truncation marker"
         );
+    }
+
+    // ── ERR-01: extract_binary ─────────────────────────────────────
+
+    #[test]
+    fn extract_binary_multi_word() {
+        assert_eq!(extract_binary("cargo test --release"), "cargo");
+    }
+
+    #[test]
+    fn extract_binary_single_word() {
+        assert_eq!(extract_binary("sh"), "sh");
+    }
+
+    #[test]
+    fn extract_binary_empty() {
+        assert_eq!(extract_binary(""), "");
+    }
+
+    #[test]
+    fn extract_binary_leading_whitespace() {
+        assert_eq!(extract_binary("  cargo test"), "cargo");
+    }
+
+    // ── ERR-01: classify_exit_code ─────────────────────────────────
+
+    #[test]
+    fn classify_exit_code_127_is_not_found() {
+        assert!(matches!(
+            classify_exit_code(127),
+            Some(CommandErrorKind::NotFound)
+        ));
+    }
+
+    #[test]
+    fn classify_exit_code_126_is_not_executable() {
+        assert!(matches!(
+            classify_exit_code(126),
+            Some(CommandErrorKind::NotExecutable)
+        ));
+    }
+
+    #[test]
+    fn classify_exit_code_1_is_none() {
+        assert!(classify_exit_code(1).is_none());
+    }
+
+    #[test]
+    fn classify_exit_code_0_is_none() {
+        assert!(classify_exit_code(0).is_none());
+    }
+
+    // ── ERR-01: format_command_error ───────────────────────────────
+
+    #[test]
+    fn format_command_error_not_found() {
+        let msg = format_command_error("cargo test", CommandErrorKind::NotFound);
+        assert!(msg.contains("cargo"), "should contain binary name, got: {msg}");
+        assert!(msg.contains("not found"), "should say not found, got: {msg}");
+        assert!(msg.contains("PATH"), "should mention PATH, got: {msg}");
+    }
+
+    #[test]
+    fn format_command_error_not_executable() {
+        let msg = format_command_error("cargo test", CommandErrorKind::NotExecutable);
+        assert!(msg.contains("cargo"), "should contain binary name, got: {msg}");
+        assert!(
+            msg.contains("not executable"),
+            "should say not executable, got: {msg}"
+        );
+        assert!(
+            msg.contains("permissions"),
+            "should mention permissions, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn format_command_error_not_found_single_word() {
+        let msg = format_command_error("sh", CommandErrorKind::NotFound);
+        assert!(msg.contains("sh"), "should contain binary name, got: {msg}");
+        assert!(msg.contains("not found"), "should say not found, got: {msg}");
     }
 }
