@@ -67,6 +67,12 @@
   4. stdout and stderr have independent byte budgets (one can truncate while the other doesn't)
   5. `GateResult.truncated` is `true` and `GateResult.original_bytes` reflects the pre-truncation size when truncation occurs
 
+**Plans:** 2 plans
+
+Plans:
+- [ ] 29-01-PLAN.md — TDD: build truncate_head_tail pure function with comprehensive tests
+- [ ] 29-02-PLAN.md — Wire truncate_head_tail into evaluate_command, replace old truncation
+
 #### Phase 30: Core Tech Debt
 
 **Goal:** Eliminate validation duplication, extract shared evaluation logic, harden history and daemon persistence, and tighten visibility on internal APIs.
