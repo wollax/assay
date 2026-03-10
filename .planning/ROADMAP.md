@@ -170,6 +170,56 @@
     2. At least 10 open issues from `.planning/issues/open/` are closed
     3. All resolved issues are verified by `just ready` passing
 
+### ○ v0.4.1 Merge Tools
+
+**Goal:** Ship merge conflict detection and PR-based merge proposal as MCP tools — enabling agents to safely check for conflicts and propose merges through pull requests with gate evidence, backed by forge-agnostic env vars and worktree fixes.
+
+- [ ] Phase 46: Worktree Fixes
+  - WFIX-01: Cleanup `--all` uses canonical path from git
+  - WFIX-02: Default branch detection provides actionable error
+  - WFIX-03: Prune failures surfaced as warnings
+  - **Goal:** Fix worktree edge cases before building merge tools on top of worktree infrastructure
+  - **Success criteria:**
+    1. `worktree cleanup --all` resolves paths via `git worktree list` canonical output instead of string comparison — handles symlinks and relative paths
+    2. Default branch detection fails with actionable error message naming the `init.defaultBranch` config key instead of silently falling back to `main`
+    3. `git worktree prune` failures are surfaced as warnings in MCP responses (via Phase 35 `warnings` field) instead of silently discarded
+
+- [ ] Phase 47: Merge Check
+  - MERGE-01: `merge_check` MCP tool
+  - **Goal:** Standalone conflict detection via `git merge-tree --write-tree` with zero side effects
+  - **Success criteria:**
+    1. `merge_check` MCP tool accepts `base` and `head` refs and returns `MergeCheck { clean, conflicts, base_sha, head_sha }`
+    2. Uses `git merge-tree --write-tree` (Git 2.38+) — no index mutation, no working tree changes
+    3. When merge is clean, `conflicts` is empty and `clean` is true
+    4. When merge has conflicts, `conflicts` lists affected file paths and `clean` is false
+
+- [ ] Phase 48: Gate Evidence Formatting
+  - MERGE-04: Gate evidence formatting for PR body
+  - **Goal:** Format gate results as markdown suitable for PR bodies with GitHub character limit handling
+  - **Success criteria:**
+    1. Gate results are formatted as markdown with per-criterion pass/fail status and evaluator reasoning
+    2. PR body is truncated at 65,536 chars with a link to the full gate report path
+    3. Truncation preserves the summary section and truncates individual criterion details
+    4. When gate results fit within limit, full content is included without truncation markers
+
+- [ ] Phase 49: Forge-Agnostic Env Vars
+  - MERGE-05: Forge-agnostic extensibility via env vars
+  - **Goal:** Set env vars for downstream tooling and validate `gh` CLI availability
+  - **Success criteria:**
+    1. `merge_propose` sets `$ASSAY_BRANCH`, `$ASSAY_SPEC`, and `$ASSAY_GATE_REPORT_PATH` env vars before invoking forge CLI
+    2. Clear error message when `gh` CLI is not found on PATH, naming the dependency and linking to installation docs
+    3. Env vars are documented in MCP tool schema descriptions
+
+- [ ] Phase 50: Merge Propose
+  - MERGE-02: `merge_propose` MCP tool
+  - MERGE-03: `dry_run: bool` parameter
+  - **Goal:** Push branch and create PR with gate evidence — the agent's path to merging work
+  - **Success criteria:**
+    1. `merge_propose` pushes worktree branch to remote and creates PR via `gh pr create`, returning `MergeProposal { pr_url, pr_number, gate_summary, dry_run }`
+    2. PR body includes formatted gate evidence from Phase 48
+    3. `dry_run: true` previews the PR (branch, title, body) without pushing or creating — returns the same `MergeProposal` shape with `dry_run: true` and no `pr_url`/`pr_number`
+    4. Push-to-remote is documented as a side effect in the MCP tool schema description
+
 ## Progress Summary
 
 | Milestone | Status | Phases | Requirements | Complete |
@@ -178,3 +228,4 @@
 | v0.2.0 Dual-Track Gates & Hardening | ✅ Shipped | 15 | 52 | 100% |
 | v0.3.0 Orchestration Foundation | ✅ Shipped | 9 | 43 | 100% |
 | v0.4.0 Headless Orchestration | 🔄 In Progress | 11 | 28 | 0% |
+| v0.4.1 Merge Tools | ○ Planned | 5 | 8 | 0% |
