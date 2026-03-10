@@ -9,7 +9,14 @@ const DEFAULT_CONFIG: &str = "\
 # Smelt project configuration\n\
 \n\
 # Smelt format version (for future migration support)\n\
-version = 1\n";
+version = 1\n\
+\n\
+# AI conflict resolution (uncomment to configure)\n\
+# [ai]\n\
+# enabled = true\n\
+# provider = \"anthropic\"\n\
+# model = \"claude-sonnet-4-20250514\"\n\
+# max_retries = 2\n";
 
 /// Initialize a new Smelt project by creating `.smelt/config.toml` at the
 /// repository root.

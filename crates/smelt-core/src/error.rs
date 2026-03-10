@@ -83,6 +83,10 @@ pub enum SmeltError {
     /// Merge was aborted by the user during conflict resolution.
     #[error("merge aborted by user during session '{session}'")]
     MergeAborted { session: String },
+
+    /// AI resolution failed (provider error, empty response, invalid output).
+    #[error("AI resolution failed: {message}")]
+    AiResolution { message: String },
 }
 
 impl SmeltError {
