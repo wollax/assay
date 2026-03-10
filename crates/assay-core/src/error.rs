@@ -494,10 +494,7 @@ mod tests {
             suggestion: None,
         };
         let display = err.to_string();
-        assert!(
-            display.contains("spec 'xyz' not found"),
-            "got: {display}"
-        );
+        assert!(display.contains("spec 'xyz' not found"), "got: {display}");
         assert!(display.contains("alpha, beta"), "got: {display}");
     }
 
