@@ -143,8 +143,25 @@ pub fn create(
     let worktree_path = worktree_base.join(spec_slug);
     let branch_name = format!("assay/{spec_slug}");
 
-    // Check if worktree already exists
+    // Check if worktree already exists (filesystem or lingering branch)
     if worktree_path.exists() {
+        return Err(AssayError::WorktreeExists {
+            spec_slug: spec_slug.to_string(),
+            path: worktree_path,
+        });
+    }
+
+    // Check if branch already exists (e.g., from incomplete cleanup)
+    if git_command(
+        &[
+            "rev-parse",
+            "--verify",
+            &format!("refs/heads/{branch_name}"),
+        ],
+        project_root,
+    )
+    .is_ok()
+    {
         return Err(AssayError::WorktreeExists {
             spec_slug: spec_slug.to_string(),
             path: worktree_path,
@@ -276,15 +293,18 @@ pub fn cleanup(
 
     // Remove worktree
     let path_str = worktree_path.to_string_lossy().to_string();
-    if dirty || force {
+    if force {
         git_command(&["worktree", "remove", "--force", &path_str], project_root)?;
     } else {
         git_command(&["worktree", "remove", &path_str], project_root)?;
     }
 
-    // Delete the branch (ignore error if branch doesn't exist)
+    // Delete the branch; use -d (safe) when not forced, -D (force) when forced
     let branch_name = format!("assay/{spec_slug}");
-    let _ = git_command(&["branch", "-D", &branch_name], project_root);
+    let delete_flag = if force { "-D" } else { "-d" };
+    if let Err(e) = git_command(&["branch", delete_flag, &branch_name], project_root) {
+        eprintln!("Warning: failed to delete branch '{branch_name}': {e}");
+    }
 
     Ok(())
 }
