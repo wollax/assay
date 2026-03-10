@@ -135,12 +135,13 @@ impl Manifest {
         }
 
         // Validate on_failure policy
-        if let Some(ref policy) = self.manifest.on_failure {
-            if policy != "skip-dependents" && policy != "abort" {
-                return Err(SmeltError::ManifestParse(format!(
-                    "invalid on_failure policy '{policy}' (expected: skip-dependents, abort)"
-                )));
-            }
+        if let Some(ref policy) = self.manifest.on_failure
+            && policy != "skip-dependents"
+            && policy != "abort"
+        {
+            return Err(SmeltError::ManifestParse(format!(
+                "invalid on_failure policy '{policy}' (expected: skip-dependents, abort)"
+            )));
         }
 
         let mut names = HashSet::new();
@@ -263,14 +264,7 @@ impl Manifest {
 
         if is_cyclic_directed(&graph) {
             // Find the cycle participants for a useful error message
-            let cycle_names: Vec<&str> = graph
-                .node_indices()
-                .filter_map(|n| {
-                    // A node is in a cycle if it has a path back to itself
-                    // Simple approach: use toposort failure
-                    Some(graph[n])
-                })
-                .collect();
+            let cycle_names: Vec<&str> = graph.node_indices().map(|n| graph[n]).collect();
             return Err(SmeltError::DependencyCycle {
                 details: format!(
                     "sessions form a dependency cycle (check depends_on in: {})",
