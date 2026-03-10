@@ -18,7 +18,8 @@ pub use merge::{
     MergeReport, NoopConflictHandler, ResolutionMethod,
 };
 pub use orchestrate::{
-    build_dag, FailurePolicy, OrchestrationOpts, OrchestrationReport, RunState, SessionDag,
+    build_dag, FailurePolicy, Orchestrator, OrchestrationOpts, OrchestrationReport, RunState,
+    RunStateManager, SessionDag,
 };
 pub use session::{Manifest, SessionResult, SessionRunner};
 pub use worktree::{CreateWorktreeOpts, RemoveResult, WorktreeInfo, WorktreeManager};
