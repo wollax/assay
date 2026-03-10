@@ -1,12 +1,31 @@
 # Project Milestones: Assay
 
-## v0.3.0 Orchestration Foundation (In Progress)
+## v0.3.0 Orchestration Foundation (Shipped: 2026-03-10)
 
-**Goal:** Build worktree isolation foundation and close tech debt from v0.2.0 — types hygiene, CLI polish, MCP validation, error messages, and gate output truncation.
+**Delivered:** Worktree isolation foundation, gate output truncation, actionable error messages, types hygiene, CLI polish, MCP validation hardening, and core tech debt cleanup.
 
-**Phases planned:** 26-33 (8 phases)
+**Phases completed:** 26-34 (22 plans total)
 
-**See:** `.planning/ROADMAP.md` for detailed phase breakdown, `.planning/REQUIREMENTS.md` for full requirement IDs.
+**Key accomplishments:**
+
+- Git worktree lifecycle management: create, list, status, cleanup across CLI and MCP surfaces
+- Gate output head+tail truncation with independent 32 KiB per-stream byte budgets, UTF-8 safety, and MCP truncation metadata visibility
+- Actionable error messages: Levenshtein fuzzy matching for spec-not-found, exit code classification (127/126), TOML parse error formatting with source-line carets
+- Types hygiene: Eq derives on all safe types, Display impls for all public enums, deny(missing_docs), Criterion/GateCriterion dedup
+- CLI polish: NO_COLOR/TTY handling, help text dedup, enforcement dedup, StreamCounters API, constants extraction
+- Core tech debt: shared evaluate_criteria/validate_criteria helpers, history save_run() API, guard daemon persistence hardening
+
+**Stats:**
+
+- 180 files changed, 20,883 insertions, 5,071 deletions
+- 27,067 lines of Rust across 5 crates
+- 9 phases, 22 plans, 143 commits
+- 603 tests
+- 2 days from start to ship (2026-03-08 → 2026-03-10)
+
+**Git range:** `docs: start milestone v0.3.0` → `Merge pull request #103`
+
+**What's next:** v0.4.0 — Headless sequential orchestration (Claude Code launcher, session record, gate_evaluate)
 
 ---
 

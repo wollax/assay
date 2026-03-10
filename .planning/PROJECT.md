@@ -114,26 +114,13 @@ The `assay-mcp` crate provides MCP server functionality. Future crates may inclu
 - Binary crates are thin wrappers that delegate to `assay-core`
 - Run `just ready` before considering work complete
 
-## Current Milestone: v0.3.0 Orchestration Foundation
-
-**Goal:** Build the foundation for agent orchestration — worktree isolation, headless agent launching, session tracking, independent gate evaluation, and a minimal TUI — while closing tech debt from v0.2.0.
-
-**Target features:**
-
-- Worktree Manager: git worktree lifecycle for agent isolation
-- Quick wins: CLI correctness, MCP validation, types hygiene, error messages, output truncation
-
-**Deferred to v0.4.0+:** Claude Code launcher, session record, gate_evaluate, TUI viewer, composable gates, spec preconditions, gate history summary.
-
-**Workflow target:** Worktree foundation + quality hardening. Headless sequential orchestration is v0.4.0.
-
 ## Current State
 
-**Shipped:** v0.2.0 Dual-Track Gates & Hardening (2026-03-08)
+**Shipped:** v0.3.0 Orchestration Foundation (2026-03-10)
 
-23,385 lines of Rust across 5 crates (types, core, cli, tui, mcp). 493 tests. Full dual-track quality gate platform with agent-evaluated criteria, run history, enforcement levels, session diagnostics, team context protection, and guard daemon.
+27,067 lines of Rust across 5 crates (types, core, cli, tui, mcp). 603 tests. Worktree isolation foundation, gate output truncation, actionable error messages, types hygiene with deny(missing_docs), CLI polish, and MCP validation hardening.
 
-**Previous:** v0.1.0 Proof of Concept (2026-03-02)
+**Previous:** v0.2.0 Dual-Track Gates & Hardening (2026-03-08), v0.1.0 Proof of Concept (2026-03-02)
 
 ## Requirements
 
@@ -163,15 +150,16 @@ The `assay-mcp` crate provides MCP server functionality. Future crates may inclu
 - ✓ Testing & tooling: MCP handler tests, cargo-deny tightened, dogfooding spec — v0.2.0
 - ✓ Token-aware session diagnostics: JSONL parser, bloat categorization, context % — v0.2.0
 - ✓ Agent team context protection: checkpointing, pruning engine, guard daemon, overflow recovery — v0.2.0
+- ✓ Git worktree lifecycle management (create, list, status, cleanup) — v0.3.0
+- ✓ CLI correctness: NO_COLOR/TTY handling, help dedup, enforcement dedup, constants extraction — v0.3.0
+- ✓ MCP parameter validation with actionable error messages — v0.3.0
+- ✓ Types hygiene: Eq derives, Display impls, doc comments, deny(missing_docs), Criterion dedup — v0.3.0
+- ✓ Gate/spec error messages: fuzzy matching, exit code classification, TOML error formatting — v0.3.0
+- ✓ Gate output truncation with head+tail capture, UTF-8 safety, and MCP visibility metadata — v0.3.0
 
 ### Active
 
-- [ ] Git worktree lifecycle management (create, list, status, cleanup) — v0.3.0
-- [ ] CLI correctness sprint (NO_COLOR, help duplication, enforcement duplication) — v0.3.0
-- [ ] MCP parameter validation with actionable error messages — v0.3.0
-- [ ] Types hygiene Tier A (Eq derives, Display impls, doc comments) — v0.3.0
-- [ ] Gate/spec error message improvements — v0.3.0
-- [ ] Gate output truncation with head+tail capture — v0.3.0
+(None — next milestone not yet defined. Run `/kata-add-milestone` to start.)
 
 ### Future
 
@@ -236,4 +224,4 @@ The `assay-mcp` crate provides MCP server functionality. Future crates may inclu
 - [Cozempic](https://github.com/Ruya-AI/cozempic) — Reference for token-aware diagnostics and agent team context loss protection
 
 ---
-*Last updated: 2026-03-08 after v0.3.0 milestone started*
+*Last updated: 2026-03-10 after v0.3.0 milestone shipped*
