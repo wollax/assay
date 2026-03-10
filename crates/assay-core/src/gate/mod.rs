@@ -33,6 +33,50 @@ use crate::error::{AssayError, Result};
 
 pub mod session;
 
+/// Classification of command execution errors based on shell exit codes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CommandErrorKind {
+    /// Exit code 127: command not found in PATH.
+    NotFound,
+    /// Exit code 126: command found but not executable.
+    NotExecutable,
+}
+
+/// Extract the binary name (first whitespace-delimited token) from a command string.
+///
+/// Returns an empty string if the command is empty or whitespace-only.
+pub(crate) fn extract_binary(cmd: &str) -> &str {
+    cmd.split_whitespace().next().unwrap_or("")
+}
+
+/// Classify a shell exit code into a known error kind.
+///
+/// Returns `Some(CommandErrorKind)` for exit codes 127 (not found) and 126
+/// (not executable), `None` for all other codes.
+pub fn classify_exit_code(code: i32) -> Option<CommandErrorKind> {
+    match code {
+        127 => Some(CommandErrorKind::NotFound),
+        126 => Some(CommandErrorKind::NotExecutable),
+        _ => None,
+    }
+}
+
+/// Format a user-facing error message for command execution failures.
+///
+/// Extracts the binary name from the command string and produces an
+/// actionable message based on the error kind.
+pub fn format_command_error(cmd: &str, kind: CommandErrorKind) -> String {
+    let binary = extract_binary(cmd);
+    match kind {
+        CommandErrorKind::NotFound => {
+            format!("command '{binary}' not found. Is it installed and in PATH?")
+        }
+        CommandErrorKind::NotExecutable => {
+            format!("command '{binary}' found but not executable. Check file permissions.")
+        }
+    }
+}
+
 /// Byte budget per output stream (stdout/stderr) for head+tail truncation (32 KiB).
 const STREAM_BUDGET: usize = 32_768;
 
@@ -191,7 +235,7 @@ fn evaluate_criteria(
         let timeout = resolve_timeout(cli_timeout, criterion.timeout, config_timeout);
 
         match evaluate(criterion, working_dir, timeout) {
-            Ok(gate_result) => {
+            Ok(mut gate_result) => {
                 if gate_result.passed {
                     passed += 1;
                     match resolved_enforcement {
@@ -199,6 +243,18 @@ fn evaluate_criteria(
                         Enforcement::Advisory => enforcement_summary.advisory_passed += 1,
                     }
                 } else {
+                    // Enrich stderr for exit code 127/126 when a command was run.
+                    // Integration-tested via classify_exit_code and format_command_error unit tests.
+                    if let Some(code) = gate_result.exit_code
+                        && let Some(kind) = classify_exit_code(code)
+                        && let Some(cmd) = criterion.cmd.as_deref()
+                    {
+                        let hint = format_command_error(cmd, kind);
+                        if !gate_result.stderr.is_empty() {
+                            gate_result.stderr.push('\n');
+                        }
+                        gate_result.stderr.push_str(&hint);
+                    }
                     failed += 1;
                     match resolved_enforcement {
                         Enforcement::Required => enforcement_summary.required_failed += 1,
@@ -217,13 +273,14 @@ fn evaluate_criteria(
                     Enforcement::Required => enforcement_summary.required_failed += 1,
                     Enforcement::Advisory => enforcement_summary.advisory_failed += 1,
                 }
+                let stderr = enriched_error_display(&err, criterion.cmd.as_deref());
                 results.push(CriterionResult {
                     criterion_name: criterion.name.clone(),
                     result: Some(GateResult {
                         passed: false,
                         kind: gate_kind_for(criterion),
                         stdout: String::new(),
-                        stderr: format!("gate evaluation error: {err}"),
+                        stderr,
                         exit_code: None,
                         duration_ms: 0,
                         timestamp: Utc::now(),
@@ -249,6 +306,28 @@ fn evaluate_criteria(
         total_duration_ms: start.elapsed().as_millis() as u64,
         enforcement: enforcement_summary,
     }
+}
+
+/// Format an error message for gate evaluation failures, enriching spawn
+/// errors (NotFound / PermissionDenied) with actionable hints when a command
+/// is available.
+pub fn enriched_error_display(err: &AssayError, cmd: Option<&str>) -> String {
+    if let AssayError::GateExecution { source, .. } = err
+        && let Some(cmd) = cmd
+    {
+        let kind = match source.kind() {
+            std::io::ErrorKind::NotFound => Some(CommandErrorKind::NotFound),
+            std::io::ErrorKind::PermissionDenied => Some(CommandErrorKind::NotExecutable),
+            _ => None,
+        };
+        if let Some(kind) = kind {
+            return format!(
+                "gate evaluation error: {err}\n{}",
+                format_command_error(cmd, kind)
+            );
+        }
+    }
+    format!("gate evaluation error: {err}")
 }
 
 /// Convert a `GateCriterion` to a `Criterion` for evaluation.
@@ -1847,6 +1926,187 @@ mod tests {
         assert!(
             result.output.contains("[truncated: "),
             "should have truncation marker"
+        );
+    }
+
+    // ── ERR-01: extract_binary ─────────────────────────────────────
+
+    #[test]
+    fn extract_binary_multi_word() {
+        assert_eq!(extract_binary("cargo test --release"), "cargo");
+    }
+
+    #[test]
+    fn extract_binary_single_word() {
+        assert_eq!(extract_binary("sh"), "sh");
+    }
+
+    #[test]
+    fn extract_binary_empty() {
+        assert_eq!(extract_binary(""), "");
+    }
+
+    #[test]
+    fn extract_binary_leading_whitespace() {
+        assert_eq!(extract_binary("  cargo test"), "cargo");
+    }
+
+    // ── ERR-01: classify_exit_code ─────────────────────────────────
+
+    #[test]
+    fn classify_exit_code_127_is_not_found() {
+        assert!(matches!(
+            classify_exit_code(127),
+            Some(CommandErrorKind::NotFound)
+        ));
+    }
+
+    #[test]
+    fn classify_exit_code_126_is_not_executable() {
+        assert!(matches!(
+            classify_exit_code(126),
+            Some(CommandErrorKind::NotExecutable)
+        ));
+    }
+
+    #[test]
+    fn classify_exit_code_1_is_none() {
+        assert!(classify_exit_code(1).is_none());
+    }
+
+    #[test]
+    fn classify_exit_code_0_is_none() {
+        assert!(classify_exit_code(0).is_none());
+    }
+
+    // ── ERR-01: format_command_error ───────────────────────────────
+
+    #[test]
+    fn format_command_error_not_found() {
+        let msg = format_command_error("cargo test", CommandErrorKind::NotFound);
+        assert!(
+            msg.contains("cargo"),
+            "should contain binary name, got: {msg}"
+        );
+        assert!(
+            msg.contains("not found"),
+            "should say not found, got: {msg}"
+        );
+        assert!(msg.contains("PATH"), "should mention PATH, got: {msg}");
+    }
+
+    #[test]
+    fn format_command_error_not_executable() {
+        let msg = format_command_error("cargo test", CommandErrorKind::NotExecutable);
+        assert!(
+            msg.contains("cargo"),
+            "should contain binary name, got: {msg}"
+        );
+        assert!(
+            msg.contains("not executable"),
+            "should say not executable, got: {msg}"
+        );
+        assert!(
+            msg.contains("permissions"),
+            "should mention permissions, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn format_command_error_not_found_single_word() {
+        let msg = format_command_error("sh", CommandErrorKind::NotFound);
+        assert!(msg.contains("sh"), "should contain binary name, got: {msg}");
+        assert!(
+            msg.contains("not found"),
+            "should say not found, got: {msg}"
+        );
+    }
+
+    // ── enriched_error_display tests ────────────────────────────────
+
+    #[test]
+    fn enriched_error_display_not_found_with_cmd() {
+        let err = AssayError::GateExecution {
+            cmd: "cargo test".to_string(),
+            working_dir: std::path::PathBuf::from("/tmp"),
+            source: std::io::Error::new(std::io::ErrorKind::NotFound, "not found"),
+        };
+        let msg = enriched_error_display(&err, Some("cargo test"));
+        assert!(
+            msg.contains("not found"),
+            "should contain not-found hint, got: {msg}"
+        );
+        assert!(msg.contains("PATH"), "should contain PATH hint, got: {msg}");
+    }
+
+    #[test]
+    fn enriched_error_display_permission_denied_with_cmd() {
+        let err = AssayError::GateExecution {
+            cmd: "cargo test".to_string(),
+            working_dir: std::path::PathBuf::from("/tmp"),
+            source: std::io::Error::new(std::io::ErrorKind::PermissionDenied, "permission denied"),
+        };
+        let msg = enriched_error_display(&err, Some("cargo test"));
+        assert!(
+            msg.contains("not executable"),
+            "should contain permission hint, got: {msg}"
+        );
+        assert!(
+            msg.contains("permissions"),
+            "should mention permissions, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn enriched_error_display_other_io_error_with_cmd() {
+        let err = AssayError::GateExecution {
+            cmd: "cargo test".to_string(),
+            working_dir: std::path::PathBuf::from("/tmp"),
+            source: std::io::Error::new(std::io::ErrorKind::BrokenPipe, "broken pipe"),
+        };
+        let msg = enriched_error_display(&err, Some("cargo test"));
+        assert!(
+            msg.starts_with("gate evaluation error:"),
+            "should be plain error message, got: {msg}"
+        );
+        assert!(
+            !msg.contains("PATH"),
+            "should not contain hint for other IO errors, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn enriched_error_display_non_gate_execution_error() {
+        let err = AssayError::SpecNotFound {
+            name: "missing".to_string(),
+            specs_dir: std::path::PathBuf::from("/tmp/specs"),
+        };
+        let msg = enriched_error_display(&err, Some("cargo test"));
+        assert!(
+            msg.starts_with("gate evaluation error:"),
+            "should be plain error message, got: {msg}"
+        );
+        assert!(
+            !msg.contains("PATH"),
+            "should not contain hint for non-GateExecution errors, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn enriched_error_display_gate_execution_no_cmd() {
+        let err = AssayError::GateExecution {
+            cmd: "cargo test".to_string(),
+            working_dir: std::path::PathBuf::from("/tmp"),
+            source: std::io::Error::new(std::io::ErrorKind::NotFound, "not found"),
+        };
+        let msg = enriched_error_display(&err, None);
+        assert!(
+            msg.starts_with("gate evaluation error:"),
+            "should be plain error message, got: {msg}"
+        );
+        assert!(
+            !msg.contains("PATH"),
+            "should not contain hint when cmd is None, got: {msg}"
         );
     }
 }

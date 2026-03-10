@@ -11,6 +11,118 @@ use assay_types::{CriterionKind, Enforcement, FeatureSpec, GateSection, GatesSpe
 
 use crate::error::{AssayError, Result};
 
+/// Compute Levenshtein edit distance between two strings.
+///
+/// Uses a single-row DP approach for space efficiency.
+pub(crate) fn levenshtein(a: &str, b: &str) -> usize {
+    let b_len = b.chars().count();
+    let mut prev: Vec<usize> = (0..=b_len).collect();
+    let mut curr = vec![0; b_len + 1];
+
+    for (i, ca) in a.chars().enumerate() {
+        curr[0] = i + 1;
+        for (j, cb) in b.chars().enumerate() {
+            let cost = if ca == cb { 0 } else { 1 };
+            curr[j + 1] = (prev[j] + cost).min(prev[j + 1] + 1).min(curr[j] + 1);
+        }
+        std::mem::swap(&mut prev, &mut curr);
+    }
+    prev[b_len]
+}
+
+/// Find a single fuzzy match for `name` among `candidates`.
+///
+/// Returns `Some(candidate)` only when exactly one candidate has:
+/// - Levenshtein distance <= 2, AND
+/// - distance <= name.len() / 2 (avoids suggesting for very short names)
+///
+/// Returns `None` if zero or multiple candidates meet the threshold (ambiguous).
+pub(crate) fn find_fuzzy_match(name: &str, candidates: &[String]) -> Option<String> {
+    let threshold = (name.chars().count() / 2).min(2);
+    let mut best: Option<(&str, usize)> = None;
+    let mut ambiguous = false;
+
+    for candidate in candidates {
+        let dist = levenshtein(name, candidate);
+        if dist <= threshold && dist > 0 {
+            if best.is_some() {
+                ambiguous = true;
+                break;
+            }
+            best = Some((candidate, dist));
+        }
+    }
+
+    if ambiguous {
+        return None;
+    }
+    best.map(|(c, _)| c.to_string())
+}
+
+/// Format a diagnostic message for a spec-not-found error.
+///
+/// Produces different output based on available information:
+/// - Zero specs: "No specs found in {specs_dir}."
+/// - With specs: "spec '{name}' not found. Available specs: ..."
+/// - With invalid specs: marks them as "(invalid)"
+/// - With suggestion: appends "Did you mean '{suggestion}'?"
+// Called from AssayError::SpecNotFoundDiagnostic Display impl
+pub(crate) fn format_spec_not_found(
+    name: &str,
+    specs_dir: &Path,
+    available: &[String],
+    invalid: &[String],
+    suggestion: Option<&str>,
+) -> String {
+    if available.is_empty() && invalid.is_empty() {
+        return format!("No specs found in {}.", specs_dir.display());
+    }
+
+    if available.is_empty() && !invalid.is_empty() {
+        let list = invalid.join(", ");
+        let mut msg = format!(
+            "spec '{name}' not found. No valid specs found ({} could not be parsed: {list})",
+            invalid.len(),
+        );
+        if let Some(suggestion) = suggestion {
+            msg.push_str(&format!("\nDid you mean '{suggestion}'?"));
+        }
+        return msg;
+    }
+
+    let max_inline = 10;
+    let total = available.len() + invalid.len();
+
+    // Build the list of spec names (valid ones first, then invalid with marker)
+    let mut items: Vec<String> = Vec::with_capacity(total);
+    items.extend(available.iter().cloned());
+    items.extend(invalid.iter().map(|s| format!("{s} (invalid)")));
+
+    let list_part = if total <= max_inline {
+        items.join(", ")
+    } else {
+        let shown: Vec<&str> = items.iter().take(max_inline).map(|s| s.as_str()).collect();
+        let remaining = total - max_inline;
+        format!("{} (and {remaining} more)", shown.join(", "))
+    };
+
+    let mut msg = format!("spec '{name}' not found. Available specs: {list_part}");
+
+    if !invalid.is_empty() {
+        msg.push_str(&format!(
+            "\nWarning: {} spec(s) could not be parsed: {}",
+            invalid.len(),
+            invalid.join(", ")
+        ));
+    }
+
+    if let Some(suggestion) = suggestion {
+        msg.push_str(&format!("\nDid you mean '{suggestion}'?"));
+    }
+
+    msg
+}
+
 /// A single validation issue in a spec file.
 #[derive(Debug, Clone)]
 pub struct SpecError {
@@ -210,7 +322,7 @@ pub fn load(path: &Path) -> Result<Spec> {
 
     let spec: Spec = toml::from_str(&content).map_err(|e| AssayError::SpecParse {
         path: path.to_path_buf(),
-        message: e.to_string(),
+        message: crate::config::format_toml_error(&content, &e),
     })?;
 
     if let Err(errors) = validate(&spec) {
@@ -233,7 +345,7 @@ pub fn load_gates(path: &Path) -> Result<GatesSpec> {
 
     let gates: GatesSpec = toml::from_str(&content).map_err(|e| AssayError::GatesSpecParse {
         path: path.to_path_buf(),
-        message: e.to_string(),
+        message: crate::config::format_toml_error(&content, &e),
     })?;
 
     if let Err(errors) = validate_gates_spec(&gates) {
@@ -256,7 +368,7 @@ pub fn load_feature_spec(path: &Path) -> Result<FeatureSpec> {
 
     let spec: FeatureSpec = toml::from_str(&content).map_err(|e| AssayError::FeatureSpecParse {
         path: path.to_path_buf(),
-        message: e.to_string(),
+        message: crate::config::format_toml_error(&content, &e),
     })?;
 
     if let Err(errors) = validate_feature_spec(&spec) {
@@ -306,6 +418,67 @@ pub fn load_spec_entry(slug: &str, specs_dir: &Path) -> Result<SpecEntry> {
         name: slug.to_string(),
         specs_dir: specs_dir.to_path_buf(),
     })
+}
+
+/// Load a spec entry with enriched diagnostics on not-found errors.
+///
+/// Wraps [`load_spec_entry`], enriching `SpecNotFound` with available spec
+/// names, invalid specs, and fuzzy-match suggestions. Falls back to the
+/// bare `SpecNotFound` error if scanning the directory fails.
+pub fn load_spec_entry_with_diagnostics(slug: &str, specs_dir: &Path) -> Result<SpecEntry> {
+    match load_spec_entry(slug, specs_dir) {
+        Ok(entry) => Ok(entry),
+        Err(AssayError::SpecNotFound { name, specs_dir }) => {
+            let scan_result = match scan(&specs_dir) {
+                Ok(r) => r,
+                Err(_) => {
+                    return Err(AssayError::SpecNotFound { name, specs_dir });
+                }
+            };
+
+            let available: Vec<String> = scan_result
+                .entries
+                .iter()
+                .map(|e| e.slug().to_string())
+                .collect();
+
+            let invalid: Vec<String> = scan_result
+                .errors
+                .iter()
+                .filter_map(|e| match e {
+                    // Flat-file specs (e.g. specs/auth-flow.toml) → use file_stem
+                    AssayError::SpecParse { path, .. }
+                    | AssayError::SpecValidation { path, .. } => path
+                        .file_stem()
+                        .or_else(|| path.parent().and_then(|p| p.file_name()))
+                        .and_then(|s| s.to_str())
+                        .map(|s| s.to_string()),
+                    // Directory-based specs (e.g. specs/auth-flow/gates.toml) → use parent dir name
+                    AssayError::GatesSpecParse { path, .. }
+                    | AssayError::FeatureSpecParse { path, .. }
+                    | AssayError::GatesSpecValidation { path, .. }
+                    | AssayError::FeatureSpecValidation { path, .. } => path
+                        .parent()
+                        .and_then(|p| p.file_name())
+                        .or_else(|| path.file_stem())
+                        .and_then(|s| s.to_str())
+                        .map(|s| s.to_string()),
+                    _ => None,
+                })
+                .collect();
+
+            let suggestion = find_fuzzy_match(&name, &available);
+
+            Err(AssayError::SpecNotFoundDiagnostic {
+                name,
+                specs_dir,
+                available,
+                invalid,
+                suggestion,
+            })
+        }
+        Err(other) => Err(other),
+    }
 }
 
 /// Validate a feature spec for semantic correctness.
@@ -905,8 +1078,8 @@ cmd = "true"
                     "path should end with bad.toml, got: {p:?}"
                 );
                 assert!(
-                    message.contains("TOML parse error"),
-                    "message should contain parse error, got: {message}"
+                    message.contains("line"),
+                    "message should contain line info from format_toml_error, got: {message}"
                 );
             }
             other => panic!("expected SpecParse, got: {other:?}"),
@@ -1906,5 +2079,265 @@ cmd = "true"
             display.contains("cannot be empty"),
             "Display should contain message, got: {display}"
         );
+    }
+
+    // ── ERR-02: levenshtein ────────────────────────────────────────
+
+    #[test]
+    fn levenshtein_empty_empty() {
+        assert_eq!(levenshtein("", ""), 0);
+    }
+
+    #[test]
+    fn levenshtein_empty_to_abc() {
+        assert_eq!(levenshtein("", "abc"), 3);
+    }
+
+    #[test]
+    fn levenshtein_abc_to_empty() {
+        assert_eq!(levenshtein("abc", ""), 3);
+    }
+
+    #[test]
+    fn levenshtein_kitten_sitting() {
+        assert_eq!(levenshtein("kitten", "sitting"), 3);
+    }
+
+    #[test]
+    fn levenshtein_same_strings() {
+        assert_eq!(levenshtein("same", "same"), 0);
+    }
+
+    #[test]
+    fn levenshtein_single_char_diff() {
+        assert_eq!(levenshtein("a", "b"), 1);
+    }
+
+    // ── ERR-02: find_fuzzy_match ───────────────────────────────────
+
+    #[test]
+    fn find_fuzzy_match_close_match() {
+        let candidates = vec![
+            "auth-flow".to_string(),
+            "billing".to_string(),
+            "login".to_string(),
+        ];
+        assert_eq!(
+            find_fuzzy_match("auth-flw", &candidates),
+            Some("auth-flow".to_string())
+        );
+    }
+
+    #[test]
+    fn find_fuzzy_match_too_far() {
+        let candidates = vec!["auth-flow".to_string(), "billing".to_string()];
+        assert_eq!(find_fuzzy_match("xyz", &candidates), None);
+    }
+
+    #[test]
+    fn find_fuzzy_match_ambiguous() {
+        let candidates = vec!["ac".to_string(), "ad".to_string()];
+        // Both "ac" and "ad" are distance 1 from "ab" — ambiguous
+        assert_eq!(find_fuzzy_match("ab", &candidates), None);
+    }
+
+    #[test]
+    fn find_fuzzy_match_short_name_threshold() {
+        // distance 1, but 1 > len("a")/2 = 0, so threshold blocks
+        let candidates = vec!["b".to_string()];
+        assert_eq!(find_fuzzy_match("a", &candidates), None);
+    }
+
+    #[test]
+    fn find_fuzzy_match_empty_candidates() {
+        let candidates: Vec<String> = vec![];
+        assert_eq!(find_fuzzy_match("test", &candidates), None);
+    }
+
+    // ── ERR-02: format_spec_not_found ──────────────────────────────
+
+    #[test]
+    fn format_spec_not_found_zero_specs() {
+        let msg = format_spec_not_found("xyz", Path::new(".assay/specs/"), &[], &[], None);
+        assert_eq!(msg, "No specs found in .assay/specs/.");
+    }
+
+    #[test]
+    fn format_spec_not_found_three_specs() {
+        let available = vec!["alpha".to_string(), "beta".to_string(), "gamma".to_string()];
+        let msg = format_spec_not_found("xyz", Path::new(".assay/specs/"), &available, &[], None);
+        assert!(
+            msg.contains("spec 'xyz' not found"),
+            "should mention name, got: {msg}"
+        );
+        assert!(
+            msg.contains("alpha, beta, gamma"),
+            "should list specs, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn format_spec_not_found_eleven_specs_truncated() {
+        let available: Vec<String> = ('a'..='k').map(|c| c.to_string()).collect();
+        let msg = format_spec_not_found("xyz", Path::new(".assay/specs/"), &available, &[], None);
+        assert!(
+            msg.contains("(and 1 more)"),
+            "should truncate with count, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn format_spec_not_found_with_invalid() {
+        let available = vec!["alpha".to_string()];
+        let invalid = vec!["billing".to_string()];
+        let msg = format_spec_not_found(
+            "xyz",
+            Path::new(".assay/specs/"),
+            &available,
+            &invalid,
+            None,
+        );
+        assert!(
+            msg.contains("billing (invalid)"),
+            "should mark invalid specs, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn format_spec_not_found_with_suggestion() {
+        let available = vec!["auth-flow".to_string()];
+        let msg = format_spec_not_found(
+            "auth-flw",
+            Path::new(".assay/specs/"),
+            &available,
+            &[],
+            Some("auth-flow"),
+        );
+        assert!(
+            msg.contains("Did you mean 'auth-flow'?"),
+            "should suggest match, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn format_spec_not_found_only_invalid_no_available() {
+        let invalid = vec!["bad-spec".to_string()];
+        let msg = format_spec_not_found("xyz", Path::new(".assay/specs/"), &[], &invalid, None);
+        assert!(
+            msg.contains("No valid specs found"),
+            "should say no valid specs, got: {msg}"
+        );
+        assert!(
+            msg.contains("could not be parsed"),
+            "should mention parse failures, got: {msg}"
+        );
+        assert!(
+            !msg.contains("Available specs:"),
+            "should NOT say 'Available specs:', got: {msg}"
+        );
+    }
+
+    // ── load_spec_entry_with_diagnostics tests ──────────────────────
+
+    #[test]
+    fn load_spec_entry_with_diagnostics_exists() {
+        let dir = tempfile::tempdir().unwrap();
+        write_spec_in(
+            dir.path(),
+            "alpha.toml",
+            r#"
+name = "alpha"
+
+[[criteria]]
+name = "c1"
+description = "d1"
+cmd = "true"
+"#,
+        );
+
+        let entry =
+            load_spec_entry_with_diagnostics("alpha", dir.path()).expect("should find spec");
+        assert_eq!(entry.slug(), "alpha");
+    }
+
+    #[test]
+    fn load_spec_entry_with_diagnostics_not_found_with_available() {
+        let dir = tempfile::tempdir().unwrap();
+        write_spec_in(
+            dir.path(),
+            "alpha.toml",
+            r#"
+name = "alpha"
+
+[[criteria]]
+name = "c1"
+description = "d1"
+cmd = "true"
+"#,
+        );
+
+        let err = load_spec_entry_with_diagnostics("xyz", dir.path()).unwrap_err();
+        match &err {
+            AssayError::SpecNotFoundDiagnostic {
+                available, invalid, ..
+            } => {
+                assert!(
+                    available.contains(&"alpha".to_string()),
+                    "should list alpha as available, got: {available:?}"
+                );
+                assert!(
+                    invalid.is_empty(),
+                    "should have no invalid specs, got: {invalid:?}"
+                );
+            }
+            other => panic!("expected SpecNotFoundDiagnostic, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn load_spec_entry_with_diagnostics_not_found_empty_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        // Create the specs dir but put nothing in it
+        std::fs::create_dir_all(dir.path()).unwrap();
+
+        let err = load_spec_entry_with_diagnostics("xyz", dir.path()).unwrap_err();
+        match &err {
+            AssayError::SpecNotFoundDiagnostic {
+                available, invalid, ..
+            } => {
+                assert!(available.is_empty(), "should have no available specs");
+                assert!(invalid.is_empty(), "should have no invalid specs");
+            }
+            other => panic!("expected SpecNotFoundDiagnostic, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn load_spec_entry_with_diagnostics_not_found_with_suggestion() {
+        let dir = tempfile::tempdir().unwrap();
+        write_spec_in(
+            dir.path(),
+            "auth-flow.toml",
+            r#"
+name = "auth-flow"
+
+[[criteria]]
+name = "c1"
+description = "d1"
+cmd = "true"
+"#,
+        );
+
+        let err = load_spec_entry_with_diagnostics("auth-flw", dir.path()).unwrap_err();
+        match &err {
+            AssayError::SpecNotFoundDiagnostic { suggestion, .. } => {
+                assert_eq!(
+                    suggestion.as_deref(),
+                    Some("auth-flow"),
+                    "should suggest auth-flow"
+                );
+            }
+            other => panic!("expected SpecNotFoundDiagnostic, got: {other:?}"),
+        }
     }
 }
