@@ -58,11 +58,16 @@
 - [x] Phase 30: Core Tech Debt (3 plans) — 2026-03-10
 - [x] Phase 31: Error Messages (2 plans) — 2026-03-10
 
-#### Phase 32: CLI Polish
+#### Phase 32: CLI Polish (4 plans)
 
 **Goal:** Fix correctness issues and eliminate code duplication across the CLI surface — NO_COLOR handling, help text, enforcement blocks, color branches, StreamCounters, and magic strings.
 **Dependencies:** Phase 26 (CLI modules extracted)
 **Requirements:** CLI-01, CLI-02, CLI-03, CLI-04, CLI-05, CLI-06, CLI-07, CLI-08
+**Plans:**
+  - Plan 01 (Wave 1): CLI-08 constant + CLI-01 NO_COLOR fix + CLI-07 column gap — shared modules
+  - Plan 02 (Wave 1): CLI-05 StreamCounters methods + CLI-06 StreamConfig docs — gate.rs structs
+  - Plan 03 (Wave 1): CLI-02 help text dedup + CLI-04 color branch dedup — main.rs + spec.rs cleanup
+  - Plan 04 (Wave 2, depends on 02): CLI-03 enforcement dedup — uses gate_blocked() from Plan 02
 **Success Criteria** (what must be TRUE):
   1. Setting `NO_COLOR=1` disables all color output; unsetting it enables color (using `var_os().is_none()`)
   2. Gate command help text appears once (no duplication between top-level and subcommand)
