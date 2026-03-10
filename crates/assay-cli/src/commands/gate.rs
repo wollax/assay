@@ -168,12 +168,29 @@ fn load_gate_context() -> anyhow::Result<(
     Ok((root, config, working_dir, config_timeout))
 }
 
-/// Streaming display counters accumulated during criterion evaluation.
+/// Tracks pass/fail/warn/skip counts during streaming gate execution.
+#[derive(Default)]
 struct StreamCounters {
+    /// Number of criteria that passed evaluation.
     passed: usize,
+    /// Number of criteria that failed evaluation (required enforcement).
     failed: usize,
+    /// Number of criteria that failed evaluation (advisory enforcement).
     warned: usize,
+    /// Number of criteria skipped (agent-report or non-executable).
     skipped: usize,
+}
+
+impl StreamCounters {
+    /// Total number of criteria processed (passed + failed + warned + skipped).
+    fn tally(&self) -> usize {
+        self.passed + self.failed + self.warned + self.skipped
+    }
+
+    /// Whether any required criteria failed, blocking the gate.
+    fn gate_blocked(&self) -> bool {
+        self.failed > 0
+    }
 }
 
 /// Display configuration for streaming criterion evaluation.
@@ -287,7 +304,7 @@ fn stream_criterion(
 
 /// Print a gate summary line (pass/fail/warn/skip counts).
 fn print_gate_summary(counters: &StreamCounters, color: bool, label: &str) {
-    let total = counters.passed + counters.failed + counters.warned + counters.skipped;
+    let total = counters.tally();
     let passed_str = format_count(counters.passed, "\x1b[32m", color);
     let failed_str = format_count(counters.failed, "\x1b[31m", color);
     let warned_str = format_count(counters.warned, "\x1b[33m", color);
@@ -372,12 +389,7 @@ fn handle_gate_run_all(cli_timeout: Option<u64>, verbose: bool, json: bool) -> a
         verbose,
         color,
     };
-    let mut counters = StreamCounters {
-        passed: 0,
-        failed: 0,
-        warned: 0,
-        skipped: 0,
-    };
+    let mut counters = StreamCounters::default();
     let spec_count = result.entries.len();
 
     for (i, entry) in result.entries.iter().enumerate() {
@@ -433,7 +445,7 @@ fn handle_gate_run_all(cli_timeout: Option<u64>, verbose: bool, json: bool) -> a
     }
 
     print_gate_summary(&counters, color, &format!("Results ({spec_count} specs)"));
-    Ok(if counters.failed > 0 { 1 } else { 0 })
+    Ok(if counters.gate_blocked() { 1 } else { 0 })
 }
 
 /// Handle `assay gate run <name> [--timeout N] [--verbose] [--json]`.
@@ -505,12 +517,7 @@ fn handle_gate_run(
         verbose,
         color,
     };
-    let mut counters = StreamCounters {
-        passed: 0,
-        failed: 0,
-        warned: 0,
-        skipped: 0,
-    };
+    let mut counters = StreamCounters::default();
     let executable_count = criteria
         .iter()
         .filter(|c| c.cmd.is_some() || c.path.is_some())
@@ -536,7 +543,7 @@ fn handle_gate_run(
     );
 
     print_gate_summary(&counters, color, "Results");
-    Ok(if counters.failed > 0 { 1 } else { 0 })
+    Ok(if counters.gate_blocked() { 1 } else { 0 })
 }
 
 /// Build a [`GateRunSummary`] for streaming mode (no per-criterion results or timing).
