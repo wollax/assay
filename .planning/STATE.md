@@ -2,27 +2,27 @@
 
 ## Current Position
 
-Phase: 3 of 10 — Session Manifest & Scripted Sessions
+Phase: 4 of 10 — Sequential Merge
 Plan: 3 of 3 complete
-Status: Phase 3 complete
-Progress: ███░░░░░░░ 3/10
+Status: Phase complete
+Progress: ████░░░░░░ 4/10
 
-Last activity: 2026-03-09 — Completed 03-03-PLAN.md (CLI session command, process group, integration tests)
+Last activity: 2026-03-10 — Completed 04-03-PLAN.md (CLI merge command + integration tests)
 
 ## Session Continuity
 
-Last session: 2026-03-09
-Stopped at: Completed Phase 3 — Session Manifest & Scripted Sessions
-Resume file: .planning/phases/active/04-*/04-01-PLAN.md
+Last session: 2026-03-10T12:32:11Z
+Stopped at: Completed Phase 04 (Sequential Merge)
+Resume file: .planning/phases/pending/05-merge-order/05-PLAN.md
 
 ## Performance Metrics
 
 | Metric | Value |
 |--------|-------|
-| Phases completed | 3 |
-| Phases remaining | 7 |
-| Plans completed (phase 3) | 3/3 |
-| Requirements covered | 3/12 |
+| Phases completed | 4 |
+| Phases remaining | 6 |
+| Plans completed (phase 4) | 3/3 |
+| Requirements covered | 4/12 |
 | Blockers | 0 |
 | Technical debt items | 0 |
 
@@ -43,11 +43,11 @@ Resume file: .planning/phases/active/04-*/04-01-PLAN.md
 - Binary named "smelt" via [[bin]] in smelt-cli
 - GitOps trait uses native async fn (RPITIT) — no async-trait or trait_variant crate needed
 - preflight() is synchronous (std::process::Command) — runs before tokio runtime
-- SmeltError has 14 variants: original 5 + 7 worktree-specific + 2 session-specific (ManifestParse, SessionError)
+- SmeltError has 17 variants: original 14 + 3 merge-specific (MergeConflict, MergeTargetExists, NoCompletedSessions)
 - CLI uses clap derive with Optional subcommand for context-aware no-args behavior
 - Tracing subscriber writes to stderr; stdout reserved for structured output
 - `--no-color` disables console colors on both stdout and stderr
-- GitOps trait extended with 8 worktree/branch methods + 3 session methods (add, commit, rev_list_count)
+- GitOps trait extended with 8 worktree/branch methods + 3 session methods + 8 merge methods
 - WorktreeState serializes to per-session TOML files in .smelt/worktrees/
 - SessionStatus enum: Created/Running/Completed/Failed/Orphaned (serde rename_all lowercase)
 - parse_porcelain() handles git worktree list --porcelain output including bare, detached, locked states
@@ -78,6 +78,19 @@ Resume file: .planning/phases/active/04-*/04-01-PLAN.md
 - ProcessGroup wraps Child process with kill_group() via libc SIGTERM for future real-agent cleanup
 - execute_run() catches errors and prints to stderr, returns exit code (0 = all pass, 1 = any failure)
 - Integration tests create repo as subdirectory of temp dir for automatic worktree cleanup
+- merge_squash checks both stdout and stderr for "CONFLICT" — git writes conflict messages to stdout
+- merge_squash uses raw tokio::process::Command (not run_in) for exit code inspection
+- worktree_add_existing uses `git worktree add <path> <branch>` (no -b flag) for existing branches
+- reset_hard takes target_ref parameter for flexibility in rollback scenarios
+- MergeRunner<G: GitOps + Clone> follows SessionRunner pattern — new(git, repo_root) + run(manifest, opts)
+- Explicit cleanup in error paths (no Drop guard) — simpler, all paths explicit
+- Template commit messages for squash merges: `merge(<session>): <task-desc>` with 72-char truncation
+- diff_numstat with `{hash}^` parent ref for per-session stats
+- WorktreeManager::remove(force=true) reused for session cleanup after successful merge
+- MergeRunner collects sessions in manifest order — deterministic merge sequence
+- CLI `smelt merge <manifest>` with `--target` flag for branch name override
+- Post-hoc progress from MergeReport (no real-time callbacks in Phase 4)
+- SessionRunner updates WorktreeState status after execution (Completed/Failed)
 
 ### Blockers
 

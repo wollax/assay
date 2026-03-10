@@ -11,9 +11,8 @@ use crate::worktree::GitWorktreeEntry;
 
 /// Async interface for git operations.
 ///
-/// Implementations shell out to `git` or use a library. The trait is the
-/// primary test seam — production code uses [`GitCli`], tests can substitute
-/// a fake.
+/// The current implementation shells out to `git`. The trait exists as a
+/// test seam — production code uses [`GitCli`], tests can substitute a fake.
 pub trait GitOps {
     /// Return the repository root directory.
     fn repo_root(&self) -> impl Future<Output = Result<PathBuf>> + Send;
@@ -85,6 +84,57 @@ pub trait GitOps {
         branch: &str,
         base: &str,
     ) -> impl Future<Output = Result<usize>> + Send;
+
+    /// Find the merge-base (common ancestor) of two refs.
+    fn merge_base(&self, ref_a: &str, ref_b: &str) -> impl Future<Output = Result<String>> + Send;
+
+    /// Create a new branch at `start_point` without checking it out.
+    fn branch_create(
+        &self,
+        branch_name: &str,
+        start_point: &str,
+    ) -> impl Future<Output = Result<()>> + Send;
+
+    /// Perform a squash merge of `source_ref` into the current branch of `work_dir`.
+    /// Returns `Ok(())` on clean merge (changes staged, not committed).
+    /// Returns `SmeltError::MergeConflict` on conflict (with file list, session empty).
+    /// Returns `SmeltError::GitExecution` on other git errors.
+    fn merge_squash(
+        &self,
+        work_dir: &Path,
+        source_ref: &str,
+    ) -> impl Future<Output = Result<()>> + Send;
+
+    /// Check out an existing branch into a new worktree path (no `-b` flag).
+    fn worktree_add_existing(
+        &self,
+        path: &Path,
+        branch_name: &str,
+    ) -> impl Future<Output = Result<()>> + Send;
+
+    /// List unmerged (conflicting) files in `work_dir`.
+    /// Uses `git diff --name-only --diff-filter=U`.
+    fn unmerged_files(
+        &self,
+        work_dir: &Path,
+    ) -> impl Future<Output = Result<Vec<String>>> + Send;
+
+    /// Hard reset HEAD in `work_dir` to `target_ref`.
+    fn reset_hard(
+        &self,
+        work_dir: &Path,
+        target_ref: &str,
+    ) -> impl Future<Output = Result<()>> + Send;
+
+    /// Resolve a ref (branch name, HEAD, etc.) to a full commit hash.
+    fn rev_parse(&self, rev: &str) -> impl Future<Output = Result<String>> + Send;
+
+    /// Get diff stats between two refs. Returns Vec of (insertions, deletions, filename).
+    fn diff_numstat(
+        &self,
+        from_ref: &str,
+        to_ref: &str,
+    ) -> impl Future<Output = Result<Vec<(usize, usize, String)>>> + Send;
 }
 
 /// Synchronous preflight checks run before the async runtime is fully engaged.

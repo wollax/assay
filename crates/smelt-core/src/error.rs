@@ -67,6 +67,18 @@ pub enum SmeltError {
     /// Session-specific error.
     #[error("session '{session}': {message}")]
     SessionError { session: String, message: String },
+
+    /// Merge conflict occurred during sequential merge.
+    #[error("merge conflict in session '{session}': conflicting files: {}", files.join(", "))]
+    MergeConflict { session: String, files: Vec<String> },
+
+    /// Target branch for merge already exists.
+    #[error("merge target branch '{branch}' already exists (use a different name or delete it)")]
+    MergeTargetExists { branch: String },
+
+    /// No completed sessions available to merge.
+    #[error("no completed sessions to merge — all sessions failed or are still running")]
+    NoCompletedSessions,
 }
 
 impl SmeltError {

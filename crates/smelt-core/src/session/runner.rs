@@ -2,11 +2,14 @@
 
 use std::path::PathBuf;
 
+use tracing::warn;
+
 use crate::error::{Result, SmeltError};
 use crate::git::GitOps;
 use crate::session::manifest::Manifest;
 use crate::session::script::ScriptExecutor;
 use crate::session::types::{SessionOutcome, SessionResult};
+use crate::worktree::state::{SessionStatus, WorktreeState};
 use crate::worktree::{CreateWorktreeOpts, WorktreeManager};
 
 /// Coordinates manifest execution: creates worktrees, runs scripts,
@@ -102,6 +105,47 @@ impl<G: GitOps + Clone> SessionRunner<G> {
                 }
             };
 
+            // Update worktree state file with session outcome
+            let state_file = smelt_dir
+                .join("worktrees")
+                .join(format!("{}.toml", session.name));
+            let result = if state_file.exists() {
+                match WorktreeState::load(&state_file) {
+                    Ok(mut state) => {
+                        state.status = match result.outcome {
+                            SessionOutcome::Completed => SessionStatus::Completed,
+                            _ => SessionStatus::Failed,
+                        };
+                        state.updated_at = chrono::Utc::now();
+                        match state.save(&state_file) {
+                            Ok(()) => result,
+                            Err(e) => {
+                                warn!(
+                                    "failed to update state file for session '{}': {e}",
+                                    session.name
+                                );
+                                SessionResult {
+                                    outcome: SessionOutcome::Failed,
+                                    failure_reason: Some(format!(
+                                        "session completed but state save failed: {e}"
+                                    )),
+                                    ..result
+                                }
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        warn!(
+                            "failed to load state file for session '{}': {e}",
+                            session.name
+                        );
+                        result
+                    }
+                }
+            } else {
+                result
+            };
+
             results.push(result);
         }
 
@@ -114,7 +158,7 @@ mod tests {
     use super::*;
     use crate::git::GitCli;
     use crate::session::manifest::{
-        FileChange, ManifestMeta, ScriptDef, ScriptStep, SessionDef,
+        FailureMode, FileChange, ManifestMeta, ScriptDef, ScriptStep, SessionDef,
     };
     use std::process::Command;
 
@@ -511,5 +555,49 @@ mod tests {
         assert!(content_a.contains("feature_a"), "session A should have feature_a");
         assert!(content_b.contains("feature_b"), "session B should have feature_b");
         assert_ne!(content_a, content_b, "content should differ (conflict setup)");
+    }
+
+    #[tokio::test]
+    async fn run_manifest_updates_state_files_correctly() {
+        let (_tmp, cli, repo_path) = setup_test_repo();
+
+        let manifest = simple_manifest(vec![
+            scripted_session(
+                "state-ok",
+                vec![commit_step("add file", vec![("ok.txt", "ok\n")])],
+            ),
+            scripted_session(
+                "state-fail",
+                vec![commit_step("add file", vec![("fail.txt", "fail\n")])],
+            ),
+        ]);
+
+        // Pre-set the second session's script to simulate failure
+        let mut manifest_with_failure = manifest;
+        if let Some(ref mut script) = manifest_with_failure.sessions[1].script {
+            script.simulate_failure = Some(FailureMode::Crash);
+        }
+
+        let runner = SessionRunner::new(cli, repo_path.clone());
+        let results = runner
+            .run_manifest(&manifest_with_failure)
+            .await
+            .expect("run_manifest");
+
+        // First session should be Completed
+        assert_eq!(results[0].outcome, SessionOutcome::Completed);
+        let state_ok = WorktreeState::load(
+            &repo_path.join(".smelt/worktrees/state-ok.toml"),
+        )
+        .expect("load state-ok");
+        assert_eq!(state_ok.status, SessionStatus::Completed);
+
+        // Second session should be Failed
+        assert_eq!(results[1].outcome, SessionOutcome::Failed);
+        let state_fail = WorktreeState::load(
+            &repo_path.join(".smelt/worktrees/state-fail.toml"),
+        )
+        .expect("load state-fail");
+        assert_eq!(state_fail.status, SessionStatus::Failed);
     }
 }
