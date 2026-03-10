@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 2026-03-08)
 
 ## Current Position
 
-Phase: 28 — Worktree Manager
+Phase: 29 — Gate Output Truncation
 Plan: 2 of 2
-Status: Phase complete (verified)
-Last activity: 2026-03-09 — Phase 28 verified and completed
+Status: Complete
+Last activity: 2026-03-09 — Completed 29-02-PLAN.md
 
-Progress: v0.3.0 [██████░░░░░░░░░░] 38% (3/8 phases)
+Progress: v0.3.0 [████████░░░░░░░░] 50% (4/8 phases)
 
 ## Milestone Progress
 
@@ -22,14 +22,14 @@ Progress: v0.3.0 [██████░░░░░░░░░░] 38% (3/8 pha
 |-----------|--------|--------------|----------|
 | v0.1.0 | 10 | 43 | 100% (shipped) |
 | v0.2.0 | 15 (11-25) | 52 | 100% (shipped) |
-| v0.3.0 | 8 (26-33) | 43 | 38% |
+| v0.3.0 | 8 (26-33) | 43 | 50% |
 
 ## Phase Checklist
 
 - [x] Phase 26: Structural Prerequisites (CORE-01, CORE-05)
 - [x] Phase 27: Types Hygiene (TYPE-01 through TYPE-06)
 - [x] Phase 28: Worktree Manager (ORCH-01 through ORCH-07)
-- [ ] Phase 29: Gate Output Truncation (GATE-01 through GATE-05)
+- [x] Phase 29: Gate Output Truncation (GATE-01 through GATE-05)
 - [ ] Phase 30: Core Tech Debt (CORE-02, CORE-03, CORE-04, CORE-06, CORE-07, CORE-08, CORE-09)
 - [ ] Phase 31: Error Messages (ERR-01, ERR-02, ERR-03)
 - [ ] Phase 32: CLI Polish (CLI-01 through CLI-08)
@@ -55,6 +55,7 @@ v0.2.0 decisions archived to .planning/milestones/v0.2.0-ROADMAP.md
 - Sub-enum error pattern for new error categories (WorktreeError, etc.)
 - Zero new workspace dependencies (hard constraint from research)
 - Launcher, session record, gate_evaluate, TUI viewer, composable gates, spec preconditions, gate history summary — all deferred to v0.4.0+
+- Head/tail truncation ratio 1:2 (33% head, 67% tail) with marker as overhead (GATE-01)
 
 ### Pending Issues
 
@@ -67,4 +68,4 @@ None.
 
 ### Next Actions
 
-Start Phase 29: Gate Output Truncation (GATE-01 through GATE-05).
+Begin Phase 30: Core Tech Debt (CORE-02, CORE-03, CORE-04, CORE-06, CORE-07, CORE-08, CORE-09).
