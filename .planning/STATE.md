@@ -11,10 +11,10 @@ See: .planning/PROJECT.md (updated 2026-03-08)
 
 Phase: 28 — Worktree Manager
 Plan: 2 of 2
-Status: Phase complete
-Last activity: 2026-03-09 — Completed Plan 28-02: CLI subcommands and MCP tools
+Status: Phase complete (verified)
+Last activity: 2026-03-09 — Phase 28 verified and completed
 
-Progress: v0.3.0 [█████░░░░░░░░░░░] 31% (2.5/8 phases)
+Progress: v0.3.0 [██████░░░░░░░░░░] 38% (3/8 phases)
 
 ## Milestone Progress
 
@@ -22,7 +22,7 @@ Progress: v0.3.0 [█████░░░░░░░░░░░] 31% (2.5/8 p
 |-----------|--------|--------------|----------|
 | v0.1.0 | 10 | 43 | 100% (shipped) |
 | v0.2.0 | 15 (11-25) | 52 | 100% (shipped) |
-| v0.3.0 | 8 (26-33) | 43 | 31% |
+| v0.3.0 | 8 (26-33) | 43 | 38% |
 
 ## Phase Checklist
 
@@ -66,4 +66,4 @@ None.
 
 ### Next Actions
 
-Begin Phase 29: Gate Output Truncation (GATE-01 through GATE-05).
+Start Phase 29: Gate Output Truncation (GATE-01 through GATE-05).
