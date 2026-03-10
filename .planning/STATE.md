@@ -3,16 +3,16 @@
 ## Current Position
 
 Phase: 7 of 10 — AI Conflict Resolution
-Plan: 2 of 3 complete
-Status: In progress
-Progress: █████████░ 9/10
+Plan: 3 of 3 (tasks 1-2 complete, task 3 checkpoint)
+Status: Checkpoint — awaiting manual verification
+Progress: █████████░ 9.5/10
 
-Last activity: 2026-03-10 — Completed 07-02-PLAN.md
+Last activity: 2026-03-10 — Completed 07-03-PLAN.md tasks 1-2
 
 ## Session Continuity
 
-Last session: 2026-03-10T19:06:46Z
-Stopped at: Completed 07-02-PLAN.md (AiConflictHandler core engine)
+Last session: 2026-03-10
+Stopped at: 07-03-PLAN.md Task 3 checkpoint (manual verification of AI resolution UX)
 Resume file: None
 
 ## Performance Metrics
@@ -21,8 +21,8 @@ Resume file: None
 |--------|-------|
 | Phases completed | 6 |
 | Phases remaining | 4 |
-| Plans completed (phase 7) | 2/3 |
-| Requirements covered | 10/12 |
+| Plans completed (phase 7) | 3/3 (checkpoint pending) |
+| Requirements covered | 12/12 |
 | Blockers | 0 |
 | Technical debt items | 0 |
 
@@ -149,6 +149,15 @@ Resume file: None
 - AiConflictHandler.provider is Arc<P> for sharing with CLI retry wrapper (Plan 03)
 - task_description is None in AI prompts — accepted v0.1.0 limitation
 - default_model_for_provider: anthropic -> claude-sonnet-4, openai -> gpt-4o, ollama -> llama3.1, gemini -> gemini-2.0-flash
+- AiInteractiveConflictHandler wraps AiConflictHandler + InteractiveConflictHandler with Accept/Edit/Reject UX
+- similar crate for colored unified diff display (red removals, green additions, cyan hunk headers)
+- MergeConflictHandler enum dispatcher avoids RPITIT-no-dyn: AiInteractive(Box<...>) | Interactive
+- --no-ai flag on `smelt merge run` disables AI resolution entirely
+- build_conflict_handler factory: checks no_ai, TTY, AiConfig.enabled, GenAiProvider::new() — fallback chain
+- Retry-with-feedback: reject -> prompt feedback -> build_retry_prompt -> provider.complete() up to max_retries
+- Non-TTY always falls back to InteractiveConflictHandler (propagates MergeConflict error)
+- execute_merge_run accepts no_ai: bool parameter
+- 186 tests pass (146 core + 10 cli_merge + 16 cli_session + 6 cli_worktree + 8 cli_init)
 
 ### Blockers
 
