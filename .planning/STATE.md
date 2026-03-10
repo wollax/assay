@@ -56,6 +56,9 @@ v0.2.0 decisions archived to .planning/milestones/v0.2.0-ROADMAP.md
 - Zero new workspace dependencies (hard constraint from research)
 - Launcher, session record, gate_evaluate, TUI viewer, composable gates, spec preconditions, gate history summary — all deferred to v0.4.0+
 - Head/tail truncation ratio 1:2 (33% head, 67% tail) with marker as overhead (GATE-01)
+- Levenshtein fuzzy match threshold: distance <= 2 AND distance <= name.len() / 2
+- SpecNotFoundDiagnostic is a separate error variant (not enriching existing SpecNotFound)
+- ERR-01 detects exit codes 127/126 (not io::ErrorKind) since commands spawn via sh -c
 
 ### Pending Issues
 

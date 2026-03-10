@@ -56,16 +56,7 @@
 - [x] Phase 28: Worktree Manager (2 plans) — 2026-03-09
 - [x] Phase 29: Gate Output Truncation (2 plans) — 2026-03-09
 - [x] Phase 30: Core Tech Debt (3 plans) — 2026-03-10
-
-#### Phase 31: Error Messages
-
-**Goal:** Make all error messages actionable — command-not-found errors name the missing binary, spec-not-found errors list available specs, and TOML parse errors include file path and line number.
-**Dependencies:** Phase 26 (error ergonomics), Phase 30 (spec parse error handling)
-**Requirements:** ERR-01, ERR-02, ERR-03
-**Success Criteria** (what must be TRUE):
-  1. A gate run with a nonexistent command shows "Command 'X' not found. Is it installed and in PATH?"
-  2. Requesting a nonexistent spec shows the spec name and lists all available spec names
-  3. An invalid TOML spec file shows the file path, line number, and specific parse error message
+- [x] Phase 31: Error Messages (2 plans) — 2026-03-10
 
 #### Phase 32: CLI Polish
 
@@ -97,4 +88,4 @@
 |-----------|--------|--------|--------------|----------|
 | v0.1.0 Proof of Concept | ✅ Shipped | 10 | 43 | 100% |
 | v0.2.0 Dual-Track Gates & Hardening | ✅ Shipped | 15 | 52 | 100% |
-| v0.3.0 Orchestration Foundation | 🔄 In Progress | 8 (26-33) | 43 | 63% |
+| v0.3.0 Orchestration Foundation | 🔄 In Progress | 8 (26-33) | 43 | 75% |

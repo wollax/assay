@@ -48,9 +48,9 @@
 
 ## Error Messages
 
-- [ ] **ERR-01**: Command not found during gate run shows actionable message ("Command 'X' not found. Is it installed and in PATH?")
-- [ ] **ERR-02**: Spec not found shows available spec names
-- [ ] **ERR-03**: Invalid spec TOML shows file path, line number, and specific parse error
+- [x] **ERR-01**: Command not found during gate run shows actionable message ("Command 'X' not found. Is it installed and in PATH?")
+- [x] **ERR-02**: Spec not found shows available spec names
+- [x] **ERR-03**: Invalid spec TOML shows file path, line number, and specific parse error
 
 ## Core Tech Debt
 
