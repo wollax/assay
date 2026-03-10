@@ -2929,4 +2929,112 @@ cmd = "echo ok"
             extract_text(&result)
         );
     }
+
+    // ── MCP-01: Missing required parameter tests ────────────────────
+
+    #[test]
+    fn test_gate_run_params_missing_name() {
+        let json = serde_json::json!({});
+        let err = serde_json::from_value::<GateRunParams>(json).err().unwrap();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("missing field"),
+            "should mention missing field: {msg}"
+        );
+        assert!(
+            msg.contains("name"),
+            "should name the parameter: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_gate_report_params_missing_fields() {
+        let json = serde_json::json!({});
+        let err = serde_json::from_value::<GateReportParams>(json).err().unwrap();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("missing field"),
+            "should mention missing field: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_spec_get_params_missing_name() {
+        let json = serde_json::json!({});
+        let err = serde_json::from_value::<SpecGetParams>(json).err().unwrap();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("missing field"),
+            "should mention missing field: {msg}"
+        );
+        assert!(
+            msg.contains("name"),
+            "should name the parameter: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_gate_finalize_params_missing_session_id() {
+        let json = serde_json::json!({});
+        let err = serde_json::from_value::<GateFinalizeParams>(json).err().unwrap();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("missing field"),
+            "should mention missing field: {msg}"
+        );
+        assert!(
+            msg.contains("session_id"),
+            "should name the parameter: {msg}"
+        );
+    }
+
+    // ── MCP-02: Invalid parameter type tests ────────────────────────
+
+    #[test]
+    fn test_gate_run_params_invalid_timeout_type() {
+        let json = serde_json::json!({"name": "test", "timeout": "abc"});
+        let err = serde_json::from_value::<GateRunParams>(json).err().unwrap();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("invalid type") || msg.contains("invalid value"),
+            "should mention invalid type: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_gate_report_params_invalid_passed_type() {
+        let json = serde_json::json!({
+            "session_id": "s",
+            "criterion_name": "c",
+            "passed": "yes",
+            "evidence": "e",
+            "reasoning": "r",
+            "evaluator_role": "self"
+        });
+        let err = serde_json::from_value::<GateReportParams>(json).err().unwrap();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("invalid type"),
+            "should mention invalid type: {msg}"
+        );
+        assert!(
+            msg.contains("bool"),
+            "should mention expected type bool: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_gate_run_params_invalid_include_evidence_type() {
+        let json = serde_json::json!({"name": "test", "include_evidence": 42});
+        let err = serde_json::from_value::<GateRunParams>(json).err().unwrap();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("invalid type"),
+            "should mention invalid type: {msg}"
+        );
+        assert!(
+            msg.contains("bool"),
+            "should mention expected type bool: {msg}"
+        );
+    }
 }
