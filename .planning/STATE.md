@@ -59,6 +59,7 @@ v0.2.0 decisions archived to .planning/milestones/v0.2.0-ROADMAP.md
 ### Pending Issues
 
 19 open issues remain from v0.2.0 triage (see .planning/issues/TRIAGE-SUMMARY.md)
+9 new issues from Phase 28 PR review (worktree module, GitHub #78-#86)
 
 ### Blockers
 
