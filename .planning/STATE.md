@@ -3,16 +3,16 @@
 ## Current Position
 
 Phase: 7 of 10 — AI Conflict Resolution
-Plan: 1 of 3 complete
+Plan: 2 of 3 complete
 Status: In progress
 Progress: █████████░ 9/10
 
-Last activity: 2026-03-10 — Completed 07-01-PLAN.md
+Last activity: 2026-03-10 — Completed 07-02-PLAN.md
 
 ## Session Continuity
 
-Last session: 2026-03-10T18:56:22Z
-Stopped at: Completed 07-01-PLAN.md (AI provider abstraction)
+Last session: 2026-03-10T19:06:46Z
+Stopped at: Completed 07-02-PLAN.md (AiConflictHandler core engine)
 Resume file: None
 
 ## Performance Metrics
@@ -21,8 +21,8 @@ Resume file: None
 |--------|-------|
 | Phases completed | 6 |
 | Phases remaining | 4 |
-| Plans completed (phase 7) | 1/3 |
-| Requirements covered | 9/12 |
+| Plans completed (phase 7) | 2/3 |
+| Requirements covered | 10/12 |
 | Blockers | 0 |
 | Technical debt items | 0 |
 
@@ -140,6 +140,15 @@ Resume file: None
 - API key from config injected via env var passthrough (env takes precedence over config)
 - strip_code_fences post-processes LLM output — conservative, only strips when both opening and closing fences present
 - Prompt templates use 3-way merge context: base + ours + theirs with session metadata
+- GitOps::show_index_stage extracts :1:, :2:, :3: content for 3-way merge context
+- ConflictAction::Resolved changed from unit variant to Resolved(ResolutionMethod)
+- ResolutionMethod extended with AiAssisted and AiEdited (serialize to kebab-case)
+- format_commit_message accepts ResolutionMethod instead of bool for AI resolution suffixes
+- sessions_resolved filter includes Manual, AiAssisted, and AiEdited (not just Manual)
+- AiConflictHandler<G, P> implements ConflictHandler — single-attempt per-file LLM resolver
+- AiConflictHandler.provider is Arc<P> for sharing with CLI retry wrapper (Plan 03)
+- task_description is None in AI prompts — accepted v0.1.0 limitation
+- default_model_for_provider: anthropic -> claude-sonnet-4, openai -> gpt-4o, ollama -> llama3.1, gemini -> gemini-2.0-flash
 
 ### Blockers
 
