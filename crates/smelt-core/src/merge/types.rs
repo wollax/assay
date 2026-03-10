@@ -5,11 +5,12 @@ use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
 
-/// Action the user chose when a conflict is encountered.
+/// Action the conflict handler chose when a conflict is encountered.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConflictAction {
-    /// User resolved all conflicts and is ready to continue.
-    Resolved,
+    /// Conflicts were resolved and the merge is ready to continue.
+    /// Carries the method used so the commit message and report can reflect it.
+    Resolved(ResolutionMethod),
     /// Skip this session (undo the failed squash merge, move on).
     Skip,
     /// Abort the entire merge sequence.
@@ -17,6 +18,11 @@ pub enum ConflictAction {
 }
 
 /// How a session's merge was resolved.
+///
+/// Variants `Clean` and `Skipped` are bookkeeping states set by the merge
+/// engine — they never appear inside a [`ConflictAction`]. `Manual`,
+/// `AiAssisted`, and `AiEdited` are returned by conflict handlers via
+/// `ConflictAction::Resolved(method)`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum ResolutionMethod {
@@ -25,7 +31,12 @@ pub enum ResolutionMethod {
     /// User resolved conflicts manually.
     Manual,
     /// Session was skipped due to unresolved conflicts.
+    /// Set by the merge engine when `ConflictAction::Skip` is chosen.
     Skipped,
+    /// AI resolved the conflict and the user accepted the resolution.
+    AiAssisted,
+    /// AI proposed a resolution, user edited it before accepting.
+    AiEdited,
 }
 
 /// Strategy for ordering sessions during merge.
@@ -140,7 +151,7 @@ pub struct MergeReport {
     pub plan: Option<MergePlan>,
     /// Sessions where conflicts were skipped by the user.
     pub sessions_conflict_skipped: Vec<String>,
-    /// Sessions where the user manually resolved conflicts.
+    /// Sessions where conflicts were resolved (manual or AI).
     pub sessions_resolved: Vec<String>,
 }
 
@@ -152,7 +163,7 @@ impl MergeReport {
         !self.sessions_skipped.is_empty()
     }
 
-    /// Returns `true` if any sessions had conflicts resolved manually.
+    /// Returns `true` if any sessions had conflicts resolved (manually or by AI).
     pub fn has_resolved(&self) -> bool {
         !self.sessions_resolved.is_empty()
     }

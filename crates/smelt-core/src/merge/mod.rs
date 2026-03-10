@@ -1,5 +1,6 @@
 //! Sequential merge engine for combining completed session worktrees.
 
+pub mod ai_handler;
 pub mod conflict;
 pub mod ordering;
 pub mod types;
@@ -10,6 +11,7 @@ use std::path::{Path, PathBuf};
 
 use tracing::{info, warn};
 
+pub use ai_handler::{AiConflictHandler, default_model_for_provider};
 pub use conflict::{ConflictHunk, ConflictScan, scan_conflict_markers};
 pub use types::{
     ConflictAction, DiffStat, MergeOpts, MergeOrderStrategy, MergePlan, MergeReport,
@@ -230,7 +232,10 @@ impl<G: GitOps + Clone> MergeRunner<G> {
 
                 let sessions_resolved: Vec<String> = session_results
                     .iter()
-                    .filter(|r| r.resolution == ResolutionMethod::Manual)
+                    .filter(|r| {
+                        r.resolution != ResolutionMethod::Clean
+                            && r.resolution != ResolutionMethod::Skipped
+                    })
                     .map(|r| r.session_name.clone())
                     .collect();
 
@@ -400,7 +405,7 @@ impl<G: GitOps + Clone> MergeRunner<G> {
                         session.task_description.as_deref(),
                         target_branch,
                         &session.branch_name,
-                        false,
+                        ResolutionMethod::Clean,
                     );
                     let result = self
                         .commit_and_stat(temp_path, &session.session_name, &commit_msg, ResolutionMethod::Clean)
@@ -427,7 +432,7 @@ impl<G: GitOps + Clone> MergeRunner<G> {
                             .await?;
 
                         match action {
-                            ConflictAction::Resolved => {
+                            ConflictAction::Resolved(method) => {
                                 // Re-scan to validate resolution
                                 scan = conflict::scan_files_for_markers(temp_path, &conflict_files);
                                 if scan.has_markers() {
@@ -435,20 +440,21 @@ impl<G: GitOps + Clone> MergeRunner<G> {
                                     continue;
                                 }
                                 // Stage all files and commit
-                                self.git.add(temp_path, &["."]).await?;
+                                let file_refs: Vec<&str> = conflict_files.iter().map(|s| s.as_str()).collect();
+                                self.git.add(temp_path, &file_refs).await?;
                                 let commit_msg = format_commit_message(
                                     &session.session_name,
                                     session.task_description.as_deref(),
                                     target_branch,
                                     &session.branch_name,
-                                    true,
+                                    method,
                                 );
                                 let result = self
                                     .commit_and_stat(
                                         temp_path,
                                         &session.session_name,
                                         &commit_msg,
-                                        ResolutionMethod::Manual,
+                                        method,
                                     )
                                     .await?;
                                 info!(
@@ -552,12 +558,14 @@ fn format_commit_message(
     task: Option<&str>,
     target_branch: &str,
     session_branch: &str,
-    manually_resolved: bool,
+    resolution: ResolutionMethod,
 ) -> String {
-    let suffix = if manually_resolved {
-        " [resolved: manual]"
-    } else {
-        ""
+    let suffix = match resolution {
+        ResolutionMethod::Clean => "",
+        ResolutionMethod::Manual => " [resolved: manual]",
+        ResolutionMethod::Skipped => " [skipped]",
+        ResolutionMethod::AiAssisted => " [resolved: ai-assisted]",
+        ResolutionMethod::AiEdited => " [resolved: ai-edited]",
     };
 
     let subject = match task {
@@ -1162,7 +1170,7 @@ mod tests {
                     .join("\n");
                 std::fs::write(&path, format!("{resolved}\n")).unwrap();
             }
-            Ok(ConflictAction::Resolved)
+            Ok(ConflictAction::Resolved(ResolutionMethod::Manual))
         }
     }
 
@@ -1235,6 +1243,52 @@ mod tests {
             resolved_commit.contains("[resolved: manual]"),
             "commit message should contain resolution suffix, got: {resolved_commit}"
         );
+    }
+
+    #[test]
+    fn test_format_commit_message_ai_assisted() {
+        let msg = format_commit_message("sess", Some("task"), "main", "smelt/sess", ResolutionMethod::AiAssisted);
+        assert!(
+            msg.contains("[resolved: ai-assisted]"),
+            "expected ai-assisted suffix, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_format_commit_message_ai_edited() {
+        let msg = format_commit_message("sess", Some("task"), "main", "smelt/sess", ResolutionMethod::AiEdited);
+        assert!(
+            msg.contains("[resolved: ai-edited]"),
+            "expected ai-edited suffix, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_format_commit_message_clean_no_suffix() {
+        let msg = format_commit_message("sess", Some("task"), "main", "smelt/sess", ResolutionMethod::Clean);
+        assert!(
+            !msg.contains("[resolved:"),
+            "clean merge should have no resolution suffix, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_conflict_action_resolved_carries_method() {
+        let action = ConflictAction::Resolved(ResolutionMethod::AiAssisted);
+        match action {
+            ConflictAction::Resolved(method) => {
+                assert_eq!(method, ResolutionMethod::AiAssisted);
+            }
+            _ => panic!("expected Resolved variant"),
+        }
+
+        let action_edited = ConflictAction::Resolved(ResolutionMethod::AiEdited);
+        match action_edited {
+            ConflictAction::Resolved(method) => {
+                assert_eq!(method, ResolutionMethod::AiEdited);
+            }
+            _ => panic!("expected Resolved variant"),
+        }
     }
 
     #[tokio::test]

@@ -147,6 +147,17 @@ pub trait GitOps {
         from_ref: &str,
         to_ref: &str,
     ) -> impl Future<Output = Result<Vec<(usize, usize, String)>>> + Send;
+
+    /// Show a file at a specific index stage in `work_dir`.
+    ///
+    /// Stage 1 = base (common ancestor), 2 = ours (HEAD), 3 = theirs (merging branch).
+    /// Uses `git show :N:file`. Returns the file content as a string.
+    fn show_index_stage(
+        &self,
+        work_dir: &Path,
+        stage: u8,
+        file: &str,
+    ) -> impl Future<Output = Result<String>> + Send;
 }
 
 /// Synchronous preflight checks run before the async runtime is fully engaged.

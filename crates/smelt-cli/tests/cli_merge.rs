@@ -363,7 +363,169 @@ fn test_merge_manifest_not_found() {
         .stderr(predicate::str::contains("Error"));
 }
 
-// ── Test 7: Three sessions, one failed — merge skips failed ─────────
+// ── Test 7: --no-ai flag accepted and clean merge works ──────────────
+
+#[test]
+fn test_merge_no_ai_flag_clean_merge() {
+    let tmp = tempfile::tempdir().expect("create temp dir");
+    let repo = setup_test_repo(&tmp);
+
+    smelt_cmd(&repo).arg("init").assert().success();
+
+    let manifest = write_manifest(
+        &repo,
+        r#"
+[manifest]
+name = "no-ai-clean"
+
+[[session]]
+name = "session-x"
+task = "Write x file"
+
+[session.script]
+backend = "scripted"
+
+[[session.script.steps]]
+action = "commit"
+message = "add x.txt"
+files = [{ path = "x.txt", content = "x content\n" }]
+"#,
+    );
+
+    // Run sessions
+    smelt_cmd(&repo)
+        .args(["session", "run", manifest.to_str().unwrap()])
+        .assert()
+        .success();
+
+    // Merge with --no-ai flag — should work for clean merges
+    smelt_cmd(&repo)
+        .args(["merge", "run", manifest.to_str().unwrap(), "--no-ai"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("session-x:"))
+        .stderr(predicate::str::contains("Merged 1 session(s)"));
+}
+
+// ── Test 8: AI config disabled falls back to manual path ─────────────
+
+#[test]
+fn test_merge_ai_disabled_config_conflict_exits_error() {
+    let tmp = tempfile::tempdir().expect("create temp dir");
+    let repo = setup_test_repo(&tmp);
+
+    smelt_cmd(&repo).arg("init").assert().success();
+
+    // Write config with AI disabled
+    let smelt_dir = repo.join(".smelt");
+    std::fs::write(
+        smelt_dir.join("config.toml"),
+        "[ai]\nenabled = false\n",
+    )
+    .expect("write config");
+
+    let manifest = write_manifest(
+        &repo,
+        r#"
+[manifest]
+name = "ai-disabled-conflict"
+
+[[session]]
+name = "sess-a"
+task = "Edit shared"
+
+[session.script]
+backend = "scripted"
+
+[[session.script.steps]]
+action = "commit"
+message = "A changes"
+files = [{ path = "shared.txt", content = "from A\n" }]
+
+[[session]]
+name = "sess-b"
+task = "Edit shared too"
+
+[session.script]
+backend = "scripted"
+
+[[session.script.steps]]
+action = "commit"
+message = "B changes"
+files = [{ path = "shared.txt", content = "from B\n" }]
+"#,
+    );
+
+    // Run sessions
+    smelt_cmd(&repo)
+        .args(["session", "run", manifest.to_str().unwrap()])
+        .assert()
+        .success();
+
+    // Merge should fail (non-TTY mode: conflict propagated as error, same as Phase 6)
+    smelt_cmd(&repo)
+        .args(["merge", "run", manifest.to_str().unwrap()])
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("merge conflict"))
+        .stderr(predicate::str::contains("shared.txt"));
+}
+
+// ── Test 9: --no-ai with conflict also exits error in non-TTY ────────
+
+#[test]
+fn test_merge_no_ai_conflict_exits_error() {
+    let tmp = tempfile::tempdir().expect("create temp dir");
+    let repo = setup_test_repo(&tmp);
+
+    smelt_cmd(&repo).arg("init").assert().success();
+
+    let manifest = write_manifest(
+        &repo,
+        r#"
+[manifest]
+name = "no-ai-conflict"
+
+[[session]]
+name = "alpha"
+task = "Edit shared"
+
+[session.script]
+backend = "scripted"
+
+[[session.script.steps]]
+action = "commit"
+message = "alpha edit"
+files = [{ path = "shared.txt", content = "alpha version\n" }]
+
+[[session]]
+name = "beta"
+task = "Edit shared too"
+
+[session.script]
+backend = "scripted"
+
+[[session.script.steps]]
+action = "commit"
+message = "beta edit"
+files = [{ path = "shared.txt", content = "beta version\n" }]
+"#,
+    );
+
+    smelt_cmd(&repo)
+        .args(["session", "run", manifest.to_str().unwrap()])
+        .assert()
+        .success();
+
+    // --no-ai with conflict in non-TTY → error
+    smelt_cmd(&repo)
+        .args(["merge", "run", manifest.to_str().unwrap(), "--no-ai"])
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("merge conflict"));
+}
+
+// ── Test 10: Three sessions, one failed — merge skips failed ────────
 
 #[test]
 fn test_merge_three_sessions_one_failed() {

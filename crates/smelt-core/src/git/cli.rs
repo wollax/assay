@@ -335,14 +335,25 @@ impl GitOps for GitCli {
             .filter_map(|line| {
                 let parts: Vec<&str> = line.splitn(3, '\t').collect();
                 if parts.len() == 3 {
-                    let ins = parts[0].parse().unwrap_or(0);
-                    let del = parts[1].parse().unwrap_or(0);
+                    // Binary files produce "-" for insertions/deletions — skip them.
+                    let ins: usize = parts[0].parse().ok()?;
+                    let del: usize = parts[1].parse().ok()?;
                     Some((ins, del, parts[2].to_string()))
                 } else {
                     None
                 }
             })
             .collect())
+    }
+
+    async fn show_index_stage(
+        &self,
+        work_dir: &Path,
+        stage: u8,
+        file: &str,
+    ) -> Result<String> {
+        self.run_in(work_dir, &["show", &format!(":{stage}:{file}")])
+            .await
     }
 }
 
