@@ -12,7 +12,6 @@ use crate::error::{AssayError, Result};
 
 /// Result of truncating a source line to fit within a display budget.
 #[derive(Debug)]
-#[allow(dead_code)] // Wired into call sites in Plan 02
 pub(crate) struct TruncatedLine {
     /// The (possibly truncated) text to display.
     pub text: String,
@@ -24,7 +23,6 @@ pub(crate) struct TruncatedLine {
 ///
 /// Both line and column are zero-based. Column is measured in characters
 /// (not bytes) to handle multi-byte UTF-8 correctly.
-#[allow(dead_code)] // Wired into call sites in Plan 02
 pub(crate) fn translate_position(content: &str, byte_offset: usize) -> (usize, usize) {
     let clamped = byte_offset.min(content.len());
     let before = &content[..clamped];
@@ -39,7 +37,6 @@ pub(crate) fn translate_position(content: &str, byte_offset: usize) -> (usize, u
 /// If the line already fits, returns it unchanged with the original column
 /// as the caret offset. Otherwise, centers a window around `col` and adds
 /// `...` ellipsis markers at the truncation points.
-#[allow(dead_code)] // Wired into call sites in Plan 02
 pub(crate) fn truncate_source_line(line: &str, col: usize, budget: usize) -> TruncatedLine {
     let chars: Vec<char> = line.chars().collect();
     if chars.len() <= budget {
@@ -97,7 +94,6 @@ pub(crate) fn truncate_source_line(line: &str, col: usize, budget: usize) -> Tru
 ///
 /// The file path is NOT included — callers (AssayError Display impls)
 /// prepend "parsing config '{path}': " or similar.
-#[allow(dead_code)] // Wired into call sites in Plan 02
 pub(crate) fn format_toml_error(content: &str, err: &toml::de::Error) -> String {
     let message = err.message();
     let Some(span) = err.span() else {
@@ -197,7 +193,7 @@ pub fn load(root: &Path) -> Result<Config> {
 
     let config: Config = toml::from_str(&content).map_err(|e| AssayError::ConfigParse {
         path: path.clone(),
-        message: e.to_string(),
+        message: format_toml_error(&content, &e),
     })?;
 
     if let Err(errors) = validate(&config) {
@@ -589,8 +585,8 @@ default_timeout = 600
                     "path should end with config.toml, got: {path:?}"
                 );
                 assert!(
-                    message.contains("TOML parse error"),
-                    "message should contain parse error, got: {message}"
+                    message.contains("line"),
+                    "message should contain line info from format_toml_error, got: {message}"
                 );
             }
             other => panic!("expected ConfigParse, got: {other:?}"),
