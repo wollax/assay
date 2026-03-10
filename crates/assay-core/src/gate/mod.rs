@@ -33,8 +33,8 @@ use crate::error::{AssayError, Result};
 
 pub mod session;
 
-/// Maximum bytes to retain from stdout/stderr capture (64 KB).
-const MAX_OUTPUT_BYTES: usize = 65_536;
+/// Byte budget per output stream (stdout/stderr) for head+tail truncation (32 KiB).
+const STREAM_BUDGET: usize = 32_768;
 
 /// Polling interval for `try_wait` timeout loop.
 const POLL_INTERVAL_MS: u64 = 50;
@@ -542,17 +542,13 @@ fn evaluate_command(cmd: &str, working_dir: &Path, timeout: Duration) -> Result<
         stderr_raw.push_str(&format!("[pipe read error: {e}]"));
     }
 
-    // Track original sizes for truncation metadata
-    let original_stdout_len = stdout_raw.len();
-    let original_stderr_len = stderr_raw.len();
+    // Apply head+tail truncation independently per stream
+    let stdout_result = truncate_head_tail(&stdout_raw, STREAM_BUDGET);
+    let stderr_result = truncate_head_tail(&stderr_raw, STREAM_BUDGET);
 
-    // Apply truncation (tail-biased)
-    let (stdout_str, stdout_truncated) = truncate_output(&stdout_raw, MAX_OUTPUT_BYTES);
-    let (stderr_str, stderr_truncated) = truncate_output(&stderr_raw, MAX_OUTPUT_BYTES);
-
-    let truncated = stdout_truncated || stderr_truncated;
+    let truncated = stdout_result.truncated || stderr_result.truncated;
     let original_bytes = if truncated {
-        Some((original_stdout_len + original_stderr_len) as u64)
+        Some((stdout_result.original_bytes + stderr_result.original_bytes) as u64)
     } else {
         None
     };
@@ -566,8 +562,8 @@ fn evaluate_command(cmd: &str, working_dir: &Path, timeout: Duration) -> Result<
                 kind: GateKind::Command {
                     cmd: cmd.to_string(),
                 },
-                stdout: stdout_str,
-                stderr: stderr_str,
+                stdout: stdout_result.output,
+                stderr: stderr_result.output,
                 exit_code,
                 duration_ms,
                 timestamp: Utc::now(),
@@ -581,10 +577,14 @@ fn evaluate_command(cmd: &str, working_dir: &Path, timeout: Duration) -> Result<
         }
         None => {
             // Timeout: append timeout notice to stderr
-            let timeout_stderr = if stderr_str.is_empty() {
+            let timeout_stderr = if stderr_result.output.is_empty() {
                 format!("[timed out after {}s]", timeout.as_secs())
             } else {
-                format!("{}\n[timed out after {}s]", stderr_str, timeout.as_secs())
+                format!(
+                    "{}\n[timed out after {}s]",
+                    stderr_result.output,
+                    timeout.as_secs()
+                )
             };
 
             Ok(GateResult {
@@ -592,7 +592,7 @@ fn evaluate_command(cmd: &str, working_dir: &Path, timeout: Duration) -> Result<
                 kind: GateKind::Command {
                     cmd: cmd.to_string(),
                 },
-                stdout: stdout_str,
+                stdout: stdout_result.output,
                 stderr: timeout_stderr,
                 exit_code: None,
                 duration_ms,
@@ -632,7 +632,6 @@ fn evaluate_always_pass() -> Result<GateResult> {
 /// When truncation is applied, the output contains the first portion (head)
 /// and last portion (tail) of the original input, separated by a marker
 /// indicating how many bytes were omitted.
-#[allow(dead_code)] // Used in tests; integrated in Plan 02
 struct TruncationResult {
     /// The possibly-truncated output string.
     output: String,
@@ -651,7 +650,6 @@ struct TruncationResult {
 /// The marker itself is overhead and does not count against the budget.
 /// UTF-8 character boundaries are respected using `floor_char_boundary`
 /// and `ceil_char_boundary` to avoid splitting multi-byte sequences.
-#[allow(dead_code)] // Used in tests; integrated in Plan 02
 fn truncate_head_tail(input: &str, budget: usize) -> TruncationResult {
     let original_bytes = input.len();
 
@@ -685,26 +683,6 @@ fn truncate_head_tail(input: &str, budget: usize) -> TruncationResult {
         truncated: true,
         original_bytes,
     }
-}
-
-/// Truncate output, keeping the tail (since errors appear at end).
-///
-/// Returns `(possibly_truncated_string, was_truncated)`. If within
-/// budget, returns the input unchanged. Otherwise, keeps the last
-/// `max_bytes` bytes with a prepended truncation indicator, using
-/// `str::ceil_char_boundary` for safe UTF-8 slicing.
-fn truncate_output(output: &str, max_bytes: usize) -> (String, bool) {
-    if output.len() <= max_bytes {
-        return (output.to_string(), false);
-    }
-    let skip = output.len() - max_bytes;
-    let start = output.ceil_char_boundary(skip);
-    let truncated = format!(
-        "[truncated, showing last {} bytes]\n{}",
-        output.len() - start,
-        &output[start..]
-    );
-    (truncated, true)
 }
 
 #[cfg(test)]
@@ -885,30 +863,47 @@ mod tests {
         );
     }
 
-    // ── truncate_output ────────────────────────────────────────────
+    // ── evaluate_command: independent stream truncation (GATE-04) ──
 
     #[test]
-    fn truncate_output_within_budget() {
-        let input = "short string";
-        let (output, was_truncated) = truncate_output(input, 1024);
+    fn evaluate_command_independent_stream_truncation() {
+        let dir = tempfile::tempdir().unwrap();
 
-        assert_eq!(output, input);
-        assert!(!was_truncated);
-    }
+        // Generate large stdout (> STREAM_BUDGET) but small stderr
+        let large_size = STREAM_BUDGET + 1024;
+        let cmd = format!("printf '%0.s.' $(seq 1 {large_size}) && echo 'small stderr' >&2");
+        let criterion = Criterion {
+            name: "stream truncation test".to_string(),
+            description: "tests independent truncation".to_string(),
+            cmd: Some(cmd),
+            path: None,
+            timeout: None,
+            enforcement: None,
+            kind: None,
+            prompt: None,
+            requirements: vec![],
+        };
 
-    #[test]
-    fn truncate_output_over_budget() {
-        let input = "a".repeat(200);
-        let (output, was_truncated) = truncate_output(&input, 100);
+        let result = evaluate(&criterion, dir.path(), Duration::from_secs(30)).unwrap();
 
-        assert!(was_truncated);
+        assert!(result.truncated, "should be truncated");
         assert!(
-            output.contains("[truncated, showing last"),
-            "should have truncation indicator, got: {:?}",
-            output
+            result.original_bytes.is_some(),
+            "original_bytes should be set"
         );
-        // The output should contain the tail portion
-        assert!(output.contains(&"a".repeat(100)));
+        assert!(
+            result.stdout.contains("[truncated: "),
+            "stdout should have truncation marker, got len: {}",
+            result.stdout.len()
+        );
+        assert!(
+            !result.stderr.contains("[truncated: "),
+            "stderr should NOT be truncated"
+        );
+        assert!(
+            result.stderr.contains("small stderr"),
+            "stderr should contain original content"
+        );
     }
 
     // ── resolve_timeout ────────────────────────────────────────────
