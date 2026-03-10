@@ -151,16 +151,14 @@ impl Manifest {
                 )));
             }
 
-            // Validate file_scope globs (warn but don't fail)
+            // Validate file_scope globs
             if let Some(ref scopes) = session.file_scope {
                 for pattern in scopes {
                     if let Err(e) = globset::Glob::new(pattern) {
-                        tracing::warn!(
-                            session = %session.name,
-                            pattern = %pattern,
-                            error = %e,
-                            "invalid glob pattern in file_scope"
-                        );
+                        return Err(SmeltError::ManifestParse(format!(
+                            "session '{}' has invalid glob pattern '{}': {e}",
+                            session.name, pattern
+                        )));
                     }
                 }
             }
@@ -404,6 +402,33 @@ steps = []
         let err = Manifest::parse(toml).unwrap_err();
         assert!(
             err.to_string().contains("at least one step"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn parse_malformed_toml_returns_error() {
+        let err = Manifest::parse("this is not { valid toml").unwrap_err();
+        assert!(
+            matches!(err, SmeltError::ManifestParse(_)),
+            "expected ManifestParse, got: {err}"
+        );
+    }
+
+    #[test]
+    fn validate_rejects_invalid_glob_pattern() {
+        let toml = r#"
+[manifest]
+name = "bad-glob"
+
+[[session]]
+name = "s1"
+task = "something"
+file_scope = ["[invalid"]
+"#;
+        let err = Manifest::parse(toml).unwrap_err();
+        assert!(
+            err.to_string().contains("invalid glob pattern"),
             "got: {err}"
         );
     }

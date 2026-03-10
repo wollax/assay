@@ -7,7 +7,9 @@ use std::time::Duration;
 pub enum SessionOutcome {
     Completed,
     Failed,
+    /// Reserved for Phase 10 (real agent sessions with timeout).
     TimedOut,
+    /// Reserved for Phase 10 (real agent sessions killed by orchestrator).
     Killed,
 }
 

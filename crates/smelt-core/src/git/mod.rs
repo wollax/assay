@@ -68,7 +68,10 @@ pub trait GitOps {
     /// Check if a branch exists.
     fn branch_exists(&self, branch_name: &str) -> impl Future<Output = Result<bool>> + Send;
 
-    /// Stage files for commit. If `paths` is empty, stages all changes (`git add -A`).
+    /// Stage files for commit.
+    ///
+    /// # Panics
+    /// Panics if `paths` is empty. Callers must provide explicit file paths.
     fn add(&self, work_dir: &Path, paths: &[&str]) -> impl Future<Output = Result<()>> + Send;
 
     /// Create a commit in the given working directory with the provided message.

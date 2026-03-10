@@ -190,13 +190,10 @@ impl GitOps for GitCli {
     }
 
     async fn add(&self, work_dir: &Path, paths: &[&str]) -> Result<()> {
-        if paths.is_empty() {
-            self.run_in(work_dir, &["add", "-A"]).await?;
-        } else {
-            let mut args = vec!["add"];
-            args.extend(paths);
-            self.run_in(work_dir, &args).await?;
-        }
+        assert!(!paths.is_empty(), "add() requires explicit file paths");
+        let mut args = vec!["add"];
+        args.extend(paths);
+        self.run_in(work_dir, &args).await?;
         Ok(())
     }
 

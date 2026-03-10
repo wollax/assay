@@ -35,8 +35,12 @@ impl ProcessGroup {
     #[cfg(unix)]
     pub fn kill_group(&self) -> std::io::Result<()> {
         if let Some(pgid) = self.pgid {
-            // Negate PID to signal the entire process group
-            let ret = unsafe { libc::kill(-(pgid as i32), libc::SIGTERM) };
+            // Negate PID to signal the entire process group.
+            // The child was spawned with process_group(0), so PID == PGID.
+            let pid = i32::try_from(pgid).map_err(|_| {
+                std::io::Error::new(std::io::ErrorKind::InvalidInput, "PID exceeds i32::MAX")
+            })?;
+            let ret = unsafe { libc::kill(-pid, libc::SIGTERM) };
             if ret == -1 {
                 let err = std::io::Error::last_os_error();
                 // ESRCH = process not found (already dead) — that's OK
@@ -51,10 +55,17 @@ impl ProcessGroup {
     }
 
     /// Wait for the child process to exit, returning its exit status.
+    ///
+    /// Returns an error if the child has already been waited on.
     pub fn wait(&mut self) -> std::io::Result<std::process::ExitStatus> {
         self.child
             .as_mut()
-            .expect("ProcessGroup::wait called after child was taken")
+            .ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "ProcessGroup::wait called after child was already waited on",
+                )
+            })?
             .wait()
     }
 }

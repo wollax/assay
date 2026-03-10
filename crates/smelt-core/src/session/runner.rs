@@ -49,7 +49,7 @@ impl<G: GitOps + Clone> SessionRunner<G> {
                 .unwrap_or_else(|| manifest.manifest.base_ref.clone());
 
             // Create worktree
-            let info = manager
+            let info = match manager
                 .create(CreateWorktreeOpts {
                     session_name: session.name.clone(),
                     base: base_ref,
@@ -57,21 +57,48 @@ impl<G: GitOps + Clone> SessionRunner<G> {
                     task_description: session.task.clone(),
                     file_scope: session.file_scope.clone(),
                 })
-                .await?;
+                .await
+            {
+                Ok(info) => info,
+                Err(e) => {
+                    results.push(SessionResult {
+                        session_name: session.name.clone(),
+                        outcome: SessionOutcome::Failed,
+                        steps_completed: 0,
+                        failure_reason: Some(format!("worktree creation failed: {e}")),
+                        has_commits: false,
+                        duration: std::time::Duration::ZERO,
+                    });
+                    continue;
+                }
+            };
 
             // Execute script if present
-            let result = if let Some(ref script) = session.script {
-                let executor = ScriptExecutor::new(&self.git, info.worktree_path);
-                executor.execute(&session.name, script).await?
-            } else {
-                // No script — return a completed result with no commits
-                SessionResult {
-                    session_name: session.name.clone(),
-                    outcome: SessionOutcome::Completed,
-                    steps_completed: 0,
-                    failure_reason: None,
-                    has_commits: false,
-                    duration: std::time::Duration::ZERO,
+            let result = match session.script {
+                Some(ref script) => {
+                    let executor = ScriptExecutor::new(&self.git, info.worktree_path);
+                    match executor.execute(&session.name, script).await {
+                        Ok(result) => result,
+                        Err(e) => SessionResult {
+                            session_name: session.name.clone(),
+                            outcome: SessionOutcome::Failed,
+                            steps_completed: 0,
+                            failure_reason: Some(format!("script execution failed: {e}")),
+                            has_commits: false,
+                            duration: std::time::Duration::ZERO,
+                        },
+                    }
+                }
+                None => {
+                    // No script — return a completed result with no commits
+                    SessionResult {
+                        session_name: session.name.clone(),
+                        outcome: SessionOutcome::Completed,
+                        steps_completed: 0,
+                        failure_reason: None,
+                        has_commits: false,
+                        duration: std::time::Duration::ZERO,
+                    }
                 }
             };
 
@@ -357,6 +384,87 @@ mod tests {
             matches!(err, SmeltError::NotInitialized),
             "expected NotInitialized, got: {err}"
         );
+    }
+
+    #[tokio::test]
+    async fn run_manifest_session_without_script_returns_completed() {
+        let (_tmp, cli, repo_path) = setup_test_repo();
+
+        let manifest = simple_manifest(vec![SessionDef {
+            name: "no-script".to_string(),
+            task: Some("A real agent task".to_string()),
+            task_file: None,
+            file_scope: None,
+            base_ref: None,
+            timeout_secs: None,
+            env: None,
+            script: None,
+        }]);
+
+        let runner = SessionRunner::new(cli, repo_path);
+        let results = runner.run_manifest(&manifest).await.expect("run_manifest");
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].session_name, "no-script");
+        assert_eq!(results[0].outcome, SessionOutcome::Completed);
+        assert_eq!(results[0].steps_completed, 0);
+        assert!(!results[0].has_commits);
+    }
+
+    #[tokio::test]
+    async fn run_manifest_session_base_ref_override() {
+        let (_tmp, cli, repo_path) = setup_test_repo();
+
+        // Create a second commit so we can use a branch as base_ref
+        let git = which::which("git").unwrap();
+        std::fs::write(repo_path.join("extra.txt"), "extra\n").unwrap();
+        Command::new(&git)
+            .args(["add", "extra.txt"])
+            .current_dir(&repo_path)
+            .output()
+            .expect("git add");
+        Command::new(&git)
+            .args(["commit", "-m", "second commit"])
+            .current_dir(&repo_path)
+            .output()
+            .expect("git commit");
+
+        // Use HEAD as the base_ref override (session overrides manifest's "HEAD")
+        let manifest = simple_manifest(vec![SessionDef {
+            name: "from-override".to_string(),
+            task: Some("Work from override".to_string()),
+            task_file: None,
+            file_scope: None,
+            base_ref: Some("HEAD".to_string()),
+            timeout_secs: None,
+            env: None,
+            script: Some(ScriptDef {
+                backend: "scripted".to_string(),
+                exit_after: None,
+                simulate_failure: None,
+                steps: vec![ScriptStep::Commit {
+                    message: "from override".to_string(),
+                    files: vec![FileChange {
+                        path: "override.txt".to_string(),
+                        content: Some("from override\n".to_string()),
+                        content_file: None,
+                    }],
+                }],
+            }),
+        }]);
+
+        let runner = SessionRunner::new(cli.clone(), repo_path);
+        let results = runner.run_manifest(&manifest).await.expect("run_manifest");
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(
+            results[0].outcome,
+            SessionOutcome::Completed,
+            "expected Completed but got {:?}: {:?}",
+            results[0].outcome,
+            results[0].failure_reason
+        );
+        assert!(results[0].has_commits);
     }
 
     #[tokio::test]

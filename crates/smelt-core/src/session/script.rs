@@ -1,6 +1,6 @@
 //! ScriptExecutor — runs scripted session steps in a worktree.
 
-use std::path::PathBuf;
+use std::path::{Component, PathBuf};
 use std::time::Instant;
 
 use crate::error::{Result, SmeltError};
@@ -19,6 +19,42 @@ impl<'a, G: GitOps> ScriptExecutor<'a, G> {
     /// Create a new `ScriptExecutor`.
     pub fn new(git: &'a G, worktree_path: PathBuf) -> Self {
         Self { git, worktree_path }
+    }
+
+    /// Validate that a file path is safe (no traversal, not absolute).
+    fn validate_path(path: &str, worktree_path: &PathBuf) -> Result<PathBuf> {
+        let p = std::path::Path::new(path);
+
+        // Reject absolute paths
+        if p.is_absolute() {
+            return Err(SmeltError::SessionError {
+                session: String::new(),
+                message: format!("file path '{path}' is absolute; must be relative to worktree"),
+            });
+        }
+
+        // Reject paths with .. components
+        for component in p.components() {
+            if matches!(component, Component::ParentDir) {
+                return Err(SmeltError::SessionError {
+                    session: String::new(),
+                    message: format!(
+                        "file path '{path}' contains '..'; must stay within worktree"
+                    ),
+                });
+            }
+        }
+
+        // Resolve and verify the path stays under the worktree
+        let resolved = worktree_path.join(p);
+        if !resolved.starts_with(worktree_path) {
+            return Err(SmeltError::SessionError {
+                session: String::new(),
+                message: format!("file path '{path}' resolves outside worktree"),
+            });
+        }
+
+        Ok(resolved)
     }
 
     /// Execute a scripted session definition.
@@ -49,7 +85,8 @@ impl<'a, G: GitOps> ScriptExecutor<'a, G> {
 
                     // Write files to worktree
                     for file_change in effective_files {
-                        let file_path = self.worktree_path.join(&file_change.path);
+                        let file_path =
+                            Self::validate_path(&file_change.path, &self.worktree_path)?;
 
                         // Create parent directories
                         if let Some(parent) = file_path.parent() {
@@ -310,6 +347,129 @@ mod tests {
 
         let content = std::fs::read_to_string(wt_path.join("hello.txt")).expect("read file");
         assert_eq!(content, "hello world\n");
+    }
+
+    #[tokio::test]
+    async fn simulate_failure_partial_writes_half_files_then_fails() {
+        let (_tmp, cli, wt_path, default_branch) = setup_test_repo_with_worktree().await;
+
+        let mut script = make_script(vec![ScriptStep::Commit {
+            message: "partial commit".to_string(),
+            files: vec![
+                FileChange {
+                    path: "a.txt".to_string(),
+                    content: Some("aaa\n".to_string()),
+                    content_file: None,
+                },
+                FileChange {
+                    path: "b.txt".to_string(),
+                    content: Some("bbb\n".to_string()),
+                    content_file: None,
+                },
+                FileChange {
+                    path: "c.txt".to_string(),
+                    content: Some("ccc\n".to_string()),
+                    content_file: None,
+                },
+                FileChange {
+                    path: "d.txt".to_string(),
+                    content: Some("ddd\n".to_string()),
+                    content_file: None,
+                },
+            ],
+        }]);
+        script.simulate_failure = Some(FailureMode::Partial);
+
+        let executor = ScriptExecutor::new(&cli, wt_path);
+        let result = executor
+            .execute("test-session", &script)
+            .await
+            .expect("execute");
+
+        assert_eq!(result.outcome, SessionOutcome::Failed);
+        assert_eq!(result.steps_completed, 1);
+        assert!(result.has_commits);
+        assert_eq!(
+            result.failure_reason.as_deref(),
+            Some("simulated partial failure")
+        );
+
+        // Should have created exactly 1 commit (partial, then fail)
+        let count = cli
+            .rev_list_count("smelt/test-session", &default_branch)
+            .await
+            .expect("rev_list_count");
+        assert_eq!(count, 1);
+    }
+
+    #[tokio::test]
+    async fn path_traversal_absolute_rejected() {
+        let (_tmp, cli, wt_path, _) = setup_test_repo_with_worktree().await;
+
+        let script = make_script(vec![ScriptStep::Commit {
+            message: "bad path".to_string(),
+            files: vec![FileChange {
+                path: "/etc/passwd".to_string(),
+                content: Some("pwned".to_string()),
+                content_file: None,
+            }],
+        }]);
+
+        let executor = ScriptExecutor::new(&cli, wt_path);
+        let err = executor
+            .execute("test-session", &script)
+            .await
+            .expect_err("should reject absolute path");
+        assert!(err.to_string().contains("absolute"), "got: {err}");
+    }
+
+    #[tokio::test]
+    async fn path_traversal_dotdot_rejected() {
+        let (_tmp, cli, wt_path, _) = setup_test_repo_with_worktree().await;
+
+        let script = make_script(vec![ScriptStep::Commit {
+            message: "bad path".to_string(),
+            files: vec![FileChange {
+                path: "../../.ssh/authorized_keys".to_string(),
+                content: Some("pwned".to_string()),
+                content_file: None,
+            }],
+        }]);
+
+        let executor = ScriptExecutor::new(&cli, wt_path);
+        let err = executor
+            .execute("test-session", &script)
+            .await
+            .expect_err("should reject .. path");
+        assert!(err.to_string().contains(".."), "got: {err}");
+    }
+
+    #[tokio::test]
+    async fn content_file_reads_from_disk() {
+        let (_tmp, cli, wt_path, _) = setup_test_repo_with_worktree().await;
+
+        // Write a content file in the worktree
+        let content_path = wt_path.join("template.txt");
+        std::fs::write(&content_path, "content from file\n").unwrap();
+
+        let script = make_script(vec![ScriptStep::Commit {
+            message: "from file".to_string(),
+            files: vec![FileChange {
+                path: "output.txt".to_string(),
+                content: None,
+                content_file: Some(content_path.to_string_lossy().to_string()),
+            }],
+        }]);
+
+        let executor = ScriptExecutor::new(&cli, wt_path.clone());
+        let result = executor
+            .execute("test-session", &script)
+            .await
+            .expect("execute");
+
+        assert_eq!(result.outcome, SessionOutcome::Completed);
+        let content = std::fs::read_to_string(wt_path.join("output.txt")).expect("read output");
+        assert_eq!(content, "content from file\n");
     }
 
     #[tokio::test]
