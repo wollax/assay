@@ -10,9 +10,9 @@ See: .planning/PROJECT.md (updated 2026-03-08)
 ## Current Position
 
 Phase: 32 — CLI Polish
-Plan: 3 of 4
+Plan: 4 of 4
 Status: Complete
-Last activity: 2026-03-10 — Completed 32-02-PLAN.md (StreamCounters & StreamConfig documentation)
+Last activity: 2026-03-10 — Completed 32-04-PLAN.md (enforcement dedup)
 
 Progress: v0.3.0 [████████████░░░░] 75% (6/8 phases)
 
@@ -32,7 +32,7 @@ Progress: v0.3.0 [████████████░░░░] 75% (6/8 pha
 - [x] Phase 29: Gate Output Truncation (GATE-01 through GATE-05)
 - [x] Phase 30: Core Tech Debt (CORE-02, CORE-03, CORE-04, CORE-06, CORE-07, CORE-08, CORE-09)
 - [x] Phase 31: Error Messages (ERR-01, ERR-02, ERR-03)
-- [ ] Phase 32: CLI Polish (CLI-01 through CLI-08)
+- [x] Phase 32: CLI Polish (CLI-01 through CLI-08)
 - [ ] Phase 33: MCP Validation (MCP-01 through MCP-05)
 
 ## Accumulated Context
@@ -71,4 +71,4 @@ None.
 
 ### Next Actions
 
-Phase 32 Plan 01 complete. TTY detection added to colors_enabled(), [srs] magic string extracted to DIRECTORY_SPEC_INDICATOR, COLUMN_GAP constant defined. Ready for 32-02-PLAN.md.
+Phase 32 complete (all 4 plans). Ready for Phase 33: MCP Validation.
