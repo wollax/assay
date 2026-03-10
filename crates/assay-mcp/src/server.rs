@@ -1078,7 +1078,8 @@ fn load_spec_entry_mcp(
     name: &str,
 ) -> Result<SpecEntry, CallToolResult> {
     let specs_dir = cwd.join(".assay").join(&config.specs_dir);
-    assay_core::spec::load_spec_entry(name, &specs_dir).map_err(|e| domain_error(&e))
+    assay_core::spec::load_spec_entry_with_diagnostics(name, &specs_dir)
+        .map_err(|e| domain_error(&e))
 }
 
 /// Resolve the gate working directory from config, matching CLI behavior.
@@ -1678,8 +1679,8 @@ mod tests {
             })
             .collect();
         assert!(
-            text.contains("nonexistent"),
-            "error should mention the spec name, got: {text}"
+            text.contains("No specs found") || text.contains("nonexistent"),
+            "error should contain diagnostic message, got: {text}"
         );
     }
 
@@ -2641,8 +2642,8 @@ cmd = "echo ok"
         );
         let text = extract_text(&result);
         assert!(
-            text.contains("nonexistent"),
-            "error should mention the spec name, got: {text}"
+            text.contains("No specs found") || text.contains("nonexistent"),
+            "error should contain diagnostic message, got: {text}"
         );
     }
 
@@ -2727,8 +2728,8 @@ cmd = "echo ok"
         );
         let text = extract_text(&result);
         assert!(
-            text.contains("nonexistent"),
-            "error should mention the spec name, got: {text}"
+            text.contains("No specs found") || text.contains("nonexistent"),
+            "error should contain diagnostic message, got: {text}"
         );
     }
 

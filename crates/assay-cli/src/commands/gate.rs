@@ -118,13 +118,7 @@ pub(crate) fn handle(command: GateCommand) -> anyhow::Result<i32> {
             let config = assay_core::config::load(&root)?;
             let assay_dir = assay_dir(&root);
             let specs_dir = assay_dir.join(&config.specs_dir);
-            match assay_core::spec::load_spec_entry(&name, &specs_dir) {
-                Ok(_) => {}
-                Err(assay_core::AssayError::SpecNotFound { .. }) => {
-                    bail!("spec '{name}' not found in {}", config.specs_dir);
-                }
-                Err(e) => return Err(e.into()),
-            }
+            assay_core::spec::load_spec_entry_with_diagnostics(&name, &specs_dir)?;
             let ids = assay_core::history::list(&assay_dir, &name)?;
             match ids.last() {
                 Some(last_id) => handle_gate_history_detail(&name, last_id, json),
@@ -452,13 +446,7 @@ fn handle_gate_run(
     let (root, config, working_dir, config_timeout) = load_gate_context()?;
     let specs_dir = assay_dir(&root).join(&config.specs_dir);
 
-    let entry = match assay_core::spec::load_spec_entry(name, &specs_dir) {
-        Ok(e) => e,
-        Err(assay_core::AssayError::SpecNotFound { .. }) => {
-            bail!("spec '{name}' not found in {}", config.specs_dir);
-        }
-        Err(e) => return Err(e.into()),
-    };
+    let entry = assay_core::spec::load_spec_entry_with_diagnostics(name, &specs_dir)?;
 
     let assay_dir = assay_dir(&root);
     let max_history = config.gates.as_ref().and_then(|g| g.max_history);
@@ -606,13 +594,7 @@ fn handle_gate_history(name: &str, json: bool, limit: usize) -> anyhow::Result<i
 
     // Verify spec exists
     let specs_dir = assay_dir.join(&config.specs_dir);
-    match assay_core::spec::load_spec_entry(name, &specs_dir) {
-        Ok(_) => {}
-        Err(assay_core::AssayError::SpecNotFound { .. }) => {
-            bail!("spec '{name}' not found in {}", config.specs_dir);
-        }
-        Err(e) => return Err(e.into()),
-    }
+    assay_core::spec::load_spec_entry_with_diagnostics(name, &specs_dir)?;
 
     let ids = assay_core::history::list(&assay_dir, name)?;
 
@@ -730,13 +712,7 @@ fn handle_gate_history_detail(name: &str, run_id: &str, json: bool) -> anyhow::R
 
     // Verify spec exists
     let specs_dir = assay_dir.join(&config.specs_dir);
-    match assay_core::spec::load_spec_entry(name, &specs_dir) {
-        Ok(_) => {}
-        Err(assay_core::AssayError::SpecNotFound { .. }) => {
-            bail!("spec '{name}' not found in {}", config.specs_dir);
-        }
-        Err(e) => return Err(e.into()),
-    }
+    assay_core::spec::load_spec_entry_with_diagnostics(name, &specs_dir)?;
 
     let record = assay_core::history::load(&assay_dir, name, run_id)?;
 
