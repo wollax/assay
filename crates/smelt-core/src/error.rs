@@ -31,6 +31,34 @@ pub enum SmeltError {
         path: PathBuf,
         source: std::io::Error,
     },
+
+    /// Worktree with this name already exists.
+    #[error("worktree '{name}' already exists")]
+    WorktreeExists { name: String },
+
+    /// Worktree not found in Smelt state.
+    #[error("worktree '{name}' not found")]
+    WorktreeNotFound { name: String },
+
+    /// Branch already exists (collision).
+    #[error("branch '{branch}' already exists")]
+    BranchExists { branch: String },
+
+    /// Worktree has uncommitted changes.
+    #[error("worktree '{name}' has uncommitted changes (use --force to override)")]
+    WorktreeDirty { name: String },
+
+    /// Branch has unmerged commits.
+    #[error("branch '{branch}' has unmerged commits (use --force to delete)")]
+    BranchUnmerged { branch: String },
+
+    /// Smelt project not initialized.
+    #[error("not a Smelt project (run `smelt init` first)")]
+    NotInitialized,
+
+    /// State file deserialization error.
+    #[error("failed to parse state file: {0}")]
+    StateDeserialization(String),
 }
 
 impl SmeltError {

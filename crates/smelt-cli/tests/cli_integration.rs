@@ -42,6 +42,21 @@ fn smelt_cmd(dir: &std::path::Path) -> Command {
     cmd
 }
 
+/// Clean up sibling worktree directories created by `smelt worktree create`.
+///
+/// Worktrees are placed at `{tmp_parent}/{tmp_dir_name}-smelt-{session_name}/`.
+fn cleanup_worktree_sibling(tmp: &tempfile::TempDir, session_name: &str) {
+    let tmp_dir_name = tmp
+        .path()
+        .file_name()
+        .unwrap()
+        .to_string_lossy()
+        .to_string();
+    let parent = tmp.path().parent().unwrap();
+    let sibling = parent.join(format!("{tmp_dir_name}-smelt-{session_name}"));
+    let _ = std::fs::remove_dir_all(&sibling);
+}
+
 // ── Version & Help ─────────────────────────────────────────────────────
 
 #[test]
@@ -148,4 +163,205 @@ fn test_outside_git_repo() {
         .assert()
         .code(1)
         .stderr(predicate::str::is_match("(?i)git").expect("valid regex"));
+}
+
+// ── Worktree Lifecycle ─────────────────────────────────────────────────
+
+#[test]
+fn test_worktree_create_and_list() {
+    let tmp = setup_git_repo();
+
+    // Init
+    smelt_cmd(tmp.path()).arg("init").assert().success();
+
+    // Create worktree
+    smelt_cmd(tmp.path())
+        .args(["worktree", "create", "test-session"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Created worktree 'test-session'"))
+        .stdout(predicate::str::contains("smelt/test-session"));
+
+    // List should show the worktree
+    smelt_cmd(tmp.path())
+        .args(["worktree", "list"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("test-session"))
+        .stdout(predicate::str::contains("smelt/test-session"));
+
+    // Cleanup
+    cleanup_worktree_sibling(&tmp, "test-session");
+}
+
+#[test]
+fn test_worktree_create_duplicate() {
+    let tmp = setup_git_repo();
+
+    smelt_cmd(tmp.path()).arg("init").assert().success();
+
+    // First create succeeds
+    smelt_cmd(tmp.path())
+        .args(["worktree", "create", "dup-test"])
+        .assert()
+        .success();
+
+    // Second create fails
+    smelt_cmd(tmp.path())
+        .args(["worktree", "create", "dup-test"])
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("already exists"));
+
+    // Cleanup
+    cleanup_worktree_sibling(&tmp, "dup-test");
+}
+
+#[test]
+fn test_worktree_remove() {
+    let tmp = setup_git_repo();
+
+    smelt_cmd(tmp.path()).arg("init").assert().success();
+
+    // Create
+    smelt_cmd(tmp.path())
+        .args(["worktree", "create", "remove-test"])
+        .assert()
+        .success();
+
+    // Remove with --yes and --force (branch won't be merged since it's just created)
+    smelt_cmd(tmp.path())
+        .args(["worktree", "remove", "remove-test", "--yes", "--force"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Removed worktree 'remove-test'"));
+
+    // List should be empty
+    smelt_cmd(tmp.path())
+        .args(["worktree", "list"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("No worktrees tracked."));
+
+    // Cleanup (should already be gone, but just in case)
+    cleanup_worktree_sibling(&tmp, "remove-test");
+}
+
+#[test]
+fn test_worktree_wt_alias() {
+    let tmp = setup_git_repo();
+
+    smelt_cmd(tmp.path()).arg("init").assert().success();
+
+    // `smelt wt list` should work same as `smelt worktree list`
+    smelt_cmd(tmp.path())
+        .args(["wt", "list"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("No worktrees tracked."));
+
+    // Create via alias
+    smelt_cmd(tmp.path())
+        .args(["wt", "create", "alias-test"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Created worktree 'alias-test'"));
+
+    // List via alias
+    smelt_cmd(tmp.path())
+        .args(["wt", "list"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("alias-test"));
+
+    // Cleanup
+    cleanup_worktree_sibling(&tmp, "alias-test");
+}
+
+#[test]
+fn test_worktree_create_without_init() {
+    let tmp = setup_git_repo();
+
+    // Attempt create without init
+    smelt_cmd(tmp.path())
+        .args(["worktree", "create", "no-init"])
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("smelt init"));
+}
+
+#[test]
+fn test_worktree_remove_nonexistent() {
+    let tmp = setup_git_repo();
+
+    smelt_cmd(tmp.path()).arg("init").assert().success();
+
+    // Remove a name that doesn't exist
+    smelt_cmd(tmp.path())
+        .args(["worktree", "remove", "ghost", "--yes"])
+        .assert()
+        .code(1)
+        .stderr(predicate::str::contains("not found"));
+}
+
+#[test]
+fn test_worktree_remove_dirty_with_force() {
+    let tmp = setup_git_repo();
+    smelt_cmd(tmp.path()).arg("init").assert().success();
+
+    // Create worktree
+    smelt_cmd(tmp.path())
+        .args(["worktree", "create", "dirty-test"])
+        .assert()
+        .success();
+
+    // Make the worktree dirty by writing an untracked file
+    let tmp_dir_name = tmp.path().file_name().unwrap().to_string_lossy().to_string();
+    let wt_dir = tmp
+        .path()
+        .parent()
+        .unwrap()
+        .join(format!("{tmp_dir_name}-smelt-dirty-test"));
+    std::fs::write(wt_dir.join("dirty-file.txt"), "dirty\n").expect("write dirty file");
+
+    // Remove with --force --yes should succeed even with dirty worktree
+    smelt_cmd(tmp.path())
+        .args(["worktree", "remove", "dirty-test", "--force", "--yes"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Removed worktree 'dirty-test'"));
+
+    // Cleanup
+    cleanup_worktree_sibling(&tmp, "dirty-test");
+}
+
+#[test]
+fn test_worktree_remove_dirty_with_yes_auto_confirms() {
+    let tmp = setup_git_repo();
+    smelt_cmd(tmp.path()).arg("init").assert().success();
+
+    // Create worktree
+    smelt_cmd(tmp.path())
+        .args(["worktree", "create", "dirty-yes-test"])
+        .assert()
+        .success();
+
+    // Make the worktree dirty
+    let tmp_dir_name = tmp.path().file_name().unwrap().to_string_lossy().to_string();
+    let wt_dir = tmp
+        .path()
+        .parent()
+        .unwrap()
+        .join(format!("{tmp_dir_name}-smelt-dirty-yes-test"));
+    std::fs::write(wt_dir.join("dirty-file.txt"), "dirty\n").expect("write dirty file");
+
+    // Remove with --yes (no --force) should auto-confirm and force remove
+    smelt_cmd(tmp.path())
+        .args(["worktree", "remove", "dirty-yes-test", "--yes"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Removed worktree 'dirty-yes-test'"));
+
+    // Cleanup
+    cleanup_worktree_sibling(&tmp, "dirty-yes-test");
 }

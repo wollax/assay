@@ -31,6 +31,15 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # Terminal
 console = "0.16"
 
+# Date/time
+chrono = { version = "0.4", features = ["serde", "clock"] }
+
+# Interactive prompts
+dialoguer = "0.12"
+
+# POSIX
+libc = "0.2"
+
 # Utilities
 which = "8"
 
