@@ -365,6 +365,14 @@ struct CriterionSummary {
     /// Full stderr output. Only present when `include_evidence=true`.
     #[serde(skip_serializing_if = "Option::is_none")]
     stderr: Option<String>,
+    /// Whether stdout or stderr was truncated due to size limits.
+    /// Absent for skipped criteria.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    truncated: Option<bool>,
+    /// Original combined byte count before truncation.
+    /// Absent when output was not truncated or criterion was skipped.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    original_bytes: Option<u64>,
 }
 
 // ── Constants ────────────────────────────────────────────────────────
@@ -1206,6 +1214,8 @@ fn format_gate_response(
                 reason: None,
                 stdout: None,
                 stderr: None,
+                truncated: None,
+                original_bytes: None,
             },
             Some(gate_result) if gate_result.passed => CriterionSummary {
                 name: cr.criterion_name.clone(),
@@ -1225,6 +1235,8 @@ fn format_gate_response(
                 } else {
                     None
                 },
+                truncated: Some(gate_result.truncated),
+                original_bytes: gate_result.original_bytes,
             },
             Some(gate_result) => {
                 let reason = first_nonempty_line(&gate_result.stderr)
@@ -1249,6 +1261,8 @@ fn format_gate_response(
                     } else {
                         None
                     },
+                    truncated: Some(gate_result.truncated),
+                    original_bytes: gate_result.original_bytes,
                 }
             }
         })
@@ -1986,6 +2000,8 @@ cmd = "echo ok"
                     reason: None,
                     stdout: None,
                     stderr: None,
+                    truncated: Some(false),
+                    original_bytes: None,
                 },
                 CriterionSummary {
                     name: "lint".to_string(),
@@ -1997,6 +2013,8 @@ cmd = "echo ok"
                     reason: Some("error: unused variable".to_string()),
                     stdout: None,
                     stderr: None,
+                    truncated: Some(false),
+                    original_bytes: None,
                 },
                 CriterionSummary {
                     name: "review".to_string(),
@@ -2008,6 +2026,8 @@ cmd = "echo ok"
                     reason: None,
                     stdout: None,
                     stderr: None,
+                    truncated: None,
+                    original_bytes: None,
                 },
             ],
             session_id: None,
@@ -2111,6 +2131,8 @@ cmd = "echo ok"
                 reason: None,
                 stdout: Some("all tests passed".to_string()),
                 stderr: Some(String::new()),
+                truncated: Some(false),
+                original_bytes: None,
             }],
             session_id: None,
             pending_criteria: None,
