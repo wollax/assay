@@ -1244,6 +1244,52 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_format_commit_message_ai_assisted() {
+        let msg = format_commit_message("sess", Some("task"), "main", "smelt/sess", ResolutionMethod::AiAssisted);
+        assert!(
+            msg.contains("[resolved: ai-assisted]"),
+            "expected ai-assisted suffix, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_format_commit_message_ai_edited() {
+        let msg = format_commit_message("sess", Some("task"), "main", "smelt/sess", ResolutionMethod::AiEdited);
+        assert!(
+            msg.contains("[resolved: ai-edited]"),
+            "expected ai-edited suffix, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_format_commit_message_clean_no_suffix() {
+        let msg = format_commit_message("sess", Some("task"), "main", "smelt/sess", ResolutionMethod::Clean);
+        assert!(
+            !msg.contains("[resolved:"),
+            "clean merge should have no resolution suffix, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_conflict_action_resolved_carries_method() {
+        let action = ConflictAction::Resolved(ResolutionMethod::AiAssisted);
+        match action {
+            ConflictAction::Resolved(method) => {
+                assert_eq!(method, ResolutionMethod::AiAssisted);
+            }
+            _ => panic!("expected Resolved variant"),
+        }
+
+        let action_edited = ConflictAction::Resolved(ResolutionMethod::AiEdited);
+        match action_edited {
+            ConflictAction::Resolved(method) => {
+                assert_eq!(method, ResolutionMethod::AiEdited);
+            }
+            _ => panic!("expected Resolved variant"),
+        }
+    }
+
     #[tokio::test]
     async fn test_merge_conflict_skip_continues() {
         let (_tmp, git, repo_path) = setup_test_repo();
