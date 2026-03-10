@@ -24,6 +24,7 @@ Progress: v0.4.0 [░░░░░░░░░░░░░░░░░] 0% (0/11 
 | v0.2.0 | 15 (11-25) | 52 | 100% (shipped) |
 | v0.3.0 | 9 (26-34) | 43 | 100% (shipped) |
 | v0.4.0 | 11 (35-45) | 28 | 0% |
+| v0.4.1 | TBD | 8 | 0% (planned) |
 
 ## Accumulated Context
 
@@ -41,11 +42,24 @@ v0.4.0 decisions (from brainstorm):
 - Context engine is external crate (separate repo), not workspace crate
 - `spec_validate` check_commands is opt-in (off by default)
 
+v0.4.1 decisions (from brainstorm):
+- PR creation over direct merge for v0.4.x — maps to `autonomous: false`
+- `git merge-tree --write-tree` for conflict detection — zero side effects
+- GitHub-first via `gh` CLI, env vars for forge-agnostic extensibility
+- Hardcode merge defaults, extract config from usage (YAGNI)
+- Auto-revert killed permanently — contradicts `autonomous: false`
+- Investigate GitHub merge queue before building multi-worktree ordering
+
 ### Milestone Scope Issues
 
-Issues pulled into current milestone scope:
+Issues pulled into v0.4.0 scope:
 - "History save failure not surfaced" (from: .planning/issues/open/2026-03-10-history-save-failure-not-surfaced.md) — closed by OBS-01 warnings field
 - Tech debt batch sweep of highest-value backlog items
+
+Issues pulled into v0.4.1 scope:
+- "Cleanup --all should use canonical path from git" (from: .planning/issues/open/2026-03-09-worktree-cleanup-all-path.md)
+- "Default branch fallback to main gives confusing errors" (from: .planning/issues/open/2026-03-09-worktree-detect-default-branch-fallback.md)
+- "Git worktree prune failure silently discarded" (from: .planning/issues/open/2026-03-09-worktree-prune-failure-silent.md)
 
 ### Pending Issues
 
