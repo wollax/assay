@@ -9,10 +9,10 @@ See: .planning/PROJECT.md (updated 2026-03-08)
 
 ## Current Position
 
-Phase: 27 — Types Hygiene
-Plan: 4 of 4
-Status: Phase complete
-Last activity: 2026-03-09 — Completed Plan 27-04: Criterion dedup
+Phase: 28 — Worktree Manager
+Plan: 1 of 2
+Status: In progress
+Last activity: 2026-03-09 — Completed Plan 28-01: Worktree foundation
 
 Progress: v0.3.0 [████░░░░░░░░░░░░] 25% (2/8 phases)
 
@@ -66,4 +66,4 @@ None.
 
 ### Next Actions
 
-Start Phase 28: Worktree Manager (ORCH-01 through ORCH-07).
+Continue Phase 28: Execute Plan 28-02 (CLI subcommands, MCP tools, worktree-aware spec resolution).
