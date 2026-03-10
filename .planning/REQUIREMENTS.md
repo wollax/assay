@@ -51,7 +51,38 @@
 
 ## Traceability
 
-_Filled by roadmapper._
+| Requirement | Phase | Theme |
+|-------------|-------|-------|
+| ORCH-01 | 43 | gate_evaluate Schema & Subprocess |
+| ORCH-02 | 43 | gate_evaluate Schema & Subprocess |
+| ORCH-03 | 43 | gate_evaluate Schema & Subprocess |
+| ORCH-04 | 44 | gate_evaluate Context Budgeting |
+| ORCH-05 | 44 | gate_evaluate Context Budgeting |
+| SESS-01 | 40 | WorkSession Type & Persistence |
+| SESS-02 | 40 | WorkSession Type & Persistence |
+| SESS-03 | 41 | Session MCP Tools |
+| SESS-04 | 41 | Session MCP Tools |
+| SESS-05 | 41 | Session MCP Tools |
+| SESS-06 | 42 | Session Recovery & Internal API |
+| SESS-07 | 42 | Session Recovery & Internal API |
+| SPEC-01 | 37 | Spec Validation |
+| SPEC-02 | 37 | Spec Validation |
+| SPEC-03 | 37 | Spec Validation |
+| SPEC-04 | 37 | Spec Validation |
+| CTX-01 | 39 | Context Engine Integration |
+| CTX-02 | 39 | Context Engine Integration |
+| CTX-03 | 39 | Context Engine Integration |
+| OBS-01 | 35 | Observability Foundation |
+| OBS-02 | 35 | Observability Foundation |
+| OBS-03 | 38 | Observability Completion |
+| OBS-04 | 38 | Observability Completion |
+| FIX-01 | 36 | Correctness & Robustness |
+| FIX-02 | 36 | Correctness & Robustness |
+| FIX-03 | 36 | Correctness & Robustness |
+| DEBT-01 | 45 | Tech Debt Cleanup |
+| DEBT-02 | 35 | Observability Foundation |
+
+**Coverage:** 28/28 requirements mapped (100%)
 
 ---
 
