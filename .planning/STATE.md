@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 2026-03-08)
 
 ## Current Position
 
-Phase: 30 — Core Tech Debt
-Plan: 3 of 3
+Phase: 31 — Error Messages
+Plan: 2 of 2
 Status: Complete
-Last activity: 2026-03-10 — Completed 30-03-PLAN.md (CORE-07, CORE-08: guard daemon persistence)
+Last activity: 2026-03-10 — Completed 31-02-PLAN.md (wired all error formatting into call sites)
 
-Progress: v0.3.0 [██████████░░░░░░] 62.5% (5/8 phases)
+Progress: v0.3.0 [████████████░░░░] 75% (6/8 phases)
 
 ## Milestone Progress
 
@@ -22,7 +22,7 @@ Progress: v0.3.0 [██████████░░░░░░] 62.5% (5/8 p
 |-----------|--------|--------------|----------|
 | v0.1.0 | 10 | 43 | 100% (shipped) |
 | v0.2.0 | 15 (11-25) | 52 | 100% (shipped) |
-| v0.3.0 | 8 (26-33) | 43 | 63% |
+| v0.3.0 | 8 (26-33) | 43 | 75% |
 
 ## Phase Checklist
 
@@ -31,7 +31,7 @@ Progress: v0.3.0 [██████████░░░░░░] 62.5% (5/8 p
 - [x] Phase 28: Worktree Manager (ORCH-01 through ORCH-07)
 - [x] Phase 29: Gate Output Truncation (GATE-01 through GATE-05)
 - [x] Phase 30: Core Tech Debt (CORE-02, CORE-03, CORE-04, CORE-06, CORE-07, CORE-08, CORE-09)
-- [ ] Phase 31: Error Messages (ERR-01, ERR-02, ERR-03)
+- [x] Phase 31: Error Messages (ERR-01, ERR-02, ERR-03)
 - [ ] Phase 32: CLI Polish (CLI-01 through CLI-08)
 - [ ] Phase 33: MCP Validation (MCP-01 through MCP-05)
 
@@ -56,6 +56,9 @@ v0.2.0 decisions archived to .planning/milestones/v0.2.0-ROADMAP.md
 - Zero new workspace dependencies (hard constraint from research)
 - Launcher, session record, gate_evaluate, TUI viewer, composable gates, spec preconditions, gate history summary — all deferred to v0.4.0+
 - Head/tail truncation ratio 1:2 (33% head, 67% tail) with marker as overhead (GATE-01)
+- Levenshtein fuzzy match threshold: distance <= 2 AND distance <= name.len() / 2
+- SpecNotFoundDiagnostic is a separate error variant (not enriching existing SpecNotFound)
+- ERR-01 detects exit codes 127/126 (not io::ErrorKind) since commands spawn via sh -c
 
 ### Pending Issues
 
@@ -68,4 +71,4 @@ None.
 
 ### Next Actions
 
-Phase 30 complete. Begin Phase 31: Error Messages (ERR-01, ERR-02, ERR-03).
+Phase 31 complete. All error message improvements (ERR-01, ERR-02, ERR-03) wired into production. Ready for Phase 32: CLI Polish.
