@@ -16,10 +16,15 @@ pub mod watcher;
 pub async fn start_guard(
     session_path: &Path,
     assay_dir: &Path,
+    project_dir: &Path,
     config: GuardConfig,
 ) -> crate::Result<()> {
-    let mut d =
-        daemon::GuardDaemon::new(session_path.to_path_buf(), assay_dir.to_path_buf(), config);
+    let mut d = daemon::GuardDaemon::new(
+        session_path.to_path_buf(),
+        assay_dir.to_path_buf(),
+        project_dir.to_path_buf(),
+        config,
+    );
     d.run().await
 }
 
