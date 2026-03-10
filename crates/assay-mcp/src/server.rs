@@ -3165,4 +3165,168 @@ cmd = "echo ok"
             "should mention expected type bool: {msg}"
         );
     }
+
+    // ── Truncation visibility tests ──────────────────────────────────
+
+    #[test]
+    fn test_criterion_summary_truncation_fields_all_states() {
+        let response = GateRunResponse {
+            spec_name: "trunc-test".to_string(),
+            passed: 1,
+            failed: 1,
+            skipped: 1,
+            required_passed: 1,
+            required_failed: 1,
+            advisory_passed: 0,
+            advisory_failed: 0,
+            blocked: true,
+            total_duration_ms: 1000,
+            criteria: vec![
+                // Passed + truncated
+                CriterionSummary {
+                    name: "big-output".to_string(),
+                    status: "passed".to_string(),
+                    enforcement: "required".to_string(),
+                    kind_label: Some("cmd".to_string()),
+                    exit_code: Some(0),
+                    duration_ms: Some(500),
+                    reason: None,
+                    stdout: None,
+                    stderr: None,
+                    truncated: Some(true),
+                    original_bytes: Some(524_288),
+                },
+                // Failed + not truncated
+                CriterionSummary {
+                    name: "lint".to_string(),
+                    status: "failed".to_string(),
+                    enforcement: "required".to_string(),
+                    kind_label: Some("cmd".to_string()),
+                    exit_code: Some(1),
+                    duration_ms: Some(500),
+                    reason: Some("error".to_string()),
+                    stdout: None,
+                    stderr: None,
+                    truncated: Some(false),
+                    original_bytes: None,
+                },
+                // Skipped
+                CriterionSummary {
+                    name: "review".to_string(),
+                    status: "skipped".to_string(),
+                    enforcement: "advisory".to_string(),
+                    kind_label: None,
+                    exit_code: None,
+                    duration_ms: None,
+                    reason: None,
+                    stdout: None,
+                    stderr: None,
+                    truncated: None,
+                    original_bytes: None,
+                },
+            ],
+            session_id: None,
+            pending_criteria: None,
+        };
+
+        // Struct-level assertions
+        assert_eq!(response.criteria[0].truncated, Some(true));
+        assert_eq!(response.criteria[0].original_bytes, Some(524_288));
+        assert_eq!(response.criteria[1].truncated, Some(false));
+        assert_eq!(response.criteria[1].original_bytes, None);
+        assert_eq!(response.criteria[2].truncated, None);
+        assert_eq!(response.criteria[2].original_bytes, None);
+
+        // JSON serialization assertions
+        let json = serde_json::to_value(&response).unwrap();
+
+        // Passed + truncated: both fields present
+        assert_eq!(json["criteria"][0]["truncated"], true);
+        assert_eq!(json["criteria"][0]["original_bytes"], 524_288);
+
+        // Failed + not truncated: truncated=false present, original_bytes absent
+        assert_eq!(json["criteria"][1]["truncated"], false);
+        assert!(
+            json["criteria"][1].get("original_bytes").is_none(),
+            "original_bytes should be omitted when None: {}",
+            json["criteria"][1]
+        );
+
+        // Skipped: both fields absent
+        assert!(
+            json["criteria"][2].get("truncated").is_none(),
+            "skipped criterion should omit truncated: {}",
+            json["criteria"][2]
+        );
+        assert!(
+            json["criteria"][2].get("original_bytes").is_none(),
+            "skipped criterion should omit original_bytes: {}",
+            json["criteria"][2]
+        );
+    }
+
+    #[test]
+    fn test_truncation_fields_independent_of_include_evidence() {
+        // Build a summary with a truncated criterion
+        let summary = GateRunSummary {
+            spec_name: "trunc-evidence-test".to_string(),
+            results: vec![CriterionResult {
+                criterion_name: "big-test".to_string(),
+                result: Some(GateResult {
+                    passed: true,
+                    kind: GateKind::Command {
+                        cmd: "cargo test".to_string(),
+                    },
+                    stdout: "output...".to_string(),
+                    stderr: String::new(),
+                    exit_code: Some(0),
+                    duration_ms: 200,
+                    timestamp: Utc::now(),
+                    truncated: true,
+                    original_bytes: Some(524_288),
+                    evidence: None,
+                    reasoning: None,
+                    confidence: None,
+                    evaluator_role: None,
+                }),
+                enforcement: Enforcement::Required,
+            }],
+            passed: 1,
+            failed: 0,
+            skipped: 0,
+            total_duration_ms: 200,
+            enforcement: EnforcementSummary {
+                required_passed: 1,
+                required_failed: 0,
+                advisory_passed: 0,
+                advisory_failed: 0,
+            },
+        };
+
+        // Without evidence: truncation fields still present
+        let without_evidence = format_gate_response(&summary, false);
+        assert_eq!(without_evidence.criteria[0].truncated, Some(true));
+        assert_eq!(without_evidence.criteria[0].original_bytes, Some(524_288));
+        assert!(
+            without_evidence.criteria[0].stdout.is_none(),
+            "stdout should be absent without evidence"
+        );
+
+        let json_no_ev = serde_json::to_value(&without_evidence).unwrap();
+        assert_eq!(json_no_ev["criteria"][0]["truncated"], true);
+        assert_eq!(json_no_ev["criteria"][0]["original_bytes"], 524_288);
+
+        // With evidence: truncation fields still present
+        let with_evidence = format_gate_response(&summary, true);
+        assert_eq!(with_evidence.criteria[0].truncated, Some(true));
+        assert_eq!(with_evidence.criteria[0].original_bytes, Some(524_288));
+        assert!(
+            with_evidence.criteria[0].stdout.is_some(),
+            "stdout should be present with evidence"
+        );
+
+        let json_ev = serde_json::to_value(&with_evidence).unwrap();
+        assert_eq!(json_ev["criteria"][0]["truncated"], true);
+        assert_eq!(json_ev["criteria"][0]["original_bytes"], 524_288);
+    }
 }
