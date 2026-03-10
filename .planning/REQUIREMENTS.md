@@ -40,11 +40,11 @@
 
 ## Gate Output
 
-- [ ] **GATE-01**: Gate command output captured with head+tail truncation and byte budget
-- [ ] **GATE-02**: Truncation uses `[truncated: X bytes omitted]` marker between head and tail
-- [ ] **GATE-03**: UTF-8 boundaries respected (no split multi-byte sequences)
-- [ ] **GATE-04**: Independent stdout/stderr byte budgets
-- [ ] **GATE-05**: Existing `truncated` and `original_bytes` fields on `GateResult` populated correctly
+- [x] **GATE-01**: Gate command output captured with head+tail truncation and byte budget
+- [x] **GATE-02**: Truncation uses `[truncated: X bytes omitted]` marker between head and tail
+- [x] **GATE-03**: UTF-8 boundaries respected (no split multi-byte sequences)
+- [x] **GATE-04**: Independent stdout/stderr byte budgets
+- [x] **GATE-05**: Existing `truncated` and `original_bytes` fields on `GateResult` populated correctly
 
 ## Error Messages
 
