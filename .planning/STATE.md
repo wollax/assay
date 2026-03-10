@@ -2,18 +2,18 @@
 
 ## Current Position
 
-Phase: 5 of 10 — Merge Order Intelligence
-Plan: 3 of 3 complete
-Status: Phase 5 complete
-Progress: ██████░░░░ 6/10
+Phase: 6 of 10 — Human Fallback Resolution
+Plan: 1 of 3 complete
+Status: In progress
+Progress: ███████░░░ 7/10
 
-Last activity: 2026-03-10 — Completed 05-03-PLAN.md (CLI Subcommands & Plan Display)
+Last activity: 2026-03-10 — Completed 06-01-PLAN.md (Foundation Types, Conflict Scanning & GitOps Extension)
 
 ## Session Continuity
 
-Last session: 2026-03-10T14:14:00Z
-Stopped at: Completed Phase 5 (all 3 plans)
-Resume file: (next phase)
+Last session: 2026-03-10T16:46:00Z
+Stopped at: Completed 06-01-PLAN.md
+Resume file: None
 
 ## Performance Metrics
 
@@ -21,7 +21,7 @@ Resume file: (next phase)
 |--------|-------|
 | Phases completed | 5 |
 | Phases remaining | 5 |
-| Plans completed (phase 5) | 3/3 |
+| Plans completed (phase 6) | 1/3 |
 | Requirements covered | 5/12 |
 | Blockers | 0 |
 | Technical debt items | 0 |
@@ -105,11 +105,16 @@ Resume file: (next phase)
 - Strategy resolution: opts.strategy > manifest.merge_strategy > Default (CompletionTime)
 - Non-exhaustive wildcard arm removed from order_sessions match — future variants cause compile error
 - MergeRunner::plan() performs dry-run analysis (collect + order) without creating branches/worktrees
-- MergeOpts::new(target_branch, strategy) constructor for cross-crate use of non-exhaustive struct
+- MergeOpts::new(target_branch, strategy, verbose) constructor for cross-crate use of non-exhaustive struct
 - MergePlan, SessionPlanEntry, PairwiseOverlap derive Deserialize for JSON round-trip
 - `merge plan` outputs comfy-table (UTF8_FULL + UTF8_ROUND_CORNERS) by default, JSON with --json
 - `merge run` and `merge plan` both accept --strategy (completion-time|file-overlap) and --target flags
 - format_plan_table shows: merge order table, pairwise overlap table (file-overlap only), per-session file list (truncated at 10)
+- ConflictAction not Serialize — only used for runtime control flow, not persisted
+- ResolutionMethod is Serialize (kebab-case) — included in MergeSessionResult which is already Serialize
+- scan_conflict_markers discards partial hunks on new `<<<<<<<` — prevents false positives
+- scan_files_for_markers silently skips unreadable files — binary/deleted files should not cause errors
+- GitOps::log_subjects(range) returns Vec<String> of commit subjects via git log --format=%s
 
 ### Blockers
 
