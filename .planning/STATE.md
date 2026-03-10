@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-03-08)
 ## Current Position
 
 Phase: 31 — Error Messages
-Plan: 1 of 2
-Status: In progress
-Last activity: 2026-03-10 — Completed 31-01-PLAN.md (ERR-01, ERR-02, ERR-03 pure functions)
+Plan: 2 of 2
+Status: Complete
+Last activity: 2026-03-10 — Completed 31-02-PLAN.md (wired all error formatting into call sites)
 
-Progress: v0.3.0 [██████████░░░░░░] 62.5% (5/8 phases)
+Progress: v0.3.0 [████████████░░░░] 75% (6/8 phases)
 
 ## Milestone Progress
 
@@ -22,7 +22,7 @@ Progress: v0.3.0 [██████████░░░░░░] 62.5% (5/8 p
 |-----------|--------|--------------|----------|
 | v0.1.0 | 10 | 43 | 100% (shipped) |
 | v0.2.0 | 15 (11-25) | 52 | 100% (shipped) |
-| v0.3.0 | 8 (26-33) | 43 | 63% |
+| v0.3.0 | 8 (26-33) | 43 | 75% |
 
 ## Phase Checklist
 
@@ -31,7 +31,7 @@ Progress: v0.3.0 [██████████░░░░░░] 62.5% (5/8 p
 - [x] Phase 28: Worktree Manager (ORCH-01 through ORCH-07)
 - [x] Phase 29: Gate Output Truncation (GATE-01 through GATE-05)
 - [x] Phase 30: Core Tech Debt (CORE-02, CORE-03, CORE-04, CORE-06, CORE-07, CORE-08, CORE-09)
-- [ ] Phase 31: Error Messages (ERR-01, ERR-02, ERR-03)
+- [x] Phase 31: Error Messages (ERR-01, ERR-02, ERR-03)
 - [ ] Phase 32: CLI Polish (CLI-01 through CLI-08)
 - [ ] Phase 33: MCP Validation (MCP-01 through MCP-05)
 
@@ -68,4 +68,4 @@ None.
 
 ### Next Actions
 
-Plan 31-01 complete (pure functions built and tested). Execute Plan 31-02 to wire functions into call sites.
+Phase 31 complete. All error message improvements (ERR-01, ERR-02, ERR-03) wired into production. Ready for Phase 32: CLI Polish.
