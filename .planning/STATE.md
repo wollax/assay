@@ -14,7 +14,7 @@ Plan: 4 of 4
 Status: Complete
 Last activity: 2026-03-10 — Completed 32-04-PLAN.md (enforcement dedup)
 
-Progress: v0.3.0 [████████████░░░░] 75% (6/8 phases)
+Progress: v0.3.0 [██████████████░░] 88% (7/8 phases)
 
 ## Milestone Progress
 
@@ -22,7 +22,7 @@ Progress: v0.3.0 [████████████░░░░] 75% (6/8 pha
 |-----------|--------|--------------|----------|
 | v0.1.0 | 10 | 43 | 100% (shipped) |
 | v0.2.0 | 15 (11-25) | 52 | 100% (shipped) |
-| v0.3.0 | 8 (26-33) | 43 | 75% |
+| v0.3.0 | 8 (26-33) | 43 | 88% |
 
 ## Phase Checklist
 
