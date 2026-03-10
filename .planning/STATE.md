@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-03-08)
 ## Current Position
 
 Phase: 30 — Core Tech Debt
-Plan: 2 of 3
-Status: In Progress
-Last activity: 2026-03-10 — Completed 30-02-PLAN.md (CORE-06: save_run API)
+Plan: 3 of 3
+Status: Complete
+Last activity: 2026-03-10 — Completed 30-03-PLAN.md (CORE-07, CORE-08: guard daemon persistence)
 
-Progress: v0.3.0 [████████░░░░░░░░] 50% (4/8 phases)
+Progress: v0.3.0 [██████████░░░░░░] 62.5% (5/8 phases)
 
 ## Milestone Progress
 
@@ -30,7 +30,7 @@ Progress: v0.3.0 [████████░░░░░░░░] 50% (4/8 pha
 - [x] Phase 27: Types Hygiene (TYPE-01 through TYPE-06)
 - [x] Phase 28: Worktree Manager (ORCH-01 through ORCH-07)
 - [x] Phase 29: Gate Output Truncation (GATE-01 through GATE-05)
-- [ ] Phase 30: Core Tech Debt (CORE-02, CORE-03, CORE-04, CORE-06, CORE-07, CORE-08, CORE-09)
+- [x] Phase 30: Core Tech Debt (CORE-02, CORE-03, CORE-04, CORE-06, CORE-07, CORE-08, CORE-09)
 - [ ] Phase 31: Error Messages (ERR-01, ERR-02, ERR-03)
 - [ ] Phase 32: CLI Polish (CLI-01 through CLI-08)
 - [ ] Phase 33: MCP Validation (MCP-01 through MCP-05)
@@ -68,4 +68,4 @@ None.
 
 ### Next Actions
 
-Continue Phase 30: Core Tech Debt — execute 30-03-PLAN.md next.
+Phase 30 complete. Begin Phase 31: Error Messages (ERR-01, ERR-02, ERR-03).
