@@ -3,17 +3,17 @@
 ## Current Position
 
 Phase: 3 of 10 — Session Manifest & Scripted Sessions
-Plan: 1 of 3 complete
+Plan: 2 of 3 complete
 Status: Phase 3 in progress
 Progress: ██░░░░░░░░ 2/10
 
-Last activity: 2026-03-09 — Completed 03-01-PLAN.md (manifest types, GitOps extension, session result types)
+Last activity: 2026-03-09 — Completed 03-02-PLAN.md (ScriptExecutor, SessionRunner)
 
 ## Session Continuity
 
 Last session: 2026-03-09
-Stopped at: Completed 03-01 — Manifest types & GitOps extension
-Resume file: .planning/phases/active/03-*/03-02-PLAN.md
+Stopped at: Completed 03-02 — ScriptExecutor & SessionRunner
+Resume file: .planning/phases/active/03-*/03-03-PLAN.md
 
 ## Performance Metrics
 
@@ -21,7 +21,7 @@ Resume file: .planning/phases/active/03-*/03-02-PLAN.md
 |--------|-------|
 | Phases completed | 2 |
 | Phases remaining | 8 |
-| Plans completed (phase 3) | 1/3 |
+| Plans completed (phase 3) | 2/3 |
 | Requirements covered | 2/12 |
 | Blockers | 0 |
 | Technical debt items | 0 |
@@ -67,6 +67,13 @@ Resume file: .planning/phases/active/03-*/03-02-PLAN.md
 - rev_list_count uses `git rev-list --count base..branch` range syntax
 - globset validates file_scope globs at parse time (warn, don't fail)
 - SessionResult/SessionOutcome are plain types (not serde) — serialization not needed yet
+- GitCli derives Clone for shared usage between SessionRunner and WorktreeManager
+- ScriptExecutor takes session_name as parameter (not embedded in ScriptDef)
+- FailureMode::Partial writes first max(N/2, 1) files then returns Failed after first step
+- FailureMode::Crash completes max_steps then returns Failed outcome
+- SessionRunner uses G: GitOps + Clone bound to clone git for WorktreeManager
+- Sessions execute sequentially (parallel deferred)
+- Worktrees persist on failure for inspection
 
 ### Blockers
 
