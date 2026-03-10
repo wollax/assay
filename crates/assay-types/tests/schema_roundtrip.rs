@@ -103,6 +103,7 @@ fn config_validates() {
             max_history: None,
         }),
         guard: None,
+        worktree: None,
     });
 }
 

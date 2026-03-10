@@ -229,6 +229,49 @@ pub enum AssayError {
         /// The time window in seconds.
         window_secs: u64,
     },
+
+    /// A git command failed to spawn (git not found, permission denied).
+    #[error("git command `{cmd}` failed to execute: {source}")]
+    WorktreeGit {
+        /// The git command that failed (e.g., "git worktree add ...").
+        cmd: String,
+        /// The underlying I/O error.
+        source: std::io::Error,
+    },
+
+    /// A git command exited with non-zero status.
+    #[error("git command `{cmd}` failed (exit {exit_code:?}):\n{stderr}")]
+    WorktreeGitFailed {
+        /// The git command that failed.
+        cmd: String,
+        /// The stderr output from the command.
+        stderr: String,
+        /// The exit code, if available.
+        exit_code: Option<i32>,
+    },
+
+    /// Worktree already exists for this spec.
+    #[error("worktree already exists for spec `{spec_slug}` at {path}")]
+    WorktreeExists {
+        /// The spec slug that already has a worktree.
+        spec_slug: String,
+        /// The existing worktree path.
+        path: PathBuf,
+    },
+
+    /// Worktree not found for the given spec.
+    #[error("no worktree found for spec `{spec_slug}`")]
+    WorktreeNotFound {
+        /// The spec slug that was looked up.
+        spec_slug: String,
+    },
+
+    /// Worktree has uncommitted changes and cleanup was refused.
+    #[error("worktree `{spec_slug}` has uncommitted changes; use --force to override")]
+    WorktreeDirty {
+        /// The spec slug with uncommitted changes.
+        spec_slug: String,
+    },
 }
 
 impl AssayError {

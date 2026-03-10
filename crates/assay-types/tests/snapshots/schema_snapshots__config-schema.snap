@@ -91,6 +91,18 @@ expression: schema.to_value()
         }
       },
       "type": "object"
+    },
+    "WorktreeConfig": {
+      "additionalProperties": false,
+      "description": "Configuration for worktree management.\n\nLoaded from the `[worktree]` section of `.assay/config.toml`.",
+      "properties": {
+        "base_dir": {
+          "default": "",
+          "description": "Base directory for worktrees.\nRelative paths are resolved from the project root.\nDefault: `\"../<project-name>-worktrees/\"` (computed at runtime when empty).",
+          "type": "string"
+        }
+      },
+      "type": "object"
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -127,6 +139,17 @@ expression: schema.to_value()
       "default": "specs/",
       "description": "Directory containing spec files, relative to `.assay/`.\nDefaults to `\"specs/\"`.",
       "type": "string"
+    },
+    "worktree": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/WorktreeConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Worktree management configuration."
     }
   },
   "required": [
