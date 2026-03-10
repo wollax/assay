@@ -1,6 +1,6 @@
-//! MCP server implementation with spec, gate, and context tools.
+//! MCP server implementation with spec, gate, context, and worktree tools.
 //!
-//! Provides the [`AssayServer`] which exposes eight tools over MCP:
+//! Provides the [`AssayServer`] which exposes twelve tools over MCP:
 //! - `spec_list` — discover available specs
 //! - `spec_get` — read a full spec definition
 //! - `gate_run` — evaluate quality gate criteria (auto-creates sessions for agent criteria)
@@ -9,6 +9,10 @@
 //! - `gate_history` — query past gate run results for a spec
 //! - `context_diagnose` — diagnose token usage and bloat in a Claude Code session
 //! - `estimate_tokens` — estimate current token usage and context window health
+//! - `worktree_create` — create an isolated git worktree for a spec
+//! - `worktree_list` — list all active assay-managed worktrees
+//! - `worktree_status` — check worktree status (branch, dirty, ahead/behind)
+//! - `worktree_cleanup` — remove a worktree and its branch
 //!
 //! All domain errors are returned as `CallToolResult` with `isError: true`
 //! so that agents can see and self-correct. Protocol errors (`McpError`)
@@ -152,6 +156,69 @@ pub struct EstimateTokensParams {
     /// Session ID to estimate. Defaults to the most recent session.
     #[schemars(description = "Session UUID. Omit for most recent session.")]
     pub session_id: Option<String>,
+}
+
+/// Parameters for the `worktree_create` tool.
+#[derive(Deserialize, JsonSchema)]
+pub struct WorktreeCreateParams {
+    /// Spec name (slug) to create a worktree for.
+    #[schemars(description = "Spec name (slug, e.g. 'auth-flow')")]
+    pub name: String,
+
+    /// Base branch override. Defaults to auto-detected default branch.
+    #[schemars(description = "Base branch to create worktree from (default: auto-detected)")]
+    #[serde(default)]
+    pub base: Option<String>,
+
+    /// Worktree base directory override.
+    #[schemars(description = "Override worktree base directory")]
+    #[serde(default)]
+    pub worktree_dir: Option<String>,
+}
+
+/// Parameters for the `worktree_list` tool.
+#[derive(Deserialize, JsonSchema)]
+pub struct WorktreeListParams {
+    /// Worktree base directory override.
+    /// Currently unused — list discovers worktrees from git, not the filesystem.
+    /// Retained for API consistency with other worktree tools.
+    #[schemars(description = "Override worktree base directory (reserved for future use)")]
+    #[serde(default)]
+    #[allow(dead_code)]
+    pub worktree_dir: Option<String>,
+}
+
+/// Parameters for the `worktree_status` tool.
+#[derive(Deserialize, JsonSchema)]
+pub struct WorktreeStatusParams {
+    /// Spec name (slug) to check status for.
+    #[schemars(description = "Spec name (slug, e.g. 'auth-flow')")]
+    pub name: String,
+
+    /// Worktree base directory override.
+    #[schemars(description = "Override worktree base directory")]
+    #[serde(default)]
+    pub worktree_dir: Option<String>,
+}
+
+/// Parameters for the `worktree_cleanup` tool.
+#[derive(Deserialize, JsonSchema)]
+pub struct WorktreeCleanupParams {
+    /// Spec name (slug) to clean up.
+    #[schemars(description = "Spec name (slug, e.g. 'auth-flow')")]
+    pub name: String,
+
+    /// Force cleanup of dirty worktrees. Defaults to true for MCP (non-interactive).
+    #[schemars(
+        description = "Force cleanup even if worktree has uncommitted changes (default: true for MCP)"
+    )]
+    #[serde(default)]
+    pub force: Option<bool>,
+
+    /// Worktree base directory override.
+    #[schemars(description = "Override worktree base directory")]
+    #[serde(default)]
+    pub worktree_dir: Option<String>,
 }
 
 // ── Response structs ─────────────────────────────────────────────────
@@ -846,6 +913,128 @@ impl AssayServer {
             Err(e) => Ok(domain_error(&e)),
         }
     }
+
+    /// Create an isolated git worktree for a spec.
+    #[tool(
+        description = "Create an isolated git worktree for a spec. Returns WorktreeInfo with spec_slug, path, branch, and base_branch. Validates that the spec exists before creating the worktree."
+    )]
+    pub async fn worktree_create(
+        &self,
+        params: Parameters<WorktreeCreateParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let cwd = resolve_cwd()?;
+        let config = match load_config(&cwd) {
+            Ok(c) => c,
+            Err(err_result) => return Ok(err_result),
+        };
+
+        let worktree_dir = assay_core::worktree::resolve_worktree_dir(
+            params.0.worktree_dir.as_deref(),
+            &config,
+            &cwd,
+        );
+        let specs_dir = cwd.join(".assay").join(&config.specs_dir);
+
+        let info = match assay_core::worktree::create(
+            &cwd,
+            &params.0.name,
+            params.0.base.as_deref(),
+            &worktree_dir,
+            &specs_dir,
+        ) {
+            Ok(info) => info,
+            Err(e) => return Ok(domain_error(&e)),
+        };
+
+        let json = serde_json::to_string(&info)
+            .map_err(|e| McpError::internal_error(format!("serialization failed: {e}"), None))?;
+        Ok(CallToolResult::success(vec![Content::text(json)]))
+    }
+
+    /// List all active assay worktrees.
+    #[tool(
+        description = "List all active assay-managed worktrees. Returns an array of WorktreeInfo objects with spec_slug, path, and branch for each worktree."
+    )]
+    pub async fn worktree_list(
+        &self,
+        #[allow(unused_variables)] params: Parameters<WorktreeListParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let cwd = resolve_cwd()?;
+
+        let entries = match assay_core::worktree::list(&cwd) {
+            Ok(e) => e,
+            Err(e) => return Ok(domain_error(&e)),
+        };
+
+        let json = serde_json::to_string(&entries)
+            .map_err(|e| McpError::internal_error(format!("serialization failed: {e}"), None))?;
+        Ok(CallToolResult::success(vec![Content::text(json)]))
+    }
+
+    /// Check worktree status (branch, dirty state, ahead/behind).
+    #[tool(
+        description = "Check worktree status including branch, HEAD commit, dirty state, and ahead/behind counts relative to upstream. Returns a WorktreeStatus object."
+    )]
+    pub async fn worktree_status(
+        &self,
+        params: Parameters<WorktreeStatusParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let cwd = resolve_cwd()?;
+        let config = match load_config(&cwd) {
+            Ok(c) => c,
+            Err(err_result) => return Ok(err_result),
+        };
+
+        let worktree_dir = assay_core::worktree::resolve_worktree_dir(
+            params.0.worktree_dir.as_deref(),
+            &config,
+            &cwd,
+        );
+        let worktree_path = worktree_dir.join(&params.0.name);
+
+        let status = match assay_core::worktree::status(&worktree_path, &params.0.name) {
+            Ok(s) => s,
+            Err(e) => return Ok(domain_error(&e)),
+        };
+
+        let json = serde_json::to_string(&status)
+            .map_err(|e| McpError::internal_error(format!("serialization failed: {e}"), None))?;
+        Ok(CallToolResult::success(vec![Content::text(json)]))
+    }
+
+    /// Remove a worktree and its associated branch.
+    #[tool(
+        description = "Remove a worktree and its associated branch. Defaults to force=true since MCP tools are non-interactive. Returns a confirmation object with the removed spec name."
+    )]
+    pub async fn worktree_cleanup(
+        &self,
+        params: Parameters<WorktreeCleanupParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let cwd = resolve_cwd()?;
+        let config = match load_config(&cwd) {
+            Ok(c) => c,
+            Err(err_result) => return Ok(err_result),
+        };
+
+        let worktree_dir = assay_core::worktree::resolve_worktree_dir(
+            params.0.worktree_dir.as_deref(),
+            &config,
+            &cwd,
+        );
+        let worktree_path = worktree_dir.join(&params.0.name);
+
+        // Default force=true for MCP (non-interactive agent context)
+        let force = params.0.force.unwrap_or(true);
+
+        if let Err(e) = assay_core::worktree::cleanup(&cwd, &worktree_path, &params.0.name, force) {
+            return Ok(domain_error(&e));
+        }
+
+        let response = serde_json::json!({"removed": params.0.name});
+        let json = serde_json::to_string(&response)
+            .map_err(|e| McpError::internal_error(format!("serialization failed: {e}"), None))?;
+        Ok(CallToolResult::success(vec![Content::text(json)]))
+    }
 }
 
 #[tool_handler]
@@ -863,7 +1052,9 @@ impl ServerHandler for AssayServer {
                  for each criterion, and gate_finalize to persist results. \
                  Use gate_history to query past run results and track quality trends. \
                  Use context_diagnose for full session diagnostics with bloat analysis, \
-                 or estimate_tokens for a quick context health check."
+                 or estimate_tokens for a quick context health check. \
+                 Use worktree_create to isolate spec work in a git worktree, \
+                 worktree_list/worktree_status to inspect, and worktree_cleanup to remove."
                     .to_string(),
             ),
         }
@@ -1562,6 +1753,7 @@ cmd = "echo ok"
             specs_dir: "specs/".to_string(),
             gates: None,
             guard: None,
+            worktree: None,
         };
 
         let result = resolve_working_dir(&cwd, &config);
@@ -1580,6 +1772,7 @@ cmd = "echo ok"
                 max_history: None,
             }),
             guard: None,
+            worktree: None,
         };
 
         let result = resolve_working_dir(&cwd, &config);
@@ -1602,6 +1795,7 @@ cmd = "echo ok"
                 max_history: None,
             }),
             guard: None,
+            worktree: None,
         };
 
         let result = resolve_working_dir(&cwd, &config);

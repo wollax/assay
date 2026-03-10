@@ -113,6 +113,30 @@ Examples:
         #[command(subcommand)]
         command: commands::context::ContextCommand,
     },
+    /// Manage git worktrees for spec isolation
+    #[command(after_long_help = "\
+Examples:
+  Create an isolated worktree for a spec:
+    assay worktree create auth-flow
+
+  Create from a specific base branch:
+    assay worktree create auth-flow --base develop
+
+  List all active worktrees:
+    assay worktree list
+
+  Check worktree status:
+    assay worktree status auth-flow
+
+  Remove a worktree:
+    assay worktree cleanup auth-flow
+
+  Remove all worktrees:
+    assay worktree cleanup --all --force")]
+    Worktree {
+        #[command(subcommand)]
+        command: commands::worktree::WorktreeCommand,
+    },
     /// Team state checkpointing
     #[command(after_long_help = "\
 Examples:
@@ -149,6 +173,7 @@ async fn run() -> anyhow::Result<i32> {
         Some(Command::Spec { command }) => commands::spec::handle(command),
         Some(Command::Gate { command }) => commands::gate::handle(command),
         Some(Command::Context { command }) => commands::context::handle(command),
+        Some(Command::Worktree { command }) => commands::worktree::handle(command),
         Some(Command::Checkpoint { command }) => commands::checkpoint::handle(command),
         None => {
             // Note: project detection checks cwd only — no upward traversal.

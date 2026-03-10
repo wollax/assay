@@ -103,6 +103,7 @@ fn config_validates() {
             max_history: None,
         }),
         guard: None,
+        worktree: None,
     });
 }
 
@@ -509,4 +510,51 @@ fn gate_run_summary_backward_compat_deserialize() {
 
     // Also validate the deserialized instance against the schema
     validate(&summary);
+}
+
+#[test]
+fn worktree_config_validates() {
+    validate(&WorktreeConfig {
+        base_dir: "../my-worktrees".to_string(),
+    });
+}
+
+#[test]
+fn worktree_config_empty_base_dir_validates() {
+    validate(&WorktreeConfig {
+        base_dir: String::new(),
+    });
+}
+
+#[test]
+fn worktree_info_validates() {
+    validate(&WorktreeInfo {
+        spec_slug: "auth-flow".to_string(),
+        path: std::path::PathBuf::from("/tmp/worktrees/auth-flow"),
+        branch: "assay/auth-flow".to_string(),
+        base_branch: Some("main".to_string()),
+    });
+}
+
+#[test]
+fn worktree_info_without_base_branch_validates() {
+    validate(&WorktreeInfo {
+        spec_slug: "auth-flow".to_string(),
+        path: std::path::PathBuf::from("/tmp/worktrees/auth-flow"),
+        branch: "assay/auth-flow".to_string(),
+        base_branch: None,
+    });
+}
+
+#[test]
+fn worktree_status_validates() {
+    validate(&WorktreeStatus {
+        spec_slug: "auth-flow".to_string(),
+        path: std::path::PathBuf::from("/tmp/worktrees/auth-flow"),
+        branch: "assay/auth-flow".to_string(),
+        head: "abc1234".to_string(),
+        dirty: true,
+        ahead: 3,
+        behind: 1,
+    });
 }

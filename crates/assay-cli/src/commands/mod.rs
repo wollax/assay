@@ -4,6 +4,7 @@ pub mod gate;
 pub mod init;
 pub mod mcp;
 pub mod spec;
+pub mod worktree;
 
 use anyhow::Context;
 use std::path::PathBuf;
