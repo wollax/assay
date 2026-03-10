@@ -494,8 +494,8 @@ mod integration_tests {
         let root = tmp.path().to_path_buf();
         let wt_tmp = TempDir::new().expect("failed to create worktree temp dir");
 
-        // git init
-        git_command(&["init"], &root).expect("git init failed");
+        // git init with explicit main branch
+        git_command(&["init", "-b", "main"], &root).expect("git init failed");
         git_command(&["config", "user.email", "test@example.com"], &root)
             .expect("git config email failed");
         git_command(&["config", "user.name", "Test User"], &root).expect("git config name failed");
