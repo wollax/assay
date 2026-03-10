@@ -9,10 +9,10 @@ See: .planning/PROJECT.md (updated 2026-03-08)
 
 ## Current Position
 
-Phase: 29 — Gate Output Truncation
-Plan: 2 of 2
-Status: Complete
-Last activity: 2026-03-09 — Completed 29-02-PLAN.md
+Phase: 30 — Core Tech Debt
+Plan: 2 of 3
+Status: In Progress
+Last activity: 2026-03-10 — Completed 30-02-PLAN.md (CORE-06: save_run API)
 
 Progress: v0.3.0 [████████░░░░░░░░] 50% (4/8 phases)
 
@@ -68,4 +68,4 @@ None.
 
 ### Next Actions
 
-Begin Phase 30: Core Tech Debt (CORE-02, CORE-03, CORE-04, CORE-06, CORE-07, CORE-08, CORE-09).
+Continue Phase 30: Core Tech Debt — execute 30-03-PLAN.md next.
