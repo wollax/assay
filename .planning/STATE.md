@@ -2,18 +2,18 @@
 
 ## Current Position
 
-Phase: 2 of 10 — Worktree Manager
-Plan: 3 of 3 complete
-Status: Phase 2 complete
+Phase: 3 of 10 — Session Manifest & Scripted Sessions
+Plan: 1 of 3 complete
+Status: Phase 3 in progress
 Progress: ██░░░░░░░░ 2/10
 
-Last activity: 2026-03-09 — Completed 02-03-PLAN.md (remove, orphan detection, prune, integration tests)
+Last activity: 2026-03-09 — Completed 03-01-PLAN.md (manifest types, GitOps extension, session result types)
 
 ## Session Continuity
 
 Last session: 2026-03-09
-Stopped at: Completed Phase 2 — Worktree Manager (all 3 plans done)
-Resume file: .planning/phases/active/03-*/03-01-PLAN.md
+Stopped at: Completed 03-01 — Manifest types & GitOps extension
+Resume file: .planning/phases/active/03-*/03-02-PLAN.md
 
 ## Performance Metrics
 
@@ -21,7 +21,7 @@ Resume file: .planning/phases/active/03-*/03-01-PLAN.md
 |--------|-------|
 | Phases completed | 2 |
 | Phases remaining | 8 |
-| Plans completed (phase 2) | 3/3 |
+| Plans completed (phase 3) | 1/3 |
 | Requirements covered | 2/12 |
 | Blockers | 0 |
 | Technical debt items | 0 |
@@ -43,11 +43,11 @@ Resume file: .planning/phases/active/03-*/03-01-PLAN.md
 - Binary named "smelt" via [[bin]] in smelt-cli
 - GitOps trait uses native async fn (RPITIT) — no async-trait or trait_variant crate needed
 - preflight() is synchronous (std::process::Command) — runs before tokio runtime
-- SmeltError has 12 variants: original 5 + 7 worktree-specific (WorktreeExists, WorktreeNotFound, BranchExists, WorktreeDirty, BranchUnmerged, NotInitialized, StateDeserialization)
+- SmeltError has 14 variants: original 5 + 7 worktree-specific + 2 session-specific (ManifestParse, SessionError)
 - CLI uses clap derive with Optional subcommand for context-aware no-args behavior
 - Tracing subscriber writes to stderr; stdout reserved for structured output
 - `--no-color` disables console colors on both stdout and stderr
-- GitOps trait extended with 8 worktree/branch methods (worktree_add/remove/list/prune/is_dirty, branch_delete/is_merged/exists)
+- GitOps trait extended with 8 worktree/branch methods + 3 session methods (add, commit, rev_list_count)
 - WorktreeState serializes to per-session TOML files in .smelt/worktrees/
 - SessionStatus enum: Created/Running/Completed/Failed/Orphaned (serde rename_all lowercase)
 - parse_porcelain() handles git worktree list --porcelain output including bare, detached, locked states
@@ -60,6 +60,13 @@ Resume file: .planning/phases/active/03-*/03-01-PLAN.md
 - Only Running sessions can become orphaned
 - remove() sequence: check dirty → worktree remove → check merged → branch delete → state file remove → git worktree prune
 - dialoguer::Confirm used for interactive dirty worktree confirmation
+- Session manifest is TOML with `[manifest]` metadata + `[[session]]` array
+- Manifest::parse() (not from_str) to avoid clippy should_implement_trait lint
+- ScriptStep uses serde `tag = "action"` internally tagged enum
+- GitCli::run_in() helper for operations in arbitrary working directories (worktrees)
+- rev_list_count uses `git rev-list --count base..branch` range syntax
+- globset validates file_scope globs at parse time (warn, don't fail)
+- SessionResult/SessionOutcome are plain types (not serde) — serialization not needed yet
 
 ### Blockers
 
