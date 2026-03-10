@@ -35,6 +35,11 @@ pub use gates_spec::{GateCriterion, GatesSpec};
 pub use session::{AgentEvaluation, AgentSession, Confidence, EvaluatorRole};
 pub use worktree::{WorktreeConfig, WorktreeInfo, WorktreeStatus};
 
+/// Marker prefix for directory-based specs in CLI output (e.g., `[srs] auth-flow`).
+///
+/// Directory specs store criteria across multiple files rather than in a single TOML.
+pub const DIRECTORY_SPEC_INDICATOR: &str = "[srs]";
+
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 

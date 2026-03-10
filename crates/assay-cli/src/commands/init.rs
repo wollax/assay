@@ -68,8 +68,9 @@ pub(crate) fn show_status(root: &std::path::Path) -> anyhow::Result<()> {
                     .filter(|c| c.cmd.is_some() || c.path.is_some())
                     .count();
                 println!(
-                    "  {:<width$}  [srs] {total} criteria ({executable} executable)",
+                    "  {:<width$}  {} {total} criteria ({executable} executable)",
                     slug,
+                    assay_types::DIRECTORY_SPEC_INDICATOR,
                     width = name_width,
                 );
             }

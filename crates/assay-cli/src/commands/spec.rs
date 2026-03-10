@@ -89,7 +89,7 @@ fn handle_spec_show(name: &str, json: bool) -> anyhow::Result<i32> {
                 return Ok(0);
             }
 
-            println!("Spec: {} [srs]", gates.name);
+            println!("Spec: {} {}", gates.name, assay_types::DIRECTORY_SPEC_INDICATOR);
 
             // Show feature spec summary if available
             if let Some(ref sp) = spec_path
@@ -256,7 +256,7 @@ fn handle_spec_list() -> anyhow::Result<i32> {
                 }
             }
             SpecEntry::Directory { slug, gates, .. } => {
-                let indicator = "[srs]";
+                let indicator = assay_types::DIRECTORY_SPEC_INDICATOR;
                 let criteria_count = gates.criteria.len();
                 println!(
                     "  {:<width$}  {indicator} {criteria_count} criteria",
