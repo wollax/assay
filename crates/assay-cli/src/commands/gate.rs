@@ -255,6 +255,16 @@ fn stream_criterion(
                 );
             }
 
+            // Show actionable hint for exit code 127/126
+            if !result.passed
+                && let Some(code) = result.exit_code
+                && let Some(kind) = assay_core::gate::classify_exit_code(code)
+                && let Some(cmd) = criterion.cmd.as_deref()
+            {
+                let hint = assay_core::gate::format_command_error(cmd, kind);
+                eprintln!("    {hint}");
+            }
+
             if !result.passed || cfg.verbose {
                 print_evidence(&result.stdout, &result.stderr, result.truncated, cfg.color);
             }
@@ -275,7 +285,8 @@ fn stream_criterion(
                     format_fail(cfg.color)
                 );
             }
-            eprintln!("    error: {err}");
+            let display = assay_core::gate::enriched_error_display(&err, criterion.cmd.as_deref());
+            eprintln!("    {display}");
         }
     }
 }
