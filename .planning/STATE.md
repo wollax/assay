@@ -9,10 +9,10 @@ See: .planning/PROJECT.md (updated 2026-03-08)
 
 ## Current Position
 
-Phase: 31 — Error Messages
-Plan: 2 of 2
-Status: Complete
-Last activity: 2026-03-10 — Completed 31-02-PLAN.md (wired all error formatting into call sites)
+Phase: 32 — CLI Polish
+Plan: 1 of 4
+Status: In progress
+Last activity: 2026-03-10 — Completed 32-01-PLAN.md (TTY detection, DIRECTORY_SPEC_INDICATOR, COLUMN_GAP)
 
 Progress: v0.3.0 [████████████░░░░] 75% (6/8 phases)
 
@@ -71,4 +71,4 @@ None.
 
 ### Next Actions
 
-Phase 31 complete. All error message improvements (ERR-01, ERR-02, ERR-03) wired into production. Ready for Phase 32: CLI Polish.
+Phase 32 Plan 01 complete. TTY detection added to colors_enabled(), [srs] magic string extracted to DIRECTORY_SPEC_INDICATOR, COLUMN_GAP constant defined. Ready for 32-02-PLAN.md.
