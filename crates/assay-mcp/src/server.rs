@@ -571,13 +571,15 @@ impl AssayServer {
 
         // If spec has agent criteria, create a session and attach to response.
         if let Some(info) = agent_info {
-            // Move results out of summary instead of cloning the Vec<CriterionResult>.
-            let deterministic_results = summary.results;
+            // Destructure summary to move fields without cloning Vec<CriterionResult>.
+            let assay_types::GateRunSummary {
+                spec_name, results, ..
+            } = summary;
             let session = assay_core::gate::session::create_session(
-                &summary.spec_name,
+                &spec_name,
                 info.agent_criteria_names,
                 info.spec_enforcement,
-                deterministic_results,
+                results,
             );
 
             let session_id = session.session_id.clone();
@@ -1684,51 +1686,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_failure_reason_both_empty_shows_unknown() {
-        let summary = GateRunSummary {
-            spec_name: "test".to_string(),
-            results: vec![CriterionResult {
-                criterion_name: "silent-fail".to_string(),
-                result: Some(GateResult {
-                    passed: false,
-                    kind: GateKind::Command {
-                        cmd: "false".to_string(),
-                    },
-                    stdout: String::new(),
-                    stderr: String::new(),
-                    exit_code: Some(1),
-                    duration_ms: 10,
-                    timestamp: Utc::now(),
-                    truncated: false,
-                    original_bytes: None,
-                    evidence: None,
-                    reasoning: None,
-                    confidence: None,
-                    evaluator_role: None,
-                }),
-                enforcement: Enforcement::Required,
-            }],
-            passed: 0,
-            failed: 1,
-            skipped: 0,
-            total_duration_ms: 10,
-            enforcement: EnforcementSummary {
-                required_passed: 0,
-                required_failed: 1,
-                advisory_passed: 0,
-                advisory_failed: 0,
-            },
-        };
-
-        let response = format_gate_response(&summary, false);
-        let failed = &response.criteria[0];
-        assert_eq!(
-            failed.reason.as_deref(),
-            Some("unknown"),
-            "when both stderr and stdout are empty, reason should be 'unknown'"
-        );
-    }
+    // Note: both-empty → "unknown" case already covered by
+    // test_format_gate_response_failed_with_empty_stderr above.
 
     // ── Helper function integration tests ────────────────────────────
 
@@ -3097,6 +3056,10 @@ cmd = "echo ok"
         assert!(
             msg.contains("missing field"),
             "should mention missing field: {msg}"
+        );
+        assert!(
+            msg.contains("session_id"),
+            "should name the first required parameter: {msg}"
         );
     }
 
