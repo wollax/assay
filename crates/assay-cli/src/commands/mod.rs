@@ -33,9 +33,10 @@ pub(crate) fn assay_dir(root: &std::path::Path) -> PathBuf {
 ///
 /// Returns `false` when the `NO_COLOR` environment variable is set
 /// (any value, including empty — per <https://no-color.org/>) or when
-/// stdout is not a terminal (e.g., piped to a file or another process).
+/// stderr is not a terminal (e.g., piped to a file or another process).
+/// We check stderr because gate streaming output goes to stderr.
 pub(crate) fn colors_enabled() -> bool {
-    std::env::var_os("NO_COLOR").is_none() && std::io::stdout().is_terminal()
+    std::env::var_os("NO_COLOR").is_none() && std::io::stderr().is_terminal()
 }
 
 /// Resolve the project root directory.
