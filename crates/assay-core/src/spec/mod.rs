@@ -14,6 +14,7 @@ use crate::error::{AssayError, Result};
 /// Compute Levenshtein edit distance between two strings.
 ///
 /// Uses a single-row DP approach for space efficiency.
+#[allow(dead_code)] // Wired into call sites in Plan 02
 pub(crate) fn levenshtein(a: &str, b: &str) -> usize {
     let b_len = b.chars().count();
     let mut prev: Vec<usize> = (0..=b_len).collect();
@@ -37,6 +38,7 @@ pub(crate) fn levenshtein(a: &str, b: &str) -> usize {
 /// - distance <= name.len() / 2 (avoids suggesting for very short names)
 ///
 /// Returns `None` if zero or multiple candidates meet the threshold (ambiguous).
+#[allow(dead_code)] // Wired into call sites in Plan 02
 pub(crate) fn find_fuzzy_match(name: &str, candidates: &[String]) -> Option<String> {
     let threshold = (name.len() / 2).min(2);
     let mut best: Option<(&str, usize)> = None;
@@ -66,6 +68,7 @@ pub(crate) fn find_fuzzy_match(name: &str, candidates: &[String]) -> Option<Stri
 /// - With specs: "spec '{name}' not found. Available specs: ..."
 /// - With invalid specs: marks them as "(invalid)"
 /// - With suggestion: appends "Did you mean '{suggestion}'?"
+// Called from AssayError::SpecNotFoundDiagnostic Display impl
 pub(crate) fn format_spec_not_found(
     name: &str,
     specs_dir: &Path,
@@ -2084,30 +2087,14 @@ cmd = "true"
 
     #[test]
     fn format_spec_not_found_zero_specs() {
-        let msg = format_spec_not_found(
-            "xyz",
-            Path::new(".assay/specs/"),
-            &[],
-            &[],
-            None,
-        );
+        let msg = format_spec_not_found("xyz", Path::new(".assay/specs/"), &[], &[], None);
         assert_eq!(msg, "No specs found in .assay/specs/.");
     }
 
     #[test]
     fn format_spec_not_found_three_specs() {
-        let available = vec![
-            "alpha".to_string(),
-            "beta".to_string(),
-            "gamma".to_string(),
-        ];
-        let msg = format_spec_not_found(
-            "xyz",
-            Path::new(".assay/specs/"),
-            &available,
-            &[],
-            None,
-        );
+        let available = vec!["alpha".to_string(), "beta".to_string(), "gamma".to_string()];
+        let msg = format_spec_not_found("xyz", Path::new(".assay/specs/"), &available, &[], None);
         assert!(
             msg.contains("spec 'xyz' not found"),
             "should mention name, got: {msg}"
@@ -2121,13 +2108,7 @@ cmd = "true"
     #[test]
     fn format_spec_not_found_eleven_specs_truncated() {
         let available: Vec<String> = ('a'..='k').map(|c| c.to_string()).collect();
-        let msg = format_spec_not_found(
-            "xyz",
-            Path::new(".assay/specs/"),
-            &available,
-            &[],
-            None,
-        );
+        let msg = format_spec_not_found("xyz", Path::new(".assay/specs/"), &available, &[], None);
         assert!(
             msg.contains("(and 1 more)"),
             "should truncate with count, got: {msg}"
