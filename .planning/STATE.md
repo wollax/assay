@@ -3,17 +3,17 @@
 ## Current Position
 
 Phase: 5 of 10 — Merge Order Intelligence
-Plan: 1 of 3 complete
+Plan: 2 of 3 complete
 Status: In progress
 Progress: █████░░░░░ 5/10
 
-Last activity: 2026-03-10 — Completed 05-01-PLAN.md (Types, Trait Methods & Dependencies)
+Last activity: 2026-03-10 — Completed 05-02-PLAN.md (Ordering Algorithms & MergeRunner Integration)
 
 ## Session Continuity
 
-Last session: 2026-03-10T13:47:00Z
-Stopped at: Completed 05-01-PLAN.md
-Resume file: .planning/phases/active/05-merge-order/05-02-PLAN.md
+Last session: 2026-03-10T14:03:43Z
+Stopped at: Completed 05-02-PLAN.md
+Resume file: .planning/phases/active/05-merge-order/05-03-PLAN.md
 
 ## Performance Metrics
 
@@ -21,7 +21,7 @@ Resume file: .planning/phases/active/05-merge-order/05-02-PLAN.md
 |--------|-------|
 | Phases completed | 4 |
 | Phases remaining | 6 |
-| Plans completed (phase 5) | 1/3 |
+| Plans completed (phase 5) | 2/3 |
 | Requirements covered | 4/12 |
 | Blockers | 0 |
 | Technical debt items | 0 |
@@ -96,6 +96,14 @@ Resume file: .planning/phases/active/05-merge-order/05-02-PLAN.md
 - GitOps::diff_name_only(base_ref, head_ref) returns Vec<String> of changed file paths
 - DiffStat, MergeSessionResult, MergeReport derive Serialize for JSON output
 - comfy-table v7 and serde_json v1 added to workspace dependencies
+- CompletedSession is pub(crate) with changed_files (HashSet<String>) and original_index (usize)
+- collect_sessions() is async — calls diff_name_only per session to populate changed_files
+- order_sessions() dispatches on MergeOrderStrategy, returns (Vec<CompletedSession>, MergePlan)
+- Greedy file-overlap: pick minimum overlap against merged set, tiebreak by original_index
+- Fallback: when all pairwise overlaps equal, falls back to manifest order with fell_back flag
+- MergeReport.plan: Option<MergePlan> populated on successful merge
+- Strategy resolution: opts.strategy > manifest.merge_strategy > Default (CompletionTime)
+- Non-exhaustive wildcard arm removed from order_sessions match — future variants cause compile error
 
 ### Blockers
 
