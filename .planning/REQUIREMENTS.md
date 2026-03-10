@@ -2,13 +2,13 @@
 
 ## Orchestration
 
-- [ ] **ORCH-01**: User can create an isolated git worktree for a spec with `assay worktree create <spec>`
-- [ ] **ORCH-02**: User can list all active worktrees with `assay worktree list`
-- [ ] **ORCH-03**: User can check worktree status (branch, dirty, behind/ahead) with `assay worktree status <spec>`
-- [ ] **ORCH-04**: User can clean up a worktree with `assay worktree cleanup <spec>`
-- [ ] **ORCH-05**: MCP tools `worktree_create`, `worktree_status`, `worktree_cleanup` available for agent use
-- [ ] **ORCH-06**: Worktree paths are configurable (default: `.assay/worktrees/`)
-- [ ] **ORCH-07**: Specs resolve from parent project when gates evaluate in worktree context
+- [x] **ORCH-01**: User can create an isolated git worktree for a spec with `assay worktree create <spec>`
+- [x] **ORCH-02**: User can list all active worktrees with `assay worktree list`
+- [x] **ORCH-03**: User can check worktree status (branch, dirty, behind/ahead) with `assay worktree status <spec>`
+- [x] **ORCH-04**: User can clean up a worktree with `assay worktree cleanup <spec>`
+- [x] **ORCH-05**: MCP tools `worktree_create`, `worktree_status`, `worktree_cleanup` available for agent use
+- [x] **ORCH-06**: Worktree paths are configurable (default: `.assay/worktrees/`)
+- [x] **ORCH-07**: Specs resolve from parent project when gates evaluate in worktree context
 
 ## CLI Polish
 
