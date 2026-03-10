@@ -7,7 +7,7 @@ use std::collections::HashSet;
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-use assay_types::{CriterionKind, Enforcement, FeatureSpec, GatesSpec, Spec};
+use assay_types::{CriterionKind, Enforcement, FeatureSpec, GateSection, GatesSpec, Spec};
 
 use crate::error::{AssayError, Result};
 
@@ -103,81 +103,96 @@ pub fn validate(spec: &Spec) -> std::result::Result<(), Vec<SpecError>> {
             message: "must have at least one criterion".into(),
         });
     } else {
-        let mut seen = HashSet::new();
-        for (i, criterion) in spec.criteria.iter().enumerate() {
-            if criterion.name.trim().is_empty() {
-                errors.push(SpecError {
-                    field: format!("criteria[{i}].name"),
-                    message: "required, must not be empty".into(),
-                });
-            } else if !seen.insert(&criterion.name) {
-                errors.push(SpecError {
-                    field: format!("criteria[{i}].name"),
-                    message: format!("duplicate criterion name `{}`", criterion.name),
-                });
-            }
-
-            if criterion.cmd.is_some() && criterion.path.is_some() {
-                errors.push(SpecError {
-                    field: format!("criteria[{i}]"),
-                    message: format!(
-                        "criterion `{}` has both `cmd` and `path`; `cmd` takes precedence, `path` is ignored",
-                        criterion.name
-                    ),
-                });
-            }
-
-            // AgentReport criteria must not have cmd or path
-            if criterion.kind == Some(CriterionKind::AgentReport) {
-                if criterion.cmd.is_some() {
-                    errors.push(SpecError {
-                        field: format!("criteria[{i}]"),
-                        message: format!(
-                            "criterion `{}` has kind=AgentReport with `cmd`; agent criteria cannot have a command",
-                            criterion.name
-                        ),
-                    });
-                }
-                if criterion.path.is_some() {
-                    errors.push(SpecError {
-                        field: format!("criteria[{i}]"),
-                        message: format!(
-                            "criterion `{}` has kind=AgentReport with `path`; agent criteria cannot have a path check",
-                            criterion.name
-                        ),
-                    });
-                }
-            }
-        }
-
-        // Verify at least one executable criterion is required.
-        // AgentReport criteria count as "executable" (evaluated through sessions).
-        let is_executable = |c: &assay_types::Criterion| {
-            c.cmd.is_some() || c.path.is_some() || c.kind == Some(CriterionKind::AgentReport)
-        };
-        let has_executable = spec.criteria.iter().any(&is_executable);
-        let has_required_executable = spec.criteria.iter().any(|c| {
-            let enforcement = crate::gate::resolve_enforcement(c.enforcement, spec.gate.as_ref());
-            is_executable(c) && enforcement == Enforcement::Required
-        });
-
-        if !has_executable {
-            errors.push(SpecError {
-                field: "criteria".into(),
-                message: "at least one criterion must have a `cmd` or `path` field".into(),
-            });
-        } else if !has_required_executable {
-            errors.push(SpecError {
-                field: "criteria".into(),
-                message: "at least one executable criterion must have enforcement = \"required\"; a gate with only advisory criteria would always pass".into(),
-            });
-        }
+        validate_criteria(&spec.criteria, spec.gate.as_ref(), &mut errors);
     }
 
     if errors.is_empty() {
         Ok(())
     } else {
         Err(errors)
+    }
+}
+
+/// Validate per-criterion rules shared by both legacy specs and gate specs.
+///
+/// Checks each criterion for:
+/// - Non-empty, unique names
+/// - `cmd` / `path` mutual exclusion
+/// - `AgentReport` incompatibility with `cmd` / `path`
+/// - At least one executable criterion with `enforcement = required`
+fn validate_criteria(
+    criteria: &[assay_types::Criterion],
+    gate: Option<&GateSection>,
+    errors: &mut Vec<SpecError>,
+) {
+    let mut seen = HashSet::new();
+    for (i, criterion) in criteria.iter().enumerate() {
+        if criterion.name.trim().is_empty() {
+            errors.push(SpecError {
+                field: format!("criteria[{i}].name"),
+                message: "required, must not be empty".into(),
+            });
+        } else if !seen.insert(&criterion.name) {
+            errors.push(SpecError {
+                field: format!("criteria[{i}].name"),
+                message: format!("duplicate criterion name `{}`", criterion.name),
+            });
+        }
+
+        if criterion.cmd.is_some() && criterion.path.is_some() {
+            errors.push(SpecError {
+                field: format!("criteria[{i}]"),
+                message: format!(
+                    "criterion `{}` has both `cmd` and `path`; `cmd` takes precedence, `path` is ignored",
+                    criterion.name
+                ),
+            });
+        }
+
+        // AgentReport criteria must not have cmd or path
+        if criterion.kind == Some(CriterionKind::AgentReport) {
+            if criterion.cmd.is_some() {
+                errors.push(SpecError {
+                    field: format!("criteria[{i}]"),
+                    message: format!(
+                        "criterion `{}` has kind=AgentReport with `cmd`; agent criteria cannot have a command",
+                        criterion.name
+                    ),
+                });
+            }
+            if criterion.path.is_some() {
+                errors.push(SpecError {
+                    field: format!("criteria[{i}]"),
+                    message: format!(
+                        "criterion `{}` has kind=AgentReport with `path`; agent criteria cannot have a path check",
+                        criterion.name
+                    ),
+                });
+            }
+        }
+    }
+
+    // Verify at least one executable criterion is required.
+    // AgentReport criteria count as "executable" (evaluated through sessions).
+    let is_executable = |c: &assay_types::Criterion| {
+        c.cmd.is_some() || c.path.is_some() || c.kind == Some(CriterionKind::AgentReport)
+    };
+    let has_executable = criteria.iter().any(&is_executable);
+    let has_required_executable = criteria.iter().any(|c| {
+        let enforcement = crate::gate::resolve_enforcement(c.enforcement, gate);
+        is_executable(c) && enforcement == Enforcement::Required
+    });
+
+    if !has_executable {
+        errors.push(SpecError {
+            field: "criteria".into(),
+            message: "at least one criterion must have a `cmd` or `path` field".into(),
+        });
+    } else if !has_required_executable {
+        errors.push(SpecError {
+            field: "criteria".into(),
+            message: "at least one executable criterion must have enforcement = \"required\"; a gate with only advisory criteria would always pass".into(),
+        });
     }
 }
 
@@ -371,75 +386,7 @@ pub fn validate_gates_spec(spec: &GatesSpec) -> std::result::Result<(), Vec<Spec
             message: "must have at least one criterion".into(),
         });
     } else {
-        let mut seen = HashSet::new();
-        for (i, criterion) in spec.criteria.iter().enumerate() {
-            if criterion.name.trim().is_empty() {
-                errors.push(SpecError {
-                    field: format!("criteria[{i}].name"),
-                    message: "required, must not be empty".into(),
-                });
-            } else if !seen.insert(&criterion.name) {
-                errors.push(SpecError {
-                    field: format!("criteria[{i}].name"),
-                    message: format!("duplicate criterion name `{}`", criterion.name),
-                });
-            }
-
-            if criterion.cmd.is_some() && criterion.path.is_some() {
-                errors.push(SpecError {
-                    field: format!("criteria[{i}]"),
-                    message: format!(
-                        "criterion `{}` has both `cmd` and `path`; `cmd` takes precedence, `path` is ignored",
-                        criterion.name
-                    ),
-                });
-            }
-
-            // AgentReport criteria must not have cmd or path
-            if criterion.kind == Some(CriterionKind::AgentReport) {
-                if criterion.cmd.is_some() {
-                    errors.push(SpecError {
-                        field: format!("criteria[{i}]"),
-                        message: format!(
-                            "criterion `{}` has kind=AgentReport with `cmd`; agent criteria cannot have a command",
-                            criterion.name
-                        ),
-                    });
-                }
-                if criterion.path.is_some() {
-                    errors.push(SpecError {
-                        field: format!("criteria[{i}]"),
-                        message: format!(
-                            "criterion `{}` has kind=AgentReport with `path`; agent criteria cannot have a path check",
-                            criterion.name
-                        ),
-                    });
-                }
-            }
-        }
-
-        // Verify at least one executable criterion is required.
-        // AgentReport criteria count as "executable" (evaluated through sessions).
-        let is_executable = |c: &assay_types::GateCriterion| {
-            c.cmd.is_some() || c.path.is_some() || c.kind == Some(CriterionKind::AgentReport)
-        };
-        let has_executable = spec.criteria.iter().any(&is_executable);
-        let has_required_executable = spec.criteria.iter().any(|c| {
-            let enforcement = crate::gate::resolve_enforcement(c.enforcement, spec.gate.as_ref());
-            is_executable(c) && enforcement == Enforcement::Required
-        });
-
-        if !has_executable {
-            errors.push(SpecError {
-                field: "criteria".into(),
-                message: "at least one criterion must have a `cmd` or `path` field".into(),
-            });
-        } else if !has_required_executable {
-            errors.push(SpecError {
-                field: "criteria".into(),
-                message: "at least one executable criterion must have enforcement = \"required\"; a gate with only advisory criteria would always pass".into(),
-            });
-        }
+        validate_criteria(&spec.criteria, spec.gate.as_ref(), &mut errors);
     }
 
     if errors.is_empty() {
