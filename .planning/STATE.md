@@ -9,10 +9,10 @@ See: .planning/PROJECT.md (updated 2026-03-08)
 
 ## Current Position
 
-Phase: 28 — Worktree Manager
-Plan: 2 of 2
-Status: Phase complete (verified)
-Last activity: 2026-03-09 — Phase 28 verified and completed
+Phase: 29 — Gate Output Truncation
+Plan: 1 of 2
+Status: In progress
+Last activity: 2026-03-09 — Completed 29-01-PLAN.md
 
 Progress: v0.3.0 [██████░░░░░░░░░░] 38% (3/8 phases)
 
@@ -55,6 +55,7 @@ v0.2.0 decisions archived to .planning/milestones/v0.2.0-ROADMAP.md
 - Sub-enum error pattern for new error categories (WorktreeError, etc.)
 - Zero new workspace dependencies (hard constraint from research)
 - Launcher, session record, gate_evaluate, TUI viewer, composable gates, spec preconditions, gate history summary — all deferred to v0.4.0+
+- Head/tail truncation ratio 1:2 (33% head, 67% tail) with marker as overhead (GATE-01)
 
 ### Pending Issues
 
@@ -67,4 +68,4 @@ None.
 
 ### Next Actions
 
-Start Phase 29: Gate Output Truncation (GATE-01 through GATE-05).
+Continue Phase 29: Execute 29-02-PLAN.md (integrate truncate_head_tail, replace truncate_output).
