@@ -1562,6 +1562,7 @@ cmd = "echo ok"
             specs_dir: "specs/".to_string(),
             gates: None,
             guard: None,
+            worktree: None,
         };
 
         let result = resolve_working_dir(&cwd, &config);
@@ -1580,6 +1581,7 @@ cmd = "echo ok"
                 max_history: None,
             }),
             guard: None,
+            worktree: None,
         };
 
         let result = resolve_working_dir(&cwd, &config);
@@ -1602,6 +1604,7 @@ cmd = "echo ok"
                 max_history: None,
             }),
             guard: None,
+            worktree: None,
         };
 
         let result = resolve_working_dir(&cwd, &config);

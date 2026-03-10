@@ -290,6 +290,7 @@ default_timeout = 600
                 max_history: None,
             }),
             guard: None,
+            worktree: None,
         };
 
         let errors = super::validate(&config).unwrap_err();
