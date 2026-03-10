@@ -54,24 +54,7 @@
 - [x] Phase 26: Structural Prerequisites (2 plans) — 2026-03-09
 - [x] Phase 27: Types Hygiene (4 plans) — 2026-03-09
 - [x] Phase 28: Worktree Manager (2 plans) — 2026-03-09
-
-#### Phase 29: Gate Output Truncation
-
-**Goal:** Implement head+tail output capture with byte budgets so gate command output is bounded, UTF-8 safe, and truncation is visible in results.
-**Dependencies:** Phase 27 (GateResult type refinements)
-**Requirements:** GATE-01, GATE-02, GATE-03, GATE-04, GATE-05
-**Success Criteria** (what must be TRUE):
-  1. Gate command output exceeding the byte budget is truncated with head and tail sections preserved
-  2. Truncated output contains a `[truncated: X bytes omitted]` marker between head and tail
-  3. Truncation never splits a multi-byte UTF-8 sequence (verified by test with multi-byte input)
-  4. stdout and stderr have independent byte budgets (one can truncate while the other doesn't)
-  5. `GateResult.truncated` is `true` and `GateResult.original_bytes` reflects the pre-truncation size when truncation occurs
-
-**Plans:** 2 plans
-
-Plans:
-- [ ] 29-01-PLAN.md — TDD: build truncate_head_tail pure function with comprehensive tests
-- [ ] 29-02-PLAN.md — Wire truncate_head_tail into evaluate_command, replace old truncation
+- [x] Phase 29: Gate Output Truncation (2 plans) — 2026-03-09
 
 #### Phase 30: Core Tech Debt
 
@@ -125,4 +108,4 @@ Plans:
 |-----------|--------|--------|--------------|----------|
 | v0.1.0 Proof of Concept | ✅ Shipped | 10 | 43 | 100% |
 | v0.2.0 Dual-Track Gates & Hardening | ✅ Shipped | 15 | 52 | 100% |
-| v0.3.0 Orchestration Foundation | 🔄 In Progress | 8 (26-33) | 43 | 38% |
+| v0.3.0 Orchestration Foundation | 🔄 In Progress | 8 (26-33) | 43 | 50% |
