@@ -10,9 +10,9 @@ See: .planning/PROJECT.md (updated 2026-03-08)
 ## Current Position
 
 Phase: 32 — CLI Polish
-Plan: 1 of 4
-Status: In progress
-Last activity: 2026-03-10 — Completed 32-01-PLAN.md (TTY detection, DIRECTORY_SPEC_INDICATOR, COLUMN_GAP)
+Plan: 3 of 4
+Status: In Progress
+Last activity: 2026-03-10 — Completed 32-03-PLAN.md (help text dedup, color branch collapse)
 
 Progress: v0.3.0 [████████████░░░░] 75% (6/8 phases)
 
