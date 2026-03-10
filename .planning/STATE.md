@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 2026-03-08)
 
 ## Current Position
 
-Phase: 33 — MCP Validation
-Plan: 2 of 2
+Phase: 34 — MCP Truncation Visibility
+Plan: 1 of 1
 Status: Phase complete
-Last activity: 2026-03-10 — Completed 33-02-PLAN.md (stdout fallback + clone elimination)
+Last activity: 2026-03-10 — Completed 34-01-PLAN.md (truncation metadata in MCP responses)
 
-Progress: v0.3.0 [████████████████] 100% (8/8 phases)
+Progress: v0.3.0+ [█████████████████] 100% (9/9 phases)
 
 ## Milestone Progress
 
@@ -34,6 +34,7 @@ Progress: v0.3.0 [████████████████] 100% (8/8 ph
 - [x] Phase 31: Error Messages (ERR-01, ERR-02, ERR-03)
 - [x] Phase 32: CLI Polish (CLI-01 through CLI-08)
 - [x] Phase 33: MCP Validation (MCP-01 through MCP-05)
+- [x] Phase 34: MCP Truncation Visibility (gap closure)
 
 ## Accumulated Context
 
@@ -63,6 +64,7 @@ v0.2.0 decisions archived to .planning/milestones/v0.2.0-ROADMAP.md
 - `.err().unwrap()` pattern preferred over `.unwrap_err()` when T lacks Debug
 - Stderr-first, stdout-fallback chain for MCP failure reason extraction (MCP-04)
 - Partial struct moves to eliminate GateRunSummary and Vec<CriterionResult> clones in gate_run (MCP-05)
+- CriterionSummary truncation fields use Option<bool>/Option<u64> so skipped criteria omit them from JSON (Phase 34)
 
 ### Pending Issues
 
@@ -75,10 +77,10 @@ None.
 
 ### Next Actions
 
-Phase 33 complete. All v0.3.0 phases done. Ready for milestone wrap-up.
+Phase 34 complete. All v0.3.0 phases and gap closures done. Ready for milestone wrap-up.
 
 ### Session Continuity
 
-Last session: 2026-03-10T17:59Z
-Stopped at: Completed 33-02-PLAN.md
+Last session: 2026-03-10T18:46Z
+Stopped at: Completed 34-01-PLAN.md
 Resume file: None
