@@ -344,6 +344,16 @@ impl GitOps for GitCli {
             })
             .collect())
     }
+
+    async fn show_index_stage(
+        &self,
+        work_dir: &Path,
+        stage: u8,
+        file: &str,
+    ) -> Result<String> {
+        self.run_in(work_dir, &["show", &format!(":{stage}:{file}")])
+            .await
+    }
 }
 
 #[cfg(test)]

@@ -230,7 +230,10 @@ impl<G: GitOps + Clone> MergeRunner<G> {
 
                 let sessions_resolved: Vec<String> = session_results
                     .iter()
-                    .filter(|r| r.resolution == ResolutionMethod::Manual)
+                    .filter(|r| {
+                        r.resolution != ResolutionMethod::Clean
+                            && r.resolution != ResolutionMethod::Skipped
+                    })
                     .map(|r| r.session_name.clone())
                     .collect();
 
@@ -400,7 +403,7 @@ impl<G: GitOps + Clone> MergeRunner<G> {
                         session.task_description.as_deref(),
                         target_branch,
                         &session.branch_name,
-                        false,
+                        ResolutionMethod::Clean,
                     );
                     let result = self
                         .commit_and_stat(temp_path, &session.session_name, &commit_msg, ResolutionMethod::Clean)
@@ -427,7 +430,7 @@ impl<G: GitOps + Clone> MergeRunner<G> {
                             .await?;
 
                         match action {
-                            ConflictAction::Resolved => {
+                            ConflictAction::Resolved(method) => {
                                 // Re-scan to validate resolution
                                 scan = conflict::scan_files_for_markers(temp_path, &conflict_files);
                                 if scan.has_markers() {
@@ -441,14 +444,14 @@ impl<G: GitOps + Clone> MergeRunner<G> {
                                     session.task_description.as_deref(),
                                     target_branch,
                                     &session.branch_name,
-                                    true,
+                                    method,
                                 );
                                 let result = self
                                     .commit_and_stat(
                                         temp_path,
                                         &session.session_name,
                                         &commit_msg,
-                                        ResolutionMethod::Manual,
+                                        method,
                                     )
                                     .await?;
                                 info!(
@@ -552,12 +555,14 @@ fn format_commit_message(
     task: Option<&str>,
     target_branch: &str,
     session_branch: &str,
-    manually_resolved: bool,
+    resolution: ResolutionMethod,
 ) -> String {
-    let suffix = if manually_resolved {
-        " [resolved: manual]"
-    } else {
-        ""
+    let suffix = match resolution {
+        ResolutionMethod::Clean => "",
+        ResolutionMethod::Manual => " [resolved: manual]",
+        ResolutionMethod::Skipped => " [skipped]",
+        ResolutionMethod::AiAssisted => " [resolved: ai-assisted]",
+        ResolutionMethod::AiEdited => " [resolved: ai-edited]",
     };
 
     let subject = match task {
@@ -1162,7 +1167,7 @@ mod tests {
                     .join("\n");
                 std::fs::write(&path, format!("{resolved}\n")).unwrap();
             }
-            Ok(ConflictAction::Resolved)
+            Ok(ConflictAction::Resolved(ResolutionMethod::Manual))
         }
     }
 

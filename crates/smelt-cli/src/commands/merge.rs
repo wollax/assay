@@ -9,7 +9,7 @@ use smelt_core::error::SmeltError;
 use smelt_core::merge::conflict::ConflictScan;
 use smelt_core::merge::{MergeOrderStrategy, MergePlan, MergeRunner};
 use smelt_core::{
-    ConflictAction, ConflictHandler, GitCli, Manifest, MergeOpts,
+    ConflictAction, ConflictHandler, GitCli, Manifest, MergeOpts, ResolutionMethod,
 };
 
 /// Subcommands for `smelt merge`.
@@ -162,7 +162,7 @@ impl ConflictHandler for InteractiveConflictHandler {
                     message: format!("failed to read user input: {e}"),
                 })?;
             Ok(match selection {
-                0 => ConflictAction::Resolved,
+                0 => ConflictAction::Resolved(ResolutionMethod::Manual),
                 1 => ConflictAction::Skip,
                 _ => ConflictAction::Abort,
             })
