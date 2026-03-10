@@ -1,4 +1,4 @@
-use super::{assay_dir, project_root};
+use super::{COLUMN_GAP, assay_dir, project_root};
 
 /// Display project status for bare `assay` invocation inside an initialized project.
 ///
@@ -55,9 +55,10 @@ pub(crate) fn show_status(root: &std::path::Path) -> anyhow::Result<()> {
                     .filter(|c| c.cmd.is_some() || c.path.is_some())
                     .count();
                 println!(
-                    "  {:<width$}  {total} criteria ({executable} executable)",
+                    "  {:<width$}{gap}{total} criteria ({executable} executable)",
                     slug,
                     width = name_width,
+                    gap = COLUMN_GAP,
                 );
             }
             SpecEntry::Directory { slug, gates, .. } => {
@@ -68,10 +69,11 @@ pub(crate) fn show_status(root: &std::path::Path) -> anyhow::Result<()> {
                     .filter(|c| c.cmd.is_some() || c.path.is_some())
                     .count();
                 println!(
-                    "  {:<width$}  {} {total} criteria ({executable} executable)",
+                    "  {:<width$}{gap}{} {total} criteria ({executable} executable)",
                     slug,
                     assay_types::DIRECTORY_SPEC_INDICATOR,
                     width = name_width,
+                    gap = COLUMN_GAP,
                 );
             }
         }

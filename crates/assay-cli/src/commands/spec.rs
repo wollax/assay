@@ -2,7 +2,9 @@ use anyhow::{Context, bail};
 use assay_core::spec::SpecEntry;
 use clap::Subcommand;
 
-use super::{ANSI_COLOR_OVERHEAD, assay_dir, colors_enabled, format_criteria_type, project_root};
+use super::{
+    ANSI_COLOR_OVERHEAD, COLUMN_GAP, assay_dir, colors_enabled, format_criteria_type, project_root,
+};
 
 #[derive(Subcommand)]
 pub(crate) enum SpecCommand {
@@ -89,7 +91,11 @@ fn handle_spec_show(name: &str, json: bool) -> anyhow::Result<i32> {
                 return Ok(0);
             }
 
-            println!("Spec: {} {}", gates.name, assay_types::DIRECTORY_SPEC_INDICATOR);
+            println!(
+                "Spec: {} {}",
+                gates.name,
+                assay_types::DIRECTORY_SPEC_INDICATOR
+            );
 
             // Show feature spec summary if available
             if let Some(ref sp) = spec_path
@@ -154,16 +160,17 @@ fn print_criteria_table(criteria: &[assay_types::Criterion]) {
     let type_width = 11;
 
     println!(
-        "  {:<num_w$}  {:<name_w$}  {:<type_w$}  Command",
+        "  {:<num_w$}{gap}{:<name_w$}{gap}{:<type_w$}{gap}Command",
         "#",
         "Criterion",
         "Type",
         num_w = num_width,
         name_w = name_width,
         type_w = type_width,
+        gap = COLUMN_GAP,
     );
     println!(
-        "  {:<num_w$}  {:<name_w$}  {:<type_w$}  {}",
+        "  {:<num_w$}{gap}{:<name_w$}{gap}{:<type_w$}{gap}{}",
         "\u{2500}".repeat(num_width),
         "\u{2500}".repeat(name_width),
         "\u{2500}".repeat(type_width),
@@ -171,6 +178,7 @@ fn print_criteria_table(criteria: &[assay_types::Criterion]) {
         num_w = num_width,
         name_w = name_width,
         type_w = type_width,
+        gap = COLUMN_GAP,
     );
 
     for (i, criterion) in criteria.iter().enumerate() {
@@ -184,23 +192,25 @@ fn print_criteria_table(criteria: &[assay_types::Criterion]) {
 
         if color {
             println!(
-                "  {:<num_w$}  {:<name_w$}  {:<type_w$}  {cmd_display}",
+                "  {:<num_w$}{gap}{:<name_w$}{gap}{:<type_w$}{gap}{cmd_display}",
                 i + 1,
                 criterion.name,
                 type_label,
                 num_w = num_width,
                 name_w = name_width,
                 type_w = type_width + ANSI_COLOR_OVERHEAD,
+                gap = COLUMN_GAP,
             );
         } else {
             println!(
-                "  {:<num_w$}  {:<name_w$}  {:<type_w$}  {cmd_display}",
+                "  {:<num_w$}{gap}{:<name_w$}{gap}{:<type_w$}{gap}{cmd_display}",
                 i + 1,
                 criterion.name,
                 type_label,
                 num_w = num_width,
                 name_w = name_width,
                 type_w = type_width,
+                gap = COLUMN_GAP,
             );
         }
     }
@@ -248,10 +258,11 @@ fn handle_spec_list() -> anyhow::Result<i32> {
                     println!("  {:<width$}", slug, width = name_width);
                 } else {
                     println!(
-                        "  {:<width$}  {}",
+                        "  {:<width$}{gap}{}",
                         slug,
                         spec.description,
-                        width = name_width
+                        width = name_width,
+                        gap = COLUMN_GAP,
                     );
                 }
             }
@@ -259,9 +270,10 @@ fn handle_spec_list() -> anyhow::Result<i32> {
                 let indicator = assay_types::DIRECTORY_SPEC_INDICATOR;
                 let criteria_count = gates.criteria.len();
                 println!(
-                    "  {:<width$}  {indicator} {criteria_count} criteria",
+                    "  {:<width$}{gap}{indicator} {criteria_count} criteria",
                     slug,
-                    width = name_width
+                    width = name_width,
+                    gap = COLUMN_GAP,
                 );
             }
         }

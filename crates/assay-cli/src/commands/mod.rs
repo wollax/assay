@@ -16,6 +16,9 @@ use std::path::PathBuf;
 /// `\x1b[32m` = 5 bytes, `\x1b[0m` = 4 bytes, total = 9.
 pub(crate) const ANSI_COLOR_OVERHEAD: usize = 9;
 
+/// Column separator used in CLI table output (two spaces).
+pub(crate) const COLUMN_GAP: &str = "  ";
+
 /// Name of the Assay project directory relative to project root.
 pub(crate) const ASSAY_DIR_NAME: &str = ".assay";
 
