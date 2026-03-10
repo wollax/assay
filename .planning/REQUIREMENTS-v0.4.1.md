@@ -18,14 +18,14 @@
 
 | Requirement | Phase | Theme |
 |-------------|-------|-------|
-| MERGE-01 | TBD | Merge Tools |
-| MERGE-02 | TBD | Merge Tools |
-| MERGE-03 | TBD | Merge Tools |
-| MERGE-04 | TBD | Merge Tools |
-| MERGE-05 | TBD | Merge Tools |
-| WFIX-01 | TBD | Worktree Fixes |
-| WFIX-02 | TBD | Worktree Fixes |
-| WFIX-03 | TBD | Worktree Fixes |
+| MERGE-01 | 47 | Merge Check |
+| MERGE-02 | 50 | Merge Propose |
+| MERGE-03 | 50 | Merge Propose |
+| MERGE-04 | 48 | Gate Evidence Formatting |
+| MERGE-05 | 49 | Forge-Agnostic Env Vars |
+| WFIX-01 | 46 | Worktree Fixes |
+| WFIX-02 | 46 | Worktree Fixes |
+| WFIX-03 | 46 | Worktree Fixes |
 
 **Coverage:** 8/8 requirements mapped (100%)
 
