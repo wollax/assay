@@ -17,6 +17,7 @@ pub mod gate_run;
 pub mod gates_spec;
 pub mod schema_registry;
 pub mod session;
+pub mod worktree;
 
 pub use checkpoint::{
     AgentState, AgentStatus, ContextHealthSnapshot, TaskState, TaskStatus, TeamCheckpoint,
@@ -32,6 +33,7 @@ pub use gate::{GateKind, GateResult};
 pub use gate_run::{CriterionResult, GateRunRecord, GateRunSummary};
 pub use gates_spec::{GateCriterion, GatesSpec};
 pub use session::{AgentEvaluation, AgentSession, Confidence, EvaluatorRole};
+pub use worktree::{WorktreeConfig, WorktreeInfo, WorktreeStatus};
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -139,6 +141,10 @@ pub struct Config {
     /// Guard daemon configuration.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub guard: Option<GuardConfig>,
+
+    /// Worktree management configuration.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub worktree: Option<WorktreeConfig>,
 }
 
 inventory::submit! {
