@@ -9,6 +9,7 @@ use crate::git::GitOps;
 use crate::worktree::{GitWorktreeEntry, parse_porcelain};
 
 /// Concrete [`GitOps`] implementation that shells out to the `git` binary.
+#[derive(Clone)]
 pub struct GitCli {
     git_binary: PathBuf,
     repo_root: PathBuf,
