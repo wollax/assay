@@ -32,3 +32,6 @@ pub mod context;
 
 /// Guard daemon: background context protection with threshold-based pruning.
 pub mod guard;
+
+/// Git worktree lifecycle management.
+pub mod worktree;
