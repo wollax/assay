@@ -1,11 +1,27 @@
 //! Types for merge operations and reporting.
 
+use serde::{Deserialize, Serialize};
+
+/// Strategy for ordering sessions during merge.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
+#[serde(rename_all = "kebab-case")]
+pub enum MergeOrderStrategy {
+    /// Order sessions by manifest position (default — preserves Phase 4 behavior).
+    #[default]
+    CompletionTime,
+    /// Order sessions by file overlap — merge least-overlapping first.
+    FileOverlap,
+}
+
 /// Options for a merge operation.
 #[derive(Debug, Clone, Default)]
 #[non_exhaustive]
 pub struct MergeOpts {
     /// Override the target branch name (default: `smelt/merge/<manifest-name>`).
     pub target_branch: Option<String>,
+    /// Override the merge ordering strategy.
+    pub strategy: Option<MergeOrderStrategy>,
 }
 
 impl MergeOpts {
@@ -13,12 +29,21 @@ impl MergeOpts {
     pub fn with_target_branch(target: String) -> Self {
         Self {
             target_branch: Some(target),
+            strategy: None,
+        }
+    }
+
+    /// Create merge options with a specific ordering strategy.
+    pub fn with_strategy(strategy: MergeOrderStrategy) -> Self {
+        Self {
+            target_branch: None,
+            strategy: Some(strategy),
         }
     }
 }
 
 /// Per-file diff statistics.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct DiffStat {
     pub file: String,
     pub insertions: usize,
@@ -26,7 +51,7 @@ pub struct DiffStat {
 }
 
 /// Result of merging a single session.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct MergeSessionResult {
     pub session_name: String,
     pub commit_hash: String,
@@ -37,7 +62,7 @@ pub struct MergeSessionResult {
 }
 
 /// Overall merge report.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct MergeReport {
     pub target_branch: String,
     pub base_commit: String,

@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use tracing::{info, warn};
 
-pub use types::{DiffStat, MergeOpts, MergeReport, MergeSessionResult};
+pub use types::{DiffStat, MergeOpts, MergeOrderStrategy, MergeReport, MergeSessionResult};
 
 use crate::error::{Result, SmeltError};
 use crate::git::GitOps;
@@ -424,6 +424,7 @@ mod tests {
             manifest: ManifestMeta {
                 name: name.to_string(),
                 base_ref: "HEAD".to_string(),
+                merge_strategy: None,
             },
             sessions: sessions
                 .iter()
@@ -607,6 +608,7 @@ mod tests {
                 &manifest,
                 MergeOpts {
                     target_branch: Some("my-custom-branch".to_string()),
+                    strategy: None,
                 },
             )
             .await
