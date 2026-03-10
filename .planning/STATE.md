@@ -3,17 +3,17 @@
 ## Current Position
 
 Phase: 4 of 10 — Sequential Merge
-Plan: 1 of 3 complete
+Plan: 2 of 3 complete
 Status: In progress
 Progress: ███▒░░░░░░ 4/10
 
-Last activity: 2026-03-10 — Completed 04-01-PLAN.md (git primitives for sequential merge)
+Last activity: 2026-03-10 — Completed 04-02-PLAN.md (MergeRunner core merge engine)
 
 ## Session Continuity
 
-Last session: 2026-03-10T12:15:36Z
-Stopped at: Completed 04-01-PLAN.md
-Resume file: .planning/phases/active/04-sequential-merge/04-02-PLAN.md
+Last session: 2026-03-10T12:26:00Z
+Stopped at: Completed 04-02-PLAN.md
+Resume file: .planning/phases/active/04-sequential-merge/04-03-PLAN.md
 
 ## Performance Metrics
 
@@ -21,7 +21,7 @@ Resume file: .planning/phases/active/04-sequential-merge/04-02-PLAN.md
 |--------|-------|
 | Phases completed | 3 |
 | Phases remaining | 7 |
-| Plans completed (phase 4) | 1/3 |
+| Plans completed (phase 4) | 2/3 |
 | Requirements covered | 3/12 |
 | Blockers | 0 |
 | Technical debt items | 0 |
@@ -82,6 +82,12 @@ Resume file: .planning/phases/active/04-sequential-merge/04-02-PLAN.md
 - merge_squash uses raw tokio::process::Command (not run_in) for exit code inspection
 - worktree_add_existing uses `git worktree add <path> <branch>` (no -b flag) for existing branches
 - reset_hard takes target_ref parameter for flexibility in rollback scenarios
+- MergeRunner<G: GitOps + Clone> follows SessionRunner pattern — new(git, repo_root) + run(manifest, opts)
+- Explicit cleanup in error paths (no Drop guard) — simpler, all paths explicit
+- Template commit messages for squash merges: `merge(<session>): <task-desc>` with 72-char truncation
+- diff_numstat with `{hash}^` parent ref for per-session stats
+- WorktreeManager::remove(force=true) reused for session cleanup after successful merge
+- MergeRunner collects sessions in manifest order — deterministic merge sequence
 
 ### Blockers
 
