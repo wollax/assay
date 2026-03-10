@@ -190,29 +190,21 @@ fn print_criteria_table(criteria: &[assay_types::Criterion]) {
             .or(criterion.path.as_deref())
             .unwrap_or("");
 
-        if color {
-            println!(
-                "  {:<num_w$}{gap}{:<name_w$}{gap}{:<type_w$}{gap}{cmd_display}",
-                i + 1,
-                criterion.name,
-                type_label,
-                num_w = num_width,
-                name_w = name_width,
-                type_w = type_width + ANSI_COLOR_OVERHEAD,
-                gap = COLUMN_GAP,
-            );
+        let tw = if color {
+            type_width + ANSI_COLOR_OVERHEAD
         } else {
-            println!(
-                "  {:<num_w$}{gap}{:<name_w$}{gap}{:<type_w$}{gap}{cmd_display}",
-                i + 1,
-                criterion.name,
-                type_label,
-                num_w = num_width,
-                name_w = name_width,
-                type_w = type_width,
-                gap = COLUMN_GAP,
-            );
-        }
+            type_width
+        };
+        println!(
+            "  {:<num_w$}{gap}{:<name_w$}{gap}{:<type_w$}{gap}{cmd_display}",
+            i + 1,
+            criterion.name,
+            type_label,
+            num_w = num_width,
+            name_w = name_width,
+            type_w = tw,
+            gap = COLUMN_GAP,
+        );
     }
 }
 
