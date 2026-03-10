@@ -11,8 +11,8 @@ See: .planning/PROJECT.md (updated 2026-03-08)
 
 Phase: 32 — CLI Polish
 Plan: 3 of 4
-Status: In Progress
-Last activity: 2026-03-10 — Completed 32-03-PLAN.md (help text dedup, color branch collapse)
+Status: Complete
+Last activity: 2026-03-10 — Completed 32-02-PLAN.md (StreamCounters & StreamConfig documentation)
 
 Progress: v0.3.0 [████████████░░░░] 75% (6/8 phases)
 
