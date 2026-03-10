@@ -1222,6 +1222,7 @@ fn format_gate_response(
             },
             Some(gate_result) => {
                 let reason = first_nonempty_line(&gate_result.stderr)
+                    .or_else(|| first_nonempty_line(&gate_result.stdout))
                     .unwrap_or("unknown")
                     .to_string();
                 CriterionSummary {
@@ -1584,6 +1585,144 @@ mod tests {
         assert!(
             response.blocked,
             "blocked should be true when required_failed > 0"
+        );
+    }
+
+    #[test]
+    fn test_failure_reason_prefers_stderr() {
+        let summary = GateRunSummary {
+            spec_name: "test".to_string(),
+            results: vec![CriterionResult {
+                criterion_name: "both-outputs".to_string(),
+                result: Some(GateResult {
+                    passed: false,
+                    kind: GateKind::Command {
+                        cmd: "failing-cmd".to_string(),
+                    },
+                    stdout: "stdout message".to_string(),
+                    stderr: "stderr message".to_string(),
+                    exit_code: Some(1),
+                    duration_ms: 42,
+                    timestamp: Utc::now(),
+                    truncated: false,
+                    original_bytes: None,
+                    evidence: None,
+                    reasoning: None,
+                    confidence: None,
+                    evaluator_role: None,
+                }),
+                enforcement: Enforcement::Required,
+            }],
+            passed: 0,
+            failed: 1,
+            skipped: 0,
+            total_duration_ms: 42,
+            enforcement: EnforcementSummary {
+                required_passed: 0,
+                required_failed: 1,
+                advisory_passed: 0,
+                advisory_failed: 0,
+            },
+        };
+
+        let response = format_gate_response(&summary, false);
+        let failed = &response.criteria[0];
+        assert_eq!(
+            failed.reason.as_deref(),
+            Some("stderr message"),
+            "when both stderr and stdout are present, reason should come from stderr"
+        );
+    }
+
+    #[test]
+    fn test_failure_reason_falls_back_to_stdout() {
+        let summary = GateRunSummary {
+            spec_name: "test".to_string(),
+            results: vec![CriterionResult {
+                criterion_name: "stdout-only".to_string(),
+                result: Some(GateResult {
+                    passed: false,
+                    kind: GateKind::Command {
+                        cmd: "failing-cmd".to_string(),
+                    },
+                    stdout: "error from stdout".to_string(),
+                    stderr: String::new(),
+                    exit_code: Some(1),
+                    duration_ms: 30,
+                    timestamp: Utc::now(),
+                    truncated: false,
+                    original_bytes: None,
+                    evidence: None,
+                    reasoning: None,
+                    confidence: None,
+                    evaluator_role: None,
+                }),
+                enforcement: Enforcement::Required,
+            }],
+            passed: 0,
+            failed: 1,
+            skipped: 0,
+            total_duration_ms: 30,
+            enforcement: EnforcementSummary {
+                required_passed: 0,
+                required_failed: 1,
+                advisory_passed: 0,
+                advisory_failed: 0,
+            },
+        };
+
+        let response = format_gate_response(&summary, false);
+        let failed = &response.criteria[0];
+        assert_eq!(
+            failed.reason.as_deref(),
+            Some("error from stdout"),
+            "when stderr is empty, reason should fall back to stdout"
+        );
+    }
+
+    #[test]
+    fn test_failure_reason_both_empty_shows_unknown() {
+        let summary = GateRunSummary {
+            spec_name: "test".to_string(),
+            results: vec![CriterionResult {
+                criterion_name: "silent-fail".to_string(),
+                result: Some(GateResult {
+                    passed: false,
+                    kind: GateKind::Command {
+                        cmd: "false".to_string(),
+                    },
+                    stdout: String::new(),
+                    stderr: String::new(),
+                    exit_code: Some(1),
+                    duration_ms: 10,
+                    timestamp: Utc::now(),
+                    truncated: false,
+                    original_bytes: None,
+                    evidence: None,
+                    reasoning: None,
+                    confidence: None,
+                    evaluator_role: None,
+                }),
+                enforcement: Enforcement::Required,
+            }],
+            passed: 0,
+            failed: 1,
+            skipped: 0,
+            total_duration_ms: 10,
+            enforcement: EnforcementSummary {
+                required_passed: 0,
+                required_failed: 1,
+                advisory_passed: 0,
+                advisory_failed: 0,
+            },
+        };
+
+        let response = format_gate_response(&summary, false);
+        let failed = &response.criteria[0];
+        assert_eq!(
+            failed.reason.as_deref(),
+            Some("unknown"),
+            "when both stderr and stdout are empty, reason should be 'unknown'"
         );
     }
 
@@ -2941,16 +3080,15 @@ cmd = "echo ok"
             msg.contains("missing field"),
             "should mention missing field: {msg}"
         );
-        assert!(
-            msg.contains("name"),
-            "should name the parameter: {msg}"
-        );
+        assert!(msg.contains("name"), "should name the parameter: {msg}");
     }
 
     #[test]
     fn test_gate_report_params_missing_fields() {
         let json = serde_json::json!({});
-        let err = serde_json::from_value::<GateReportParams>(json).err().unwrap();
+        let err = serde_json::from_value::<GateReportParams>(json)
+            .err()
+            .unwrap();
         let msg = err.to_string();
         assert!(
             msg.contains("missing field"),
@@ -2967,16 +3105,15 @@ cmd = "echo ok"
             msg.contains("missing field"),
             "should mention missing field: {msg}"
         );
-        assert!(
-            msg.contains("name"),
-            "should name the parameter: {msg}"
-        );
+        assert!(msg.contains("name"), "should name the parameter: {msg}");
     }
 
     #[test]
     fn test_gate_finalize_params_missing_session_id() {
         let json = serde_json::json!({});
-        let err = serde_json::from_value::<GateFinalizeParams>(json).err().unwrap();
+        let err = serde_json::from_value::<GateFinalizeParams>(json)
+            .err()
+            .unwrap();
         let msg = err.to_string();
         assert!(
             msg.contains("missing field"),
@@ -3011,7 +3148,9 @@ cmd = "echo ok"
             "reasoning": "r",
             "evaluator_role": "self"
         });
-        let err = serde_json::from_value::<GateReportParams>(json).err().unwrap();
+        let err = serde_json::from_value::<GateReportParams>(json)
+            .err()
+            .unwrap();
         let msg = err.to_string();
         assert!(
             msg.contains("invalid type"),
