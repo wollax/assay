@@ -60,34 +60,11 @@ Examples:
         command: commands::mcp::McpCommand,
     },
     /// Manage spec files
-    #[command(after_long_help = "\
-Examples:
-  List all specs in the project:
-    assay spec list
-
-  Show a spec's criteria as a table:
-    assay spec show auth-flow
-
-  Show a spec as JSON (for agent consumption):
-    assay spec show auth-flow --json")]
     Spec {
         #[command(subcommand)]
         command: commands::spec::SpecCommand,
     },
     /// Manage quality gates
-    #[command(after_long_help = "\
-Examples:
-  Run gates for a spec:
-    assay gate run auth-flow
-
-  Run with verbose output (show all evidence):
-    assay gate run auth-flow --verbose
-
-  Run with a custom timeout (seconds):
-    assay gate run auth-flow --timeout 60
-
-  Run and output JSON (for agent consumption):
-    assay gate run auth-flow --json")]
     Gate {
         #[command(subcommand)]
         command: commands::gate::GateCommand,
