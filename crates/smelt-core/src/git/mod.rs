@@ -67,6 +67,24 @@ pub trait GitOps {
 
     /// Check if a branch exists.
     fn branch_exists(&self, branch_name: &str) -> impl Future<Output = Result<bool>> + Send;
+
+    /// Stage files for commit.
+    ///
+    /// # Panics
+    /// Panics if `paths` is empty. Callers must provide explicit file paths.
+    fn add(&self, work_dir: &Path, paths: &[&str]) -> impl Future<Output = Result<()>> + Send;
+
+    /// Create a commit in the given working directory with the provided message.
+    /// Returns the short commit hash.
+    fn commit(&self, work_dir: &Path, message: &str)
+        -> impl Future<Output = Result<String>> + Send;
+
+    /// Count commits on `branch` that are not on `base`. Returns the count.
+    fn rev_list_count(
+        &self,
+        branch: &str,
+        base: &str,
+    ) -> impl Future<Output = Result<usize>> + Send;
 }
 
 /// Synchronous preflight checks run before the async runtime is fully engaged.
