@@ -28,8 +28,12 @@ impl GenAiProvider {
             if let Some(env_name) = env_name {
                 // Only set if not already set — env vars take precedence over config.
                 if std::env::var(env_name).is_err() {
-                    // SAFETY: set_var is called during single-threaded client
-                    // construction before any async runtime threads are spawned.
+                    // SAFETY: Environment variable mutation is not thread-safe.
+                    // This call runs once during handler construction (not in a
+                    // hot loop), targets provider-specific env vars that no other
+                    // thread reads at this point, and is skipped if the var is
+                    // already set. Future improvement: move env setup to a
+                    // pre-runtime sync context.
                     unsafe { std::env::set_var(env_name, key) };
                 }
             }

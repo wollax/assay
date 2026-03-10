@@ -130,7 +130,7 @@ impl<G: GitOps + Send + Sync, P: AiProvider + 'static> ConflictHandler for AiCon
 }
 
 /// Return a sensible default model name based on the configured provider.
-fn default_model_for_provider(config: &AiConfig) -> &'static str {
+pub fn default_model_for_provider(config: &AiConfig) -> &'static str {
     match config.provider.as_deref() {
         Some("anthropic") => "claude-sonnet-4-20250514",
         Some("openai") => "gpt-4o",
@@ -143,6 +143,289 @@ fn default_model_for_provider(config: &AiConfig) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::merge::conflict::ConflictScan;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use tempfile::TempDir;
+
+    /// Mock AiProvider that returns predictable content.
+    struct MockProvider {
+        response: String,
+        call_count: AtomicUsize,
+    }
+
+    impl MockProvider {
+        fn new(response: &str) -> Self {
+            Self {
+                response: response.to_owned(),
+                call_count: AtomicUsize::new(0),
+            }
+        }
+
+        fn calls(&self) -> usize {
+            self.call_count.load(Ordering::SeqCst)
+        }
+    }
+
+    impl AiProvider for MockProvider {
+        async fn complete(
+            &self,
+            _model: &str,
+            _system_prompt: &str,
+            _user_prompt: &str,
+        ) -> crate::Result<String> {
+            self.call_count.fetch_add(1, Ordering::SeqCst);
+            Ok(self.response.clone())
+        }
+    }
+
+    /// Mock AiProvider that always fails.
+    struct FailingProvider;
+
+    impl AiProvider for FailingProvider {
+        async fn complete(
+            &self,
+            _model: &str,
+            _system_prompt: &str,
+            _user_prompt: &str,
+        ) -> crate::Result<String> {
+            Err(SmeltError::AiResolution {
+                message: "mock provider failure".to_owned(),
+            })
+        }
+    }
+
+    /// Minimal mock GitOps for testing AI handler.
+    #[derive(Clone)]
+    struct MockGitOps;
+
+    impl GitOps for MockGitOps {
+        async fn repo_root(&self) -> crate::Result<std::path::PathBuf> {
+            Ok(std::path::PathBuf::from("/mock"))
+        }
+        async fn is_inside_work_tree(&self, _path: &std::path::Path) -> crate::Result<bool> {
+            Ok(true)
+        }
+        async fn current_branch(&self) -> crate::Result<String> {
+            Ok("main".to_owned())
+        }
+        async fn head_short(&self) -> crate::Result<String> {
+            Ok("abc1234".to_owned())
+        }
+        async fn worktree_add(
+            &self,
+            _path: &std::path::Path,
+            _branch: &str,
+            _start: &str,
+        ) -> crate::Result<()> {
+            Ok(())
+        }
+        async fn worktree_remove(
+            &self,
+            _path: &std::path::Path,
+            _force: bool,
+        ) -> crate::Result<()> {
+            Ok(())
+        }
+        async fn worktree_list(
+            &self,
+        ) -> crate::Result<Vec<crate::worktree::GitWorktreeEntry>> {
+            Ok(vec![])
+        }
+        async fn worktree_add_existing(
+            &self,
+            _path: &std::path::Path,
+            _branch: &str,
+        ) -> crate::Result<()> {
+            Ok(())
+        }
+        async fn worktree_prune(&self) -> crate::Result<()> {
+            Ok(())
+        }
+        async fn worktree_is_dirty(&self, _path: &std::path::Path) -> crate::Result<bool> {
+            Ok(false)
+        }
+        async fn branch_delete(
+            &self,
+            _name: &str,
+            _force: bool,
+        ) -> crate::Result<()> {
+            Ok(())
+        }
+        async fn branch_is_merged(
+            &self,
+            _branch: &str,
+            _base: &str,
+        ) -> crate::Result<bool> {
+            Ok(false)
+        }
+        async fn branch_exists(&self, _name: &str) -> crate::Result<bool> {
+            Ok(false)
+        }
+        async fn add(
+            &self,
+            _work_dir: &std::path::Path,
+            _paths: &[&str],
+        ) -> crate::Result<()> {
+            Ok(())
+        }
+        async fn commit(
+            &self,
+            _work_dir: &std::path::Path,
+            _msg: &str,
+        ) -> crate::Result<String> {
+            Ok("commit123".to_owned())
+        }
+        async fn rev_list_count(
+            &self,
+            _branch: &str,
+            _base: &str,
+        ) -> crate::Result<usize> {
+            Ok(1)
+        }
+        async fn merge_base(&self, _a: &str, _b: &str) -> crate::Result<String> {
+            Ok("base123".to_owned())
+        }
+        async fn branch_create(
+            &self,
+            _name: &str,
+            _start: &str,
+        ) -> crate::Result<()> {
+            Ok(())
+        }
+        async fn merge_squash(
+            &self,
+            _work_dir: &std::path::Path,
+            _source: &str,
+        ) -> crate::Result<()> {
+            Ok(())
+        }
+        async fn unmerged_files(
+            &self,
+            _work_dir: &std::path::Path,
+        ) -> crate::Result<Vec<String>> {
+            Ok(vec![])
+        }
+        async fn reset_hard(
+            &self,
+            _work_dir: &std::path::Path,
+            _target: &str,
+        ) -> crate::Result<()> {
+            Ok(())
+        }
+        async fn rev_parse(&self, _rev: &str) -> crate::Result<String> {
+            Ok("abc123".to_owned())
+        }
+        async fn diff_name_only(
+            &self,
+            _base: &str,
+            _head: &str,
+        ) -> crate::Result<Vec<String>> {
+            Ok(vec![])
+        }
+        async fn log_subjects(&self, _range: &str) -> crate::Result<Vec<String>> {
+            Ok(vec!["test commit".to_owned()])
+        }
+        async fn diff_numstat(
+            &self,
+            _from: &str,
+            _to: &str,
+        ) -> crate::Result<Vec<(usize, usize, String)>> {
+            Ok(vec![])
+        }
+        async fn show_index_stage(
+            &self,
+            _work_dir: &std::path::Path,
+            stage: u8,
+            _file: &str,
+        ) -> crate::Result<String> {
+            match stage {
+                1 => Ok("base content".to_owned()),
+                2 => Ok("ours content".to_owned()),
+                3 => Ok("theirs content".to_owned()),
+                _ => Err(SmeltError::AiResolution {
+                    message: "invalid stage".to_owned(),
+                }),
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn handle_conflict_writes_resolved_files() {
+        let tmp = TempDir::new().unwrap();
+        let work_dir = tmp.path();
+
+        // Create a conflicted file
+        let file_name = "conflict.rs";
+        std::fs::write(
+            work_dir.join(file_name),
+            "<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>>",
+        )
+        .unwrap();
+
+        let resolved_content = "merged content";
+        let provider = Arc::new(MockProvider::new(resolved_content));
+        let config = AiConfig::default();
+
+        let handler = AiConflictHandler::new(
+            MockGitOps,
+            Arc::clone(&provider),
+            config,
+            "main".to_owned(),
+        );
+
+        let scan = ConflictScan {
+            hunks: vec![],
+            total_conflict_lines: 0,
+        };
+
+        let result = handler
+            .handle_conflict("test-session", &[file_name.to_owned()], &scan, work_dir)
+            .await;
+
+        assert!(result.is_ok());
+        assert!(matches!(
+            result.unwrap(),
+            ConflictAction::Resolved(ResolutionMethod::AiAssisted)
+        ));
+
+        // Verify the file was written with resolved content
+        let written = std::fs::read_to_string(work_dir.join(file_name)).unwrap();
+        assert_eq!(written, resolved_content);
+
+        // Provider was called once per file
+        assert_eq!(provider.calls(), 1);
+    }
+
+    #[tokio::test]
+    async fn handle_conflict_propagates_provider_error() {
+        let tmp = TempDir::new().unwrap();
+        let work_dir = tmp.path();
+
+        std::fs::write(work_dir.join("file.rs"), "conflicted").unwrap();
+
+        let provider = Arc::new(FailingProvider);
+        let config = AiConfig::default();
+
+        let handler = AiConflictHandler::new(
+            MockGitOps,
+            provider,
+            config,
+            "main".to_owned(),
+        );
+
+        let scan = ConflictScan {
+            hunks: vec![],
+            total_conflict_lines: 0,
+        };
+
+        let result = handler
+            .handle_conflict("test-session", &["file.rs".to_owned()], &scan, work_dir)
+            .await;
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(matches!(err, SmeltError::AiResolution { .. }));
+    }
 
     #[test]
     fn default_model_anthropic() {

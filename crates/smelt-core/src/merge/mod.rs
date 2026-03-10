@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 
 use tracing::{info, warn};
 
-pub use ai_handler::AiConflictHandler;
+pub use ai_handler::{AiConflictHandler, default_model_for_provider};
 pub use conflict::{ConflictHunk, ConflictScan, scan_conflict_markers};
 pub use types::{
     ConflictAction, DiffStat, MergeOpts, MergeOrderStrategy, MergePlan, MergeReport,

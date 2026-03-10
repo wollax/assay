@@ -13,7 +13,9 @@ use smelt_core::ai::{
 };
 use smelt_core::error::SmeltError;
 use smelt_core::merge::conflict::ConflictScan;
-use smelt_core::merge::{AiConflictHandler, MergeOrderStrategy, MergePlan, MergeRunner};
+use smelt_core::merge::{
+    AiConflictHandler, MergeOrderStrategy, MergePlan, MergeRunner, default_model_for_provider,
+};
 use smelt_core::{
     ConflictAction, ConflictHandler, GitCli, GitOps, Manifest, MergeOpts, ResolutionMethod,
 };
@@ -302,16 +304,25 @@ async fn prompt_continue_after_edit(
     .map(|_| ())
 }
 
+/// Result of showing the AI diff and prompting the user.
+enum AiPromptChoice {
+    /// User accepted the AI resolution as-is.
+    Accept,
+    /// User edited the files after AI resolution.
+    Edit,
+    /// User rejected the AI resolution.
+    Reject,
+}
+
 impl<G: GitOps + Send + Sync, P: AiProvider + 'static> AiInteractiveConflictHandler<G, P> {
     /// Show the AI-proposed diff for each file and prompt Accept/Edit/Reject.
-    /// Returns the chosen `ConflictAction`.
     async fn show_diff_and_prompt(
         &self,
         session_name: &str,
         files: &[String],
         original_contents: &[(String, String)],
         work_dir: &Path,
-    ) -> smelt_core::Result<ConflictAction> {
+    ) -> smelt_core::Result<AiPromptChoice> {
         // Show diff per file
         eprintln!(
             "\nAI proposed resolution for {} file(s):",
@@ -319,7 +330,11 @@ impl<G: GitOps + Send + Sync, P: AiProvider + 'static> AiInteractiveConflictHand
         );
         for (file_path, original) in original_contents {
             let resolved_path = work_dir.join(file_path);
-            let resolved = std::fs::read_to_string(&resolved_path).unwrap_or_default();
+            let resolved = std::fs::read_to_string(&resolved_path).map_err(|e| {
+                SmeltError::AiResolution {
+                    message: format!("failed to read resolved file '{file_path}': {e}"),
+                }
+            })?;
             let diff_output = format_colored_diff(original, &resolved, file_path);
             if diff_output.trim().is_empty() {
                 eprintln!("  {file_path}: (no changes)");
@@ -330,19 +345,12 @@ impl<G: GitOps + Send + Sync, P: AiProvider + 'static> AiInteractiveConflictHand
 
         let selection = prompt_accept_edit_reject(session_name).await?;
         match selection {
-            0 => {
-                // Accept
-                Ok(ConflictAction::Resolved(ResolutionMethod::AiAssisted))
-            }
+            0 => Ok(AiPromptChoice::Accept),
             1 => {
-                // Edit
                 prompt_continue_after_edit(session_name, work_dir).await?;
-                Ok(ConflictAction::Resolved(ResolutionMethod::AiEdited))
+                Ok(AiPromptChoice::Edit)
             }
-            _ => {
-                // Reject — handled by caller
-                Ok(ConflictAction::Abort) // Sentinel; caller checks for index 2
-            }
+            _ => Ok(AiPromptChoice::Reject),
         }
     }
 
@@ -359,7 +367,7 @@ impl<G: GitOps + Send + Sync, P: AiProvider + 'static> AiInteractiveConflictHand
             .config
             .model
             .as_deref()
-            .unwrap_or("claude-sonnet-4-20250514");
+            .unwrap_or_else(|| default_model_for_provider(&self.config));
 
         let system_prompt = build_system_prompt();
 
@@ -367,7 +375,9 @@ impl<G: GitOps + Send + Sync, P: AiProvider + 'static> AiInteractiveConflictHand
             // Read the current conflicted content from disk to build the prompt.
             // We use the working-tree content which may still have markers.
             let conflicted = std::fs::read_to_string(work_dir.join(file))
-                .unwrap_or_default();
+                .map_err(|e| SmeltError::AiResolution {
+                    message: format!("failed to read conflicted file '{file}': {e}"),
+                })?;
 
             let original_prompt = build_resolution_prompt(
                 file,
@@ -437,11 +447,23 @@ impl<G: GitOps + Send + Sync, P: AiProvider + 'static> ConflictHandler
         let original_contents: Vec<(String, String)> = files
             .iter()
             .filter_map(|f| {
-                std::fs::read_to_string(work_dir.join(f))
-                    .ok()
-                    .map(|content| (f.clone(), content))
+                match std::fs::read_to_string(work_dir.join(f)) {
+                    Ok(content) => Some((f.clone(), content)),
+                    Err(e) => {
+                        eprintln!("Warning: failed to read conflicted file '{f}': {e}");
+                        None
+                    }
+                }
             })
             .collect();
+
+        if original_contents.len() != files.len() {
+            eprintln!(
+                "Warning: captured {}/{} conflicted files — fallback may not restore all files",
+                original_contents.len(),
+                files.len()
+            );
+        }
 
         // Attempt AI resolution.
         let ai_result = self
@@ -455,7 +477,7 @@ impl<G: GitOps + Send + Sync, P: AiProvider + 'static> ConflictHandler
                 let mut retries_used: u8 = 0;
 
                 loop {
-                    let user_action = self
+                    let choice = self
                         .show_diff_and_prompt(
                             session_name,
                             files,
@@ -464,17 +486,24 @@ impl<G: GitOps + Send + Sync, P: AiProvider + 'static> ConflictHandler
                         )
                         .await?;
 
-                    match user_action {
-                        ConflictAction::Resolved(method) => {
-                            return Ok(ConflictAction::Resolved(method));
+                    match choice {
+                        AiPromptChoice::Accept => {
+                            return Ok(ConflictAction::Resolved(
+                                ResolutionMethod::AiAssisted,
+                            ));
                         }
-                        ConflictAction::Abort => {
+                        AiPromptChoice::Edit => {
+                            return Ok(ConflictAction::Resolved(
+                                ResolutionMethod::AiEdited,
+                            ));
+                        }
+                        AiPromptChoice::Reject => {
                             // User rejected — prompt for feedback.
                             let feedback =
                                 prompt_feedback(session_name).await?;
 
                             retries_used += 1;
-                            if retries_used < self.config.max_retries {
+                            if retries_used <= self.config.max_retries {
                                 let feedback_text = if feedback.is_empty() {
                                     "Please try again with a different approach."
                                         .to_string()
@@ -515,8 +544,6 @@ impl<G: GitOps + Send + Sync, P: AiProvider + 'static> ConflictHandler
                                 break;
                             }
                         }
-                        // Skip is not an option in AI prompt; unreachable.
-                        _ => return Ok(user_action),
                     }
                 }
 

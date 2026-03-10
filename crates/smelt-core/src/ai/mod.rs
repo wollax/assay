@@ -34,6 +34,7 @@ pub struct AiConfig {
 
     /// API key fallback. Prefer environment variables (`ANTHROPIC_API_KEY`,
     /// `OPENAI_API_KEY`, etc.) — this field is a last-resort override.
+    #[serde(skip_serializing)]
     pub api_key: Option<String>,
 
     /// Custom endpoint URL for proxies or self-hosted providers.
@@ -73,9 +74,17 @@ impl AiConfig {
     /// Returns `None` if the file is unreadable or has no `[ai]` section.
     pub fn load(smelt_dir: &Path) -> Option<AiConfig> {
         let config_path = smelt_dir.join("config.toml");
-        let content = std::fs::read_to_string(config_path).ok()?;
-        let config_file: ConfigFile = toml::from_str(&content).ok()?;
-        config_file.ai
+        let content = std::fs::read_to_string(&config_path).ok()?;
+        match toml::from_str::<ConfigFile>(&content) {
+            Ok(config_file) => config_file.ai,
+            Err(e) => {
+                tracing::warn!(
+                    "failed to parse {}: {e}",
+                    config_path.display()
+                );
+                None
+            }
+        }
     }
 }
 
