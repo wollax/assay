@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-03-08)
 ## Current Position
 
 Phase: 33 — MCP Validation
-Plan: 1 of 2
-Status: In progress
-Last activity: 2026-03-10 — Completed 33-01-PLAN.md (serde validation regression tests)
+Plan: 2 of 2
+Status: Phase complete
+Last activity: 2026-03-10 — Completed 33-02-PLAN.md (stdout fallback + clone elimination)
 
-Progress: v0.3.0 [██████████████░░] 88% (7/8 phases, plan 1/2 of phase 33)
+Progress: v0.3.0 [████████████████] 100% (8/8 phases)
 
 ## Milestone Progress
 
@@ -22,7 +22,7 @@ Progress: v0.3.0 [██████████████░░] 88% (7/8 pha
 |-----------|--------|--------------|----------|
 | v0.1.0 | 10 | 43 | 100% (shipped) |
 | v0.2.0 | 15 (11-25) | 52 | 100% (shipped) |
-| v0.3.0 | 8 (26-33) | 43 | 88% |
+| v0.3.0 | 8 (26-33) | 43 | 100% |
 
 ## Phase Checklist
 
@@ -33,7 +33,7 @@ Progress: v0.3.0 [██████████████░░] 88% (7/8 pha
 - [x] Phase 30: Core Tech Debt (CORE-02, CORE-03, CORE-04, CORE-06, CORE-07, CORE-08, CORE-09)
 - [x] Phase 31: Error Messages (ERR-01, ERR-02, ERR-03)
 - [x] Phase 32: CLI Polish (CLI-01 through CLI-08)
-- [ ] Phase 33: MCP Validation (MCP-01 through MCP-05)
+- [x] Phase 33: MCP Validation (MCP-01 through MCP-05)
 
 ## Accumulated Context
 
@@ -61,6 +61,8 @@ v0.2.0 decisions archived to .planning/milestones/v0.2.0-ROADMAP.md
 - ERR-01 detects exit codes 127/126 (not io::ErrorKind) since commands spawn via sh -c
 - MCP param validation tested at serde layer (not handler layer) — rmcp Parameters<T> handles it before handler executes
 - `.err().unwrap()` pattern preferred over `.unwrap_err()` when T lacks Debug
+- Stderr-first, stdout-fallback chain for MCP failure reason extraction (MCP-04)
+- Partial struct moves to eliminate GateRunSummary and Vec<CriterionResult> clones in gate_run (MCP-05)
 
 ### Pending Issues
 
@@ -73,10 +75,10 @@ None.
 
 ### Next Actions
 
-Phase 33 plan 01 complete. Plan 02 (MCP-04/MCP-05) ready to execute.
+Phase 33 complete. All v0.3.0 phases done. Ready for milestone wrap-up.
 
 ### Session Continuity
 
-Last session: 2026-03-10T17:57Z
-Stopped at: Completed 33-01-PLAN.md
+Last session: 2026-03-10T17:59Z
+Stopped at: Completed 33-02-PLAN.md
 Resume file: None
