@@ -363,6 +363,21 @@ fn handle_worktree_cleanup_all(
         return Ok(0);
     }
 
+    // Check dirty state for each worktree to inform the user
+    let dirty_slugs: Vec<&str> = if !force {
+        entries
+            .iter()
+            .filter(|e| {
+                assay_core::worktree::status(&e.path, &e.spec_slug)
+                    .map(|s| s.dirty)
+                    .unwrap_or(false)
+            })
+            .map(|e| e.spec_slug.as_str())
+            .collect()
+    } else {
+        vec![]
+    };
+
     if !force {
         if !std::io::stdin().is_terminal() {
             bail!(
@@ -372,7 +387,22 @@ fn handle_worktree_cleanup_all(
         }
         eprintln!("The following worktrees will be removed:");
         for entry in &entries {
-            eprintln!("  - {} ({})", entry.spec_slug, entry.path.display());
+            let dirty_marker = if dirty_slugs.contains(&entry.spec_slug.as_str()) {
+                " (dirty!)"
+            } else {
+                ""
+            };
+            eprintln!(
+                "  - {} ({}){dirty_marker}",
+                entry.spec_slug,
+                entry.path.display()
+            );
+        }
+        if !dirty_slugs.is_empty() {
+            eprintln!(
+                "\nWarning: {} worktree(s) have uncommitted changes.",
+                dirty_slugs.len()
+            );
         }
         eprint!("Remove all? [y/N] ");
         let mut input = String::new();
@@ -385,14 +415,16 @@ fn handle_worktree_cleanup_all(
 
     let mut removed = Vec::new();
     for entry in &entries {
-        let worktree_path = worktree_dir.join(&entry.spec_slug);
-        // Use the actual entry path if it differs from computed path
-        let path = if worktree_path.exists() {
-            worktree_path
-        } else {
+        // Prefer git-reported path; fall back to computed path
+        let computed_path = worktree_dir.join(&entry.spec_slug);
+        let path = if entry.path.exists() {
             entry.path.clone()
+        } else {
+            computed_path
         };
-        match assay_core::worktree::cleanup(root, &path, &entry.spec_slug, true) {
+        // User confirmed removal (or --force was passed), so force-remove dirty worktrees
+        let entry_force = force || dirty_slugs.contains(&entry.spec_slug.as_str());
+        match assay_core::worktree::cleanup(root, &path, &entry.spec_slug, entry_force) {
             Ok(()) => removed.push(entry.spec_slug.clone()),
             Err(e) => eprintln!("Warning: failed to remove '{}': {e}", entry.spec_slug),
         }
