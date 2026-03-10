@@ -10,6 +10,112 @@ use assay_types::Config;
 
 use crate::error::{AssayError, Result};
 
+/// Result of truncating a source line to fit within a display budget.
+#[derive(Debug)]
+pub(crate) struct TruncatedLine {
+    /// The (possibly truncated) text to display.
+    pub text: String,
+    /// The column offset where the caret should point within `text`.
+    pub caret_offset: usize,
+}
+
+/// Translate a byte offset in a string to a (line, column) pair.
+///
+/// Both line and column are zero-based. Column is measured in characters
+/// (not bytes) to handle multi-byte UTF-8 correctly.
+pub(crate) fn translate_position(content: &str, byte_offset: usize) -> (usize, usize) {
+    let clamped = byte_offset.min(content.len());
+    let before = &content[..clamped];
+    let line = before.matches('\n').count();
+    let last_newline = before.rfind('\n').map(|p| p + 1).unwrap_or(0);
+    let col = content[last_newline..clamped].chars().count();
+    (line, col)
+}
+
+/// Truncate a source line to fit within `budget` characters.
+///
+/// If the line already fits, returns it unchanged with the original column
+/// as the caret offset. Otherwise, centers a window around `col` and adds
+/// `...` ellipsis markers at the truncation points.
+pub(crate) fn truncate_source_line(line: &str, col: usize, budget: usize) -> TruncatedLine {
+    let chars: Vec<char> = line.chars().collect();
+    if chars.len() <= budget {
+        return TruncatedLine {
+            text: line.to_string(),
+            caret_offset: col,
+        };
+    }
+
+    let ellipsis = "...";
+    let elen = ellipsis.len();
+
+    // Determine window boundaries
+    let half = budget / 2;
+    let mut start = col.saturating_sub(half);
+    let mut end = (start + budget).min(chars.len());
+
+    let need_left = start > 0;
+    let need_right = end < chars.len();
+
+    // Adjust for ellipsis space
+    if need_left && need_right {
+        // Both sides need ellipsis — shrink the visible window
+        let available = budget.saturating_sub(elen * 2);
+        let h = available / 2;
+        start = col.saturating_sub(h);
+        end = (start + available).min(chars.len());
+        start = end.saturating_sub(available);
+    } else if need_left {
+        // Only left ellipsis
+        let available = budget.saturating_sub(elen);
+        start = end.saturating_sub(available);
+    } else if need_right {
+        // Only right ellipsis
+        let available = budget.saturating_sub(elen);
+        end = (start + available).min(chars.len());
+    }
+
+    let prefix = if start > 0 { ellipsis } else { "" };
+    let suffix = if end < chars.len() { ellipsis } else { "" };
+    let slice: String = chars[start..end].iter().collect();
+    let caret_offset = col.saturating_sub(start) + prefix.len();
+
+    TruncatedLine {
+        text: format!("{prefix}{slice}{suffix}"),
+        caret_offset,
+    }
+}
+
+/// Format a TOML parse error with source line and caret pointer.
+///
+/// Uses the error's span (if available) to show the offending line from the
+/// original content, truncated to ~80 characters. Falls back to just the
+/// error message when no span information is available.
+///
+/// The file path is NOT included — callers (AssayError Display impls)
+/// prepend "parsing config '{path}': " or similar.
+pub(crate) fn format_toml_error(content: &str, err: &toml::de::Error) -> String {
+    let message = err.message();
+    let Some(span) = err.span() else {
+        return message.to_string();
+    };
+
+    let (line, col) = translate_position(content, span.start);
+    let source_line = content.lines().nth(line).unwrap_or("");
+    let truncated = truncate_source_line(source_line, col, 80);
+    let line_num = line + 1;
+    let gutter_width = line_num.to_string().len();
+
+    format!(
+        "line {line_num}, column {}: {message}\n{:gutter_width$} |\n{line_num} | {}\n{:gutter_width$} | {}^",
+        col + 1,
+        "",
+        truncated.text,
+        "",
+        " ".repeat(truncated.caret_offset),
+    )
+}
+
 /// A single validation issue in a config file.
 #[derive(Debug, Clone)]
 pub struct ConfigError {
@@ -276,6 +382,130 @@ default_timeout = 600
             errors[0].message.contains("positive"),
             "got: {}",
             errors[0].message
+        );
+    }
+
+    // ── ERR-03: translate_position ───────────────────────────────
+
+    #[test]
+    fn translate_position_start() {
+        assert_eq!(super::translate_position("hello\nworld", 0), (0, 0));
+    }
+
+    #[test]
+    fn translate_position_middle_of_first_line() {
+        assert_eq!(super::translate_position("hello\nworld", 3), (0, 3));
+    }
+
+    #[test]
+    fn translate_position_second_line() {
+        // byte 6 = 'w' in "world" (after "hello\n")
+        assert_eq!(super::translate_position("hello\nworld", 6), (1, 0));
+    }
+
+    #[test]
+    fn translate_position_second_line_col3() {
+        assert_eq!(super::translate_position("hello\nworld", 9), (1, 3));
+    }
+
+    #[test]
+    fn translate_position_at_newline() {
+        // byte 5 = '\n'
+        assert_eq!(super::translate_position("hello\nworld", 5), (0, 5));
+    }
+
+    #[test]
+    fn translate_position_beyond_content() {
+        // Clamp to end
+        let (line, _col) = super::translate_position("hello", 100);
+        assert_eq!(line, 0);
+    }
+
+    // ── ERR-03: truncate_source_line ──────────────────────────────
+
+    #[test]
+    fn truncate_source_line_short_passthrough() {
+        let result = super::truncate_source_line("short", 3, 80);
+        assert_eq!(result.text, "short");
+        assert_eq!(result.caret_offset, 3);
+    }
+
+    #[test]
+    fn truncate_source_line_exact_budget() {
+        let line = "a".repeat(80);
+        let result = super::truncate_source_line(&line, 40, 80);
+        assert_eq!(result.text, line);
+        assert_eq!(result.caret_offset, 40);
+    }
+
+    #[test]
+    fn truncate_source_line_long_center() {
+        let line = "a".repeat(120);
+        let result = super::truncate_source_line(&line, 60, 80);
+        assert!(
+            result.text.len() <= 80,
+            "should fit in budget, got len: {}",
+            result.text.len()
+        );
+        assert!(
+            result.text.contains("..."),
+            "should have ellipsis, got: {}",
+            result.text
+        );
+    }
+
+    #[test]
+    fn truncate_source_line_col_near_start() {
+        let line = "a".repeat(120);
+        let result = super::truncate_source_line(&line, 5, 80);
+        assert!(result.text.len() <= 80);
+        // Should not have left ellipsis since col is near start
+        assert!(
+            !result.text.starts_with("..."),
+            "should not have left ellipsis for col near start, got: {}",
+            result.text
+        );
+    }
+
+    #[test]
+    fn truncate_source_line_col_near_end() {
+        let line = "a".repeat(120);
+        let result = super::truncate_source_line(&line, 115, 80);
+        assert!(result.text.len() <= 80);
+        // Should not have right ellipsis since col is near end
+        assert!(
+            !result.text.ends_with("..."),
+            "should not have right ellipsis for col near end, got: {}",
+            result.text
+        );
+    }
+
+    // ── ERR-03: format_toml_error ─────────────────────────────────
+
+    #[test]
+    fn format_toml_error_with_span() {
+        let content = "some_key = x_bad_value\n";
+        let err = toml::from_str::<toml::Value>(content).unwrap_err();
+        let result = super::format_toml_error(content, &err);
+        assert!(
+            result.contains("line 1"),
+            "should contain line number, got: {result}"
+        );
+        assert!(
+            result.contains("^"),
+            "should contain caret pointer, got: {result}"
+        );
+    }
+
+    #[test]
+    fn format_toml_error_multiline() {
+        let content = "[section]\nkey = \n";
+        let err = toml::from_str::<toml::Value>(content).unwrap_err();
+        let result = super::format_toml_error(content, &err);
+        // Should show line info
+        assert!(
+            result.contains("line"),
+            "should contain line reference, got: {result}"
         );
     }
 
