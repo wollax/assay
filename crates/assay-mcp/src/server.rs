@@ -366,13 +366,18 @@ struct CriterionSummary {
     #[serde(skip_serializing_if = "Option::is_none")]
     stderr: Option<String>,
     /// Whether stdout or stderr was truncated due to size limits.
-    /// Absent for skipped criteria.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// Absent for skipped criteria and when output was not truncated.
+    #[serde(skip_serializing_if = "option_is_none_or_false")]
     truncated: Option<bool>,
     /// Original combined byte count before truncation.
     /// Absent when output was not truncated or criterion was skipped.
     #[serde(skip_serializing_if = "Option::is_none")]
     original_bytes: Option<u64>,
+}
+
+/// Returns `true` when the value is `None` or `Some(false)`.
+fn option_is_none_or_false(v: &Option<bool>) -> bool {
+    !matches!(v, Some(true))
 }
 
 // ── Constants ────────────────────────────────────────────────────────
@@ -3244,8 +3249,12 @@ cmd = "echo ok"
         assert_eq!(json["criteria"][0]["truncated"], true);
         assert_eq!(json["criteria"][0]["original_bytes"], 524_288);
 
-        // Failed + not truncated: truncated=false present, original_bytes absent
-        assert_eq!(json["criteria"][1]["truncated"], false);
+        // Failed + not truncated: both fields absent (Some(false) skipped like None)
+        assert!(
+            json["criteria"][1].get("truncated").is_none(),
+            "non-truncated criterion should omit truncated: {}",
+            json["criteria"][1]
+        );
         assert!(
             json["criteria"][1].get("original_bytes").is_none(),
             "original_bytes should be omitted when None: {}",
@@ -3270,34 +3279,58 @@ cmd = "echo ok"
         // Build a summary with a truncated criterion
         let summary = GateRunSummary {
             spec_name: "trunc-evidence-test".to_string(),
-            results: vec![CriterionResult {
-                criterion_name: "big-test".to_string(),
-                result: Some(GateResult {
-                    passed: true,
-                    kind: GateKind::Command {
-                        cmd: "cargo test".to_string(),
-                    },
-                    stdout: "output...".to_string(),
-                    stderr: String::new(),
-                    exit_code: Some(0),
-                    duration_ms: 200,
-                    timestamp: Utc::now(),
-                    truncated: true,
-                    original_bytes: Some(524_288),
-                    evidence: None,
-                    reasoning: None,
-                    confidence: None,
-                    evaluator_role: None,
-                }),
-                enforcement: Enforcement::Required,
-            }],
+            results: vec![
+                CriterionResult {
+                    criterion_name: "big-test".to_string(),
+                    result: Some(GateResult {
+                        passed: true,
+                        kind: GateKind::Command {
+                            cmd: "cargo test".to_string(),
+                        },
+                        stdout: "output...".to_string(),
+                        stderr: String::new(),
+                        exit_code: Some(0),
+                        duration_ms: 200,
+                        timestamp: Utc::now(),
+                        truncated: true,
+                        original_bytes: Some(524_288),
+                        evidence: None,
+                        reasoning: None,
+                        confidence: None,
+                        evaluator_role: None,
+                    }),
+                    enforcement: Enforcement::Required,
+                },
+                // Failed + truncated — exercises the failed match arm
+                CriterionResult {
+                    criterion_name: "failing-test".to_string(),
+                    result: Some(GateResult {
+                        passed: false,
+                        kind: GateKind::Command {
+                            cmd: "cargo clippy".to_string(),
+                        },
+                        stdout: String::new(),
+                        stderr: "error: lint failure".to_string(),
+                        exit_code: Some(1),
+                        duration_ms: 100,
+                        timestamp: Utc::now(),
+                        truncated: true,
+                        original_bytes: Some(1_048_576),
+                        evidence: None,
+                        reasoning: None,
+                        confidence: None,
+                        evaluator_role: None,
+                    }),
+                    enforcement: Enforcement::Required,
+                },
+            ],
             passed: 1,
-            failed: 0,
+            failed: 1,
             skipped: 0,
-            total_duration_ms: 200,
+            total_duration_ms: 300,
             enforcement: EnforcementSummary {
                 required_passed: 1,
-                required_failed: 0,
+                required_failed: 1,
                 advisory_passed: 0,
                 advisory_failed: 0,
             },
@@ -3316,6 +3349,10 @@ cmd = "echo ok"
         assert_eq!(json_no_ev["criteria"][0]["truncated"], true);
         assert_eq!(json_no_ev["criteria"][0]["original_bytes"], 524_288);
 
+        // Failed arm: truncation fields present without evidence
+        assert_eq!(without_evidence.criteria[1].truncated, Some(true));
+        assert_eq!(without_evidence.criteria[1].original_bytes, Some(1_048_576));
+
         // With evidence: truncation fields still present
         let with_evidence = format_gate_response(&summary, true);
         assert_eq!(with_evidence.criteria[0].truncated, Some(true));
@@ -3325,8 +3362,14 @@ cmd = "echo ok"
             "stdout should be present with evidence"
         );
 
+        // Failed arm: truncation fields present with evidence
+        assert_eq!(with_evidence.criteria[1].truncated, Some(true));
+        assert_eq!(with_evidence.criteria[1].original_bytes, Some(1_048_576));
+
         let json_ev = serde_json::to_value(&with_evidence).unwrap();
         assert_eq!(json_ev["criteria"][0]["truncated"], true);
         assert_eq!(json_ev["criteria"][0]["original_bytes"], 524_288);
+        assert_eq!(json_ev["criteria"][1]["truncated"], true);
+        assert_eq!(json_ev["criteria"][1]["original_bytes"], 1_048_576);
     }
 }

@@ -14,8 +14,7 @@ expression: snap
       "exit_code": 0,
       "kind_label": "cmd",
       "name": "echo-check",
-      "status": "passed",
-      "truncated": false
+      "status": "passed"
     }
   ],
   "failed": 0,
