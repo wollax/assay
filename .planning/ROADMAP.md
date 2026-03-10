@@ -58,18 +58,7 @@
 - [x] Phase 30: Core Tech Debt (3 plans) — 2026-03-10
 - [x] Phase 31: Error Messages (2 plans) — 2026-03-10
 - [x] Phase 32: CLI Polish (4 plans) — 2026-03-10
-
-#### Phase 33: MCP Validation
-
-**Goal:** Harden MCP tool parameter validation with specific error messages, improve spec-not-found diagnostics, check stdout for failure reasons, and remove unnecessary clones.
-**Dependencies:** Phase 31 (error message patterns established)
-**Requirements:** MCP-01, MCP-02, MCP-03, MCP-04, MCP-05
-**Success Criteria** (what must be TRUE):
-  1. Calling an MCP tool with a missing required parameter returns a specific error naming the parameter
-  2. Calling an MCP tool with an invalid parameter type returns a specific error naming the parameter and expected type
-  3. A spec-not-found MCP error includes the list of available spec names
-  4. MCP gate failure reason checks stdout in addition to stderr
-  5. `gate_run` handler has no unnecessary clone intermediaries
+- [x] Phase 33: MCP Validation (2 plans) — 2026-03-10
 
 ## Progress Summary
 
@@ -77,4 +66,4 @@
 |-----------|--------|--------|--------------|----------|
 | v0.1.0 Proof of Concept | ✅ Shipped | 10 | 43 | 100% |
 | v0.2.0 Dual-Track Gates & Hardening | ✅ Shipped | 15 | 52 | 100% |
-| v0.3.0 Orchestration Foundation | 🔄 In Progress | 8 (26-33) | 43 | 88% |
+| v0.3.0 Orchestration Foundation | ✅ Complete | 8 (26-33) | 43 | 100% |

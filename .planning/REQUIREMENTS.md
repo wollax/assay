@@ -23,11 +23,11 @@
 
 ## MCP Validation
 
-- [ ] **MCP-01**: All MCP tools return specific error messages for missing required parameters
-- [ ] **MCP-02**: All MCP tools return specific error messages for invalid parameter types
-- [ ] **MCP-03**: Spec-not-found errors include list of available spec names
-- [ ] **MCP-04**: MCP failure reason checks stdout in addition to stderr
-- [ ] **MCP-05**: Unnecessary clone intermediaries removed from gate_run
+- [x] **MCP-01**: All MCP tools return specific error messages for missing required parameters
+- [x] **MCP-02**: All MCP tools return specific error messages for invalid parameter types
+- [x] **MCP-03**: Spec-not-found errors include list of available spec names
+- [x] **MCP-04**: MCP failure reason checks stdout in addition to stderr
+- [x] **MCP-05**: Unnecessary clone intermediaries removed from gate_run
 
 ## Types Hygiene
 
