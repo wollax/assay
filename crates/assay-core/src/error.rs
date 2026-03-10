@@ -106,6 +106,24 @@ pub enum AssayError {
         specs_dir: PathBuf,
     },
 
+    /// A spec was not found, with enriched diagnostic information.
+    ///
+    /// Produced by `load_spec_entry_with_diagnostics()` — includes available
+    /// spec list, invalid specs, and optional fuzzy-match suggestion.
+    #[error("{}", crate::spec::format_spec_not_found(.name, .specs_dir, .available, .invalid, .suggestion.as_deref()))]
+    SpecNotFoundDiagnostic {
+        /// The spec name that was looked up.
+        name: String,
+        /// The directory that was searched.
+        specs_dir: PathBuf,
+        /// Names of valid specs found in the directory.
+        available: Vec<String>,
+        /// Names of specs that failed to parse.
+        invalid: Vec<String>,
+        /// A fuzzy-match suggestion, if one unambiguous match was found.
+        suggestion: Option<String>,
+    },
+
     /// Feature spec (`spec.toml`) parsing failed.
     #[error("parsing feature spec `{path}`: {message}")]
     FeatureSpecParse {
@@ -450,4 +468,52 @@ mod tests {
     // tested at runtime within the defining crate (where exhaustive matches are
     // allowed). The attribute's presence is verified by inspection and by the
     // compiler enforcing it on downstream consumers.
+
+    // ── ERR-02: SpecNotFoundDiagnostic Display ─────────────────────
+
+    #[test]
+    fn spec_not_found_diagnostic_zero_specs() {
+        let err = AssayError::SpecNotFoundDiagnostic {
+            name: "xyz".to_string(),
+            specs_dir: PathBuf::from(".assay/specs/"),
+            available: vec![],
+            invalid: vec![],
+            suggestion: None,
+        };
+        let display = err.to_string();
+        assert_eq!(display, "No specs found in .assay/specs/.");
+    }
+
+    #[test]
+    fn spec_not_found_diagnostic_with_specs() {
+        let err = AssayError::SpecNotFoundDiagnostic {
+            name: "xyz".to_string(),
+            specs_dir: PathBuf::from(".assay/specs/"),
+            available: vec!["alpha".to_string(), "beta".to_string()],
+            invalid: vec![],
+            suggestion: None,
+        };
+        let display = err.to_string();
+        assert!(
+            display.contains("spec 'xyz' not found"),
+            "got: {display}"
+        );
+        assert!(display.contains("alpha, beta"), "got: {display}");
+    }
+
+    #[test]
+    fn spec_not_found_diagnostic_with_suggestion() {
+        let err = AssayError::SpecNotFoundDiagnostic {
+            name: "auth-flw".to_string(),
+            specs_dir: PathBuf::from(".assay/specs/"),
+            available: vec!["auth-flow".to_string()],
+            invalid: vec![],
+            suggestion: Some("auth-flow".to_string()),
+        };
+        let display = err.to_string();
+        assert!(
+            display.contains("Did you mean 'auth-flow'?"),
+            "got: {display}"
+        );
+    }
 }
