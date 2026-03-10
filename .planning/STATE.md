@@ -2,18 +2,18 @@
 
 ## Current Position
 
-Phase: 4 of 10 — Sequential Merge
-Plan: 3 of 3 complete
-Status: Phase complete
-Progress: ████░░░░░░ 4/10
+Phase: 5 of 10 — Merge Order Intelligence
+Plan: 1 of 3 complete
+Status: In progress
+Progress: █████░░░░░ 5/10
 
-Last activity: 2026-03-10 — Completed 04-03-PLAN.md (CLI merge command + integration tests)
+Last activity: 2026-03-10 — Completed 05-01-PLAN.md (Types, Trait Methods & Dependencies)
 
 ## Session Continuity
 
-Last session: 2026-03-10T12:32:11Z
-Stopped at: Completed Phase 04 (Sequential Merge)
-Resume file: .planning/phases/pending/05-merge-order/05-PLAN.md
+Last session: 2026-03-10T13:47:00Z
+Stopped at: Completed 05-01-PLAN.md
+Resume file: .planning/phases/active/05-merge-order/05-02-PLAN.md
 
 ## Performance Metrics
 
@@ -21,7 +21,7 @@ Resume file: .planning/phases/pending/05-merge-order/05-PLAN.md
 |--------|-------|
 | Phases completed | 4 |
 | Phases remaining | 6 |
-| Plans completed (phase 4) | 3/3 |
+| Plans completed (phase 5) | 1/3 |
 | Requirements covered | 4/12 |
 | Blockers | 0 |
 | Technical debt items | 0 |
@@ -91,6 +91,11 @@ Resume file: .planning/phases/pending/05-merge-order/05-PLAN.md
 - CLI `smelt merge <manifest>` with `--target` flag for branch name override
 - Post-hoc progress from MergeReport (no real-time callbacks in Phase 4)
 - SessionRunner updates WorktreeState status after execution (Completed/Failed)
+- MergeOrderStrategy is #[non_exhaustive] enum with CompletionTime (default) and FileOverlap, serde rename_all kebab-case
+- MergeOpts.strategy and ManifestMeta.merge_strategy are Option<MergeOrderStrategy> — None means use default
+- GitOps::diff_name_only(base_ref, head_ref) returns Vec<String> of changed file paths
+- DiffStat, MergeSessionResult, MergeReport derive Serialize for JSON output
+- comfy-table v7 and serde_json v1 added to workspace dependencies
 
 ### Blockers
 
