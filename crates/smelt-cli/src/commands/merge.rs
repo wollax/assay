@@ -69,7 +69,7 @@ pub async fn execute_merge_run(
     );
 
     let runner = MergeRunner::new(git, repo_root);
-    let opts = MergeOpts::new(target, strategy);
+    let opts = MergeOpts::new(target, strategy, false);
 
     match runner.run(&manifest, opts).await {
         Ok(report) => {
@@ -172,7 +172,7 @@ pub async fn execute_merge_plan(
     };
 
     let runner = MergeRunner::new(git, repo_root);
-    let opts = MergeOpts::new(target, strategy);
+    let opts = MergeOpts::new(target, strategy, false);
 
     match runner.plan(&manifest, opts).await {
         Ok(plan) => {

@@ -9,8 +9,8 @@ use std::path::{Path, PathBuf};
 use tracing::{info, warn};
 
 pub use types::{
-    DiffStat, MergeOpts, MergeOrderStrategy, MergePlan, MergeReport, MergeSessionResult,
-    PairwiseOverlap, SessionPlanEntry,
+    ConflictAction, DiffStat, MergeOpts, MergeOrderStrategy, MergePlan, MergeReport,
+    MergeSessionResult, PairwiseOverlap, ResolutionMethod, SessionPlanEntry,
 };
 
 use crate::error::{Result, SmeltError};
@@ -182,6 +182,8 @@ impl<G: GitOps + Clone> MergeRunner<G> {
                     total_insertions,
                     total_deletions,
                     plan: Some(merge_plan),
+                    sessions_conflict_skipped: vec![],
+                    sessions_resolved: vec![],
                 })
             }
             Err(e) => {
@@ -358,6 +360,7 @@ impl<G: GitOps + Clone> MergeRunner<G> {
                 files_changed,
                 insertions,
                 deletions,
+                resolution: Some(ResolutionMethod::Clean),
             });
         }
 
