@@ -32,6 +32,12 @@ enum Commands {
         #[command(subcommand)]
         command: commands::worktree::WorktreeCommands,
     },
+
+    /// Manage and run agent sessions
+    Session {
+        #[command(subcommand)]
+        command: commands::session::SessionCommands,
+    },
 }
 
 async fn run() -> anyhow::Result<i32> {
@@ -84,6 +90,14 @@ async fn run() -> anyhow::Result<i32> {
                 }
                 commands::worktree::WorktreeCommands::Prune { yes } => {
                     commands::worktree::execute_prune(git, repo_root, yes).await
+                }
+            }
+        }
+        Some(Commands::Session { command }) => {
+            let git = GitCli::new(git_binary, repo_root.clone());
+            match command {
+                commands::session::SessionCommands::Run { manifest } => {
+                    commands::session::execute_run(git, repo_root, &manifest).await
                 }
             }
         }
