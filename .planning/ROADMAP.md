@@ -59,6 +59,7 @@
 - [x] Phase 31: Error Messages (2 plans) — 2026-03-10
 - [x] Phase 32: CLI Polish (4 plans) — 2026-03-10
 - [x] Phase 33: MCP Validation (2 plans) — 2026-03-10
+- [x] Phase 34: MCP Truncation Visibility (1 plan) — 2026-03-10
 
 ## Progress Summary
 
@@ -66,4 +67,4 @@
 |-----------|--------|--------|--------------|----------|
 | v0.1.0 Proof of Concept | ✅ Shipped | 10 | 43 | 100% |
 | v0.2.0 Dual-Track Gates & Hardening | ✅ Shipped | 15 | 52 | 100% |
-| v0.3.0 Orchestration Foundation | ✅ Complete | 8 (26-33) | 43 | 100% |
+| v0.3.0 Orchestration Foundation | 🔄 In Progress | 9 (26-34) | 43 | 100% |
