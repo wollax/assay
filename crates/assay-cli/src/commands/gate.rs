@@ -205,6 +205,22 @@ struct StreamConfig {
     color: bool,
 }
 
+impl StreamConfig {
+    fn new(
+        cli_timeout: Option<u64>,
+        config_timeout: Option<u64>,
+        verbose: bool,
+        color: bool,
+    ) -> Self {
+        Self {
+            cli_timeout,
+            config_timeout,
+            verbose,
+            color,
+        }
+    }
+}
+
 /// Stream a single criterion's evaluation with live "running" -> "PASS/FAIL/WARN" display.
 ///
 /// Enforcement is resolved per-criterion: advisory failures increment `warned` (not `failed`)
@@ -387,12 +403,7 @@ fn handle_gate_run_all(cli_timeout: Option<u64>, verbose: bool, json: bool) -> a
     }
 
     let color = colors_enabled();
-    let cfg = StreamConfig {
-        cli_timeout,
-        config_timeout,
-        verbose,
-        color,
-    };
+    let cfg = StreamConfig::new(cli_timeout, config_timeout, verbose, color);
     let mut counters = StreamCounters::default();
     let spec_count = result.entries.len();
 
@@ -515,12 +526,7 @@ fn handle_gate_run(
     };
 
     let color = colors_enabled();
-    let cfg = StreamConfig {
-        cli_timeout,
-        config_timeout,
-        verbose,
-        color,
-    };
+    let cfg = StreamConfig::new(cli_timeout, config_timeout, verbose, color);
     let mut counters = StreamCounters::default();
     let executable_count = criteria
         .iter()
