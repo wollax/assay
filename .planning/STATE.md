@@ -3,26 +3,26 @@
 ## Current Position
 
 Phase: 3 of 10 — Session Manifest & Scripted Sessions
-Plan: 2 of 3 complete
-Status: Phase 3 in progress
-Progress: ██░░░░░░░░ 2/10
+Plan: 3 of 3 complete
+Status: Phase 3 complete
+Progress: ███░░░░░░░ 3/10
 
-Last activity: 2026-03-09 — Completed 03-02-PLAN.md (ScriptExecutor, SessionRunner)
+Last activity: 2026-03-09 — Completed 03-03-PLAN.md (CLI session command, process group, integration tests)
 
 ## Session Continuity
 
 Last session: 2026-03-09
-Stopped at: Completed 03-02 — ScriptExecutor & SessionRunner
-Resume file: .planning/phases/active/03-*/03-03-PLAN.md
+Stopped at: Completed Phase 3 — Session Manifest & Scripted Sessions
+Resume file: .planning/phases/active/04-*/04-01-PLAN.md
 
 ## Performance Metrics
 
 | Metric | Value |
 |--------|-------|
-| Phases completed | 2 |
-| Phases remaining | 8 |
-| Plans completed (phase 3) | 2/3 |
-| Requirements covered | 2/12 |
+| Phases completed | 3 |
+| Phases remaining | 7 |
+| Plans completed (phase 3) | 3/3 |
+| Requirements covered | 3/12 |
 | Blockers | 0 |
 | Technical debt items | 0 |
 
@@ -74,6 +74,10 @@ Resume file: .planning/phases/active/03-*/03-03-PLAN.md
 - SessionRunner uses G: GitOps + Clone bound to clone git for WorktreeManager
 - Sessions execute sequentially (parallel deferred)
 - Worktrees persist on failure for inspection
+- CLI `smelt session run <manifest.toml>` wired through clap Commands enum
+- ProcessGroup wraps Child process with kill_group() via libc SIGTERM for future real-agent cleanup
+- execute_run() catches errors and prints to stderr, returns exit code (0 = all pass, 1 = any failure)
+- Integration tests create repo as subdirectory of temp dir for automatic worktree cleanup
 
 ### Blockers
 
