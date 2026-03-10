@@ -9,10 +9,10 @@ See: .planning/PROJECT.md (updated 2026-03-08)
 
 ## Current Position
 
-Phase: 30 — Core Tech Debt
-Plan: 3 of 3
-Status: Complete
-Last activity: 2026-03-10 — Completed 30-03-PLAN.md (CORE-07, CORE-08: guard daemon persistence)
+Phase: 31 — Error Messages
+Plan: 1 of 2
+Status: In progress
+Last activity: 2026-03-10 — Completed 31-01-PLAN.md (ERR-01, ERR-02, ERR-03 pure functions)
 
 Progress: v0.3.0 [██████████░░░░░░] 62.5% (5/8 phases)
 
@@ -68,4 +68,4 @@ None.
 
 ### Next Actions
 
-Phase 30 complete. Begin Phase 31: Error Messages (ERR-01, ERR-02, ERR-03).
+Plan 31-01 complete (pure functions built and tested). Execute Plan 31-02 to wire functions into call sites.
