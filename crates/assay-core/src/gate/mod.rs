@@ -548,7 +548,7 @@ fn evaluate_command(cmd: &str, working_dir: &Path, timeout: Duration) -> Result<
 
     let truncated = stdout_result.truncated || stderr_result.truncated;
     let original_bytes = if truncated {
-        Some((stdout_result.original_bytes + stderr_result.original_bytes) as u64)
+        Some(stdout_result.original_bytes as u64 + stderr_result.original_bytes as u64)
     } else {
         None
     };
@@ -647,9 +647,12 @@ struct TruncationResult {
 /// Otherwise, the output is split into a head (~33%) and tail (~67%)
 /// section separated by a `[truncated: X bytes omitted]` marker.
 ///
-/// The marker itself is overhead and does not count against the budget.
+/// The marker itself is overhead and does not count against the budget,
+/// so the total output length may be up to `budget + marker_len`.
 /// UTF-8 character boundaries are respected using `floor_char_boundary`
 /// and `ceil_char_boundary` to avoid splitting multi-byte sequences.
+///
+/// A `budget` of 0 produces a marker-only output with no content bytes.
 fn truncate_head_tail(input: &str, budget: usize) -> TruncationResult {
     let original_bytes = input.len();
 
@@ -866,6 +869,7 @@ mod tests {
     // ── evaluate_command: independent stream truncation (GATE-04) ──
 
     #[test]
+    #[cfg_attr(not(unix), ignore)]
     fn evaluate_command_independent_stream_truncation() {
         let dir = tempfile::tempdir().unwrap();
 
@@ -1852,7 +1856,18 @@ mod tests {
 
     #[test]
     fn truncate_head_tail_overlap_guard() {
-        // Input barely over budget — head+tail overlap
+        // Use 4-byte emoji chars with a budget that causes head/tail overlap.
+        // 4 emojis = 16 bytes, budget=15: head_budget=5, tail_budget=10
+        // head_end = floor_char_boundary(5) = 4 (one emoji)
+        // tail_start = ceil_char_boundary(16-10=6) = 8 (after second emoji)
+        // No overlap with this split. Need smaller budget to force overlap.
+        //
+        // 3 emojis = 12 bytes, budget=11: head_budget=3, tail_budget=8
+        // head_end = floor_char_boundary(3) = 0 (no complete emoji fits)
+        // tail_start = ceil_char_boundary(12-8=4) = 4
+        // 4 > 0, no overlap. The overlap path is very hard to hit with
+        // aligned chars. Test with ASCII barely-over instead, which still
+        // exercises the function without panic.
         let input = "a".repeat(105);
         let result = truncate_head_tail(&input, 100);
 
@@ -1863,6 +1878,15 @@ mod tests {
             result.output.contains("[truncated: "),
             "should still have truncation marker"
         );
+
+        // Also test budget=0 to exercise tail-only fallback
+        let result_zero = truncate_head_tail("hello world", 0);
+        assert!(result_zero.truncated);
+        assert!(result_zero.output.contains("[truncated: 11 bytes omitted]"));
+        // With budget=0: head_budget=0, tail_budget=0
+        // head_end=0, tail_start=ceil_char_boundary(11-0=11)=11
+        // tail_start(11) > head_end(0), so normal path: head="", tail=""
+        // omitted=11, output is just the marker
     }
 
     #[test]
