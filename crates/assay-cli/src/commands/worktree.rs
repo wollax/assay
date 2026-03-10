@@ -305,8 +305,8 @@ fn handle_worktree_cleanup(
     let spec_slug = name.unwrap();
     let worktree_path = worktree_dir.join(spec_slug);
 
-    // Check dirty state for confirmation
-    if !force {
+    // Check dirty state for confirmation; track whether user confirmed
+    let effective_force = if !force {
         let is_dirty = assay_core::worktree::status(&worktree_path, spec_slug)
             .map(|s| s.dirty)
             .unwrap_or(false);
@@ -325,10 +325,15 @@ fn handle_worktree_cleanup(
                 println!("Aborted.");
                 return Ok(1);
             }
+            true // user confirmed — pass force=true to core
+        } else {
+            false
         }
-    }
+    } else {
+        true
+    };
 
-    assay_core::worktree::cleanup(&root, &worktree_path, spec_slug, force)
+    assay_core::worktree::cleanup(&root, &worktree_path, spec_slug, effective_force)
         .map_err(|e| anyhow::anyhow!("{e}"))?;
 
     if json {
