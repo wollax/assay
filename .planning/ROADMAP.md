@@ -47,7 +47,8 @@
 
 </details>
 
-### 🔄 v0.3.0 Orchestration Foundation (In Progress)
+<details>
+<summary>✅ v0.3.0 Orchestration Foundation — SHIPPED 2026-03-10</summary>
 
 **Goal:** Build the foundation for agent orchestration — worktree isolation, independent gate evaluation infrastructure, and CLI/MCP/types/core hardening — while closing tech debt from v0.2.0.
 
@@ -61,10 +62,14 @@
 - [x] Phase 33: MCP Validation (2 plans) — 2026-03-10
 - [x] Phase 34: MCP Truncation Visibility (1 plan) — 2026-03-10
 
+[Full archive](milestones/v0.3.0-ROADMAP.md)
+
+</details>
+
 ## Progress Summary
 
 | Milestone | Status | Phases | Requirements | Complete |
 |-----------|--------|--------|--------------|----------|
 | v0.1.0 Proof of Concept | ✅ Shipped | 10 | 43 | 100% |
 | v0.2.0 Dual-Track Gates & Hardening | ✅ Shipped | 15 | 52 | 100% |
-| v0.3.0 Orchestration Foundation | 🔄 In Progress | 9 (26-34) | 43 | 100% |
+| v0.3.0 Orchestration Foundation | ✅ Shipped | 9 | 43 | 100% |

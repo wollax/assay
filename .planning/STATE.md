@@ -2,19 +2,19 @@
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-03-08)
+See: .planning/PROJECT.md (updated 2026-03-10)
 
 **Core value:** Dual-track quality gates (deterministic + agent-evaluated) for AI coding agents
-**Current focus:** v0.3.0 Orchestration Foundation
+**Current focus:** Planning next milestone
 
 ## Current Position
 
-Phase: 34 — MCP Truncation Visibility
-Plan: 1 of 1
-Status: Phase complete
-Last activity: 2026-03-10 — Completed 34-01-PLAN.md (truncation metadata in MCP responses)
+Phase: None — between milestones
+Plan: N/A
+Status: Ready to plan next milestone
+Last activity: 2026-03-10 — v0.3.0 milestone complete
 
-Progress: v0.3.0+ [█████████████████] 100% (9/9 phases)
+Progress: v0.3.0 [█████████████████] 100% (SHIPPED)
 
 ## Milestone Progress
 
@@ -22,19 +22,7 @@ Progress: v0.3.0+ [█████████████████] 100% (9/
 |-----------|--------|--------------|----------|
 | v0.1.0 | 10 | 43 | 100% (shipped) |
 | v0.2.0 | 15 (11-25) | 52 | 100% (shipped) |
-| v0.3.0 | 9 (26-34) | 43 | 100% |
-
-## Phase Checklist
-
-- [x] Phase 26: Structural Prerequisites (CORE-01, CORE-05)
-- [x] Phase 27: Types Hygiene (TYPE-01 through TYPE-06)
-- [x] Phase 28: Worktree Manager (ORCH-01 through ORCH-07)
-- [x] Phase 29: Gate Output Truncation (GATE-01 through GATE-05)
-- [x] Phase 30: Core Tech Debt (CORE-02, CORE-03, CORE-04, CORE-06, CORE-07, CORE-08, CORE-09)
-- [x] Phase 31: Error Messages (ERR-01, ERR-02, ERR-03)
-- [x] Phase 32: CLI Polish (CLI-01 through CLI-08)
-- [x] Phase 33: MCP Validation (MCP-01 through MCP-05)
-- [x] Phase 34: MCP Truncation Visibility (gap closure)
+| v0.3.0 | 9 (26-34) | 43 | 100% (shipped) |
 
 ## Accumulated Context
 
@@ -42,34 +30,12 @@ Progress: v0.3.0+ [█████████████████] 100% (9/
 
 v0.1.0 decisions archived to .planning/milestones/v0.1.0-ROADMAP.md
 v0.2.0 decisions archived to .planning/milestones/v0.2.0-ROADMAP.md
-
-- v0.3.0 targets headless sequential workflow (not full interactive orchestration)
-- Concrete Claude Code module, NOT an agent launcher trait (premature abstraction)
-- Merge-back pipeline deferred to v0.4.0 (premature without orchestrator)
-- Spec provider trait deferred (one implementation = premature abstraction)
-- CLI monolith extraction is prerequisite for all v0.3.0 feature work (DONE — Phase 26)
-- CLI commands/ module: flat files, one per subcommand group, shared helpers in mod.rs
-- Each command module exposes pub(crate) handle() for dispatch
-- main.rs is 182 lines (help text attributes tightly coupled to Command enum)
-- TUI assay-core dependency verified (Phase 26)
-- AssayError::Json variant added; existing Io call sites kept as-is, new code uses constructors
-- Sub-enum error pattern for new error categories (WorktreeError, etc.)
-- Zero new workspace dependencies (hard constraint from research)
-- Launcher, session record, gate_evaluate, TUI viewer, composable gates, spec preconditions, gate history summary — all deferred to v0.4.0+
-- Head/tail truncation ratio 1:2 (33% head, 67% tail) with marker as overhead (GATE-01)
-- Levenshtein fuzzy match threshold: distance <= 2 AND distance <= name.len() / 2
-- SpecNotFoundDiagnostic is a separate error variant (not enriching existing SpecNotFound)
-- ERR-01 detects exit codes 127/126 (not io::ErrorKind) since commands spawn via sh -c
-- MCP param validation tested at serde layer (not handler layer) — rmcp Parameters<T> handles it before handler executes
-- `.err().unwrap()` pattern preferred over `.unwrap_err()` when T lacks Debug
-- Stderr-first, stdout-fallback chain for MCP failure reason extraction (MCP-04)
-- Partial struct moves to eliminate GateRunSummary and Vec<CriterionResult> clones in gate_run (MCP-05)
-- CriterionSummary truncation fields use Option<bool>/Option<u64> so skipped criteria omit them from JSON (Phase 34)
+v0.3.0 decisions archived to .planning/milestones/v0.3.0-ROADMAP.md
 
 ### Pending Issues
 
-19 open issues remain from v0.2.0 triage (see .planning/issues/TRIAGE-SUMMARY.md)
-9 new issues from Phase 28 PR review (worktree module, GitHub #78-#86)
+42 open issues in .planning/issues/open/ (test gaps, derives, naming, refactors)
+See .planning/issues/ for full backlog.
 
 ### Blockers
 
@@ -77,10 +43,10 @@ None.
 
 ### Next Actions
 
-Phase 34 complete. All v0.3.0 phases and gap closures done. Ready for milestone wrap-up.
+Run `/kata-add-milestone` to start next milestone (questioning → research → requirements → roadmap).
 
 ### Session Continuity
 
-Last session: 2026-03-10T18:46Z
-Stopped at: Completed 34-01-PLAN.md
+Last session: 2026-03-10
+Stopped at: v0.3.0 milestone completion
 Resume file: None
