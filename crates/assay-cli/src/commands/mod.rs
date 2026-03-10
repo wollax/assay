@@ -7,6 +7,7 @@ pub mod spec;
 pub mod worktree;
 
 use anyhow::Context;
+use std::io::IsTerminal;
 use std::path::PathBuf;
 
 // ── Shared constants ──────────────────────────────────────────────
@@ -14,6 +15,9 @@ use std::path::PathBuf;
 /// Extra bytes added by a single ANSI color sequence pair (`\x1b[XXm` ... `\x1b[0m`).
 /// `\x1b[32m` = 5 bytes, `\x1b[0m` = 4 bytes, total = 9.
 pub(crate) const ANSI_COLOR_OVERHEAD: usize = 9;
+
+/// Column separator used in CLI table output (two spaces).
+pub(crate) const COLUMN_GAP: &str = "  ";
 
 /// Name of the Assay project directory relative to project root.
 pub(crate) const ASSAY_DIR_NAME: &str = ".assay";
@@ -28,9 +32,11 @@ pub(crate) fn assay_dir(root: &std::path::Path) -> PathBuf {
 /// Check whether terminal colors should be used.
 ///
 /// Returns `false` when the `NO_COLOR` environment variable is set
-/// (any value, including empty — per <https://no-color.org/>).
+/// (any value, including empty — per <https://no-color.org/>) or when
+/// stderr is not a terminal (e.g., piped to a file or another process).
+/// We check stderr because gate streaming output goes to stderr.
 pub(crate) fn colors_enabled() -> bool {
-    std::env::var_os("NO_COLOR").is_none()
+    std::env::var_os("NO_COLOR").is_none() && std::io::stderr().is_terminal()
 }
 
 /// Resolve the project root directory.

@@ -12,14 +12,14 @@
 
 ## CLI Polish
 
-- [ ] **CLI-01**: `NO_COLOR` environment variable handled correctly per no-color.org spec (`var_os().is_none()`)
-- [ ] **CLI-02**: Gate command help text consolidated (no duplication between top-level and subcommand)
-- [ ] **CLI-03**: Enforcement check block deduplicated between `handle_gate_run_all` and `handle_gate_run`
-- [ ] **CLI-04**: Spec show color branch duplication eliminated
-- [ ] **CLI-05**: `StreamCounters` has doc comments, `tally()` method, and `gate_blocked()` method
-- [ ] **CLI-06**: `StreamConfig` fields have doc comments
-- [ ] **CLI-07**: Command column separator is data-driven (not hardcoded)
-- [ ] **CLI-08**: `[srs]` magic string extracted to constant
+- [x] **CLI-01**: `NO_COLOR` environment variable handled correctly per no-color.org spec (`var_os().is_none()`)
+- [x] **CLI-02**: Gate command help text consolidated (no duplication between top-level and subcommand)
+- [x] **CLI-03**: Enforcement check block deduplicated between `handle_gate_run_all` and `handle_gate_run`
+- [x] **CLI-04**: Spec show color branch duplication eliminated
+- [x] **CLI-05**: `StreamCounters` has doc comments, `tally()` method, and `gate_blocked()` method
+- [x] **CLI-06**: `StreamConfig` fields have doc comments
+- [x] **CLI-07**: Command column separator is data-driven (not hardcoded)
+- [x] **CLI-08**: `[srs]` magic string extracted to constant
 
 ## MCP Validation
 

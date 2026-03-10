@@ -57,18 +57,7 @@
 - [x] Phase 29: Gate Output Truncation (2 plans) — 2026-03-09
 - [x] Phase 30: Core Tech Debt (3 plans) — 2026-03-10
 - [x] Phase 31: Error Messages (2 plans) — 2026-03-10
-
-#### Phase 32: CLI Polish
-
-**Goal:** Fix correctness issues and eliminate code duplication across the CLI surface — NO_COLOR handling, help text, enforcement blocks, color branches, StreamCounters, and magic strings.
-**Dependencies:** Phase 26 (CLI modules extracted)
-**Requirements:** CLI-01, CLI-02, CLI-03, CLI-04, CLI-05, CLI-06, CLI-07, CLI-08
-**Success Criteria** (what must be TRUE):
-  1. Setting `NO_COLOR=1` disables all color output; unsetting it enables color (using `var_os().is_none()`)
-  2. Gate command help text appears once (no duplication between top-level and subcommand)
-  3. Enforcement check logic exists in one place (shared between `handle_gate_run_all` and `handle_gate_run`)
-  4. `StreamCounters` has doc comments, a `tally()` method, and a `gate_blocked()` method
-  5. The `[srs]` magic string is extracted to a named constant
+- [x] Phase 32: CLI Polish (4 plans) — 2026-03-10
 
 #### Phase 33: MCP Validation
 
@@ -88,4 +77,4 @@
 |-----------|--------|--------|--------------|----------|
 | v0.1.0 Proof of Concept | ✅ Shipped | 10 | 43 | 100% |
 | v0.2.0 Dual-Track Gates & Hardening | ✅ Shipped | 15 | 52 | 100% |
-| v0.3.0 Orchestration Foundation | 🔄 In Progress | 8 (26-33) | 43 | 75% |
+| v0.3.0 Orchestration Foundation | 🔄 In Progress | 8 (26-33) | 43 | 88% |
