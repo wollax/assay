@@ -154,6 +154,14 @@ Smelt is a multi-agent orchestration layer that coordinates AI coding sessions i
 3. Rejected AI resolutions fall back to the human manual resolution flow from Phase 6
 4. Resolution metadata (method: ai-assisted, model used, user-accepted) is recorded in the merge commit
 
+**Plans:**
+
+| Plan | Wave | Title | Tasks |
+|------|------|-------|-------|
+| 07-01 | 1 | Foundation: AiProvider trait, GenAiProvider, AiConfig, prompt templates | AiProvider trait + GenAiProvider backed by genai, AiConfig for config.toml, prompt construction, SmeltError::AiResolution |
+| 07-02 | 2 | Core: AiConflictHandler, show_index_stage, ResolutionMethod variants | AiConflictHandler implementing ConflictHandler, 3-way context extraction via git index stages, AiAssisted/AiEdited resolution methods, format_commit_message update |
+| 07-03 | 3 | CLI: AI resolution UX, diff display, fallback chain, --no-ai flag | Accept/Edit/Reject flow with colored diffs via similar, retry-with-feedback, manual fallback, --no-ai flag, ConflictAction carries ResolutionMethod, integration tests |
+
 ### Phase 8: Orchestration Plan & Task Graph
 
 **Goal:** Enable the user to define a complete orchestration plan — a task graph specifying which sessions to run, their dependencies, and how to merge the results. The orchestrator executes the plan: creates worktrees, launches sessions, waits for completion, merges in order, resolves conflicts, and reports results.
