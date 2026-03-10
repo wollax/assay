@@ -2374,6 +2374,10 @@ cmd = "true"
         let err = load_spec_entry_with_diagnostics("nonexistent-xyz", dir.path()).unwrap_err();
         let display = err.to_string();
         assert!(
+            display.contains("nonexistent-xyz"),
+            "Display should mention the queried spec name: {display}"
+        );
+        assert!(
             display.contains("not found"),
             "Display should mention 'not found': {display}"
         );
@@ -2390,7 +2394,6 @@ cmd = "true"
     #[test]
     fn spec_not_found_display_empty_dir() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::create_dir_all(dir.path()).unwrap();
 
         let err = load_spec_entry_with_diagnostics("nonexistent-xyz", dir.path()).unwrap_err();
         let display = err.to_string();
