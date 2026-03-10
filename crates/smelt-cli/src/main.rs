@@ -38,6 +38,15 @@ enum Commands {
         #[command(subcommand)]
         command: commands::session::SessionCommands,
     },
+
+    /// Merge session outputs into a single branch
+    Merge {
+        /// Path to the session manifest file
+        manifest: String,
+        /// Override target branch name
+        #[arg(long)]
+        target: Option<String>,
+    },
 }
 
 async fn run() -> anyhow::Result<i32> {
@@ -100,6 +109,10 @@ async fn run() -> anyhow::Result<i32> {
                     commands::session::execute_run(git, repo_root, &manifest).await
                 }
             }
+        }
+        Some(Commands::Merge { manifest, target }) => {
+            let git = GitCli::new(git_binary, repo_root.clone());
+            commands::merge::execute_merge(git, repo_root, &manifest, target).await
         }
         None => {
             let smelt_dir = repo_root.join(".smelt");
