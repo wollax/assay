@@ -2,17 +2,17 @@
 
 ## Current Position
 
-Phase: 6 of 10 — Human Fallback Resolution
-Plan: 3 of 3 complete
-Status: Phase verified and complete
-Progress: ████████░░ 8/10
+Phase: 7 of 10 — AI Conflict Resolution
+Plan: 1 of 3 complete
+Status: In progress
+Progress: █████████░ 9/10
 
-Last activity: 2026-03-10 — Phase 6 verified (10/10 must-haves) and completed
+Last activity: 2026-03-10 — Completed 07-01-PLAN.md
 
 ## Session Continuity
 
-Last session: 2026-03-10T22:00:00Z
-Stopped at: Completed 06-03-PLAN.md (Phase 6 complete)
+Last session: 2026-03-10T18:56:22Z
+Stopped at: Completed 07-01-PLAN.md (AI provider abstraction)
 Resume file: None
 
 ## Performance Metrics
@@ -21,7 +21,7 @@ Resume file: None
 |--------|-------|
 | Phases completed | 6 |
 | Phases remaining | 4 |
-| Plans completed (phase 6) | 3/3 |
+| Plans completed (phase 7) | 1/3 |
 | Requirements covered | 9/12 |
 | Blockers | 0 |
 | Technical debt items | 0 |
@@ -131,6 +131,15 @@ Resume file: None
 - Small conflicts (<20 total lines) show inline markers with console::style coloring; larger conflicts show truncated view
 - --verbose on merge run dumps full conflict file contents in worktree
 - PR review: removed dead resume detection code, moved verbose from MergeOpts to CLI handler, ConflictScan.has_markers is now a method, resolution is no longer Option, sessions_merged excludes skipped, rollback errors are logged
+- AiProvider trait uses RPITIT (matching ConflictHandler/GitOps pattern) — no async-trait crate
+- GenAiProvider wraps genai::Client with error mapping to SmeltError::AiResolution
+- genai = "0.5" and similar = "2" added as workspace dependencies; genai inherited by smelt-core, similar for smelt-cli (Plan 03)
+- serde_json moved from smelt-core dev-dependencies to dependencies (needed for AI response handling)
+- SmeltError::AiResolution { message } — 19th variant for AI-specific failures
+- AiConfig loads from .smelt/config.toml [ai] section with ConfigFile wrapper; returns None if missing
+- API key from config injected via env var passthrough (env takes precedence over config)
+- strip_code_fences post-processes LLM output — conservative, only strips when both opening and closing fences present
+- Prompt templates use 3-way merge context: base + ours + theirs with session metadata
 
 ### Blockers
 
