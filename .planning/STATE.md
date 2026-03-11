@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 2026-03-10)
 
 ## Current Position
 
-Phase: 36 — Correctness & Robustness (COMPLETE)
-Plan: 3 of 3 (Diff Capture at Gate Run)
-Status: Complete
-Last activity: 2026-03-11 — Completed 36-01-PLAN.md (all 3 plans done)
+Phase: 37 — Spec Validation
+Plan: 1 of 2 (Validation Types & Domain Logic)
+Status: In progress
+Last activity: 2026-03-11 — Completed 37-01-PLAN.md
 
-Progress: v0.4.0 [████░░░░░░░░░░░░░] ~18% (phases 35-36 complete, 9 phases remaining)
+Progress: v0.4.0 [█████░░░░░░░░░░░░] ~22% (phases 35-36 complete, 37 in progress)
 
 ## Milestone Progress
 
@@ -59,6 +59,11 @@ v0.4.0 decisions (from 36-03):
 - Diff capture uses `std::process::Command` directly (not assay_core worktree module) to avoid error type coupling
 - `truncate_diff` is public API on `assay_core::gate`; `truncate_head_tail`/`TruncationResult` remain pub(crate)
 
+v0.4.0 decisions (from 37-01):
+- Command-not-found is Warning severity (binary may exist in execution env but not validation env)
+- Whitespace-only prompt treated same as missing for AgentReport validation
+- Cycle detection only runs when spec has dependencies (avoids unnecessary full-directory scan)
+
 v0.4.1 decisions (from brainstorm):
 - PR creation over direct merge for v0.4.x — maps to `autonomous: false`
 - `git merge-tree --write-tree` for conflict detection — zero side effects
@@ -94,5 +99,5 @@ Run `/kata-plan-phase [N]` to start planning phases, or `/kata-discuss-phase [N]
 ### Session Continuity
 
 Last session: 2026-03-11
-Stopped at: Completed 36-03-PLAN.md (phase 36 complete)
+Stopped at: Completed 37-01-PLAN.md
 Resume file: None
