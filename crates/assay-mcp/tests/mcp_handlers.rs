@@ -548,6 +548,7 @@ async fn gate_history_nonexistent_spec_returns_error() {
             name: "nonexistent-spec".to_string(),
             run_id: None,
             limit: None,
+            outcome: None,
         }))
         .await
         .unwrap();
