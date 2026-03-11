@@ -435,6 +435,21 @@ fn option_is_none_or_false(v: &Option<bool>) -> bool {
 /// Session timeout in seconds (30 minutes).
 const SESSION_TIMEOUT_SECS: u64 = 1800;
 
+/// Maximum number of timed-out session entries to retain (prevents unbounded growth).
+const MAX_TIMED_OUT_ENTRIES: usize = 100;
+
+// ── Timed-out session tracking ───────────────────────────────────────
+
+/// Metadata about a session that was auto-finalized due to timeout.
+/// Used to provide richer "not found" error messages.
+#[derive(Debug, Clone)]
+struct TimedOutInfo {
+    spec_name: String,
+    created_at: chrono::DateTime<chrono::Utc>,
+    timed_out_at: chrono::DateTime<chrono::Utc>,
+    timeout_secs: u64,
+}
+
 // ── Server struct ────────────────────────────────────────────────────
 
 /// MCP server exposing Assay spec and gate operations as tools.
@@ -442,6 +457,7 @@ const SESSION_TIMEOUT_SECS: u64 = 1800;
 pub struct AssayServer {
     tool_router: ToolRouter<Self>,
     sessions: Arc<Mutex<HashMap<String, AgentSession>>>,
+    timed_out_sessions: Arc<Mutex<HashMap<String, TimedOutInfo>>>,
 }
 
 impl Default for AssayServer {
@@ -457,6 +473,7 @@ impl AssayServer {
         Self {
             tool_router: Self::tool_router(),
             sessions: Arc::new(Mutex::new(HashMap::new())),
+            timed_out_sessions: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -643,6 +660,9 @@ impl AssayServer {
                 info.agent_criteria_names,
                 info.spec_enforcement,
                 results,
+                None,  // diff — not yet wired up
+                false, // diff_truncated
+                None,  // diff_bytes_original
             );
 
             let session_id = session.session_id.clone();
@@ -659,6 +679,7 @@ impl AssayServer {
 
             // Spawn timeout task.
             let sessions = Arc::clone(&self.sessions);
+            let timed_out = Arc::clone(&self.timed_out_sessions);
             let assay_dir = cwd.join(".assay");
             let max_history = config.gates.as_ref().and_then(|g| g.max_history);
             let wd_string = working_dir.to_string_lossy().to_string();
@@ -669,12 +690,38 @@ impl AssayServer {
                     sessions.remove(&session_id)
                 };
                 if let Some(session) = session {
+                    let timed_out_at = Utc::now();
                     tracing::warn!(
                         session_id = %session.session_id,
                         spec_name = %session.spec_name,
                         "session timed out after {}s, auto-finalizing",
                         SESSION_TIMEOUT_SECS
                     );
+
+                    // Track the timed-out session for richer not-found messages.
+                    {
+                        let mut map = timed_out.lock().await;
+                        if map.len() >= MAX_TIMED_OUT_ENTRIES {
+                            // Evict the oldest entry by timed_out_at.
+                            if let Some(oldest_key) = map
+                                .iter()
+                                .min_by_key(|(_, v)| v.timed_out_at)
+                                .map(|(k, _)| k.clone())
+                            {
+                                map.remove(&oldest_key);
+                            }
+                        }
+                        map.insert(
+                            session.session_id.clone(),
+                            TimedOutInfo {
+                                spec_name: session.spec_name.clone(),
+                                created_at: session.created_at,
+                                timed_out_at,
+                                timeout_secs: SESSION_TIMEOUT_SECS,
+                            },
+                        );
+                    }
+
                     let record = assay_core::gate::session::finalize_as_timed_out(&session);
                     if let Err(e) = assay_core::history::save(&assay_dir, &record, max_history) {
                         tracing::error!(
@@ -731,10 +778,9 @@ impl AssayServer {
         let p = params.0;
         let mut sessions = self.sessions.lock().await;
         let Some(session) = sessions.get_mut(&p.session_id) else {
-            return Ok(CallToolResult::error(vec![Content::text(format!(
-                "session '{}' not found (expired or already finalized)",
-                p.session_id
-            ))]));
+            // Drop the sessions lock before awaiting the helper (it acquires timed_out lock).
+            drop(sessions);
+            return Ok(self.session_not_found_error(&p.session_id).await);
         };
 
         let eval = AgentEvaluation {
@@ -792,10 +838,7 @@ impl AssayServer {
             sessions.remove(&session_id)
         };
         let Some(session) = session else {
-            return Ok(CallToolResult::error(vec![Content::text(format!(
-                "session '{}' not found (expired or already finalized)",
-                session_id
-            ))]));
+            return Ok(self.session_not_found_error(&session_id).await);
         };
 
         let cwd = resolve_cwd()?;
@@ -1129,6 +1172,33 @@ impl AssayServer {
         let json = serde_json::to_string(&response)
             .map_err(|e| McpError::internal_error(format!("serialization failed: {e}"), None))?;
         Ok(CallToolResult::success(vec![Content::text(json)]))
+    }
+}
+
+// ── Private helpers ──────────────────────────────────────────────────
+
+impl AssayServer {
+    /// Build a not-found error for a session ID, distinguishing timed-out
+    /// sessions from sessions that never existed (or were already finalized).
+    async fn session_not_found_error(&self, session_id: &str) -> CallToolResult {
+        let timed_out = self.timed_out_sessions.lock().await;
+        if let Some(info) = timed_out.get(session_id) {
+            let elapsed = (info.timed_out_at - info.created_at).num_seconds();
+            CallToolResult::error(vec![Content::text(format!(
+                "Session '{session_id}' timed out after {elapsed}s \
+                 (configured timeout: {}s) for spec '{}'. \
+                 Use gate_run to start a new session, \
+                 or gate_history to review past results.",
+                info.timeout_secs, info.spec_name,
+            ))])
+        } else {
+            CallToolResult::error(vec![Content::text(format!(
+                "Session '{session_id}' not found \
+                 (it may have been finalized or never existed). \
+                 Use gate_run to start a new session, \
+                 or gate_history to review past results.",
+            ))])
+        }
     }
 }
 
