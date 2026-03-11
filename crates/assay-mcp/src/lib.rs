@@ -17,7 +17,7 @@ mod server;
 #[cfg(any(test, feature = "testing"))]
 pub use server::{
     AssayServer, ContextDiagnoseParams, EstimateTokensParams, GateFinalizeParams,
-    GateHistoryParams, GateReportParams, GateRunParams, SpecGetParams,
+    GateHistoryParams, GateReportParams, GateRunParams, SpecGetParams, SpecValidateParams,
 };
 
 #[cfg(any(test, feature = "testing"))]

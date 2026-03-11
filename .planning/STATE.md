@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 2026-03-10)
 
 ## Current Position
 
-Phase: 36 — Correctness & Robustness (COMPLETE)
-Plan: 3 of 3 (Diff Capture at Gate Run)
+Phase: 37 — Spec Validation (COMPLETE)
+Plan: 2 of 2 (MCP Tool Wiring)
 Status: Complete
-Last activity: 2026-03-11 — Completed 36-01-PLAN.md (all 3 plans done)
+Last activity: 2026-03-11 — Completed 37-02-PLAN.md
 
-Progress: v0.4.0 [████░░░░░░░░░░░░░] ~18% (phases 35-36 complete, 9 phases remaining)
+Progress: v0.4.0 [██████░░░░░░░░░░░] ~27% (phases 35-37 complete)
 
 ## Milestone Progress
 
@@ -23,7 +23,7 @@ Progress: v0.4.0 [████░░░░░░░░░░░░░] ~18% (pha
 | v0.1.0 | 10 | 43 | 100% (shipped) |
 | v0.2.0 | 15 (11-25) | 52 | 100% (shipped) |
 | v0.3.0 | 9 (26-34) | 43 | 100% (shipped) |
-| v0.4.0 | 11 (35-45) | 28 | 18% (2/11 phases) |
+| v0.4.0 | 11 (35-45) | 28 | 27% (3/11 phases) |
 | v0.4.1 | TBD | 8 | 0% (planned) |
 
 ## Accumulated Context
@@ -58,6 +58,15 @@ v0.4.0 decisions (from 36-02):
 v0.4.0 decisions (from 36-03):
 - Diff capture uses `std::process::Command` directly (not assay_core worktree module) to avoid error type coupling
 - `truncate_diff` is public API on `assay_core::gate`; `truncate_head_tail`/`TruncationResult` remain pub(crate)
+
+v0.4.0 decisions (from 37-01):
+- Command-not-found is Warning severity (binary may exist in execution env but not validation env)
+- Whitespace-only prompt treated same as missing for AgentReport validation
+- Cycle detection only runs when spec has dependencies (avoids unnecessary full-directory scan)
+
+v0.4.0 decisions (from 37-02):
+- spec_validate uses fully qualified type paths (no import additions needed)
+- FeatureSpec parse/validation errors fall through to domain_error (not converted to ValidationResult)
 
 v0.4.1 decisions (from brainstorm):
 - PR creation over direct merge for v0.4.x — maps to `autonomous: false`
@@ -94,5 +103,5 @@ Run `/kata-plan-phase [N]` to start planning phases, or `/kata-discuss-phase [N]
 ### Session Continuity
 
 Last session: 2026-03-11
-Stopped at: Completed 36-03-PLAN.md (phase 36 complete)
+Stopped at: Completed 37-02-PLAN.md (phase 37 complete)
 Resume file: None

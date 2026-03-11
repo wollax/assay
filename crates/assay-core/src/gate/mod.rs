@@ -993,6 +993,7 @@ mod tests {
             name: "mixed".to_string(),
             description: String::new(),
             gate: None,
+            depends: vec![],
             criteria: vec![
                 Criterion {
                     name: "passes".to_string(),
@@ -1049,6 +1050,7 @@ mod tests {
             name: "bad-cmd".to_string(),
             description: String::new(),
             gate: None,
+            depends: vec![],
             criteria: vec![Criterion {
                 name: "impossible".to_string(),
                 description: "nonexistent binary".to_string(),
@@ -1079,6 +1081,7 @@ mod tests {
             name: "mixed".to_string(),
             description: String::new(),
             gate: None,
+            depends: vec![],
             criteria: vec![
                 GateCriterion {
                     name: "passes".to_string(),
@@ -1135,6 +1138,7 @@ mod tests {
             name: "test".to_string(),
             description: String::new(),
             gate: None,
+            depends: vec![],
             criteria: vec![Criterion {
                 name: "echo".to_string(),
                 description: "echo test".to_string(),
@@ -1152,6 +1156,7 @@ mod tests {
             name: "test".to_string(),
             description: String::new(),
             gate: None,
+            depends: vec![],
             criteria: vec![GateCriterion {
                 name: "echo".to_string(),
                 description: "echo test".to_string(),
@@ -1277,6 +1282,7 @@ mod tests {
             name: "file-check".to_string(),
             description: String::new(),
             gate: None,
+            depends: vec![],
             criteria: vec![
                 Criterion {
                     name: "file present".to_string(),
@@ -1347,6 +1353,7 @@ mod tests {
             name: "file-gates".to_string(),
             description: String::new(),
             gate: None,
+            depends: vec![],
             criteria: vec![GateCriterion {
                 name: "readme exists".to_string(),
                 description: "check readme".to_string(),
@@ -1435,6 +1442,7 @@ mod tests {
             name: "advisory-test".to_string(),
             description: String::new(),
             gate: None,
+            depends: vec![],
             criteria: vec![
                 Criterion {
                     name: "required-pass".to_string(),
@@ -1485,6 +1493,7 @@ mod tests {
             name: "skip-test".to_string(),
             description: String::new(),
             gate: None,
+            depends: vec![],
             criteria: vec![
                 Criterion {
                     name: "required-pass".to_string(),
@@ -1535,6 +1544,7 @@ mod tests {
             gate: Some(GateSection {
                 enforcement: Enforcement::Advisory,
             }),
+            depends: vec![],
             criteria: vec![
                 GateCriterion {
                     name: "required-override".to_string(),
@@ -1582,6 +1592,7 @@ mod tests {
             name: "mixed-enforcement".to_string(),
             description: String::new(),
             gate: None,
+            depends: vec![],
             criteria: vec![
                 Criterion {
                     name: "required-pass".to_string(),
@@ -1670,6 +1681,7 @@ mod tests {
             name: "mixed-with-agent".to_string(),
             description: String::new(),
             gate: None,
+            depends: vec![],
             criteria: vec![
                 Criterion {
                     name: "cmd-pass".to_string(),
@@ -1741,6 +1753,7 @@ mod tests {
             name: "bad-gates-cmd".to_string(),
             description: String::new(),
             gate: None,
+            depends: vec![],
             criteria: vec![GateCriterion {
                 name: "impossible".to_string(),
                 description: "nonexistent binary".to_string(),

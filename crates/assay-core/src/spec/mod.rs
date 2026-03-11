@@ -3,6 +3,8 @@
 //! Handles loading, parsing, and validating specifications
 //! that define what should be built and their acceptance criteria.
 
+pub mod validate;
+
 use std::collections::HashSet;
 use std::fmt;
 use std::path::{Path, PathBuf};
@@ -880,6 +882,7 @@ unknown_crit_key = true
             name: "test".to_string(),
             description: String::new(),
             gate: None,
+            depends: vec![],
             criteria: vec![Criterion {
                 name: "c1".to_string(),
                 description: "d1".to_string(),
@@ -930,6 +933,7 @@ unknown_crit_key = true
             name: "test".to_string(),
             description: String::new(),
             gate: None,
+            depends: vec![],
             criteria: vec![],
         };
 
@@ -949,6 +953,7 @@ unknown_crit_key = true
             name: "test".to_string(),
             description: String::new(),
             gate: None,
+            depends: vec![],
             criteria: vec![
                 Criterion {
                     name: "dup".to_string(),
@@ -989,6 +994,7 @@ unknown_crit_key = true
             name: "test".to_string(),
             description: String::new(),
             gate: None,
+            depends: vec![],
             criteria: vec![Criterion {
                 name: String::new(),
                 description: "d1".to_string(),
@@ -1012,6 +1018,7 @@ unknown_crit_key = true
             name: "   ".to_string(),
             description: String::new(),
             gate: None,
+            depends: vec![],
             criteria: vec![],
         };
 
@@ -1775,6 +1782,7 @@ cmd = "true"
             name: "test".into(),
             description: String::new(),
             gate: None,
+            depends: vec![],
             criteria: vec![assay_types::GateCriterion {
                 name: "c1".into(),
                 description: "d1".into(),
@@ -1796,6 +1804,7 @@ cmd = "true"
             name: "test".into(),
             description: String::new(),
             gate: None,
+            depends: vec![],
             criteria: vec![],
         };
         let errors = validate_gates_spec(&spec).unwrap_err();
@@ -1808,6 +1817,7 @@ cmd = "true"
             name: "test".into(),
             description: String::new(),
             gate: None,
+            depends: vec![],
             criteria: vec![
                 assay_types::GateCriterion {
                     name: "dup".into(),
@@ -1849,6 +1859,7 @@ cmd = "true"
             gate: Some(GateSection {
                 enforcement: Enforcement::Advisory,
             }),
+            depends: vec![],
             criteria: vec![Criterion {
                 name: "lint".to_string(),
                 description: "run lint".to_string(),
@@ -1879,6 +1890,7 @@ cmd = "true"
             gate: Some(GateSection {
                 enforcement: Enforcement::Advisory,
             }),
+            depends: vec![],
             criteria: vec![Criterion {
                 name: "lint".to_string(),
                 description: "lint".to_string(),
@@ -1901,6 +1913,7 @@ cmd = "true"
             name: "test".to_string(),
             description: String::new(),
             gate: None,
+            depends: vec![],
             criteria: vec![Criterion {
                 name: "build".to_string(),
                 description: "build".to_string(),
@@ -1926,6 +1939,7 @@ cmd = "true"
             gate: Some(GateSection {
                 enforcement: Enforcement::Advisory,
             }),
+            depends: vec![],
             criteria: vec![assay_types::GateCriterion {
                 name: "lint".into(),
                 description: "lint".into(),
@@ -1956,6 +1970,7 @@ cmd = "true"
             name: "test".to_string(),
             description: String::new(),
             gate: None,
+            depends: vec![],
             criteria: vec![
                 Criterion {
                     name: "descriptive".to_string(),
@@ -1997,6 +2012,7 @@ cmd = "true"
             name: "test".to_string(),
             description: String::new(),
             gate: None,
+            depends: vec![],
             criteria: vec![Criterion {
                 name: "agent-with-cmd".to_string(),
                 description: "agent criterion with cmd".to_string(),
@@ -2025,6 +2041,7 @@ cmd = "true"
             name: "test".to_string(),
             description: String::new(),
             gate: None,
+            depends: vec![],
             criteria: vec![Criterion {
                 name: "agent-with-path".to_string(),
                 description: "agent criterion with path".to_string(),

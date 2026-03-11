@@ -8,7 +8,8 @@ use std::io::Write as _;
 use std::path::Path;
 
 use assay_mcp::{
-    AssayServer, GateFinalizeParams, GateHistoryParams, GateReportParams, GateRunParams, Parameters,
+    AssayServer, GateFinalizeParams, GateHistoryParams, GateReportParams, GateRunParams,
+    Parameters, SpecValidateParams,
 };
 use assay_types::{Confidence, EvaluatorRole};
 use rmcp::model::RawContent;
@@ -1346,5 +1347,152 @@ cmd = "echo ok"
     assert_eq!(
         history["total_runs"], 15,
         "total_runs should reflect all 15 on-disk records"
+    );
+}
+
+// ── spec_validate tests ─────────────────────────────────────────────
+
+#[tokio::test]
+#[serial]
+async fn spec_validate_valid_spec() {
+    let dir = create_project(r#"project_name = "validate-test""#);
+    create_spec(
+        dir.path(),
+        "good-spec.toml",
+        r#"
+name = "good spec"
+description = "A valid spec"
+
+[[criteria]]
+name = "builds"
+description = "Project builds"
+cmd = "echo ok"
+"#,
+    );
+    std::env::set_current_dir(dir.path()).unwrap();
+
+    let server = AssayServer::new();
+    let result = server
+        .spec_validate(Parameters(SpecValidateParams {
+            name: "good-spec".to_string(),
+            check_commands: false,
+        }))
+        .await
+        .unwrap();
+
+    let json: serde_json::Value = serde_json::from_str(&extract_text(&result)).unwrap();
+    assert_eq!(json["valid"], true);
+    assert_eq!(json["spec"], "good-spec");
+    assert_eq!(json["summary"]["errors"], 0);
+    assert_eq!(json["summary"]["warnings"], 0);
+}
+
+#[tokio::test]
+#[serial]
+async fn spec_validate_toml_parse_error() {
+    let dir = create_project(r#"project_name = "validate-test""#);
+    create_spec(dir.path(), "bad-spec.toml", "this is not valid toml [[[");
+    std::env::set_current_dir(dir.path()).unwrap();
+
+    let server = AssayServer::new();
+    let result = server
+        .spec_validate(Parameters(SpecValidateParams {
+            name: "bad-spec".to_string(),
+            check_commands: false,
+        }))
+        .await
+        .unwrap();
+
+    let json: serde_json::Value = serde_json::from_str(&extract_text(&result)).unwrap();
+    assert_eq!(json["valid"], false);
+    assert_eq!(json["spec"], "bad-spec");
+    assert_eq!(json["summary"]["errors"], 1);
+    assert_eq!(json["diagnostics"][0]["severity"], "error");
+    assert_eq!(json["diagnostics"][0]["location"], "toml");
+}
+
+#[tokio::test]
+#[serial]
+async fn spec_validate_not_found_returns_validation_result() {
+    let dir = create_project(r#"project_name = "validate-test""#);
+    // Create a valid spec so the specs dir exists
+    create_spec(
+        dir.path(),
+        "real-spec.toml",
+        r#"
+name = "real"
+description = "exists"
+
+[[criteria]]
+name = "c1"
+description = "d1"
+cmd = "true"
+"#,
+    );
+    std::env::set_current_dir(dir.path()).unwrap();
+
+    let server = AssayServer::new();
+    let result = server
+        .spec_validate(Parameters(SpecValidateParams {
+            name: "nonexistent-spec".to_string(),
+            check_commands: false,
+        }))
+        .await
+        .unwrap();
+
+    // Should return a structured ValidationResult, not a domain_error
+    let json: serde_json::Value = serde_json::from_str(&extract_text(&result)).unwrap();
+    assert_eq!(json["valid"], false);
+    assert_eq!(json["spec"], "nonexistent-spec");
+    assert_eq!(json["summary"]["errors"], 1);
+    assert_eq!(json["diagnostics"][0]["severity"], "error");
+    assert_eq!(json["diagnostics"][0]["location"], "name");
+    assert!(
+        json["diagnostics"][0]["message"]
+            .as_str()
+            .unwrap()
+            .contains("not found"),
+        "should mention spec not found"
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn spec_validate_agent_prompt_warning() {
+    let dir = create_project(r#"project_name = "validate-test""#);
+    create_spec(
+        dir.path(),
+        "agent-spec.toml",
+        r#"
+name = "agent spec"
+description = "Has agent criteria without prompt"
+
+[[criteria]]
+name = "review"
+description = "Agent review"
+kind = "AgentReport"
+"#,
+    );
+    std::env::set_current_dir(dir.path()).unwrap();
+
+    let server = AssayServer::new();
+    let result = server
+        .spec_validate(Parameters(SpecValidateParams {
+            name: "agent-spec".to_string(),
+            check_commands: false,
+        }))
+        .await
+        .unwrap();
+
+    let json: serde_json::Value = serde_json::from_str(&extract_text(&result)).unwrap();
+    // Valid because warnings don't block
+    assert_eq!(json["valid"], true);
+    assert_eq!(json["summary"]["warnings"], 1);
+    assert_eq!(json["diagnostics"][0]["severity"], "warning");
+    assert!(
+        json["diagnostics"][0]["message"]
+            .as_str()
+            .unwrap()
+            .contains("no prompt")
     );
 }

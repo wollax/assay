@@ -17,6 +17,7 @@ pub mod gate_run;
 pub mod gates_spec;
 pub mod schema_registry;
 pub mod session;
+pub mod validation;
 pub mod worktree;
 
 pub use checkpoint::{
@@ -33,6 +34,7 @@ pub use gate::{GateKind, GateResult};
 pub use gate_run::{CriterionResult, GateRunRecord, GateRunSummary};
 pub use gates_spec::{GateCriterion, GatesSpec};
 pub use session::{AgentEvaluation, AgentSession, Confidence, EvaluatorRole};
+pub use validation::{Diagnostic, DiagnosticSummary, Severity, ValidationResult};
 pub use worktree::{WorktreeConfig, WorktreeInfo, WorktreeMetadata, WorktreeStatus};
 
 /// Marker badge for directory-based specs in CLI output (e.g., `auth-flow  [srs] 3 criteria`).
@@ -58,6 +60,10 @@ pub struct Spec {
     /// Gate configuration section (enforcement defaults).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub gate: Option<GateSection>,
+
+    /// Spec names this spec depends on. Used for dependency ordering and cycle detection.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub depends: Vec<String>,
 
     /// Acceptance criteria that must be satisfied.
     pub criteria: Vec<Criterion>,
