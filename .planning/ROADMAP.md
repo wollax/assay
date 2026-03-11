@@ -80,7 +80,7 @@
   - FIX-02: Better gate_report/gate_finalize error messages
   - FIX-03: Diff context attached to gate sessions
 
-- [ ] Phase 37: Spec Validation
+- [ ] Phase 37: Spec Validation (2 plans, 2 waves)
   - SPEC-01: `spec_validate` MCP tool with structured diagnostics
   - SPEC-02: TOML parse, criterion uniqueness, prompt field, structure completeness
   - SPEC-03: Optional `check_commands` parameter for PATH validation
