@@ -554,7 +554,9 @@ fn worktree_status_validates() {
         branch: "assay/auth-flow".to_string(),
         head: "abc1234".to_string(),
         dirty: true,
-        ahead: 3,
-        behind: 1,
+        ahead: Some(3),
+        behind: Some(1),
+        base_branch: Some("main".to_string()),
+        warnings: vec![],
     });
 }
