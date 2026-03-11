@@ -658,13 +658,13 @@ fn evaluate_always_pass() -> Result<GateResult> {
 /// When truncation is applied, the output contains the first portion (head)
 /// and last portion (tail) of the original input, separated by a marker
 /// indicating how many bytes were omitted.
-struct TruncationResult {
+pub(crate) struct TruncationResult {
     /// The possibly-truncated output string.
-    output: String,
+    pub(crate) output: String,
     /// Whether truncation was applied.
-    truncated: bool,
+    pub(crate) truncated: bool,
     /// Original byte length of the input.
-    original_bytes: usize,
+    pub(crate) original_bytes: usize,
 }
 
 /// Truncate output using a head+tail strategy with a byte budget.
@@ -679,7 +679,7 @@ struct TruncationResult {
 /// and `ceil_char_boundary` to avoid splitting multi-byte sequences.
 ///
 /// A `budget` of 0 produces a marker-only output with no content bytes.
-fn truncate_head_tail(input: &str, budget: usize) -> TruncationResult {
+pub(crate) fn truncate_head_tail(input: &str, budget: usize) -> TruncationResult {
     let original_bytes = input.len();
 
     if original_bytes <= budget {
@@ -712,6 +712,18 @@ fn truncate_head_tail(input: &str, budget: usize) -> TruncationResult {
         truncated: true,
         original_bytes,
     }
+}
+
+/// Truncate a diff string using head+tail strategy.
+///
+/// Returns `(truncated_output, was_truncated, original_byte_length)`.
+/// If input is empty, returns `(None, false, None)`.
+pub fn truncate_diff(raw: &str, budget: usize) -> (Option<String>, bool, Option<usize>) {
+    if raw.is_empty() {
+        return (None, false, None);
+    }
+    let result = truncate_head_tail(raw, budget);
+    (Some(result.output), result.truncated, Some(result.original_bytes))
 }
 
 #[cfg(test)]
