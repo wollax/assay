@@ -207,6 +207,14 @@ pub struct WorktreeStatusParams {
     #[schemars(description = "Override worktree base directory")]
     #[serde(default)]
     pub worktree_dir: Option<String>,
+
+    /// Whether to fetch the base branch from the remote before computing status.
+    /// Defaults to false.
+    #[schemars(
+        description = "Fetch base branch from remote before computing ahead/behind (default: false)"
+    )]
+    #[serde(default)]
+    pub fetch: Option<bool>,
 }
 
 /// Parameters for the `worktree_cleanup` tool.
@@ -1135,9 +1143,9 @@ impl AssayServer {
         Ok(CallToolResult::success(vec![Content::text(json)]))
     }
 
-    /// Check worktree status (branch, dirty state, ahead/behind).
+    /// Check worktree status (branch, dirty state, ahead/behind relative to base branch).
     #[tool(
-        description = "Check worktree status including branch, HEAD commit, dirty state, and ahead/behind counts relative to upstream. Returns a WorktreeStatus object."
+        description = "Check worktree status including branch, HEAD commit, dirty state, and ahead/behind counts relative to the base branch. Set fetch=true to update remote refs first. Returns a WorktreeStatus object with optional warnings."
     )]
     pub async fn worktree_status(
         &self,
@@ -1155,6 +1163,17 @@ impl AssayServer {
             &cwd,
         );
         let worktree_path = worktree_dir.join(&params.0.name);
+
+        // Optionally fetch the base branch from the remote before computing status
+        if params.0.fetch.unwrap_or(false)
+            && let Some(metadata) = assay_core::worktree::read_metadata_public(&worktree_path)
+        {
+            // Best-effort fetch — ignore failures (e.g., offline, no remote)
+            let _ = std::process::Command::new("git")
+                .args(["fetch", "origin", &metadata.base_branch])
+                .current_dir(&worktree_path)
+                .output();
+        }
 
         let status = match assay_core::worktree::status(&worktree_path, &params.0.name) {
             Ok(s) => s,

@@ -112,9 +112,7 @@ fn write_metadata(worktree_path: &Path, metadata: &WorktreeMetadata) -> Result<(
 
     // Add to the shared git exclude so the metadata file is invisible to status.
     // Use --git-common-dir to get the main .git dir (works for both main and linked worktrees).
-    if let Ok(git_common_dir) =
-        git_command(&["rev-parse", "--git-common-dir"], worktree_path)
-    {
+    if let Ok(git_common_dir) = git_command(&["rev-parse", "--git-common-dir"], worktree_path) {
         let common_path = if Path::new(&git_common_dir).is_absolute() {
             PathBuf::from(&git_common_dir)
         } else {
@@ -148,6 +146,11 @@ fn read_metadata(worktree_path: &Path) -> Option<WorktreeMetadata> {
     let meta_path = worktree_path.join(".assay").join("worktree.json");
     let content = std::fs::read_to_string(&meta_path).ok()?;
     serde_json::from_str(&content).ok()
+}
+
+/// Read worktree metadata (public API for MCP handlers that need the base branch).
+pub fn read_metadata_public(worktree_path: &Path) -> Option<WorktreeMetadata> {
+    read_metadata(worktree_path)
 }
 
 // ---------------------------------------------------------------------------
