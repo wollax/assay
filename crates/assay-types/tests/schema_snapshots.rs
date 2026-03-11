@@ -142,3 +142,15 @@ fn gate_run_record_schema_snapshot() {
     let schema = schemars::schema_for!(assay_types::GateRunRecord);
     assert_json_snapshot!("gate-run-record-schema", schema.to_value());
 }
+
+#[test]
+fn worktree_status_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::WorktreeStatus);
+    assert_json_snapshot!("worktree-status-schema", schema.to_value());
+}
+
+#[test]
+fn worktree_metadata_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::WorktreeMetadata);
+    assert_json_snapshot!("worktree-metadata-schema", schema.to_value());
+}
