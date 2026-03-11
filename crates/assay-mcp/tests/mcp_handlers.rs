@@ -561,3 +561,143 @@ async fn gate_history_nonexistent_spec_returns_error() {
         assert_eq!(json["total_runs"], 0);
     }
 }
+
+// ── Warnings field tests ─────────────────────────────────────────────
+
+#[tokio::test]
+#[serial]
+async fn gate_run_command_only_success_omits_warnings() {
+    let dir = create_project(r#"project_name = "warnings-cmd-test""#);
+    create_spec(
+        dir.path(),
+        "cmd-spec.toml",
+        r#"
+name = "cmd-spec"
+description = "Command-only spec for warnings test"
+
+[[criteria]]
+name = "echo-check"
+description = "Echo passes"
+cmd = "echo ok"
+"#,
+    );
+
+    std::env::set_current_dir(dir.path()).unwrap();
+
+    let server = AssayServer::new();
+    let result = server
+        .gate_run(Parameters(GateRunParams {
+            name: "cmd-spec".to_string(),
+            include_evidence: false,
+            timeout: Some(30),
+        }))
+        .await
+        .unwrap();
+
+    assert!(
+        !result.is_error.unwrap_or(false),
+        "gate_run should succeed, got: {}",
+        extract_text(&result)
+    );
+
+    let json: serde_json::Value = serde_json::from_str(&extract_text(&result)).unwrap();
+    assert_eq!(json["passed"], 1);
+    // warnings should be omitted entirely when empty (skip_serializing_if)
+    assert!(
+        json.get("warnings").is_none(),
+        "warnings should be absent when empty, got: {json}"
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn gate_finalize_success_omits_warnings_and_has_persisted() {
+    let dir = create_project(r#"project_name = "warnings-finalize-test""#);
+    create_spec(
+        dir.path(),
+        "agent-spec.toml",
+        r#"
+name = "agent-spec"
+description = "Agent spec for finalize warnings test"
+
+[[criteria]]
+name = "echo-check"
+description = "Echo passes"
+cmd = "echo ok"
+
+[[criteria]]
+name = "code-review"
+description = "Agent reviews code quality"
+kind = "AgentReport"
+prompt = "Review the code for quality issues"
+"#,
+    );
+
+    std::env::set_current_dir(dir.path()).unwrap();
+
+    let server = AssayServer::new();
+
+    // gate_run
+    let run_result = server
+        .gate_run(Parameters(GateRunParams {
+            name: "agent-spec".to_string(),
+            include_evidence: false,
+            timeout: Some(30),
+        }))
+        .await
+        .unwrap();
+
+    let run_json: serde_json::Value = serde_json::from_str(&extract_text(&run_result)).unwrap();
+    let session_id = run_json["session_id"]
+        .as_str()
+        .expect("should have session_id");
+
+    // gate_report
+    server
+        .gate_report(Parameters(GateReportParams {
+            session_id: session_id.to_string(),
+            criterion_name: "code-review".to_string(),
+            passed: true,
+            evidence: "Code looks good".to_string(),
+            reasoning: "Meets standards".to_string(),
+            confidence: Some(Confidence::High),
+            evaluator_role: EvaluatorRole::SelfEval,
+        }))
+        .await
+        .unwrap();
+
+    // gate_finalize
+    let finalize_result = server
+        .gate_finalize(Parameters(GateFinalizeParams {
+            session_id: session_id.to_string(),
+        }))
+        .await
+        .unwrap();
+
+    assert!(
+        !finalize_result.is_error.unwrap_or(false),
+        "gate_finalize should succeed, got: {}",
+        extract_text(&finalize_result)
+    );
+
+    let json: serde_json::Value =
+        serde_json::from_str(&extract_text(&finalize_result)).unwrap();
+
+    // persisted should be true on success
+    assert_eq!(json["persisted"], true);
+
+    // warnings should be omitted when empty
+    assert!(
+        json.get("warnings").is_none(),
+        "warnings should be absent when empty, got: {json}"
+    );
+
+    // Verify full response structure from GateFinalizeResponse struct
+    assert!(json["run_id"].as_str().is_some_and(|s| !s.is_empty()), "run_id should be present");
+    assert_eq!(json["spec_name"], "agent-spec");
+    assert!(json["passed"].as_u64().is_some(), "passed should be present");
+    assert!(json["failed"].as_u64().is_some(), "failed should be present");
+    assert!(json["skipped"].as_u64().is_some(), "skipped should be present");
+    assert!(json["required_failed"].as_u64().is_some(), "required_failed should be present");
+    assert!(json["advisory_failed"].as_u64().is_some(), "advisory_failed should be present");
+}
