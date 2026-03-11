@@ -1,0 +1,15 @@
+[manifest]
+name = "agent-demo"
+base_ref = "HEAD"
+
+[[session]]
+name = "add-greeting"
+task = "Create a file src/greeting.rs with a public function greet() that returns the string 'Hello from Smelt!'. Add appropriate module declaration."
+file_scope = ["src/greeting.rs", "src/lib.rs"]
+timeout_secs = 120
+
+[[session]]
+name = "add-farewell"
+task = "Create a file src/farewell.rs with a public function farewell() that returns the string 'Goodbye from Smelt!'. Add appropriate module declaration."
+file_scope = ["src/farewell.rs", "src/lib.rs"]
+timeout_secs = 120
