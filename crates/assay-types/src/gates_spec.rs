@@ -35,6 +35,10 @@ pub struct GatesSpec {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub gate: Option<GateSection>,
 
+    /// Spec names this gate spec depends on. Used for dependency ordering and cycle detection.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub depends: Vec<String>,
+
     /// Gate criteria that must be satisfied.
     pub criteria: Vec<GateCriterion>,
 }
@@ -65,6 +69,7 @@ mod tests {
             name: "auth-flow".to_string(),
             description: String::new(),
             gate: None,
+            depends: vec![],
             criteria: vec![GateCriterion {
                 name: "compiles".to_string(),
                 description: "Code compiles".to_string(),
@@ -245,6 +250,7 @@ unknown_crit_key = true
             name: "mixed-gates".to_string(),
             description: "Both command and agent criteria".to_string(),
             gate: None,
+            depends: vec![],
             criteria: vec![
                 GateCriterion {
                     name: "compiles".to_string(),
@@ -290,6 +296,7 @@ unknown_crit_key = true
             gate: Some(GateSection {
                 enforcement: Enforcement::Advisory,
             }),
+            depends: vec![],
             criteria: vec![GateCriterion {
                 name: "check".to_string(),
                 description: "A check".to_string(),

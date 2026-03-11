@@ -34,6 +34,7 @@ fn spec_validates() {
         name: "build-feature".to_string(),
         description: "Implement the login page".to_string(),
         gate: None,
+        depends: vec![],
         criteria: vec![Criterion {
             name: "compiles".to_string(),
             description: "The project compiles".to_string(),
@@ -73,6 +74,7 @@ fn workflow_validates() {
             name: "build-feature".to_string(),
             description: "Implement the login page".to_string(),
             gate: None,
+            depends: vec![],
             criteria: vec![Criterion {
                 name: "compiles".to_string(),
                 description: "The project compiles".to_string(),
@@ -275,6 +277,7 @@ fn gates_spec_validates() {
         name: "auth-flow".to_string(),
         description: String::new(),
         gate: None,
+        depends: vec![],
         criteria: vec![GateCriterion {
             name: "auth-compiles".to_string(),
             description: "Auth module compiles".to_string(),
