@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 2026-03-10)
 
 ## Current Position
 
-Phase: 35 — Observability Foundation (COMPLETE)
-Plan: 2 of 2 (Outcome Filter and Limit Cap)
+Phase: 36 — Correctness & Robustness (COMPLETE)
+Plan: 3 of 3 (Diff Capture at Gate Run)
 Status: Complete
-Last activity: 2026-03-11 — Completed 35-02-PLAN.md
+Last activity: 2026-03-11 — Completed 36-01-PLAN.md (all 3 plans done)
 
-Progress: v0.4.0 [██░░░░░░░░░░░░░░░] ~9% (phase 35 complete, 10 phases remaining)
+Progress: v0.4.0 [████░░░░░░░░░░░░░] ~18% (phases 35-36 complete, 9 phases remaining)
 
 ## Milestone Progress
 
@@ -23,7 +23,7 @@ Progress: v0.4.0 [██░░░░░░░░░░░░░░░] ~9% (phas
 | v0.1.0 | 10 | 43 | 100% (shipped) |
 | v0.2.0 | 15 (11-25) | 52 | 100% (shipped) |
 | v0.3.0 | 9 (26-34) | 43 | 100% (shipped) |
-| v0.4.0 | 11 (35-45) | 28 | 9% (1/11 phases) |
+| v0.4.0 | 11 (35-45) | 28 | 18% (2/11 phases) |
 | v0.4.1 | TBD | 8 | 0% (planned) |
 
 ## Accumulated Context
@@ -50,6 +50,14 @@ v0.4.0 decisions (from 35-01):
 v0.4.0 decisions (from 35-02):
 - Unrecognized outcome values treated as "any" (graceful degradation)
 - `total_runs` reflects on-disk count, not filtered count
+
+v0.4.0 decisions (from 36-02):
+- `timed_out_sessions` capped at 100 entries with oldest-eviction
+- Session not-found errors always suggest gate_run + gate_history (no active session listing)
+
+v0.4.0 decisions (from 36-03):
+- Diff capture uses `std::process::Command` directly (not assay_core worktree module) to avoid error type coupling
+- `truncate_diff` is public API on `assay_core::gate`; `truncate_head_tail`/`TruncationResult` remain pub(crate)
 
 v0.4.1 decisions (from brainstorm):
 - PR creation over direct merge for v0.4.x — maps to `autonomous: false`
@@ -86,5 +94,5 @@ Run `/kata-plan-phase [N]` to start planning phases, or `/kata-discuss-phase [N]
 ### Session Continuity
 
 Last session: 2026-03-11
-Stopped at: Completed phase 35 (both plans)
+Stopped at: Completed 36-03-PLAN.md (phase 36 complete)
 Resume file: None

@@ -126,6 +126,20 @@ pub struct AgentSession {
     /// Resolved enforcement level per criterion name.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub spec_enforcement: HashMap<String, Enforcement>,
+
+    /// Git diff captured at gate_run time (staged + unstaged changes relative to HEAD).
+    /// None when the worktree is clean or diff capture failed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub diff: Option<String>,
+
+    /// Whether the captured diff was truncated to fit the 32 KiB budget.
+    #[serde(default)]
+    pub diff_truncated: bool,
+
+    /// Original byte size of the diff before truncation.
+    /// Present only when a diff was captured (even if not truncated).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub diff_bytes_original: Option<usize>,
 }
 
 inventory::submit! {
@@ -252,6 +266,9 @@ mod tests {
             agent_evaluations: evaluations,
             criteria_names,
             spec_enforcement,
+            diff: None,
+            diff_truncated: false,
+            diff_bytes_original: None,
         };
 
         let json = serde_json::to_string_pretty(&session).expect("serialize");
@@ -269,6 +286,9 @@ mod tests {
             agent_evaluations: HashMap::new(),
             criteria_names: HashSet::new(),
             spec_enforcement: HashMap::new(),
+            diff: None,
+            diff_truncated: false,
+            diff_bytes_original: None,
         };
 
         let json = serde_json::to_string(&session).expect("serialize");

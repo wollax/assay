@@ -75,14 +75,10 @@
   - OBS-02: Outcome-filtered `gate_history` with limit
   - DEBT-02: Close history-save-failure-not-surfaced issue
 
-- [ ] Phase 36: Correctness & Robustness
+- [x] Phase 36: Correctness & Robustness — 2026-03-11
   - FIX-01: Worktree status relative to base branch
   - FIX-02: Better gate_report/gate_finalize error messages
   - FIX-03: Diff context attached to gate sessions
-  - **Success criteria:**
-    1. `worktree_status` computes ahead/behind relative to base branch tip, not upstream — assay-managed branches show correct counts
-    2. Gate session errors distinguish timeout vs not-found with recovery hints in messages
-    3. `git diff HEAD` (32 KiB cap, head-biased truncation) is stored on AgentSession with `diff_truncated` flag
 
 - [ ] Phase 37: Spec Validation
   - SPEC-01: `spec_validate` MCP tool with structured diagnostics
@@ -222,5 +218,5 @@
 | v0.1.0 Proof of Concept | ✅ Shipped | 10 | 43 | 100% |
 | v0.2.0 Dual-Track Gates & Hardening | ✅ Shipped | 15 | 52 | 100% |
 | v0.3.0 Orchestration Foundation | ✅ Shipped | 9 | 43 | 100% |
-| v0.4.0 Headless Orchestration | 🔄 In Progress | 11 | 28 | 9% |
+| v0.4.0 Headless Orchestration | 🔄 In Progress | 11 | 28 | 18% |
 | v0.4.1 Merge Tools | ○ Planned | 5 | 8 | 0% |
