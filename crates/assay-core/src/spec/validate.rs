@@ -16,7 +16,7 @@ use super::SpecError;
 
 /// Convert existing SpecError vec to Diagnostic vec.
 /// All SpecErrors are error-severity (they block validity).
-fn spec_errors_to_diagnostics(errors: &[SpecError]) -> Vec<Diagnostic> {
+pub fn spec_errors_to_diagnostics(errors: &[SpecError]) -> Vec<Diagnostic> {
     errors
         .iter()
         .map(|e| Diagnostic {
@@ -53,8 +53,12 @@ fn validate_agent_prompts(criteria: &[assay_types::Criterion]) -> Vec<Diagnostic
 }
 
 /// Validate that command binaries exist on PATH.
-/// Uses `which::which()` for cross-platform lookup.
-/// Uses `extract_binary()` from gate module to get binary name from command string.
+///
+/// Uses `which::which()` for cross-platform lookup and `extract_binary()` from
+/// the gate module to extract the binary name from a command string.
+///
+/// Produces `Severity::Warning` diagnostics (never errors), since the command
+/// may exist in the execution environment but not the validation environment.
 fn validate_commands(criteria: &[assay_types::Criterion]) -> Vec<Diagnostic> {
     criteria
         .iter()
@@ -71,11 +75,11 @@ fn validate_commands(criteria: &[assay_types::Criterion]) -> Vec<Diagnostic> {
             }
             match which::which(binary) {
                 Ok(_) => None,
-                Err(_) => Some(Diagnostic {
+                Err(e) => Some(Diagnostic {
                     severity: Severity::Warning,
                     location: format!("criteria[{i}].cmd"),
                     message: format!(
-                        "command `{binary}` not found on PATH (criterion `{}`)",
+                        "command `{binary}` not found on PATH (criterion `{}`): {e}",
                         c.name
                     ),
                 }),
@@ -92,11 +96,17 @@ enum Color {
     Black,
 }
 
-/// Detect dependency cycles across all provided specs.
-/// Returns diagnostics for each cycle found, with the full cycle path.
+/// Detect dependency cycles and unknown references across all provided specs.
+///
+/// Returns two kinds of diagnostics:
+/// - `Severity::Error` for each cycle found (with the full cycle path).
+/// - `Severity::Warning` for any dependency that references an unknown spec slug.
+///
+/// Each diagnostic carries a `specs` set indicating which spec slugs are involved,
+/// enabling callers to filter diagnostics by spec without substring matching.
 ///
 /// `specs` is a map from spec slug to its declared dependencies.
-pub fn detect_cycles(specs: &HashMap<String, Vec<String>>) -> Vec<Diagnostic> {
+pub(crate) fn detect_cycles(specs: &HashMap<String, Vec<String>>) -> Vec<CycleDiagnostic> {
     let mut colors: HashMap<&str, Color> =
         specs.keys().map(|k| (k.as_str(), Color::White)).collect();
     let mut path: Vec<&str> = Vec::new();
@@ -111,12 +121,17 @@ pub fn detect_cycles(specs: &HashMap<String, Vec<String>>) -> Vec<Diagnostic> {
     // Also check for dependencies referencing unknown specs
     let known: HashSet<&str> = specs.keys().map(|s| s.as_str()).collect();
     for (name, deps) in specs {
-        for dep in deps {
+        for (i, dep) in deps.iter().enumerate() {
             if !known.contains(dep.as_str()) {
-                diagnostics.push(Diagnostic {
-                    severity: Severity::Warning,
-                    location: "depends".to_string(),
-                    message: format!("spec `{name}` depends on `{dep}` which was not found"),
+                let mut involved = HashSet::new();
+                involved.insert(name.clone());
+                diagnostics.push(CycleDiagnostic {
+                    diagnostic: Diagnostic {
+                        severity: Severity::Warning,
+                        location: format!("depends[{i}]"),
+                        message: format!("spec `{name}` depends on `{dep}` which was not found"),
+                    },
+                    specs: involved,
                 });
             }
         }
@@ -125,12 +140,18 @@ pub fn detect_cycles(specs: &HashMap<String, Vec<String>>) -> Vec<Diagnostic> {
     diagnostics
 }
 
+/// A diagnostic from cycle detection, with the set of spec slugs involved.
+pub(crate) struct CycleDiagnostic {
+    pub diagnostic: Diagnostic,
+    pub specs: HashSet<String>,
+}
+
 fn dfs<'a>(
     node: &'a str,
     graph: &'a HashMap<String, Vec<String>>,
     colors: &mut HashMap<&'a str, Color>,
     path: &mut Vec<&'a str>,
-    diagnostics: &mut Vec<Diagnostic>,
+    diagnostics: &mut Vec<CycleDiagnostic>,
 ) {
     colors.insert(node, Color::Gray);
     path.push(node);
@@ -141,20 +162,28 @@ fn dfs<'a>(
                 match color {
                     Color::Gray => {
                         // Found a cycle — extract the cycle path
-                        let cycle_start = path.iter().position(|&n| n == dep.as_str()).unwrap();
+                        let Some(cycle_start) = path.iter().position(|&n| n == dep.as_str()) else {
+                            // Invariant violated — skip rather than panic
+                            continue;
+                        };
                         let cycle: Vec<&str> = path[cycle_start..].to_vec();
+                        let involved: HashSet<String> =
+                            cycle.iter().map(|s| s.to_string()).collect();
                         let cycle_display: Vec<String> = cycle
                             .iter()
                             .chain(std::iter::once(&dep.as_str()))
                             .map(|s| s.to_string())
                             .collect();
-                        diagnostics.push(Diagnostic {
-                            severity: Severity::Error,
-                            location: "depends".to_string(),
-                            message: format!(
-                                "circular dependency detected: {}",
-                                cycle_display.join(" -> ")
-                            ),
+                        diagnostics.push(CycleDiagnostic {
+                            diagnostic: Diagnostic {
+                                severity: Severity::Error,
+                                location: "depends".to_string(),
+                                message: format!(
+                                    "circular dependency detected: {}",
+                                    cycle_display.join(" -> ")
+                                ),
+                            },
+                            specs: involved,
                         });
                     }
                     Color::White => {
@@ -171,35 +200,31 @@ fn dfs<'a>(
     colors.insert(node, Color::Black);
 }
 
-/// Validate a spec entry, producing a structured [`ValidationResult`].
+/// Run additional validation checks on an already-loaded spec entry.
 ///
-/// Reuses existing [`super::validate()`] and [`super::validate_gates_spec()`] for
-/// core validation, then layers on additional checks:
+/// This function does NOT re-run core validation (`validate()`/`validate_gates_spec()`),
+/// since `load_spec_entry` already performs that. Instead it layers on checks that
+/// the loader does not cover:
 /// - AgentReport prompt presence (warning)
 /// - Command existence on PATH (opt-in via `check_commands`)
 ///
 /// Cycle detection is handled separately via [`detect_cycles()`] since it
 /// requires loading all specs.
+///
+/// For specs that failed to load (TOML parse, core validation errors), the MCP
+/// handler constructs `ValidationResult` directly from the error — this function
+/// is only called on the success path.
 pub fn validate_spec(entry: &super::SpecEntry, check_commands: bool) -> ValidationResult {
-    let (slug, criteria, validation_result) = match entry {
-        super::SpecEntry::Legacy { slug, spec } => {
-            let result = super::validate(spec);
-            (slug.clone(), spec.criteria.as_slice(), result)
-        }
+    let (slug, criteria) = match entry {
+        super::SpecEntry::Legacy { slug, spec } => (slug.clone(), spec.criteria.as_slice()),
         super::SpecEntry::Directory { slug, gates, .. } => {
-            let result = super::validate_gates_spec(gates);
-            (slug.clone(), gates.criteria.as_slice(), result)
+            (slug.clone(), gates.criteria.as_slice())
         }
     };
 
     let mut diagnostics = Vec::new();
 
-    // Convert existing SpecErrors to Diagnostics
-    if let Err(errors) = &validation_result {
-        diagnostics.extend(spec_errors_to_diagnostics(errors));
-    }
-
-    // Additional checks (run regardless of core validation result)
+    // Additional checks beyond what load_spec_entry validates
     diagnostics.extend(validate_agent_prompts(criteria));
 
     if check_commands {
@@ -217,7 +242,7 @@ pub fn validate_spec(entry: &super::SpecEntry, check_commands: bool) -> Validati
     }
 }
 
-fn build_summary(diagnostics: &[Diagnostic]) -> DiagnosticSummary {
+pub fn build_summary(diagnostics: &[Diagnostic]) -> DiagnosticSummary {
     let mut errors = 0;
     let mut warnings = 0;
     let mut info = 0;
@@ -239,6 +264,9 @@ fn build_summary(diagnostics: &[Diagnostic]) -> DiagnosticSummary {
 ///
 /// When the target spec declares `depends = [...]`, loads ALL specs from
 /// `specs_dir` to build a dependency graph and check for cycles.
+///
+/// If loading specs from `specs_dir` fails (e.g., I/O error), a warning
+/// diagnostic is emitted indicating that cycle detection was skipped.
 pub fn validate_spec_with_dependencies(
     entry: &super::SpecEntry,
     check_commands: bool,
@@ -254,31 +282,44 @@ pub fn validate_spec_with_dependencies(
 
     // Only do cycle detection if this spec has dependencies
     if !depends.is_empty() {
+        let slug = entry.slug();
         // Load all specs to build dependency graph
-        if let Ok(scan_result) = super::scan(specs_dir) {
-            let mut graph: HashMap<String, Vec<String>> = HashMap::new();
-            for e in &scan_result.entries {
-                let deps = match e {
-                    super::SpecEntry::Legacy { spec, .. } => spec.depends.clone(),
-                    super::SpecEntry::Directory { gates, .. } => gates.depends.clone(),
-                };
-                graph.insert(e.slug().to_string(), deps);
-            }
-            // Ensure the current entry is in the graph
-            graph
-                .entry(entry.slug().to_string())
-                .or_insert_with(|| depends.clone());
-
-            let cycle_diagnostics = detect_cycles(&graph);
-            // Only include diagnostics relevant to this spec
-            for d in cycle_diagnostics {
-                if d.message.contains(entry.slug()) {
-                    result.diagnostics.push(d);
+        match super::scan(specs_dir) {
+            Ok(scan_result) => {
+                let mut graph: HashMap<String, Vec<String>> = HashMap::new();
+                for e in &scan_result.entries {
+                    let deps = match e {
+                        super::SpecEntry::Legacy { spec, .. } => spec.depends.clone(),
+                        super::SpecEntry::Directory { gates, .. } => gates.depends.clone(),
+                    };
+                    graph.insert(e.slug().to_string(), deps);
                 }
+                // Ensure the current entry is in the graph
+                graph
+                    .entry(slug.to_string())
+                    .or_insert_with(|| depends.clone());
+
+                let cycle_diagnostics = detect_cycles(&graph);
+                // Only include diagnostics involving this spec (by set membership, not substring)
+                for cd in cycle_diagnostics {
+                    if cd.specs.contains(slug) {
+                        result.diagnostics.push(cd.diagnostic);
+                    }
+                }
+                // Rebuild summary
+                result.summary = build_summary(&result.diagnostics);
+                result.valid = result.summary.errors == 0;
             }
-            // Rebuild summary
-            result.summary = build_summary(&result.diagnostics);
-            result.valid = result.summary.errors == 0;
+            Err(e) => {
+                result.diagnostics.push(Diagnostic {
+                    severity: Severity::Warning,
+                    location: "depends".to_string(),
+                    message: format!(
+                        "cycle detection skipped: could not scan specs directory: {e}"
+                    ),
+                });
+                result.summary = build_summary(&result.diagnostics);
+            }
         }
     }
 
@@ -460,14 +501,15 @@ mod tests {
         specs.insert("a".to_string(), vec!["b".to_string()]);
         specs.insert("b".to_string(), vec!["a".to_string()]);
 
-        let diagnostics = detect_cycles(&specs);
-        let errors: Vec<_> = diagnostics
+        let results = detect_cycles(&specs);
+        let errors: Vec<_> = results
             .iter()
-            .filter(|d| d.severity == Severity::Error)
+            .filter(|cd| cd.diagnostic.severity == Severity::Error)
             .collect();
         assert!(!errors.is_empty(), "should detect cycle between a and b");
-        assert!(errors[0].message.contains("circular dependency"));
-        assert!(errors[0].message.contains(" -> "));
+        assert!(errors[0].diagnostic.message.contains("circular dependency"));
+        assert!(errors[0].specs.contains("a"));
+        assert!(errors[0].specs.contains("b"));
     }
 
     #[test]
@@ -477,10 +519,10 @@ mod tests {
         specs.insert("b".to_string(), vec!["c".to_string()]);
         specs.insert("c".to_string(), vec![]);
 
-        let diagnostics = detect_cycles(&specs);
-        let errors: Vec<_> = diagnostics
+        let results = detect_cycles(&specs);
+        let errors: Vec<_> = results
             .iter()
-            .filter(|d| d.severity == Severity::Error)
+            .filter(|cd| cd.diagnostic.severity == Severity::Error)
             .collect();
         assert!(errors.is_empty(), "no cycle should be detected");
     }
@@ -490,14 +532,15 @@ mod tests {
         let mut specs = HashMap::new();
         specs.insert("a".to_string(), vec!["unknown".to_string()]);
 
-        let diagnostics = detect_cycles(&specs);
-        let warnings: Vec<_> = diagnostics
+        let results = detect_cycles(&specs);
+        let warnings: Vec<_> = results
             .iter()
-            .filter(|d| d.severity == Severity::Warning)
+            .filter(|cd| cd.diagnostic.severity == Severity::Warning)
             .collect();
         assert_eq!(warnings.len(), 1);
-        assert!(warnings[0].message.contains("not found"));
-        assert!(warnings[0].message.contains("unknown"));
+        assert!(warnings[0].diagnostic.message.contains("not found"));
+        assert!(warnings[0].diagnostic.message.contains("unknown"));
+        assert_eq!(warnings[0].diagnostic.location, "depends[0]");
     }
 
     #[test]
@@ -507,17 +550,35 @@ mod tests {
         specs.insert("b".to_string(), vec!["c".to_string()]);
         specs.insert("c".to_string(), vec!["a".to_string()]);
 
-        let diagnostics = detect_cycles(&specs);
-        let errors: Vec<_> = diagnostics
+        let results = detect_cycles(&specs);
+        let errors: Vec<_> = results
             .iter()
-            .filter(|d| d.severity == Severity::Error)
+            .filter(|cd| cd.diagnostic.severity == Severity::Error)
             .collect();
         assert!(!errors.is_empty(), "should detect 3-node cycle");
         // The cycle path should contain all three nodes
-        let msg = &errors[0].message;
+        let msg = &errors[0].diagnostic.message;
         assert!(msg.contains("a"), "cycle should mention a: {msg}");
         assert!(msg.contains("b"), "cycle should mention b: {msg}");
         assert!(msg.contains("c"), "cycle should mention c: {msg}");
+        // All three should be in the specs set
+        assert!(errors[0].specs.contains("a"));
+        assert!(errors[0].specs.contains("b"));
+        assert!(errors[0].specs.contains("c"));
+    }
+
+    #[test]
+    fn test_detect_cycles_self_loop() {
+        let mut specs = HashMap::new();
+        specs.insert("a".to_string(), vec!["a".to_string()]);
+
+        let results = detect_cycles(&specs);
+        let errors: Vec<_> = results
+            .iter()
+            .filter(|cd| cd.diagnostic.severity == Severity::Error)
+            .collect();
+        assert!(!errors.is_empty(), "should detect self-loop");
+        assert!(errors[0].specs.contains("a"));
     }
 
     #[test]
@@ -551,22 +612,23 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_spec_invalid_empty_name() {
+    fn test_validate_spec_agent_prompt_warning() {
+        // validate_spec detects AgentReport criteria without prompts
         let entry = super::super::SpecEntry::Legacy {
-            slug: "bad-spec".to_string(),
+            slug: "agent-spec".to_string(),
             spec: Spec {
-                name: "".to_string(),
+                name: "agent test".to_string(),
                 description: String::new(),
                 gate: None,
                 depends: vec![],
                 criteria: vec![Criterion {
-                    name: "c1".to_string(),
-                    description: "d1".to_string(),
-                    cmd: Some("true".to_string()),
+                    name: "review".to_string(),
+                    description: "Agent review".to_string(),
+                    cmd: None,
                     path: None,
                     timeout: None,
                     enforcement: None,
-                    kind: None,
+                    kind: Some(CriterionKind::AgentReport),
                     prompt: None,
                     requirements: vec![],
                 }],
@@ -574,13 +636,14 @@ mod tests {
         };
 
         let result = validate_spec(&entry, false);
-        assert!(!result.valid);
-        assert!(result.summary.errors > 0);
+        // Spec is still valid (warnings don't block)
+        assert!(result.valid);
+        assert_eq!(result.summary.warnings, 1);
         assert!(
             result
                 .diagnostics
                 .iter()
-                .any(|d| d.severity == Severity::Error && d.location == "name")
+                .any(|d| d.severity == Severity::Warning && d.location == "criteria[0].prompt")
         );
     }
 }
