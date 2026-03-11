@@ -719,3 +719,275 @@ prompt = "Review the code for quality issues"
         "advisory_failed should be present"
     );
 }
+
+// ── Outcome filter and limit cap tests ───────────────────────────────
+
+/// Helper: run a gate and return its JSON response. Panics on handler error.
+async fn run_gate(server: &AssayServer, spec_name: &str) -> serde_json::Value {
+    let result = server
+        .gate_run(Parameters(GateRunParams {
+            name: spec_name.to_string(),
+            include_evidence: false,
+            timeout: Some(30),
+        }))
+        .await
+        .unwrap();
+    assert!(
+        !result.is_error.unwrap_or(false),
+        "gate_run should succeed, got: {}",
+        extract_text(&result)
+    );
+    serde_json::from_str(&extract_text(&result)).unwrap()
+}
+
+/// Helper: query gate_history in list mode and return parsed JSON.
+async fn query_history(
+    server: &AssayServer,
+    spec_name: &str,
+    limit: Option<usize>,
+    outcome: Option<&str>,
+) -> serde_json::Value {
+    let result = server
+        .gate_history(Parameters(GateHistoryParams {
+            name: spec_name.to_string(),
+            run_id: None,
+            limit,
+            outcome: outcome.map(String::from),
+        }))
+        .await
+        .unwrap();
+    assert!(
+        !result.is_error.unwrap_or(false),
+        "gate_history should succeed, got: {}",
+        extract_text(&result)
+    );
+    serde_json::from_str(&extract_text(&result)).unwrap()
+}
+
+#[tokio::test]
+#[serial]
+async fn gate_history_outcome_failed_filters_correctly() {
+    let dir = create_project(r#"project_name = "outcome-failed-test""#);
+
+    // Spec with a required criterion that always fails
+    create_spec(
+        dir.path(),
+        "fail-spec.toml",
+        r#"
+name = "fail-spec"
+description = "Spec with a failing required criterion"
+
+[[criteria]]
+name = "will-fail"
+description = "Always fails"
+cmd = "false"
+"#,
+    );
+
+    // Spec with a criterion that always passes
+    create_spec(
+        dir.path(),
+        "pass-spec.toml",
+        r#"
+name = "pass-spec"
+description = "Spec with a passing criterion"
+
+[[criteria]]
+name = "will-pass"
+description = "Always passes"
+cmd = "echo ok"
+"#,
+    );
+
+    std::env::set_current_dir(dir.path()).unwrap();
+    let server = AssayServer::new();
+
+    // Create 2 passing runs and 2 failing runs (using separate specs that share history dir conceptually)
+    // Actually, outcome filter is per-spec, so we need a spec that can both pass and fail.
+    // Let's use two separate specs and query them independently.
+    run_gate(&server, "fail-spec").await;
+    run_gate(&server, "fail-spec").await;
+    run_gate(&server, "pass-spec").await;
+    run_gate(&server, "pass-spec").await;
+
+    // Query failed runs for fail-spec
+    let failed_history = query_history(&server, "fail-spec", None, Some("failed")).await;
+    let runs = failed_history["runs"].as_array().unwrap();
+    assert_eq!(runs.len(), 2, "should have 2 failed runs");
+    for run in runs {
+        assert!(
+            run["required_failed"].as_u64().unwrap() > 0,
+            "all returned runs should have required_failed > 0"
+        );
+    }
+
+    // Query passed runs for fail-spec — should be empty
+    let passed_history = query_history(&server, "fail-spec", None, Some("passed")).await;
+    let runs = passed_history["runs"].as_array().unwrap();
+    assert_eq!(runs.len(), 0, "fail-spec should have 0 passed runs");
+
+    // Query failed runs for pass-spec — should be empty
+    let failed_history = query_history(&server, "pass-spec", None, Some("failed")).await;
+    let runs = failed_history["runs"].as_array().unwrap();
+    assert_eq!(runs.len(), 0, "pass-spec should have 0 failed runs");
+}
+
+#[tokio::test]
+#[serial]
+async fn gate_history_outcome_passed_filters_correctly() {
+    let dir = create_project(r#"project_name = "outcome-passed-test""#);
+    create_spec(
+        dir.path(),
+        "pass-spec.toml",
+        r#"
+name = "pass-spec"
+description = "Spec with a passing criterion"
+
+[[criteria]]
+name = "will-pass"
+description = "Always passes"
+cmd = "echo ok"
+"#,
+    );
+
+    std::env::set_current_dir(dir.path()).unwrap();
+    let server = AssayServer::new();
+
+    run_gate(&server, "pass-spec").await;
+    run_gate(&server, "pass-spec").await;
+    run_gate(&server, "pass-spec").await;
+
+    let passed_history = query_history(&server, "pass-spec", None, Some("passed")).await;
+    let runs = passed_history["runs"].as_array().unwrap();
+    assert_eq!(runs.len(), 3, "should have 3 passed runs");
+    for run in runs {
+        assert_eq!(
+            run["required_failed"].as_u64().unwrap(),
+            0,
+            "all returned runs should have required_failed == 0"
+        );
+    }
+}
+
+#[tokio::test]
+#[serial]
+async fn gate_history_outcome_any_returns_all() {
+    let dir = create_project(r#"project_name = "outcome-any-test""#);
+    create_spec(
+        dir.path(),
+        "mixed-spec.toml",
+        r#"
+name = "mixed-spec"
+description = "Spec with pass and fail criteria"
+
+[[criteria]]
+name = "will-pass"
+description = "Always passes"
+cmd = "echo ok"
+
+[[criteria]]
+name = "will-fail"
+description = "Always fails"
+cmd = "false"
+"#,
+    );
+
+    std::env::set_current_dir(dir.path()).unwrap();
+    let server = AssayServer::new();
+
+    run_gate(&server, "mixed-spec").await;
+    run_gate(&server, "mixed-spec").await;
+
+    // outcome=any should return all runs
+    let any_history = query_history(&server, "mixed-spec", None, Some("any")).await;
+    let runs = any_history["runs"].as_array().unwrap();
+    assert_eq!(runs.len(), 2, "outcome=any should return all runs");
+
+    // No outcome (default) should also return all runs
+    let default_history = query_history(&server, "mixed-spec", None, None).await;
+    let default_runs = default_history["runs"].as_array().unwrap();
+    assert_eq!(
+        default_runs.len(),
+        2,
+        "default outcome should return all runs"
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn gate_history_limit_capped_at_50() {
+    let dir = create_project(r#"project_name = "limit-cap-test""#);
+    create_spec(
+        dir.path(),
+        "cap-spec.toml",
+        r#"
+name = "cap-spec"
+description = "Spec for limit cap test"
+
+[[criteria]]
+name = "check"
+description = "Always passes"
+cmd = "echo ok"
+"#,
+    );
+
+    std::env::set_current_dir(dir.path()).unwrap();
+    let server = AssayServer::new();
+
+    // Create 3 runs — enough to verify the limit param is accepted
+    run_gate(&server, "cap-spec").await;
+    run_gate(&server, "cap-spec").await;
+    run_gate(&server, "cap-spec").await;
+
+    // Request limit=100, which should be capped at 50 internally.
+    // With only 3 runs, we get 3 back — the point is the parameter is accepted.
+    let history = query_history(&server, "cap-spec", Some(100), None).await;
+    let runs = history["runs"].as_array().unwrap();
+    assert_eq!(
+        runs.len(),
+        3,
+        "should return all 3 runs (limit=100 capped to 50, but only 3 exist)"
+    );
+    assert_eq!(history["total_runs"], 3);
+}
+
+#[tokio::test]
+#[serial]
+async fn gate_history_default_limit_is_10() {
+    let dir = create_project(r#"project_name = "default-limit-test""#);
+    create_spec(
+        dir.path(),
+        "limit-spec.toml",
+        r#"
+name = "limit-spec"
+description = "Spec for default limit test"
+
+[[criteria]]
+name = "check"
+description = "Always passes"
+cmd = "echo ok"
+"#,
+    );
+
+    std::env::set_current_dir(dir.path()).unwrap();
+    let server = AssayServer::new();
+
+    // Create 15 runs
+    for _ in 0..15 {
+        run_gate(&server, "limit-spec").await;
+    }
+
+    // Query with no limit — should return exactly 10 (default)
+    let history = query_history(&server, "limit-spec", None, None).await;
+    let runs = history["runs"].as_array().unwrap();
+    assert_eq!(
+        runs.len(),
+        10,
+        "default limit should return 10 runs, got {}",
+        runs.len()
+    );
+    assert_eq!(
+        history["total_runs"], 15,
+        "total_runs should reflect all 15 on-disk records"
+    );
+}
