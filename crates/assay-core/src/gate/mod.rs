@@ -993,6 +993,7 @@ mod tests {
             name: "mixed".to_string(),
             description: String::new(),
             gate: None,
+            depends: vec![],
             criteria: vec![
                 Criterion {
                     name: "passes".to_string(),

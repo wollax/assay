@@ -880,6 +880,7 @@ unknown_crit_key = true
             name: "test".to_string(),
             description: String::new(),
             gate: None,
+            depends: vec![],
             criteria: vec![Criterion {
                 name: "c1".to_string(),
                 description: "d1".to_string(),
@@ -930,6 +931,7 @@ unknown_crit_key = true
             name: "test".to_string(),
             description: String::new(),
             gate: None,
+            depends: vec![],
             criteria: vec![],
         };
 
@@ -949,6 +951,7 @@ unknown_crit_key = true
             name: "test".to_string(),
             description: String::new(),
             gate: None,
+            depends: vec![],
             criteria: vec![
                 Criterion {
                     name: "dup".to_string(),
@@ -989,6 +992,7 @@ unknown_crit_key = true
             name: "test".to_string(),
             description: String::new(),
             gate: None,
+            depends: vec![],
             criteria: vec![Criterion {
                 name: String::new(),
                 description: "d1".to_string(),

@@ -148,6 +148,13 @@ expression: schema.to_value()
           },
           "type": "array"
         },
+        "depends": {
+          "description": "Spec names this spec depends on. Used for dependency ordering and cycle detection.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "description": {
           "description": "Human-readable description. Defaults to empty string, omitted from\nserialized output when empty.",
           "type": "string"
