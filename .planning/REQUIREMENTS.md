@@ -6,7 +6,7 @@
 
 - [x] **SESS-01**: User can create and manage git worktrees for agent sessions (create, track, cleanup)
 - [x] **SESS-02**: User can define a session manifest specifying what each agent should work on
-- [ ] **SESS-03**: User can launch a real Claude Code agent session in a worktree
+- [x] **SESS-03**: User can launch a real Claude Code agent session in a worktree
 - [x] **SESS-04**: User can launch a scripted/simulated session for development and testing
 
 ### Merge & Conflict Resolution
@@ -47,7 +47,7 @@
 |-------------|-------|--------|
 | SESS-01 | Phase 2: Worktree Manager | Complete |
 | SESS-02 | Phase 3: Session Manifest & Scripted Sessions | Complete |
-| SESS-03 | Phase 10: Real Agent Sessions | Pending |
+| SESS-03 | Phase 10: Real Agent Sessions | Complete |
 | SESS-04 | Phase 3: Session Manifest & Scripted Sessions | Complete |
 | MERGE-01 | Phase 4: Sequential Merge | Complete |
 | MERGE-02 | Phase 7: AI Conflict Resolution | Complete |

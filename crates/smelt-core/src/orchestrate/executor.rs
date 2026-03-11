@@ -3,6 +3,7 @@
 
 use std::collections::HashSet;
 use std::path::PathBuf;
+use std::time::Duration;
 
 use chrono::Utc;
 use petgraph::graph::NodeIndex;
@@ -18,10 +19,28 @@ use crate::orchestrate::state::{compute_manifest_hash, RunStateManager};
 use crate::orchestrate::types::{
     FailurePolicy, OrchestrationOpts, OrchestrationReport, RunPhase, RunState, SessionRunState,
 };
+use crate::session::agent::{resolve_claude_binary, AgentExecutor};
 use crate::session::manifest::Manifest;
 use crate::session::script::ScriptExecutor;
 use crate::session::types::SessionOutcome;
 use crate::worktree::{CreateWorktreeOpts, WorktreeManager};
+
+/// Extract a human-readable message from a `JoinError` panic payload.
+fn extract_join_error_message(join_error: tokio::task::JoinError) -> String {
+    if join_error.is_cancelled() {
+        "task cancelled".to_string()
+    } else if let Ok(payload) = join_error.try_into_panic() {
+        if let Some(s) = payload.downcast_ref::<&str>() {
+            format!("task panicked: {s}")
+        } else if let Some(s) = payload.downcast_ref::<String>() {
+            format!("task panicked: {s}")
+        } else {
+            "task panicked with unknown payload".to_string()
+        }
+    } else {
+        "task failed with unknown JoinError".to_string()
+    }
+}
 
 /// Orchestrates the full execution lifecycle: DAG validation, worktree creation,
 /// parallel session execution, state persistence, and merge phase delegation.
@@ -34,6 +53,20 @@ impl<G: GitOps + Clone + Send + Sync + 'static> Orchestrator<G> {
     /// Create a new `Orchestrator`.
     pub fn new(git: G, repo_root: PathBuf) -> Self {
         Self { git, repo_root }
+    }
+
+    /// Check whether any sessions require a Claude Code agent and, if so,
+    /// resolve the `claude` binary on `$PATH`. Returns `Some(path)` when at
+    /// least one agent session exists, `None` when all sessions are scripted.
+    fn check_agent_preflight(manifest: &Manifest) -> Result<Option<PathBuf>> {
+        let has_agent_sessions = manifest.sessions.iter().any(|s| s.script.is_none());
+        if has_agent_sessions {
+            let binary = resolve_claude_binary()?;
+            info!(binary = %binary.display(), "resolved claude binary for agent sessions");
+            Ok(Some(binary))
+        } else {
+            Ok(None)
+        }
     }
 
     /// Execute a full orchestration lifecycle.
@@ -53,6 +86,9 @@ impl<G: GitOps + Clone + Send + Sync + 'static> Orchestrator<G> {
         on_status: impl Fn(&str, &SessionRunState) + Send + Sync,
     ) -> Result<OrchestrationReport> {
         let start = tokio::time::Instant::now();
+
+        // Phase 0: Preflight — resolve claude binary if any agent sessions exist
+        let claude_binary = Self::check_agent_preflight(manifest)?;
 
         // Phase 0: Validate & build DAG
         let dag = build_dag(manifest)?;
@@ -160,6 +196,7 @@ impl<G: GitOps + Clone + Send + Sync + 'static> Orchestrator<G> {
             failure_policy,
             &cancel,
             &on_status,
+            claude_binary.as_ref(),
         )
         .await?;
 
@@ -227,6 +264,9 @@ impl<G: GitOps + Clone + Send + Sync + 'static> Orchestrator<G> {
             });
         }
 
+        // Preflight for resume as well
+        let claude_binary = Self::check_agent_preflight(manifest)?;
+
         match run_state.phase {
             RunPhase::Sessions => {
                 // Re-execute from Phase 2 for non-terminal sessions
@@ -241,6 +281,7 @@ impl<G: GitOps + Clone + Send + Sync + 'static> Orchestrator<G> {
                     failure_policy,
                     &cancel,
                     &on_status,
+                    claude_binary.as_ref(),
                 )
                 .await?;
 
@@ -334,6 +375,7 @@ impl<G: GitOps + Clone + Send + Sync + 'static> Orchestrator<G> {
         failure_policy: FailurePolicy,
         cancel: &CancellationToken,
         on_status: &(impl Fn(&str, &SessionRunState) + Send + Sync),
+        claude_binary: Option<&PathBuf>,
     ) -> Result<()> {
         let smelt_dir = self.repo_root.join(".smelt");
 
@@ -458,6 +500,13 @@ impl<G: GitOps + Clone + Send + Sync + 'static> Orchestrator<G> {
                 let child_cancel = cancel.child_token();
                 let log_path = state_manager.log_path(&run_state.run_id, &session_name);
 
+                // Clone agent-related fields before the spawn boundary
+                let claude_binary_clone = claude_binary.cloned();
+                let task_content = session_def.task.clone();
+                let task_file = session_def.task_file.clone();
+                let file_scope = session_def.file_scope.clone();
+                let timeout_secs = session_def.timeout_secs;
+
                 // Clone name for panic-safety: the inner spawn catches panics
                 // via JoinError, and the outer closure still has the name.
                 let panic_name = name_clone.clone();
@@ -502,20 +551,105 @@ impl<G: GitOps + Clone + Send + Sync + 'static> Orchestrator<G> {
                                 }
                             }
                         } else {
-                            // No script — immediately complete
-                            Ok(SessionRunState::Completed {
-                                duration_secs: timer.elapsed().as_secs_f64(),
-                            })
+                            // No script — dispatch to AgentExecutor
+                            let Some(binary) = claude_binary_clone else {
+                                return (
+                                    name_clone,
+                                    Ok(SessionRunState::Failed {
+                                        reason: "claude binary not resolved (preflight should have caught this)".to_string(),
+                                    }),
+                                );
+                            };
+
+                            // Resolve task content: inline task or task_file
+                            let task = match (&task_content, &task_file) {
+                                (Some(t), _) => t.clone(),
+                                (None, Some(tf)) => {
+                                    match tokio::fs::read_to_string(tf).await {
+                                        Ok(content) => content,
+                                        Err(e) => {
+                                            return (
+                                                name_clone,
+                                                Ok(SessionRunState::Failed {
+                                                    reason: format!("failed to read task_file '{tf}': {e}"),
+                                                }),
+                                            );
+                                        }
+                                    }
+                                }
+                                (None, None) => {
+                                    return (
+                                        name_clone,
+                                        Ok(SessionRunState::Failed {
+                                            reason: "session has neither task nor task_file".to_string(),
+                                        }),
+                                    );
+                                }
+                            };
+
+                            let timeout_duration = timeout_secs.map(Duration::from_secs);
+                            let agent = AgentExecutor::new(
+                                binary,
+                                worktree_path.clone(),
+                                log_path.clone(),
+                                timeout_duration,
+                            );
+
+                            let scope_refs: Option<Vec<String>> = file_scope;
+                            let scope_slice = scope_refs.as_deref();
+
+                            // model=None: per-session model override not yet wired (v0.1.0)
+                            match agent.execute(&name_clone, &task, scope_slice, None, child_cancel).await {
+                                Ok(session_result) => {
+                                    let duration = timer.elapsed().as_secs_f64();
+                                    match session_result.outcome {
+                                        SessionOutcome::Completed => {
+                                            Ok(SessionRunState::Completed { duration_secs: duration })
+                                        }
+                                        SessionOutcome::TimedOut => {
+                                            Ok(SessionRunState::Failed {
+                                                reason: session_result
+                                                    .failure_reason
+                                                    .unwrap_or_else(|| "session timed out".to_string()),
+                                            })
+                                        }
+                                        SessionOutcome::Killed => {
+                                            Ok(SessionRunState::Cancelled)
+                                        }
+                                        _ => {
+                                            Ok(SessionRunState::Failed {
+                                                reason: session_result
+                                                    .failure_reason
+                                                    .unwrap_or_else(|| "unknown failure".to_string()),
+                                            })
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    Ok(SessionRunState::Failed {
+                                        reason: format!("agent execution error: {e}"),
+                                    })
+                                }
+                            }
                         };
 
-                        // Write log file (best effort)
-                        if let Some(parent) = log_path.parent() {
-                            let _ = std::fs::create_dir_all(parent);
+                        // Write log file (best effort) — only for scripted sessions;
+                        // AgentExecutor writes its own log.
+                        if script.is_some() {
+                            if let Some(parent) = log_path.parent() {
+                                let _ = std::fs::create_dir_all(parent);
+                            }
+                            let status_label = match &result {
+                                Ok(SessionRunState::Completed { .. }) => "completed",
+                                Ok(SessionRunState::Failed { .. }) => "failed",
+                                Ok(SessionRunState::Cancelled) => "cancelled",
+                                _ => "unknown",
+                            };
+                            let _ = std::fs::write(
+                                &log_path,
+                                format!("Session '{}' {status_label}\n", name_clone),
+                            );
                         }
-                        let _ = std::fs::write(
-                            &log_path,
-                            format!("Session '{}' completed\n", name_clone),
-                        );
 
                         match result {
                             Ok(state) => (name_clone, Ok(state)),
@@ -526,20 +660,7 @@ impl<G: GitOps + Clone + Send + Sync + 'static> Orchestrator<G> {
                     match handle.await {
                         Ok(result) => result,
                         Err(join_error) => {
-                            let msg = if join_error.is_cancelled() {
-                                "task cancelled".to_string()
-                            } else if let Ok(payload) = join_error.try_into_panic() {
-                                if let Some(s) = payload.downcast_ref::<&str>() {
-                                    format!("task panicked: {s}")
-                                } else if let Some(s) = payload.downcast_ref::<String>() {
-                                    format!("task panicked: {s}")
-                                } else {
-                                    "task panicked with unknown payload".to_string()
-                                }
-                            } else {
-                                "task failed with unknown JoinError".to_string()
-                            };
-                            (panic_name, Err(msg))
+                            (panic_name, Err(extract_join_error_message(join_error)))
                         }
                     }
                 });
@@ -575,25 +696,36 @@ impl<G: GitOps + Clone + Send + Sync + 'static> Orchestrator<G> {
                             // JoinError: task panicked or was cancelled.
                             // The session name is lost because JoinError doesn't carry it.
                             // This path should be unreachable — spawned tasks catch panics
-                            // internally via catch_unwind and return them as Failed results.
+                            // internally and return them as Failed results.
                             if join_error.is_cancelled() {
                                 continue;
                             }
-                            let panic_msg = if let Ok(reason) = join_error.try_into_panic() {
-                                if let Some(s) = reason.downcast_ref::<&str>() {
-                                    format!("task panicked (uncaught): {s}")
-                                } else if let Some(s) = reason.downcast_ref::<String>() {
-                                    format!("task panicked (uncaught): {s}")
-                                } else {
-                                    "task panicked (uncaught) with unknown payload".to_string()
-                                }
-                            } else {
-                                "task failed with unknown JoinError".to_string()
-                            };
+                            let panic_msg = extract_join_error_message(join_error);
                             warn!("{}", panic_msg);
-                            // Defensive: cannot map to a session. Log and continue — the
-                            // session will remain in `in_flight` but the catch_unwind wrapper
-                            // in the spawned task should prevent this path from being reached.
+                            // Defensive: drain any session from in_flight that is not in
+                            // completed_set or skipped_set. Without this, a truly uncaught
+                            // panic would leave the session in `in_flight` forever, stalling
+                            // the loop.
+                            let orphaned: Vec<NodeIndex> = in_flight
+                                .iter()
+                                .copied()
+                                .filter(|n| !completed_set.contains(n) && !skipped_set.contains(n))
+                                .collect();
+                            for node_idx in orphaned {
+                                in_flight.remove(&node_idx);
+                                if let Some(name) = dag.node_weight(node_idx) {
+                                    let state = SessionRunState::Failed {
+                                        reason: panic_msg.clone(),
+                                    };
+                                    run_state.sessions.insert(name.clone(), state.clone());
+                                    on_status(name, &state);
+                                    mark_skipped_dependents(
+                                        dag,
+                                        node_idx,
+                                        &mut skipped_set,
+                                    );
+                                }
+                            }
                             continue;
                         }
                     };

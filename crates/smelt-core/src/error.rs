@@ -95,6 +95,10 @@ pub enum SmeltError {
     /// Dependency cycle detected in manifest.
     #[error("dependency cycle detected in manifest: {details}")]
     DependencyCycle { details: String },
+
+    /// `claude` CLI binary not found on `$PATH`.
+    #[error("'claude' CLI not found on $PATH. Install Claude Code to use real agent sessions.")]
+    AgentNotFound,
 }
 
 impl SmeltError {

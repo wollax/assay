@@ -713,6 +713,16 @@ pub async fn execute_orchestrate_run(
         }
     };
 
+    // Detect agent sessions and print informational message.
+    // The actual binary resolution happens in Orchestrator::check_agent_preflight()
+    // which provides the canonical error path.
+    let agent_session_count = manifest.sessions.iter().filter(|s| s.script.is_none()).count();
+    if agent_session_count > 0 {
+        eprintln!(
+            "Detected {agent_session_count} agent session(s) — using Claude Code backend"
+        );
+    }
+
     // Read raw manifest content for hash computation
     let manifest_content = match std::fs::read_to_string(manifest_path) {
         Ok(c) => c,
@@ -764,7 +774,15 @@ pub async fn execute_orchestrate_run(
                         eprintln!("Resuming run '{}'...", state.run_id);
                         Some(state)
                     }
-                    _ => None,
+                    Ok(Ok(false)) => None,
+                    Ok(Err(e)) => {
+                        eprintln!("Warning: resume prompt failed: {e}. Starting fresh.");
+                        None
+                    }
+                    Err(e) => {
+                        eprintln!("Warning: resume prompt task failed: {e}. Starting fresh.");
+                        None
+                    }
                 }
             } else {
                 // Non-TTY: skip resume

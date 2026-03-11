@@ -2,27 +2,27 @@
 
 ## Current Position
 
-Phase: 9 of 10 — Session Summary & Scope Isolation
+Phase: 10 of 10 — Real Agent Sessions
 Plan: 3 of 3 complete
-Status: Phase complete
-Progress: ███████████████████████████ 27/27
+Status: Complete
+Progress: ██████████████████████████████ 30/30
 
-Last activity: 2026-03-11 — Completed 09-03-PLAN.md (CLI summary command, integration tests)
+Last activity: 2026-03-11 — Completed 10-03-PLAN.md (Integration tests & E2E verification)
 
 ## Session Continuity
 
 Last session: 2026-03-11
-Stopped at: Completed 09-03-PLAN.md (phase 9 complete)
+Stopped at: Completed 10-03-PLAN.md (phase complete)
 Resume file: None
 
 ## Performance Metrics
 
 | Metric | Value |
 |--------|-------|
-| Phases completed | 9 |
-| Phases remaining | 1 |
-| Plans completed (phase 9) | 3/3 |
-| Requirements covered | 27/27 |
+| Phases completed | 10 |
+| Phases remaining | 0 |
+| Plans completed (phase 10) | 3/3 |
+| Requirements covered | 30/30 |
 | Blockers | 0 |
 | Technical debt items | 0 |
 
@@ -191,6 +191,16 @@ Resume file: None
 - OrchestrationReport.summary is Option<SummaryReport> — None on collection failure or no completed sessions
 - Summary collected in "Phase 2.5" of orchestration: after sessions, before merge
 - Resume from Merging phase loads previously-persisted summary; resume from Sessions re-collects
+- SmeltError has 22 variants: original 21 + AgentNotFound
+- AgentExecutor takes stdout/stderr handles before select! to allow child.wait() (borrow) in all arms — wait_with_output() moves child
+- AgentExecutor has_commits=true on exit 0 (v0.1.0 limitation) — merge phase handles no-diff sessions gracefully
+- Orchestrator.check_agent_preflight() resolves claude binary before worktree creation; returns Option<PathBuf> (None when all sessions are scripted)
+- execute_sessions() accepts Option<&PathBuf> for claude_binary; agent sessions fail with clear error if None (preflight should prevent this)
+- SessionRunner.try_agent_session() gracefully degrades to Completed (no commits) when binary not found or execution fails — preserves backward compatibility
+- CLI prints "Detected N agent session(s) — using Claude Code backend" and exits early with install instructions when claude not found
+- task_file content cloned before spawn boundary in orchestrator; resolved inside async closure
+- AgentExecutor removes CLAUDECODE env var before spawning child — prevents nested session detection error
+- No-script session test is environment-agnostic: asserts Completed outcome regardless of claude availability
 
 ### Blockers
 

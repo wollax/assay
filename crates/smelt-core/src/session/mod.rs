@@ -1,11 +1,13 @@
-//! Session manifest, types, and scripted session support.
+//! Session manifest, types, scripted session support, and agent execution.
 
+pub mod agent;
 pub mod manifest;
 pub mod process;
 pub mod runner;
 pub mod script;
 pub mod types;
 
+pub use agent::AgentExecutor;
 pub use manifest::{
     FailureMode, FileChange, Manifest, ManifestMeta, ScriptDef, ScriptStep, SessionDef,
 };
