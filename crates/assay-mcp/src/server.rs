@@ -435,6 +435,9 @@ fn option_is_none_or_false(v: &Option<bool>) -> bool {
 /// Session timeout in seconds (30 minutes).
 const SESSION_TIMEOUT_SECS: u64 = 1800;
 
+/// Maximum byte size for captured git diff (32 KiB).
+const DIFF_BUDGET_BYTES: usize = 32 * 1024;
+
 /// Maximum number of timed-out session entries to retain (prevents unbounded growth).
 const MAX_TIMED_OUT_ENTRIES: usize = 100;
 
@@ -651,6 +654,29 @@ impl AssayServer {
 
         // If spec has agent criteria, create a session and attach to response.
         if let Some(info) = agent_info {
+            // Capture git diff for the session (non-blocking on failure).
+            let (diff, diff_truncated, diff_bytes_original) = {
+                match std::process::Command::new("git")
+                    .args(["diff", "HEAD"])
+                    .current_dir(&working_dir)
+                    .output()
+                {
+                    Ok(output) if output.status.success() => {
+                        let raw = String::from_utf8_lossy(&output.stdout);
+                        assay_core::gate::truncate_diff(&raw, DIFF_BUDGET_BYTES)
+                    }
+                    Ok(output) => {
+                        let stderr = String::from_utf8_lossy(&output.stderr);
+                        tracing::warn!("git diff HEAD failed: {}", stderr.trim());
+                        (None, false, None)
+                    }
+                    Err(e) => {
+                        tracing::warn!("git diff HEAD command error: {e}");
+                        (None, false, None)
+                    }
+                }
+            };
+
             // Destructure summary to move fields without cloning Vec<CriterionResult>.
             let assay_types::GateRunSummary {
                 spec_name, results, ..
@@ -660,9 +686,9 @@ impl AssayServer {
                 info.agent_criteria_names,
                 info.spec_enforcement,
                 results,
-                None,  // diff — not yet wired up
-                false, // diff_truncated
-                None,  // diff_bytes_original
+                diff,
+                diff_truncated,
+                diff_bytes_original,
             );
 
             let session_id = session.session_id.clone();
