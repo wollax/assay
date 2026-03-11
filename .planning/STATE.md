@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 2026-03-10)
 
 ## Current Position
 
-Phase: 35 — Observability Foundation
-Plan: 1 of 2 (Warnings Field and Finalize Refactor)
-Status: In progress
-Last activity: 2026-03-11 — Completed 35-01-PLAN.md
+Phase: 35 — Observability Foundation (COMPLETE)
+Plan: 2 of 2 (Outcome Filter and Limit Cap)
+Status: Complete
+Last activity: 2026-03-11 — Completed 35-02-PLAN.md
 
-Progress: v0.4.0 [█░░░░░░░░░░░░░░░░] ~5% (35-01 of 11 phases)
+Progress: v0.4.0 [██░░░░░░░░░░░░░░░] ~9% (phase 35 complete, 10 phases remaining)
 
 ## Milestone Progress
 
@@ -46,6 +46,10 @@ v0.4.0 decisions (from 35-01):
 - `build_finalized_record` returns plain `GateRunRecord` (infallible without I/O)
 - `persisted` field on `GateFinalizeResponse` derives from `warnings.is_empty()`
 - `finalize_session` kept as backward-compat wrapper
+
+v0.4.0 decisions (from 35-02):
+- Unrecognized outcome values treated as "any" (graceful degradation)
+- `total_runs` reflects on-disk count, not filtered count
 
 v0.4.1 decisions (from brainstorm):
 - PR creation over direct merge for v0.4.x — maps to `autonomous: false`
@@ -82,5 +86,5 @@ Run `/kata-plan-phase [N]` to start planning phases, or `/kata-discuss-phase [N]
 ### Session Continuity
 
 Last session: 2026-03-11
-Stopped at: Completed 35-01-PLAN.md
+Stopped at: Completed phase 35 (both plans)
 Resume file: None
