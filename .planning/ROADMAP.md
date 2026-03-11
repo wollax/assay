@@ -70,15 +70,10 @@
 
 **Goal:** Ship `gate_evaluate` as the capstone MCP tool — agent-evaluated gates driven by headless subprocess orchestration, backed by session persistence, context-aware diff budgeting, spec validation, and observability improvements.
 
-- [ ] Phase 35: Observability Foundation
+- [x] Phase 35: Observability Foundation — 2026-03-11
   - OBS-01: `warnings` field on mutating MCP responses
   - OBS-02: Outcome-filtered `gate_history` with limit
   - DEBT-02: Close history-save-failure-not-surfaced issue
-  - **Success criteria:**
-    1. Mutating MCP tool responses include `warnings` field that surfaces history save failures, diff capture failures, and cleanup warnings
-    2. `gate_history` accepts `outcome` parameter (passed/failed/any) and returns only matching runs
-    3. `gate_history` accepts `limit` parameter (default 10, max 50) and respects it
-    4. History save failure issue is closed — warnings field subsumes the concern
 
 - [ ] Phase 36: Correctness & Robustness
   - FIX-01: Worktree status relative to base branch
@@ -227,5 +222,5 @@
 | v0.1.0 Proof of Concept | ✅ Shipped | 10 | 43 | 100% |
 | v0.2.0 Dual-Track Gates & Hardening | ✅ Shipped | 15 | 52 | 100% |
 | v0.3.0 Orchestration Foundation | ✅ Shipped | 9 | 43 | 100% |
-| v0.4.0 Headless Orchestration | 🔄 In Progress | 11 | 28 | 0% |
+| v0.4.0 Headless Orchestration | 🔄 In Progress | 11 | 28 | 9% |
 | v0.4.1 Merge Tools | ○ Planned | 5 | 8 | 0% |
