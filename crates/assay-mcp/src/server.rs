@@ -1,8 +1,9 @@
 //! MCP server implementation with spec, gate, context, and worktree tools.
 //!
-//! Provides the [`AssayServer`] which exposes twelve tools over MCP:
+//! Provides the [`AssayServer`] which exposes thirteen tools over MCP:
 //! - `spec_list` — discover available specs
 //! - `spec_get` — read a full spec definition
+//! - `spec_validate` — statically validate a spec without running it
 //! - `gate_run` — evaluate quality gate criteria (auto-creates sessions for agent criteria)
 //! - `gate_report` — submit agent evaluation for a criterion in an active session
 //! - `gate_finalize` — finalize a session, persisting all evaluations as a GateRunRecord
@@ -46,6 +47,25 @@ pub struct SpecGetParams {
     /// The spec to retrieve.
     #[schemars(description = "Spec name (filename without .toml extension, e.g. 'auth-flow')")]
     pub name: String,
+}
+
+/// Parameters for the `spec_validate` tool.
+#[derive(Deserialize, JsonSchema)]
+pub struct SpecValidateParams {
+    /// The spec to validate.
+    #[schemars(
+        description = "Spec name to validate (filename without .toml extension, e.g. 'auth-flow')"
+    )]
+    pub name: String,
+
+    /// Whether to validate command existence on PATH.
+    #[schemars(
+        description = "Validate that command binaries in criteria exist on PATH (default: false). \
+            Enable for deployment readiness checks. Command-not-found is reported as a warning, \
+            not an error, since the execution environment may differ."
+    )]
+    #[serde(default)]
+    pub check_commands: bool,
 }
 
 /// Parameters for the `gate_run` tool.
@@ -591,6 +611,109 @@ impl AssayServer {
         .map_err(|e| McpError::internal_error(format!("serialization failed: {e}"), None))?;
 
         Ok(CallToolResult::success(vec![Content::text(json)]))
+    }
+
+    /// Statically validate a spec without running it.
+    #[tool(
+        description = "Statically validate a spec without running it. Returns a ValidationResult with \
+            per-criterion diagnostics, severity levels (error/warning/info), and a summary. \
+            Errors block validity (TOML parse errors, duplicate criterion names, missing required fields). \
+            Warnings are advisory (missing AgentReport prompt, command not found on PATH). \
+            When the spec declares depends=[...], cross-spec dependency cycles are detected. \
+            Use check_commands=true to verify command binaries exist on PATH."
+    )]
+    pub async fn spec_validate(
+        &self,
+        params: Parameters<SpecValidateParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let cwd = resolve_cwd()?;
+        let config = match load_config(&cwd) {
+            Ok(c) => c,
+            Err(err_result) => return Ok(err_result),
+        };
+        let specs_dir = cwd.join(".assay").join(&config.specs_dir);
+
+        // Try to load the spec entry (handles TOML parse errors)
+        let entry =
+            match assay_core::spec::load_spec_entry_with_diagnostics(&params.0.name, &specs_dir) {
+                Ok(entry) => entry,
+                Err(assay_core::AssayError::SpecParse { message, .. })
+                | Err(assay_core::AssayError::GatesSpecParse { message, .. }) => {
+                    // TOML parse error — return as ValidationResult with error diagnostic
+                    let result = assay_types::ValidationResult {
+                        spec: params.0.name.clone(),
+                        valid: false,
+                        diagnostics: vec![assay_types::Diagnostic {
+                            severity: assay_types::Severity::Error,
+                            location: "toml".to_string(),
+                            message,
+                        }],
+                        summary: assay_types::DiagnosticSummary {
+                            errors: 1,
+                            warnings: 0,
+                            info: 0,
+                        },
+                    };
+                    return Ok(CallToolResult::success(vec![Content::json(result)?]));
+                }
+                Err(assay_core::AssayError::SpecValidation { errors, .. }) => {
+                    // Validation errors from load — convert to ValidationResult
+                    let diagnostics: Vec<assay_types::Diagnostic> = errors
+                        .iter()
+                        .map(|e| assay_types::Diagnostic {
+                            severity: assay_types::Severity::Error,
+                            location: e.field.clone(),
+                            message: e.message.clone(),
+                        })
+                        .collect();
+                    let error_count = diagnostics.len();
+                    let result = assay_types::ValidationResult {
+                        spec: params.0.name.clone(),
+                        valid: false,
+                        diagnostics,
+                        summary: assay_types::DiagnosticSummary {
+                            errors: error_count,
+                            warnings: 0,
+                            info: 0,
+                        },
+                    };
+                    return Ok(CallToolResult::success(vec![Content::json(result)?]));
+                }
+                Err(assay_core::AssayError::GatesSpecValidation { errors, .. }) => {
+                    let diagnostics: Vec<assay_types::Diagnostic> = errors
+                        .iter()
+                        .map(|e| assay_types::Diagnostic {
+                            severity: assay_types::Severity::Error,
+                            location: e.field.clone(),
+                            message: e.message.clone(),
+                        })
+                        .collect();
+                    let error_count = diagnostics.len();
+                    let result = assay_types::ValidationResult {
+                        spec: params.0.name.clone(),
+                        valid: false,
+                        diagnostics,
+                        summary: assay_types::DiagnosticSummary {
+                            errors: error_count,
+                            warnings: 0,
+                            info: 0,
+                        },
+                    };
+                    return Ok(CallToolResult::success(vec![Content::json(result)?]));
+                }
+                Err(other) => {
+                    return Ok(domain_error(&other));
+                }
+            };
+
+        // Spec loaded successfully — run validation with additional checks
+        let result = assay_core::spec::validate::validate_spec_with_dependencies(
+            &entry,
+            params.0.check_commands,
+            &specs_dir,
+        );
+
+        Ok(CallToolResult::success(vec![Content::json(result)?]))
     }
 
     /// Run quality gate checks for a spec.
