@@ -680,8 +680,7 @@ prompt = "Review the code for quality issues"
         extract_text(&finalize_result)
     );
 
-    let json: serde_json::Value =
-        serde_json::from_str(&extract_text(&finalize_result)).unwrap();
+    let json: serde_json::Value = serde_json::from_str(&extract_text(&finalize_result)).unwrap();
 
     // persisted should be true on success
     assert_eq!(json["persisted"], true);
@@ -693,11 +692,29 @@ prompt = "Review the code for quality issues"
     );
 
     // Verify full response structure from GateFinalizeResponse struct
-    assert!(json["run_id"].as_str().is_some_and(|s| !s.is_empty()), "run_id should be present");
+    assert!(
+        json["run_id"].as_str().is_some_and(|s| !s.is_empty()),
+        "run_id should be present"
+    );
     assert_eq!(json["spec_name"], "agent-spec");
-    assert!(json["passed"].as_u64().is_some(), "passed should be present");
-    assert!(json["failed"].as_u64().is_some(), "failed should be present");
-    assert!(json["skipped"].as_u64().is_some(), "skipped should be present");
-    assert!(json["required_failed"].as_u64().is_some(), "required_failed should be present");
-    assert!(json["advisory_failed"].as_u64().is_some(), "advisory_failed should be present");
+    assert!(
+        json["passed"].as_u64().is_some(),
+        "passed should be present"
+    );
+    assert!(
+        json["failed"].as_u64().is_some(),
+        "failed should be present"
+    );
+    assert!(
+        json["skipped"].as_u64().is_some(),
+        "skipped should be present"
+    );
+    assert!(
+        json["required_failed"].as_u64().is_some(),
+        "required_failed should be present"
+    );
+    assert!(
+        json["advisory_failed"].as_u64().is_some(),
+        "advisory_failed should be present"
+    );
 }

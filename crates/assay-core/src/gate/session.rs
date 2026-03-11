@@ -101,10 +101,7 @@ fn resolve_evaluator_priority(evaluations: &[AgentEvaluation]) -> Option<&AgentE
 ///
 /// Agent-reported criteria default to advisory enforcement unless
 /// overridden by the spec's enforcement map.
-pub fn build_finalized_record(
-    session: &AgentSession,
-    working_dir: Option<&str>,
-) -> GateRunRecord {
+pub fn build_finalized_record(session: &AgentSession, working_dir: Option<&str>) -> GateRunRecord {
     let start = Instant::now();
 
     let mut results = session.command_results.clone();
