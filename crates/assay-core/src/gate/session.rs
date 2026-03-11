@@ -28,6 +28,9 @@ pub fn create_session(
     criteria_names: HashSet<String>,
     spec_enforcement: HashMap<String, Enforcement>,
     command_results: Vec<CriterionResult>,
+    diff: Option<String>,
+    diff_truncated: bool,
+    diff_bytes_original: Option<usize>,
 ) -> AgentSession {
     let ts = Utc::now();
     let session_id = history::generate_run_id(&ts);
@@ -40,6 +43,9 @@ pub fn create_session(
         agent_evaluations: HashMap::new(),
         criteria_names,
         spec_enforcement,
+        diff,
+        diff_truncated,
+        diff_bytes_original,
     }
 }
 
@@ -407,6 +413,9 @@ mod tests {
             HashSet::from(["c1".to_string()]),
             HashMap::new(),
             vec![],
+            None,
+            false,
+            None,
         );
 
         assert!(
@@ -418,12 +427,50 @@ mod tests {
     }
 
     #[test]
+    fn create_session_with_diff_stores_fields() {
+        let diff_content = "diff --git a/foo.rs b/foo.rs\n+hello\n".to_string();
+        let session = create_session(
+            "test-spec",
+            HashSet::from(["c1".to_string()]),
+            HashMap::new(),
+            vec![],
+            Some(diff_content.clone()),
+            true,
+            Some(65536),
+        );
+
+        assert_eq!(session.diff.as_deref(), Some(diff_content.as_str()));
+        assert!(session.diff_truncated);
+        assert_eq!(session.diff_bytes_original, Some(65536));
+    }
+
+    #[test]
+    fn create_session_without_diff_stores_none() {
+        let session = create_session(
+            "test-spec",
+            HashSet::from(["c1".to_string()]),
+            HashMap::new(),
+            vec![],
+            None,
+            false,
+            None,
+        );
+
+        assert!(session.diff.is_none());
+        assert!(!session.diff_truncated);
+        assert!(session.diff_bytes_original.is_none());
+    }
+
+    #[test]
     fn report_evaluation_valid_criterion() {
         let mut session = create_session(
             "test-spec",
             HashSet::from(["code-review".to_string()]),
             HashMap::new(),
             vec![],
+            None,
+            false,
+            None,
         );
 
         let eval = make_evaluation(true, EvaluatorRole::SelfEval, Some(Confidence::High));
@@ -440,6 +487,9 @@ mod tests {
             HashSet::from(["code-review".to_string()]),
             HashMap::new(),
             vec![],
+            None,
+            false,
+            None,
         );
 
         let eval = make_evaluation(true, EvaluatorRole::SelfEval, None);
@@ -461,6 +511,9 @@ mod tests {
             HashSet::from(["code-review".to_string()]),
             HashMap::new(),
             vec![],
+            None,
+            false,
+            None,
         );
 
         let eval1 = make_evaluation(true, EvaluatorRole::SelfEval, Some(Confidence::Medium));
@@ -481,6 +534,9 @@ mod tests {
             HashSet::from(["agent-check".to_string()]),
             HashMap::from([("agent-check".to_string(), Enforcement::Required)]),
             vec![],
+            None,
+            false,
+            None,
         );
 
         let eval = make_evaluation(true, EvaluatorRole::SelfEval, Some(Confidence::High));
@@ -510,6 +566,9 @@ mod tests {
             HashSet::from(["review".to_string()]),
             HashMap::from([("review".to_string(), Enforcement::Required)]),
             vec![],
+            None,
+            false,
+            None,
         );
 
         // SelfEval says pass, Human says fail — Human should win
@@ -543,6 +602,9 @@ mod tests {
                 ("advisory-check".to_string(), Enforcement::Advisory),
             ]),
             vec![],
+            None,
+            false,
+            None,
         );
 
         // Only evaluate one criterion

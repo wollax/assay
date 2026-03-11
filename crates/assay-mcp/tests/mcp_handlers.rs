@@ -387,6 +387,124 @@ async fn gate_finalize_invalid_session_returns_error() {
 }
 
 #[tokio::test]
+async fn gate_report_not_found_returns_recovery_hint() {
+    let server = AssayServer::new();
+    let result = server
+        .gate_report(Parameters(GateReportParams {
+            session_id: "fabricated-session-abc".to_string(),
+            criterion_name: "some-criterion".to_string(),
+            passed: true,
+            evidence: "test".to_string(),
+            reasoning: "test".to_string(),
+            confidence: Some(Confidence::High),
+            evaluator_role: EvaluatorRole::SelfEval,
+        }))
+        .await
+        .unwrap();
+
+    assert!(
+        result.is_error.unwrap_or(false),
+        "gate_report for missing session should return error"
+    );
+    let text = extract_text(&result);
+    assert!(
+        text.contains("not found"),
+        "error should mention 'not found', got: {text}"
+    );
+    assert!(
+        text.contains("gate_run"),
+        "error should suggest gate_run as recovery, got: {text}"
+    );
+    // Must NOT list active sessions.
+    assert!(
+        !text.contains("active sessions"),
+        "error should NOT list active sessions, got: {text}"
+    );
+}
+
+#[tokio::test]
+async fn gate_finalize_not_found_returns_recovery_hint() {
+    let server = AssayServer::new();
+    let result = server
+        .gate_finalize(Parameters(GateFinalizeParams {
+            session_id: "fabricated-session-xyz".to_string(),
+        }))
+        .await
+        .unwrap();
+
+    assert!(
+        result.is_error.unwrap_or(false),
+        "gate_finalize for missing session should return error"
+    );
+    let text = extract_text(&result);
+    assert!(
+        text.contains("not found"),
+        "error should mention 'not found', got: {text}"
+    );
+    assert!(
+        text.contains("gate_run"),
+        "error should suggest gate_run, got: {text}"
+    );
+    assert!(
+        text.contains("gate_history"),
+        "error should suggest gate_history, got: {text}"
+    );
+}
+
+#[tokio::test]
+async fn gate_report_and_finalize_not_found_errors_are_consistent() {
+    let server = AssayServer::new();
+    let session_id = "same-fabricated-id-42";
+
+    let report_result = server
+        .gate_report(Parameters(GateReportParams {
+            session_id: session_id.to_string(),
+            criterion_name: "irrelevant".to_string(),
+            passed: true,
+            evidence: "test".to_string(),
+            reasoning: "test".to_string(),
+            confidence: Some(Confidence::High),
+            evaluator_role: EvaluatorRole::SelfEval,
+        }))
+        .await
+        .unwrap();
+
+    let finalize_result = server
+        .gate_finalize(Parameters(GateFinalizeParams {
+            session_id: session_id.to_string(),
+        }))
+        .await
+        .unwrap();
+
+    let report_text = extract_text(&report_result);
+    let finalize_text = extract_text(&finalize_result);
+
+    // Both should be errors.
+    assert!(report_result.is_error.unwrap_or(false));
+    assert!(finalize_result.is_error.unwrap_or(false));
+
+    // Both should mention the session ID.
+    assert!(
+        report_text.contains(session_id),
+        "gate_report error should contain session ID, got: {report_text}"
+    );
+    assert!(
+        finalize_text.contains(session_id),
+        "gate_finalize error should contain session ID, got: {finalize_text}"
+    );
+
+    // Both should follow the same pattern (same structure, same recovery hints).
+    assert!(
+        report_text.contains("gate_run") && finalize_text.contains("gate_run"),
+        "both errors should suggest gate_run"
+    );
+    assert!(
+        report_text.contains("gate_history") && finalize_text.contains("gate_history"),
+        "both errors should suggest gate_history"
+    );
+}
+
+#[tokio::test]
 #[serial]
 async fn gate_report_nonexistent_criterion_returns_error() {
     let dir = create_project(r#"project_name = "report-error-test""#);

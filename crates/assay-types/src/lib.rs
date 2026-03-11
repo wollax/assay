@@ -33,7 +33,7 @@ pub use gate::{GateKind, GateResult};
 pub use gate_run::{CriterionResult, GateRunRecord, GateRunSummary};
 pub use gates_spec::{GateCriterion, GatesSpec};
 pub use session::{AgentEvaluation, AgentSession, Confidence, EvaluatorRole};
-pub use worktree::{WorktreeConfig, WorktreeInfo, WorktreeStatus};
+pub use worktree::{WorktreeConfig, WorktreeInfo, WorktreeMetadata, WorktreeStatus};
 
 /// Marker badge for directory-based specs in CLI output (e.g., `auth-flow  [srs] 3 criteria`).
 ///
