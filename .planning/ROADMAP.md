@@ -6,7 +6,7 @@ Smelt is a multi-agent orchestration layer that coordinates AI coding sessions i
 
 | # | Milestone | Status |
 |---|-----------|--------|
-| 1 | v0.1.0 Orchestration PoC | 🔄 In Progress |
+| 1 | v0.1.0 Orchestration PoC | ✅ Complete |
 | 2 | v0.2.0 Assay Integration & Forge | ○ Planned |
 | 3 | v0.3.0 Multi-Machine Coordination | ○ Planned |
 
@@ -235,4 +235,4 @@ Smelt is a multi-agent orchestration layer that coordinates AI coding sessions i
 | 7 | AI Conflict Resolution | MERGE-02 | Complete |
 | 8 | Orchestration Plan & Task Graph | ORCH-04 | Complete |
 | 9 | Session Summary & Scope Isolation | ORCH-02, ORCH-03 | Complete |
-| 10 | Real Agent Sessions | SESS-03 | Pending |
+| 10 | Real Agent Sessions | SESS-03 | Complete |
