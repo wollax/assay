@@ -132,12 +132,20 @@ pub struct GateHistoryParams {
     #[serde(default)]
     pub run_id: Option<String>,
 
-    /// Maximum number of runs to return in list mode (default: 10).
+    /// Maximum number of runs to return in list mode (default: 10, max: 50).
     #[schemars(
-        description = "Maximum number of runs to return (default: 10, ignored when run_id is set)"
+        description = "Maximum number of runs to return (default: 10, max: 50, ignored when run_id is set)"
     )]
     #[serde(default)]
     pub limit: Option<usize>,
+
+    /// Filter by outcome: "passed", "failed", or "any" (default: "any").
+    /// A run is "failed" when any required criterion failed (required_failed > 0).
+    #[schemars(
+        description = "Filter runs by outcome: 'passed' (no required failures), 'failed' (has required failures), or 'any' (default: 'any')"
+    )]
+    #[serde(default)]
+    pub outcome: Option<String>,
 }
 
 /// Parameters for the `context_diagnose` tool.
@@ -822,7 +830,7 @@ impl AssayServer {
 
     /// Query gate run history for a spec.
     #[tool(
-        description = "Query gate run history for a spec. Without run_id, returns a list of recent runs with summary counts. With run_id, returns the full gate run record including all criterion results. Use this to check past gate outcomes and track quality trends."
+        description = "Query gate run history for a spec. Without run_id, returns a list of recent runs with summary counts (filterable by outcome: passed/failed/any). With run_id, returns the full gate run record including all criterion results. Use this to check past gate outcomes and track quality trends."
     )]
     pub async fn gate_history(
         &self,
@@ -854,25 +862,35 @@ impl AssayServer {
         };
 
         let total_runs = all_ids.len();
-        let limit = params.0.limit.unwrap_or(10);
+        let limit = params.0.limit.unwrap_or(10).min(50);
+        let outcome_filter = params.0.outcome.as_deref().unwrap_or("any");
 
-        // list() returns oldest-first; take the last `limit` entries and reverse for most-recent-first.
-        let selected_ids: Vec<&String> = all_ids.iter().rev().take(limit).collect();
-
-        let mut runs = Vec::with_capacity(selected_ids.len());
-        for id in &selected_ids {
+        // Iterate newest-first, loading and filtering by outcome, collecting up to `limit` matches.
+        let mut runs = Vec::with_capacity(limit);
+        for id in all_ids.iter().rev() {
+            if runs.len() >= limit {
+                break;
+            }
             match assay_core::history::load(&assay_dir, &params.0.name, id) {
                 Ok(record) => {
-                    runs.push(GateHistoryEntry {
-                        run_id: record.run_id,
-                        timestamp: record.timestamp.to_rfc3339(),
-                        passed: record.summary.passed,
-                        failed: record.summary.failed,
-                        skipped: record.summary.skipped,
-                        required_failed: record.summary.enforcement.required_failed,
-                        advisory_failed: record.summary.enforcement.advisory_failed,
-                        blocked: record.summary.enforcement.required_failed > 0,
-                    });
+                    let is_failed = record.summary.enforcement.required_failed > 0;
+                    let matches = match outcome_filter {
+                        "passed" => !is_failed,
+                        "failed" => is_failed,
+                        _ => true, // "any" or unrecognized
+                    };
+                    if matches {
+                        runs.push(GateHistoryEntry {
+                            run_id: record.run_id,
+                            timestamp: record.timestamp.to_rfc3339(),
+                            passed: record.summary.passed,
+                            failed: record.summary.failed,
+                            skipped: record.summary.skipped,
+                            required_failed: record.summary.enforcement.required_failed,
+                            advisory_failed: record.summary.enforcement.advisory_failed,
+                            blocked: is_failed,
+                        });
+                    }
                 }
                 Err(e) => {
                     tracing::warn!(run_id = %id, "skipping unreadable history entry: {e}");
