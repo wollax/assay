@@ -330,6 +330,27 @@ expression: schema.to_value()
       "type": "array",
       "uniqueItems": true
     },
+    "diff": {
+      "description": "Git diff captured at gate_run time (staged + unstaged changes relative to HEAD).\nNone when the worktree is clean or diff capture failed.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "diff_bytes_original": {
+      "description": "Original byte size of the diff before truncation.\nPresent only when a diff was captured (even if not truncated).",
+      "format": "uint",
+      "minimum": 0,
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "diff_truncated": {
+      "default": false,
+      "description": "Whether the captured diff was truncated to fit the 32 KiB budget.",
+      "type": "boolean"
+    },
     "session_id": {
       "description": "Unique session identifier.",
       "type": "string"
