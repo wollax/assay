@@ -3030,6 +3030,7 @@ cmd = "echo ok"
                 name: "no-runs".to_string(),
                 run_id: None,
                 limit: None,
+                outcome: None,
             }))
             .await
             .unwrap();
