@@ -22,7 +22,8 @@ pub use orchestrate::{
     build_dag, FailurePolicy, Orchestrator, OrchestrationOpts, OrchestrationReport, RunState,
     RunStateManager, SessionDag,
 };
-pub use session::{Manifest, SessionResult, SessionRunner};
+pub use session::{AgentExecutor, Manifest, SessionResult, SessionRunner};
+pub use session::agent::resolve_claude_binary;
 pub use summary::{
     collect_summary, FileStat, ScopeViolation, SessionSummary, SummaryReport, SummaryTotals,
 };
