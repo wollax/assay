@@ -280,7 +280,20 @@ fn handle_worktree_status(
     println!("  Branch: {}", st.branch);
     println!("  HEAD:   {}", st.head);
     println!("  Status: {status_label}");
-    println!("  Ahead:  {}  Behind: {}", st.ahead, st.behind);
+    let ahead_str = st.ahead.map_or("n/a".to_string(), |v| v.to_string());
+    let behind_str = st.behind.map_or("n/a".to_string(), |v| v.to_string());
+    println!("  Ahead:  {ahead_str}  Behind: {behind_str}");
+
+    if let Some(ref base) = st.base_branch {
+        println!("  Base:   {base}");
+    }
+
+    for warning in &st.warnings {
+        println!(
+            "  {}",
+            colorize(&format!("Warning: {warning}"), "\x1b[33m", color)
+        );
+    }
 
     Ok(0)
 }

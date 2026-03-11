@@ -723,7 +723,11 @@ pub fn truncate_diff(raw: &str, budget: usize) -> (Option<String>, bool, Option<
         return (None, false, None);
     }
     let result = truncate_head_tail(raw, budget);
-    (Some(result.output), result.truncated, Some(result.original_bytes))
+    (
+        Some(result.output),
+        result.truncated,
+        Some(result.original_bytes),
+    )
 }
 
 #[cfg(test)]
