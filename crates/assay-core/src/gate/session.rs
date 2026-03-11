@@ -92,20 +92,16 @@ fn resolve_evaluator_priority(evaluations: &[AgentEvaluation]) -> Option<&AgentE
         .max_by_key(|e| (role_priority(&e.evaluator_role), e.timestamp))
 }
 
-/// Finalize a session, producing a complete gate run record.
+/// Build a finalized gate run record from a session without performing I/O.
 ///
 /// Combines command results with agent evaluation results. For each
 /// agent criterion, resolves the effective evaluation using role priority
-/// (human > independent > self). Saves the record to history.
+/// (human > independent > self). Returns the record directly — the caller
+/// is responsible for persisting it.
 ///
 /// Agent-reported criteria default to advisory enforcement unless
 /// overridden by the spec's enforcement map.
-pub fn finalize_session(
-    session: &AgentSession,
-    assay_dir: &Path,
-    working_dir: Option<&str>,
-    max_history: Option<usize>,
-) -> Result<GateRunRecord> {
+pub fn build_finalized_record(session: &AgentSession, working_dir: Option<&str>) -> GateRunRecord {
     let start = Instant::now();
 
     let mut results = session.command_results.clone();
@@ -114,7 +110,72 @@ pub fn finalize_session(
     let mut skipped = 0usize;
     let mut enforcement_summary = EnforcementSummary::default();
 
-    // Count command results
+    // Merge agent evaluations into results, replacing skipped placeholders
+    // that gate_run inserts for AgentReport criteria.
+    for criterion_name in &session.criteria_names {
+        let enforcement = session
+            .spec_enforcement
+            .get(criterion_name)
+            .copied()
+            .unwrap_or(Enforcement::Advisory);
+
+        if let Some(evaluations) = session.agent_evaluations.get(criterion_name)
+            && !evaluations.is_empty()
+        {
+            let best = resolve_evaluator_priority(evaluations)
+                .expect("non-empty evaluations should have a best");
+
+            let gate_result = GateResult {
+                passed: best.passed,
+                kind: GateKind::AgentReport,
+                stdout: String::new(),
+                stderr: String::new(),
+                exit_code: None,
+                duration_ms: 0,
+                timestamp: best.timestamp,
+                truncated: false,
+                original_bytes: None,
+                evidence: Some(best.evidence.clone()),
+                reasoning: Some(best.reasoning.clone()),
+                confidence: best.confidence,
+                evaluator_role: Some(best.evaluator_role),
+            };
+
+            // Replace the skipped placeholder if one exists, otherwise append.
+            if let Some(existing) = results
+                .iter_mut()
+                .find(|cr| cr.criterion_name == *criterion_name && cr.result.is_none())
+            {
+                existing.result = Some(gate_result);
+                existing.enforcement = enforcement;
+            } else if !results
+                .iter()
+                .any(|cr| cr.criterion_name == *criterion_name)
+            {
+                results.push(CriterionResult {
+                    criterion_name: criterion_name.clone(),
+                    result: Some(gate_result),
+                    enforcement,
+                });
+            }
+
+            continue;
+        }
+
+        // Un-evaluated agent criterion: ensure a skipped entry exists.
+        if !results
+            .iter()
+            .any(|cr| cr.criterion_name == *criterion_name)
+        {
+            results.push(CriterionResult {
+                criterion_name: criterion_name.clone(),
+                result: None,
+                enforcement,
+            });
+        }
+    }
+
+    // Count all results
     for cr in &results {
         let enforcement = cr.enforcement;
         match &cr.result {
@@ -139,78 +200,9 @@ pub fn finalize_session(
         }
     }
 
-    // Build results for agent-evaluated criteria
-    for criterion_name in &session.criteria_names {
-        // Skip if this criterion already has a command result
-        if results
-            .iter()
-            .any(|cr| &cr.criterion_name == criterion_name)
-        {
-            continue;
-        }
-
-        let enforcement = session
-            .spec_enforcement
-            .get(criterion_name)
-            .copied()
-            .unwrap_or(Enforcement::Advisory);
-
-        match session.agent_evaluations.get(criterion_name) {
-            Some(evaluations) if !evaluations.is_empty() => {
-                let best = resolve_evaluator_priority(evaluations)
-                    .expect("non-empty evaluations should have a best");
-
-                let gate_result = GateResult {
-                    passed: best.passed,
-                    kind: GateKind::AgentReport,
-                    stdout: String::new(),
-                    stderr: String::new(),
-                    exit_code: None,
-                    duration_ms: 0,
-                    timestamp: best.timestamp,
-                    truncated: false,
-                    original_bytes: None,
-                    evidence: Some(best.evidence.clone()),
-                    reasoning: Some(best.reasoning.clone()),
-                    confidence: best.confidence,
-                    evaluator_role: Some(best.evaluator_role),
-                };
-
-                if best.passed {
-                    passed += 1;
-                    match enforcement {
-                        Enforcement::Required => enforcement_summary.required_passed += 1,
-                        Enforcement::Advisory => enforcement_summary.advisory_passed += 1,
-                    }
-                } else {
-                    failed += 1;
-                    match enforcement {
-                        Enforcement::Required => enforcement_summary.required_failed += 1,
-                        Enforcement::Advisory => enforcement_summary.advisory_failed += 1,
-                    }
-                }
-
-                results.push(CriterionResult {
-                    criterion_name: criterion_name.clone(),
-                    result: Some(gate_result),
-                    enforcement,
-                });
-            }
-            _ => {
-                // Un-evaluated agent criterion: mark as skipped
-                skipped += 1;
-                results.push(CriterionResult {
-                    criterion_name: criterion_name.clone(),
-                    result: None,
-                    enforcement,
-                });
-            }
-        }
-    }
-
     let total_duration_ms = start.elapsed().as_millis() as u64;
 
-    let record = GateRunRecord {
+    GateRunRecord {
         run_id: session.session_id.clone(),
         assay_version: env!("CARGO_PKG_VERSION").to_string(),
         timestamp: session.created_at,
@@ -224,10 +216,22 @@ pub fn finalize_session(
             total_duration_ms,
             enforcement: enforcement_summary,
         },
-    };
+    }
+}
 
+/// Finalize a session, producing a complete gate run record and saving to history.
+///
+/// Convenience wrapper around [`build_finalized_record`] that also persists the
+/// record via [`history::save`]. Keeps the original signature for backward
+/// compatibility with existing callers and tests.
+pub fn finalize_session(
+    session: &AgentSession,
+    assay_dir: &Path,
+    working_dir: Option<&str>,
+    max_history: Option<usize>,
+) -> Result<GateRunRecord> {
+    let record = build_finalized_record(session, working_dir);
     history::save(assay_dir, &record, max_history)?;
-
     Ok(record)
 }
 

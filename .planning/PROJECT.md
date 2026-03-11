@@ -114,6 +114,19 @@ The `assay-mcp` crate provides MCP server functionality. Future crates may inclu
 - Binary crates are thin wrappers that delegate to `assay-core`
 - Run `just ready` before considering work complete
 
+## Current Milestone: v0.4.0 Headless Orchestration
+
+**Goal:** Ship headless agent evaluation with context-aware gates — `gate_evaluate` as a single MCP tool that computes diffs, spawns headless evaluators, and persists results, backed by session persistence and external context engine integration.
+
+**Target features:**
+
+- `gate_evaluate` capstone MCP tool (diff-aware headless evaluation in single call)
+- `WorkSession` persistence linking worktrees, agents, and gate runs
+- `spec_validate` static spec health checker
+- Context engine integration for token-budgeted context slicing
+- 7 quick-win observability and correctness improvements
+- Tech debt batch cleanup
+
 ## Current State
 
 **Shipped:** v0.3.0 Orchestration Foundation (2026-03-10)
@@ -159,20 +172,28 @@ The `assay-mcp` crate provides MCP server functionality. Future crates may inclu
 
 ### Active
 
-(None — next milestone not yet defined. Run `/kata-add-milestone` to start.)
+- [ ] `gate_evaluate` MCP tool — diff + headless evaluator + finalize in single call — v0.4.0
+- [ ] `WorkSession` persistence with phase transitions and MCP tools — v0.4.0
+- [ ] `spec_validate` MCP tool with structured diagnostics — v0.4.0
+- [ ] Context engine integration for token-budgeted context slicing — v0.4.0
+- [ ] MCP observability: warnings field, filtered history, resolved config, growth rate — v0.4.0
+- [ ] Correctness: worktree base branch status, session error messages, diff context — v0.4.0
+- [ ] Tech debt batch cleanup — v0.4.0
+- [ ] `merge_check` MCP tool — read-only conflict detection via `git merge-tree` — v0.4.1
+- [ ] `merge_propose` MCP tool — PR creation with gate evidence, dry_run support — v0.4.1
+- [ ] Worktree fixes: canonical paths, default branch errors, prune failure surfacing — v0.4.1
 
 ### Future
 
-- [ ] Claude Code headless launcher (`--print` mode in worktrees)
-- [ ] Session record persistence linking worktrees, agents, and gate runs
-- [ ] Independent gate evaluation with context isolation and diff assembly
 - [ ] Minimal TUI gate results viewer
 - [ ] Composable gate definitions (`gate.extends`)
+- [ ] Criteria libraries with `include` field
 - [ ] Spec preconditions section
 - [ ] Gate history summary with pass/fail rates
 - [ ] tmux session/pane management for interactive agent lifecycle
 - [ ] MCP-integrated iterative workflow (agents call gates during implementation)
-- [ ] Merge-back workflow: feature branch creation, conflict resolution, gate enforcement
+- [ ] WorkSession merge state machine (merge_ready → merged | conflict_detected)
+- [ ] Conflict resolution strategies (auto/rebase/agent/human escalation)
 - [ ] Multi-session orchestrator/daemon managing concurrent sessions
 - [ ] Full TUI dashboard for multi-session supervision
 - [ ] Agent launcher trait (extract from concrete Claude Code implementation)
@@ -224,4 +245,4 @@ The `assay-mcp` crate provides MCP server functionality. Future crates may inclu
 - [Cozempic](https://github.com/Ruya-AI/cozempic) — Reference for token-aware diagnostics and agent team context loss protection
 
 ---
-*Last updated: 2026-03-10 after v0.3.0 milestone shipped*
+*Last updated: 2026-03-10 after v0.4.0 milestone started*
