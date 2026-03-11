@@ -2437,6 +2437,7 @@ cmd = "echo ok"
                 name: "test".to_string(),
                 description: String::new(),
                 gate: None,
+                depends: vec![],
                 criteria: vec![assay_types::Criterion {
                     name: "builds".to_string(),
                     description: "builds".to_string(),
@@ -2465,6 +2466,7 @@ cmd = "echo ok"
                 name: "mixed".to_string(),
                 description: String::new(),
                 gate: None,
+                depends: vec![],
                 criteria: vec![
                     assay_types::Criterion {
                         name: "builds".to_string(),
