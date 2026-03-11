@@ -548,6 +548,7 @@ async fn gate_history_nonexistent_spec_returns_error() {
             name: "nonexistent-spec".to_string(),
             run_id: None,
             limit: None,
+            outcome: None,
         }))
         .await
         .unwrap();
@@ -560,4 +561,672 @@ async fn gate_history_nonexistent_spec_returns_error() {
     if !result.is_error.unwrap_or(false) {
         assert_eq!(json["total_runs"], 0);
     }
+}
+
+// ── Warnings field tests ─────────────────────────────────────────────
+
+#[tokio::test]
+#[serial]
+async fn gate_run_command_only_success_omits_warnings() {
+    let dir = create_project(r#"project_name = "warnings-cmd-test""#);
+    create_spec(
+        dir.path(),
+        "cmd-spec.toml",
+        r#"
+name = "cmd-spec"
+description = "Command-only spec for warnings test"
+
+[[criteria]]
+name = "echo-check"
+description = "Echo passes"
+cmd = "echo ok"
+"#,
+    );
+
+    std::env::set_current_dir(dir.path()).unwrap();
+
+    let server = AssayServer::new();
+    let result = server
+        .gate_run(Parameters(GateRunParams {
+            name: "cmd-spec".to_string(),
+            include_evidence: false,
+            timeout: Some(30),
+        }))
+        .await
+        .unwrap();
+
+    assert!(
+        !result.is_error.unwrap_or(false),
+        "gate_run should succeed, got: {}",
+        extract_text(&result)
+    );
+
+    let json: serde_json::Value = serde_json::from_str(&extract_text(&result)).unwrap();
+    assert_eq!(json["passed"], 1);
+    // warnings should be omitted entirely when empty (skip_serializing_if)
+    assert!(
+        json.get("warnings").is_none(),
+        "warnings should be absent when empty, got: {json}"
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn gate_finalize_success_omits_warnings_and_has_persisted() {
+    let dir = create_project(r#"project_name = "warnings-finalize-test""#);
+    create_spec(
+        dir.path(),
+        "agent-spec.toml",
+        r#"
+name = "agent-spec"
+description = "Agent spec for finalize warnings test"
+
+[[criteria]]
+name = "echo-check"
+description = "Echo passes"
+cmd = "echo ok"
+
+[[criteria]]
+name = "code-review"
+description = "Agent reviews code quality"
+kind = "AgentReport"
+prompt = "Review the code for quality issues"
+"#,
+    );
+
+    std::env::set_current_dir(dir.path()).unwrap();
+
+    let server = AssayServer::new();
+
+    // gate_run
+    let run_result = server
+        .gate_run(Parameters(GateRunParams {
+            name: "agent-spec".to_string(),
+            include_evidence: false,
+            timeout: Some(30),
+        }))
+        .await
+        .unwrap();
+
+    let run_json: serde_json::Value = serde_json::from_str(&extract_text(&run_result)).unwrap();
+    let session_id = run_json["session_id"]
+        .as_str()
+        .expect("should have session_id");
+
+    // gate_report
+    server
+        .gate_report(Parameters(GateReportParams {
+            session_id: session_id.to_string(),
+            criterion_name: "code-review".to_string(),
+            passed: true,
+            evidence: "Code looks good".to_string(),
+            reasoning: "Meets standards".to_string(),
+            confidence: Some(Confidence::High),
+            evaluator_role: EvaluatorRole::SelfEval,
+        }))
+        .await
+        .unwrap();
+
+    // gate_finalize
+    let finalize_result = server
+        .gate_finalize(Parameters(GateFinalizeParams {
+            session_id: session_id.to_string(),
+        }))
+        .await
+        .unwrap();
+
+    assert!(
+        !finalize_result.is_error.unwrap_or(false),
+        "gate_finalize should succeed, got: {}",
+        extract_text(&finalize_result)
+    );
+
+    let json: serde_json::Value = serde_json::from_str(&extract_text(&finalize_result)).unwrap();
+
+    // persisted should be true on success
+    assert_eq!(json["persisted"], true);
+
+    // warnings should be omitted when empty
+    assert!(
+        json.get("warnings").is_none(),
+        "warnings should be absent when empty, got: {json}"
+    );
+
+    // Verify full response structure from GateFinalizeResponse struct.
+    // The spec has 1 cmd criterion (passes) and 1 agent criterion (reported as passed).
+    assert!(
+        json["run_id"].as_str().is_some_and(|s| !s.is_empty()),
+        "run_id should be present"
+    );
+    assert_eq!(json["spec_name"], "agent-spec");
+    assert_eq!(json["passed"], 2, "both cmd and agent criteria should pass");
+    assert_eq!(json["failed"], 0);
+    assert_eq!(json["skipped"], 0);
+    assert_eq!(json["required_failed"], 0);
+    assert_eq!(json["advisory_failed"], 0);
+    assert_eq!(
+        json["blocked"], false,
+        "no required failures means not blocked"
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn gate_finalize_save_failure_surfaces_warning() {
+    let dir = create_project(r#"project_name = "save-fail-test""#);
+    create_spec(
+        dir.path(),
+        "cmd-spec.toml",
+        r#"
+name = "cmd-spec"
+description = "Command-only spec for save failure test"
+
+[[criteria]]
+name = "echo-check"
+description = "Echo passes"
+cmd = "echo ok"
+
+[[criteria]]
+name = "code-review"
+description = "Agent reviews code"
+kind = "AgentReport"
+prompt = "Review the code"
+"#,
+    );
+
+    std::env::set_current_dir(dir.path()).unwrap();
+
+    let server = AssayServer::new();
+
+    // gate_run to create a session
+    let run_result = server
+        .gate_run(Parameters(GateRunParams {
+            name: "cmd-spec".to_string(),
+            include_evidence: false,
+            timeout: Some(30),
+        }))
+        .await
+        .unwrap();
+
+    let run_json: serde_json::Value = serde_json::from_str(&extract_text(&run_result)).unwrap();
+    let session_id = run_json["session_id"]
+        .as_str()
+        .expect("should have session_id");
+
+    // Submit agent report
+    server
+        .gate_report(Parameters(GateReportParams {
+            session_id: session_id.to_string(),
+            criterion_name: "code-review".to_string(),
+            passed: true,
+            evidence: "Looks good".to_string(),
+            reasoning: "Clean code".to_string(),
+            confidence: Some(Confidence::High),
+            evaluator_role: EvaluatorRole::SelfEval,
+        }))
+        .await
+        .unwrap();
+
+    // Make the results directory read-only to force a save failure.
+    // Create the results dir first, then make it non-writable.
+    let results_dir = dir.path().join(".assay").join("results");
+    std::fs::create_dir_all(&results_dir).unwrap();
+
+    // On Unix, remove write permission from the results directory
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let perms = std::fs::Permissions::from_mode(0o444);
+        std::fs::set_permissions(&results_dir, perms).unwrap();
+    }
+
+    let finalize_result = server
+        .gate_finalize(Parameters(GateFinalizeParams {
+            session_id: session_id.to_string(),
+        }))
+        .await
+        .unwrap();
+
+    // Restore permissions before assertions (so tempdir cleanup works)
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let perms = std::fs::Permissions::from_mode(0o755);
+        std::fs::set_permissions(&results_dir, perms).unwrap();
+    }
+
+    assert!(
+        !finalize_result.is_error.unwrap_or(false),
+        "gate_finalize should succeed (with warnings), got: {}",
+        extract_text(&finalize_result)
+    );
+
+    let json: serde_json::Value = serde_json::from_str(&extract_text(&finalize_result)).unwrap();
+
+    // On Unix, save should fail due to read-only dir, surfacing a warning
+    #[cfg(unix)]
+    {
+        assert_eq!(
+            json["persisted"], false,
+            "persisted should be false when save fails"
+        );
+        let warnings = json["warnings"]
+            .as_array()
+            .expect("warnings should be present");
+        assert!(
+            !warnings.is_empty(),
+            "should have at least one warning about save failure"
+        );
+        assert!(
+            warnings[0]
+                .as_str()
+                .unwrap()
+                .contains("history save failed"),
+            "warning should mention save failure, got: {}",
+            warnings[0]
+        );
+    }
+}
+
+// ── Outcome filter and limit cap tests ───────────────────────────────
+
+/// Helper: run a gate and return its JSON response. Panics on handler error.
+async fn run_gate(server: &AssayServer, spec_name: &str) -> serde_json::Value {
+    let result = server
+        .gate_run(Parameters(GateRunParams {
+            name: spec_name.to_string(),
+            include_evidence: false,
+            timeout: Some(30),
+        }))
+        .await
+        .unwrap();
+    assert!(
+        !result.is_error.unwrap_or(false),
+        "gate_run should succeed, got: {}",
+        extract_text(&result)
+    );
+    serde_json::from_str(&extract_text(&result)).unwrap()
+}
+
+/// Helper: query gate_history in list mode and return parsed JSON.
+async fn query_history(
+    server: &AssayServer,
+    spec_name: &str,
+    limit: Option<usize>,
+    outcome: Option<&str>,
+) -> serde_json::Value {
+    let result = server
+        .gate_history(Parameters(GateHistoryParams {
+            name: spec_name.to_string(),
+            run_id: None,
+            limit,
+            outcome: outcome.map(String::from),
+        }))
+        .await
+        .unwrap();
+    assert!(
+        !result.is_error.unwrap_or(false),
+        "gate_history should succeed, got: {}",
+        extract_text(&result)
+    );
+    serde_json::from_str(&extract_text(&result)).unwrap()
+}
+
+#[tokio::test]
+#[serial]
+async fn gate_history_outcome_failed_filters_correctly() {
+    let dir = create_project(r#"project_name = "outcome-failed-test""#);
+
+    // Spec with a required criterion that always fails
+    create_spec(
+        dir.path(),
+        "fail-spec.toml",
+        r#"
+name = "fail-spec"
+description = "Spec with a failing required criterion"
+
+[[criteria]]
+name = "will-fail"
+description = "Always fails"
+cmd = "false"
+"#,
+    );
+
+    // Spec with a criterion that always passes
+    create_spec(
+        dir.path(),
+        "pass-spec.toml",
+        r#"
+name = "pass-spec"
+description = "Spec with a passing criterion"
+
+[[criteria]]
+name = "will-pass"
+description = "Always passes"
+cmd = "echo ok"
+"#,
+    );
+
+    std::env::set_current_dir(dir.path()).unwrap();
+    let server = AssayServer::new();
+
+    // Create 2 passing runs and 2 failing runs (using separate specs that share history dir conceptually)
+    // Actually, outcome filter is per-spec, so we need a spec that can both pass and fail.
+    // Let's use two separate specs and query them independently.
+    run_gate(&server, "fail-spec").await;
+    run_gate(&server, "fail-spec").await;
+    run_gate(&server, "pass-spec").await;
+    run_gate(&server, "pass-spec").await;
+
+    // Query failed runs for fail-spec
+    let failed_history = query_history(&server, "fail-spec", None, Some("failed")).await;
+    let runs = failed_history["runs"].as_array().unwrap();
+    assert_eq!(runs.len(), 2, "should have 2 failed runs");
+    // total_runs reflects ALL on-disk records, not just filtered
+    assert_eq!(
+        failed_history["total_runs"], 2,
+        "total_runs should reflect all on-disk records for fail-spec"
+    );
+    for run in runs {
+        assert!(
+            run["required_failed"].as_u64().unwrap() > 0,
+            "all returned runs should have required_failed > 0"
+        );
+    }
+
+    // Query passed runs for fail-spec — should be empty but total_runs still shows all records
+    let passed_history = query_history(&server, "fail-spec", None, Some("passed")).await;
+    let runs = passed_history["runs"].as_array().unwrap();
+    assert_eq!(runs.len(), 0, "fail-spec should have 0 passed runs");
+    assert_eq!(
+        passed_history["total_runs"], 2,
+        "total_runs should reflect all on-disk records regardless of outcome filter"
+    );
+
+    // Query failed runs for pass-spec — should be empty
+    let failed_history = query_history(&server, "pass-spec", None, Some("failed")).await;
+    let runs = failed_history["runs"].as_array().unwrap();
+    assert_eq!(runs.len(), 0, "pass-spec should have 0 failed runs");
+    assert_eq!(
+        failed_history["total_runs"], 2,
+        "total_runs should reflect all on-disk records for pass-spec"
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn gate_history_outcome_passed_filters_correctly() {
+    let dir = create_project(r#"project_name = "outcome-passed-test""#);
+    create_spec(
+        dir.path(),
+        "pass-spec.toml",
+        r#"
+name = "pass-spec"
+description = "Spec with a passing criterion"
+
+[[criteria]]
+name = "will-pass"
+description = "Always passes"
+cmd = "echo ok"
+"#,
+    );
+
+    std::env::set_current_dir(dir.path()).unwrap();
+    let server = AssayServer::new();
+
+    run_gate(&server, "pass-spec").await;
+    run_gate(&server, "pass-spec").await;
+    run_gate(&server, "pass-spec").await;
+
+    let passed_history = query_history(&server, "pass-spec", None, Some("passed")).await;
+    let runs = passed_history["runs"].as_array().unwrap();
+    assert_eq!(runs.len(), 3, "should have 3 passed runs");
+    for run in runs {
+        assert_eq!(
+            run["required_failed"].as_u64().unwrap(),
+            0,
+            "all returned runs should have required_failed == 0"
+        );
+    }
+}
+
+#[tokio::test]
+#[serial]
+async fn gate_history_outcome_any_returns_all() {
+    let dir = create_project(r#"project_name = "outcome-any-test""#);
+
+    // Create two separate specs: one that always passes, one that always fails.
+    // This ensures we have genuinely mixed outcomes when querying a single spec.
+    create_spec(
+        dir.path(),
+        "pass-spec.toml",
+        r#"
+name = "pass-spec"
+description = "Spec that always passes"
+
+[[criteria]]
+name = "will-pass"
+description = "Always passes"
+cmd = "echo ok"
+"#,
+    );
+
+    create_spec(
+        dir.path(),
+        "fail-spec.toml",
+        r#"
+name = "fail-spec"
+description = "Spec that always fails"
+
+[[criteria]]
+name = "will-fail"
+description = "Always fails"
+cmd = "false"
+"#,
+    );
+
+    // Use a single spec with an advisory failing criterion so the run itself is "passed"
+    // (required_failed == 0), mixed with a spec that has required failures.
+    create_spec(
+        dir.path(),
+        "mixed-spec.toml",
+        r#"
+name = "mixed-spec"
+description = "Spec with advisory fail — overall passes"
+
+[[criteria]]
+name = "will-pass"
+description = "Always passes"
+cmd = "echo ok"
+
+[[criteria]]
+name = "advisory-fail"
+description = "Fails but advisory"
+cmd = "false"
+enforcement = "advisory"
+"#,
+    );
+
+    std::env::set_current_dir(dir.path()).unwrap();
+    let server = AssayServer::new();
+
+    // Run pass-spec (passed) and fail-spec (failed) to verify the filter works
+    // across specs with different outcomes. Then query each with outcome=any.
+    run_gate(&server, "pass-spec").await;
+    run_gate(&server, "fail-spec").await;
+
+    // Run mixed-spec twice — all runs are "passed" because advisory failures don't block
+    run_gate(&server, "mixed-spec").await;
+
+    // outcome=any should return all runs for pass-spec
+    let any_history = query_history(&server, "pass-spec", None, Some("any")).await;
+    let runs = any_history["runs"].as_array().unwrap();
+    assert_eq!(
+        runs.len(),
+        1,
+        "outcome=any should return the 1 pass-spec run"
+    );
+
+    // outcome=any should return all runs for fail-spec
+    let any_history = query_history(&server, "fail-spec", None, Some("any")).await;
+    let runs = any_history["runs"].as_array().unwrap();
+    assert_eq!(
+        runs.len(),
+        1,
+        "outcome=any should return the 1 fail-spec run"
+    );
+    assert!(
+        runs[0]["blocked"].as_bool().unwrap(),
+        "fail-spec run should be blocked"
+    );
+
+    // No outcome (default) should also return all runs
+    let default_history = query_history(&server, "pass-spec", None, None).await;
+    let default_runs = default_history["runs"].as_array().unwrap();
+    assert_eq!(
+        default_runs.len(),
+        1,
+        "default outcome should return all runs"
+    );
+
+    // mixed-spec: advisory failure means the run is "passed" (not blocked)
+    let mixed_history = query_history(&server, "mixed-spec", None, Some("passed")).await;
+    let mixed_runs = mixed_history["runs"].as_array().unwrap();
+    assert_eq!(
+        mixed_runs.len(),
+        1,
+        "mixed-spec run should be 'passed' (advisory fail doesn't block)"
+    );
+    assert!(
+        !mixed_runs[0]["blocked"].as_bool().unwrap(),
+        "mixed-spec run should not be blocked"
+    );
+    assert_eq!(
+        mixed_runs[0]["advisory_failed"], 1,
+        "should have 1 advisory failure"
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn gate_history_unrecognized_outcome_returns_error() {
+    let dir = create_project(r#"project_name = "bad-outcome-test""#);
+    create_spec(
+        dir.path(),
+        "some-spec.toml",
+        r#"
+name = "some-spec"
+description = "Spec for outcome validation test"
+
+[[criteria]]
+name = "check"
+description = "Always passes"
+cmd = "true"
+"#,
+    );
+
+    std::env::set_current_dir(dir.path()).unwrap();
+    let server = AssayServer::new();
+
+    let result = server
+        .gate_history(Parameters(GateHistoryParams {
+            name: "some-spec".to_string(),
+            run_id: None,
+            limit: None,
+            outcome: Some("invalid_value".to_string()),
+        }))
+        .await
+        .unwrap();
+
+    assert!(
+        result.is_error.unwrap_or(false),
+        "unrecognized outcome value should return error, got: {}",
+        extract_text(&result)
+    );
+    let text = extract_text(&result);
+    assert!(
+        text.contains("unrecognized outcome filter"),
+        "error should mention unrecognized outcome, got: {text}"
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn gate_history_limit_capped_at_50() {
+    let dir = create_project(r#"project_name = "limit-cap-test""#);
+    create_spec(
+        dir.path(),
+        "cap-spec.toml",
+        r#"
+name = "cap-spec"
+description = "Spec for limit cap test"
+
+[[criteria]]
+name = "check"
+description = "Always passes"
+cmd = "true"
+"#,
+    );
+
+    std::env::set_current_dir(dir.path()).unwrap();
+    let server = AssayServer::new();
+
+    // Create 51 runs to exceed the 50-run cap
+    for _ in 0..51 {
+        run_gate(&server, "cap-spec").await;
+    }
+
+    // Request limit=100, which should be capped at 50 internally.
+    let history = query_history(&server, "cap-spec", Some(100), None).await;
+    let runs = history["runs"].as_array().unwrap();
+    assert_eq!(
+        runs.len(),
+        50,
+        "should return exactly 50 runs (limit=100 capped to 50)"
+    );
+    assert_eq!(
+        history["total_runs"], 51,
+        "total_runs should reflect all 51 on-disk records"
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn gate_history_default_limit_is_10() {
+    let dir = create_project(r#"project_name = "default-limit-test""#);
+    create_spec(
+        dir.path(),
+        "limit-spec.toml",
+        r#"
+name = "limit-spec"
+description = "Spec for default limit test"
+
+[[criteria]]
+name = "check"
+description = "Always passes"
+cmd = "echo ok"
+"#,
+    );
+
+    std::env::set_current_dir(dir.path()).unwrap();
+    let server = AssayServer::new();
+
+    // Create 15 runs
+    for _ in 0..15 {
+        run_gate(&server, "limit-spec").await;
+    }
+
+    // Query with no limit — should return exactly 10 (default)
+    let history = query_history(&server, "limit-spec", None, None).await;
+    let runs = history["runs"].as_array().unwrap();
+    assert_eq!(
+        runs.len(),
+        10,
+        "default limit should return 10 runs, got {}",
+        runs.len()
+    );
+    assert_eq!(
+        history["total_runs"], 15,
+        "total_runs should reflect all 15 on-disk records"
+    );
 }

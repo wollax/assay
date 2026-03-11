@@ -132,12 +132,20 @@ pub struct GateHistoryParams {
     #[serde(default)]
     pub run_id: Option<String>,
 
-    /// Maximum number of runs to return in list mode (default: 10).
+    /// Maximum number of runs to return in list mode (default: 10, max: 50).
     #[schemars(
-        description = "Maximum number of runs to return (default: 10, ignored when run_id is set)"
+        description = "Maximum number of runs to return (default: 10, max: 50, ignored when run_id is set)"
     )]
     #[serde(default)]
     pub limit: Option<usize>,
+
+    /// Filter by outcome: "passed", "failed", or "any" (default: "any").
+    /// A run is "failed" when any required criterion failed (required_failed > 0).
+    #[schemars(
+        description = "Filter runs by outcome: 'passed' (no required failures), 'failed' (has required failures), or 'any' (default: 'any')"
+    )]
+    #[serde(default)]
+    pub outcome: Option<String>,
 }
 
 /// Parameters for the `context_diagnose` tool.
@@ -289,6 +297,10 @@ struct GateRunResponse {
     /// Names of criteria pending agent evaluation. Omitted when no session is active.
     #[serde(skip_serializing_if = "Option::is_none")]
     pending_criteria: Option<Vec<String>>,
+    /// Warnings about degraded operations (e.g., history save failure).
+    /// Omitted from JSON when empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    warnings: Vec<String>,
 }
 
 /// Response from the `gate_report` tool confirming an evaluation was recorded.
@@ -304,6 +316,40 @@ struct GateReportResponse {
     evaluations_count: usize,
     /// Names of criteria still pending agent evaluation in this session.
     pending_criteria: Vec<String>,
+    /// Warnings about degraded operations.
+    /// Pre-wired for future observability (e.g., report validation warnings);
+    /// currently always empty since `gate_report` has no fallible side-effects.
+    /// Omitted from JSON when empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    warnings: Vec<String>,
+}
+
+/// Aggregate gate finalize response returned by the `gate_finalize` tool.
+#[derive(Serialize)]
+struct GateFinalizeResponse {
+    /// Run ID of the finalized record.
+    run_id: String,
+    /// Name of the spec that was evaluated.
+    spec_name: String,
+    /// Total number of criteria that passed.
+    passed: usize,
+    /// Total number of criteria that failed.
+    failed: usize,
+    /// Number of criteria skipped.
+    skipped: usize,
+    /// Number of required-enforcement criteria that failed.
+    required_failed: usize,
+    /// Number of advisory-enforcement criteria that failed.
+    advisory_failed: usize,
+    /// Whether the gate is blocked — `true` when any required criterion failed.
+    /// Consistent with `GateRunResponse` and `GateHistoryEntry`.
+    blocked: bool,
+    /// Whether the record was persisted to history.
+    persisted: bool,
+    /// Warnings about degraded operations (e.g., history save failure).
+    /// Omitted from JSON when empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    warnings: Vec<String>,
 }
 
 /// Response for `gate_history` in list mode — returns recent run summaries.
@@ -311,10 +357,14 @@ struct GateReportResponse {
 struct GateHistoryListResponse {
     /// Spec name that was queried.
     spec_name: String,
-    /// Total number of runs available for this spec (before limit is applied).
+    /// Total number of runs on disk for this spec (before limit AND outcome filter are applied).
     total_runs: usize,
     /// Run summaries, most recent first.
     runs: Vec<GateHistoryEntry>,
+    /// Warnings about degraded operations (e.g., unreadable history entries).
+    /// Omitted from JSON when empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    warnings: Vec<String>,
 }
 
 /// A single run entry in the history list.
@@ -655,10 +705,12 @@ impl AssayServer {
                 Some(working_dir.to_string_lossy().to_string()),
                 max_history,
             ) {
+                let msg = format!("history save failed: {e}");
                 tracing::warn!(
                     spec_name = %spec_name_for_log,
-                    "failed to save command-only gate run history: {e}"
+                    "{msg}"
                 );
+                response.warnings.push(msg);
             }
         }
 
@@ -717,6 +769,7 @@ impl AssayServer {
             accepted: true,
             evaluations_count,
             pending_criteria: pending,
+            warnings: Vec::new(),
         };
 
         let json = serde_json::to_string(&response)
@@ -754,26 +807,31 @@ impl AssayServer {
         let working_dir = resolve_working_dir(&cwd, &config);
         let max_history = config.gates.as_ref().and_then(|g| g.max_history);
 
-        let record = match assay_core::gate::session::finalize_session(
+        let record = assay_core::gate::session::build_finalized_record(
             &session,
-            &assay_dir,
             Some(&working_dir.to_string_lossy()),
-            max_history,
-        ) {
-            Ok(r) => r,
-            Err(e) => return Ok(domain_error(&e)),
-        };
+        );
 
-        let response = serde_json::json!({
-            "run_id": record.run_id,
-            "spec_name": record.summary.spec_name,
-            "passed": record.summary.passed,
-            "failed": record.summary.failed,
-            "skipped": record.summary.skipped,
-            "required_failed": record.summary.enforcement.required_failed,
-            "advisory_failed": record.summary.enforcement.advisory_failed,
-            "persisted": true,
-        });
+        let mut warnings = Vec::new();
+        if let Err(e) = assay_core::history::save(&assay_dir, &record, max_history) {
+            let msg = format!("history save failed: {e}");
+            tracing::warn!(session_id = %record.run_id, "{msg}");
+            warnings.push(msg);
+        }
+
+        let required_failed = record.summary.enforcement.required_failed;
+        let response = GateFinalizeResponse {
+            run_id: record.run_id,
+            spec_name: record.summary.spec_name,
+            passed: record.summary.passed,
+            failed: record.summary.failed,
+            skipped: record.summary.skipped,
+            required_failed,
+            advisory_failed: record.summary.enforcement.advisory_failed,
+            blocked: required_failed > 0,
+            persisted: warnings.is_empty(),
+            warnings,
+        };
 
         let json = serde_json::to_string(&response)
             .map_err(|e| McpError::internal_error(format!("serialization failed: {e}"), None))?;
@@ -783,7 +841,7 @@ impl AssayServer {
 
     /// Query gate run history for a spec.
     #[tool(
-        description = "Query gate run history for a spec. Without run_id, returns a list of recent runs with summary counts. With run_id, returns the full gate run record including all criterion results. Use this to check past gate outcomes and track quality trends."
+        description = "Query gate run history for a spec. Without run_id, returns a list of recent runs with summary counts (filterable by outcome: passed/failed/any). With run_id, returns the full gate run record including all criterion results. Use this to check past gate outcomes and track quality trends."
     )]
     pub async fn gate_history(
         &self,
@@ -815,28 +873,49 @@ impl AssayServer {
         };
 
         let total_runs = all_ids.len();
-        let limit = params.0.limit.unwrap_or(10);
+        let limit = params.0.limit.unwrap_or(10).min(50);
+        let outcome_filter = params.0.outcome.as_deref().unwrap_or("any");
 
-        // list() returns oldest-first; take the last `limit` entries and reverse for most-recent-first.
-        let selected_ids: Vec<&String> = all_ids.iter().rev().take(limit).collect();
+        // Validate outcome filter value.
+        if !matches!(outcome_filter, "passed" | "failed" | "any") {
+            return Ok(CallToolResult::error(vec![Content::text(format!(
+                "unrecognized outcome filter '{}': valid values are \"passed\", \"failed\", \"any\"",
+                outcome_filter
+            ))]));
+        }
 
-        let mut runs = Vec::with_capacity(selected_ids.len());
-        for id in &selected_ids {
+        // Iterate newest-first, loading and filtering by outcome, collecting up to `limit` matches.
+        let mut runs = Vec::with_capacity(limit);
+        let mut warnings = Vec::new();
+        for id in all_ids.iter().rev() {
+            if runs.len() >= limit {
+                break;
+            }
             match assay_core::history::load(&assay_dir, &params.0.name, id) {
                 Ok(record) => {
-                    runs.push(GateHistoryEntry {
-                        run_id: record.run_id,
-                        timestamp: record.timestamp.to_rfc3339(),
-                        passed: record.summary.passed,
-                        failed: record.summary.failed,
-                        skipped: record.summary.skipped,
-                        required_failed: record.summary.enforcement.required_failed,
-                        advisory_failed: record.summary.enforcement.advisory_failed,
-                        blocked: record.summary.enforcement.required_failed > 0,
-                    });
+                    let is_failed = record.summary.enforcement.required_failed > 0;
+                    let matches = match outcome_filter {
+                        "passed" => !is_failed,
+                        "failed" => is_failed,
+                        _ => true, // "any" (validated above)
+                    };
+                    if matches {
+                        runs.push(GateHistoryEntry {
+                            run_id: record.run_id,
+                            timestamp: record.timestamp.to_rfc3339(),
+                            passed: record.summary.passed,
+                            failed: record.summary.failed,
+                            skipped: record.summary.skipped,
+                            required_failed: record.summary.enforcement.required_failed,
+                            advisory_failed: record.summary.enforcement.advisory_failed,
+                            blocked: is_failed,
+                        });
+                    }
                 }
                 Err(e) => {
-                    tracing::warn!(run_id = %id, "skipping unreadable history entry: {e}");
+                    let msg = format!("skipping unreadable history entry '{}': {e}", id);
+                    tracing::warn!(run_id = %id, "{msg}");
+                    warnings.push(msg);
                 }
             }
         }
@@ -845,6 +924,7 @@ impl AssayServer {
             spec_name: params.0.name,
             total_runs,
             runs,
+            warnings,
         };
 
         let json = serde_json::to_string(&response)
@@ -1287,6 +1367,7 @@ fn format_gate_response(
         criteria,
         session_id: None,
         pending_criteria: None,
+        warnings: Vec::new(),
     }
 }
 
@@ -2037,6 +2118,7 @@ cmd = "echo ok"
             ],
             session_id: None,
             pending_criteria: None,
+            warnings: Vec::new(),
         };
 
         let json = serde_json::to_value(&response).unwrap();
@@ -2141,6 +2223,7 @@ cmd = "echo ok"
             }],
             session_id: None,
             pending_criteria: None,
+            warnings: Vec::new(),
         };
 
         let json = serde_json::to_value(&response).unwrap();
@@ -2163,6 +2246,7 @@ cmd = "echo ok"
             accepted: true,
             evaluations_count: 1,
             pending_criteria: vec!["arch-review".to_string()],
+            warnings: Vec::new(),
         };
 
         let json = serde_json::to_value(&response).unwrap();
@@ -2189,6 +2273,7 @@ cmd = "echo ok"
             criteria: vec![],
             session_id: Some("20260305T220000Z-abc123".to_string()),
             pending_criteria: Some(vec!["code-review".to_string()]),
+            warnings: Vec::new(),
         };
 
         let json = serde_json::to_value(&response).unwrap();
@@ -2607,6 +2692,7 @@ cmd = "echo ok"
                     blocked: false,
                 },
             ],
+            warnings: Vec::new(),
         };
 
         let json = serde_json::to_value(&response).unwrap();
@@ -2632,6 +2718,7 @@ cmd = "echo ok"
             spec_name: "no-history".to_string(),
             total_runs: 0,
             runs: vec![],
+            warnings: Vec::new(),
         };
 
         let json = serde_json::to_value(&response).unwrap();
@@ -2968,6 +3055,7 @@ cmd = "echo ok"
                 name: "no-runs".to_string(),
                 run_id: None,
                 limit: None,
+                outcome: None,
             }))
             .await
             .unwrap();
@@ -3232,6 +3320,7 @@ cmd = "echo ok"
             ],
             session_id: None,
             pending_criteria: None,
+            warnings: Vec::new(),
         };
 
         // Struct-level assertions

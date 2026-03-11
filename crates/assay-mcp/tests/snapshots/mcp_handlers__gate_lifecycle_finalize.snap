@@ -5,11 +5,12 @@ expression: "{\n    let mut snap = finalize_json.clone(); snap[\"run_id\"] =\n  
 ---
 {
   "advisory_failed": 0,
+  "blocked": false,
   "failed": 0,
-  "passed": 1,
+  "passed": 2,
   "persisted": true,
   "required_failed": 0,
   "run_id": "[run_id]",
-  "skipped": 1,
+  "skipped": 0,
   "spec_name": "mixed-spec"
 }
