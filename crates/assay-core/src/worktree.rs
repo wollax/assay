@@ -7,7 +7,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use assay_types::{Config, WorktreeInfo, WorktreeStatus};
+use assay_types::{Config, WorktreeInfo, WorktreeMetadata, WorktreeStatus};
 
 use crate::error::{AssayError, Result};
 
@@ -89,6 +89,62 @@ fn parse_worktree_list(porcelain: &str) -> Vec<RawWorktree> {
             })
         })
         .collect()
+}
+
+/// Write worktree metadata to `<worktree_path>/.assay/worktree.json`.
+///
+/// Also adds `.assay/worktree.json` to the worktree's local git exclude
+/// (`$GIT_DIR/info/exclude`) so it doesn't pollute `git status`.
+fn write_metadata(worktree_path: &Path, metadata: &WorktreeMetadata) -> Result<()> {
+    let meta_dir = worktree_path.join(".assay");
+    std::fs::create_dir_all(&meta_dir)
+        .map_err(|e| AssayError::io("creating worktree metadata dir", &meta_dir, e))?;
+    let meta_path = meta_dir.join("worktree.json");
+    let json = serde_json::to_string_pretty(metadata).map_err(|e| {
+        AssayError::io(
+            "serializing worktree metadata",
+            &meta_path,
+            std::io::Error::other(e),
+        )
+    })?;
+    std::fs::write(&meta_path, json)
+        .map_err(|e| AssayError::io("writing worktree metadata", &meta_path, e))?;
+
+    // Add to per-worktree git exclude so the metadata file is invisible to status
+    if let Ok(git_dir) = git_command(&["rev-parse", "--git-dir"], worktree_path) {
+        let git_dir_path = if Path::new(&git_dir).is_absolute() {
+            PathBuf::from(&git_dir)
+        } else {
+            worktree_path.join(&git_dir)
+        };
+        let exclude_dir = git_dir_path.join("info");
+        let _ = std::fs::create_dir_all(&exclude_dir);
+        let exclude_path = exclude_dir.join("exclude");
+        let exclude_entry = ".assay/worktree.json";
+        let needs_entry = match std::fs::read_to_string(&exclude_path) {
+            Ok(content) => !content.lines().any(|l| l.trim() == exclude_entry),
+            Err(_) => true,
+        };
+        if needs_entry {
+            use std::io::Write;
+            if let Ok(mut file) = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&exclude_path)
+            {
+                let _ = writeln!(file, "{exclude_entry}");
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Read worktree metadata from `<worktree_path>/.assay/worktree.json`.
+fn read_metadata(worktree_path: &Path) -> Option<WorktreeMetadata> {
+    let meta_path = worktree_path.join(".assay").join("worktree.json");
+    let content = std::fs::read_to_string(&meta_path).ok()?;
+    serde_json::from_str(&content).ok()
 }
 
 // ---------------------------------------------------------------------------
@@ -184,6 +240,15 @@ pub fn create(
         project_root,
     )?;
 
+    // Persist metadata so status() can find the base branch later
+    write_metadata(
+        &worktree_path,
+        &WorktreeMetadata {
+            base_branch: base.clone(),
+            spec_slug: spec_slug.to_string(),
+        },
+    )?;
+
     Ok(WorktreeInfo {
         spec_slug: spec_slug.to_string(),
         path: worktree_path,
@@ -208,11 +273,12 @@ pub fn list(project_root: &Path) -> Result<Vec<WorktreeInfo>> {
         .filter_map(|wt| {
             let branch = wt.branch.as_deref()?;
             let slug = branch.strip_prefix("assay/")?;
+            let base_branch = read_metadata(&wt.path).map(|m| m.base_branch);
             Some(WorktreeInfo {
                 spec_slug: slug.to_string(),
                 path: wt.path,
                 branch: branch.to_string(),
-                base_branch: None,
+                base_branch,
             })
         })
         .collect();
@@ -222,6 +288,10 @@ pub fn list(project_root: &Path) -> Result<Vec<WorktreeInfo>> {
 }
 
 /// Get the status of a worktree including dirty state and ahead/behind counts.
+///
+/// Ahead/behind counts are computed relative to the base branch (from metadata),
+/// using the remote-tracking ref `origin/<base>` with a local fallback `refs/heads/<base>`.
+/// If the base ref is missing, ahead/behind are `None` and a warning is included.
 pub fn status(worktree_path: &Path, spec_slug: &str) -> Result<WorktreeStatus> {
     if !worktree_path.exists() {
         return Err(AssayError::WorktreeNotFound {
@@ -235,24 +305,63 @@ pub fn status(worktree_path: &Path, spec_slug: &str) -> Result<WorktreeStatus> {
     let porcelain_output = git_command(&["status", "--porcelain"], worktree_path)?;
     let dirty = !porcelain_output.is_empty();
 
-    // ahead/behind — default to 0/0 if no upstream
-    let (ahead, behind) = git_command(
-        &["rev-list", "--left-right", "--count", "HEAD...@{upstream}"],
-        worktree_path,
-    )
-    .ok()
-    .and_then(|output| {
-        let parts: Vec<&str> = output.split('\t').collect();
-        if parts.len() == 2 {
-            Some((
-                parts[0].parse::<usize>().unwrap_or(0),
-                parts[1].parse::<usize>().unwrap_or(0),
-            ))
+    // Read metadata to find the base branch
+    let metadata = read_metadata(worktree_path);
+    let base_branch = metadata.as_ref().map(|m| m.base_branch.clone());
+    let mut warnings = Vec::new();
+
+    let (ahead, behind) = if let Some(ref base) = base_branch {
+        // Try remote-tracking ref first, fall back to local ref
+        let remote_ref = format!("origin/{base}");
+        let local_ref = format!("refs/heads/{base}");
+
+        let base_ref = if git_command(
+            &[
+                "rev-parse",
+                "--verify",
+                &format!("refs/remotes/{remote_ref}"),
+            ],
+            worktree_path,
+        )
+        .is_ok()
+        {
+            remote_ref
+        } else if git_command(&["rev-parse", "--verify", &local_ref], worktree_path).is_ok() {
+            local_ref
         } else {
-            None
+            warnings.push(format!(
+                "Base branch '{base}' ref not found (tried origin/{base} and local). \
+                 Ahead/behind counts unavailable."
+            ));
+            String::new()
+        };
+
+        if base_ref.is_empty() {
+            (None, None)
+        } else {
+            let rev_range = format!("HEAD...{base_ref}");
+            git_command(
+                &["rev-list", "--left-right", "--count", &rev_range],
+                worktree_path,
+            )
+            .ok()
+            .and_then(|output| {
+                let parts: Vec<&str> = output.split('\t').collect();
+                if parts.len() == 2 {
+                    Some((
+                        Some(parts[0].parse::<usize>().unwrap_or(0)),
+                        Some(parts[1].parse::<usize>().unwrap_or(0)),
+                    ))
+                } else {
+                    None
+                }
+            })
+            .unwrap_or((None, None))
         }
-    })
-    .unwrap_or((0, 0));
+    } else {
+        warnings.push("No worktree metadata found; ahead/behind counts unavailable.".to_string());
+        (None, None)
+    };
 
     Ok(WorktreeStatus {
         spec_slug: spec_slug.to_string(),
@@ -262,6 +371,8 @@ pub fn status(worktree_path: &Path, spec_slug: &str) -> Result<WorktreeStatus> {
         dirty,
         ahead,
         behind,
+        base_branch,
+        warnings,
     })
 }
 
