@@ -1,8 +1,8 @@
 //! Structured spec validation with diagnostic output.
 //!
-//! Reuses existing [`super::validate()`] and [`super::validate_gates_spec()`]
-//! for core validation logic, converting their `Vec<SpecError>` output to
-//! `Vec<Diagnostic>`. Layers on additional checks:
+//! Core validation (`validate()`/`validate_gates_spec()`) runs during
+//! `load_spec_entry_with_diagnostics()` — this module converts those errors
+//! to `Vec<Diagnostic>` and layers on additional checks:
 //!
 //! - AgentReport prompt presence (warning)
 //! - Command binary existence on PATH (opt-in)
@@ -242,6 +242,7 @@ pub fn validate_spec(entry: &super::SpecEntry, check_commands: bool) -> Validati
     }
 }
 
+/// Count diagnostics by severity level into a [`DiagnosticSummary`].
 pub fn build_summary(diagnostics: &[Diagnostic]) -> DiagnosticSummary {
     let mut errors = 0;
     let mut warnings = 0;
@@ -262,7 +263,7 @@ pub fn build_summary(diagnostics: &[Diagnostic]) -> DiagnosticSummary {
 
 /// Validate a single spec and optionally check cross-spec dependencies.
 ///
-/// When the target spec declares `depends = [...]`, loads ALL specs from
+/// When the target spec declares a non-empty `depends` list, loads ALL specs from
 /// `specs_dir` to build a dependency graph and check for cycles.
 ///
 /// If loading specs from `specs_dir` fails (e.g., I/O error), a warning
@@ -294,10 +295,8 @@ pub fn validate_spec_with_dependencies(
                     };
                     graph.insert(e.slug().to_string(), deps);
                 }
-                // Ensure the current entry is in the graph
-                graph
-                    .entry(slug.to_string())
-                    .or_insert_with(|| depends.clone());
+                // Always use the in-memory entry's depends (may differ from on-disk)
+                graph.insert(slug.to_string(), depends.clone());
 
                 let cycle_diagnostics = detect_cycles(&graph);
                 // Only include diagnostics involving this spec (by set membership, not substring)

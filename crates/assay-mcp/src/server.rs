@@ -670,6 +670,24 @@ impl AssayServer {
                     };
                     return Ok(CallToolResult::success(vec![Content::json(result)?]));
                 }
+                Err(
+                    ref e @ assay_core::AssayError::SpecNotFound { .. }
+                    | ref e @ assay_core::AssayError::SpecNotFoundDiagnostic { .. },
+                ) => {
+                    let diagnostics = vec![assay_types::Diagnostic {
+                        severity: assay_types::Severity::Error,
+                        location: "name".to_string(),
+                        message: e.to_string(),
+                    }];
+                    let summary = assay_core::spec::validate::build_summary(&diagnostics);
+                    let result = assay_types::ValidationResult {
+                        spec: params.0.name.clone(),
+                        valid: false,
+                        diagnostics,
+                        summary,
+                    };
+                    return Ok(CallToolResult::success(vec![Content::json(result)?]));
+                }
                 Err(other) => {
                     return Ok(domain_error(&other));
                 }

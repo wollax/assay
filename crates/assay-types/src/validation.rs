@@ -9,12 +9,12 @@ use serde::{Deserialize, Serialize};
 )]
 #[serde(rename_all = "lowercase")]
 pub enum Severity {
-    /// Blocks validity — spec cannot be used.
-    Error,
-    /// Advisory — spec is usable but has issues worth addressing.
-    Warning,
     /// Informational — suggestion or note.
     Info,
+    /// Advisory — spec is usable but has issues worth addressing.
+    Warning,
+    /// Blocks validity — spec cannot be used.
+    Error,
 }
 
 /// A single validation diagnostic with location, severity, and message.
@@ -34,6 +34,7 @@ pub struct ValidationResult {
     /// The spec name/slug that was validated.
     pub spec: String,
     /// Whether the spec is valid (no error-severity diagnostics).
+    /// Invariant: `valid == (summary.errors == 0)`. Maintained by construction.
     pub valid: bool,
     /// All diagnostics found.
     pub diagnostics: Vec<Diagnostic>,
