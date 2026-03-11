@@ -560,3 +560,26 @@ fn worktree_status_validates() {
         warnings: vec![],
     });
 }
+
+#[test]
+fn worktree_status_none_ahead_behind_validates() {
+    validate(&WorktreeStatus {
+        spec_slug: "auth-flow".to_string(),
+        path: std::path::PathBuf::from("/tmp/worktrees/auth-flow"),
+        branch: "assay/auth-flow".to_string(),
+        head: "abc1234".to_string(),
+        dirty: false,
+        ahead: None,
+        behind: None,
+        base_branch: None,
+        warnings: vec!["no worktree metadata found — ahead/behind unavailable".to_string()],
+    });
+}
+
+#[test]
+fn worktree_metadata_validates() {
+    validate(&WorktreeMetadata {
+        base_branch: "main".to_string(),
+        spec_slug: "auth-flow".to_string(),
+    });
+}

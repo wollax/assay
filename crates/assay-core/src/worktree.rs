@@ -119,7 +119,13 @@ fn write_metadata(worktree_path: &Path, metadata: &WorktreeMetadata) -> Result<(
             worktree_path.join(&git_common_dir)
         };
         let exclude_dir = common_path.join("info");
-        let _ = std::fs::create_dir_all(&exclude_dir);
+        if let Err(e) = std::fs::create_dir_all(&exclude_dir) {
+            tracing::warn!(
+                path = %exclude_dir.display(),
+                "could not create git info dir for exclude entry: {e}"
+            );
+            return Ok(());
+        }
         let exclude_path = exclude_dir.join("exclude");
         let exclude_entry = ".assay/worktree.json";
         let needs_entry = match std::fs::read_to_string(&exclude_path) {
@@ -128,12 +134,25 @@ fn write_metadata(worktree_path: &Path, metadata: &WorktreeMetadata) -> Result<(
         };
         if needs_entry {
             use std::io::Write;
-            if let Ok(mut file) = std::fs::OpenOptions::new()
+            match std::fs::OpenOptions::new()
                 .create(true)
                 .append(true)
                 .open(&exclude_path)
             {
-                let _ = writeln!(file, "{exclude_entry}");
+                Ok(mut file) => {
+                    if let Err(e) = writeln!(file, "{exclude_entry}") {
+                        tracing::warn!(
+                            path = %exclude_path.display(),
+                            "could not write git exclude entry: {e}"
+                        );
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        path = %exclude_path.display(),
+                        "could not open git exclude file: {e}"
+                    );
+                }
             }
         }
     }
@@ -142,15 +161,20 @@ fn write_metadata(worktree_path: &Path, metadata: &WorktreeMetadata) -> Result<(
 }
 
 /// Read worktree metadata from `<worktree_path>/.assay/worktree.json`.
-fn read_metadata(worktree_path: &Path) -> Option<WorktreeMetadata> {
+///
+/// Returns `None` if the file is missing or cannot be parsed.
+pub fn read_metadata(worktree_path: &Path) -> Option<WorktreeMetadata> {
     let meta_path = worktree_path.join(".assay").join("worktree.json");
     let content = std::fs::read_to_string(&meta_path).ok()?;
-    serde_json::from_str(&content).ok()
-}
-
-/// Read worktree metadata (public API for MCP handlers that need the base branch).
-pub fn read_metadata_public(worktree_path: &Path) -> Option<WorktreeMetadata> {
-    read_metadata(worktree_path)
+    serde_json::from_str(&content)
+        .map_err(|e| {
+            tracing::warn!(
+                path = %meta_path.display(),
+                "corrupt worktree metadata, ignoring: {e}"
+            );
+            e
+        })
+        .ok()
 }
 
 // ---------------------------------------------------------------------------
@@ -772,6 +796,55 @@ cmd = "echo ok"
             .expect("create with directory-based spec should succeed");
         assert_eq!(info.spec_slug, "payments");
         assert_eq!(info.branch, "assay/payments");
+    }
+
+    #[test]
+    fn test_status_missing_metadata_returns_none_ahead_behind() {
+        let (_tmp, _wt_tmp, root, specs_dir) = setup_repo();
+        let worktree_base = _wt_tmp.path().join("worktrees");
+
+        let info = create(&root, "auth-flow", Some("main"), &worktree_base, &specs_dir)
+            .expect("create failed");
+
+        // Remove the metadata file to simulate a worktree without metadata
+        let meta_path = info.path.join(".assay").join("worktree.json");
+        std::fs::remove_file(&meta_path).expect("failed to remove metadata");
+
+        let st = status(&info.path, "auth-flow").expect("status should still succeed");
+        assert!(
+            st.ahead.is_none(),
+            "ahead should be None when metadata is missing"
+        );
+        assert!(
+            st.behind.is_none(),
+            "behind should be None when metadata is missing"
+        );
+        assert!(
+            st.base_branch.is_none(),
+            "base_branch should be None when metadata is missing"
+        );
+        assert!(
+            !st.warnings.is_empty(),
+            "should include a warning about missing metadata"
+        );
+        assert!(
+            st.warnings[0].contains("metadata"),
+            "warning should mention metadata, got: {}",
+            st.warnings[0]
+        );
+    }
+
+    #[test]
+    fn test_read_write_metadata_roundtrip() {
+        let dir = tempfile::tempdir().unwrap();
+        let metadata = WorktreeMetadata {
+            base_branch: "develop".to_string(),
+            spec_slug: "my-feature".to_string(),
+        };
+
+        write_metadata(dir.path(), &metadata).expect("write_metadata should succeed");
+        let loaded = read_metadata(dir.path()).expect("read_metadata should return Some");
+        assert_eq!(loaded, metadata);
     }
 
     #[test]

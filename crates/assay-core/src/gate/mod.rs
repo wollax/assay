@@ -1945,6 +1945,35 @@ mod tests {
         );
     }
 
+    // ── truncate_diff ──────────────────────────────────────────────
+
+    #[test]
+    fn truncate_diff_empty_returns_none() {
+        let (diff, truncated, original) = truncate_diff("", 1024);
+        assert!(diff.is_none());
+        assert!(!truncated);
+        assert!(original.is_none());
+    }
+
+    #[test]
+    fn truncate_diff_within_budget() {
+        let input = "diff --git a/foo.rs b/foo.rs\n+hello\n";
+        let (diff, truncated, original) = truncate_diff(input, 1024);
+        assert_eq!(diff.as_deref(), Some(input));
+        assert!(!truncated);
+        assert_eq!(original, Some(input.len()));
+    }
+
+    #[test]
+    fn truncate_diff_over_budget() {
+        let input = "a".repeat(200);
+        let (diff, truncated, original) = truncate_diff(&input, 50);
+        assert!(diff.is_some());
+        assert!(truncated);
+        assert_eq!(original, Some(200));
+        assert!(diff.unwrap().contains("[truncated: "));
+    }
+
     // ── ERR-01: extract_binary ─────────────────────────────────────
 
     #[test]
