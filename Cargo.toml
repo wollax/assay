@@ -37,6 +37,7 @@ dirs = "6"
 regex-lite = "0.1"
 notify = { version = "7", default-features = false, features = ["macos_kqueue"] }
 tracing-appender = "0.2"
+which = "7"
 
 [workspace.lints.clippy]
 derive_partial_eq_without_eq = "deny"

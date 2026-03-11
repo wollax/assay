@@ -80,16 +80,11 @@
   - FIX-02: Better gate_report/gate_finalize error messages
   - FIX-03: Diff context attached to gate sessions
 
-- [ ] Phase 37: Spec Validation
+- [x] Phase 37: Spec Validation — 2026-03-11
   - SPEC-01: `spec_validate` MCP tool with structured diagnostics
   - SPEC-02: TOML parse, criterion uniqueness, prompt field, structure completeness
   - SPEC-03: Optional `check_commands` parameter for PATH validation
   - SPEC-04: Cross-spec dependency validation with cycle detection
-  - **Success criteria:**
-    1. `spec_validate` returns structured `ValidationResult` with per-criterion diagnostics without running the spec
-    2. Invalid TOML, duplicate criterion names, missing AgentReport prompt, and incomplete structure each produce specific diagnostic messages
-    3. `check_commands: true` validates command existence on PATH; defaults to off
-    4. Specs with `depends = [...]` are checked for cycles — circular dependencies produce clear error messages
 
 - [ ] Phase 38: Observability Completion
   - OBS-03: `spec_get` resolved config with timeout precedence
@@ -218,5 +213,5 @@
 | v0.1.0 Proof of Concept | ✅ Shipped | 10 | 43 | 100% |
 | v0.2.0 Dual-Track Gates & Hardening | ✅ Shipped | 15 | 52 | 100% |
 | v0.3.0 Orchestration Foundation | ✅ Shipped | 9 | 43 | 100% |
-| v0.4.0 Headless Orchestration | 🔄 In Progress | 11 | 28 | 18% |
+| v0.4.0 Headless Orchestration | 🔄 In Progress | 11 | 28 | 27% |
 | v0.4.1 Merge Tools | ○ Planned | 5 | 8 | 0% |
