@@ -1166,7 +1166,7 @@ impl AssayServer {
 
         // Optionally fetch the base branch from the remote before computing status
         if params.0.fetch.unwrap_or(false)
-            && let Some(metadata) = assay_core::worktree::read_metadata_public(&worktree_path)
+            && let Some(metadata) = assay_core::worktree::read_metadata(&worktree_path)
         {
             // Best-effort fetch — ignore failures (e.g., offline, no remote)
             let _ = std::process::Command::new("git")

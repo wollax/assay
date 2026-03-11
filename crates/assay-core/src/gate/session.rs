@@ -427,6 +427,41 @@ mod tests {
     }
 
     #[test]
+    fn create_session_with_diff_stores_fields() {
+        let diff_content = "diff --git a/foo.rs b/foo.rs\n+hello\n".to_string();
+        let session = create_session(
+            "test-spec",
+            HashSet::from(["c1".to_string()]),
+            HashMap::new(),
+            vec![],
+            Some(diff_content.clone()),
+            true,
+            Some(65536),
+        );
+
+        assert_eq!(session.diff.as_deref(), Some(diff_content.as_str()));
+        assert!(session.diff_truncated);
+        assert_eq!(session.diff_bytes_original, Some(65536));
+    }
+
+    #[test]
+    fn create_session_without_diff_stores_none() {
+        let session = create_session(
+            "test-spec",
+            HashSet::from(["c1".to_string()]),
+            HashMap::new(),
+            vec![],
+            None,
+            false,
+            None,
+        );
+
+        assert!(session.diff.is_none());
+        assert!(!session.diff_truncated);
+        assert!(session.diff_bytes_original.is_none());
+    }
+
+    #[test]
     fn report_evaluation_valid_criterion() {
         let mut session = create_session(
             "test-spec",
