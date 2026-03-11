@@ -619,7 +619,8 @@ impl AssayServer {
             per-criterion diagnostics, severity levels (error/warning/info), and a summary. \
             Errors block validity (TOML parse errors, duplicate criterion names, missing required fields). \
             Warnings are advisory (missing AgentReport prompt, command not found on PATH). \
-            When the spec declares depends=[...], cross-spec dependency cycles are detected. \
+            When the spec being validated declares depends=[...], ALL specs are scanned for \
+            dependency cycles involving this spec. Specs with no depends list skip cycle detection. \
             Use check_commands=true to verify command binaries exist on PATH."
     )]
     pub async fn spec_validate(
@@ -638,66 +639,34 @@ impl AssayServer {
             match assay_core::spec::load_spec_entry_with_diagnostics(&params.0.name, &specs_dir) {
                 Ok(entry) => entry,
                 Err(assay_core::AssayError::SpecParse { message, .. })
-                | Err(assay_core::AssayError::GatesSpecParse { message, .. }) => {
+                | Err(assay_core::AssayError::GatesSpecParse { message, .. })
+                | Err(assay_core::AssayError::FeatureSpecParse { message, .. }) => {
                     // TOML parse error — return as ValidationResult with error diagnostic
-                    let result = assay_types::ValidationResult {
-                        spec: params.0.name.clone(),
-                        valid: false,
-                        diagnostics: vec![assay_types::Diagnostic {
-                            severity: assay_types::Severity::Error,
-                            location: "toml".to_string(),
-                            message,
-                        }],
-                        summary: assay_types::DiagnosticSummary {
-                            errors: 1,
-                            warnings: 0,
-                            info: 0,
-                        },
-                    };
-                    return Ok(CallToolResult::success(vec![Content::json(result)?]));
-                }
-                Err(assay_core::AssayError::SpecValidation { errors, .. }) => {
-                    // Validation errors from load — convert to ValidationResult
-                    let diagnostics: Vec<assay_types::Diagnostic> = errors
-                        .iter()
-                        .map(|e| assay_types::Diagnostic {
-                            severity: assay_types::Severity::Error,
-                            location: e.field.clone(),
-                            message: e.message.clone(),
-                        })
-                        .collect();
-                    let error_count = diagnostics.len();
+                    let diagnostics = vec![assay_types::Diagnostic {
+                        severity: assay_types::Severity::Error,
+                        location: "toml".to_string(),
+                        message,
+                    }];
+                    let summary = assay_core::spec::validate::build_summary(&diagnostics);
                     let result = assay_types::ValidationResult {
                         spec: params.0.name.clone(),
                         valid: false,
                         diagnostics,
-                        summary: assay_types::DiagnosticSummary {
-                            errors: error_count,
-                            warnings: 0,
-                            info: 0,
-                        },
+                        summary,
                     };
                     return Ok(CallToolResult::success(vec![Content::json(result)?]));
                 }
-                Err(assay_core::AssayError::GatesSpecValidation { errors, .. }) => {
-                    let diagnostics: Vec<assay_types::Diagnostic> = errors
-                        .iter()
-                        .map(|e| assay_types::Diagnostic {
-                            severity: assay_types::Severity::Error,
-                            location: e.field.clone(),
-                            message: e.message.clone(),
-                        })
-                        .collect();
-                    let error_count = diagnostics.len();
+                Err(assay_core::AssayError::SpecValidation { errors, .. })
+                | Err(assay_core::AssayError::GatesSpecValidation { errors, .. })
+                | Err(assay_core::AssayError::FeatureSpecValidation { errors, .. }) => {
+                    let diagnostics =
+                        assay_core::spec::validate::spec_errors_to_diagnostics(&errors);
+                    let summary = assay_core::spec::validate::build_summary(&diagnostics);
                     let result = assay_types::ValidationResult {
                         spec: params.0.name.clone(),
                         valid: false,
                         diagnostics,
-                        summary: assay_types::DiagnosticSummary {
-                            errors: error_count,
-                            warnings: 0,
-                            info: 0,
-                        },
+                        summary,
                     };
                     return Ok(CallToolResult::success(vec![Content::json(result)?]));
                 }
