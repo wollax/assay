@@ -9,10 +9,10 @@ See: .planning/PROJECT.md (updated 2026-03-10)
 
 ## Current Position
 
-Phase: 35 — Observability Foundation (COMPLETE)
-Plan: 2 of 2 (Outcome Filter and Limit Cap)
+Phase: 36 — Correctness & Robustness
+Plan: 2 of 3 (Enriched Gate Session Error Messages)
 Status: Complete
-Last activity: 2026-03-11 — Completed 35-02-PLAN.md
+Last activity: 2026-03-11 — Completed 36-02-PLAN.md
 
 Progress: v0.4.0 [██░░░░░░░░░░░░░░░] ~9% (phase 35 complete, 10 phases remaining)
 
@@ -51,6 +51,11 @@ v0.4.0 decisions (from 35-02):
 - Unrecognized outcome values treated as "any" (graceful degradation)
 - `total_runs` reflects on-disk count, not filtered count
 
+v0.4.0 decisions (from 36-02):
+- `timed_out_sessions` capped at 100 entries with oldest-eviction
+- Session not-found errors always suggest gate_run + gate_history (no active session listing)
+- `create_session` diff params wired as None/false/None until diff capture is implemented
+
 v0.4.1 decisions (from brainstorm):
 - PR creation over direct merge for v0.4.x — maps to `autonomous: false`
 - `git merge-tree --write-tree` for conflict detection — zero side effects
@@ -86,5 +91,5 @@ Run `/kata-plan-phase [N]` to start planning phases, or `/kata-discuss-phase [N]
 ### Session Continuity
 
 Last session: 2026-03-11
-Stopped at: Completed phase 35 (both plans)
+Stopped at: Completed 36-02-PLAN.md
 Resume file: None
