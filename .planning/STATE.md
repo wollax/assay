@@ -3,16 +3,16 @@
 ## Current Position
 
 Phase: 9 of 10 — Session Summary & Scope Isolation
-Plan: 1 of 3 complete
+Plan: 2 of 3 complete
 Status: In progress
 Progress: █████████████████████████░░ 25/27
 
-Last activity: 2026-03-11 — Completed 09-01-PLAN.md (summary types, manifest shared_files, scope checking)
+Last activity: 2026-03-11 — Completed 09-02-PLAN.md (summary analysis, orchestrator integration, state persistence)
 
 ## Session Continuity
 
-Last session: 2026-03-11T10:14:36Z
-Stopped at: Completed 09-01-PLAN.md
+Last session: 2026-03-11
+Stopped at: Completed 09-02-PLAN.md
 Resume file: None
 
 ## Performance Metrics
@@ -21,7 +21,7 @@ Resume file: None
 |--------|-------|
 | Phases completed | 8 |
 | Phases remaining | 2 |
-| Plans completed (phase 9) | 1/3 |
+| Plans completed (phase 9) | 2/3 |
 | Requirements covered | 25/27 |
 | Blockers | 0 |
 | Technical debt items | 0 |
@@ -182,6 +182,15 @@ Resume file: None
 - check_scope() is opt-in: returns empty violations when file_scope is None
 - GlobSet-based scope matching combines file_scope + shared_files patterns; case-sensitive
 - ScopeViolation.file_scope captures session's file_scope patterns (not shared_files) for diagnostics
+- collect_summary() gathers diff_numstat + diff_name_only + log_subjects per completed session via GitOps
+- Binary files (in diff_name_only but not diff_numstat) included with insertions=0, deletions=0
+- Session branch naming for summary uses actual convention `smelt/<session_name>` (not manifest-prefixed)
+- Summary collection errors skip individual sessions with warn!() rather than failing entire operation
+- RunStateManager persists summary.json alongside state.json in .smelt/runs/<run_id>/
+- find_latest_completed_run() scans for Complete-phase runs by updated_at (for standalone `smelt summary`)
+- OrchestrationReport.summary is Option<SummaryReport> — None on collection failure or no completed sessions
+- Summary collected in "Phase 2.5" of orchestration: after sessions, before merge
+- Resume from Merging phase loads previously-persisted summary; resume from Sessions re-collects
 
 ### Blockers
 
