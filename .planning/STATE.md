@@ -12,7 +12,7 @@ See: .planning/PROJECT.md (updated 2026-03-10)
 Phase: 36 — Correctness & Robustness (COMPLETE)
 Plan: 3 of 3 (Diff Capture at Gate Run)
 Status: Complete
-Last activity: 2026-03-11 — Completed 36-03-PLAN.md
+Last activity: 2026-03-11 — Completed 36-01-PLAN.md (all 3 plans done)
 
 Progress: v0.4.0 [████░░░░░░░░░░░░░] ~18% (phases 35-36 complete, 9 phases remaining)
 
