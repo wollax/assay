@@ -110,14 +110,17 @@ fn write_metadata(worktree_path: &Path, metadata: &WorktreeMetadata) -> Result<(
     std::fs::write(&meta_path, json)
         .map_err(|e| AssayError::io("writing worktree metadata", &meta_path, e))?;
 
-    // Add to per-worktree git exclude so the metadata file is invisible to status
-    if let Ok(git_dir) = git_command(&["rev-parse", "--git-dir"], worktree_path) {
-        let git_dir_path = if Path::new(&git_dir).is_absolute() {
-            PathBuf::from(&git_dir)
+    // Add to the shared git exclude so the metadata file is invisible to status.
+    // Use --git-common-dir to get the main .git dir (works for both main and linked worktrees).
+    if let Ok(git_common_dir) =
+        git_command(&["rev-parse", "--git-common-dir"], worktree_path)
+    {
+        let common_path = if Path::new(&git_common_dir).is_absolute() {
+            PathBuf::from(&git_common_dir)
         } else {
-            worktree_path.join(&git_dir)
+            worktree_path.join(&git_common_dir)
         };
-        let exclude_dir = git_dir_path.join("info");
+        let exclude_dir = common_path.join("info");
         let _ = std::fs::create_dir_all(&exclude_dir);
         let exclude_path = exclude_dir.join("exclude");
         let exclude_entry = ".assay/worktree.json";
@@ -664,16 +667,25 @@ cmd = "echo ok"
         assert_eq!(info.base_branch.as_deref(), Some("main"));
         assert!(info.path.exists());
 
-        // List
+        // List — should now include base_branch from metadata
         let entries = list(&root).expect("list failed");
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].spec_slug, "auth-flow");
+        assert_eq!(
+            entries[0].base_branch.as_deref(),
+            Some("main"),
+            "list() should populate base_branch from metadata"
+        );
 
-        // Status
+        // Status — includes base_branch and ahead/behind relative to base
         let st = status(&info.path, "auth-flow").expect("status failed");
         assert_eq!(st.branch, "assay/auth-flow");
         assert!(!st.dirty);
         assert!(!st.head.is_empty());
+        assert_eq!(st.base_branch.as_deref(), Some("main"));
+        assert_eq!(st.ahead, Some(0));
+        assert_eq!(st.behind, Some(0));
+        assert!(st.warnings.is_empty());
 
         // Cleanup
         cleanup(&root, &info.path, "auth-flow", false).expect("cleanup failed");
