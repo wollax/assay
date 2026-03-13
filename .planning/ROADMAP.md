@@ -86,13 +86,9 @@
   - SPEC-03: Optional `check_commands` parameter for PATH validation
   - SPEC-04: Cross-spec dependency validation with cycle detection
 
-- [ ] Phase 38: Observability Completion
+- [x] Phase 38: Observability Completion — 2026-03-13
   - OBS-03: `spec_get` resolved config with timeout precedence
   - OBS-04: Growth rate metrics in `estimate_tokens`
-  - **Success criteria:**
-    1. `spec_get` with `resolve: true` returns effective timeouts showing 3-tier precedence and working_dir validation results
-    2. `estimate_tokens` returns avg tokens per turn and estimated turns remaining when 5+ assistant turns exist
-    3. Growth rate metrics are absent (not zero) when fewer than 5 assistant turns exist
 
 - [ ] Phase 39: Context Engine Integration
   - CTX-01: External context-engine crate dependency
@@ -213,5 +209,5 @@
 | v0.1.0 Proof of Concept | ✅ Shipped | 10 | 43 | 100% |
 | v0.2.0 Dual-Track Gates & Hardening | ✅ Shipped | 15 | 52 | 100% |
 | v0.3.0 Orchestration Foundation | ✅ Shipped | 9 | 43 | 100% |
-| v0.4.0 Headless Orchestration | 🔄 In Progress | 11 | 28 | 27% |
+| v0.4.0 Headless Orchestration | 🔄 In Progress | 11 | 28 | 36% |
 | v0.4.1 Merge Tools | ○ Planned | 5 | 8 | 0% |

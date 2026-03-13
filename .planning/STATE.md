@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 2026-03-10)
 
 ## Current Position
 
-Phase: 37 — Spec Validation (COMPLETE)
-Plan: 2 of 2 (MCP Tool Wiring)
+Phase: 38 — Observability Completion (COMPLETE)
+Plan: 2 of 2 (Growth Rate Metrics)
 Status: Complete
-Last activity: 2026-03-11 — Completed 37-02-PLAN.md
+Last activity: 2026-03-13 — Completed 38-02-PLAN.md
 
-Progress: v0.4.0 [██████░░░░░░░░░░░] ~27% (phases 35-37 complete)
+Progress: v0.4.0 [███████░░░░░░░░░░] ~36% (phases 35-38 complete)
 
 ## Milestone Progress
 
@@ -23,7 +23,7 @@ Progress: v0.4.0 [██████░░░░░░░░░░░] ~27% (pha
 | v0.1.0 | 10 | 43 | 100% (shipped) |
 | v0.2.0 | 15 (11-25) | 52 | 100% (shipped) |
 | v0.3.0 | 9 (26-34) | 43 | 100% (shipped) |
-| v0.4.0 | 11 (35-45) | 28 | 27% (3/11 phases) |
+| v0.4.0 | 11 (35-45) | 28 | 36% (4/11 phases) |
 | v0.4.1 | TBD | 8 | 0% (planned) |
 
 ## Accumulated Context
@@ -68,6 +68,15 @@ v0.4.0 decisions (from 37-02):
 - spec_validate uses fully qualified type paths (no import additions needed)
 - FeatureSpec parse/validation errors fall through to domain_error (not converted to ValidationResult)
 
+v0.4.0 decisions (from 38-01):
+- spec_get resolved block uses inline `serde_json::json!()` (no dedicated response struct)
+- spec tier in timeout cascade is always null (per-criterion timeout is visible in criteria array)
+- Resolved block built once before match, inserted into each branch
+
+v0.4.0 decisions (from 38-02):
+- Growth rate uses last cumulative token count divided by turn count for average (simple, stable)
+- `estimate_tokens` does both tail-read (usage) and full parse (growth rate)
+
 v0.4.1 decisions (from brainstorm):
 - PR creation over direct merge for v0.4.x — maps to `autonomous: false`
 - `git merge-tree --write-tree` for conflict detection — zero side effects
@@ -102,6 +111,6 @@ Run `/kata-plan-phase [N]` to start planning phases, or `/kata-discuss-phase [N]
 
 ### Session Continuity
 
-Last session: 2026-03-11
-Stopped at: Completed 37-02-PLAN.md (phase 37 complete)
+Last session: 2026-03-13
+Stopped at: Completed 38-02-PLAN.md (phase 38 complete)
 Resume file: None
