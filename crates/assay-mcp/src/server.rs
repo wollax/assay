@@ -620,8 +620,8 @@ impl AssayServer {
                     "description": spec.description,
                     "criteria": spec.criteria,
                 });
-                if let Some(resolved) = &resolved_block {
-                    response.as_object_mut().unwrap().insert("resolved".to_string(), resolved.clone());
+                if let (Some(resolved), Some(obj)) = (&resolved_block, response.as_object_mut()) {
+                    obj.insert("resolved".to_string(), resolved.clone());
                 }
                 serde_json::to_string(&response)
             }
@@ -636,8 +636,8 @@ impl AssayServer {
                     "gates": gates,
                     "feature_spec": feature_spec,
                 });
-                if let Some(resolved) = &resolved_block {
-                    response.as_object_mut().unwrap().insert("resolved".to_string(), resolved.clone());
+                if let (Some(resolved), Some(obj)) = (&resolved_block, response.as_object_mut()) {
+                    obj.insert("resolved".to_string(), resolved.clone());
                 }
                 serde_json::to_string(&response)
             }

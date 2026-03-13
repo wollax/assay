@@ -114,9 +114,8 @@ pub fn quick_token_estimate(path: &Path) -> std::io::Result<Option<UsageData>> {
 ///
 /// Returns a Vec of cumulative context token counts, one per qualifying turn,
 /// in chronological order.
-fn collect_turn_tokens(path: &Path) -> crate::Result<Vec<u64>> {
-    let (entries, _) = parse_session(path)?;
-    let tokens: Vec<u64> = entries
+fn collect_turn_tokens_from_entries(entries: &[ParsedEntry]) -> Vec<u64> {
+    entries
         .iter()
         .filter(|e| !is_sidechain(&e.entry))
         .filter_map(|e| match &e.entry {
@@ -125,8 +124,7 @@ fn collect_turn_tokens(path: &Path) -> crate::Result<Vec<u64>> {
             }
             _ => None,
         })
-        .collect();
-    Ok(tokens)
+        .collect()
 }
 
 /// Compute growth rate from turn token snapshots.
@@ -158,19 +156,17 @@ fn compute_growth_rate(turn_tokens: &[u64], context_window: u64) -> Option<Growt
 
 /// Full token estimation for a session file.
 ///
-/// Returns a `TokenEstimate` with context utilization percentage and health indicator.
+/// Returns a `TokenEstimate` with context utilization percentage, health indicator,
+/// and growth rate metrics (when 5+ assistant turns exist).
 pub fn estimate_tokens(path: &Path, session_id: &str) -> crate::Result<TokenEstimate> {
-    let usage = quick_token_estimate(path)
-        .map_err(|source| crate::AssayError::Io {
-            operation: "reading session file for token estimate".into(),
-            path: path.to_path_buf(),
-            source,
-        })?
-        .ok_or_else(|| crate::AssayError::SessionParse {
-            path: path.to_path_buf(),
-            line: 0,
-            message: "no usage data found in session file".into(),
-        })?;
+    // Single full parse — extracts both latest usage and per-turn token snapshots.
+    let (entries, _) = parse_session(path)?;
+
+    let usage = extract_usage(&entries).ok_or_else(|| crate::AssayError::SessionParse {
+        path: path.to_path_buf(),
+        line: 0,
+        message: "no usage data found in session file".into(),
+    })?;
 
     let context_window = DEFAULT_CONTEXT_WINDOW;
     let available = context_window.saturating_sub(SYSTEM_OVERHEAD_TOKENS);
@@ -185,8 +181,8 @@ pub fn estimate_tokens(path: &Path, session_id: &str) -> crate::Result<TokenEsti
         ContextHealth::Critical
     };
 
-    // Compute growth rate (requires full parse)
-    let turn_tokens = collect_turn_tokens(path)?;
+    // Compute growth rate from the already-parsed entries.
+    let turn_tokens = collect_turn_tokens_from_entries(&entries);
     let growth_rate = compute_growth_rate(&turn_tokens, context_window);
 
     Ok(TokenEstimate {
@@ -318,11 +314,15 @@ mod tests {
 
     #[test]
     fn compute_growth_rate_returns_some_at_threshold() {
+        // 5 turns, last = 5000, avg = 5000/5 = 1000
+        // available = 200000 - 21000 = 179000
+        // remaining_tokens = 179000 - 5000 = 174000
+        // remaining_turns = 174000 / 1000 = 174
         let tokens = vec![1000, 2000, 3000, 4000, 5000];
-        let result = compute_growth_rate(&tokens, DEFAULT_CONTEXT_WINDOW);
-        assert!(result.is_some());
-        let gr = result.unwrap();
+        let gr = compute_growth_rate(&tokens, DEFAULT_CONTEXT_WINDOW).unwrap();
         assert_eq!(gr.turn_count, 5);
+        assert_eq!(gr.avg_tokens_per_turn, 1000);
+        assert_eq!(gr.estimated_turns_remaining, 174);
     }
 
     #[test]
@@ -341,8 +341,10 @@ mod tests {
     #[test]
     fn compute_growth_rate_saturates_when_full() {
         // Context exceeds available window
+        // avg = 200000/5 = 40000
         let tokens = vec![50000, 100000, 150000, 180000, 200000];
         let gr = compute_growth_rate(&tokens, DEFAULT_CONTEXT_WINDOW).unwrap();
+        assert_eq!(gr.avg_tokens_per_turn, 40000);
         assert_eq!(gr.estimated_turns_remaining, 0);
     }
 
@@ -415,10 +417,11 @@ mod tests {
         });
         writeln!(file, "{}", entry4).unwrap();
 
-        let tokens = collect_turn_tokens(&path).unwrap();
+        let (entries, _) = parse_session(&path).unwrap();
+        let tokens = collect_turn_tokens_from_entries(&entries);
         // Should only include the two non-sidechain assistant entries
         assert_eq!(tokens.len(), 2);
-        assert_eq!(tokens[0], 100); // input_tokens only (others are 0)
+        assert_eq!(tokens[0], 100); // context_tokens() = input + cache_creation + cache_read
         assert_eq!(tokens[1], 200);
     }
 }

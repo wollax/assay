@@ -378,7 +378,7 @@ pub struct TokenEstimate {
     /// Health assessment based on utilization.
     pub health: ContextHealth,
     /// Growth rate metrics. Absent when fewer than 5 assistant turns exist.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub growth_rate: Option<GrowthRate>,
 }
 
