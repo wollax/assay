@@ -348,6 +348,7 @@ fn token_estimate_roundtrip() {
         context_window: 200_000,
         context_utilization_pct: 15.01,
         health: ContextHealth::Healthy,
+        growth_rate: None,
     };
 
     let json = serde_json::to_string_pretty(&estimate).expect("should serialize");
@@ -492,6 +493,7 @@ fn snapshot_token_estimate() {
         context_window: 200_000,
         context_utilization_pct: 12.505,
         health: ContextHealth::Healthy,
+        growth_rate: None,
     };
     insta::assert_json_snapshot!("token_estimate", estimate);
 }
