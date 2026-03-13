@@ -1191,11 +1191,12 @@ impl AssayServer {
         }
     }
 
-    /// Estimate current token usage and context window health (fast, tail-read).
+    /// Estimate current token usage and context window health.
     #[tool(
         description = "Estimate current token usage and context window health for a Claude Code session. \
             Returns context tokens, output tokens, utilization percentage, and a health indicator \
-            (healthy/warning/critical). Fast: reads only the tail of the session file. \
+            (healthy/warning/critical). When 5+ assistant turns exist, includes growth_rate with \
+            avg_tokens_per_turn, estimated_turns_remaining, and turn_count. \
             Omit session_id to estimate the most recent session for this project."
     )]
     pub async fn estimate_tokens(

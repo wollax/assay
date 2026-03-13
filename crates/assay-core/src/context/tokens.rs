@@ -4,15 +4,19 @@ use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 
-use assay_types::context::{ContextHealth, SessionEntry, TokenEstimate, UsageData};
+use assay_types::context::{ContextHealth, GrowthRate, SessionEntry, TokenEstimate, UsageData};
 
 use super::parser::ParsedEntry;
+use super::parser::parse_session;
 
 /// Default context window size for all current Claude models.
 pub(crate) const DEFAULT_CONTEXT_WINDOW: u64 = 200_000;
 
 /// Estimated system overhead (system prompt, tool definitions, etc.).
 pub(crate) const SYSTEM_OVERHEAD_TOKENS: u64 = 21_000;
+
+/// Minimum number of assistant turns required to compute growth rate metrics.
+const MIN_TURNS_FOR_GROWTH_RATE: usize = 5;
 
 /// Look up context window size for a model string.
 ///
@@ -106,6 +110,52 @@ pub fn quick_token_estimate(path: &Path) -> std::io::Result<Option<UsageData>> {
     Ok(last_usage)
 }
 
+/// Collect context_tokens from each non-sidechain assistant turn with usage data.
+///
+/// Returns a Vec of cumulative context token counts, one per qualifying turn,
+/// in chronological order.
+fn collect_turn_tokens(path: &Path) -> crate::Result<Vec<u64>> {
+    let (entries, _) = parse_session(path)?;
+    let tokens: Vec<u64> = entries
+        .iter()
+        .filter(|e| !is_sidechain(&e.entry))
+        .filter_map(|e| match &e.entry {
+            SessionEntry::Assistant(a) => {
+                a.message.as_ref()?.usage.as_ref().map(|u| u.context_tokens())
+            }
+            _ => None,
+        })
+        .collect();
+    Ok(tokens)
+}
+
+/// Compute growth rate from turn token snapshots.
+///
+/// Returns `None` when fewer than `MIN_TURNS_FOR_GROWTH_RATE` turns exist.
+/// Uses total context tokens divided by turn count for average growth,
+/// then estimates remaining turns from available context budget.
+fn compute_growth_rate(turn_tokens: &[u64], context_window: u64) -> Option<GrowthRate> {
+    if turn_tokens.len() < MIN_TURNS_FOR_GROWTH_RATE {
+        return None;
+    }
+    let turn_count = turn_tokens.len() as u64;
+    let last = *turn_tokens.last()?;
+    let avg = last / turn_count;
+    let available = context_window.saturating_sub(SYSTEM_OVERHEAD_TOKENS);
+    let remaining_tokens = available.saturating_sub(last);
+    let remaining_turns = if avg > 0 {
+        remaining_tokens / avg
+    } else {
+        0
+    };
+
+    Some(GrowthRate {
+        avg_tokens_per_turn: avg,
+        estimated_turns_remaining: remaining_turns,
+        turn_count,
+    })
+}
+
 /// Full token estimation for a session file.
 ///
 /// Returns a `TokenEstimate` with context utilization percentage and health indicator.
@@ -135,6 +185,10 @@ pub fn estimate_tokens(path: &Path, session_id: &str) -> crate::Result<TokenEsti
         ContextHealth::Critical
     };
 
+    // Compute growth rate (requires full parse)
+    let turn_tokens = collect_turn_tokens(path)?;
+    let growth_rate = compute_growth_rate(&turn_tokens, context_window);
+
     Ok(TokenEstimate {
         session_id: session_id.to_string(),
         context_tokens,
@@ -142,7 +196,7 @@ pub fn estimate_tokens(path: &Path, session_id: &str) -> crate::Result<TokenEsti
         context_window,
         context_utilization_pct: pct,
         health,
-        growth_rate: None,
+        growth_rate,
     })
 }
 
@@ -249,5 +303,122 @@ mod tests {
             context_window_for_model(Some("claude-sonnet-4-5-20250514")),
             200_000
         );
+    }
+
+    // ── compute_growth_rate tests ────────────────────────────────────
+
+    #[test]
+    fn compute_growth_rate_returns_none_below_threshold() {
+        assert!(compute_growth_rate(&[], DEFAULT_CONTEXT_WINDOW).is_none());
+        assert!(compute_growth_rate(&[1000], DEFAULT_CONTEXT_WINDOW).is_none());
+        assert!(
+            compute_growth_rate(&[1000, 2000, 3000, 4000], DEFAULT_CONTEXT_WINDOW).is_none()
+        );
+    }
+
+    #[test]
+    fn compute_growth_rate_returns_some_at_threshold() {
+        let tokens = vec![1000, 2000, 3000, 4000, 5000];
+        let result = compute_growth_rate(&tokens, DEFAULT_CONTEXT_WINDOW);
+        assert!(result.is_some());
+        let gr = result.unwrap();
+        assert_eq!(gr.turn_count, 5);
+    }
+
+    #[test]
+    fn compute_growth_rate_calculates_correctly() {
+        // 5 turns, last = 10000, avg = 10000/5 = 2000
+        // available = 200000 - 21000 = 179000
+        // remaining_tokens = 179000 - 10000 = 169000
+        // remaining_turns = 169000 / 2000 = 84
+        let tokens = vec![2000, 4000, 6000, 8000, 10000];
+        let gr = compute_growth_rate(&tokens, DEFAULT_CONTEXT_WINDOW).unwrap();
+        assert_eq!(gr.avg_tokens_per_turn, 2000);
+        assert_eq!(gr.estimated_turns_remaining, 84);
+        assert_eq!(gr.turn_count, 5);
+    }
+
+    #[test]
+    fn compute_growth_rate_saturates_when_full() {
+        // Context exceeds available window
+        let tokens = vec![50000, 100000, 150000, 180000, 200000];
+        let gr = compute_growth_rate(&tokens, DEFAULT_CONTEXT_WINDOW).unwrap();
+        assert_eq!(gr.estimated_turns_remaining, 0);
+    }
+
+    #[test]
+    fn compute_growth_rate_handles_zero_avg() {
+        // All turns had 0 tokens — avg is 0, remaining is 0
+        let tokens = vec![0, 0, 0, 0, 0];
+        let gr = compute_growth_rate(&tokens, DEFAULT_CONTEXT_WINDOW).unwrap();
+        assert_eq!(gr.avg_tokens_per_turn, 0);
+        assert_eq!(gr.estimated_turns_remaining, 0);
+        assert_eq!(gr.turn_count, 5);
+    }
+
+    #[test]
+    fn collect_turn_tokens_filters_sidechains() {
+        use std::io::Write;
+
+        // Build a session file with mixed entries
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test-session.jsonl");
+        let mut file = std::fs::File::create(&path).unwrap();
+
+        // Non-sidechain assistant with usage
+        let entry1 = serde_json::json!({
+            "type": "assistant",
+            "uuid": "a1", "timestamp": "2026-01-01T00:00:00Z",
+            "sessionId": "s1", "isSidechain": false,
+            "message": {
+                "content": [], "usage": {
+                    "input_tokens": 100, "output_tokens": 10,
+                    "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0
+                }
+            }
+        });
+        writeln!(file, "{}", entry1).unwrap();
+
+        // Sidechain assistant with usage (should be excluded)
+        let entry2 = serde_json::json!({
+            "type": "assistant",
+            "uuid": "a2", "timestamp": "2026-01-01T00:01:00Z",
+            "sessionId": "s1", "isSidechain": true,
+            "message": {
+                "content": [], "usage": {
+                    "input_tokens": 9999, "output_tokens": 99,
+                    "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0
+                }
+            }
+        });
+        writeln!(file, "{}", entry2).unwrap();
+
+        // Non-sidechain assistant with usage
+        let entry3 = serde_json::json!({
+            "type": "assistant",
+            "uuid": "a3", "timestamp": "2026-01-01T00:02:00Z",
+            "sessionId": "s1", "isSidechain": false,
+            "message": {
+                "content": [], "usage": {
+                    "input_tokens": 200, "output_tokens": 20,
+                    "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0
+                }
+            }
+        });
+        writeln!(file, "{}", entry3).unwrap();
+
+        // User entry (should be excluded)
+        let entry4 = serde_json::json!({
+            "type": "user",
+            "uuid": "u1", "timestamp": "2026-01-01T00:03:00Z",
+            "sessionId": "s1", "isSidechain": false
+        });
+        writeln!(file, "{}", entry4).unwrap();
+
+        let tokens = collect_turn_tokens(&path).unwrap();
+        // Should only include the two non-sidechain assistant entries
+        assert_eq!(tokens.len(), 2);
+        assert_eq!(tokens[0], 100); // input_tokens only (others are 0)
+        assert_eq!(tokens[1], 200);
     }
 }
