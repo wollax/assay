@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 2026-03-10)
 
 ## Current Position
 
-Phase: 37 — Spec Validation (COMPLETE)
-Plan: 2 of 2 (MCP Tool Wiring)
-Status: Complete
-Last activity: 2026-03-11 — Completed 37-02-PLAN.md
+Phase: 38 — Observability Completion (IN PROGRESS)
+Plan: 1 of 2 (Resolved Config Display)
+Status: In progress
+Last activity: 2026-03-13 — Completed 38-01-PLAN.md
 
-Progress: v0.4.0 [██████░░░░░░░░░░░] ~27% (phases 35-37 complete)
+Progress: v0.4.0 [██████░░░░░░░░░░░] ~27% (phases 35-37 complete, 38 in progress)
 
 ## Milestone Progress
 
@@ -68,6 +68,11 @@ v0.4.0 decisions (from 37-02):
 - spec_validate uses fully qualified type paths (no import additions needed)
 - FeatureSpec parse/validation errors fall through to domain_error (not converted to ValidationResult)
 
+v0.4.0 decisions (from 38-01):
+- spec_get resolved block uses inline `serde_json::json!()` (no dedicated response struct)
+- spec tier in timeout cascade is always null (per-criterion timeout is visible in criteria array)
+- Resolved block built once before match, inserted into each branch
+
 v0.4.1 decisions (from brainstorm):
 - PR creation over direct merge for v0.4.x — maps to `autonomous: false`
 - `git merge-tree --write-tree` for conflict detection — zero side effects
@@ -102,6 +107,6 @@ Run `/kata-plan-phase [N]` to start planning phases, or `/kata-discuss-phase [N]
 
 ### Session Continuity
 
-Last session: 2026-03-11
-Stopped at: Completed 37-02-PLAN.md (phase 37 complete)
+Last session: 2026-03-13
+Stopped at: Completed 38-01-PLAN.md
 Resume file: None
