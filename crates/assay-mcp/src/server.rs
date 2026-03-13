@@ -47,6 +47,13 @@ pub struct SpecGetParams {
     /// The spec to retrieve.
     #[schemars(description = "Spec name (filename without .toml extension, e.g. 'auth-flow')")]
     pub name: String,
+
+    /// Include resolved configuration (effective timeouts, working_dir validation).
+    #[schemars(
+        description = "Include resolved configuration (effective timeouts, working_dir validation)"
+    )]
+    #[serde(default)]
+    pub resolve: bool,
 }
 
 /// Parameters for the `spec_validate` tool.
@@ -568,7 +575,7 @@ impl AssayServer {
 
     /// Get a spec by name.
     #[tool(
-        description = "Get a spec by name. Returns the full spec definition as JSON. For legacy specs: {format, name, description, criteria}. For directory specs: {format, gates, feature_spec?}. Use spec_list first to find available spec names."
+        description = "Get a spec by name. Returns the full spec definition as JSON. For legacy specs: {format, name, description, criteria}. For directory specs: {format, gates, feature_spec?}. Use spec_list first to find available spec names. Pass resolve=true to include effective timeout cascade (spec/config/default precedence) and working_dir validation."
     )]
     pub async fn spec_get(
         &self,
@@ -584,14 +591,38 @@ impl AssayServer {
             Err(err_result) => return Ok(err_result),
         };
 
+        let resolved_block = if params.0.resolve {
+            let config_timeout = config.gates.as_ref().map(|g| g.default_timeout);
+            let effective_timeout = config_timeout.unwrap_or(300);
+            let working_dir = resolve_working_dir(&cwd, &config);
+            Some(serde_json::json!({
+                "timeout": {
+                    "effective": effective_timeout,
+                    "spec": serde_json::Value::Null,
+                    "config": config_timeout,
+                    "default": 300
+                },
+                "working_dir": {
+                    "path": working_dir.to_string_lossy(),
+                    "exists": working_dir.exists(),
+                    "accessible": working_dir.is_dir()
+                }
+            }))
+        } else {
+            None
+        };
+
         let json = match &entry {
             SpecEntry::Legacy { spec, .. } => {
-                let response = serde_json::json!({
+                let mut response = serde_json::json!({
                     "format": "legacy",
                     "name": spec.name,
                     "description": spec.description,
                     "criteria": spec.criteria,
                 });
+                if let Some(resolved) = &resolved_block {
+                    response.as_object_mut().unwrap().insert("resolved".to_string(), resolved.clone());
+                }
                 serde_json::to_string(&response)
             }
             SpecEntry::Directory {
@@ -600,11 +631,14 @@ impl AssayServer {
                 let feature_spec = spec_path
                     .as_ref()
                     .and_then(|p| assay_core::spec::load_feature_spec(p).ok());
-                let response = serde_json::json!({
+                let mut response = serde_json::json!({
                     "format": "directory",
                     "gates": gates,
                     "feature_spec": feature_spec,
                 });
+                if let Some(resolved) = &resolved_block {
+                    response.as_object_mut().unwrap().insert("resolved".to_string(), resolved.clone());
+                }
                 serde_json::to_string(&response)
             }
         }
@@ -3050,6 +3084,7 @@ cmd = "echo ok"
         let result = server
             .spec_get(Parameters(SpecGetParams {
                 name: "auth-flow".to_string(),
+                resolve: false,
             }))
             .await
             .unwrap();
@@ -3075,6 +3110,7 @@ cmd = "echo ok"
         let result = server
             .spec_get(Parameters(SpecGetParams {
                 name: "nonexistent".to_string(),
+                resolve: false,
             }))
             .await
             .unwrap();
