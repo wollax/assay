@@ -347,6 +347,20 @@ inventory::submit! {
 // Token Estimate
 // ---------------------------------------------------------------------------
 
+/// Growth rate metrics for a session's context usage.
+///
+/// Computed from non-sidechain assistant turns with usage data.
+/// Only available when 5 or more qualifying turns exist.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct GrowthRate {
+    /// Average context tokens added per assistant turn.
+    pub avg_tokens_per_turn: u64,
+    /// Estimated assistant turns remaining before context window is full.
+    pub estimated_turns_remaining: u64,
+    /// Number of assistant turns used to compute these metrics.
+    pub turn_count: u64,
+}
+
 /// Token estimate for an active session (MCP `estimate_tokens` response).
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -363,6 +377,9 @@ pub struct TokenEstimate {
     pub context_utilization_pct: f64,
     /// Health assessment based on utilization.
     pub health: ContextHealth,
+    /// Growth rate metrics. Absent when fewer than 5 assistant turns exist.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub growth_rate: Option<GrowthRate>,
 }
 
 inventory::submit! {

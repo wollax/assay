@@ -47,6 +47,13 @@ pub struct SpecGetParams {
     /// The spec to retrieve.
     #[schemars(description = "Spec name (filename without .toml extension, e.g. 'auth-flow')")]
     pub name: String,
+
+    /// Include resolved configuration (effective timeouts, working_dir validation).
+    #[schemars(
+        description = "Include resolved configuration (effective timeouts, working_dir validation)"
+    )]
+    #[serde(default)]
+    pub resolve: bool,
 }
 
 /// Parameters for the `spec_validate` tool.
@@ -568,7 +575,7 @@ impl AssayServer {
 
     /// Get a spec by name.
     #[tool(
-        description = "Get a spec by name. Returns the full spec definition as JSON. For legacy specs: {format, name, description, criteria}. For directory specs: {format, gates, feature_spec?}. Use spec_list first to find available spec names."
+        description = "Get a spec by name. Returns the full spec definition as JSON. For legacy specs: {format, name, description, criteria}. For directory specs: {format, gates, feature_spec?}. Use spec_list first to find available spec names. Pass resolve=true to include effective timeout cascade (spec/config/default precedence) and working_dir validation."
     )]
     pub async fn spec_get(
         &self,
@@ -584,14 +591,38 @@ impl AssayServer {
             Err(err_result) => return Ok(err_result),
         };
 
+        let resolved_block = if params.0.resolve {
+            let config_timeout = config.gates.as_ref().map(|g| g.default_timeout);
+            let effective_timeout = config_timeout.unwrap_or(300);
+            let working_dir = resolve_working_dir(&cwd, &config);
+            Some(serde_json::json!({
+                "timeout": {
+                    "effective": effective_timeout,
+                    "spec": serde_json::Value::Null,
+                    "config": config_timeout,
+                    "default": 300
+                },
+                "working_dir": {
+                    "path": working_dir.to_string_lossy(),
+                    "exists": working_dir.exists(),
+                    "accessible": working_dir.is_dir()
+                }
+            }))
+        } else {
+            None
+        };
+
         let json = match &entry {
             SpecEntry::Legacy { spec, .. } => {
-                let response = serde_json::json!({
+                let mut response = serde_json::json!({
                     "format": "legacy",
                     "name": spec.name,
                     "description": spec.description,
                     "criteria": spec.criteria,
                 });
+                if let (Some(resolved), Some(obj)) = (&resolved_block, response.as_object_mut()) {
+                    obj.insert("resolved".to_string(), resolved.clone());
+                }
                 serde_json::to_string(&response)
             }
             SpecEntry::Directory {
@@ -600,11 +631,14 @@ impl AssayServer {
                 let feature_spec = spec_path
                     .as_ref()
                     .and_then(|p| assay_core::spec::load_feature_spec(p).ok());
-                let response = serde_json::json!({
+                let mut response = serde_json::json!({
                     "format": "directory",
                     "gates": gates,
                     "feature_spec": feature_spec,
                 });
+                if let (Some(resolved), Some(obj)) = (&resolved_block, response.as_object_mut()) {
+                    obj.insert("resolved".to_string(), resolved.clone());
+                }
                 serde_json::to_string(&response)
             }
         }
@@ -1157,11 +1191,12 @@ impl AssayServer {
         }
     }
 
-    /// Estimate current token usage and context window health (fast, tail-read).
+    /// Estimate current token usage and context window health.
     #[tool(
         description = "Estimate current token usage and context window health for a Claude Code session. \
             Returns context tokens, output tokens, utilization percentage, and a health indicator \
-            (healthy/warning/critical). Fast: reads only the tail of the session file. \
+            (healthy/warning/critical). When 5+ assistant turns exist, includes growth_rate with \
+            avg_tokens_per_turn, estimated_turns_remaining, and turn_count. \
             Omit session_id to estimate the most recent session for this project."
     )]
     pub async fn estimate_tokens(
@@ -3050,6 +3085,7 @@ cmd = "echo ok"
         let result = server
             .spec_get(Parameters(SpecGetParams {
                 name: "auth-flow".to_string(),
+                resolve: false,
             }))
             .await
             .unwrap();
@@ -3075,6 +3111,7 @@ cmd = "echo ok"
         let result = server
             .spec_get(Parameters(SpecGetParams {
                 name: "nonexistent".to_string(),
+                resolve: false,
             }))
             .await
             .unwrap();
@@ -3687,5 +3724,211 @@ cmd = "echo ok"
         assert_eq!(json_ev["criteria"][0]["original_bytes"], 524_288);
         assert_eq!(json_ev["criteria"][1]["truncated"], true);
         assert_eq!(json_ev["criteria"][1]["original_bytes"], 1_048_576);
+    }
+
+    // ── spec_get resolve tests ───────────────────────────────────────
+
+    #[test]
+    fn test_spec_get_params_resolve_defaults_to_false() {
+        let json = serde_json::json!({"name": "my-spec"});
+        let params: SpecGetParams = serde_json::from_value(json).unwrap();
+        assert_eq!(params.name, "my-spec");
+        assert!(!params.resolve, "resolve should default to false");
+    }
+
+    #[test]
+    fn test_spec_get_params_resolve_true() {
+        let json = serde_json::json!({"name": "my-spec", "resolve": true});
+        let params: SpecGetParams = serde_json::from_value(json).unwrap();
+        assert!(params.resolve, "resolve should be true when set");
+    }
+
+    #[test]
+    fn test_spec_get_params_resolve_false_explicit() {
+        let json = serde_json::json!({"name": "my-spec", "resolve": false});
+        let params: SpecGetParams = serde_json::from_value(json).unwrap();
+        assert!(!params.resolve, "resolve should be false when explicitly set");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn spec_get_resolve_false_has_no_resolved_key() {
+        let dir = create_project(r#"project_name = "handler-test""#);
+        create_spec(
+            dir.path(),
+            "specs",
+            "simple.toml",
+            r#"
+name = "simple"
+description = "Simple spec"
+
+[[criteria]]
+name = "check"
+description = "A check"
+cmd = "echo ok"
+"#,
+        );
+
+        std::env::set_current_dir(dir.path()).unwrap();
+
+        let server = AssayServer::new();
+        let result = server
+            .spec_get(Parameters(SpecGetParams {
+                name: "simple".to_string(),
+                resolve: false,
+            }))
+            .await
+            .unwrap();
+
+        assert!(!result.is_error.unwrap_or(false));
+        let text = extract_text(&result);
+        let json: serde_json::Value = serde_json::from_str(&text).unwrap();
+
+        assert!(
+            json.get("resolved").is_none(),
+            "resolved key should be absent when resolve=false"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn spec_get_resolve_true_returns_resolved_block() {
+        let dir = create_project(r#"project_name = "handler-test""#);
+        create_spec(
+            dir.path(),
+            "specs",
+            "simple.toml",
+            r#"
+name = "simple"
+description = "Simple spec"
+
+[[criteria]]
+name = "check"
+description = "A check"
+cmd = "echo ok"
+"#,
+        );
+
+        std::env::set_current_dir(dir.path()).unwrap();
+
+        let server = AssayServer::new();
+        let result = server
+            .spec_get(Parameters(SpecGetParams {
+                name: "simple".to_string(),
+                resolve: true,
+            }))
+            .await
+            .unwrap();
+
+        assert!(!result.is_error.unwrap_or(false));
+        let text = extract_text(&result);
+        let json: serde_json::Value = serde_json::from_str(&text).unwrap();
+
+        let resolved = json
+            .get("resolved")
+            .expect("resolved key should be present when resolve=true");
+
+        // Timeout cascade shape
+        let timeout = &resolved["timeout"];
+        assert_eq!(timeout["effective"], 300, "default effective timeout");
+        assert!(timeout["spec"].is_null(), "spec tier should be null");
+        assert!(
+            timeout["config"].is_null(),
+            "config tier should be null when no [gates] section"
+        );
+        assert_eq!(timeout["default"], 300);
+
+        // Working dir shape
+        let wd = &resolved["working_dir"];
+        assert!(wd["path"].is_string(), "working_dir.path should be a string");
+        assert!(wd["exists"].is_boolean(), "working_dir.exists should be a bool");
+        assert!(wd["accessible"].is_boolean(), "working_dir.accessible should be a bool");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn spec_get_resolve_true_with_gates_config_shows_config_timeout() {
+        let dir = create_project(
+            r#"
+project_name = "handler-test"
+
+[gates]
+default_timeout = 120
+"#,
+        );
+        create_spec(
+            dir.path(),
+            "specs",
+            "gated.toml",
+            r#"
+name = "gated"
+description = "Spec with gates config"
+
+[[criteria]]
+name = "check"
+description = "A check"
+cmd = "echo ok"
+"#,
+        );
+
+        std::env::set_current_dir(dir.path()).unwrap();
+
+        let server = AssayServer::new();
+        let result = server
+            .spec_get(Parameters(SpecGetParams {
+                name: "gated".to_string(),
+                resolve: true,
+            }))
+            .await
+            .unwrap();
+
+        assert!(!result.is_error.unwrap_or(false));
+        let text = extract_text(&result);
+        let json: serde_json::Value = serde_json::from_str(&text).unwrap();
+
+        let timeout = &json["resolved"]["timeout"];
+        assert_eq!(timeout["effective"], 120, "effective should use config timeout");
+        assert!(timeout["spec"].is_null(), "spec tier should be null");
+        assert_eq!(timeout["config"], 120, "config tier should show the configured value");
+        assert_eq!(timeout["default"], 300, "default tier is always 300");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn spec_get_resolve_true_working_dir_exists_and_accessible() {
+        let dir = create_project(r#"project_name = "handler-test""#);
+        create_spec(
+            dir.path(),
+            "specs",
+            "simple.toml",
+            r#"
+name = "simple"
+description = "Simple spec"
+
+[[criteria]]
+name = "check"
+description = "A check"
+cmd = "echo ok"
+"#,
+        );
+
+        std::env::set_current_dir(dir.path()).unwrap();
+
+        let server = AssayServer::new();
+        let result = server
+            .spec_get(Parameters(SpecGetParams {
+                name: "simple".to_string(),
+                resolve: true,
+            }))
+            .await
+            .unwrap();
+
+        let text = extract_text(&result);
+        let json: serde_json::Value = serde_json::from_str(&text).unwrap();
+        let wd = &json["resolved"]["working_dir"];
+
+        // CWD is a temp dir that exists and is accessible
+        assert_eq!(wd["exists"], true, "CWD should exist");
+        assert_eq!(wd["accessible"], true, "CWD should be accessible");
     }
 }
