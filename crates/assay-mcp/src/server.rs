@@ -3724,4 +3724,210 @@ cmd = "echo ok"
         assert_eq!(json_ev["criteria"][1]["truncated"], true);
         assert_eq!(json_ev["criteria"][1]["original_bytes"], 1_048_576);
     }
+
+    // ── spec_get resolve tests ───────────────────────────────────────
+
+    #[test]
+    fn test_spec_get_params_resolve_defaults_to_false() {
+        let json = serde_json::json!({"name": "my-spec"});
+        let params: SpecGetParams = serde_json::from_value(json).unwrap();
+        assert_eq!(params.name, "my-spec");
+        assert!(!params.resolve, "resolve should default to false");
+    }
+
+    #[test]
+    fn test_spec_get_params_resolve_true() {
+        let json = serde_json::json!({"name": "my-spec", "resolve": true});
+        let params: SpecGetParams = serde_json::from_value(json).unwrap();
+        assert!(params.resolve, "resolve should be true when set");
+    }
+
+    #[test]
+    fn test_spec_get_params_resolve_false_explicit() {
+        let json = serde_json::json!({"name": "my-spec", "resolve": false});
+        let params: SpecGetParams = serde_json::from_value(json).unwrap();
+        assert!(!params.resolve, "resolve should be false when explicitly set");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn spec_get_resolve_false_has_no_resolved_key() {
+        let dir = create_project(r#"project_name = "handler-test""#);
+        create_spec(
+            dir.path(),
+            "specs",
+            "simple.toml",
+            r#"
+name = "simple"
+description = "Simple spec"
+
+[[criteria]]
+name = "check"
+description = "A check"
+cmd = "echo ok"
+"#,
+        );
+
+        std::env::set_current_dir(dir.path()).unwrap();
+
+        let server = AssayServer::new();
+        let result = server
+            .spec_get(Parameters(SpecGetParams {
+                name: "simple".to_string(),
+                resolve: false,
+            }))
+            .await
+            .unwrap();
+
+        assert!(!result.is_error.unwrap_or(false));
+        let text = extract_text(&result);
+        let json: serde_json::Value = serde_json::from_str(&text).unwrap();
+
+        assert!(
+            json.get("resolved").is_none(),
+            "resolved key should be absent when resolve=false"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn spec_get_resolve_true_returns_resolved_block() {
+        let dir = create_project(r#"project_name = "handler-test""#);
+        create_spec(
+            dir.path(),
+            "specs",
+            "simple.toml",
+            r#"
+name = "simple"
+description = "Simple spec"
+
+[[criteria]]
+name = "check"
+description = "A check"
+cmd = "echo ok"
+"#,
+        );
+
+        std::env::set_current_dir(dir.path()).unwrap();
+
+        let server = AssayServer::new();
+        let result = server
+            .spec_get(Parameters(SpecGetParams {
+                name: "simple".to_string(),
+                resolve: true,
+            }))
+            .await
+            .unwrap();
+
+        assert!(!result.is_error.unwrap_or(false));
+        let text = extract_text(&result);
+        let json: serde_json::Value = serde_json::from_str(&text).unwrap();
+
+        let resolved = json
+            .get("resolved")
+            .expect("resolved key should be present when resolve=true");
+
+        // Timeout cascade shape
+        let timeout = &resolved["timeout"];
+        assert_eq!(timeout["effective"], 300, "default effective timeout");
+        assert!(timeout["spec"].is_null(), "spec tier should be null");
+        assert!(
+            timeout["config"].is_null(),
+            "config tier should be null when no [gates] section"
+        );
+        assert_eq!(timeout["default"], 300);
+
+        // Working dir shape
+        let wd = &resolved["working_dir"];
+        assert!(wd["path"].is_string(), "working_dir.path should be a string");
+        assert!(wd["exists"].is_boolean(), "working_dir.exists should be a bool");
+        assert!(wd["accessible"].is_boolean(), "working_dir.accessible should be a bool");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn spec_get_resolve_true_with_gates_config_shows_config_timeout() {
+        let dir = create_project(
+            r#"
+project_name = "handler-test"
+
+[gates]
+default_timeout = 120
+"#,
+        );
+        create_spec(
+            dir.path(),
+            "specs",
+            "gated.toml",
+            r#"
+name = "gated"
+description = "Spec with gates config"
+
+[[criteria]]
+name = "check"
+description = "A check"
+cmd = "echo ok"
+"#,
+        );
+
+        std::env::set_current_dir(dir.path()).unwrap();
+
+        let server = AssayServer::new();
+        let result = server
+            .spec_get(Parameters(SpecGetParams {
+                name: "gated".to_string(),
+                resolve: true,
+            }))
+            .await
+            .unwrap();
+
+        assert!(!result.is_error.unwrap_or(false));
+        let text = extract_text(&result);
+        let json: serde_json::Value = serde_json::from_str(&text).unwrap();
+
+        let timeout = &json["resolved"]["timeout"];
+        assert_eq!(timeout["effective"], 120, "effective should use config timeout");
+        assert!(timeout["spec"].is_null(), "spec tier should be null");
+        assert_eq!(timeout["config"], 120, "config tier should show the configured value");
+        assert_eq!(timeout["default"], 300, "default tier is always 300");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn spec_get_resolve_true_working_dir_exists_and_accessible() {
+        let dir = create_project(r#"project_name = "handler-test""#);
+        create_spec(
+            dir.path(),
+            "specs",
+            "simple.toml",
+            r#"
+name = "simple"
+description = "Simple spec"
+
+[[criteria]]
+name = "check"
+description = "A check"
+cmd = "echo ok"
+"#,
+        );
+
+        std::env::set_current_dir(dir.path()).unwrap();
+
+        let server = AssayServer::new();
+        let result = server
+            .spec_get(Parameters(SpecGetParams {
+                name: "simple".to_string(),
+                resolve: true,
+            }))
+            .await
+            .unwrap();
+
+        let text = extract_text(&result);
+        let json: serde_json::Value = serde_json::from_str(&text).unwrap();
+        let wd = &json["resolved"]["working_dir"];
+
+        // CWD is a temp dir that exists and is accessible
+        assert_eq!(wd["exists"], true, "CWD should exist");
+        assert_eq!(wd["accessible"], true, "CWD should be accessible");
+    }
 }
