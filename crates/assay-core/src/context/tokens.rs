@@ -142,6 +142,7 @@ pub fn estimate_tokens(path: &Path, session_id: &str) -> crate::Result<TokenEsti
         context_window,
         context_utilization_pct: pct,
         health,
+        growth_rate: None,
     })
 }
 
