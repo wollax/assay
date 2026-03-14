@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::model::{ContextItem, ContextBudget, OverflowStrategy, ScoredItem};
 use crate::placer::Placer;
 use crate::CupelError;
@@ -15,6 +17,12 @@ pub(crate) fn place_items(
     overflow_strategy: OverflowStrategy,
     placer: &dyn Placer,
 ) -> Result<Vec<ContextItem>, CupelError> {
+    // Build content -> score map (first occurrence = highest score since sorted desc)
+    let mut score_map: HashMap<&str, f64> = HashMap::with_capacity(sorted_scored.len());
+    for si in sorted_scored {
+        score_map.entry(si.item.content()).or_insert(si.score);
+    }
+
     // Step 1: Merge — pinned items with score 1.0, then sliced items with original scores
     let mut merged: Vec<ScoredItem> = Vec::with_capacity(pinned.len() + sliced.len());
 
@@ -26,11 +34,7 @@ pub(crate) fn place_items(
     }
 
     for item in sliced {
-        // Look up the original score from sorted_scored by content match
-        let score = sorted_scored
-            .iter()
-            .find(|si| si.item.content() == item.content())
-            .map_or(0.0, |si| si.score);
+        let score = score_map.get(item.content()).copied().unwrap_or(0.0);
 
         merged.push(ScoredItem {
             item: item.clone(),

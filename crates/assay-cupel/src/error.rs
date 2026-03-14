@@ -22,6 +22,9 @@ pub enum CupelError {
         target_tokens: i64,
     },
 
+    #[error("invalid pipeline configuration: {0}")]
+    PipelineConfig(String),
+
     #[error("invalid scorer configuration: {0}")]
     ScorerConfig(String),
 

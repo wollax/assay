@@ -12,7 +12,7 @@ use crate::model::{ContextBudget, ContextItem, ScoredItem};
 ///
 /// Slicers receive items pre-sorted by score descending (from the Sort stage)
 /// and return the subset of items that fits within the budget.
-pub trait Slicer {
+pub trait Slicer: Send + Sync {
     /// Selects items from `sorted` that fit within `budget`.
     fn slice(&self, sorted: &[ScoredItem], budget: &ContextBudget) -> Vec<ContextItem>;
 }

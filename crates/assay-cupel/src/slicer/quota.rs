@@ -7,12 +7,56 @@ use crate::CupelError;
 /// A single quota entry specifying require and cap percentages for a kind.
 #[derive(Debug, Clone)]
 pub struct QuotaEntry {
+    kind: ContextKind,
+    require: f64,
+    cap: f64,
+}
+
+impl QuotaEntry {
+    /// Creates a new `QuotaEntry` with validated require and cap percentages.
+    ///
+    /// # Validation
+    ///
+    /// - `require` must be in `[0.0, 100.0]`.
+    /// - `cap` must be in `[0.0, 100.0]`.
+    /// - `require` must be `<= cap`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `CupelError::SlicerConfig` if validation fails.
+    pub fn new(kind: ContextKind, require: f64, cap: f64) -> Result<Self, CupelError> {
+        if !(0.0..=100.0).contains(&require) {
+            return Err(CupelError::SlicerConfig(format!(
+                "require ({require}) must be in [0.0, 100.0]"
+            )));
+        }
+        if !(0.0..=100.0).contains(&cap) {
+            return Err(CupelError::SlicerConfig(format!(
+                "cap ({cap}) must be in [0.0, 100.0]"
+            )));
+        }
+        if require > cap {
+            return Err(CupelError::SlicerConfig(format!(
+                "require ({require}) must be <= cap ({cap})"
+            )));
+        }
+        Ok(Self { kind, require, cap })
+    }
+
     /// The context kind this quota applies to.
-    pub kind: ContextKind,
+    pub fn kind(&self) -> &ContextKind {
+        &self.kind
+    }
+
     /// Minimum guaranteed percentage of the budget. Range: [0.0, 100.0].
-    pub require: f64,
+    pub fn require(&self) -> f64 {
+        self.require
+    }
+
     /// Maximum percentage of the budget. Range: [0.0, 100.0].
-    pub cap: f64,
+    pub fn cap(&self) -> f64 {
+        self.cap
+    }
 }
 
 /// A decorator slicer that partitions items by [`ContextKind`], distributes the
@@ -35,16 +79,7 @@ impl QuotaSlice {
     ///
     /// Returns `CupelError::SlicerConfig` if validation fails.
     pub fn new(quotas: Vec<QuotaEntry>, inner: Box<dyn Slicer>) -> Result<Self, CupelError> {
-        let mut require_sum = 0.0;
-        for q in &quotas {
-            if q.require > q.cap {
-                return Err(CupelError::SlicerConfig(format!(
-                    "require ({}) must be <= cap ({}) for kind '{}'",
-                    q.require, q.cap, q.kind,
-                )));
-            }
-            require_sum += q.require;
-        }
+        let require_sum: f64 = quotas.iter().map(|q| q.require()).sum();
         if require_sum > 100.0 {
             return Err(CupelError::SlicerConfig(format!(
                 "sum of require percentages ({require_sum}) must not exceed 100.0",
@@ -56,8 +91,8 @@ impl QuotaSlice {
     fn get_cap(&self, kind: &ContextKind) -> f64 {
         self.quotas
             .iter()
-            .find(|q| &q.kind == kind)
-            .map_or(100.0, |q| q.cap)
+            .find(|q| q.kind() == kind)
+            .map_or(100.0, |q| q.cap())
     }
 }
 
@@ -92,12 +127,12 @@ impl Slicer for QuotaSlice {
 
         for q in &self.quotas {
             require_tokens.insert(
-                q.kind.clone(),
-                (q.require / 100.0 * target_tokens as f64).floor() as i64,
+                q.kind().clone(),
+                (q.require() / 100.0 * target_tokens as f64).floor() as i64,
             );
             cap_tokens.insert(
-                q.kind.clone(),
-                (q.cap / 100.0 * target_tokens as f64).floor() as i64,
+                q.kind().clone(),
+                (q.cap() / 100.0 * target_tokens as f64).floor() as i64,
             );
         }
 
@@ -105,25 +140,29 @@ impl Slicer for QuotaSlice {
         let total_required: i64 = require_tokens.values().sum();
         let unassigned_budget = (target_tokens - total_required).max(0);
 
+        // Sort partition keys for deterministic iteration order
+        let mut sorted_kinds: Vec<&ContextKind> = partitions.keys().collect();
+        sorted_kinds.sort_by_key(|k| k.as_str().to_ascii_lowercase());
+
         // Step 3: Compute distribution mass
         let mut total_mass_for_distribution: i64 = 0;
-        for kind in partitions.keys() {
-            let cap = cap_tokens.get(kind).copied().unwrap_or(target_tokens);
-            let require = require_tokens.get(kind).copied().unwrap_or(0);
+        for kind in &sorted_kinds {
+            let cap = cap_tokens.get(*kind).copied().unwrap_or(target_tokens);
+            let require = require_tokens.get(*kind).copied().unwrap_or(0);
             if cap > require {
                 total_mass_for_distribution +=
-                    candidate_token_mass.get(kind).copied().unwrap_or(0);
+                    candidate_token_mass.get(*kind).copied().unwrap_or(0);
             }
         }
 
         // Step 4: Distribute per kind
         let mut kind_budgets: HashMap<ContextKind, i64> = HashMap::new();
-        for kind in partitions.keys() {
-            let require = require_tokens.get(kind).copied().unwrap_or(0);
-            let cap = cap_tokens.get(kind).copied().unwrap_or(target_tokens);
+        for kind in &sorted_kinds {
+            let require = require_tokens.get(*kind).copied().unwrap_or(0);
+            let cap = cap_tokens.get(*kind).copied().unwrap_or(target_tokens);
 
             let proportional = if total_mass_for_distribution > 0 && cap > require {
-                let mass = candidate_token_mass.get(kind).copied().unwrap_or(0);
+                let mass = candidate_token_mass.get(*kind).copied().unwrap_or(0);
                 (unassigned_budget as f64 * mass as f64 / total_mass_for_distribution as f64)
                     .floor() as i64
             } else {
@@ -135,7 +174,7 @@ impl Slicer for QuotaSlice {
                 kind_budget = cap;
             }
 
-            kind_budgets.insert(kind.clone(), kind_budget);
+            kind_budgets.insert((*kind).clone(), kind_budget);
         }
 
         // Phase 4: Per-kind slicing
@@ -147,9 +186,11 @@ impl Slicer for QuotaSlice {
             }
 
             let cap = (self.get_cap(kind) / 100.0 * target_tokens as f64).floor() as i64;
+            // Defensive guard: ensure kind_budget does not exceed cap
+            let kind_budget = kind_budget.min(cap);
 
             // Create a sub-budget for the inner slicer.
-            // Use unwrap since cap >= kind_budget >= 0 and target <= max.
+            // Safe: cap >= kind_budget >= 0 after the defensive guard above.
             let sub_budget = ContextBudget::new(
                 cap,
                 kind_budget,

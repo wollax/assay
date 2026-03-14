@@ -10,7 +10,7 @@ use crate::model::{ContextItem, ScoredItem};
 ///
 /// Placers receive merged items (pinned + sliced) with their scores and
 /// produce the final ordered list of context items.
-pub trait Placer {
+pub trait Placer: Send + Sync {
     /// Orders the given items for final presentation in the context window.
     fn place(&self, items: &[ScoredItem]) -> Vec<ContextItem>;
 }

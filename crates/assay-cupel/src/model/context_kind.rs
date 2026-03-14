@@ -32,6 +32,12 @@ impl ContextKind {
         Ok(Self(s))
     }
 
+    /// Creates a `ContextKind` from a well-known constant, bypassing validation.
+    /// Only used internally for statically-known non-empty strings.
+    pub(crate) fn from_static(value: &str) -> Self {
+        Self(value.to_owned())
+    }
+
     /// Returns the underlying string value.
     pub fn as_str(&self) -> &str {
         &self.0

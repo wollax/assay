@@ -72,6 +72,15 @@ impl Pipeline {
     }
 }
 
+impl std::fmt::Debug for Pipeline {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Pipeline")
+            .field("deduplication", &self.deduplication)
+            .field("overflow_strategy", &self.overflow_strategy)
+            .finish()
+    }
+}
+
 /// Builder for constructing a [`Pipeline`] with required and optional configuration.
 pub struct PipelineBuilder {
     scorer: Option<Box<dyn Scorer>>,
@@ -79,6 +88,18 @@ pub struct PipelineBuilder {
     placer: Option<Box<dyn Placer>>,
     deduplication: bool,
     overflow_strategy: OverflowStrategy,
+}
+
+impl std::fmt::Debug for PipelineBuilder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PipelineBuilder")
+            .field("scorer", &self.scorer.is_some())
+            .field("slicer", &self.slicer.is_some())
+            .field("placer", &self.placer.is_some())
+            .field("deduplication", &self.deduplication)
+            .field("overflow_strategy", &self.overflow_strategy)
+            .finish()
+    }
 }
 
 impl PipelineBuilder {
@@ -120,13 +141,13 @@ impl PipelineBuilder {
     pub fn build(self) -> Result<Pipeline, CupelError> {
         let scorer = self
             .scorer
-            .ok_or_else(|| CupelError::InvalidBudget("scorer is required".to_owned()))?;
+            .ok_or_else(|| CupelError::PipelineConfig("scorer is required".to_owned()))?;
         let slicer = self
             .slicer
-            .ok_or_else(|| CupelError::InvalidBudget("slicer is required".to_owned()))?;
+            .ok_or_else(|| CupelError::PipelineConfig("slicer is required".to_owned()))?;
         let placer = self
             .placer
-            .ok_or_else(|| CupelError::InvalidBudget("placer is required".to_owned()))?;
+            .ok_or_else(|| CupelError::PipelineConfig("placer is required".to_owned()))?;
 
         Ok(Pipeline {
             scorer,

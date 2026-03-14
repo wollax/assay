@@ -20,16 +20,16 @@ impl KindScorer {
     pub fn with_default_weights() -> Self {
         let mut weights = HashMap::new();
         weights.insert(
-            ContextKind::new(ContextKind::SYSTEM_PROMPT).unwrap(),
+            ContextKind::from_static(ContextKind::SYSTEM_PROMPT),
             1.0,
         );
-        weights.insert(ContextKind::new(ContextKind::MEMORY).unwrap(), 0.8);
+        weights.insert(ContextKind::from_static(ContextKind::MEMORY), 0.8);
         weights.insert(
-            ContextKind::new(ContextKind::TOOL_OUTPUT).unwrap(),
+            ContextKind::from_static(ContextKind::TOOL_OUTPUT),
             0.6,
         );
-        weights.insert(ContextKind::new(ContextKind::DOCUMENT).unwrap(), 0.4);
-        weights.insert(ContextKind::new(ContextKind::MESSAGE).unwrap(), 0.2);
+        weights.insert(ContextKind::from_static(ContextKind::DOCUMENT), 0.4);
+        weights.insert(ContextKind::from_static(ContextKind::MESSAGE), 0.2);
         Self { weights }
     }
 

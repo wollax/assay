@@ -8,7 +8,7 @@ use crate::model::{ContextKind, ContextSource};
 /// An immutable record representing a single piece of context in the pipeline.
 ///
 /// Constructed via [`ContextItemBuilder`]. All fields are private with public accessor methods.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ContextItem {
     content: String,
     tokens: i64,
