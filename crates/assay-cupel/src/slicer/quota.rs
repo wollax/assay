@@ -107,7 +107,7 @@ impl Slicer for QuotaSlice {
 
         // Step 3: Compute distribution mass
         let mut total_mass_for_distribution: i64 = 0;
-        for (kind, _) in &partitions {
+        for kind in partitions.keys() {
             let cap = cap_tokens.get(kind).copied().unwrap_or(target_tokens);
             let require = require_tokens.get(kind).copied().unwrap_or(0);
             if cap > require {
@@ -118,7 +118,7 @@ impl Slicer for QuotaSlice {
 
         // Step 4: Distribute per kind
         let mut kind_budgets: HashMap<ContextKind, i64> = HashMap::new();
-        for (kind, _) in &partitions {
+        for kind in partitions.keys() {
             let require = require_tokens.get(kind).copied().unwrap_or(0);
             let cap = cap_tokens.get(kind).copied().unwrap_or(target_tokens);
 
@@ -159,7 +159,7 @@ impl Slicer for QuotaSlice {
             )
             .expect("sub-budget should be valid since cap >= kind_budget >= 0");
 
-            let selected = self.inner.slice(&items, &sub_budget);
+            let selected = self.inner.slice(items, &sub_budget);
             all_selected.extend(selected);
         }
 
