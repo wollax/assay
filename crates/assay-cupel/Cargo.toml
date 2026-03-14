@@ -1,0 +1,19 @@
+[package]
+name = "assay-cupel"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Context window management pipeline for LLM applications"
+
+[dependencies]
+chrono.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+toml.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true
