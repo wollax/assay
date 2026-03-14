@@ -1,0 +1,76 @@
+[test]
+name = "Pipeline: greedy slice with u-shaped placement"
+stage = "pipeline"
+
+# 4 items scored by recency, sliced by greedy, placed u-shaped.
+# Budget: target=500, max=1000, reserve=0.
+#
+# Score (RecencyScorer):
+#   countWithTimestamp = 4, denominator = 3.
+#   "oldest" (Jan):  rank 0 → 0.0
+#   "early"  (Apr):  rank 1 → 1/3 ≈ 0.333
+#   "late"   (Sep):  rank 2 → 2/3 ≈ 0.667
+#   "newest" (Dec):  rank 3 → 1.0
+#
+# Sort: newest(1.0), late(0.667), early(0.333), oldest(0.0)
+#
+# Slice (Greedy, target=500):
+#   Densities: newest=1.0/100=0.01, late=0.667/150≈0.00444, early=0.333/150≈0.00222, oldest=0.0/200=0.0
+#   Fill: newest(remaining=400), late(remaining=250), early(remaining=100), oldest(200>100 skip)
+#   Selected: newest, late, early
+#
+# Place (UShapedPlacer):
+#   Items arrive as ScoredItem pairs. Need to compute scores for sliced items.
+#   newest(1.0), late(0.667), early(0.333)
+#   Sort by score desc: newest(1.0, idx0), late(0.667, idx1), early(0.333, idx2)
+#   Rank 0 (newest) → left[0]
+#   Rank 1 (late) → right[2]
+#   Rank 2 (early) → left[1]
+#   Result: [newest, early, late]
+
+[budget]
+max_tokens = 1000
+target_tokens = 500
+output_reserve = 0
+
+[config]
+slicer = "greedy"
+placer = "u-shaped"
+deduplication = true
+
+[[config.scorers]]
+type = "recency"
+weight = 1.0
+
+[[items]]
+content = "oldest"
+tokens = 200
+kind = "Message"
+timestamp = 2024-01-01T00:00:00Z
+
+[[items]]
+content = "early"
+tokens = 150
+kind = "Message"
+timestamp = 2024-04-01T00:00:00Z
+
+[[items]]
+content = "late"
+tokens = 150
+kind = "Message"
+timestamp = 2024-09-01T00:00:00Z
+
+[[items]]
+content = "newest"
+tokens = 100
+kind = "Message"
+timestamp = 2024-12-01T00:00:00Z
+
+[[expected_output]]
+content = "newest"
+
+[[expected_output]]
+content = "early"
+
+[[expected_output]]
+content = "late"

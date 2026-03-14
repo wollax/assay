@@ -1,0 +1,28 @@
+[test]
+name = "ChronologicalPlacer orders items by ascending timestamp"
+stage = "placing"
+placer = "chronological"
+
+# Items with timestamps should be sorted oldest-first.
+# Scores are available but not used by ChronologicalPlacer.
+
+[[items]]
+content = "recent"
+tokens = 100
+score = 0.9
+timestamp = 2024-12-01T00:00:00Z
+
+[[items]]
+content = "middle"
+tokens = 100
+score = 0.5
+timestamp = 2024-06-01T00:00:00Z
+
+[[items]]
+content = "old"
+tokens = 100
+score = 0.3
+timestamp = 2024-01-01T00:00:00Z
+
+[expected]
+ordered_contents = ["old", "middle", "recent"]

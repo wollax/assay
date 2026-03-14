@@ -1,0 +1,73 @@
+[test]
+name = "CompositeScorer computes weighted average of child scorers"
+stage = "scoring"
+scorer = "composite"
+
+# Two child scorers: recency (weight 3.0) and priority (weight 1.0).
+# Normalized weights: recency = 3/4 = 0.75, priority = 1/4 = 0.25.
+#
+# Items:
+#   "old-low":  timestamp Jan, priority 1
+#   "new-high": timestamp Dec, priority 10
+#   "old-high": timestamp Jan, priority 10
+#
+# Recency scores (3 timestamped, denominator = 2):
+#   "old-low":  Jan → rank 0 → 0.0
+#   "new-high": Dec → rank 2 → 1.0
+#   "old-high": Jan → rank 0 → 0.0 (tied with old-low)
+#
+# Priority scores (3 prioritized, denominator = 2):
+#   "old-low":  priority 1  → rank 0 → 0.0
+#   "new-high": priority 10 → rank 1 → 0.5 (tied with old-high at rank 1)
+#   "old-high": priority 10 → rank 1 → 0.5
+#
+# Wait — let me recompute priority. countWithPriority = 3, denom = 2.
+# priority 1: rank 0 (0 items strictly lower) → 0/2 = 0.0
+# priority 10: rank 1 (1 item strictly lower: the one with priority 1) → 1/2 = 0.5
+# But there are 2 items with priority 10 — each has rank 1 → 0.5
+#
+# Composite scores:
+#   "old-low":  0.75 * 0.0 + 0.25 * 0.0 = 0.0
+#   "new-high": 0.75 * 1.0 + 0.25 * 0.5 = 0.875
+#   "old-high": 0.75 * 0.0 + 0.25 * 0.5 = 0.125
+
+[[config.scorers]]
+type = "recency"
+weight = 3.0
+
+[[config.scorers]]
+type = "priority"
+weight = 1.0
+
+[[items]]
+content = "old-low"
+tokens = 100
+timestamp = 2024-01-01T00:00:00Z
+priority = 1
+
+[[items]]
+content = "new-high"
+tokens = 100
+timestamp = 2024-12-01T00:00:00Z
+priority = 10
+
+[[items]]
+content = "old-high"
+tokens = 100
+timestamp = 2024-01-01T00:00:00Z
+priority = 10
+
+[[expected]]
+content = "old-low"
+score_approx = 0.0
+
+[[expected]]
+content = "new-high"
+score_approx = 0.875
+
+[[expected]]
+content = "old-high"
+score_approx = 0.125
+
+[tolerance]
+score_epsilon = 1e-9

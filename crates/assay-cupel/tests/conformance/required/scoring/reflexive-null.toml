@@ -1,0 +1,26 @@
+[test]
+name = "ReflexiveScorer returns 0.0 for null futureRelevanceHint"
+stage = "scoring"
+scorer = "reflexive"
+
+# Items without futureRelevanceHint should score 0.0.
+
+[[items]]
+content = "has hint"
+tokens = 100
+futureRelevanceHint = 0.75
+
+[[items]]
+content = "no hint"
+tokens = 100
+
+[[expected]]
+content = "has hint"
+score_approx = 0.75
+
+[[expected]]
+content = "no hint"
+score_approx = 0.0
+
+[tolerance]
+score_epsilon = 1e-9

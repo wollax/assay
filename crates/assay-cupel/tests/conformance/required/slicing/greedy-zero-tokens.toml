@@ -1,0 +1,42 @@
+[test]
+name = "GreedySlice always includes zero-token items"
+stage = "slicing"
+slicer = "greedy"
+
+# Budget: 150 tokens.
+# Zero-token items have density MAX_FLOAT and are always included.
+#
+# Items:
+#   "zero-a": tokens=0, score=0.1 → density = MAX_FLOAT
+#   "zero-b": tokens=0, score=0.05 → density = MAX_FLOAT
+#   "normal": tokens=100, score=0.8 → density = 0.008
+#   "too-big": tokens=200, score=0.9 → density = 0.0045
+#
+# After selecting zero-token items and "normal" (100 tokens, fits in 150),
+# "too-big" (200) does not fit in remaining 50.
+
+[budget]
+target_tokens = 150
+
+[[scored_items]]
+content = "zero-a"
+tokens = 0
+score = 0.1
+
+[[scored_items]]
+content = "zero-b"
+tokens = 0
+score = 0.05
+
+[[scored_items]]
+content = "normal"
+tokens = 100
+score = 0.8
+
+[[scored_items]]
+content = "too-big"
+tokens = 200
+score = 0.9
+
+[expected]
+selected_contents = ["zero-a", "zero-b", "normal"]

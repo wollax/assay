@@ -1,0 +1,77 @@
+[test]
+name = "KnapsackSlice selects optimally where greedy would not"
+stage = "slicing"
+slicer = "knapsack"
+
+# Budget: 300 tokens, bucket_size: 100
+# This is a case where knapsack should differ from greedy.
+#
+# Items:
+#   "expensive": tokens=300, score=0.8 → value=8000, discretized weight=3
+#   "cheap-a":   tokens=200, score=0.5 → value=5000, discretized weight=2
+#   "cheap-b":   tokens=200, score=0.4 → value=4000, discretized weight=2
+#
+# Capacity = floor(300/100) = 3
+#
+# Greedy (by density):
+#   expensive: density = 0.8/300 ≈ 0.00267
+#   cheap-a:   density = 0.5/200 = 0.0025
+#   cheap-b:   density = 0.4/200 = 0.002
+#   → selects "expensive" (remaining=0), total value = 0.8
+#
+# Knapsack DP:
+#   Taking cheap-a + cheap-b would need 400 tokens > 300, doesn't fit.
+#   Taking expensive = value 8000, weight 3 → fits exactly.
+#   Taking cheap-a alone = value 5000, weight 2.
+#   Taking cheap-b alone = value 4000, weight 2.
+#   expensive (8000) > cheap-a (5000) > cheap-b (4000)
+#   → Knapsack selects "expensive" (same as greedy in this case)
+#
+# Let me redesign for a genuine knapsack-vs-greedy difference:
+#   "big":     tokens=250, score=0.7 → value=7000, dw=ceil(250/100)=3
+#   "small-a": tokens=150, score=0.5 → value=5000, dw=ceil(150/100)=2
+#   "small-b": tokens=150, score=0.45 → value=4500, dw=ceil(150/100)=2
+#
+# Capacity = floor(300/100) = 3
+#
+# Greedy (by density):
+#   big:     0.7/250 = 0.0028
+#   small-a: 0.5/150 ≈ 0.00333
+#   small-b: 0.45/150 = 0.003
+#   → small-a first (dw=2, remaining=1), small-b next (dw=2 > 1, skip),
+#     big (dw=3 > 1, skip). Only "small-a" selected. Total value = 5000.
+#
+# Knapsack DP:
+#   At capacity 3, can fit big (dw=3, value=7000) or small-a (dw=2, value=5000).
+#   big at w=3: dp[3-3]+7000 = 7000 > 0 → dp[3]=7000, keep[0][3]=true
+#   small-a at w=3: dp[3-2]+5000 = 5000 < 7000 → no change
+#   small-a at w=2: dp[2-2]+5000 = 5000 > 0 → dp[2]=5000, keep[1][2]=true
+#   small-b at w=3: dp[3-2]+4500 = dp[1]+4500 = 4500 < 7000 → no change
+#   small-b at w=2: dp[2-2]+4500 = 4500 < 5000 → no change
+#
+#   Reconstruct from capacity=3: keep[2][3]=false, keep[1][3]=false, keep[0][3]=true → "big"
+#   → Knapsack selects "big" (value 7000 > 5000)
+
+[config]
+bucket_size = 100
+
+[budget]
+target_tokens = 300
+
+[[scored_items]]
+content = "big"
+tokens = 250
+score = 0.7
+
+[[scored_items]]
+content = "small-a"
+tokens = 150
+score = 0.5
+
+[[scored_items]]
+content = "small-b"
+tokens = 150
+score = 0.45
+
+[expected]
+selected_contents = ["big"]

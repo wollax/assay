@@ -1,0 +1,45 @@
+[test]
+name = "ScaledScorer applies min-max normalization to inner scorer"
+stage = "scoring"
+scorer = "scaled"
+
+# Inner scorer: reflexive (passes through futureRelevanceHint).
+# Items have hints: 0.2, 0.5, 0.8
+# min = 0.2, max = 0.8, range = 0.6
+# Scaled scores:
+#   0.2 → (0.2 - 0.2) / 0.6 = 0.0
+#   0.5 → (0.5 - 0.2) / 0.6 = 0.5
+#   0.8 → (0.8 - 0.2) / 0.6 = 1.0
+
+[config]
+inner_scorer = "reflexive"
+
+[[items]]
+content = "low"
+tokens = 100
+futureRelevanceHint = 0.2
+
+[[items]]
+content = "mid"
+tokens = 100
+futureRelevanceHint = 0.5
+
+[[items]]
+content = "high"
+tokens = 100
+futureRelevanceHint = 0.8
+
+[[expected]]
+content = "low"
+score_approx = 0.0
+
+[[expected]]
+content = "mid"
+score_approx = 0.5
+
+[[expected]]
+content = "high"
+score_approx = 1.0
+
+[tolerance]
+score_epsilon = 1e-9

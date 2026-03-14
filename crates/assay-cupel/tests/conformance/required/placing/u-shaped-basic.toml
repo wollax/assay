@@ -1,0 +1,40 @@
+[test]
+name = "UShapedPlacer places highest scores at edges"
+stage = "placing"
+placer = "u-shaped"
+
+# 5 items sorted by score descending: A(0.9), B(0.7), C(0.5), D(0.3), E(0.1)
+# Rank 0 (A) → left[0]
+# Rank 1 (B) → right[4]
+# Rank 2 (C) → left[1]
+# Rank 3 (D) → right[3]
+# Rank 4 (E) → left[2]
+# Result: [A, C, E, D, B]
+
+[[items]]
+content = "A"
+tokens = 100
+score = 0.9
+
+[[items]]
+content = "B"
+tokens = 100
+score = 0.7
+
+[[items]]
+content = "C"
+tokens = 100
+score = 0.5
+
+[[items]]
+content = "D"
+tokens = 100
+score = 0.3
+
+[[items]]
+content = "E"
+tokens = 100
+score = 0.1
+
+[expected]
+ordered_contents = ["A", "C", "E", "D", "B"]

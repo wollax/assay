@@ -1,0 +1,40 @@
+[test]
+name = "RecencyScorer ranks items by timestamp"
+stage = "scoring"
+scorer = "recency"
+
+# 3 items with distinct timestamps.
+# countWithTimestamp = 3, so denominator = 2.
+# oldest (Jan) has rank 0 → 0/2 = 0.0
+# middle (Jun) has rank 1 → 1/2 = 0.5
+# newest (Dec) has rank 2 → 2/2 = 1.0
+
+[[items]]
+content = "oldest"
+tokens = 100
+timestamp = 2024-01-01T00:00:00Z
+
+[[items]]
+content = "middle"
+tokens = 100
+timestamp = 2024-06-01T00:00:00Z
+
+[[items]]
+content = "newest"
+tokens = 100
+timestamp = 2024-12-01T00:00:00Z
+
+[[expected]]
+content = "oldest"
+score_approx = 0.0
+
+[[expected]]
+content = "middle"
+score_approx = 0.5
+
+[[expected]]
+content = "newest"
+score_approx = 1.0
+
+[tolerance]
+score_epsilon = 1e-9
