@@ -47,6 +47,6 @@ impl Placer for UShapedPlacer {
             }
         }
 
-        result.into_iter().map(|o| o.unwrap()).collect()
+        result.into_iter().map(|o| o.expect("UShapedPlacer: all result slots must be filled")).collect()
     }
 }

@@ -258,11 +258,11 @@ mod conformance {
                             .as_float()
                             .or_else(|| q["cap"].as_integer().map(|i| i as f64))
                             .expect("quota missing cap");
-                        QuotaEntry {
-                            kind: ContextKind::new(kind).unwrap(),
+                        QuotaEntry::new(
+                            ContextKind::new(kind).unwrap(),
                             require,
                             cap,
-                        }
+                        ).unwrap()
                     })
                     .collect();
 

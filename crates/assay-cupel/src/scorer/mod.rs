@@ -24,10 +24,11 @@ use crate::model::ContextItem;
 ///
 /// Scorers are pure functions: given identical inputs, they must return the same output.
 /// Scores are conventionally in [0.0, 1.0] but this is not enforced.
-pub trait Scorer: Any {
+pub trait Scorer: Any + Send + Sync {
     /// Computes a relevance score for `item` given the full list of scoreable items.
     fn score(&self, item: &ContextItem, all_items: &[ContextItem]) -> f64;
 
     /// Returns `self` as `&dyn Any` for downcasting (used by cycle detection).
+    #[doc(hidden)]
     fn as_any(&self) -> &dyn Any;
 }
