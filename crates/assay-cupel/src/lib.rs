@@ -1,6 +1,7 @@
 pub mod error;
 pub mod model;
 pub mod scorer;
+pub mod slicer;
 
 pub use error::CupelError;
 pub use model::{
@@ -11,3 +12,4 @@ pub use scorer::{
     CompositeScorer, FrequencyScorer, KindScorer, PriorityScorer, RecencyScorer, ReflexiveScorer,
     ScaledScorer, Scorer, TagScorer,
 };
+pub use slicer::{GreedySlice, KnapsackSlice, QuotaEntry, QuotaSlice, Slicer};
