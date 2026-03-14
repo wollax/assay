@@ -1,0 +1,76 @@
+[test]
+name = "Pipeline: pinned items bypass scoring and appear in output"
+stage = "pipeline"
+
+# Pinned items skip scoring/slicing and go directly to the Place stage
+# with score 1.0. They are merged before sliced items.
+#
+# Budget: target=400, max=1000, reserve=0.
+#
+# Classify:
+#   pinned: "system" (pinned=true, tokens=100)
+#   scoreable: "old" (tokens=150), "new" (tokens=150)
+#
+# Score (RecencyScorer on scoreable items only):
+#   countWithTimestamp = 2, denominator = 1.
+#   "old" (Jan): rank 0 → 0.0
+#   "new" (Dec): rank 1 → 1.0
+#
+# Sort: new(1.0), old(0.0)
+#
+# Slice (Greedy, effective target = 400 - 100 pinned = 300):
+#   new: density=1.0/150≈0.00667 → selected (remaining=150)
+#   old: density=0.0/150=0.0 → selected (remaining=0)
+#   Both fit.
+#
+# Place (Chronological):
+#   merged = [system(pinned, score=1.0, no timestamp), new(score=1.0), old(score=0.0)]
+#   Actually, merged has pinned first: system(score=1.0), then sliced: new(1.0), old(0.0).
+#   merged tokens = 100+150+150 = 400 = target → no overflow.
+#
+#   Chronological sort:
+#     "old" (Jan timestamp) → first
+#     "new" (Dec timestamp) → second
+#     "system" (no timestamp) → last
+#   Result: [old, new, system]
+
+[budget]
+max_tokens = 1000
+target_tokens = 400
+output_reserve = 0
+
+[config]
+slicer = "greedy"
+placer = "chronological"
+deduplication = true
+
+[[config.scorers]]
+type = "recency"
+weight = 1.0
+
+[[items]]
+content = "system"
+tokens = 100
+kind = "SystemPrompt"
+pinned = true
+
+[[items]]
+content = "old"
+tokens = 150
+kind = "Message"
+timestamp = 2024-01-01T00:00:00Z
+
+[[items]]
+content = "new"
+tokens = 150
+kind = "Message"
+timestamp = 2024-12-01T00:00:00Z
+
+[[expected_output]]
+content = "old"
+
+[[expected_output]]
+content = "new"
+
+[[expected_output]]
+content = "system"

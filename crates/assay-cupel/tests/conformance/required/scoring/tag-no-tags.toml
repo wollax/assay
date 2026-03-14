@@ -1,0 +1,31 @@
+[test]
+name = "TagScorer returns 0.0 for items with no tags"
+stage = "scoring"
+scorer = "tag"
+
+# An item with no tags should score 0.0 regardless of configured weights.
+
+[[config.tag_weights]]
+tag = "important"
+weight = 5.0
+
+[[items]]
+content = "has tags"
+tokens = 100
+tags = ["important"]
+
+[[items]]
+content = "no tags"
+tokens = 100
+tags = []
+
+[[expected]]
+content = "has tags"
+score_approx = 1.0
+
+[[expected]]
+content = "no tags"
+score_approx = 0.0
+
+[tolerance]
+score_epsilon = 1e-9

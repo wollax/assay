@@ -1,0 +1,39 @@
+[test]
+name = "PriorityScorer handles null priorities"
+stage = "scoring"
+scorer = "priority"
+
+# 3 items: 2 with priority, 1 without.
+# countWithPriority = 2, denominator = 1.
+# priority 3: rank 0 → 0/1 = 0.0
+# priority 7: rank 1 → 1/1 = 1.0
+# null priority → 0.0
+
+[[items]]
+content = "low-priority"
+tokens = 100
+priority = 3
+
+[[items]]
+content = "high-priority"
+tokens = 100
+priority = 7
+
+[[items]]
+content = "no-priority"
+tokens = 100
+
+[[expected]]
+content = "low-priority"
+score_approx = 0.0
+
+[[expected]]
+content = "high-priority"
+score_approx = 1.0
+
+[[expected]]
+content = "no-priority"
+score_approx = 0.0
+
+[tolerance]
+score_epsilon = 1e-9

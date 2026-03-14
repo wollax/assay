@@ -1,0 +1,55 @@
+[test]
+name = "FrequencyScorer scores by proportion of tag-sharing peers"
+stage = "scoring"
+scorer = "frequency"
+
+# 4 items. Denominator for each is (4 - 1) = 3.
+# Tags (case-insensitive matching):
+#   A: ["web", "api"]
+#   B: ["web"]
+#   C: ["api", "db"]
+#   D: ["cli"]
+#
+# A shares with B (web), C (api) → 2/3
+# B shares with A (web) → 1/3
+# C shares with A (api) → 1/3
+# D shares with nobody → 0/3 = 0.0
+
+[[items]]
+content = "A"
+tokens = 100
+tags = ["web", "api"]
+
+[[items]]
+content = "B"
+tokens = 100
+tags = ["web"]
+
+[[items]]
+content = "C"
+tokens = 100
+tags = ["api", "db"]
+
+[[items]]
+content = "D"
+tokens = 100
+tags = ["cli"]
+
+[[expected]]
+content = "A"
+score_approx = 0.666666666666667
+
+[[expected]]
+content = "B"
+score_approx = 0.333333333333333
+
+[[expected]]
+content = "C"
+score_approx = 0.333333333333333
+
+[[expected]]
+content = "D"
+score_approx = 0.0
+
+[tolerance]
+score_epsilon = 1e-9

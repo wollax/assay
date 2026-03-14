@@ -1,0 +1,35 @@
+[test]
+name = "UShapedPlacer uses stable tiebreaking for equal scores"
+stage = "placing"
+placer = "u-shaped"
+
+# 4 items all with score 0.5.
+# Stable sort by score descending, tiebreak by index ascending → original order.
+# Rank 0 (X, index 0) → left[0]
+# Rank 1 (Y, index 1) → right[3]
+# Rank 2 (Z, index 2) → left[1]
+# Rank 3 (W, index 3) → right[2]
+# Result: [X, Z, W, Y]
+
+[[items]]
+content = "X"
+tokens = 100
+score = 0.5
+
+[[items]]
+content = "Y"
+tokens = 100
+score = 0.5
+
+[[items]]
+content = "Z"
+tokens = 100
+score = 0.5
+
+[[items]]
+content = "W"
+tokens = 100
+score = 0.5
+
+[expected]
+ordered_contents = ["X", "Z", "W", "Y"]

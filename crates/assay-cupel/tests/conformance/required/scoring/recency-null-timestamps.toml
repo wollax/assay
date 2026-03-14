@@ -1,0 +1,47 @@
+[test]
+name = "RecencyScorer handles null timestamps"
+stage = "scoring"
+scorer = "recency"
+
+# 4 items: 2 with timestamps, 2 without.
+# countWithTimestamp = 2, denominator = 1.
+# "old" has rank 0 → 0/1 = 0.0
+# "new" has rank 1 → 1/1 = 1.0
+# null-timestamp items → 0.0
+
+[[items]]
+content = "old"
+tokens = 100
+timestamp = 2024-01-01T00:00:00Z
+
+[[items]]
+content = "new"
+tokens = 100
+timestamp = 2024-12-01T00:00:00Z
+
+[[items]]
+content = "no-timestamp-a"
+tokens = 100
+
+[[items]]
+content = "no-timestamp-b"
+tokens = 100
+
+[[expected]]
+content = "old"
+score_approx = 0.0
+
+[[expected]]
+content = "new"
+score_approx = 1.0
+
+[[expected]]
+content = "no-timestamp-a"
+score_approx = 0.0
+
+[[expected]]
+content = "no-timestamp-b"
+score_approx = 0.0
+
+[tolerance]
+score_epsilon = 1e-9

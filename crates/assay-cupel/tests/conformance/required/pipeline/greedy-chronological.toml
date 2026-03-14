@@ -1,0 +1,73 @@
+[test]
+name = "Pipeline: greedy slice with chronological placement"
+stage = "pipeline"
+
+# 4 items scored by recency (weight 1.0), sliced by greedy, placed chronologically.
+# Budget: target=400, max=1000, reserve=0.
+#
+# Classify: all non-pinned, tokens >= 0 → all scoreable.
+#
+# Score (RecencyScorer):
+#   countWithTimestamp = 4, denominator = 3.
+#   "jan" (Jan): rank 0 → 0/3 = 0.0
+#   "mar" (Mar): rank 1 → 1/3 ≈ 0.333
+#   "aug" (Aug): rank 2 → 2/3 ≈ 0.667
+#   "dec" (Dec): rank 3 → 3/3 = 1.0
+#
+# Deduplicate: no duplicates.
+#
+# Sort: by score descending, stable.
+#   dec(1.0), aug(0.667), mar(0.333), jan(0.0)
+#
+# Slice (Greedy, target=400):
+#   Densities: dec=1.0/150≈0.00667, aug=0.667/150≈0.00444, mar=0.333/200≈0.00167, jan=0.0/200=0.0
+#   Sorted by density: dec, aug, mar, jan
+#   Fill: dec(remaining=250), aug(remaining=100), mar(200>100 skip), jan(200>100 skip)
+#   Selected: dec, aug
+#
+# Place (Chronological):
+#   aug (Aug) before dec (Dec).
+
+[budget]
+max_tokens = 1000
+target_tokens = 400
+output_reserve = 0
+
+[config]
+slicer = "greedy"
+placer = "chronological"
+deduplication = true
+
+[[config.scorers]]
+type = "recency"
+weight = 1.0
+
+[[items]]
+content = "jan"
+tokens = 200
+kind = "Message"
+timestamp = 2024-01-15T00:00:00Z
+
+[[items]]
+content = "mar"
+tokens = 200
+kind = "Message"
+timestamp = 2024-03-15T00:00:00Z
+
+[[items]]
+content = "aug"
+tokens = 150
+kind = "Message"
+timestamp = 2024-08-15T00:00:00Z
+
+[[items]]
+content = "dec"
+tokens = 150
+kind = "Message"
+timestamp = 2024-12-15T00:00:00Z
+
+[[expected_output]]
+content = "aug"
+
+[[expected_output]]
+content = "dec"
