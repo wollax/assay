@@ -2014,11 +2014,18 @@ fn load_recovery_threshold(cwd: &Path) -> u64 {
     let config_path = cwd.join(".assay").join("config.toml");
     let content = match std::fs::read_to_string(&config_path) {
         Ok(c) => c,
-        Err(_) => return 3600,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return 3600,
+        Err(e) => {
+            tracing::warn!("recovery threshold: cannot read config: {e}, using default 3600s");
+            return 3600;
+        }
     };
     let config: Config = match toml::from_str(&content) {
         Ok(c) => c,
-        Err(_) => return 3600,
+        Err(e) => {
+            tracing::warn!("recovery threshold: cannot parse config: {e}, using default 3600s");
+            return 3600;
+        }
     };
     config.sessions.map(|s| s.stale_threshold).unwrap_or(3600)
 }
@@ -2034,21 +2041,13 @@ pub async fn serve() -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!("Starting assay MCP server");
 
     // Recover stale sessions before accepting any tool calls.
-    // Runs synchronously — capped at 100 sessions, completes in <50ms.
+    // Runs synchronously before the server accepts connections. Capped at 100 sessions.
     if let Ok(cwd) = std::env::current_dir() {
         let assay_dir = cwd.join(".assay");
         if assay_dir.join("sessions").is_dir() {
             let stale_threshold = load_recovery_threshold(&cwd);
-            let summary =
-                assay_core::work_session::recover_stale_sessions(&assay_dir, stale_threshold);
-            if summary.recovered > 0 || summary.errors > 0 {
-                tracing::info!(
-                    recovered = summary.recovered,
-                    skipped = summary.skipped,
-                    errors = summary.errors,
-                    "session recovery scan complete"
-                );
-            }
+            // Recovery scan logs its own summary via tracing::info! when sessions are recovered.
+            assay_core::work_session::recover_stale_sessions(&assay_dir, stale_threshold);
         }
     }
 
