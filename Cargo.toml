@@ -39,6 +39,7 @@ regex-lite = "0.1"
 notify = { version = "7", default-features = false, features = ["macos_kqueue"] }
 tracing-appender = "0.2"
 which = "7"
+ulid = { version = "1.2", features = ["serde"] }
 
 [workspace.lints.clippy]
 derive_partial_eq_without_eq = "deny"
