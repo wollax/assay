@@ -126,7 +126,7 @@
     2. `gate_evaluate` calls session management through direct Rust function calls, never MCP round-trips
     3. Recovery scan handles corrupt session files gracefully — logs warning, skips file, continues scan
 
-- [ ] Phase 43: gate_evaluate Schema & Subprocess (2 plans)
+- [x] Phase 43: gate_evaluate Schema & Subprocess (2 plans) — 2026-03-15
   - ORCH-01: gate_evaluate evaluates agent criteria in single call
   - ORCH-02: Subprocess model — parent parses JSON, evaluator never calls MCP
   - ORCH-03: EvaluatorOutput JSON schema with lenient parsing
@@ -211,5 +211,5 @@
 | v0.1.0 Proof of Concept | ✅ Shipped | 10 | 43 | 100% |
 | v0.2.0 Dual-Track Gates & Hardening | ✅ Shipped | 15 | 52 | 100% |
 | v0.3.0 Orchestration Foundation | ✅ Shipped | 9 | 43 | 100% |
-| v0.4.0 Headless Orchestration | 🔄 In Progress | 11 | 28 | 64% |
+| v0.4.0 Headless Orchestration | 🔄 In Progress | 11 | 28 | 82% |
 | v0.4.1 Merge Tools | ○ Planned | 5 | 8 | 0% |
