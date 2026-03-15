@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 2026-03-10)
 
 ## Current Position
 
-Phase: 39 — Context Engine Integration
-Plan: 1 of 2 (Remove assay-cupel, add cupel dependency)
-Status: In progress
-Last activity: 2026-03-15 — Completed 39-01-PLAN.md
+Phase: 39 — Context Engine Integration (COMPLETE)
+Plan: 2 of 2 (Context budgeting integration)
+Status: Complete
+Last activity: 2026-03-15 — Completed 39-02-PLAN.md
 
-Progress: v0.4.0 [████████░░░░░░░░░] ~41% (phases 35-38 complete, 39 in progress)
+Progress: v0.4.0 [█████████░░░░░░░░] ~45% (phases 35-39 complete)
 
 ## Milestone Progress
 
@@ -23,7 +23,7 @@ Progress: v0.4.0 [████████░░░░░░░░░] ~41% (pha
 | v0.1.0 | 10 | 43 | 100% (shipped) |
 | v0.2.0 | 15 (11-25) | 52 | 100% (shipped) |
 | v0.3.0 | 9 (26-34) | 43 | 100% (shipped) |
-| v0.4.0 | 11 (35-45) | 28 | 36% (4/11 phases) |
+| v0.4.0 | 11 (35-45) | 28 | 45% (5/11 phases) |
 | v0.4.1 | TBD | 8 | 0% (planned) |
 
 ## Accumulated Context
@@ -77,6 +77,12 @@ v0.4.0 decisions (from 38-02):
 - Growth rate uses last cumulative token count divided by turn count for average (simple, stable)
 - `estimate_tokens` does both tail-read (usage) and full parse (growth rate)
 
+v0.4.0 decisions (from 39-02):
+- `budget_context` uses passthrough optimization when content fits (avoids pipeline overhead)
+- Cupel pipeline method is `.run()` returning `Vec<ContextItem>` (not `.execute()`/`ScoredItem`)
+- `ContextBudget` variant added to `AssayError` for cupel error mapping
+- tokens module stays `pub(crate)` -- budgeting accesses via `super::tokens`
+
 v0.4.1 decisions (from brainstorm):
 - PR creation over direct merge for v0.4.x — maps to `autonomous: false`
 - `git merge-tree --write-tree` for conflict detection — zero side effects
@@ -112,5 +118,5 @@ Run `/kata-plan-phase [N]` to start planning phases, or `/kata-discuss-phase [N]
 ### Session Continuity
 
 Last session: 2026-03-15
-Stopped at: Completed 39-01-PLAN.md
+Stopped at: Completed 39-02-PLAN.md (Phase 39 complete)
 Resume file: None
