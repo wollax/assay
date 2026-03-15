@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 2026-03-10)
 
 ## Current Position
 
-Phase: 42 — Session Recovery & Internal API (COMPLETE)
-Plan: 2 of 2 (Startup recovery scan — COMPLETE)
-Status: Phase complete
-Last activity: 2026-03-15 — Completed 42-02-PLAN.md
+Phase: 43 — gate_evaluate Schema & Subprocess
+Plan: 1 of 2 (EvaluatorOutput schema & subprocess — COMPLETE)
+Status: In progress
+Last activity: 2026-03-15 — Completed 43-01-PLAN.md
 
-Progress: v0.4.0 [█████████████░░░░] ~73% (phases 35-42 complete, 43 next)
+Progress: v0.4.0 [██████████████░░░] ~77% (phases 35-42 complete, 43 plan 1/2)
 
 ## Milestone Progress
 
@@ -104,6 +104,12 @@ v0.4.0 decisions (from 42-02):
 - Recovery scan capped at 100 sessions (oldest first via ULID sort)
 - `load_recovery_threshold` reads config with 3600-second default; recovery never fatal
 
+v0.4.0 decisions (from 43-01):
+- Subprocess uses `child.wait()` + separate stdout/stderr tasks (not `wait_with_output`) for kill-on-timeout
+- `schemars` added to assay-core for `schema_for!` macro in evaluator
+- Warn outcome maps to `passed: true` + warning string (soft concerns don't fail gates)
+- Default enforcement is `Required` when criterion not in enforcement map
+
 v0.4.1 decisions (from brainstorm):
 - PR creation over direct merge for v0.4.x — maps to `autonomous: false`
 - `git merge-tree --write-tree` for conflict detection — zero side effects
@@ -139,5 +145,5 @@ Run `/kata-plan-phase [N]` to start planning phases, or `/kata-discuss-phase [N]
 ### Session Continuity
 
 Last session: 2026-03-15
-Stopped at: Completed 42-02-PLAN.md (phase complete)
+Stopped at: Completed 43-01-PLAN.md
 Resume file: None
