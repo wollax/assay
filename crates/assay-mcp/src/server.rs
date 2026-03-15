@@ -2590,7 +2590,10 @@ fn load_recovery_threshold(cwd: &Path) -> u64 {
             return 3600;
         }
     };
-    config.sessions.map(|s| s.stale_threshold_secs).unwrap_or(3600)
+    config
+        .sessions
+        .map(|s| s.stale_threshold_secs)
+        .unwrap_or(3600)
 }
 
 /// Start the MCP server on stdio transport.
