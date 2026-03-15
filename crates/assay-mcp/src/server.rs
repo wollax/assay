@@ -701,6 +701,9 @@ struct GateEvaluateResponse {
     /// Linked session ID. Omitted when session_id was not provided.
     #[serde(skip_serializing_if = "Option::is_none")]
     session_id: Option<String>,
+    /// Truncation metadata for the diff. Present only when truncation occurred.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    diff_truncation: Option<assay_types::DiffTruncation>,
 }
 
 /// Summary counts within a gate_evaluate response.
@@ -1277,18 +1280,24 @@ impl AssayServer {
             ))]));
         }
 
-        // ── Step 3: Compute git diff ──────────────────────────────────
-        let diff = {
+        // ── Step 3: Resolve model and config (needed for context window lookup) ──
+        let gates_config = config.gates.as_ref();
+        let model = p.model.unwrap_or_else(|| {
+            gates_config
+                .map(|g| g.evaluator_model.clone())
+                .unwrap_or_else(|| "sonnet".to_string())
+        });
+
+        // ── Step 4: Capture raw git diff ──────────────────────────────
+        let raw_diff = {
             match std::process::Command::new("git")
                 .args(["diff", "HEAD"])
                 .current_dir(&working_dir)
                 .output()
             {
                 Ok(output) if output.status.success() => {
-                    let raw = String::from_utf8_lossy(&output.stdout);
-                    let (truncated, _was_truncated, _original_bytes) =
-                        assay_core::gate::truncate_diff(&raw, DIFF_BUDGET_BYTES);
-                    truncated
+                    let raw = String::from_utf8_lossy(&output.stdout).into_owned();
+                    if raw.is_empty() { None } else { Some(raw) }
                 }
                 Ok(output) => {
                     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -1310,7 +1319,97 @@ impl AssayServer {
             }
         };
 
-        // ── Step 4: Build evaluator prompt ────────────────────────────
+        // ── Step 5: Build system prompt and schema ────────────────────
+        let system_prompt = assay_core::evaluator::build_system_prompt();
+        let schema_json = assay_core::evaluator::evaluator_schema_json();
+
+        // Build criteria text for budget computation.
+        // build_evaluator_prompt also builds criteria text internally — accept the
+        // double computation (cheap for typical criterion counts, avoids refactoring
+        // build_evaluator_prompt's API).
+        let criteria_text: String = criteria
+            .iter()
+            .enumerate()
+            .map(|(i, c)| {
+                let mut s = format!("### {}. {}\n{}", i + 1, c.name, c.description);
+                if let Some(prompt) = &c.prompt {
+                    s.push_str(&format!("\nEvaluation guidance: {prompt}"));
+                }
+                s
+            })
+            .collect::<Vec<_>>()
+            .join("\n\n");
+
+        // ── Step 6: Token-budget the diff via budget_context ──────────
+        let model_window = assay_core::context::context_window_for_model(Some(&model));
+
+        let (diff, diff_truncation) = if let Some(ref raw) = raw_diff {
+            match assay_core::context::budget_context(
+                &system_prompt,
+                &description,
+                &criteria_text,
+                raw,
+                model_window,
+            ) {
+                Ok(budgeted) => {
+                    // Extract the (possibly truncated) diff from budget_context output.
+                    // Canonical order: [system_prompt, spec_body, criteria_text, diff]
+                    // Diff is last if present and non-empty.
+                    let truncated_diff = budgeted.last().cloned().filter(|s| {
+                        s != &system_prompt && s != &description && s != &criteria_text
+                    });
+
+                    let was_truncated = match &truncated_diff {
+                        Some(d) => d.len() < raw.len(),
+                        None => !raw.is_empty(), // diff was fully dropped
+                    };
+
+                    if was_truncated {
+                        let raw_files = assay_core::gate::extract_diff_files(raw);
+                        let kept_files = truncated_diff
+                            .as_deref()
+                            .map(assay_core::gate::extract_diff_files)
+                            .unwrap_or_default();
+                        let omitted_files: Vec<String> = raw_files
+                            .iter()
+                            .filter(|f| !kept_files.contains(f))
+                            .cloned()
+                            .collect();
+
+                        let original_bytes = raw.len();
+                        let truncated_bytes = truncated_diff.as_ref().map(|d| d.len()).unwrap_or(0);
+                        let omitted_count = omitted_files.len();
+
+                        warnings.push(format!(
+                            "Diff truncated from {original_bytes} to {truncated_bytes} bytes \
+                             ({} files kept, {omitted_count} files omitted) to fit token budget",
+                            kept_files.len()
+                        ));
+
+                        let meta = assay_types::DiffTruncation {
+                            original_bytes,
+                            truncated_bytes,
+                            included_files: kept_files,
+                            omitted_files,
+                        };
+                        (truncated_diff, Some(meta))
+                    } else {
+                        (truncated_diff.or_else(|| Some(raw.clone())), None)
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("budget_context failed: {e}");
+                    warnings.push(format!(
+                        "Diff budget computation failed: {e} — full diff passed to evaluator"
+                    ));
+                    (Some(raw.clone()), None)
+                }
+            }
+        } else {
+            (None, None)
+        };
+
+        // ── Step 7: Build evaluator prompt ────────────────────────────
         // Criterion prompts are inlined by build_evaluator_prompt as
         // "Evaluation guidance" under each criterion — no separate
         // agent_prompt needed to avoid duplication.
@@ -1322,17 +1421,7 @@ impl AssayServer {
             None,
         );
 
-        // ── Step 5: Build system prompt and schema ────────────────────
-        let system_prompt = assay_core::evaluator::build_system_prompt();
-        let schema_json = assay_core::evaluator::evaluator_schema_json();
-
-        // ── Step 6: Construct EvaluatorConfig ─────────────────────────
-        let gates_config = config.gates.as_ref();
-        let model = p.model.unwrap_or_else(|| {
-            gates_config
-                .map(|g| g.evaluator_model.clone())
-                .unwrap_or_else(|| "sonnet".to_string())
-        });
+        // ── Step 8: Construct EvaluatorConfig ─────────────────────────
         let timeout = Duration::from_secs(
             p.timeout
                 .unwrap_or_else(|| gates_config.map(|g| g.evaluator_timeout).unwrap_or(120)),
@@ -1345,7 +1434,7 @@ impl AssayServer {
             retries,
         };
 
-        // ── Step 7: Spawn evaluator subprocess ────────────────────────
+        // ── Step 9: Spawn evaluator subprocess ────────────────────────
         let evaluator_result = match assay_core::evaluator::run_evaluator(
             &prompt,
             &system_prompt,
@@ -1399,7 +1488,7 @@ impl AssayServer {
         // Merge evaluator parse warnings.
         warnings.extend(evaluator_result.warnings);
 
-        // ── Step 8: Map to GateRunRecord ──────────────────────────────
+        // ── Step 10: Map to GateRunRecord ─────────────────────────────
         let enforcement_map: HashMap<String, assay_types::Enforcement> = criteria
             .iter()
             .map(|c| {
@@ -1410,13 +1499,16 @@ impl AssayServer {
             .collect();
 
         let duration_ms = start.elapsed().as_millis() as u64;
-        let (record, map_warnings) = assay_core::evaluator::map_evaluator_output(
+        let (mut record, map_warnings) = assay_core::evaluator::map_evaluator_output(
             &spec_name,
             &evaluator_result.output,
             &enforcement_map,
             duration_ms,
         );
         warnings.extend(map_warnings);
+
+        // Attach truncation metadata to the persisted record.
+        record.diff_truncation = diff_truncation.clone();
 
         let run_id = record.run_id.clone();
         let overall_passed = evaluator_result.output.summary.passed;
@@ -1451,7 +1543,7 @@ impl AssayServer {
             })
             .collect();
 
-        // ── Step 9: Persist via history::save ─────────────────────────
+        // ── Step 11: Persist via history::save ────────────────────────
         let max_history = gates_config.and_then(|g| g.max_history);
         let assay_dir_for_save = assay_dir.clone();
         let record_for_save = record.clone();
@@ -1469,7 +1561,7 @@ impl AssayServer {
             }
         }
 
-        // ── Step 10: Session auto-linking ─────────────────────────────
+        // ── Step 12: Session auto-linking ─────────────────────────────
         if let Some(ref session_id) = linked_session_id {
             let assay_dir_for_session = assay_dir.clone();
             let session_id_owned = session_id.clone();
@@ -1517,6 +1609,7 @@ impl AssayServer {
             duration_ms,
             warnings,
             session_id: linked_session_id,
+            diff_truncation,
         };
 
         let json = serde_json::to_string(&response)
