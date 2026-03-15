@@ -17,6 +17,21 @@ just build
 - Run `just ready` to verify everything passes
 - Open a pull request
 
+## Working with Local cupel
+
+If you're developing both `assay` and `cupel` simultaneously, override the registry dependency
+with your local checkout by adding this to assay's root `Cargo.toml`:
+
+```toml
+[patch.crates-io]
+cupel = { path = "../cupel/crates/cupel" }
+```
+
+**Do not commit this change.** The patch is for local development only.
+
+The local `cupel` version must satisfy the workspace version constraint (e.g., `1.x.y`).
+Remove the `[patch.crates-io]` section before committing or opening a PR.
+
 ## Coding Conventions
 
 - **Rust**: Follow standard Rust idioms. `cargo fmt` and `cargo clippy` are enforced in CI.

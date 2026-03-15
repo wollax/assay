@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 2026-03-10)
 
 ## Current Position
 
-Phase: 39 — Context Engine Integration (COMPLETE)
-Plan: 2 of 2 (Context budgeting integration)
+Phase: 40 — WorkSession Type & Persistence (COMPLETE)
+Plan: 2 of 2 (WorkSession persistence layer — COMPLETE)
 Status: Complete
-Last activity: 2026-03-15 — Completed 39-02-PLAN.md
+Last activity: 2026-03-15 — Completed 40-02-PLAN.md
 
-Progress: v0.4.0 [█████████░░░░░░░░] ~45% (phases 35-39 complete)
+Progress: v0.4.0 [███████████░░░░░░] ~55% (phases 35-40 complete)
 
 ## Milestone Progress
 
@@ -23,7 +23,7 @@ Progress: v0.4.0 [█████████░░░░░░░░] ~45% (pha
 | v0.1.0 | 10 | 43 | 100% (shipped) |
 | v0.2.0 | 15 (11-25) | 52 | 100% (shipped) |
 | v0.3.0 | 9 (26-34) | 43 | 100% (shipped) |
-| v0.4.0 | 11 (35-45) | 28 | 45% (5/11 phases) |
+| v0.4.0 | 11 (35-45) | 28 | 55% (6/11 phases) |
 | v0.4.1 | TBD | 8 | 0% (planned) |
 
 ## Accumulated Context
@@ -83,6 +83,16 @@ v0.4.0 decisions (from 39-02):
 - `ContextBudget` variant added to `AssayError` for cupel error mapping
 - tokens module stays `pub(crate)` -- budgeting accesses via `super::tokens`
 
+v0.4.0 decisions (from 40-01):
+- WorkSession uses `String` for id (ULID stored as string for schemars compatibility)
+- No `deny_unknown_fields` on WorkSession (mutable document, evolves in later phases)
+- ulid dependency wired into assay-core only (ID generation is business logic)
+
+v0.4.0 decisions (from 40-02):
+- `validate_path_component` made pub(crate) rather than duplicated (single source of truth)
+- `load_session` returns WorkSessionNotFound for missing files, Io for other read errors
+- `list_sessions` returns empty vec when sessions/ directory absent (not an error)
+
 v0.4.1 decisions (from brainstorm):
 - PR creation over direct merge for v0.4.x — maps to `autonomous: false`
 - `git merge-tree --write-tree` for conflict detection — zero side effects
@@ -118,5 +128,5 @@ Run `/kata-plan-phase [N]` to start planning phases, or `/kata-discuss-phase [N]
 ### Session Continuity
 
 Last session: 2026-03-15
-Stopped at: Completed 39-02-PLAN.md (Phase 39 complete)
+Stopped at: Completed 40-02-PLAN.md (Phase 40 complete)
 Resume file: None

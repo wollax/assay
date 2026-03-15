@@ -9,7 +9,7 @@ license = "MIT"
 repository = "https://github.com/wollax/assay"
 
 [workspace.dependencies]
-cupel = { path = "../cupel/crates/cupel" }
+cupel = "1.0.0"
 assay-types = { path = "crates/assay-types" }
 assay-core = { path = "crates/assay-core" }
 assay-mcp = { path = "crates/assay-mcp" }
@@ -39,6 +39,7 @@ regex-lite = "0.1"
 notify = { version = "7", default-features = false, features = ["macos_kqueue"] }
 tracing-appender = "0.2"
 which = "7"
+ulid = { version = "1.2", features = ["serde"] }
 
 [workspace.lints.clippy]
 derive_partial_eq_without_eq = "deny"

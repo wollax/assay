@@ -100,7 +100,7 @@
     3. When context engine is unavailable or budget exceeds content size, content passes through without truncation
     4. Token budget calculation accepts model window size and deducts spec criteria and system prompt sizes
 
-- [ ] Phase 40: WorkSession Type & Persistence
+- [x] Phase 40: WorkSession Type & Persistence — 2026-03-15
   - SESS-01: WorkSession type persisted as JSON
   - SESS-02: Phase transitions with timestamps
   - **Success criteria:**
@@ -209,5 +209,5 @@
 | v0.1.0 Proof of Concept | ✅ Shipped | 10 | 43 | 100% |
 | v0.2.0 Dual-Track Gates & Hardening | ✅ Shipped | 15 | 52 | 100% |
 | v0.3.0 Orchestration Foundation | ✅ Shipped | 9 | 43 | 100% |
-| v0.4.0 Headless Orchestration | 🔄 In Progress | 11 | 28 | 45% |
+| v0.4.0 Headless Orchestration | 🔄 In Progress | 11 | 28 | 55% |
 | v0.4.1 Merge Tools | ○ Planned | 5 | 8 | 0% |
