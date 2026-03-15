@@ -92,6 +92,20 @@ expression: schema.to_value()
       },
       "type": "object"
     },
+    "SessionsConfig": {
+      "additionalProperties": false,
+      "description": "Session management configuration.",
+      "properties": {
+        "stale_threshold": {
+          "default": 3600,
+          "description": "Staleness threshold in seconds for recovery sweep.\nSessions in `agent_running` phase older than this are marked abandoned on startup.\nDefault: 3600 (1 hour).",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
     "WorktreeConfig": {
       "additionalProperties": false,
       "description": "Configuration for worktree management.\n\nLoaded from the `[worktree]` section of `.assay/config.toml`.",
@@ -134,6 +148,17 @@ expression: schema.to_value()
     "project_name": {
       "description": "Project name (required, non-empty after trim).",
       "type": "string"
+    },
+    "sessions": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/SessionsConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Session management configuration."
     },
     "specs_dir": {
       "default": "specs/",

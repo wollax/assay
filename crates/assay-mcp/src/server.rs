@@ -1615,43 +1615,43 @@ impl AssayServer {
         let cwd = resolve_cwd()?;
         let assay_dir = cwd.join(".assay");
 
-        let mut session =
-            match assay_core::work_session::load_session(&assay_dir, &params.0.session_id) {
-                Ok(s) => s,
-                Err(e) => {
-                    let msg = format!("{e}. Use session_list to find valid session IDs.");
-                    return Ok(CallToolResult::error(vec![Content::text(msg)]));
+        let mut previous_phase = None;
+        let gate_run_ids = params.0.gate_run_ids.clone();
+
+        let session = match assay_core::work_session::with_session(
+            &assay_dir,
+            &params.0.session_id,
+            |session| {
+                previous_phase = Some(session.phase);
+                assay_core::work_session::transition_session(
+                    session,
+                    params.0.phase,
+                    &params.0.trigger,
+                    params.0.notes.as_deref(),
+                )?;
+                for id in &gate_run_ids {
+                    if !session.gate_runs.contains(id) {
+                        session.gate_runs.push(id.clone());
+                    }
                 }
-            };
-
-        let previous_phase = session.phase;
-
-        if let Err(e) = assay_core::work_session::transition_session(
-            &mut session,
-            params.0.phase,
-            &params.0.trigger,
-            params.0.notes.as_deref(),
+                Ok(())
+            },
         ) {
-            return Ok(domain_error(&e));
-        }
-
-        // Append gate run IDs (deduplicated)
-        for id in &params.0.gate_run_ids {
-            if !session.gate_runs.contains(id) {
-                session.gate_runs.push(id.clone());
+            Ok(s) => s,
+            Err(e) => {
+                let msg = if matches!(e, assay_core::error::AssayError::WorkSessionNotFound { .. })
+                {
+                    format!("{e}. Use session_list to find valid session IDs.")
+                } else {
+                    format!("{e}")
+                };
+                return Ok(CallToolResult::error(vec![Content::text(msg)]));
             }
-        }
-
-        if let Err(e) = assay_core::work_session::save_session(&assay_dir, &session) {
-            let msg = format!(
-                "Failed to persist session update: {e}. The transition was not saved — retry the same update."
-            );
-            return Ok(CallToolResult::error(vec![Content::text(msg)]));
-        }
+        };
 
         let response = SessionUpdateResponse {
             session_id: session.id,
-            previous_phase,
+            previous_phase: previous_phase.expect("set inside closure before any fallible op"),
             current_phase: session.phase,
             gate_runs_count: session.gate_runs.len(),
             warnings: Vec::new(),
@@ -2009,12 +2009,47 @@ fn first_nonempty_line(s: &str) -> Option<&str> {
     s.lines().find(|line| !line.trim().is_empty())
 }
 
+/// Load the stale session threshold from config, falling back to 3600 seconds.
+fn load_recovery_threshold(cwd: &Path) -> u64 {
+    let config_path = cwd.join(".assay").join("config.toml");
+    let content = match std::fs::read_to_string(&config_path) {
+        Ok(c) => c,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return 3600,
+        Err(e) => {
+            tracing::warn!("recovery threshold: cannot read config: {e}, using default 3600s");
+            return 3600;
+        }
+    };
+    let config: Config = match toml::from_str(&content) {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::warn!("recovery threshold: cannot parse config: {e}, using default 3600s");
+            return 3600;
+        }
+    };
+    config.sessions.map(|s| s.stale_threshold).unwrap_or(3600)
+}
+
 /// Start the MCP server on stdio transport.
 ///
 /// Creates an [`AssayServer`] and serves JSON-RPC on stdin/stdout until
 /// the transport closes. Caller must initialize tracing before calling.
+///
+/// Before accepting any tool calls, runs a recovery scan for stale
+/// `agent_running` sessions (see [`assay_core::work_session::recover_stale_sessions`]).
 pub async fn serve() -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!("Starting assay MCP server");
+
+    // Recover stale sessions before accepting any tool calls.
+    // Runs synchronously before the server accepts connections. Capped at 100 sessions.
+    if let Ok(cwd) = std::env::current_dir() {
+        let assay_dir = cwd.join(".assay");
+        if assay_dir.join("sessions").is_dir() {
+            let stale_threshold = load_recovery_threshold(&cwd);
+            // Recovery scan logs its own summary via tracing::info! when sessions are recovered.
+            assay_core::work_session::recover_stale_sessions(&assay_dir, stale_threshold);
+        }
+    }
 
     let service = AssayServer::new().serve(stdio()).await?;
 
@@ -2586,6 +2621,7 @@ cmd = "echo ok"
             gates: None,
             guard: None,
             worktree: None,
+            sessions: None,
         };
 
         let result = resolve_working_dir(&cwd, &config);
@@ -2605,6 +2641,7 @@ cmd = "echo ok"
             }),
             guard: None,
             worktree: None,
+            sessions: None,
         };
 
         let result = resolve_working_dir(&cwd, &config);
@@ -2628,6 +2665,7 @@ cmd = "echo ok"
             }),
             guard: None,
             worktree: None,
+            sessions: None,
         };
 
         let result = resolve_working_dir(&cwd, &config);

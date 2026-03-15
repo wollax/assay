@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 2026-03-10)
 
 ## Current Position
 
-Phase: 41 — Session MCP Tools (COMPLETE)
-Plan: 1 of 1 (Session MCP tools — COMPLETE)
-Status: Complete
-Last activity: 2026-03-15 — Completed 41-01-PLAN.md
+Phase: 42 — Session Recovery & Internal API (COMPLETE)
+Plan: 2 of 2 (Startup recovery scan — COMPLETE)
+Status: Phase complete
+Last activity: 2026-03-15 — Completed 42-02-PLAN.md
 
-Progress: v0.4.0 [████████████░░░░░] ~64% (phases 35-41 complete)
+Progress: v0.4.0 [█████████████░░░░] ~73% (phases 35-42 complete, 43 next)
 
 ## Milestone Progress
 
@@ -23,7 +23,7 @@ Progress: v0.4.0 [████████████░░░░░] ~64% (pha
 | v0.1.0 | 10 | 43 | 100% (shipped) |
 | v0.2.0 | 15 (11-25) | 52 | 100% (shipped) |
 | v0.3.0 | 9 (26-34) | 43 | 100% (shipped) |
-| v0.4.0 | 11 (35-45) | 28 | 64% (7/11 phases) |
+| v0.4.0 | 11 (35-45) | 28 | 73% (8/11 phases) |
 | v0.4.1 | TBD | 8 | 0% (planned) |
 
 ## Accumulated Context
@@ -93,6 +93,17 @@ v0.4.0 decisions (from 40-02):
 - `load_session` returns WorkSessionNotFound for missing files, Io for other read errors
 - `list_sessions` returns empty vec when sessions/ directory absent (not an error)
 
+v0.4.0 decisions (from 42-01):
+- `SessionsConfig` with `stale_threshold` uses `Option<SessionsConfig>` on `Config` (backward-compatible)
+- `with_session` captures `previous_phase` inside closure (avoids double-load in MCP handler)
+- Convenience functions compose `with_session` + `transition_session` (not builder pattern)
+
+v0.4.0 decisions (from 42-02):
+- Recovery runs in `serve()` before transport binding, not in `AssayServer::new()`
+- Staleness measured from `AgentRunning` transition timestamp, not `created_at`
+- Recovery scan capped at 100 sessions (oldest first via ULID sort)
+- `load_recovery_threshold` reads config with 3600-second default; recovery never fatal
+
 v0.4.1 decisions (from brainstorm):
 - PR creation over direct merge for v0.4.x — maps to `autonomous: false`
 - `git merge-tree --write-tree` for conflict detection — zero side effects
@@ -128,5 +139,5 @@ Run `/kata-plan-phase [N]` to start planning phases, or `/kata-discuss-phase [N]
 ### Session Continuity
 
 Last session: 2026-03-15
-Stopped at: Completed 41-01-PLAN.md (Phase 41 complete)
+Stopped at: Completed 42-02-PLAN.md (phase complete)
 Resume file: None

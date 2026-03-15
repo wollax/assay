@@ -548,6 +548,7 @@ detached
             worktree: base_dir.map(|d| assay_types::WorktreeConfig {
                 base_dir: d.to_string(),
             }),
+            sessions: None,
         }
     }
 

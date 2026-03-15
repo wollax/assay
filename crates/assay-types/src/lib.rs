@@ -158,6 +158,10 @@ pub struct Config {
     /// Worktree management configuration.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub worktree: Option<WorktreeConfig>,
+
+    /// Session management configuration.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sessions: Option<SessionsConfig>,
 }
 
 inventory::submit! {
@@ -235,6 +239,28 @@ inventory::submit! {
         name: "guard-config",
         generate: || schemars::schema_for!(GuardConfig),
     }
+}
+
+/// Session management configuration.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SessionsConfig {
+    /// Staleness threshold in seconds for recovery sweep.
+    /// Sessions in `agent_running` phase older than this are marked abandoned on startup.
+    /// Default: 3600 (1 hour).
+    #[serde(default = "default_stale_threshold")]
+    pub stale_threshold: u64,
+}
+
+inventory::submit! {
+    schema_registry::SchemaEntry {
+        name: "sessions-config",
+        generate: || schemars::schema_for!(SessionsConfig),
+    }
+}
+
+fn default_stale_threshold() -> u64 {
+    3600
 }
 
 fn default_soft_threshold() -> f64 {
