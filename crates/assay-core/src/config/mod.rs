@@ -541,6 +541,7 @@ default_timeout = 600
             }),
             guard: None,
             worktree: None,
+            sessions: None,
         };
 
         let errors = super::validate(&config).unwrap_err();
@@ -633,5 +634,55 @@ default_timeout = 600
             }
             other => panic!("expected ConfigValidation, got: {other:?}"),
         }
+    }
+
+    // ── SessionsConfig tests ──────────────────────────────────────
+
+    #[test]
+    fn from_str_without_sessions_section_parses_as_none() {
+        let toml = r#"project_name = "test""#;
+        let config = super::from_str(toml).expect("should parse without sessions");
+        assert!(config.sessions.is_none());
+    }
+
+    #[test]
+    fn from_str_with_sessions_section_uses_defaults() {
+        let toml = r#"
+project_name = "test"
+
+[sessions]
+"#;
+        let config = super::from_str(toml).expect("sessions with defaults should parse");
+        let sessions = config.sessions.expect("sessions should be Some");
+        assert_eq!(sessions.stale_threshold, 3600);
+    }
+
+    #[test]
+    fn from_str_with_custom_stale_threshold() {
+        let toml = r#"
+project_name = "test"
+
+[sessions]
+stale_threshold = 7200
+"#;
+        let config = super::from_str(toml).expect("custom threshold should parse");
+        let sessions = config.sessions.expect("sessions should be Some");
+        assert_eq!(sessions.stale_threshold, 7200);
+    }
+
+    #[test]
+    fn from_str_rejects_unknown_sessions_keys() {
+        let toml = r#"
+project_name = "test"
+
+[sessions]
+unknown_option = true
+"#;
+        let err = super::from_str(toml).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("unknown field"),
+            "should reject unknown sessions key, got: {msg}"
+        );
     }
 }

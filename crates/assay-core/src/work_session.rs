@@ -167,6 +167,234 @@ pub fn list_sessions(assay_dir: &Path) -> Result<Vec<String>> {
     Ok(ids)
 }
 
+/// Load a session, apply a mutation, and save atomically.
+///
+/// Returns the mutated session on success. If the closure returns an error,
+/// the session is NOT saved — the on-disk state remains unchanged.
+pub fn with_session<F>(assay_dir: &Path, session_id: &str, mutate: F) -> Result<WorkSession>
+where
+    F: FnOnce(&mut WorkSession) -> Result<()>,
+{
+    let mut session = load_session(assay_dir, session_id)?;
+    mutate(&mut session)?;
+    save_session(assay_dir, &session)?;
+    Ok(session)
+}
+
+/// Create a session and immediately transition to [`SessionPhase::AgentRunning`].
+///
+/// Combines create + transition + save in a single atomic operation.
+/// Returns the saved session.
+pub fn start_session(
+    assay_dir: &Path,
+    spec_name: &str,
+    worktree_path: PathBuf,
+    agent_command: &str,
+    agent_model: Option<&str>,
+) -> Result<WorkSession> {
+    let mut session = create_work_session(spec_name, worktree_path, agent_command, agent_model);
+    transition_session(
+        &mut session,
+        SessionPhase::AgentRunning,
+        "session_start",
+        None,
+    )?;
+    save_session(assay_dir, &session)?;
+    Ok(session)
+}
+
+/// Transition a session to GateEvaluated and link a gate run ID.
+///
+/// Convenience for the common gate_evaluate flow: load → transition → link run → save.
+pub fn record_gate_result(
+    assay_dir: &Path,
+    session_id: &str,
+    gate_run_id: &str,
+    trigger: &str,
+    notes: Option<&str>,
+) -> Result<WorkSession> {
+    with_session(assay_dir, session_id, |session| {
+        transition_session(session, SessionPhase::GateEvaluated, trigger, notes)?;
+        if !session.gate_runs.contains(&gate_run_id.to_string()) {
+            session.gate_runs.push(gate_run_id.to_string());
+        }
+        Ok(())
+    })
+}
+
+/// Mark a session as completed after successful evaluation.
+pub fn complete_session(
+    assay_dir: &Path,
+    session_id: &str,
+    notes: Option<&str>,
+) -> Result<WorkSession> {
+    with_session(assay_dir, session_id, |session| {
+        transition_session(session, SessionPhase::Completed, "session_complete", notes)
+    })
+}
+
+/// Mark a session as abandoned with a reason.
+pub fn abandon_session(assay_dir: &Path, session_id: &str, reason: &str) -> Result<WorkSession> {
+    with_session(assay_dir, session_id, |session| {
+        transition_session(
+            session,
+            SessionPhase::Abandoned,
+            "session_abandon",
+            Some(reason),
+        )
+    })
+}
+
+// ── Recovery scan ────────────────────────────────────────────────────
+
+/// Summary of a recovery scan for stale sessions.
+#[derive(Debug, Default)]
+pub struct RecoverySummary {
+    /// Number of sessions recovered (transitioned to Abandoned).
+    pub recovered: usize,
+    /// Number of eligible sessions (AgentRunning and stale) that could not be recovered
+    /// due to missing transition records or failed state transitions.
+    pub skipped: usize,
+    /// Number of errors encountered (corrupt files, save failures).
+    pub errors: usize,
+}
+
+/// Format a [`chrono::Duration`] as a human-readable string (e.g., "3h 12m" or "45m").
+fn format_duration(d: chrono::Duration) -> String {
+    let h = d.num_hours();
+    let m = d.num_minutes() % 60;
+    match (h, m) {
+        (0, m) => format!("{m}m"),
+        (h, 0) => format!("{h}h"),
+        (h, m) => format!("{h}h {m}m"),
+    }
+}
+
+/// Build a recovery note with timing and host details.
+///
+/// Format: `"Recovered on startup: stale for 3h 12m (threshold: 1h). Host: macbook.local, PID: 12345"`
+///
+/// Duration formatting: "3h 12m" for mixed, "1h" for exact hours, "45m" for sub-hour.
+fn build_recovery_note(
+    stale_duration: chrono::Duration,
+    threshold: chrono::Duration,
+    hostname: &str,
+    pid: u32,
+) -> String {
+    format!(
+        "Recovered on startup: stale for {} (threshold: {}). Host: {}, PID: {}",
+        format_duration(stale_duration),
+        format_duration(threshold),
+        hostname,
+        pid
+    )
+}
+
+/// Scan for stale `agent_running` sessions and mark them as abandoned.
+///
+/// Called on MCP server startup before any tool call. Sessions in `AgentRunning`
+/// phase that are older than `stale_threshold_secs` (measured from the transition
+/// timestamp into `AgentRunning`) are transitioned to `Abandoned` with a recovery
+/// note containing hostname, PID, and timing details.
+///
+/// Corrupt session files are logged and skipped — one bad file does not block
+/// recovery of other sessions. The scan is capped at 100 sessions (oldest first).
+pub fn recover_stale_sessions(assay_dir: &Path, stale_threshold_secs: u64) -> RecoverySummary {
+    let mut summary = RecoverySummary::default();
+
+    let ids = match list_sessions(assay_dir) {
+        Ok(ids) => ids,
+        Err(e) => {
+            tracing::warn!("recovery scan: cannot list sessions: {e}");
+            return summary;
+        }
+    };
+
+    let threshold = chrono::Duration::seconds(stale_threshold_secs as i64);
+    let now = Utc::now();
+    let hostname = hostname::get()
+        .map(|h| h.to_string_lossy().to_string())
+        .unwrap_or_else(|_| "unknown".to_string());
+    let pid = std::process::id();
+
+    // Process oldest first (ULID sort = chronological), cap at 100.
+    for id in ids.iter().take(100) {
+        let mut session = match load_session(assay_dir, id) {
+            Ok(s) => s,
+            Err(e) => {
+                tracing::warn!(session_id = %id, "recovery scan: skipping corrupt session: {e}");
+                summary.errors += 1;
+                continue;
+            }
+        };
+
+        if session.phase != SessionPhase::AgentRunning {
+            continue;
+        }
+
+        // Find the transition timestamp into AgentRunning.
+        let entered_at = session
+            .transitions
+            .iter()
+            .rev()
+            .find(|t| t.to == SessionPhase::AgentRunning)
+            .map(|t| t.timestamp);
+
+        let Some(entered_at) = entered_at else {
+            tracing::warn!(
+                session_id = %id,
+                "recovery scan: session in AgentRunning but no transition record, skipping"
+            );
+            summary.skipped += 1;
+            continue;
+        };
+
+        let age = now - entered_at;
+        if age < threshold {
+            continue;
+        }
+
+        let note = build_recovery_note(age, threshold, &hostname, pid);
+        if let Err(e) = transition_session(
+            &mut session,
+            SessionPhase::Abandoned,
+            "startup_recovery",
+            Some(&note),
+        ) {
+            tracing::warn!(session_id = %id, "recovery scan: transition failed: {e}");
+            summary.errors += 1;
+            continue;
+        }
+
+        match save_session(assay_dir, &session) {
+            Ok(_) => {
+                tracing::info!(
+                    session_id = %id,
+                    spec_name = %session.spec_name,
+                    stale_duration = %format_duration(age),
+                    "recovered stale session"
+                );
+                summary.recovered += 1;
+            }
+            Err(e) => {
+                tracing::warn!(session_id = %id, "recovery scan: save failed: {e}");
+                summary.errors += 1;
+            }
+        }
+    }
+
+    if summary.recovered > 0 {
+        tracing::info!(
+            recovered = summary.recovered,
+            skipped = summary.skipped,
+            errors = summary.errors,
+            "recovery scan complete"
+        );
+    }
+
+    summary
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -426,5 +654,380 @@ mod tests {
         session.id = "../evil".to_string();
         let result = save_session(dir.path(), &session);
         assert!(result.is_err(), "should reject path-traversal session ID");
+    }
+
+    // ── with_session ─────────────────────────────────────────────
+
+    #[test]
+    fn with_session_happy_path() {
+        let dir = TempDir::new().unwrap();
+        let session = create_work_session("test-spec", PathBuf::from("/tmp/wt"), "claude", None);
+        save_session(dir.path(), &session).unwrap();
+
+        let updated = with_session(dir.path(), &session.id, |s| {
+            transition_session(s, SessionPhase::AgentRunning, "test", None)
+        })
+        .unwrap();
+
+        assert_eq!(updated.phase, SessionPhase::AgentRunning);
+
+        // Verify on-disk copy matches
+        let loaded = load_session(dir.path(), &session.id).unwrap();
+        assert_eq!(loaded.phase, SessionPhase::AgentRunning);
+        assert_eq!(loaded, updated);
+    }
+
+    #[test]
+    fn with_session_aborts_on_closure_error() {
+        let dir = TempDir::new().unwrap();
+        let session = create_work_session("test-spec", PathBuf::from("/tmp/wt"), "claude", None);
+        save_session(dir.path(), &session).unwrap();
+
+        // Attempt invalid transition: Created -> Completed
+        let result = with_session(dir.path(), &session.id, |s| {
+            transition_session(s, SessionPhase::Completed, "skip", None)
+        });
+
+        assert!(result.is_err(), "invalid transition should return error");
+
+        // On-disk session must still be in Created phase
+        let loaded = load_session(dir.path(), &session.id).unwrap();
+        assert_eq!(
+            loaded.phase,
+            SessionPhase::Created,
+            "on-disk state should not change when closure fails"
+        );
+    }
+
+    // ── start_session ────────────────────────────────────────────
+
+    #[test]
+    fn start_session_happy_path() {
+        let dir = TempDir::new().unwrap();
+        let session = start_session(
+            dir.path(),
+            "my-spec",
+            PathBuf::from("/tmp/wt"),
+            "claude",
+            Some("sonnet"),
+        )
+        .unwrap();
+
+        assert_eq!(session.phase, SessionPhase::AgentRunning);
+        assert_eq!(session.transitions.len(), 1);
+        assert_eq!(session.transitions[0].trigger, "session_start");
+        assert_eq!(session.spec_name, "my-spec");
+
+        // Verify persisted
+        let loaded = load_session(dir.path(), &session.id).unwrap();
+        assert_eq!(loaded, session);
+    }
+
+    // ── record_gate_result ───────────────────────────────────────
+
+    #[test]
+    fn record_gate_result_happy_path() {
+        let dir = TempDir::new().unwrap();
+        let session =
+            start_session(dir.path(), "spec", PathBuf::from("/tmp/wt"), "claude", None).unwrap();
+
+        let updated = record_gate_result(
+            dir.path(),
+            &session.id,
+            "run-001",
+            "gate_eval",
+            Some("passed"),
+        )
+        .unwrap();
+
+        assert_eq!(updated.phase, SessionPhase::GateEvaluated);
+        assert_eq!(updated.gate_runs, vec!["run-001"]);
+
+        let loaded = load_session(dir.path(), &session.id).unwrap();
+        assert_eq!(loaded, updated);
+    }
+
+    #[test]
+    fn record_gate_result_deduplicates() {
+        let dir = TempDir::new().unwrap();
+        let mut session = create_work_session("spec", PathBuf::from("/tmp/wt"), "claude", None);
+        transition_session(&mut session, SessionPhase::AgentRunning, "start", None).unwrap();
+        // Pre-populate gate_runs with an existing ID
+        session.gate_runs.push("run-001".to_string());
+        save_session(dir.path(), &session).unwrap();
+
+        let updated =
+            record_gate_result(dir.path(), &session.id, "run-001", "gate_eval", None).unwrap();
+
+        assert_eq!(
+            updated.gate_runs,
+            vec!["run-001"],
+            "duplicate gate_run_id should not be added"
+        );
+    }
+
+    // ── complete_session ─────────────────────────────────────────
+
+    #[test]
+    fn complete_session_full_lifecycle() {
+        let dir = TempDir::new().unwrap();
+        let session =
+            start_session(dir.path(), "spec", PathBuf::from("/tmp/wt"), "claude", None).unwrap();
+
+        let evaluated =
+            record_gate_result(dir.path(), &session.id, "run-001", "gate_eval", None).unwrap();
+
+        let completed = complete_session(dir.path(), &evaluated.id, Some("all passed")).unwrap();
+
+        assert_eq!(completed.phase, SessionPhase::Completed);
+        let last_transition = completed.transitions.last().unwrap();
+        assert_eq!(last_transition.trigger, "session_complete");
+        assert_eq!(last_transition.notes.as_deref(), Some("all passed"));
+    }
+
+    // ── abandon_session ──────────────────────────────────────────
+
+    #[test]
+    fn abandon_session_from_agent_running() {
+        let dir = TempDir::new().unwrap();
+        let session =
+            start_session(dir.path(), "spec", PathBuf::from("/tmp/wt"), "claude", None).unwrap();
+
+        let abandoned = abandon_session(dir.path(), &session.id, "agent crashed").unwrap();
+
+        assert_eq!(abandoned.phase, SessionPhase::Abandoned);
+        let last_transition = abandoned.transitions.last().unwrap();
+        assert_eq!(last_transition.trigger, "session_abandon");
+        assert_eq!(last_transition.notes.as_deref(), Some("agent crashed"));
+    }
+
+    #[test]
+    fn abandon_session_from_created() {
+        let dir = TempDir::new().unwrap();
+        let session = create_work_session("spec", PathBuf::from("/tmp/wt"), "claude", None);
+        save_session(dir.path(), &session).unwrap();
+
+        let abandoned = abandon_session(dir.path(), &session.id, "stale recovery sweep").unwrap();
+
+        assert_eq!(abandoned.phase, SessionPhase::Abandoned);
+        let loaded = load_session(dir.path(), &session.id).unwrap();
+        assert_eq!(loaded, abandoned);
+    }
+
+    // ── recovery scan ───────────────────────────────────────────────
+
+    /// Helper: create a session in AgentRunning with a backdated transition timestamp.
+    fn create_stale_session(dir: &Path, spec_name: &str, hours_ago: i64) -> WorkSession {
+        let mut session = create_work_session(spec_name, PathBuf::from("/tmp/wt"), "claude", None);
+        let entered_at = Utc::now() - chrono::Duration::hours(hours_ago);
+        session.transitions.push(PhaseTransition {
+            from: SessionPhase::Created,
+            to: SessionPhase::AgentRunning,
+            timestamp: entered_at,
+            trigger: "session_start".to_string(),
+            notes: None,
+        });
+        session.phase = SessionPhase::AgentRunning;
+        save_session(dir, &session).unwrap();
+        session
+    }
+
+    #[test]
+    fn recover_no_sessions() {
+        let dir = TempDir::new().unwrap();
+        // Create sessions dir but leave it empty.
+        std::fs::create_dir_all(dir.path().join("sessions")).unwrap();
+
+        let summary = recover_stale_sessions(dir.path(), 3600);
+
+        assert_eq!(summary.recovered, 0);
+        assert_eq!(summary.skipped, 0);
+        assert_eq!(summary.errors, 0);
+    }
+
+    #[test]
+    fn recover_no_sessions_dir() {
+        let dir = TempDir::new().unwrap();
+        // No sessions directory at all — should not panic.
+        let summary = recover_stale_sessions(dir.path(), 3600);
+
+        assert_eq!(summary.recovered, 0);
+        assert_eq!(summary.skipped, 0);
+        assert_eq!(summary.errors, 0);
+    }
+
+    #[test]
+    fn recover_stale_session() {
+        let dir = TempDir::new().unwrap();
+        let session = create_stale_session(dir.path(), "stale-spec", 2);
+
+        let summary = recover_stale_sessions(dir.path(), 3600); // 1h threshold
+
+        assert_eq!(summary.recovered, 1);
+        assert_eq!(summary.skipped, 0);
+        assert_eq!(summary.errors, 0);
+
+        let loaded = load_session(dir.path(), &session.id).unwrap();
+        assert_eq!(loaded.phase, SessionPhase::Abandoned);
+        let last = loaded.transitions.last().unwrap();
+        assert_eq!(last.trigger, "startup_recovery");
+        assert!(
+            last.notes
+                .as_deref()
+                .unwrap()
+                .contains("Recovered on startup"),
+            "recovery note should contain marker text, got: {:?}",
+            last.notes
+        );
+    }
+
+    #[test]
+    fn recover_skips_non_agent_running() {
+        let dir = TempDir::new().unwrap();
+
+        // Created phase
+        let s1 = create_work_session("created", PathBuf::from("/tmp/wt"), "claude", None);
+        save_session(dir.path(), &s1).unwrap();
+
+        // Completed phase
+        let mut s2 = create_work_session("completed", PathBuf::from("/tmp/wt"), "claude", None);
+        transition_session(&mut s2, SessionPhase::AgentRunning, "start", None).unwrap();
+        transition_session(&mut s2, SessionPhase::GateEvaluated, "gate", None).unwrap();
+        transition_session(&mut s2, SessionPhase::Completed, "done", None).unwrap();
+        save_session(dir.path(), &s2).unwrap();
+
+        // Abandoned phase
+        let mut s3 = create_work_session("abandoned", PathBuf::from("/tmp/wt"), "claude", None);
+        transition_session(&mut s3, SessionPhase::Abandoned, "abandon", None).unwrap();
+        save_session(dir.path(), &s3).unwrap();
+
+        // GateEvaluated phase
+        let mut s4 = create_work_session("evaluated", PathBuf::from("/tmp/wt"), "claude", None);
+        transition_session(&mut s4, SessionPhase::AgentRunning, "start", None).unwrap();
+        transition_session(&mut s4, SessionPhase::GateEvaluated, "gate", None).unwrap();
+        save_session(dir.path(), &s4).unwrap();
+
+        let summary = recover_stale_sessions(dir.path(), 3600);
+
+        assert_eq!(
+            summary.recovered, 0,
+            "no AgentRunning sessions should be recovered"
+        );
+    }
+
+    #[test]
+    fn recover_skips_fresh_session() {
+        let dir = TempDir::new().unwrap();
+        // Create an AgentRunning session with transition timestamp ~now.
+        let mut session = create_work_session("fresh", PathBuf::from("/tmp/wt"), "claude", None);
+        transition_session(&mut session, SessionPhase::AgentRunning, "start", None).unwrap();
+        save_session(dir.path(), &session).unwrap();
+
+        let summary = recover_stale_sessions(dir.path(), 3600); // 1h threshold
+
+        assert_eq!(
+            summary.recovered, 0,
+            "fresh session should not be recovered"
+        );
+
+        let loaded = load_session(dir.path(), &session.id).unwrap();
+        assert_eq!(loaded.phase, SessionPhase::AgentRunning);
+    }
+
+    #[test]
+    fn recover_corrupt_file() {
+        let dir = TempDir::new().unwrap();
+        let sessions_dir = dir.path().join("sessions");
+        std::fs::create_dir_all(&sessions_dir).unwrap();
+
+        // Write corrupt JSON.
+        std::fs::write(
+            sessions_dir.join("00CORRUPT0000000000000000AB.json"),
+            "not json",
+        )
+        .unwrap();
+
+        // Create a valid stale session (will sort after corrupt due to ULID ordering).
+        let session = create_stale_session(dir.path(), "valid-stale", 2);
+
+        let summary = recover_stale_sessions(dir.path(), 3600);
+
+        assert_eq!(summary.errors, 1, "corrupt file should be counted as error");
+        assert_eq!(
+            summary.recovered, 1,
+            "valid stale session should still be recovered"
+        );
+
+        let loaded = load_session(dir.path(), &session.id).unwrap();
+        assert_eq!(loaded.phase, SessionPhase::Abandoned);
+    }
+
+    #[test]
+    fn recover_idempotent() {
+        let dir = TempDir::new().unwrap();
+        create_stale_session(dir.path(), "stale", 2);
+
+        let first = recover_stale_sessions(dir.path(), 3600);
+        assert_eq!(first.recovered, 1);
+
+        let second = recover_stale_sessions(dir.path(), 3600);
+        assert_eq!(second.recovered, 0, "second run should recover nothing");
+    }
+
+    #[test]
+    fn recover_missing_transition_record() {
+        let dir = TempDir::new().unwrap();
+        // Create session with AgentRunning phase but NO transition records.
+        let mut session =
+            create_work_session("inconsistent", PathBuf::from("/tmp/wt"), "claude", None);
+        session.phase = SessionPhase::AgentRunning;
+        // transitions is empty — data inconsistency.
+        save_session(dir.path(), &session).unwrap();
+
+        let summary = recover_stale_sessions(dir.path(), 3600);
+
+        assert_eq!(
+            summary.skipped, 1,
+            "missing transition record should be skipped"
+        );
+        assert_eq!(summary.recovered, 0);
+
+        // Session should remain in AgentRunning (untouched).
+        let loaded = load_session(dir.path(), &session.id).unwrap();
+        assert_eq!(loaded.phase, SessionPhase::AgentRunning);
+    }
+
+    #[test]
+    fn build_recovery_note_format() {
+        let note = build_recovery_note(
+            chrono::Duration::minutes(192), // 3h 12m
+            chrono::Duration::minutes(60),  // 1h
+            "testhost",
+            12345,
+        );
+
+        assert_eq!(
+            note,
+            "Recovered on startup: stale for 3h 12m (threshold: 1h). Host: testhost, PID: 12345"
+        );
+    }
+
+    #[test]
+    fn build_recovery_note_minutes_only() {
+        let note = build_recovery_note(
+            chrono::Duration::minutes(45),
+            chrono::Duration::minutes(30),
+            "host",
+            99,
+        );
+
+        assert_eq!(
+            note,
+            "Recovered on startup: stale for 45m (threshold: 30m). Host: host, PID: 99"
+        );
+        assert!(
+            !note.contains("0h"),
+            "should not contain '0h' prefix when under 1 hour"
+        );
     }
 }
