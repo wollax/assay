@@ -85,22 +85,22 @@ pub fn save_session(assay_dir: &Path, session: &WorkSession) -> Result<PathBuf> 
 
     crate::history::validate_path_component(&session.id, "session ID")?;
 
+    let final_path = sessions_dir.join(format!("{}.json", session.id));
+
     let json = serde_json::to_string_pretty(session)
-        .map_err(|e| AssayError::json("serializing work session", &sessions_dir, e))?;
+        .map_err(|e| AssayError::json(format!("serializing work session {}", session.id), &final_path, e))?;
 
     let mut tmpfile = NamedTempFile::new_in(&sessions_dir)
         .map_err(|e| AssayError::io("creating temp file for session", &sessions_dir, e))?;
 
     tmpfile
         .write_all(json.as_bytes())
-        .map_err(|e| AssayError::io("writing work session", &sessions_dir, e))?;
+        .map_err(|e| AssayError::io("writing work session", &final_path, e))?;
 
     tmpfile
         .as_file()
         .sync_all()
-        .map_err(|e| AssayError::io("syncing work session", &sessions_dir, e))?;
-
-    let final_path = sessions_dir.join(format!("{}.json", session.id));
+        .map_err(|e| AssayError::io("syncing work session", &final_path, e))?;
     tmpfile
         .persist(&final_path)
         .map_err(|e| AssayError::io("persisting work session", &final_path, e.error))?;
@@ -111,7 +111,10 @@ pub fn save_session(assay_dir: &Path, session: &WorkSession) -> Result<PathBuf> 
 /// Load a work session by ID from `.assay/sessions/<session_id>.json`.
 ///
 /// Returns [`AssayError::WorkSessionNotFound`] if the file does not exist.
+/// Returns an error if `session_id` contains path traversal components.
 pub fn load_session(assay_dir: &Path, session_id: &str) -> Result<WorkSession> {
+    crate::history::validate_path_component(session_id, "session ID")?;
+
     let path = assay_dir
         .join("sessions")
         .join(format!("{session_id}.json"));
@@ -257,6 +260,11 @@ pub struct RecoverySummary {
     pub skipped: usize,
     /// Number of errors encountered (corrupt files, save failures).
     pub errors: usize,
+    /// Whether the scan was capped at the 100-session limit.
+    ///
+    /// When `true`, there may be additional sessions beyond the cap that were not scanned.
+    /// Operators should investigate and recover any remaining stale sessions manually.
+    pub truncated: bool,
 }
 
 /// Format a [`chrono::Duration`] as a human-readable string (e.g., "3h 12m" or "45m").
@@ -318,7 +326,9 @@ pub fn recover_stale_sessions(assay_dir: &Path, stale_threshold_secs: u64) -> Re
     let pid = std::process::id();
 
     // Process oldest first (ULID sort = chronological), cap at 100.
-    for id in ids.iter().take(100) {
+    const RECOVERY_CAP: usize = 100;
+    summary.truncated = ids.len() > RECOVERY_CAP;
+    for id in ids.iter().take(RECOVERY_CAP) {
         let mut session = match load_session(assay_dir, id) {
             Ok(s) => s,
             Err(e) => {

@@ -65,7 +65,9 @@ pub fn save_checkpoint(assay_dir: &Path, checkpoint: &TeamCheckpoint) -> crate::
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs();
-    let _ = std::fs::write(&ts_path, now.to_string());
+    if let Err(e) = std::fs::write(&ts_path, now.to_string()) {
+        tracing::warn!(path = %ts_path.display(), "failed to write last-checkpoint-ts: {e}");
+    }
 
     Ok(archive_path)
 }
