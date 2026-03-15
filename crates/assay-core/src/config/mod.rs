@@ -521,10 +521,14 @@ default_timeout = 600
         let content = "[section]\nkey = \n";
         let err = toml::from_str::<toml::Value>(content).unwrap_err();
         let result = super::format_toml_error(content, &err);
-        // Should show line info
+        // Should show the specific line number and a caret pointer
         assert!(
-            result.contains("line"),
-            "should contain line reference, got: {result}"
+            result.contains("line 2"),
+            "should reference line 2, got: {result}"
+        );
+        assert!(
+            result.contains('^'),
+            "should contain caret pointer, got: {result}"
         );
     }
 
