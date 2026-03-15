@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 2026-03-10)
 
 ## Current Position
 
-Phase: 39 — Context Engine Integration (COMPLETE)
-Plan: 2 of 2 (Context budgeting integration)
-Status: Complete
-Last activity: 2026-03-15 — Completed 39-02-PLAN.md
+Phase: 40 — WorkSession Type & Persistence
+Plan: 1 of 2 (WorkSession data model)
+Status: In progress
+Last activity: 2026-03-15 — Completed 40-01-PLAN.md
 
-Progress: v0.4.0 [█████████░░░░░░░░] ~45% (phases 35-39 complete)
+Progress: v0.4.0 [██████████░░░░░░░] ~50% (phases 35-39 complete, 40 in progress)
 
 ## Milestone Progress
 
@@ -77,6 +77,11 @@ v0.4.0 decisions (from 38-02):
 - Growth rate uses last cumulative token count divided by turn count for average (simple, stable)
 - `estimate_tokens` does both tail-read (usage) and full parse (growth rate)
 
+v0.4.0 decisions (from 40-01):
+- WorkSession uses `String` for id (ULID stored as string for schemars compatibility)
+- No `deny_unknown_fields` on WorkSession (mutable document, evolves in later phases)
+- ulid dependency wired into assay-core only (ID generation is business logic)
+
 v0.4.0 decisions (from 39-02):
 - `budget_context` uses passthrough optimization when content fits (avoids pipeline overhead)
 - Cupel pipeline method is `.run()` returning `Vec<ContextItem>` (not `.execute()`/`ScoredItem`)
@@ -118,5 +123,5 @@ Run `/kata-plan-phase [N]` to start planning phases, or `/kata-discuss-phase [N]
 ### Session Continuity
 
 Last session: 2026-03-15
-Stopped at: Completed 39-02-PLAN.md (Phase 39 complete)
+Stopped at: Completed 40-01-PLAN.md
 Resume file: None
