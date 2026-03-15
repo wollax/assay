@@ -320,6 +320,7 @@ pub fn map_evaluator_output(
             total_duration_ms: duration_ms,
             enforcement: enforcement_summary,
         },
+        diff_truncation: None,
     };
 
     (record, warnings)

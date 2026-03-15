@@ -36,7 +36,7 @@ pub use evaluator::{
 };
 pub use feature_spec::FeatureSpec;
 pub use gate::{GateKind, GateResult};
-pub use gate_run::{CriterionResult, GateRunRecord, GateRunSummary};
+pub use gate_run::{CriterionResult, DiffTruncation, GateRunRecord, GateRunSummary};
 pub use gates_spec::{GateCriterion, GatesSpec};
 pub use session::{AgentEvaluation, AgentSession, Confidence, EvaluatorRole};
 pub use validation::{Diagnostic, DiagnosticSummary, Severity, ValidationResult};

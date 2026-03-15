@@ -222,6 +222,7 @@ pub fn build_finalized_record(session: &AgentSession, working_dir: Option<&str>)
             total_duration_ms,
             enforcement: enforcement_summary,
         },
+        diff_truncation: None,
     }
 }
 
@@ -383,6 +384,7 @@ pub fn finalize_as_timed_out(session: &AgentSession) -> GateRunRecord {
             total_duration_ms: 0,
             enforcement: enforcement_summary,
         },
+        diff_truncation: None,
     }
 }
 
