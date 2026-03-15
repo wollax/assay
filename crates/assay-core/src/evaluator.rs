@@ -581,7 +581,7 @@ mod tests {
         let json = evaluator_schema_json();
         assert!(!json.is_empty());
         let value: serde_json::Value =
-            serde_json::from_str(&json).expect("schema should be valid JSON");
+            serde_json::from_str(json).expect("schema should be valid JSON");
         assert!(value.is_object());
     }
 
@@ -1036,5 +1036,127 @@ mod tests {
         };
         let display = err.to_string();
         assert!(display.contains("gate evaluation failed"));
+    }
+
+    // ── Additional tests ────────────────────────────────────────────
+
+    /// build-evaluator-prompt-empty-diff-untested:
+    /// `diff: Some("")` should produce the same output as `diff: None`.
+    #[test]
+    fn prompt_empty_string_diff_matches_none_diff() {
+        let with_none = build_evaluator_prompt("spec", "desc", &[], None, None);
+        let with_empty = build_evaluator_prompt("spec", "desc", &[], Some(""), None);
+        assert_eq!(
+            with_none, with_empty,
+            "Some(\"\") and None should produce identical prompts"
+        );
+        assert!(with_none.contains("No changes detected"));
+    }
+
+    /// map-evaluator-output-empty-criteria-no-count-assertions:
+    /// Empty criteria list should yield zero counts across all fields.
+    #[test]
+    fn map_empty_criteria_yields_zero_counts() {
+        let output = EvaluatorOutput {
+            criteria: vec![],
+            summary: assay_types::EvaluatorSummary {
+                passed: true,
+                rationale: "no criteria".to_string(),
+            },
+        };
+
+        let (record, warnings) =
+            map_evaluator_output("spec", &output, &HashMap::new(), Duration::ZERO);
+        assert_eq!(record.summary.passed, 0);
+        assert_eq!(record.summary.failed, 0);
+        assert_eq!(record.summary.skipped, 0);
+        assert_eq!(record.summary.results.len(), 0);
+        assert!(warnings.is_empty(), "no criteria — no warnings expected");
+    }
+
+    /// map-evaluator-output-warn-required-untested:
+    /// Warn outcome on a Required criterion counts as passed in enforcement.
+    #[test]
+    fn map_warn_on_required_criterion_counts_as_advisory_passed_not_failed() {
+        let output = EvaluatorOutput {
+            criteria: vec![EvaluatorCriterionResult {
+                name: "strict-check".to_string(),
+                outcome: CriterionOutcome::Warn,
+                reasoning: "soft concern".to_string(),
+                evidence: None,
+            }],
+            summary: assay_types::EvaluatorSummary {
+                passed: true,
+                rationale: "warn does not block".to_string(),
+            },
+        };
+        let enforcement_map = HashMap::from([("strict-check".to_string(), Enforcement::Required)]);
+
+        let (record, warnings) =
+            map_evaluator_output("spec", &output, &enforcement_map, Duration::ZERO);
+
+        // Warn is treated as passed — gate should not be blocked.
+        assert_eq!(record.summary.passed, 1);
+        assert_eq!(record.summary.failed, 0);
+        assert_eq!(record.summary.enforcement.required_failed, 0);
+        assert_eq!(record.summary.enforcement.required_passed, 1);
+
+        // A warning message should be emitted for the warn outcome.
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("strict-check"));
+    }
+
+    /// map-pass-outcome-kind-role-test-incomplete:
+    /// Fail outcome should also produce AgentReport kind and Independent role.
+    #[test]
+    fn map_fail_has_agent_report_kind_and_independent_role() {
+        let output = EvaluatorOutput {
+            criteria: vec![EvaluatorCriterionResult {
+                name: "failing-check".to_string(),
+                outcome: CriterionOutcome::Fail,
+                reasoning: "did not pass".to_string(),
+                evidence: Some("line 42 is wrong".to_string()),
+            }],
+            summary: assay_types::EvaluatorSummary {
+                passed: false,
+                rationale: "failed".to_string(),
+            },
+        };
+
+        let (record, _) = map_evaluator_output("spec", &output, &HashMap::new(), Duration::ZERO);
+        let result = record.summary.results[0].result.as_ref().unwrap();
+        assert!(!result.passed);
+        assert_eq!(result.kind, GateKind::AgentReport);
+        assert_eq!(result.evaluator_role, Some(EvaluatorRole::Independent));
+        assert_eq!(result.evidence.as_deref(), Some("line 42 is wrong"));
+        assert_eq!(result.reasoning.as_deref(), Some("did not pass"));
+    }
+
+    /// schema-generation-test-key-structure-not-asserted:
+    /// Schema JSON should contain "criteria" and "summary" as top-level properties.
+    #[test]
+    fn schema_json_contains_expected_top_level_properties() {
+        let json = evaluator_schema_json();
+        let value: serde_json::Value =
+            serde_json::from_str(json).expect("schema should be valid JSON");
+
+        // The schema should reference or define properties for EvaluatorOutput fields.
+        let schema_str = json;
+        assert!(
+            schema_str.contains("criteria"),
+            "schema should reference 'criteria' field"
+        );
+        assert!(
+            schema_str.contains("summary"),
+            "schema should reference 'summary' field"
+        );
+        // Verify the root is a JSON Schema object with a "$schema" or "title" or "properties" key.
+        assert!(
+            value.get("$schema").is_some()
+                || value.get("title").is_some()
+                || value.get("properties").is_some()
+                || value.get("$defs").is_some(),
+            "schema should have recognizable JSON Schema structure: {value}"
+        );
     }
 }

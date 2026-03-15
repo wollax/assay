@@ -338,4 +338,18 @@ mod tests {
             "ContextBudget should preserve CupelError as source"
         );
     }
+
+    /// budget-test-empty-system-prompt:
+    /// An empty system prompt is excluded from the output, and the remaining
+    /// non-empty inputs are returned in canonical order.
+    #[test]
+    fn empty_system_prompt_excluded_from_output() {
+        let result =
+            budget_context("", "spec body", "criteria", "diff", 200_000).expect("should succeed");
+
+        assert_eq!(result.len(), 3, "empty system prompt should be excluded");
+        assert_eq!(result[0], "spec body");
+        assert_eq!(result[1], "criteria");
+        assert_eq!(result[2], "diff");
+    }
 }
