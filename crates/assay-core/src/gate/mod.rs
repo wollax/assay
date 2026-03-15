@@ -714,6 +714,18 @@ pub(crate) fn truncate_head_tail(input: &str, budget: usize) -> TruncationResult
     }
 }
 
+/// Extract file paths from git diff headers.
+///
+/// Parses `diff --git a/<path> b/<path>` headers, returning the `b/` path
+/// for each file in the diff. The `b/` path represents the destination (post-change)
+/// file path, which is the conventional choice for display.
+pub fn extract_diff_files(diff: &str) -> Vec<String> {
+    diff.lines()
+        .filter(|l| l.starts_with("diff --git "))
+        .filter_map(|l| l.split(" b/").nth(1).map(str::to_string))
+        .collect()
+}
+
 /// Truncate a diff string using head+tail strategy.
 ///
 /// Returns `(truncated_output, was_truncated, original_byte_length)`.
@@ -733,6 +745,37 @@ pub fn truncate_diff(raw: &str, budget: usize) -> (Option<String>, bool, Option<
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ── extract_diff_files ─────────────────────────────────────────
+
+    #[test]
+    fn extract_diff_files_empty_diff() {
+        assert_eq!(extract_diff_files(""), Vec::<String>::new());
+    }
+
+    #[test]
+    fn extract_diff_files_single_file() {
+        let diff = "diff --git a/src/main.rs b/src/main.rs\nindex abc..def 100644\n--- a/src/main.rs\n+++ b/src/main.rs\n@@ -1 +1 @@\n-old\n+new\n";
+        assert_eq!(extract_diff_files(diff), vec!["src/main.rs"]);
+    }
+
+    #[test]
+    fn extract_diff_files_multiple_files() {
+        let diff = "diff --git a/foo.rs b/foo.rs\nsome content\ndiff --git a/bar.rs b/bar.rs\nmore content\ndiff --git a/baz.rs b/baz.rs\n";
+        assert_eq!(extract_diff_files(diff), vec!["foo.rs", "bar.rs", "baz.rs"]);
+    }
+
+    #[test]
+    fn extract_diff_files_no_headers() {
+        let diff = "@@ -1,3 +1,4 @@\n context\n-removed\n+added\n another line\n";
+        assert_eq!(extract_diff_files(diff), Vec::<String>::new());
+    }
+
+    #[test]
+    fn extract_diff_files_path_with_spaces() {
+        let diff = "diff --git a/path with spaces/file.rs b/path with spaces/file.rs\n";
+        assert_eq!(extract_diff_files(diff), vec!["path with spaces/file.rs"]);
+    }
 
     // ── evaluate: command execution ────────────────────────────────
 

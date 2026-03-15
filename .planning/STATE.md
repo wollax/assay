@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 2026-03-10)
 
 ## Current Position
 
-Phase: 43 — gate_evaluate Schema & Subprocess (COMPLETE)
-Plan: 2 of 2 (gate_evaluate MCP tool handler — COMPLETE)
+Phase: 44 — gate_evaluate Context Budgeting (COMPLETE)
+Plan: 2 of 2 (budget_context integration — COMPLETE)
 Status: Complete
-Last activity: 2026-03-15 — Completed 43-02-PLAN.md
+Last activity: 2026-03-15 — Completed 44-02-PLAN.md
 
-Progress: v0.4.0 [███████████████░░] ~82% (phases 35-43 complete, 44-45 remaining)
+Progress: v0.4.0 [█████████████████░] ~91% (phases 35-44 complete, 45 remaining)
 
 ## Milestone Progress
 
@@ -23,7 +23,7 @@ Progress: v0.4.0 [███████████████░░] ~82% (pha
 | v0.1.0 | 10 | 43 | 100% (shipped) |
 | v0.2.0 | 15 (11-25) | 52 | 100% (shipped) |
 | v0.3.0 | 9 (26-34) | 43 | 100% (shipped) |
-| v0.4.0 | 11 (35-45) | 28 | 82% (9/11 phases) |
+| v0.4.0 | 11 (35-45) | 28 | 91% (10/11 phases) |
 | v0.4.1 | TBD | 8 | 0% (planned) |
 
 ## Accumulated Context
@@ -115,6 +115,18 @@ v0.4.0 decisions (from 43-02):
 - Catch-all `Err(e)` for non-exhaustive EvaluatorError enum
 - agent_prompt concatenated from all criteria prompts (full guidance context)
 
+v0.4.0 decisions (from 44-01):
+- DiffTruncation placed in gate_run.rs co-located with GateRunRecord (its sole owner)
+- diff_truncation field uses serde(default, skip_serializing_if) for backward compat with existing records
+- context_window_for_model was already pub; only needed pub use re-export from context/mod.rs
+- extract_diff_files uses b/ path (destination) as conventional display choice
+
+v0.4.0 decisions (from 44-02):
+- model resolution moved before diff capture so context_window_for_model has model available
+- criteria text built locally for budget computation (cheap double computation vs. refactoring build_evaluator_prompt API)
+- Truncation detection uses byte length comparison (budget_context passthrough returns identical strings when no truncation needed)
+- DIFF_BUDGET_BYTES constant retained (still used by gate_run handler)
+
 v0.4.1 decisions (from brainstorm):
 - PR creation over direct merge for v0.4.x — maps to `autonomous: false`
 - `git merge-tree --write-tree` for conflict detection — zero side effects
@@ -150,5 +162,5 @@ Run `/kata-plan-phase [N]` to start planning phases, or `/kata-discuss-phase [N]
 ### Session Continuity
 
 Last session: 2026-03-15
-Stopped at: Completed 43-02-PLAN.md (Phase 43 complete)
+Stopped at: Completed 44-02-PLAN.md (Phase 44 complete)
 Resume file: None

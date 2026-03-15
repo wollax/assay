@@ -61,6 +61,29 @@ inventory::submit! {
     }
 }
 
+/// Truncation metadata when the diff was truncated to fit the evaluator's token budget.
+///
+/// Present only when truncation occurred (diff exceeded token budget).
+/// Omitted entirely when the diff fit within budget (clean passthrough).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct DiffTruncation {
+    /// Byte size of the original diff before truncation.
+    pub original_bytes: usize,
+    /// Byte size of the diff after truncation.
+    pub truncated_bytes: usize,
+    /// Files included in the truncated diff.
+    pub included_files: Vec<String>,
+    /// Files omitted from the truncated diff (present in original, absent after truncation).
+    pub omitted_files: Vec<String>,
+}
+
+inventory::submit! {
+    crate::schema_registry::SchemaEntry {
+        name: "diff-truncation",
+        generate: || schemars::schema_for!(DiffTruncation),
+    }
+}
+
 /// A complete, versioned record of a single gate evaluation run.
 ///
 /// Wraps [`GateRunSummary`] with metadata for persistence and audit.
@@ -81,6 +104,10 @@ pub struct GateRunRecord {
     pub working_dir: Option<String>,
     /// The complete gate run summary with all criterion results.
     pub summary: GateRunSummary,
+    /// Truncation metadata for the diff passed to the evaluator.
+    /// Present only when truncation occurred; omitted when diff fit within budget.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub diff_truncation: Option<DiffTruncation>,
 }
 
 inventory::submit! {

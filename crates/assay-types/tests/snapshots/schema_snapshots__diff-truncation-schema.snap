@@ -1,0 +1,44 @@
+---
+source: crates/assay-types/tests/schema_snapshots.rs
+expression: schema.to_value()
+---
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Truncation metadata when the diff was truncated to fit the evaluator's token budget.\n\nPresent only when truncation occurred (diff exceeded token budget).\nOmitted entirely when the diff fit within budget (clean passthrough).",
+  "properties": {
+    "included_files": {
+      "description": "Files included in the truncated diff.",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "omitted_files": {
+      "description": "Files omitted from the truncated diff (present in original, absent after truncation).",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "original_bytes": {
+      "description": "Byte size of the original diff before truncation.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "truncated_bytes": {
+      "description": "Byte size of the diff after truncation.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "original_bytes",
+    "truncated_bytes",
+    "included_files",
+    "omitted_files"
+  ],
+  "title": "DiffTruncation",
+  "type": "object"
+}
