@@ -90,7 +90,7 @@
   - OBS-03: `spec_get` resolved config with timeout precedence
   - OBS-04: Growth rate metrics in `estimate_tokens`
 
-- [ ] Phase 39: Context Engine Integration
+- [x] Phase 39: Context Engine Integration — 2026-03-15
   - CTX-01: External context-engine crate dependency
   - CTX-02: Integration surface definition
   - CTX-03: Fallback behavior without context engine
@@ -209,5 +209,5 @@
 | v0.1.0 Proof of Concept | ✅ Shipped | 10 | 43 | 100% |
 | v0.2.0 Dual-Track Gates & Hardening | ✅ Shipped | 15 | 52 | 100% |
 | v0.3.0 Orchestration Foundation | ✅ Shipped | 9 | 43 | 100% |
-| v0.4.0 Headless Orchestration | 🔄 In Progress | 11 | 28 | 36% |
+| v0.4.0 Headless Orchestration | 🔄 In Progress | 11 | 28 | 45% |
 | v0.4.1 Merge Tools | ○ Planned | 5 | 8 | 0% |
