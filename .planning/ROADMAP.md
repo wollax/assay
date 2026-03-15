@@ -147,7 +147,7 @@
     3. Truncation metadata (original size, truncated size, strategy used) is included in GateRunRecord
     4. When diff fits within budget, no truncation occurs and no truncation metadata is recorded
 
-- [ ] Phase 45: Tech Debt Cleanup (9 plans)
+- [x] Phase 45: Tech Debt Cleanup (9 plans) — 2026-03-15
   - DEBT-01: Batch sweep of highest-value backlog issues
   - Plan 01 (wave 1): Won't-fix triage — close 30 superseded/deferred issues (no code changes)
   - Plan 02 (wave 1): assay-types v0.4.0 sweep — derives, serde attrs, field types, rename (~15 issues)
@@ -220,5 +220,5 @@
 | v0.1.0 Proof of Concept | ✅ Shipped | 10 | 43 | 100% |
 | v0.2.0 Dual-Track Gates & Hardening | ✅ Shipped | 15 | 52 | 100% |
 | v0.3.0 Orchestration Foundation | ✅ Shipped | 9 | 43 | 100% |
-| v0.4.0 Headless Orchestration | 🔄 In Progress | 11 | 28 | 91% |
+| v0.4.0 Headless Orchestration | ✅ Complete | 11 | 28 | 100% |
 | v0.4.1 Merge Tools | ○ Planned | 5 | 8 | 0% |

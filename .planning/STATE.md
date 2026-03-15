@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-03-10)
 
 **Core value:** Dual-track quality gates (deterministic + agent-evaluated) for AI coding agents
-**Current focus:** v0.4.0 Headless Orchestration — gate_evaluate capstone, session persistence, context engine integration
+**Current focus:** v0.4.0 Headless Orchestration — COMPLETE
 
 ## Current Position
 
-Phase: 45 — Tech Debt Cleanup (IN PROGRESS)
-Plan: 01 of 9
-Status: In progress
-Last activity: 2026-03-15 — Completed 45-01-PLAN.md
+Phase: 45 — Tech Debt Cleanup (COMPLETE)
+Plan: 9 of 9 (all plans complete)
+Status: Complete
+Last activity: 2026-03-15 — Completed all 9 plans in Phase 45
 
-Progress: v0.4.0 [█████████████████░] ~91% (phases 35-44 complete, 45 in progress)
+Progress: v0.4.0 [████████████████████] 100% (phases 35-45 complete)
 
 ## Milestone Progress
 
@@ -23,7 +23,7 @@ Progress: v0.4.0 [█████████████████░] ~91% (
 | v0.1.0 | 10 | 43 | 100% (shipped) |
 | v0.2.0 | 15 (11-25) | 52 | 100% (shipped) |
 | v0.3.0 | 9 (26-34) | 43 | 100% (shipped) |
-| v0.4.0 | 11 (35-45) | 28 | 91% (10/11 phases) |
+| v0.4.0 | 11 (35-45) | 28 | 100% (complete) |
 | v0.4.1 | TBD | 8 | 0% (planned) |
 
 ## Accumulated Context
@@ -44,7 +44,7 @@ v0.4.0 decisions (from brainstorm):
 
 v0.4.0 decisions (from 35-01):
 - `build_finalized_record` returns plain `GateRunRecord` (infallible without I/O)
-- `persisted` field on `GateFinalizeResponse` derives from `warnings.is_empty()`
+- `persisted` field on `GateFinalizeResponse` derives from `save_result.is_ok()` (robust, not fragile `warnings.is_empty()`)
 - `finalize_session` kept as backward-compat wrapper
 
 v0.4.0 decisions (from 35-02):
@@ -94,7 +94,7 @@ v0.4.0 decisions (from 40-02):
 - `list_sessions` returns empty vec when sessions/ directory absent (not an error)
 
 v0.4.0 decisions (from 42-01):
-- `SessionsConfig` with `stale_threshold` uses `Option<SessionsConfig>` on `Config` (backward-compatible)
+- `SessionsConfig` with `stale_threshold_secs` uses `Option<SessionsConfig>` on `Config` (backward-compatible)
 - `with_session` captures `previous_phase` inside closure (avoids double-load in MCP handler)
 - Convenience functions compose `with_session` + `transition_session` (not builder pattern)
 
@@ -127,6 +127,19 @@ v0.4.0 decisions (from 44-02):
 - Truncation detection uses byte length comparison (budget_context passthrough returns identical strings when no truncation needed)
 - DIFF_BUDGET_BYTES constant retained (still used by gate_run handler)
 
+v0.4.0 decisions (from 45):
+- `stale_threshold` renamed to `stale_threshold_secs` with `#[serde(alias = "stale_threshold")]` for backward compat
+- `SessionPhase` is `#[non_exhaustive]` — downstream match sites use wildcard arms
+- `DiffTruncation` byte fields changed from `usize` to `u64` (platform-independent serialization)
+- `WorktreeInfo` ahead/behind changed from `usize` to `u32`
+- Evaluator schema cached with `LazyLock` (generated once per process)
+- `map_evaluator_output` accepts `Duration` instead of raw `u64`
+- `EvaluateCriterionResult` uses typed `CriterionOutcome`/`Enforcement` enums instead of freeform strings
+- `persisted` field derived from `save_result.is_ok()` (not fragile `warnings.is_empty()`)
+- `RecoverySummary` has `truncated: bool` for 100-session cap indication
+- `GateHistoryEntry` has `required_passed`/`advisory_passed` count fields
+- `load_session` validates path components to prevent directory traversal
+
 v0.4.1 decisions (from brainstorm):
 - PR creation over direct merge for v0.4.x — maps to `autonomous: false`
 - `git merge-tree --write-tree` for conflict detection — zero side effects
@@ -138,17 +151,16 @@ v0.4.1 decisions (from brainstorm):
 ### Milestone Scope Issues
 
 Issues pulled into v0.4.0 scope:
-- "History save failure not surfaced" (from: .planning/issues/open/2026-03-10-history-save-failure-not-surfaced.md) — closed by OBS-01 warnings field
-- Tech debt batch sweep of highest-value backlog items
+- "History save failure not surfaced" — closed by OBS-01 warnings field
+- Tech debt batch sweep — Phase 45 closed 120+ issues
 
 Issues pulled into v0.4.1 scope:
-- "Cleanup --all should use canonical path from git" (from: .planning/issues/open/2026-03-09-worktree-cleanup-all-path.md)
 - "Default branch fallback to main gives confusing errors" (from: .planning/issues/open/2026-03-09-worktree-detect-default-branch-fallback.md)
 - "Git worktree prune failure silently discarded" (from: .planning/issues/open/2026-03-09-worktree-prune-failure-silent.md)
 
 ### Pending Issues
 
-100+ open issues in .planning/issues/open/ (test gaps, derives, naming, refactors)
+122 open issues in .planning/issues/open/ (test gaps, derives, naming, refactors)
 See .planning/issues/ for full backlog.
 
 ### Blockers
@@ -157,10 +169,10 @@ None.
 
 ### Next Actions
 
-Run `/kata-plan-phase [N]` to start planning phases, or `/kata-discuss-phase [N]` to gather context first.
+Run `/kata-audit-milestone` to verify v0.4.0 requirements, or `/kata-complete-milestone` to archive.
 
 ### Session Continuity
 
 Last session: 2026-03-15
-Stopped at: Completed 44-02-PLAN.md (Phase 44 complete)
+Stopped at: Completed Phase 45 (v0.4.0 milestone complete)
 Resume file: None
