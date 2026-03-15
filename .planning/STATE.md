@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 2026-03-10)
 
 ## Current Position
 
-Phase: 43 — gate_evaluate Schema & Subprocess
-Plan: 1 of 2 (EvaluatorOutput schema & subprocess — COMPLETE)
-Status: In progress
-Last activity: 2026-03-15 — Completed 43-01-PLAN.md
+Phase: 43 — gate_evaluate Schema & Subprocess (COMPLETE)
+Plan: 2 of 2 (gate_evaluate MCP tool handler — COMPLETE)
+Status: Complete
+Last activity: 2026-03-15 — Completed 43-02-PLAN.md
 
-Progress: v0.4.0 [██████████████░░░] ~77% (phases 35-42 complete, 43 plan 1/2)
+Progress: v0.4.0 [███████████████░░] ~82% (phases 35-43 complete, 44-45 remaining)
 
 ## Milestone Progress
 
@@ -23,7 +23,7 @@ Progress: v0.4.0 [██████████████░░░] ~77% (pha
 | v0.1.0 | 10 | 43 | 100% (shipped) |
 | v0.2.0 | 15 (11-25) | 52 | 100% (shipped) |
 | v0.3.0 | 9 (26-34) | 43 | 100% (shipped) |
-| v0.4.0 | 11 (35-45) | 28 | 73% (8/11 phases) |
+| v0.4.0 | 11 (35-45) | 28 | 82% (9/11 phases) |
 | v0.4.1 | TBD | 8 | 0% (planned) |
 
 ## Accumulated Context
@@ -110,6 +110,11 @@ v0.4.0 decisions (from 43-01):
 - Warn outcome maps to `passed: true` + warning string (soft concerns don't fail gates)
 - Default enforcement is `Required` when criterion not in enforcement map
 
+v0.4.0 decisions (from 43-02):
+- Separate match arms for ParseError and NoStructuredOutput (different field sets)
+- Catch-all `Err(e)` for non-exhaustive EvaluatorError enum
+- agent_prompt concatenated from all criteria prompts (full guidance context)
+
 v0.4.1 decisions (from brainstorm):
 - PR creation over direct merge for v0.4.x — maps to `autonomous: false`
 - `git merge-tree --write-tree` for conflict detection — zero side effects
@@ -145,5 +150,5 @@ Run `/kata-plan-phase [N]` to start planning phases, or `/kata-discuss-phase [N]
 ### Session Continuity
 
 Last session: 2026-03-15
-Stopped at: Completed 43-01-PLAN.md
+Stopped at: Completed 43-02-PLAN.md (Phase 43 complete)
 Resume file: None
