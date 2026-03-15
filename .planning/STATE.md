@@ -5,14 +5,14 @@
 See: .planning/PROJECT.md (updated 2026-03-15)
 
 **Core value:** Dual-track quality gates (deterministic + agent-evaluated) for AI coding agents
-**Current focus:** v0.5.0 Single-Agent Harness End-to-End — Defining requirements
+**Current focus:** v0.5.0 Single-Agent Harness End-to-End — Roadmap created, ready for execution
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: 51 (Session Vocabulary Cleanup)
 Plan: —
-Status: Defining requirements
-Last activity: 2026-03-15 — Milestone v0.5.0 started
+Status: Planned (not started)
+Last activity: 2026-03-15 — Roadmap created for v0.5.0
 
 ## Milestone Progress
 
@@ -23,7 +23,7 @@ Last activity: 2026-03-15 — Milestone v0.5.0 started
 | v0.3.0 | 9 (26-34) | 43 | 100% (shipped) |
 | v0.4.0 | 11 (35-45) | 28 | 100% (shipped) |
 | v0.4.1 | 5 (46-50) | 8 | 0% (planned) |
-| v0.5.0 | TBD | TBD | 0% (defining) |
+| v0.5.0 | 9 (51-59) | 19 | 0% (planned) |
 
 ## Accumulated Context
 
@@ -53,6 +53,20 @@ v0.5.0 decisions (from brainstorm 2026-03-15T16-14):
 - `[[sessions]]` array in RunManifest from day one (forward-compatible)
 - Session vocabulary cleanup: `AgentSession` → `GateEvalContext`
 - Struct composition (`SessionCore`) over traits for type unification (v0.6.1)
+
+### Phase-Requirement Mapping
+
+| Phase | Requirements | Theme |
+|-------|-------------|-------|
+| 51 | PREREQ-02 | Session vocabulary cleanup |
+| 52 | PREREQ-01 | GateEvalContext persistence |
+| 53 | WTREE-01, WTREE-02, WTREE-03 | Worktree session linkage |
+| 54 | WTREE-04 | Worktree tech debt (15 issues) |
+| 55 | HARNESS-01, HARNESS-02 | Harness crate + HarnessProfile type |
+| 56 | HARNESS-03, HARNESS-04 | Prompt builder + settings merger |
+| 57 | HARNESS-05, HARNESS-06, HARNESS-07 | Hook contract + Claude Code adapter |
+| 58 | MANIFEST-01, MANIFEST-02, MANIFEST-03 | RunManifest type + parsing |
+| 59 | E2E-01, E2E-02, E2E-03 | End-to-end pipeline |
 
 ### Milestone Scope Issues
 
@@ -90,10 +104,10 @@ None. v0.4.1 must ship before v0.5.0 work begins.
 
 ### Next Actions
 
-Define v0.5.0 requirements, then create roadmap.
+Begin Phase 51 (Session Vocabulary Cleanup) after v0.4.1 ships.
 
 ### Session Continuity
 
 Last session: 2026-03-15
-Stopped at: v0.5.0 milestone definition in progress
+Stopped at: v0.5.0 roadmap created, ready for execution
 Resume file: None
