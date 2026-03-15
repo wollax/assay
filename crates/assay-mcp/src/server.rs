@@ -909,13 +909,13 @@ impl AssayServer {
                     "gates": gates,
                     "feature_spec": feature_spec,
                 });
-                if let Some(err_msg) = feature_spec_error {
-                    if let Some(obj) = response.as_object_mut() {
-                        obj.insert(
-                            "feature_spec_error".to_string(),
-                            serde_json::Value::String(err_msg),
-                        );
-                    }
+                if let Some(err_msg) = feature_spec_error
+                    && let Some(obj) = response.as_object_mut()
+                {
+                    obj.insert(
+                        "feature_spec_error".to_string(),
+                        serde_json::Value::String(err_msg),
+                    );
                 }
                 if let (Some(resolved), Some(obj)) = (resolved_block, response.as_object_mut()) {
                     obj.insert("resolved".to_string(), resolved);
@@ -3070,6 +3070,69 @@ mod tests {
     // Note: both-empty → "unknown" case already covered by
     // test_format_gate_response_failed_with_empty_stderr above.
 
+    /// Build a `GateRunSummary` with a single failing criterion, reducing boilerplate in
+    /// failure-reason tests.
+    fn single_failing_summary(criterion_name: &str, stdout: &str, stderr: &str) -> GateRunSummary {
+        GateRunSummary {
+            spec_name: "test".to_string(),
+            results: vec![CriterionResult {
+                criterion_name: criterion_name.to_string(),
+                result: Some(GateResult {
+                    passed: false,
+                    kind: GateKind::Command {
+                        cmd: "failing-cmd".to_string(),
+                    },
+                    stdout: stdout.to_string(),
+                    stderr: stderr.to_string(),
+                    exit_code: Some(1),
+                    duration_ms: 42,
+                    timestamp: Utc::now(),
+                    truncated: false,
+                    original_bytes: None,
+                    evidence: None,
+                    reasoning: None,
+                    confidence: None,
+                    evaluator_role: None,
+                }),
+                enforcement: Enforcement::Required,
+            }],
+            passed: 0,
+            failed: 1,
+            skipped: 0,
+            total_duration_ms: 42,
+            enforcement: EnforcementSummary {
+                required_passed: 0,
+                required_failed: 1,
+                advisory_passed: 0,
+                advisory_failed: 0,
+            },
+        }
+    }
+
+    #[test]
+    fn test_failure_reason_stdout_multiline_uses_first_nonempty_line() {
+        // When stdout has multiple lines, only the first non-empty line should be the reason.
+        let summary = single_failing_summary("multiline-out", "first line\nsecond line\n", "");
+        let response = format_gate_response(&summary, false);
+        assert_eq!(
+            response.criteria[0].reason.as_deref(),
+            Some("first line"),
+            "reason should be first non-empty line of stdout, not entire output"
+        );
+    }
+
+    #[test]
+    fn test_failure_reason_stdout_skips_leading_empty_lines() {
+        // Leading empty lines in stdout should be skipped; the first non-empty line is used.
+        let summary = single_failing_summary("leading-empty", "\n\nreal error\nmore stuff\n", "");
+        let response = format_gate_response(&summary, false);
+        assert_eq!(
+            response.criteria[0].reason.as_deref(),
+            Some("real error"),
+            "reason should skip leading empty lines and return first non-empty line"
+        );
+    }
+
     // ── Helper function integration tests ────────────────────────────
 
     /// Create a tempdir with a valid `.assay/config.toml`.
@@ -3162,8 +3225,8 @@ mod tests {
             })
             .collect();
         assert!(
-            text.contains("No specs found") || text.contains("nonexistent"),
-            "error should contain diagnostic message, got: {text}"
+            text.contains("No specs found"),
+            "error should contain 'No specs found', got: {text}"
         );
     }
 
@@ -4170,8 +4233,8 @@ cmd = "echo ok"
         );
         let text = extract_text(&result);
         assert!(
-            text.contains("No specs found") || text.contains("nonexistent"),
-            "error should contain diagnostic message, got: {text}"
+            text.contains("No specs found"),
+            "error should contain 'No specs found', got: {text}"
         );
     }
 
@@ -4256,8 +4319,8 @@ cmd = "echo ok"
         );
         let text = extract_text(&result);
         assert!(
-            text.contains("No specs found") || text.contains("nonexistent"),
-            "error should contain diagnostic message, got: {text}"
+            text.contains("No specs found"),
+            "error should contain 'No specs found', got: {text}"
         );
     }
 
@@ -4305,8 +4368,8 @@ cmd = "echo ok"
         );
         let text = extract_text(&result);
         assert!(
-            text.contains("does not exist") || text.contains("not a directory"),
-            "error should mention missing working dir, got: {text}"
+            text.contains("working directory does not exist or is not a directory"),
+            "error should describe the invalid working dir, got: {text}"
         );
     }
 
@@ -5002,6 +5065,65 @@ cmd = "echo ok"
         assert_eq!(wd["accessible"], true, "CWD should be accessible");
     }
 
+    #[tokio::test]
+    #[serial]
+    async fn spec_get_resolve_true_directory_format_returns_resolved_block() {
+        let dir = create_project(r#"project_name = "handler-test""#);
+        // Create a directory-format spec
+        let spec_dir = dir.path().join(".assay").join("specs").join("dir-spec");
+        std::fs::create_dir_all(&spec_dir).unwrap();
+        std::fs::write(
+            spec_dir.join("gates.toml"),
+            r#"
+name = "dir-spec"
+description = "Directory format spec"
+
+[[criteria]]
+name = "compiles"
+description = "Code compiles"
+cmd = "echo ok"
+"#,
+        )
+        .unwrap();
+
+        std::env::set_current_dir(dir.path()).unwrap();
+
+        let server = AssayServer::new();
+        let result = server
+            .spec_get(Parameters(SpecGetParams {
+                name: "dir-spec".to_string(),
+                resolve: true,
+            }))
+            .await
+            .unwrap();
+
+        assert!(
+            !result.is_error.unwrap_or(false),
+            "spec_get should succeed for directory spec"
+        );
+        let text = extract_text(&result);
+        let json: serde_json::Value = serde_json::from_str(&text).unwrap();
+
+        assert_eq!(
+            json["format"], "directory",
+            "should report directory format"
+        );
+        assert!(
+            json.get("gates").is_some(),
+            "directory spec should have gates key"
+        );
+        let resolved = json
+            .get("resolved")
+            .expect("resolved key should be present when resolve=true for directory specs");
+        let timeout = &resolved["timeout"];
+        assert_eq!(timeout["effective"], 300, "default effective timeout");
+        let wd = &resolved["working_dir"];
+        assert!(
+            wd["path"].is_string(),
+            "working_dir.path should be a string"
+        );
+    }
+
     // ── Session tool tests ───────────────────────────────────────────
 
     fn create_session_params(spec_name: &str) -> SessionCreateParams {
@@ -5563,7 +5685,7 @@ cmd = "echo ok"
         );
         let text = extract_text(&result);
         assert!(
-            text.contains("not found") || text.contains("Not found"),
+            text.contains("not found"),
             "error should mention 'not found', got: {text}"
         );
     }
