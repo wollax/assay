@@ -305,6 +305,22 @@ pub enum AssayError {
         /// Description of the validation failure.
         message: String,
     },
+
+    /// WorkSession transition error (invalid phase transition).
+    #[error("work session `{session_id}` transition error: {message}")]
+    WorkSessionTransition {
+        /// The session ID involved.
+        session_id: String,
+        /// Description of the invalid transition.
+        message: String,
+    },
+
+    /// WorkSession not found on disk.
+    #[error("work session `{session_id}` not found")]
+    WorkSessionNotFound {
+        /// The session ID that was looked up.
+        session_id: String,
+    },
 }
 
 impl AssayError {
