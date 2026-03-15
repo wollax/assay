@@ -193,7 +193,12 @@ pub fn start_session(
     agent_model: Option<&str>,
 ) -> Result<WorkSession> {
     let mut session = create_work_session(spec_name, worktree_path, agent_command, agent_model);
-    transition_session(&mut session, SessionPhase::AgentRunning, "session_start", None)?;
+    transition_session(
+        &mut session,
+        SessionPhase::AgentRunning,
+        "session_start",
+        None,
+    )?;
     save_session(assay_dir, &session)?;
     Ok(session)
 }
@@ -229,13 +234,14 @@ pub fn complete_session(
 }
 
 /// Mark a session as abandoned with a reason.
-pub fn abandon_session(
-    assay_dir: &Path,
-    session_id: &str,
-    reason: &str,
-) -> Result<WorkSession> {
+pub fn abandon_session(assay_dir: &Path, session_id: &str, reason: &str) -> Result<WorkSession> {
     with_session(assay_dir, session_id, |session| {
-        transition_session(session, SessionPhase::Abandoned, "session_abandon", Some(reason))
+        transition_session(
+            session,
+            SessionPhase::Abandoned,
+            "session_abandon",
+            Some(reason),
+        )
     })
 }
 
@@ -572,18 +578,17 @@ mod tests {
     #[test]
     fn record_gate_result_happy_path() {
         let dir = TempDir::new().unwrap();
-        let session = start_session(
+        let session =
+            start_session(dir.path(), "spec", PathBuf::from("/tmp/wt"), "claude", None).unwrap();
+
+        let updated = record_gate_result(
             dir.path(),
-            "spec",
-            PathBuf::from("/tmp/wt"),
-            "claude",
-            None,
+            &session.id,
+            "run-001",
+            "gate_eval",
+            Some("passed"),
         )
         .unwrap();
-
-        let updated =
-            record_gate_result(dir.path(), &session.id, "run-001", "gate_eval", Some("passed"))
-                .unwrap();
 
         assert_eq!(updated.phase, SessionPhase::GateEvaluated);
         assert_eq!(updated.gate_runs, vec!["run-001"]);
@@ -616,14 +621,8 @@ mod tests {
     #[test]
     fn complete_session_full_lifecycle() {
         let dir = TempDir::new().unwrap();
-        let session = start_session(
-            dir.path(),
-            "spec",
-            PathBuf::from("/tmp/wt"),
-            "claude",
-            None,
-        )
-        .unwrap();
+        let session =
+            start_session(dir.path(), "spec", PathBuf::from("/tmp/wt"), "claude", None).unwrap();
 
         let evaluated =
             record_gate_result(dir.path(), &session.id, "run-001", "gate_eval", None).unwrap();
@@ -641,14 +640,8 @@ mod tests {
     #[test]
     fn abandon_session_from_agent_running() {
         let dir = TempDir::new().unwrap();
-        let session = start_session(
-            dir.path(),
-            "spec",
-            PathBuf::from("/tmp/wt"),
-            "claude",
-            None,
-        )
-        .unwrap();
+        let session =
+            start_session(dir.path(), "spec", PathBuf::from("/tmp/wt"), "claude", None).unwrap();
 
         let abandoned = abandon_session(dir.path(), &session.id, "agent crashed").unwrap();
 
@@ -664,8 +657,7 @@ mod tests {
         let session = create_work_session("spec", PathBuf::from("/tmp/wt"), "claude", None);
         save_session(dir.path(), &session).unwrap();
 
-        let abandoned =
-            abandon_session(dir.path(), &session.id, "stale recovery sweep").unwrap();
+        let abandoned = abandon_session(dir.path(), &session.id, "stale recovery sweep").unwrap();
 
         assert_eq!(abandoned.phase, SessionPhase::Abandoned);
         let loaded = load_session(dir.path(), &session.id).unwrap();
