@@ -1,6 +1,6 @@
-//! MCP server implementation with spec, gate, context, and worktree tools.
+//! MCP server implementation with spec, gate, context, worktree, and session tools.
 //!
-//! Provides the [`AssayServer`] which exposes thirteen tools over MCP:
+//! Provides the [`AssayServer`] which exposes seventeen tools over MCP:
 //! - `spec_list` — discover available specs
 //! - `spec_get` — read a full spec definition
 //! - `spec_validate` — statically validate a spec without running it
@@ -14,6 +14,10 @@
 //! - `worktree_list` — list all active assay-managed worktrees
 //! - `worktree_status` — check worktree status (branch, dirty, ahead/behind)
 //! - `worktree_cleanup` — remove a worktree and its branch
+//! - `session_create` — create a new work session for a spec
+//! - `session_get` — retrieve full session details by ID
+//! - `session_update` — transition session phase and link gate runs
+//! - `session_list` — list sessions with optional spec_name and status filters
 //!
 //! All domain errors are returned as `CallToolResult` with `isError: true`
 //! so that agents can see and self-correct. Protocol errors (`McpError`)
@@ -35,6 +39,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
 use assay_core::spec::SpecEntry;
+use assay_types::work_session::SessionPhase;
 use assay_types::{
     AgentEvaluation, AgentSession, Confidence, Config, CriterionKind, EvaluatorRole,
 };
@@ -264,6 +269,86 @@ pub struct WorktreeCleanupParams {
     pub worktree_dir: Option<String>,
 }
 
+/// Parameters for the `session_create` tool.
+#[derive(Deserialize, JsonSchema)]
+pub struct SessionCreateParams {
+    /// Spec name this session is for.
+    #[schemars(description = "Spec name (slug, e.g. 'auth-flow')")]
+    pub spec_name: String,
+
+    /// Path to the worktree associated with this session.
+    #[schemars(description = "Absolute path to the worktree directory")]
+    pub worktree_path: PathBuf,
+
+    /// Command used to invoke the agent.
+    #[schemars(description = "Agent invocation command (e.g. 'claude --spec auth-flow')")]
+    pub agent_command: String,
+
+    /// Model used by the agent, if known.
+    #[schemars(description = "Model used by the agent (e.g. 'claude-sonnet-4-20250514')")]
+    #[serde(default)]
+    pub agent_model: Option<String>,
+}
+
+/// Parameters for the `session_get` tool.
+#[derive(Deserialize, JsonSchema)]
+pub struct SessionGetParams {
+    /// Session ID to retrieve.
+    #[schemars(description = "Session ID (ULID string) to retrieve")]
+    pub session_id: String,
+}
+
+/// Parameters for the `session_update` tool.
+#[derive(Deserialize, JsonSchema)]
+pub struct SessionUpdateParams {
+    /// Session ID to update.
+    #[schemars(description = "Session ID (ULID string) to update")]
+    pub session_id: String,
+
+    /// Target phase to transition to.
+    #[schemars(
+        description = "Target phase: 'agent_running', 'gate_evaluated', 'completed', or 'abandoned'"
+    )]
+    pub phase: SessionPhase,
+
+    /// What triggered the transition.
+    #[schemars(
+        description = "What triggered the transition (e.g. 'agent_started', 'gate_passed', 'user_abandoned')"
+    )]
+    pub trigger: String,
+
+    /// Optional notes about the transition.
+    #[schemars(description = "Optional notes about the transition")]
+    #[serde(default)]
+    pub notes: Option<String>,
+
+    /// Gate run IDs to link to this session.
+    #[schemars(description = "Gate run IDs to append to this session's gate_runs list")]
+    #[serde(default)]
+    pub gate_run_ids: Vec<String>,
+}
+
+/// Parameters for the `session_list` tool.
+#[derive(Deserialize, JsonSchema)]
+pub struct SessionListParams {
+    /// Filter by spec name.
+    #[schemars(description = "Filter sessions by spec name (exact match)")]
+    #[serde(default)]
+    pub spec_name: Option<String>,
+
+    /// Filter by session phase.
+    #[schemars(
+        description = "Filter by phase: 'created', 'agent_running', 'gate_evaluated', 'completed', or 'abandoned'"
+    )]
+    #[serde(default)]
+    pub phase: Option<SessionPhase>,
+
+    /// Maximum number of sessions to return (default: 20, max: 100).
+    #[schemars(description = "Maximum sessions to return (default: 20, max: 100)")]
+    #[serde(default)]
+    pub limit: Option<usize>,
+}
+
 // ── Response structs ─────────────────────────────────────────────────
 
 /// A single entry in the `spec_list` response.
@@ -465,6 +550,78 @@ fn option_is_none_or_false(v: &Option<bool>) -> bool {
     !matches!(v, Some(true))
 }
 
+/// Response from `session_create`.
+#[derive(Serialize)]
+struct SessionCreateResponse {
+    /// The new session's unique ID (ULID).
+    session_id: String,
+    /// Spec name the session was created for.
+    spec_name: String,
+    /// Initial phase (always "created").
+    phase: SessionPhase,
+    /// ISO 8601 creation timestamp.
+    created_at: chrono::DateTime<chrono::Utc>,
+    /// Warnings about degraded operations.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    warnings: Vec<String>,
+}
+
+/// Response from `session_get`.
+#[derive(Serialize)]
+struct SessionGetResponse {
+    /// Full session data.
+    // CONSTRAINT: WorkSession must never add a `warnings` field — it would collide with the
+    // response-level warnings below. If WorkSession needs warnings, wrap in a named `session` key instead.
+    #[serde(flatten)]
+    session: assay_types::work_session::WorkSession,
+    /// Warnings about degraded operations.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    warnings: Vec<String>,
+}
+
+/// Response from `session_update`.
+#[derive(Serialize)]
+struct SessionUpdateResponse {
+    /// Session ID that was updated.
+    session_id: String,
+    /// Previous phase.
+    previous_phase: SessionPhase,
+    /// New current phase.
+    current_phase: SessionPhase,
+    /// Number of gate run IDs now linked.
+    gate_runs_count: usize,
+    /// Warnings about degraded operations.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    warnings: Vec<String>,
+}
+
+/// A summary entry in the `session_list` response.
+#[derive(Serialize)]
+struct SessionListEntry {
+    /// Session ID (ULID).
+    id: String,
+    /// Spec name.
+    spec_name: String,
+    /// Current phase.
+    phase: SessionPhase,
+    /// ISO 8601 creation timestamp.
+    created_at: chrono::DateTime<chrono::Utc>,
+    /// Number of gate runs linked.
+    gate_runs_count: usize,
+}
+
+/// Response from `session_list`.
+#[derive(Serialize)]
+struct SessionListResponse {
+    /// Total sessions on disk before filtering (includes all phases and specs).
+    total_on_disk: usize,
+    /// Matched sessions after filtering.
+    sessions: Vec<SessionListEntry>,
+    /// Warnings about degraded operations (e.g., unreadable session files).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    warnings: Vec<String>,
+}
+
 // ── Constants ────────────────────────────────────────────────────────
 
 /// Session timeout in seconds (30 minutes).
@@ -490,7 +647,7 @@ struct TimedOutInfo {
 
 // ── Server struct ────────────────────────────────────────────────────
 
-/// MCP server exposing Assay spec and gate operations as tools.
+/// MCP server exposing Assay spec, gate, context, worktree, and session operations as tools.
 #[derive(Clone)]
 pub struct AssayServer {
     tool_router: ToolRouter<Self>,
@@ -1363,6 +1520,216 @@ impl AssayServer {
             .map_err(|e| McpError::internal_error(format!("serialization failed: {e}"), None))?;
         Ok(CallToolResult::success(vec![Content::text(json)]))
     }
+
+    // ── Session tools ────────────────────────────────────────────────
+
+    /// Create a new work session for a spec.
+    #[tool(
+        description = "Create a new work session for a spec. Returns the session ID and initial state. \
+            The session starts in 'created' phase. Use session_update to advance through phases \
+            (agent_running → gate_evaluated → completed) or abandon. Validates that the spec exists."
+    )]
+    pub async fn session_create(
+        &self,
+        params: Parameters<SessionCreateParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let cwd = resolve_cwd()?;
+        let config = match load_config(&cwd) {
+            Ok(c) => c,
+            Err(err_result) => return Ok(err_result),
+        };
+
+        // Validate spec exists (consistent with gate_run)
+        if let Err(err_result) = load_spec_entry_mcp(&cwd, &config, &params.0.spec_name) {
+            return Ok(err_result);
+        }
+
+        let assay_dir = cwd.join(".assay");
+        let session = assay_core::work_session::create_work_session(
+            &params.0.spec_name,
+            params.0.worktree_path,
+            &params.0.agent_command,
+            params.0.agent_model.as_deref(),
+        );
+
+        if let Err(e) = assay_core::work_session::save_session(&assay_dir, &session) {
+            return Ok(domain_error(&e));
+        }
+
+        let response = SessionCreateResponse {
+            session_id: session.id,
+            spec_name: session.spec_name,
+            phase: session.phase,
+            created_at: session.created_at,
+            warnings: Vec::new(),
+        };
+
+        let json = serde_json::to_string(&response)
+            .map_err(|e| McpError::internal_error(format!("serialization failed: {e}"), None))?;
+        Ok(CallToolResult::success(vec![Content::text(json)]))
+    }
+
+    /// Get a work session by ID.
+    #[tool(
+        description = "Get a work session by ID. Returns the full session including phase, transitions, \
+            agent info, and linked gate runs. Use session_list to find session IDs."
+    )]
+    pub async fn session_get(
+        &self,
+        params: Parameters<SessionGetParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let cwd = resolve_cwd()?;
+        let assay_dir = cwd.join(".assay");
+
+        let session = match assay_core::work_session::load_session(&assay_dir, &params.0.session_id)
+        {
+            Ok(s) => s,
+            Err(e) => {
+                let msg = format!("{e}. Use session_list to find valid session IDs.");
+                return Ok(CallToolResult::error(vec![Content::text(msg)]));
+            }
+        };
+
+        let response = SessionGetResponse {
+            session,
+            warnings: Vec::new(),
+        };
+
+        let json = serde_json::to_string(&response)
+            .map_err(|e| McpError::internal_error(format!("serialization failed: {e}"), None))?;
+        Ok(CallToolResult::success(vec![Content::text(json)]))
+    }
+
+    /// Update a work session: transition phase and/or link gate run IDs.
+    #[tool(
+        description = "Update a work session: transition phase and/or link gate run IDs. \
+            Valid transitions: created→agent_running, agent_running→gate_evaluated, \
+            gate_evaluated→completed, any non-terminal→abandoned. \
+            Terminal phases (completed, abandoned) cannot be transitioned out of. \
+            Invalid transitions are rejected with a clear error message."
+    )]
+    pub async fn session_update(
+        &self,
+        params: Parameters<SessionUpdateParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let cwd = resolve_cwd()?;
+        let assay_dir = cwd.join(".assay");
+
+        let mut session =
+            match assay_core::work_session::load_session(&assay_dir, &params.0.session_id) {
+                Ok(s) => s,
+                Err(e) => {
+                    let msg = format!("{e}. Use session_list to find valid session IDs.");
+                    return Ok(CallToolResult::error(vec![Content::text(msg)]));
+                }
+            };
+
+        let previous_phase = session.phase;
+
+        if let Err(e) = assay_core::work_session::transition_session(
+            &mut session,
+            params.0.phase,
+            &params.0.trigger,
+            params.0.notes.as_deref(),
+        ) {
+            return Ok(domain_error(&e));
+        }
+
+        // Append gate run IDs (deduplicated)
+        for id in &params.0.gate_run_ids {
+            if !session.gate_runs.contains(id) {
+                session.gate_runs.push(id.clone());
+            }
+        }
+
+        if let Err(e) = assay_core::work_session::save_session(&assay_dir, &session) {
+            let msg = format!(
+                "Failed to persist session update: {e}. The transition was not saved — retry the same update."
+            );
+            return Ok(CallToolResult::error(vec![Content::text(msg)]));
+        }
+
+        let response = SessionUpdateResponse {
+            session_id: session.id,
+            previous_phase,
+            current_phase: session.phase,
+            gate_runs_count: session.gate_runs.len(),
+            warnings: Vec::new(),
+        };
+
+        let json = serde_json::to_string(&response)
+            .map_err(|e| McpError::internal_error(format!("serialization failed: {e}"), None))?;
+        Ok(CallToolResult::success(vec![Content::text(json)]))
+    }
+
+    /// List work sessions with optional filters.
+    #[tool(
+        description = "List work sessions with optional filters. Returns summary entries \
+            (id, spec_name, phase, created_at, gate_runs_count). \
+            Filter by spec_name (exact match) and/or status (phase). \
+            Results are ordered chronologically (oldest first, ULID order)."
+    )]
+    pub async fn session_list(
+        &self,
+        params: Parameters<SessionListParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let cwd = resolve_cwd()?;
+        let assay_dir = cwd.join(".assay");
+        let mut warnings = Vec::new();
+
+        let ids = match assay_core::work_session::list_sessions(&assay_dir) {
+            Ok(ids) => ids,
+            Err(e) => return Ok(domain_error(&e)),
+        };
+
+        let total = ids.len();
+        let limit = params.0.limit.unwrap_or(20).clamp(1, 100);
+
+        let mut sessions = Vec::new();
+        for id in &ids {
+            let session = match assay_core::work_session::load_session(&assay_dir, id) {
+                Ok(s) => s,
+                Err(e) => {
+                    warnings.push(format!("skipping session {id}: {e}"));
+                    continue;
+                }
+            };
+
+            // Apply filters
+            if let Some(ref spec_filter) = params.0.spec_name
+                && session.spec_name != *spec_filter
+            {
+                continue;
+            }
+            if let Some(phase_filter) = params.0.phase
+                && session.phase != phase_filter
+            {
+                continue;
+            }
+
+            sessions.push(SessionListEntry {
+                id: session.id,
+                spec_name: session.spec_name,
+                phase: session.phase,
+                created_at: session.created_at,
+                gate_runs_count: session.gate_runs.len(),
+            });
+
+            if sessions.len() >= limit {
+                break;
+            }
+        }
+
+        let response = SessionListResponse {
+            total_on_disk: total,
+            sessions,
+            warnings,
+        };
+
+        let json = serde_json::to_string(&response)
+            .map_err(|e| McpError::internal_error(format!("serialization failed: {e}"), None))?;
+        Ok(CallToolResult::success(vec![Content::text(json)]))
+    }
 }
 
 // ── Private helpers ──────────────────────────────────────────────────
@@ -1409,7 +1776,13 @@ impl ServerHandler for AssayServer {
                  Use context_diagnose for full session diagnostics with bloat analysis, \
                  or estimate_tokens for a quick context health check. \
                  Use worktree_create to isolate spec work in a git worktree, \
-                 worktree_list/worktree_status to inspect, and worktree_cleanup to remove."
+                 worktree_list/worktree_status to inspect, and worktree_cleanup to remove. \
+                 Use session_create to start a long-running work session for tracking \
+                 a spec through its full lifecycle (distinct from gate_run, which creates \
+                 ephemeral in-memory evaluation sessions). Use session_get to retrieve \
+                 full session details by ID, session_update to advance session phase \
+                 and link gate runs, and session_list to enumerate sessions with \
+                 optional filters."
                     .to_string(),
             ),
         }
@@ -3747,7 +4120,10 @@ cmd = "echo ok"
     fn test_spec_get_params_resolve_false_explicit() {
         let json = serde_json::json!({"name": "my-spec", "resolve": false});
         let params: SpecGetParams = serde_json::from_value(json).unwrap();
-        assert!(!params.resolve, "resolve should be false when explicitly set");
+        assert!(
+            !params.resolve,
+            "resolve should be false when explicitly set"
+        );
     }
 
     #[tokio::test]
@@ -3840,9 +4216,18 @@ cmd = "echo ok"
 
         // Working dir shape
         let wd = &resolved["working_dir"];
-        assert!(wd["path"].is_string(), "working_dir.path should be a string");
-        assert!(wd["exists"].is_boolean(), "working_dir.exists should be a bool");
-        assert!(wd["accessible"].is_boolean(), "working_dir.accessible should be a bool");
+        assert!(
+            wd["path"].is_string(),
+            "working_dir.path should be a string"
+        );
+        assert!(
+            wd["exists"].is_boolean(),
+            "working_dir.exists should be a bool"
+        );
+        assert!(
+            wd["accessible"].is_boolean(),
+            "working_dir.accessible should be a bool"
+        );
     }
 
     #[tokio::test]
@@ -3887,9 +4272,15 @@ cmd = "echo ok"
         let json: serde_json::Value = serde_json::from_str(&text).unwrap();
 
         let timeout = &json["resolved"]["timeout"];
-        assert_eq!(timeout["effective"], 120, "effective should use config timeout");
+        assert_eq!(
+            timeout["effective"], 120,
+            "effective should use config timeout"
+        );
         assert!(timeout["spec"].is_null(), "spec tier should be null");
-        assert_eq!(timeout["config"], 120, "config tier should show the configured value");
+        assert_eq!(
+            timeout["config"], 120,
+            "config tier should show the configured value"
+        );
         assert_eq!(timeout["default"], 300, "default tier is always 300");
     }
 
@@ -3930,5 +4321,874 @@ cmd = "echo ok"
         // CWD is a temp dir that exists and is accessible
         assert_eq!(wd["exists"], true, "CWD should exist");
         assert_eq!(wd["accessible"], true, "CWD should be accessible");
+    }
+
+    // ── Session tool tests ───────────────────────────────────────────
+
+    fn create_session_params(spec_name: &str) -> SessionCreateParams {
+        SessionCreateParams {
+            spec_name: spec_name.to_string(),
+            worktree_path: PathBuf::from("/tmp/wt/test"),
+            agent_command: "claude --spec test".to_string(),
+            agent_model: Some("claude-sonnet-4-20250514".to_string()),
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn session_create_happy_path() {
+        let dir = create_project(r#"project_name = "session-test""#);
+        create_spec(
+            dir.path(),
+            "specs",
+            "auth-flow.toml",
+            r#"
+name = "auth-flow"
+description = "Auth flow spec"
+
+[[criteria]]
+name = "check"
+description = "A check"
+cmd = "echo ok"
+"#,
+        );
+
+        std::env::set_current_dir(dir.path()).unwrap();
+
+        let server = AssayServer::new();
+        let result = server
+            .session_create(Parameters(create_session_params("auth-flow")))
+            .await
+            .unwrap();
+
+        assert!(!result.is_error.unwrap_or(false));
+        let text = extract_text(&result);
+        let json: serde_json::Value = serde_json::from_str(&text).unwrap();
+
+        assert!(json["session_id"].is_string());
+        assert_eq!(
+            json["session_id"].as_str().unwrap().len(),
+            26,
+            "ULID is 26 chars"
+        );
+        assert_eq!(json["spec_name"], "auth-flow");
+        assert_eq!(json["phase"], "created");
+        assert!(json["created_at"].is_string());
+        // No warnings field when empty (skip_serializing_if)
+        assert!(json.get("warnings").is_none() || json["warnings"].as_array().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn session_create_invalid_spec() {
+        let dir = create_project(r#"project_name = "session-test""#);
+        create_spec(
+            dir.path(),
+            "specs",
+            "real.toml",
+            r#"
+name = "real"
+description = "Real spec"
+
+[[criteria]]
+name = "check"
+description = "A check"
+cmd = "echo ok"
+"#,
+        );
+
+        std::env::set_current_dir(dir.path()).unwrap();
+
+        let server = AssayServer::new();
+        let result = server
+            .session_create(Parameters(create_session_params("nonexistent")))
+            .await
+            .unwrap();
+
+        assert!(
+            result.is_error.unwrap_or(false),
+            "should return domain error for unknown spec"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn session_get_happy_path() {
+        let dir = create_project(r#"project_name = "session-test""#);
+        create_spec(
+            dir.path(),
+            "specs",
+            "my-spec.toml",
+            r#"
+name = "my-spec"
+description = "My spec"
+
+[[criteria]]
+name = "check"
+description = "A check"
+cmd = "echo ok"
+"#,
+        );
+
+        std::env::set_current_dir(dir.path()).unwrap();
+
+        let server = AssayServer::new();
+
+        // Create a session first
+        let create_result = server
+            .session_create(Parameters(create_session_params("my-spec")))
+            .await
+            .unwrap();
+        let create_json: serde_json::Value =
+            serde_json::from_str(&extract_text(&create_result)).unwrap();
+        let session_id = create_json["session_id"].as_str().unwrap().to_string();
+
+        // Get it
+        let result = server
+            .session_get(Parameters(SessionGetParams {
+                session_id: session_id.clone(),
+            }))
+            .await
+            .unwrap();
+
+        assert!(!result.is_error.unwrap_or(false));
+        let json: serde_json::Value = serde_json::from_str(&extract_text(&result)).unwrap();
+        assert_eq!(json["id"], session_id);
+        assert_eq!(json["spec_name"], "my-spec");
+        assert_eq!(json["phase"], "created");
+        assert!(json["agent"]["command"].is_string());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn session_get_not_found() {
+        let dir = create_project(r#"project_name = "session-test""#);
+        std::env::set_current_dir(dir.path()).unwrap();
+
+        let server = AssayServer::new();
+        let result = server
+            .session_get(Parameters(SessionGetParams {
+                session_id: "01NONEXISTENT0000000000000".to_string(),
+            }))
+            .await
+            .unwrap();
+
+        assert!(
+            result.is_error.unwrap_or(false),
+            "should return error for nonexistent session"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn session_update_happy_path() {
+        let dir = create_project(r#"project_name = "session-test""#);
+        create_spec(
+            dir.path(),
+            "specs",
+            "up-spec.toml",
+            r#"
+name = "up-spec"
+description = "Update spec"
+
+[[criteria]]
+name = "check"
+description = "A check"
+cmd = "echo ok"
+"#,
+        );
+
+        std::env::set_current_dir(dir.path()).unwrap();
+
+        let server = AssayServer::new();
+
+        // Create session
+        let create_result = server
+            .session_create(Parameters(create_session_params("up-spec")))
+            .await
+            .unwrap();
+        let create_json: serde_json::Value =
+            serde_json::from_str(&extract_text(&create_result)).unwrap();
+        let session_id = create_json["session_id"].as_str().unwrap().to_string();
+
+        // Update to agent_running
+        let result = server
+            .session_update(Parameters(SessionUpdateParams {
+                session_id: session_id.clone(),
+                phase: SessionPhase::AgentRunning,
+                trigger: "agent_started".to_string(),
+                notes: None,
+                gate_run_ids: vec![],
+            }))
+            .await
+            .unwrap();
+
+        assert!(!result.is_error.unwrap_or(false));
+        let json: serde_json::Value = serde_json::from_str(&extract_text(&result)).unwrap();
+        assert_eq!(json["session_id"], session_id);
+        assert_eq!(json["previous_phase"], "created");
+        assert_eq!(json["current_phase"], "agent_running");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn session_update_invalid_transition() {
+        let dir = create_project(r#"project_name = "session-test""#);
+        create_spec(
+            dir.path(),
+            "specs",
+            "inv-spec.toml",
+            r#"
+name = "inv-spec"
+description = "Invalid transition spec"
+
+[[criteria]]
+name = "check"
+description = "A check"
+cmd = "echo ok"
+"#,
+        );
+
+        std::env::set_current_dir(dir.path()).unwrap();
+
+        let server = AssayServer::new();
+
+        // Create session (in "created" phase)
+        let create_result = server
+            .session_create(Parameters(create_session_params("inv-spec")))
+            .await
+            .unwrap();
+        let create_json: serde_json::Value =
+            serde_json::from_str(&extract_text(&create_result)).unwrap();
+        let session_id = create_json["session_id"].as_str().unwrap().to_string();
+
+        // Try to skip to completed (invalid: created -> completed)
+        let result = server
+            .session_update(Parameters(SessionUpdateParams {
+                session_id,
+                phase: SessionPhase::Completed,
+                trigger: "skip".to_string(),
+                notes: None,
+                gate_run_ids: vec![],
+            }))
+            .await
+            .unwrap();
+
+        assert!(
+            result.is_error.unwrap_or(false),
+            "should reject invalid transition created -> completed"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn session_update_with_gate_run_ids() {
+        let dir = create_project(r#"project_name = "session-test""#);
+        create_spec(
+            dir.path(),
+            "specs",
+            "gr-spec.toml",
+            r#"
+name = "gr-spec"
+description = "Gate run IDs spec"
+
+[[criteria]]
+name = "check"
+description = "A check"
+cmd = "echo ok"
+"#,
+        );
+
+        std::env::set_current_dir(dir.path()).unwrap();
+
+        let server = AssayServer::new();
+
+        // Create and advance to agent_running
+        let create_result = server
+            .session_create(Parameters(create_session_params("gr-spec")))
+            .await
+            .unwrap();
+        let create_json: serde_json::Value =
+            serde_json::from_str(&extract_text(&create_result)).unwrap();
+        let session_id = create_json["session_id"].as_str().unwrap().to_string();
+
+        // Update with gate_run_ids including a duplicate
+        let result = server
+            .session_update(Parameters(SessionUpdateParams {
+                session_id: session_id.clone(),
+                phase: SessionPhase::AgentRunning,
+                trigger: "agent_started".to_string(),
+                notes: None,
+                gate_run_ids: vec![
+                    "run-001".to_string(),
+                    "run-002".to_string(),
+                    "run-001".to_string(), // duplicate
+                ],
+            }))
+            .await
+            .unwrap();
+
+        assert!(!result.is_error.unwrap_or(false));
+        let json: serde_json::Value = serde_json::from_str(&extract_text(&result)).unwrap();
+        assert_eq!(
+            json["gate_runs_count"], 2,
+            "duplicates should be deduplicated"
+        );
+
+        // Verify via session_get
+        let get_result = server
+            .session_get(Parameters(SessionGetParams {
+                session_id: session_id.clone(),
+            }))
+            .await
+            .unwrap();
+        let get_json: serde_json::Value = serde_json::from_str(&extract_text(&get_result)).unwrap();
+        let gate_runs = get_json["gate_runs"].as_array().unwrap();
+        assert_eq!(gate_runs.len(), 2);
+        assert_eq!(gate_runs[0], "run-001");
+        assert_eq!(gate_runs[1], "run-002");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn session_list_empty() {
+        let dir = create_project(r#"project_name = "session-test""#);
+        std::env::set_current_dir(dir.path()).unwrap();
+
+        let server = AssayServer::new();
+        let result = server
+            .session_list(Parameters(SessionListParams {
+                spec_name: None,
+                phase: None,
+                limit: None,
+            }))
+            .await
+            .unwrap();
+
+        assert!(!result.is_error.unwrap_or(false));
+        let json: serde_json::Value = serde_json::from_str(&extract_text(&result)).unwrap();
+        assert_eq!(json["total_on_disk"], 0);
+        assert_eq!(json["sessions"].as_array().unwrap().len(), 0);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn session_list_with_spec_name_filter() {
+        let dir = create_project(r#"project_name = "session-test""#);
+        create_spec(
+            dir.path(),
+            "specs",
+            "alpha.toml",
+            r#"
+name = "alpha"
+description = "Alpha spec"
+
+[[criteria]]
+name = "check"
+description = "A check"
+cmd = "echo ok"
+"#,
+        );
+        create_spec(
+            dir.path(),
+            "specs",
+            "beta.toml",
+            r#"
+name = "beta"
+description = "Beta spec"
+
+[[criteria]]
+name = "check"
+description = "A check"
+cmd = "echo ok"
+"#,
+        );
+
+        std::env::set_current_dir(dir.path()).unwrap();
+
+        let server = AssayServer::new();
+
+        // Create sessions for both specs
+        let mut alpha_params = create_session_params("alpha");
+        alpha_params.spec_name = "alpha".to_string();
+        server
+            .session_create(Parameters(alpha_params))
+            .await
+            .unwrap();
+
+        let mut beta_params = create_session_params("beta");
+        beta_params.spec_name = "beta".to_string();
+        server
+            .session_create(Parameters(beta_params))
+            .await
+            .unwrap();
+
+        // Filter by alpha
+        let result = server
+            .session_list(Parameters(SessionListParams {
+                spec_name: Some("alpha".to_string()),
+                phase: None,
+                limit: None,
+            }))
+            .await
+            .unwrap();
+
+        let json: serde_json::Value = serde_json::from_str(&extract_text(&result)).unwrap();
+        assert_eq!(json["total_on_disk"], 2, "total is before filtering");
+        let sessions = json["sessions"].as_array().unwrap();
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0]["spec_name"], "alpha");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn session_list_with_status_filter() {
+        let dir = create_project(r#"project_name = "session-test""#);
+        create_spec(
+            dir.path(),
+            "specs",
+            "status-spec.toml",
+            r#"
+name = "status-spec"
+description = "Status filter spec"
+
+[[criteria]]
+name = "check"
+description = "A check"
+cmd = "echo ok"
+"#,
+        );
+
+        std::env::set_current_dir(dir.path()).unwrap();
+
+        let server = AssayServer::new();
+
+        // Create two sessions
+        let mut p1 = create_session_params("status-spec");
+        p1.spec_name = "status-spec".to_string();
+        let r1 = server.session_create(Parameters(p1)).await.unwrap();
+        let j1: serde_json::Value = serde_json::from_str(&extract_text(&r1)).unwrap();
+        let id1 = j1["session_id"].as_str().unwrap().to_string();
+
+        let mut p2 = create_session_params("status-spec");
+        p2.spec_name = "status-spec".to_string();
+        server.session_create(Parameters(p2)).await.unwrap();
+
+        // Advance first session to agent_running
+        server
+            .session_update(Parameters(SessionUpdateParams {
+                session_id: id1,
+                phase: SessionPhase::AgentRunning,
+                trigger: "agent_started".to_string(),
+                notes: None,
+                gate_run_ids: vec![],
+            }))
+            .await
+            .unwrap();
+
+        // Filter by created phase — should only return the second session
+        let result = server
+            .session_list(Parameters(SessionListParams {
+                spec_name: None,
+                phase: Some(SessionPhase::Created),
+                limit: None,
+            }))
+            .await
+            .unwrap();
+
+        let json: serde_json::Value = serde_json::from_str(&extract_text(&result)).unwrap();
+        let sessions = json["sessions"].as_array().unwrap();
+        assert_eq!(
+            sessions.len(),
+            1,
+            "only one session should be in 'created' phase"
+        );
+        assert_eq!(sessions[0]["phase"], "created");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn session_list_respects_limit() {
+        let dir = create_project(r#"project_name = "session-test""#);
+        create_spec(
+            dir.path(),
+            "specs",
+            "limit-spec.toml",
+            r#"
+name = "limit-spec"
+description = "Limit spec"
+
+[[criteria]]
+name = "check"
+description = "A check"
+cmd = "echo ok"
+"#,
+        );
+
+        std::env::set_current_dir(dir.path()).unwrap();
+
+        let server = AssayServer::new();
+
+        // Create 3 sessions
+        for _ in 0..3 {
+            let mut p = create_session_params("limit-spec");
+            p.spec_name = "limit-spec".to_string();
+            server.session_create(Parameters(p)).await.unwrap();
+        }
+
+        // List with limit=1
+        let result = server
+            .session_list(Parameters(SessionListParams {
+                spec_name: None,
+                phase: None,
+                limit: Some(1),
+            }))
+            .await
+            .unwrap();
+
+        let json: serde_json::Value = serde_json::from_str(&extract_text(&result)).unwrap();
+        assert_eq!(
+            json["total_on_disk"], 3,
+            "total should reflect all sessions on disk"
+        );
+        assert_eq!(
+            json["sessions"].as_array().unwrap().len(),
+            1,
+            "should respect limit=1"
+        );
+    }
+
+    // ── C2: session_update not-found test ────────────────────────────
+
+    #[tokio::test]
+    #[serial]
+    async fn session_update_not_found() {
+        let dir = create_project(r#"project_name = "session-test""#);
+        std::env::set_current_dir(dir.path()).unwrap();
+
+        let server = AssayServer::new();
+        let result = server
+            .session_update(Parameters(SessionUpdateParams {
+                session_id: "01NONEXISTENT0000000000000".to_string(),
+                phase: SessionPhase::AgentRunning,
+                trigger: "agent_started".to_string(),
+                notes: None,
+                gate_run_ids: vec![],
+            }))
+            .await
+            .unwrap();
+
+        assert!(
+            result.is_error.unwrap_or(false),
+            "should return error for nonexistent session"
+        );
+        let text = extract_text(&result);
+        assert!(
+            text.contains("not found") || text.contains("Not found"),
+            "error should mention 'not found', got: {text}"
+        );
+    }
+
+    // ── C3: session_list limit=0 returns at least one ────────────────
+
+    #[tokio::test]
+    #[serial]
+    async fn session_list_limit_zero_returns_at_least_one() {
+        let dir = create_project(r#"project_name = "session-test""#);
+        create_spec(
+            dir.path(),
+            "specs",
+            "clamp-spec.toml",
+            r#"
+name = "clamp-spec"
+description = "Clamp limit spec"
+
+[[criteria]]
+name = "check"
+description = "A check"
+cmd = "echo ok"
+"#,
+        );
+
+        std::env::set_current_dir(dir.path()).unwrap();
+
+        let server = AssayServer::new();
+
+        // Create a session
+        let mut p = create_session_params("clamp-spec");
+        p.spec_name = "clamp-spec".to_string();
+        server.session_create(Parameters(p)).await.unwrap();
+
+        // List with limit=0 — should clamp to 1
+        let result = server
+            .session_list(Parameters(SessionListParams {
+                spec_name: None,
+                phase: None,
+                limit: Some(0),
+            }))
+            .await
+            .unwrap();
+
+        assert!(!result.is_error.unwrap_or(false));
+        let json: serde_json::Value = serde_json::from_str(&extract_text(&result)).unwrap();
+        assert!(
+            !json["sessions"].as_array().unwrap().is_empty(),
+            "limit=0 should clamp to 1, returning at least one session"
+        );
+    }
+
+    // ── I12: session_update full lifecycle test ──────────────────────
+
+    #[tokio::test]
+    #[serial]
+    async fn session_update_full_lifecycle() {
+        let dir = create_project(r#"project_name = "session-test""#);
+        create_spec(
+            dir.path(),
+            "specs",
+            "lifecycle-spec.toml",
+            r#"
+name = "lifecycle-spec"
+description = "Full lifecycle spec"
+
+[[criteria]]
+name = "check"
+description = "A check"
+cmd = "echo ok"
+"#,
+        );
+
+        std::env::set_current_dir(dir.path()).unwrap();
+
+        let server = AssayServer::new();
+
+        // Create session
+        let mut p = create_session_params("lifecycle-spec");
+        p.spec_name = "lifecycle-spec".to_string();
+        let create_result = server.session_create(Parameters(p)).await.unwrap();
+        let create_json: serde_json::Value =
+            serde_json::from_str(&extract_text(&create_result)).unwrap();
+        let session_id = create_json["session_id"].as_str().unwrap().to_string();
+
+        // Transition 1: created → agent_running
+        let result = server
+            .session_update(Parameters(SessionUpdateParams {
+                session_id: session_id.clone(),
+                phase: SessionPhase::AgentRunning,
+                trigger: "agent_started".to_string(),
+                notes: None,
+                gate_run_ids: vec![],
+            }))
+            .await
+            .unwrap();
+        assert!(!result.is_error.unwrap_or(false));
+        let json: serde_json::Value = serde_json::from_str(&extract_text(&result)).unwrap();
+        assert_eq!(json["previous_phase"], "created");
+        assert_eq!(json["current_phase"], "agent_running");
+
+        // Transition 2: agent_running → gate_evaluated
+        let result = server
+            .session_update(Parameters(SessionUpdateParams {
+                session_id: session_id.clone(),
+                phase: SessionPhase::GateEvaluated,
+                trigger: "gate_run:run-001".to_string(),
+                notes: Some("all criteria passed".to_string()),
+                gate_run_ids: vec!["run-001".to_string()],
+            }))
+            .await
+            .unwrap();
+        assert!(!result.is_error.unwrap_or(false));
+        let json: serde_json::Value = serde_json::from_str(&extract_text(&result)).unwrap();
+        assert_eq!(json["previous_phase"], "agent_running");
+        assert_eq!(json["current_phase"], "gate_evaluated");
+
+        // Transition 3: gate_evaluated → completed
+        let result = server
+            .session_update(Parameters(SessionUpdateParams {
+                session_id: session_id.clone(),
+                phase: SessionPhase::Completed,
+                trigger: "auto_complete".to_string(),
+                notes: None,
+                gate_run_ids: vec![],
+            }))
+            .await
+            .unwrap();
+        assert!(!result.is_error.unwrap_or(false));
+        let json: serde_json::Value = serde_json::from_str(&extract_text(&result)).unwrap();
+        assert_eq!(json["previous_phase"], "gate_evaluated");
+        assert_eq!(json["current_phase"], "completed");
+
+        // Verify via session_get that all 3 transitions are recorded
+        let get_result = server
+            .session_get(Parameters(SessionGetParams {
+                session_id: session_id.clone(),
+            }))
+            .await
+            .unwrap();
+        assert!(!get_result.is_error.unwrap_or(false));
+        let get_json: serde_json::Value = serde_json::from_str(&extract_text(&get_result)).unwrap();
+        assert_eq!(get_json["phase"], "completed");
+        assert_eq!(
+            get_json["transitions"].as_array().unwrap().len(),
+            3,
+            "should have 3 transitions"
+        );
+    }
+
+    // ── I13: terminal-phase rejection test ───────────────────────────
+
+    #[tokio::test]
+    #[serial]
+    async fn session_update_terminal_phase_rejected() {
+        let dir = create_project(r#"project_name = "session-test""#);
+        create_spec(
+            dir.path(),
+            "specs",
+            "terminal-spec.toml",
+            r#"
+name = "terminal-spec"
+description = "Terminal phase spec"
+
+[[criteria]]
+name = "check"
+description = "A check"
+cmd = "echo ok"
+"#,
+        );
+
+        std::env::set_current_dir(dir.path()).unwrap();
+
+        let server = AssayServer::new();
+
+        // Create and advance to completed
+        let mut p = create_session_params("terminal-spec");
+        p.spec_name = "terminal-spec".to_string();
+        let create_result = server.session_create(Parameters(p)).await.unwrap();
+        let create_json: serde_json::Value =
+            serde_json::from_str(&extract_text(&create_result)).unwrap();
+        let session_id = create_json["session_id"].as_str().unwrap().to_string();
+
+        // created → agent_running → gate_evaluated → completed
+        for (phase, trigger) in [
+            (SessionPhase::AgentRunning, "agent_started"),
+            (SessionPhase::GateEvaluated, "gate_passed"),
+            (SessionPhase::Completed, "auto_complete"),
+        ] {
+            let result = server
+                .session_update(Parameters(SessionUpdateParams {
+                    session_id: session_id.clone(),
+                    phase,
+                    trigger: trigger.to_string(),
+                    notes: None,
+                    gate_run_ids: vec![],
+                }))
+                .await
+                .unwrap();
+            assert!(!result.is_error.unwrap_or(false));
+        }
+
+        // Now try to transition from completed → agent_running (should fail)
+        let result = server
+            .session_update(Parameters(SessionUpdateParams {
+                session_id: session_id.clone(),
+                phase: SessionPhase::AgentRunning,
+                trigger: "retry".to_string(),
+                notes: None,
+                gate_run_ids: vec![],
+            }))
+            .await
+            .unwrap();
+
+        assert!(
+            result.is_error.unwrap_or(false),
+            "should reject transition from terminal phase"
+        );
+    }
+
+    // ── I14: combined filter test ────────────────────────────────────
+
+    #[tokio::test]
+    #[serial]
+    async fn session_list_combined_filters() {
+        let dir = create_project(r#"project_name = "session-test""#);
+        create_spec(
+            dir.path(),
+            "specs",
+            "combo-a.toml",
+            r#"
+name = "combo-a"
+description = "Combo A spec"
+
+[[criteria]]
+name = "check"
+description = "A check"
+cmd = "echo ok"
+"#,
+        );
+        create_spec(
+            dir.path(),
+            "specs",
+            "combo-b.toml",
+            r#"
+name = "combo-b"
+description = "Combo B spec"
+
+[[criteria]]
+name = "check"
+description = "A check"
+cmd = "echo ok"
+"#,
+        );
+
+        std::env::set_current_dir(dir.path()).unwrap();
+
+        let server = AssayServer::new();
+
+        // Create sessions: combo-a (created), combo-a (agent_running), combo-b (created)
+        let mut pa1 = create_session_params("combo-a");
+        pa1.spec_name = "combo-a".to_string();
+        server.session_create(Parameters(pa1)).await.unwrap();
+
+        let mut pa2 = create_session_params("combo-a");
+        pa2.spec_name = "combo-a".to_string();
+        let r2 = server.session_create(Parameters(pa2)).await.unwrap();
+        let j2: serde_json::Value = serde_json::from_str(&extract_text(&r2)).unwrap();
+        let id2 = j2["session_id"].as_str().unwrap().to_string();
+
+        // Advance second combo-a session to agent_running
+        server
+            .session_update(Parameters(SessionUpdateParams {
+                session_id: id2,
+                phase: SessionPhase::AgentRunning,
+                trigger: "agent_started".to_string(),
+                notes: None,
+                gate_run_ids: vec![],
+            }))
+            .await
+            .unwrap();
+
+        let mut pb = create_session_params("combo-b");
+        pb.spec_name = "combo-b".to_string();
+        server.session_create(Parameters(pb)).await.unwrap();
+
+        // Filter by spec_name=combo-a AND phase=created → should return exactly 1
+        let result = server
+            .session_list(Parameters(SessionListParams {
+                spec_name: Some("combo-a".to_string()),
+                phase: Some(SessionPhase::Created),
+                limit: None,
+            }))
+            .await
+            .unwrap();
+
+        let json: serde_json::Value = serde_json::from_str(&extract_text(&result)).unwrap();
+        let sessions = json["sessions"].as_array().unwrap();
+        assert_eq!(
+            sessions.len(),
+            1,
+            "should return exactly 1 session matching both filters, got: {sessions:?}"
+        );
+        assert_eq!(sessions[0]["spec_name"], "combo-a");
+        assert_eq!(sessions[0]["phase"], "created");
     }
 }
