@@ -42,6 +42,16 @@ pub struct EvaluatorConfig {
     pub retries: u32,
 }
 
+impl Default for EvaluatorConfig {
+    fn default() -> Self {
+        Self {
+            model: "sonnet".to_string(),
+            timeout: Duration::from_secs(120),
+            retries: 1,
+        }
+    }
+}
+
 /// Result of a successful evaluator invocation.
 #[derive(Debug, Clone)]
 pub struct EvaluatorResult {
@@ -240,7 +250,7 @@ pub fn map_evaluator_output(
                 results.push(build_criterion_result(
                     criterion_result,
                     enforcement,
-                    Some(true),
+                    true,
                     timestamp,
                 ));
             }
@@ -250,7 +260,7 @@ pub fn map_evaluator_output(
                 results.push(build_criterion_result(
                     criterion_result,
                     enforcement,
-                    Some(false),
+                    false,
                     timestamp,
                 ));
             }
@@ -272,11 +282,26 @@ pub fn map_evaluator_output(
                 results.push(build_criterion_result(
                     criterion_result,
                     enforcement,
-                    Some(true),
+                    true,
                     timestamp,
                 ));
             }
         }
+    }
+
+    // Cross-check: warn if the evaluator's self-reported verdict diverges
+    // from the enforcement-derived result (required_failed > 0 means blocked).
+    let enforced_blocked = enforcement_summary.required_failed > 0;
+    if output.summary.passed && enforced_blocked {
+        warnings.push(
+            "evaluator reported overall pass, but required criteria failed — gate blocked"
+                .to_string(),
+        );
+    } else if !output.summary.passed && !enforced_blocked {
+        warnings.push(
+            "evaluator reported overall fail, but no required criteria failed — gate passed"
+                .to_string(),
+        );
     }
 
     let run_id = history::generate_run_id(&timestamp);
@@ -304,34 +329,27 @@ pub fn map_evaluator_output(
 fn build_criterion_result(
     eval_result: &EvaluatorCriterionResult,
     enforcement: Enforcement,
-    passed: Option<bool>,
+    passed: bool,
     timestamp: chrono::DateTime<Utc>,
 ) -> CriterionResult {
-    match passed {
-        Some(p) => CriterionResult {
-            criterion_name: eval_result.name.clone(),
-            result: Some(GateResult {
-                passed: p,
-                kind: GateKind::AgentReport,
-                stdout: String::new(),
-                stderr: String::new(),
-                exit_code: None,
-                duration_ms: 0,
-                timestamp,
-                truncated: false,
-                original_bytes: None,
-                evidence: eval_result.evidence.clone(),
-                reasoning: Some(eval_result.reasoning.clone()),
-                confidence: None,
-                evaluator_role: Some(EvaluatorRole::Independent),
-            }),
-            enforcement,
-        },
-        None => CriterionResult {
-            criterion_name: eval_result.name.clone(),
-            result: None,
-            enforcement,
-        },
+    CriterionResult {
+        criterion_name: eval_result.name.clone(),
+        result: Some(GateResult {
+            passed,
+            kind: GateKind::AgentReport,
+            stdout: String::new(),
+            stderr: String::new(),
+            exit_code: None,
+            duration_ms: 0,
+            timestamp,
+            truncated: false,
+            original_bytes: None,
+            evidence: eval_result.evidence.clone(),
+            reasoning: Some(eval_result.reasoning.clone()),
+            confidence: None,
+            evaluator_role: Some(EvaluatorRole::Independent),
+        }),
+        enforcement,
     }
 }
 
@@ -498,8 +516,14 @@ async fn spawn_and_collect(
 
     let duration = start.elapsed();
 
-    let stdout_bytes = stdout_task.await.unwrap_or_default();
-    let stderr_bytes = stderr_task.await.unwrap_or_default();
+    let stdout_bytes = stdout_task.await.unwrap_or_else(|e| {
+        tracing::error!("stdout reader task failed: {e}");
+        Vec::new()
+    });
+    let stderr_bytes = stderr_task.await.unwrap_or_else(|e| {
+        tracing::error!("stderr reader task failed: {e}");
+        Vec::new()
+    });
 
     if !status.success() {
         let stderr = String::from_utf8_lossy(&stderr_bytes).to_string();
@@ -692,6 +716,34 @@ mod tests {
             }
             other => panic!("expected Crash, got: {other:?}"),
         }
+    }
+
+    #[test]
+    fn parse_returns_crash_on_is_error_without_result() {
+        let stdout = serde_json::json!({
+            "is_error": true
+        })
+        .to_string();
+
+        let err = parse_evaluator_output(&stdout).unwrap_err();
+        match err {
+            EvaluatorError::Crash { stderr, .. } => {
+                assert_eq!(stderr, "unknown error");
+            }
+            other => panic!("expected Crash, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_returns_parse_error_on_null_structured_output() {
+        let stdout = serde_json::json!({
+            "structured_output": null
+        })
+        .to_string();
+
+        // null is present but not deserializable to EvaluatorOutput
+        let err = parse_evaluator_output(&stdout).unwrap_err();
+        assert!(matches!(err, EvaluatorError::ParseError { .. }));
     }
 
     #[test]

@@ -688,12 +688,14 @@ struct GateEvaluateResponse {
     /// Per-criterion results with outcome, reasoning, and evidence.
     results: Vec<EvaluateCriterionResult>,
     /// Whether the gate passed overall (from evaluator judgment).
+    /// Note: this reflects the LLM's self-reported verdict. Check
+    /// `summary.required_failed == 0` for the enforcement-derived result.
     overall_passed: bool,
     /// Model used for the evaluation.
     evaluator_model: String,
-    /// Total evaluation time in milliseconds.
+    /// Total handler wall-clock time in milliseconds (includes subprocess, git diff, and I/O).
     duration_ms: u64,
-    /// Accumulated warnings (Phase 35 pattern).
+    /// Non-fatal warnings from evaluation, parse, history save, or session linking failures.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     warnings: Vec<String>,
     /// Linked session ID. Omitted when session_id was not provided.
@@ -1290,36 +1292,30 @@ impl AssayServer {
                 }
                 Ok(output) => {
                     let stderr = String::from_utf8_lossy(&output.stderr);
-                    tracing::warn!("git diff HEAD failed: {}", stderr.trim());
+                    let msg = format!("git diff HEAD failed: {}", stderr.trim());
+                    tracing::warn!("{msg}");
+                    warnings.push(format!("{msg} — evaluator will assess without diff context"));
                     None
                 }
                 Err(e) => {
-                    tracing::warn!("git diff HEAD command error: {e}");
+                    let msg = format!("git diff HEAD command error: {e}");
+                    tracing::warn!("{msg}");
+                    warnings.push(format!("{msg} — evaluator will assess without diff context"));
                     None
                 }
             }
         };
 
         // ── Step 4: Build evaluator prompt ────────────────────────────
-        // Collect agent_prompt from criteria that have one.
-        let agent_prompt: Option<String> = {
-            let prompts: Vec<&str> = criteria
-                .iter()
-                .filter_map(|c| c.prompt.as_deref())
-                .collect();
-            if prompts.is_empty() {
-                None
-            } else {
-                Some(prompts.join("\n\n"))
-            }
-        };
-
+        // Criterion prompts are inlined by build_evaluator_prompt as
+        // "Evaluation guidance" under each criterion — no separate
+        // agent_prompt needed to avoid duplication.
         let prompt = assay_core::evaluator::build_evaluator_prompt(
             &spec_name,
             &description,
             &criteria,
             diff.as_deref(),
-            agent_prompt.as_deref(),
+            None,
         );
 
         // ── Step 5: Build system prompt and schema ────────────────────
@@ -1372,33 +1368,21 @@ impl AssayServer {
                 let code_str = exit_code
                     .map(|c| format!(" (exit code: {c})"))
                     .unwrap_or_default();
-                let excerpt = if stderr.len() > 500 {
-                    &stderr[..500]
-                } else {
-                    &stderr
-                };
                 return Ok(CallToolResult::error(vec![Content::text(format!(
-                    "Evaluator subprocess crashed{code_str}: {excerpt}"
+                    "Evaluator subprocess crashed{code_str}: {}",
+                    truncate_to_char_boundary(&stderr, 500)
                 ))]));
             }
             Err(assay_core::error::EvaluatorError::ParseError { raw_output, error }) => {
-                let excerpt = if raw_output.len() > 500 {
-                    &raw_output[..500]
-                } else {
-                    &raw_output
-                };
                 return Ok(CallToolResult::error(vec![Content::text(format!(
-                    "Evaluator output parse error: {error}. Raw output: {excerpt}"
+                    "Evaluator output parse error: {error}. Raw output: {}",
+                    truncate_to_char_boundary(&raw_output, 500)
                 ))]));
             }
             Err(assay_core::error::EvaluatorError::NoStructuredOutput { raw_output }) => {
-                let excerpt = if raw_output.len() > 500 {
-                    &raw_output[..500]
-                } else {
-                    &raw_output
-                };
                 return Ok(CallToolResult::error(vec![Content::text(format!(
-                    "Evaluator output missing structured_output. Raw output: {excerpt}"
+                    "Evaluator output missing structured_output. Raw output: {}",
+                    truncate_to_char_boundary(&raw_output, 500)
                 ))]));
             }
             Err(e) => {
@@ -1445,15 +1429,20 @@ impl AssayServer {
                     .unwrap_or(assay_types::Enforcement::Required);
                 EvaluateCriterionResult {
                     name: cr.name.clone(),
-                    outcome: format!("{}", serde_json::to_value(cr.outcome).unwrap_or_default())
-                        .trim_matches('"')
-                        .to_string(),
+                    outcome: match cr.outcome {
+                        assay_types::CriterionOutcome::Pass => "pass",
+                        assay_types::CriterionOutcome::Fail => "fail",
+                        assay_types::CriterionOutcome::Skip => "skip",
+                        assay_types::CriterionOutcome::Warn => "warn",
+                    }
+                    .to_string(),
                     reasoning: cr.reasoning.clone(),
                     evidence: cr.evidence.clone(),
                     enforcement: match enforcement {
-                        assay_types::Enforcement::Required => "required".to_string(),
-                        assay_types::Enforcement::Advisory => "advisory".to_string(),
-                    },
+                        assay_types::Enforcement::Required => "required",
+                        assay_types::Enforcement::Advisory => "advisory",
+                    }
+                    .to_string(),
                 }
             })
             .collect();
@@ -2263,6 +2252,19 @@ fn resolve_working_dir(cwd: &Path, config: &Config) -> PathBuf {
 /// Convert an AssayError into a tool execution error that the agent can see and act on.
 fn domain_error(err: &assay_core::AssayError) -> CallToolResult {
     CallToolResult::error(vec![Content::text(err.to_string())])
+}
+
+/// Truncate a string to at most `max_bytes`, respecting UTF-8 char boundaries.
+fn truncate_to_char_boundary(s: &str, max_bytes: usize) -> &str {
+    if s.len() <= max_bytes {
+        return s;
+    }
+    // Find the last char boundary at or before max_bytes
+    let mut end = max_bytes;
+    while end > 0 && !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    &s[..end]
 }
 
 /// Collected info about agent criteria in a spec, used to create a session.
