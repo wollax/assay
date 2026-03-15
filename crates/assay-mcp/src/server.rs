@@ -2586,6 +2586,7 @@ cmd = "echo ok"
             gates: None,
             guard: None,
             worktree: None,
+            sessions: None,
         };
 
         let result = resolve_working_dir(&cwd, &config);
@@ -2605,6 +2606,7 @@ cmd = "echo ok"
             }),
             guard: None,
             worktree: None,
+            sessions: None,
         };
 
         let result = resolve_working_dir(&cwd, &config);
@@ -2628,6 +2630,7 @@ cmd = "echo ok"
             }),
             guard: None,
             worktree: None,
+            sessions: None,
         };
 
         let result = resolve_working_dir(&cwd, &config);
