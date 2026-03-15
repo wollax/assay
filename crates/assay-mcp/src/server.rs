@@ -1615,43 +1615,43 @@ impl AssayServer {
         let cwd = resolve_cwd()?;
         let assay_dir = cwd.join(".assay");
 
-        let mut session =
-            match assay_core::work_session::load_session(&assay_dir, &params.0.session_id) {
-                Ok(s) => s,
-                Err(e) => {
-                    let msg = format!("{e}. Use session_list to find valid session IDs.");
-                    return Ok(CallToolResult::error(vec![Content::text(msg)]));
+        let mut previous_phase = None;
+        let gate_run_ids = params.0.gate_run_ids.clone();
+
+        let session = match assay_core::work_session::with_session(
+            &assay_dir,
+            &params.0.session_id,
+            |session| {
+                previous_phase = Some(session.phase);
+                assay_core::work_session::transition_session(
+                    session,
+                    params.0.phase,
+                    &params.0.trigger,
+                    params.0.notes.as_deref(),
+                )?;
+                for id in &gate_run_ids {
+                    if !session.gate_runs.contains(id) {
+                        session.gate_runs.push(id.clone());
+                    }
                 }
-            };
-
-        let previous_phase = session.phase;
-
-        if let Err(e) = assay_core::work_session::transition_session(
-            &mut session,
-            params.0.phase,
-            &params.0.trigger,
-            params.0.notes.as_deref(),
+                Ok(())
+            },
         ) {
-            return Ok(domain_error(&e));
-        }
-
-        // Append gate run IDs (deduplicated)
-        for id in &params.0.gate_run_ids {
-            if !session.gate_runs.contains(id) {
-                session.gate_runs.push(id.clone());
+            Ok(s) => s,
+            Err(e) => {
+                let msg = if matches!(e, assay_core::error::AssayError::WorkSessionNotFound { .. })
+                {
+                    format!("{e}. Use session_list to find valid session IDs.")
+                } else {
+                    format!("{e}")
+                };
+                return Ok(CallToolResult::error(vec![Content::text(msg)]));
             }
-        }
-
-        if let Err(e) = assay_core::work_session::save_session(&assay_dir, &session) {
-            let msg = format!(
-                "Failed to persist session update: {e}. The transition was not saved — retry the same update."
-            );
-            return Ok(CallToolResult::error(vec![Content::text(msg)]));
-        }
+        };
 
         let response = SessionUpdateResponse {
             session_id: session.id,
-            previous_phase,
+            previous_phase: previous_phase.expect("set inside closure before any fallible op"),
             current_phase: session.phase,
             gate_runs_count: session.gate_runs.len(),
             warnings: Vec::new(),
