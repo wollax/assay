@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 2026-03-10)
 
 ## Current Position
 
-Phase: 41 — Session MCP Tools (COMPLETE)
-Plan: 1 of 1 (Session MCP tools — COMPLETE)
-Status: Complete
-Last activity: 2026-03-15 — Completed 41-01-PLAN.md
+Phase: 42 — Session Recovery & Internal API (IN PROGRESS)
+Plan: 1 of 2 (Internal API surface — COMPLETE)
+Status: In progress
+Last activity: 2026-03-15 — Completed 42-01-PLAN.md
 
-Progress: v0.4.0 [████████████░░░░░] ~64% (phases 35-41 complete)
+Progress: v0.4.0 [████████████░░░░░] ~64% (phases 35-41 complete, 42 in progress)
 
 ## Milestone Progress
 
@@ -93,6 +93,11 @@ v0.4.0 decisions (from 40-02):
 - `load_session` returns WorkSessionNotFound for missing files, Io for other read errors
 - `list_sessions` returns empty vec when sessions/ directory absent (not an error)
 
+v0.4.0 decisions (from 42-01):
+- `SessionsConfig` with `stale_threshold` uses `Option<SessionsConfig>` on `Config` (backward-compatible)
+- `with_session` captures `previous_phase` inside closure (avoids double-load in MCP handler)
+- Convenience functions compose `with_session` + `transition_session` (not builder pattern)
+
 v0.4.1 decisions (from brainstorm):
 - PR creation over direct merge for v0.4.x — maps to `autonomous: false`
 - `git merge-tree --write-tree` for conflict detection — zero side effects
@@ -128,5 +133,5 @@ Run `/kata-plan-phase [N]` to start planning phases, or `/kata-discuss-phase [N]
 ### Session Continuity
 
 Last session: 2026-03-15
-Stopped at: Completed 41-01-PLAN.md (Phase 41 complete)
+Stopped at: Completed 42-01-PLAN.md
 Resume file: None
