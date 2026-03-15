@@ -1052,14 +1052,24 @@ mod tests {
     fn load_session_rejects_path_traversal_id() {
         let dir = TempDir::new().unwrap();
         let result = load_session(dir.path(), "../evil");
-        assert!(result.is_err(), "should reject path-traversal session ID");
+        let err = result.unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("invalid session ID"),
+            "should reject via path validation, got: {msg}"
+        );
     }
 
     #[test]
     fn load_session_rejects_slash_in_id() {
         let dir = TempDir::new().unwrap();
         let result = load_session(dir.path(), "foo/bar");
-        assert!(result.is_err(), "should reject session ID with slash");
+        let err = result.unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("invalid session ID"),
+            "should reject via path validation, got: {msg}"
+        );
     }
 
     // ── list_sessions non-JSON filter ─────────────────────────────────

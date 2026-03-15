@@ -1150,13 +1150,10 @@ mod tests {
             schema_str.contains("summary"),
             "schema should reference 'summary' field"
         );
-        // Verify the root is a JSON Schema object with a "$schema" or "title" or "properties" key.
+        // Verify the root is a JSON Schema object with required structural keys.
         assert!(
-            value.get("$schema").is_some()
-                || value.get("title").is_some()
-                || value.get("properties").is_some()
-                || value.get("$defs").is_some(),
-            "schema should have recognizable JSON Schema structure: {value}"
+            value.get("properties").is_some() || value.get("$defs").is_some(),
+            "schema should have 'properties' or '$defs' key: {value}"
         );
     }
 }

@@ -178,10 +178,24 @@ pub(crate) fn format_relative_time(iso: &str) -> String {
     }
 }
 
-/// Format a timestamp as a relative age string (e.g., "5m", "2h") or absolute when >24h.
+/// Format a timestamp as a relative age string (e.g., "5m", "2h") or absolute when >= 1 day.
+///
+/// Unlike [`format_relative_time`] which shows day-relative strings up to 7 days,
+/// this function falls back to absolute dates at the 24-hour boundary for compact display.
 pub(crate) fn format_relative_timestamp(ts: &chrono::DateTime<chrono::Utc>) -> String {
     let secs = chrono::Utc::now().signed_duration_since(*ts).num_seconds();
-    relative_from_secs(secs, ts, "")
+    if secs < 0 {
+        return ts.format("%Y-%m-%d %H:%M").to_string();
+    }
+    if secs < 60 {
+        format!("{secs}s")
+    } else if secs < 3600 {
+        format!("{}m", secs / 60)
+    } else if secs < 86400 {
+        format!("{}h", secs / 3600)
+    } else {
+        ts.format("%Y-%m-%d %H:%M").to_string()
+    }
 }
 
 /// Format a duration in milliseconds as a human-readable string.

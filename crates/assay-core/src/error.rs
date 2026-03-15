@@ -45,6 +45,9 @@ pub enum EvaluatorError {
     NotInstalled,
 
     /// An I/O operation in the evaluator failed (e.g., stdin write, working directory access).
+    ///
+    /// Note: Not currently retryable — see `is_retryable()` in evaluator.rs.
+    /// If transient I/O errors should be retried, add `Io` to the retryable match.
     #[error("evaluator I/O error: {0}")]
     Io(#[from] std::io::Error),
 }
