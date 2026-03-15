@@ -141,6 +141,7 @@ pub(crate) fn detect_cycles(specs: &HashMap<String, Vec<String>>) -> Vec<CycleDi
 }
 
 /// A diagnostic from cycle detection, with the set of spec slugs involved.
+#[derive(Debug)]
 pub(crate) struct CycleDiagnostic {
     pub diagnostic: Diagnostic,
     pub specs: HashSet<String>,
@@ -231,7 +232,7 @@ pub fn validate_spec(entry: &super::SpecEntry, check_commands: bool) -> Validati
         diagnostics.extend(validate_commands(criteria));
     }
 
-    let summary = build_summary(&diagnostics);
+    let summary = DiagnosticSummary::from_diagnostics(&diagnostics);
     let valid = summary.errors == 0;
 
     ValidationResult {
@@ -242,24 +243,6 @@ pub fn validate_spec(entry: &super::SpecEntry, check_commands: bool) -> Validati
     }
 }
 
-/// Count diagnostics by severity level into a [`DiagnosticSummary`].
-pub fn build_summary(diagnostics: &[Diagnostic]) -> DiagnosticSummary {
-    let mut errors = 0;
-    let mut warnings = 0;
-    let mut info = 0;
-    for d in diagnostics {
-        match d.severity {
-            Severity::Error => errors += 1,
-            Severity::Warning => warnings += 1,
-            Severity::Info => info += 1,
-        }
-    }
-    DiagnosticSummary {
-        errors,
-        warnings,
-        info,
-    }
-}
 
 /// Validate a single spec and optionally check cross-spec dependencies.
 ///
@@ -306,7 +289,7 @@ pub fn validate_spec_with_dependencies(
                     }
                 }
                 // Rebuild summary
-                result.summary = build_summary(&result.diagnostics);
+                result.summary = DiagnosticSummary::from_diagnostics(&result.diagnostics);
                 result.valid = result.summary.errors == 0;
             }
             Err(e) => {
@@ -317,7 +300,7 @@ pub fn validate_spec_with_dependencies(
                         "cycle detection skipped: could not scan specs directory: {e}"
                     ),
                 });
-                result.summary = build_summary(&result.diagnostics);
+                result.summary = DiagnosticSummary::from_diagnostics(&result.diagnostics);
             }
         }
     }
