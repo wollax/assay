@@ -15,6 +15,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// Sessions follow a linear pipeline: Created → AgentRunning → GateEvaluated → Completed.
 /// Any phase can transition to Abandoned (the escape hatch).
+#[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum SessionPhase {
@@ -73,7 +74,7 @@ impl fmt::Display for SessionPhase {
 }
 
 /// A recorded phase transition within a work session.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 pub struct PhaseTransition {
     /// The phase transitioned from.
     pub from: SessionPhase,
@@ -141,6 +142,9 @@ pub struct WorkSession {
     /// Details about the agent invocation.
     pub agent: AgentInvocation,
     /// IDs of gate runs associated with this session.
+    ///
+    /// Each entry is a `GateRunRecord.run_id` in format `<timestamp>-<6-char-hex>`
+    /// (e.g., `20260304T223015Z-a3f1b2`). Entries are deduplicated on insertion.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub gate_runs: Vec<String>,
     /// Version of assay that created this session.
@@ -314,6 +318,89 @@ mod tests {
             !json.contains("notes"),
             "JSON should omit None notes, got:\n{json}"
         );
+    }
+
+    #[test]
+    fn session_phase_deserializes_from_snake_case() {
+        let created: SessionPhase = serde_json::from_str(r#""created""#).expect("deserialize");
+        assert_eq!(created, SessionPhase::Created);
+
+        let running: SessionPhase =
+            serde_json::from_str(r#""agent_running""#).expect("deserialize");
+        assert_eq!(running, SessionPhase::AgentRunning);
+
+        let evaluated: SessionPhase =
+            serde_json::from_str(r#""gate_evaluated""#).expect("deserialize");
+        assert_eq!(evaluated, SessionPhase::GateEvaluated);
+
+        let completed: SessionPhase = serde_json::from_str(r#""completed""#).expect("deserialize");
+        assert_eq!(completed, SessionPhase::Completed);
+
+        let abandoned: SessionPhase = serde_json::from_str(r#""abandoned""#).expect("deserialize");
+        assert_eq!(abandoned, SessionPhase::Abandoned);
+    }
+
+    #[test]
+    fn session_phase_round_trip() {
+        for phase in [
+            SessionPhase::Created,
+            SessionPhase::AgentRunning,
+            SessionPhase::GateEvaluated,
+            SessionPhase::Completed,
+            SessionPhase::Abandoned,
+        ] {
+            let json = serde_json::to_string(&phase).expect("serialize");
+            let deserialized: SessionPhase = serde_json::from_str(&json).expect("deserialize");
+            assert_eq!(phase, deserialized, "round-trip failed for {phase:?}");
+        }
+    }
+
+    #[test]
+    fn session_phase_unknown_variant_errors() {
+        let result = serde_json::from_str::<SessionPhase>(r#""paused""#);
+        assert!(
+            result.is_err(),
+            "unknown variant 'paused' should fail deserialization"
+        );
+    }
+
+    #[test]
+    fn phase_transition_notes_some_serialized() {
+        let transition = PhaseTransition {
+            from: SessionPhase::Created,
+            to: SessionPhase::AgentRunning,
+            timestamp: Utc::now(),
+            trigger: "start".to_string(),
+            notes: Some("initial agent launch".to_string()),
+        };
+
+        let json = serde_json::to_string(&transition).expect("serialize");
+        assert!(
+            json.contains(r#""notes""#),
+            "JSON should include 'notes' key when Some, got:\n{json}"
+        );
+        assert!(
+            json.contains("initial agent launch"),
+            "JSON should include notes value, got:\n{json}"
+        );
+    }
+
+    #[test]
+    fn phase_transition_notes_some_round_trip() {
+        let transition = PhaseTransition {
+            from: SessionPhase::AgentRunning,
+            to: SessionPhase::GateEvaluated,
+            timestamp: chrono::DateTime::parse_from_rfc3339("2026-03-15T12:00:00Z")
+                .unwrap()
+                .with_timezone(&Utc),
+            trigger: "gate_passed".to_string(),
+            notes: Some("all criteria passed".to_string()),
+        };
+
+        let json = serde_json::to_string(&transition).expect("serialize");
+        let roundtripped: PhaseTransition = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(transition.notes, roundtripped.notes);
+        assert_eq!(roundtripped.notes.as_deref(), Some("all criteria passed"));
     }
 
     #[test]

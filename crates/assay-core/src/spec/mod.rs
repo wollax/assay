@@ -103,9 +103,14 @@ pub(crate) fn format_spec_not_found(
     let list_part = if total <= max_inline {
         items.join(", ")
     } else {
-        let shown: Vec<&str> = items.iter().take(max_inline).map(|s| s.as_str()).collect();
         let remaining = total - max_inline;
-        format!("{} (and {remaining} more)", shown.join(", "))
+        let shown = items
+            .iter()
+            .take(max_inline)
+            .map(|s| s.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!("{shown} (and {remaining} more)")
     };
 
     let mut msg = format!("spec '{name}' not found. Available specs: {list_part}");
@@ -2251,6 +2256,22 @@ cmd = "true"
         assert!(
             !msg.contains("Available specs:"),
             "should NOT say 'Available specs:', got: {msg}"
+        );
+    }
+
+    #[test]
+    fn format_spec_not_found_ten_specs_no_truncation() {
+        // Exactly 10 items (= max_inline): should list all without "(and N more)"
+        let available: Vec<String> = ('a'..='j').map(|c| c.to_string()).collect();
+        assert_eq!(available.len(), 10);
+        let msg = format_spec_not_found("xyz", Path::new(".assay/specs/"), &available, &[], None);
+        assert!(
+            !msg.contains("(and"),
+            "should not truncate at boundary of 10, got: {msg}"
+        );
+        assert!(
+            msg.contains('j'),
+            "should include last spec in list, got: {msg}"
         );
     }
 

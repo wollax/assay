@@ -17,7 +17,7 @@ use std::path::PathBuf;
 pub(crate) const ANSI_COLOR_OVERHEAD: usize = 9;
 
 /// Column separator used in CLI table output (two spaces).
-pub(crate) const COLUMN_GAP: &str = "  ";
+pub(crate) const COLUMN_GAP: &str = "  "; // 2 spaces
 
 /// Name of the Assay project directory relative to project root.
 pub(crate) const ASSAY_DIR_NAME: &str = ".assay";
@@ -72,17 +72,17 @@ pub(crate) fn criterion_label(criterion: &assay_types::Criterion) -> &'static st
 /// Format a criterion type label, optionally with ANSI color.
 ///
 /// "executable" (has a `cmd` or `path`) renders green; "descriptive" renders yellow.
-pub(crate) fn format_criteria_type(is_executable: bool, color: bool) -> String {
+pub(crate) fn format_criteria_type(is_executable: bool, color: bool) -> &'static str {
     if is_executable {
         if color {
-            "\x1b[32mexecutable\x1b[0m".to_string()
+            "\x1b[32mexecutable\x1b[0m"
         } else {
-            "executable".to_string()
+            "executable"
         }
     } else if color {
-        "\x1b[33mdescriptive\x1b[0m".to_string()
+        "\x1b[33mdescriptive\x1b[0m"
     } else {
-        "descriptive".to_string()
+        "descriptive"
     }
 }
 
@@ -145,37 +145,45 @@ pub(crate) fn format_number(n: u64) -> String {
     result.chars().rev().collect()
 }
 
+/// Shared threshold logic for relative time formatting.
+///
+/// Returns a relative string like "5s ago", "3m ago", "2h ago", "4d ago",
+/// or an absolute `%Y-%m-%d %H:%M` string when `secs` is negative or >= 7 days.
+/// The `suffix` is appended to each relative unit (e.g., `" ago"` or `""`).
+fn relative_from_secs(secs: i64, dt: &chrono::DateTime<chrono::Utc>, suffix: &str) -> String {
+    if secs < 0 {
+        return dt.format("%Y-%m-%d %H:%M").to_string();
+    }
+    if secs < 60 {
+        format!("{secs}s{suffix}")
+    } else if secs < 3600 {
+        format!("{}m{suffix}", secs / 60)
+    } else if secs < 86400 {
+        format!("{}h{suffix}", secs / 3600)
+    } else if secs < 604800 {
+        format!("{}d{suffix}", secs / 86400)
+    } else {
+        dt.format("%Y-%m-%d %H:%M").to_string()
+    }
+}
+
 /// Format a relative time string from an ISO 8601 timestamp (e.g., "2h ago").
 pub(crate) fn format_relative_time(iso: &str) -> String {
     match iso.parse::<chrono::DateTime<chrono::Utc>>() {
         Ok(dt) => {
-            let now = chrono::Utc::now();
-            let delta = now.signed_duration_since(dt);
-            let secs = delta.num_seconds();
-            if secs < 0 {
-                return dt.format("%Y-%m-%d %H:%M").to_string();
-            }
-            if secs < 60 {
-                format!("{secs}s ago")
-            } else if secs < 3600 {
-                format!("{}m ago", secs / 60)
-            } else if secs < 86400 {
-                format!("{}h ago", secs / 3600)
-            } else if secs < 604800 {
-                format!("{}d ago", secs / 86400)
-            } else {
-                dt.format("%Y-%m-%d %H:%M").to_string()
-            }
+            let secs = chrono::Utc::now().signed_duration_since(dt).num_seconds();
+            relative_from_secs(secs, &dt, " ago")
         }
         Err(_) => iso.to_string(),
     }
 }
 
-/// Format a timestamp as a relative age string (e.g., "5m", "2h") or absolute when >24h.
+/// Format a timestamp as a relative age string (e.g., "5m", "2h") or absolute when >= 1 day.
+///
+/// Unlike [`format_relative_time`] which shows day-relative strings up to 7 days,
+/// this function falls back to absolute dates at the 24-hour boundary for compact display.
 pub(crate) fn format_relative_timestamp(ts: &chrono::DateTime<chrono::Utc>) -> String {
-    let now = chrono::Utc::now();
-    let delta = now.signed_duration_since(*ts);
-    let secs = delta.num_seconds();
+    let secs = chrono::Utc::now().signed_duration_since(*ts).num_seconds();
     if secs < 0 {
         return ts.format("%Y-%m-%d %H:%M").to_string();
     }

@@ -85,22 +85,27 @@ pub fn save_session(assay_dir: &Path, session: &WorkSession) -> Result<PathBuf> 
 
     crate::history::validate_path_component(&session.id, "session ID")?;
 
-    let json = serde_json::to_string_pretty(session)
-        .map_err(|e| AssayError::json("serializing work session", &sessions_dir, e))?;
+    let final_path = sessions_dir.join(format!("{}.json", session.id));
+
+    let json = serde_json::to_string_pretty(session).map_err(|e| {
+        AssayError::json(
+            format!("serializing work session {}", session.id),
+            &final_path,
+            e,
+        )
+    })?;
 
     let mut tmpfile = NamedTempFile::new_in(&sessions_dir)
         .map_err(|e| AssayError::io("creating temp file for session", &sessions_dir, e))?;
 
     tmpfile
         .write_all(json.as_bytes())
-        .map_err(|e| AssayError::io("writing work session", &sessions_dir, e))?;
+        .map_err(|e| AssayError::io("writing work session", &final_path, e))?;
 
     tmpfile
         .as_file()
         .sync_all()
-        .map_err(|e| AssayError::io("syncing work session", &sessions_dir, e))?;
-
-    let final_path = sessions_dir.join(format!("{}.json", session.id));
+        .map_err(|e| AssayError::io("syncing work session", &final_path, e))?;
     tmpfile
         .persist(&final_path)
         .map_err(|e| AssayError::io("persisting work session", &final_path, e.error))?;
@@ -111,7 +116,10 @@ pub fn save_session(assay_dir: &Path, session: &WorkSession) -> Result<PathBuf> 
 /// Load a work session by ID from `.assay/sessions/<session_id>.json`.
 ///
 /// Returns [`AssayError::WorkSessionNotFound`] if the file does not exist.
+/// Returns an error if `session_id` contains path traversal components.
 pub fn load_session(assay_dir: &Path, session_id: &str) -> Result<WorkSession> {
+    crate::history::validate_path_component(session_id, "session ID")?;
+
     let path = assay_dir
         .join("sessions")
         .join(format!("{session_id}.json"));
@@ -248,7 +256,7 @@ pub fn abandon_session(assay_dir: &Path, session_id: &str, reason: &str) -> Resu
 // ── Recovery scan ────────────────────────────────────────────────────
 
 /// Summary of a recovery scan for stale sessions.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct RecoverySummary {
     /// Number of sessions recovered (transitioned to Abandoned).
     pub recovered: usize,
@@ -257,6 +265,11 @@ pub struct RecoverySummary {
     pub skipped: usize,
     /// Number of errors encountered (corrupt files, save failures).
     pub errors: usize,
+    /// Whether the scan was capped at the 100-session limit.
+    ///
+    /// When `true`, there may be additional sessions beyond the cap that were not scanned.
+    /// Operators should investigate and recover any remaining stale sessions manually.
+    pub truncated: bool,
 }
 
 /// Format a [`chrono::Duration`] as a human-readable string (e.g., "3h 12m" or "45m").
@@ -318,7 +331,9 @@ pub fn recover_stale_sessions(assay_dir: &Path, stale_threshold_secs: u64) -> Re
     let pid = std::process::id();
 
     // Process oldest first (ULID sort = chronological), cap at 100.
-    for id in ids.iter().take(100) {
+    const RECOVERY_CAP: usize = 100;
+    summary.truncated = ids.len() > RECOVERY_CAP;
+    for id in ids.iter().take(RECOVERY_CAP) {
         let mut session = match load_session(assay_dir, id) {
             Ok(s) => s,
             Err(e) => {
@@ -1029,5 +1044,292 @@ mod tests {
             !note.contains("0h"),
             "should not contain '0h' prefix when under 1 hour"
         );
+    }
+
+    // ── load_session path validation ─────────────────────────────────
+
+    #[test]
+    fn load_session_rejects_path_traversal_id() {
+        let dir = TempDir::new().unwrap();
+        let result = load_session(dir.path(), "../evil");
+        let err = result.unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("invalid session ID"),
+            "should reject via path validation, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn load_session_rejects_slash_in_id() {
+        let dir = TempDir::new().unwrap();
+        let result = load_session(dir.path(), "foo/bar");
+        let err = result.unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("invalid session ID"),
+            "should reject via path validation, got: {msg}"
+        );
+    }
+
+    // ── list_sessions non-JSON filter ─────────────────────────────────
+
+    #[test]
+    fn list_sessions_filters_non_json_files() {
+        let dir = TempDir::new().unwrap();
+        let sessions_dir = dir.path().join("sessions");
+        std::fs::create_dir_all(&sessions_dir).unwrap();
+
+        // Write some non-JSON files
+        std::fs::write(sessions_dir.join("README.txt"), "not json").unwrap();
+        std::fs::write(sessions_dir.join("notes"), "also not json").unwrap();
+        std::fs::write(sessions_dir.join("backup.json.bak"), "partial backup").unwrap();
+
+        // Also write a valid session
+        let session = create_work_session("spec", PathBuf::from("/tmp/wt"), "claude", None);
+        save_session(dir.path(), &session).unwrap();
+
+        let ids = list_sessions(dir.path()).unwrap();
+        assert_eq!(ids.len(), 1, "only the .json session should appear");
+        assert_eq!(ids[0], session.id);
+        assert!(!ids.iter().any(|id| id.contains("README")));
+        assert!(!ids.iter().any(|id| id.contains("notes")));
+        assert!(!ids.iter().any(|id| id.contains(".bak")));
+    }
+
+    // ── full_lifecycle per-transition field assertions ─────────────────
+
+    #[test]
+    fn full_lifecycle_transition_fields() {
+        let dir = TempDir::new().unwrap();
+        let mut session = create_work_session(
+            "lifecycle-fields",
+            PathBuf::from("/tmp/wt"),
+            "claude",
+            Some("opus"),
+        );
+
+        let before_t1 = Utc::now();
+        transition_session(
+            &mut session,
+            SessionPhase::AgentRunning,
+            "agent_started",
+            None,
+        )
+        .unwrap();
+        let after_t1 = Utc::now();
+
+        let before_t2 = Utc::now();
+        transition_session(
+            &mut session,
+            SessionPhase::GateEvaluated,
+            "gate_run:run-001",
+            Some("all criteria passed"),
+        )
+        .unwrap();
+        let after_t2 = Utc::now();
+
+        let before_t3 = Utc::now();
+        transition_session(&mut session, SessionPhase::Completed, "auto_complete", None).unwrap();
+        let after_t3 = Utc::now();
+
+        // Transition 1: Created -> AgentRunning
+        let t1 = &session.transitions[0];
+        assert_eq!(t1.from, SessionPhase::Created);
+        assert_eq!(t1.to, SessionPhase::AgentRunning);
+        assert_eq!(t1.trigger, "agent_started");
+        assert!(t1.notes.is_none());
+        assert!(t1.timestamp >= before_t1 && t1.timestamp <= after_t1);
+
+        // Transition 2: AgentRunning -> GateEvaluated (with notes)
+        let t2 = &session.transitions[1];
+        assert_eq!(t2.from, SessionPhase::AgentRunning);
+        assert_eq!(t2.to, SessionPhase::GateEvaluated);
+        assert_eq!(t2.trigger, "gate_run:run-001");
+        assert_eq!(t2.notes.as_deref(), Some("all criteria passed"));
+        assert!(t2.timestamp >= before_t2 && t2.timestamp <= after_t2);
+
+        // Transition 3: GateEvaluated -> Completed
+        let t3 = &session.transitions[2];
+        assert_eq!(t3.from, SessionPhase::GateEvaluated);
+        assert_eq!(t3.to, SessionPhase::Completed);
+        assert_eq!(t3.trigger, "auto_complete");
+        assert!(t3.notes.is_none());
+        assert!(t3.timestamp >= before_t3 && t3.timestamp <= after_t3);
+
+        // Timestamps are monotonically non-decreasing
+        assert!(t1.timestamp <= t2.timestamp);
+        assert!(t2.timestamp <= t3.timestamp);
+
+        // Persist and reload — all fields survive round-trip
+        save_session(dir.path(), &session).unwrap();
+        let loaded = load_session(dir.path(), &session.id).unwrap();
+        assert_eq!(
+            loaded.transitions[1].notes.as_deref(),
+            Some("all criteria passed")
+        );
+        assert_eq!(loaded.transitions[2].from, SessionPhase::GateEvaluated);
+    }
+
+    // ── convenience function error paths ─────────────────────────────
+
+    #[test]
+    fn record_gate_result_errors_on_wrong_phase() {
+        let dir = TempDir::new().unwrap();
+        // Completed session cannot transition to GateEvaluated
+        let mut session = create_work_session("spec", PathBuf::from("/tmp/wt"), "claude", None);
+        transition_session(&mut session, SessionPhase::AgentRunning, "start", None).unwrap();
+        transition_session(&mut session, SessionPhase::GateEvaluated, "gate", None).unwrap();
+        transition_session(&mut session, SessionPhase::Completed, "done", None).unwrap();
+        save_session(dir.path(), &session).unwrap();
+
+        let result = record_gate_result(dir.path(), &session.id, "run-001", "gate_eval", None);
+        assert!(
+            result.is_err(),
+            "record_gate_result on completed session should fail"
+        );
+        assert!(
+            matches!(
+                result.unwrap_err(),
+                AssayError::WorkSessionTransition { .. }
+            ),
+            "should be a WorkSessionTransition error"
+        );
+
+        // On-disk session remains Completed (no partial write)
+        let loaded = load_session(dir.path(), &session.id).unwrap();
+        assert_eq!(loaded.phase, SessionPhase::Completed);
+    }
+
+    #[test]
+    fn complete_session_errors_on_wrong_phase() {
+        let dir = TempDir::new().unwrap();
+        // AgentRunning cannot transition directly to Completed
+        let session =
+            start_session(dir.path(), "spec", PathBuf::from("/tmp/wt"), "claude", None).unwrap();
+
+        let result = complete_session(dir.path(), &session.id, None);
+        assert!(
+            result.is_err(),
+            "complete_session from AgentRunning should fail"
+        );
+        assert!(
+            matches!(
+                result.unwrap_err(),
+                AssayError::WorkSessionTransition { .. }
+            ),
+            "should be a WorkSessionTransition error"
+        );
+
+        // On-disk session remains AgentRunning
+        let loaded = load_session(dir.path(), &session.id).unwrap();
+        assert_eq!(loaded.phase, SessionPhase::AgentRunning);
+    }
+
+    // ── recover_skips_non_agent_running assertion tightening ──────────
+
+    #[test]
+    fn recover_skips_non_agent_running_all_assertions() {
+        let dir = TempDir::new().unwrap();
+
+        // Created phase
+        let s1 = create_work_session("created", PathBuf::from("/tmp/wt"), "claude", None);
+        save_session(dir.path(), &s1).unwrap();
+
+        // GateEvaluated phase
+        let mut s2 = create_work_session("evaluated", PathBuf::from("/tmp/wt"), "claude", None);
+        transition_session(&mut s2, SessionPhase::AgentRunning, "start", None).unwrap();
+        transition_session(&mut s2, SessionPhase::GateEvaluated, "gate", None).unwrap();
+        save_session(dir.path(), &s2).unwrap();
+
+        let summary = recover_stale_sessions(dir.path(), 3600);
+
+        assert_eq!(summary.recovered, 0, "no sessions should be recovered");
+        assert_eq!(
+            summary.skipped, 0,
+            "non-AgentRunning sessions are bypassed, not skipped"
+        );
+        assert_eq!(summary.errors, 0, "no errors should occur");
+        assert!(!summary.truncated, "scan was not truncated");
+    }
+
+    // ── recovery scan cap with truncated flag ────────────────────────
+
+    #[test]
+    fn recovery_scan_cap_truncates_at_100() {
+        let dir = TempDir::new().unwrap();
+
+        // Create 101 stale sessions
+        for i in 0..101 {
+            create_stale_session(dir.path(), &format!("spec-{i}"), 2);
+        }
+
+        let summary = recover_stale_sessions(dir.path(), 3600);
+
+        assert_eq!(
+            summary.recovered, 100,
+            "exactly 100 sessions should be recovered"
+        );
+        assert!(
+            summary.truncated,
+            "truncated should be true when cap is reached"
+        );
+    }
+
+    #[test]
+    fn recovery_scan_not_truncated_below_cap() {
+        let dir = TempDir::new().unwrap();
+
+        // Create only 3 stale sessions — well below the 100-session cap
+        for i in 0..3 {
+            create_stale_session(dir.path(), &format!("spec-{i}"), 2);
+        }
+
+        let summary = recover_stale_sessions(dir.path(), 3600);
+
+        assert_eq!(summary.recovered, 3);
+        assert!(
+            !summary.truncated,
+            "truncated should be false when below cap"
+        );
+    }
+
+    // ── stale threshold behavior ─────────────────────────────────────
+
+    #[test]
+    fn recover_respects_stale_threshold() {
+        let dir = TempDir::new().unwrap();
+
+        // Session that is 30 minutes old — fresh relative to 1h threshold
+        let mut fresh = create_work_session("fresh", PathBuf::from("/tmp/wt"), "claude", None);
+        let fresh_entered = Utc::now() - chrono::Duration::minutes(30);
+        fresh.transitions.push(PhaseTransition {
+            from: SessionPhase::Created,
+            to: SessionPhase::AgentRunning,
+            timestamp: fresh_entered,
+            trigger: "session_start".to_string(),
+            notes: None,
+        });
+        fresh.phase = SessionPhase::AgentRunning;
+        save_session(dir.path(), &fresh).unwrap();
+
+        // Session that is 2 hours old — stale relative to 1h threshold
+        let stale = create_stale_session(dir.path(), "stale", 2);
+
+        let summary = recover_stale_sessions(dir.path(), 3600); // 1h = 3600s
+
+        assert_eq!(
+            summary.recovered, 1,
+            "only the stale session should be recovered"
+        );
+        assert_eq!(summary.errors, 0);
+
+        // Fresh session untouched
+        let loaded_fresh = load_session(dir.path(), &fresh.id).unwrap();
+        assert_eq!(loaded_fresh.phase, SessionPhase::AgentRunning);
+
+        // Stale session recovered
+        let loaded_stale = load_session(dir.path(), &stale.id).unwrap();
+        assert_eq!(loaded_stale.phase, SessionPhase::Abandoned);
     }
 }

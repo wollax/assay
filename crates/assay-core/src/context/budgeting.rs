@@ -20,6 +20,12 @@ const OUTPUT_RESERVE: i64 = 4_096;
 /// Safety margin: percentage buffer for token estimation error.
 const SAFETY_MARGIN_PERCENT: f64 = 5.0;
 
+/// Priority for spec body: high, because the evaluator needs spec context to assess criteria.
+const PRIORITY_SPEC: i64 = 80;
+
+/// Priority for diff: lower than spec, making it the primary truncation target when budget is tight.
+const PRIORITY_DIFF: i64 = 50;
+
 /// Estimate tokens for a string, returning i64 for cupel compatibility.
 fn estimate_tokens(s: &str) -> i64 {
     estimate_tokens_from_bytes(s.len() as u64) as i64
@@ -111,7 +117,7 @@ pub fn budget_context(
             ContextItemBuilder::new(spec_body, estimate_tokens(spec_body))
                 .kind(ContextKind::new(ContextKind::DOCUMENT).map_err(map_err)?)
                 .source(ContextSource::new(ContextSource::RAG).map_err(map_err)?)
-                .priority(80) // High priority: spec context for evaluator
+                .priority(PRIORITY_SPEC)
                 .build()
                 .map_err(map_err)?,
         );
@@ -133,7 +139,7 @@ pub fn budget_context(
             ContextItemBuilder::new(diff, estimate_tokens(diff))
                 .kind(ContextKind::new("Diff").map_err(map_err)?)
                 .source(ContextSource::new(ContextSource::TOOL).map_err(map_err)?)
-                .priority(50) // Lower priority: primary truncation target
+                .priority(PRIORITY_DIFF)
                 .build()
                 .map_err(map_err)?,
         );
@@ -331,5 +337,19 @@ mod tests {
             std::error::Error::source(&err).is_some(),
             "ContextBudget should preserve CupelError as source"
         );
+    }
+
+    /// budget-test-empty-system-prompt:
+    /// An empty system prompt is excluded from the output, and the remaining
+    /// non-empty inputs are returned in canonical order.
+    #[test]
+    fn empty_system_prompt_excluded_from_output() {
+        let result =
+            budget_context("", "spec body", "criteria", "diff", 200_000).expect("should succeed");
+
+        assert_eq!(result.len(), 3, "empty system prompt should be excluded");
+        assert_eq!(result[0], "spec body");
+        assert_eq!(result[1], "criteria");
+        assert_eq!(result[2], "diff");
     }
 }

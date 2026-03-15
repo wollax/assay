@@ -1,5 +1,6 @@
 ---
 source: crates/assay-types/tests/schema_snapshots.rs
+assertion_line: 71
 expression: schema.to_value()
 ---
 {
@@ -132,7 +133,7 @@ expression: schema.to_value()
       "type": "array"
     },
     "depends": {
-      "description": "Spec names this gate spec depends on. Used for dependency ordering and cycle detection.",
+      "description": "Spec slugs this gate spec depends on. Used for dependency ordering and cycle detection.\nEach entry is a slug — the spec file name without extension (e.g. `\"auth-flow\"`\nfor `specs/auth-flow.toml`). Entries must be unique and non-empty.",
       "items": {
         "type": "string"
       },

@@ -379,8 +379,8 @@ pub fn status(worktree_path: &Path, spec_slug: &str) -> Result<WorktreeStatus> {
                 let parts: Vec<&str> = output.split('\t').collect();
                 if parts.len() == 2 {
                     Some((
-                        Some(parts[0].parse::<usize>().unwrap_or(0)),
-                        Some(parts[1].parse::<usize>().unwrap_or(0)),
+                        Some(parts[0].parse::<u32>().unwrap_or(0)),
+                        Some(parts[1].parse::<u32>().unwrap_or(0)),
                     ))
                 } else {
                     None
