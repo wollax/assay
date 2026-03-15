@@ -139,6 +139,7 @@ dependencies = [
  "libc",
  "notify",
  "regex-lite",
+ "schemars",
  "serde",
  "serde_json",
  "serial_test",
@@ -168,6 +169,7 @@ dependencies = [
  "serial_test",
  "tempfile",
  "tokio",
+ "toml",
  "tracing",
 ]
 
