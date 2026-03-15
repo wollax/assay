@@ -35,3 +35,6 @@ pub mod guard;
 
 /// Git worktree lifecycle management.
 pub mod worktree;
+
+/// Work session lifecycle management.
+pub mod work_session;
