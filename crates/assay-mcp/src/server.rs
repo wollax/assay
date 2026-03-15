@@ -1389,8 +1389,7 @@ impl AssayServer {
                             .collect();
 
                         let original_bytes = raw.len();
-                        let truncated_bytes =
-                            truncated_diff.as_ref().map(|d| d.len()).unwrap_or(0);
+                        let truncated_bytes = truncated_diff.as_ref().map(|d| d.len()).unwrap_or(0);
                         let omitted_count = omitted_files.len();
 
                         if truncated_bytes == 0 {
