@@ -15,8 +15,9 @@ use crate::error::{AssayError, Result};
 
 /// Create a new work session in the [`SessionPhase::Created`] phase.
 ///
-/// Generates a ULID-based identifier and records a birth transition
-/// (`Created → Created`) as the first audit trail entry.
+/// Generates a ULID-based identifier with a `created_at` timestamp.
+/// The transitions list starts empty — the first entry is appended
+/// by [`transition_session`] when the session advances.
 pub fn create_work_session(
     spec_name: &str,
     worktree_path: PathBuf,
@@ -31,15 +32,9 @@ pub fn create_work_session(
         spec_name: spec_name.to_string(),
         worktree_path,
         phase: SessionPhase::Created,
-        transitions: vec![PhaseTransition {
-            from: SessionPhase::Created,
-            to: SessionPhase::Created,
-            timestamp: now,
-            trigger: "session_create".to_string(),
-            notes: None,
-        }],
+        created_at: now,
+        transitions: vec![],
         agent: AgentInvocation {
-            spec_name: spec_name.to_string(),
             command: agent_command.to_string(),
             model: agent_model.map(String::from),
         },
@@ -58,17 +53,11 @@ pub fn transition_session(
     trigger: &str,
     notes: Option<&str>,
 ) -> Result<()> {
-    if session.phase.is_terminal() {
-        return Err(AssayError::WorkSessionTransition {
-            session_id: session.id.clone(),
-            message: format!("cannot transition from terminal phase {:?}", session.phase),
-        });
-    }
-
     if !session.phase.can_transition_to(next) {
         return Err(AssayError::WorkSessionTransition {
             session_id: session.id.clone(),
-            message: format!("invalid transition: {:?} -> {:?}", session.phase, next),
+            from: session.phase,
+            to: next,
         });
     }
 
@@ -152,7 +141,13 @@ pub fn list_sessions(assay_dir: &Path) -> Result<Vec<String>> {
 
     let mut ids: Vec<String> = std::fs::read_dir(&sessions_dir)
         .map_err(|e| AssayError::io("listing sessions", &sessions_dir, e))?
-        .filter_map(|entry| entry.ok())
+        .filter_map(|entry| match entry {
+            Ok(e) => Some(e),
+            Err(e) => {
+                eprintln!("Warning: skipping session entry: {e}");
+                None
+            }
+        })
         .filter_map(|entry| {
             let path = entry.path();
             if path.extension().is_some_and(|ext| ext == "json") {
@@ -189,14 +184,12 @@ mod tests {
     }
 
     #[test]
-    fn create_session_has_birth_transition() {
+    fn create_session_has_created_at_and_empty_transitions() {
+        let before = Utc::now();
         let session = create_work_session("test-spec", PathBuf::from("/tmp/wt"), "claude", None);
-        assert_eq!(session.transitions.len(), 1);
-        let birth = &session.transitions[0];
-        assert_eq!(birth.from, SessionPhase::Created);
-        assert_eq!(birth.to, SessionPhase::Created);
-        assert_eq!(birth.trigger, "session_create");
-        assert!(birth.notes.is_none());
+        let after = Utc::now();
+        assert!(session.transitions.is_empty(), "transitions start empty");
+        assert!(session.created_at >= before && session.created_at <= after);
     }
 
     #[test]
@@ -207,7 +200,6 @@ mod tests {
             "claude --spec auth-flow",
             Some("claude-sonnet-4-20250514"),
         );
-        assert_eq!(session.agent.spec_name, "auth-flow");
         assert_eq!(session.agent.command, "claude --spec auth-flow");
         assert_eq!(
             session.agent.model.as_deref(),
@@ -233,7 +225,7 @@ mod tests {
         .expect("valid transition");
 
         assert_eq!(session.phase, SessionPhase::AgentRunning);
-        assert_eq!(session.transitions.len(), 2);
+        assert_eq!(session.transitions.len(), 1);
     }
 
     #[test]
@@ -248,7 +240,7 @@ mod tests {
         )
         .expect("valid transition");
 
-        let entry = &session.transitions[1];
+        let entry = &session.transitions[0];
         assert_eq!(entry.from, SessionPhase::Created);
         assert_eq!(entry.to, SessionPhase::AgentRunning);
         assert_eq!(entry.trigger, "gate_run:abc123");
@@ -259,13 +251,21 @@ mod tests {
     fn transition_rejects_invalid() {
         let mut session =
             create_work_session("test-spec", PathBuf::from("/tmp/wt"), "claude", None);
+        let original_id = session.id.clone();
         let result = transition_session(&mut session, SessionPhase::Completed, "skip", None);
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(
-            matches!(err, AssayError::WorkSessionTransition { .. }),
-            "expected WorkSessionTransition, got: {err:?}"
+            matches!(
+                err,
+                AssayError::WorkSessionTransition { ref session_id, .. }
+                    if session_id == &original_id
+            ),
+            "expected WorkSessionTransition with matching session_id, got: {err:?}"
         );
+        // Session state must not change on rejected transition
+        assert_eq!(session.phase, SessionPhase::Created);
+        assert!(session.transitions.is_empty());
     }
 
     #[test]
@@ -402,15 +402,25 @@ mod tests {
         transition_session(&mut session, SessionPhase::Completed, "auto_complete", None).unwrap();
 
         assert_eq!(session.phase, SessionPhase::Completed);
-        // 1 birth + 3 transitions = 4 total
-        assert_eq!(session.transitions.len(), 4);
+        // 3 transitions (no birth transition)
+        assert_eq!(session.transitions.len(), 3);
 
         // Persist and reload.
         save_session(dir.path(), &session).unwrap();
         let loaded = load_session(dir.path(), &session.id).unwrap();
 
         assert_eq!(loaded.phase, SessionPhase::Completed);
-        assert_eq!(loaded.transitions.len(), 4);
+        assert_eq!(loaded.transitions.len(), 3);
         assert_eq!(loaded, session);
+    }
+
+    #[test]
+    fn save_rejects_path_traversal_id() {
+        let dir = TempDir::new().unwrap();
+        let mut session =
+            create_work_session("test-spec", PathBuf::from("/tmp/wt"), "claude", None);
+        session.id = "../evil".to_string();
+        let result = save_session(dir.path(), &session);
+        assert!(result.is_err(), "should reject path-traversal session ID");
     }
 }

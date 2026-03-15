@@ -4,6 +4,7 @@
 //! linking worktrees, agent invocations, and gate runs through a linear
 //! state machine ([`SessionPhase`]).
 
+use std::fmt;
 use std::path::PathBuf;
 
 use chrono::{DateTime, Utc};
@@ -59,6 +60,18 @@ impl SessionPhase {
     }
 }
 
+impl fmt::Display for SessionPhase {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Created => write!(f, "created"),
+            Self::AgentRunning => write!(f, "agent_running"),
+            Self::GateEvaluated => write!(f, "gate_evaluated"),
+            Self::Completed => write!(f, "completed"),
+            Self::Abandoned => write!(f, "abandoned"),
+        }
+    }
+}
+
 /// A recorded phase transition within a work session.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct PhaseTransition {
@@ -85,8 +98,6 @@ inventory::submit! {
 /// Details about the agent invocation for this session.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct AgentInvocation {
-    /// Name of the spec being worked on.
-    pub spec_name: String,
     /// The command used to invoke the agent.
     pub command: String,
     /// The model used by the agent, if known.
@@ -106,6 +117,13 @@ inventory::submit! {
 /// This is distinct from [`AgentSession`](crate::session::AgentSession), which is
 /// an in-memory crash-recoverable session for gate evaluation. `WorkSession` is the
 /// persistent record of an entire spec evaluation lifecycle.
+///
+/// # Schema policy
+///
+/// Unknown JSON fields are intentionally tolerated (no `deny_unknown_fields`) to allow
+/// forward-compatible schema evolution. Phases 41/42 may add fields without breaking
+/// sessions persisted by earlier versions. Contrast with [`GateRunRecord`] which uses
+/// strict validation for its immutable-after-creation semantics.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct WorkSession {
     /// Unique session identifier (ULID stored as string).
@@ -116,6 +134,8 @@ pub struct WorkSession {
     pub worktree_path: PathBuf,
     /// Current phase of the session lifecycle.
     pub phase: SessionPhase,
+    /// When the session was created.
+    pub created_at: DateTime<Utc>,
     /// History of phase transitions.
     pub transitions: Vec<PhaseTransition>,
     /// Details about the agent invocation.
@@ -190,9 +210,23 @@ mod tests {
 
     #[test]
     fn cannot_skip_phases() {
+        // Forward skips
         assert!(!SessionPhase::Created.can_transition_to(SessionPhase::GateEvaluated));
         assert!(!SessionPhase::Created.can_transition_to(SessionPhase::Completed));
         assert!(!SessionPhase::AgentRunning.can_transition_to(SessionPhase::Completed));
+        // Backward transitions
+        assert!(!SessionPhase::AgentRunning.can_transition_to(SessionPhase::Created));
+        assert!(!SessionPhase::GateEvaluated.can_transition_to(SessionPhase::AgentRunning));
+        assert!(!SessionPhase::GateEvaluated.can_transition_to(SessionPhase::Created));
+    }
+
+    #[test]
+    fn display_matches_serde_snake_case() {
+        assert_eq!(SessionPhase::Created.to_string(), "created");
+        assert_eq!(SessionPhase::AgentRunning.to_string(), "agent_running");
+        assert_eq!(SessionPhase::GateEvaluated.to_string(), "gate_evaluated");
+        assert_eq!(SessionPhase::Completed.to_string(), "completed");
+        assert_eq!(SessionPhase::Abandoned.to_string(), "abandoned");
     }
 
     #[test]
@@ -206,29 +240,32 @@ mod tests {
 
     #[test]
     fn work_session_json_round_trip() {
+        let fixed_ts = chrono::DateTime::parse_from_rfc3339("2026-03-15T12:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
         let session = WorkSession {
             id: "01HTXYZ123456789ABCDEFGH".to_string(),
             spec_name: "auth-flow".to_string(),
             worktree_path: PathBuf::from("/tmp/worktrees/auth-flow"),
             phase: SessionPhase::GateEvaluated,
+            created_at: fixed_ts,
             transitions: vec![
                 PhaseTransition {
                     from: SessionPhase::Created,
                     to: SessionPhase::AgentRunning,
-                    timestamp: Utc::now(),
+                    timestamp: fixed_ts,
                     trigger: "agent_started".to_string(),
                     notes: Some("Initial agent launch".to_string()),
                 },
                 PhaseTransition {
                     from: SessionPhase::AgentRunning,
                     to: SessionPhase::GateEvaluated,
-                    timestamp: Utc::now(),
+                    timestamp: fixed_ts,
                     trigger: "gate_passed".to_string(),
                     notes: None,
                 },
             ],
             agent: AgentInvocation {
-                spec_name: "auth-flow".to_string(),
                 command: "claude --spec auth-flow".to_string(),
                 model: Some("claude-sonnet-4-20250514".to_string()),
             },
@@ -248,8 +285,9 @@ mod tests {
             "spec_name": "test",
             "worktree_path": "/tmp/wt",
             "phase": "created",
+            "created_at": "2026-03-15T12:00:00Z",
             "transitions": [],
-            "agent": { "spec_name": "test", "command": "echo" },
+            "agent": { "command": "echo" },
             "assay_version": "0.4.0",
             "some_future_field": true
         }"#;
@@ -257,6 +295,8 @@ mod tests {
         let session: WorkSession =
             serde_json::from_str(json).expect("should tolerate unknown fields");
         assert_eq!(session.id, "01HTXYZ");
+        assert_eq!(session.phase, SessionPhase::Created);
+        assert_eq!(session.agent.command, "echo");
     }
 
     #[test]
@@ -283,9 +323,9 @@ mod tests {
             spec_name: "minimal".to_string(),
             worktree_path: PathBuf::from("/tmp/wt"),
             phase: SessionPhase::Created,
+            created_at: Utc::now(),
             transitions: vec![],
             agent: AgentInvocation {
-                spec_name: "minimal".to_string(),
                 command: "echo".to_string(),
                 model: None,
             },
