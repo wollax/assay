@@ -35,7 +35,9 @@ pub struct GatesSpec {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub gate: Option<GateSection>,
 
-    /// Spec names this gate spec depends on. Used for dependency ordering and cycle detection.
+    /// Spec slugs this gate spec depends on. Used for dependency ordering and cycle detection.
+    /// Each entry is a slug — the spec file name without extension (e.g. `"auth-flow"`
+    /// for `specs/auth-flow.toml`). Entries must be unique and non-empty.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub depends: Vec<String>,
 

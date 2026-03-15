@@ -75,6 +75,38 @@ pub fn report_evaluation(
     Ok(())
 }
 
+/// Tally pass/fail/skip counts and enforcement summary from a finalized results list.
+///
+/// Returns `(passed, failed, skipped, EnforcementSummary)`.
+fn count_results(results: &[CriterionResult]) -> (usize, usize, usize, EnforcementSummary) {
+    results.iter().fold(
+        (0usize, 0usize, 0usize, EnforcementSummary::default()),
+        |(mut passed, mut failed, mut skipped, mut enforcement), cr| {
+            match &cr.result {
+                Some(gate_result) => {
+                    if gate_result.passed {
+                        passed += 1;
+                        match cr.enforcement {
+                            Enforcement::Required => enforcement.required_passed += 1,
+                            Enforcement::Advisory => enforcement.advisory_passed += 1,
+                        }
+                    } else {
+                        failed += 1;
+                        match cr.enforcement {
+                            Enforcement::Required => enforcement.required_failed += 1,
+                            Enforcement::Advisory => enforcement.advisory_failed += 1,
+                        }
+                    }
+                }
+                None => {
+                    skipped += 1;
+                }
+            }
+            (passed, failed, skipped, enforcement)
+        },
+    )
+}
+
 /// Resolve the highest-priority evaluator from a list of evaluations.
 ///
 /// Priority: Human > Independent > SelfEval. Returns the evaluation
@@ -111,10 +143,6 @@ pub fn build_finalized_record(session: &AgentSession, working_dir: Option<&str>)
     let start = Instant::now();
 
     let mut results = session.command_results.clone();
-    let mut passed = 0usize;
-    let mut failed = 0usize;
-    let mut skipped = 0usize;
-    let mut enforcement_summary = EnforcementSummary::default();
 
     // Merge agent evaluations into results, replacing skipped placeholders
     // that gate_run inserts for AgentReport criteria.
@@ -181,31 +209,7 @@ pub fn build_finalized_record(session: &AgentSession, working_dir: Option<&str>)
         }
     }
 
-    // Count all results
-    for cr in &results {
-        let enforcement = cr.enforcement;
-        match &cr.result {
-            Some(gate_result) => {
-                if gate_result.passed {
-                    passed += 1;
-                    match enforcement {
-                        Enforcement::Required => enforcement_summary.required_passed += 1,
-                        Enforcement::Advisory => enforcement_summary.advisory_passed += 1,
-                    }
-                } else {
-                    failed += 1;
-                    match enforcement {
-                        Enforcement::Required => enforcement_summary.required_failed += 1,
-                        Enforcement::Advisory => enforcement_summary.advisory_failed += 1,
-                    }
-                }
-            }
-            None => {
-                skipped += 1;
-            }
-        }
-    }
-
+    let (passed, failed, skipped, enforcement_summary) = count_results(&results);
     let total_duration_ms = start.elapsed().as_millis() as u64;
 
     GateRunRecord {
@@ -248,37 +252,8 @@ pub fn finalize_session(
 /// Returns the record for the caller to decide whether to persist.
 pub fn finalize_as_timed_out(session: &AgentSession) -> GateRunRecord {
     let mut results = session.command_results.clone();
-    let mut passed = 0usize;
-    let mut failed = 0usize;
-    let mut skipped = 0usize;
-    let mut enforcement_summary = EnforcementSummary::default();
 
-    // Count command results
-    for cr in &results {
-        let enforcement = cr.enforcement;
-        match &cr.result {
-            Some(gate_result) => {
-                if gate_result.passed {
-                    passed += 1;
-                    match enforcement {
-                        Enforcement::Required => enforcement_summary.required_passed += 1,
-                        Enforcement::Advisory => enforcement_summary.advisory_passed += 1,
-                    }
-                } else {
-                    failed += 1;
-                    match enforcement {
-                        Enforcement::Required => enforcement_summary.required_failed += 1,
-                        Enforcement::Advisory => enforcement_summary.advisory_failed += 1,
-                    }
-                }
-            }
-            None => {
-                skipped += 1;
-            }
-        }
-    }
-
-    // Build results for agent criteria
+    // Build results for agent criteria not already present in command_results
     for criterion_name in &session.criteria_names {
         if results
             .iter()
@@ -298,47 +273,29 @@ pub fn finalize_as_timed_out(session: &AgentSession) -> GateRunRecord {
                 let best = resolve_evaluator_priority(evaluations)
                     .expect("non-empty evaluations should have a best");
 
-                let gate_result = GateResult {
-                    passed: best.passed,
-                    kind: GateKind::AgentReport,
-                    stdout: String::new(),
-                    stderr: String::new(),
-                    exit_code: None,
-                    duration_ms: 0,
-                    timestamp: best.timestamp,
-                    truncated: false,
-                    original_bytes: None,
-                    evidence: Some(best.evidence.clone()),
-                    reasoning: Some(best.reasoning.clone()),
-                    confidence: best.confidence,
-                    evaluator_role: Some(best.evaluator_role),
-                };
-
-                if best.passed {
-                    passed += 1;
-                    match enforcement {
-                        Enforcement::Required => enforcement_summary.required_passed += 1,
-                        Enforcement::Advisory => enforcement_summary.advisory_passed += 1,
-                    }
-                } else {
-                    failed += 1;
-                    match enforcement {
-                        Enforcement::Required => enforcement_summary.required_failed += 1,
-                        Enforcement::Advisory => enforcement_summary.advisory_failed += 1,
-                    }
-                }
-
                 results.push(CriterionResult {
                     criterion_name: criterion_name.clone(),
-                    result: Some(gate_result),
+                    result: Some(GateResult {
+                        passed: best.passed,
+                        kind: GateKind::AgentReport,
+                        stdout: String::new(),
+                        stderr: String::new(),
+                        exit_code: None,
+                        duration_ms: 0,
+                        timestamp: best.timestamp,
+                        truncated: false,
+                        original_bytes: None,
+                        evidence: Some(best.evidence.clone()),
+                        reasoning: Some(best.reasoning.clone()),
+                        confidence: best.confidence,
+                        evaluator_role: Some(best.evaluator_role),
+                    }),
                     enforcement,
                 });
             }
             _ => {
-                // Un-evaluated: required => failed, advisory => skipped
+                // Un-evaluated: required => failed (timeout), advisory => skipped
                 if enforcement == Enforcement::Required {
-                    failed += 1;
-                    enforcement_summary.required_failed += 1;
                     results.push(CriterionResult {
                         criterion_name: criterion_name.clone(),
                         result: Some(GateResult {
@@ -359,7 +316,6 @@ pub fn finalize_as_timed_out(session: &AgentSession) -> GateRunRecord {
                         enforcement,
                     });
                 } else {
-                    skipped += 1;
                     results.push(CriterionResult {
                         criterion_name: criterion_name.clone(),
                         result: None,
@@ -369,6 +325,8 @@ pub fn finalize_as_timed_out(session: &AgentSession) -> GateRunRecord {
             }
         }
     }
+
+    let (passed, failed, skipped, enforcement_summary) = count_results(&results);
 
     GateRunRecord {
         run_id: session.session_id.clone(),
