@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 2026-03-10)
 
 ## Current Position
 
-Phase: 43 — gate_evaluate Schema & Subprocess (COMPLETE)
-Plan: 2 of 2 (gate_evaluate MCP tool handler — COMPLETE)
-Status: Complete
-Last activity: 2026-03-15 — Completed 43-02-PLAN.md
+Phase: 44 — gate_evaluate Context Budgeting (IN PROGRESS)
+Plan: 1 of 2 (DiffTruncation type + helpers — COMPLETE)
+Status: In progress
+Last activity: 2026-03-15 — Completed 44-01-PLAN.md
 
-Progress: v0.4.0 [███████████████░░] ~82% (phases 35-43 complete, 44-45 remaining)
+Progress: v0.4.0 [████████████████░] ~88% (phases 35-44/plan-01 complete, 44/plan-02 + 45 remaining)
 
 ## Milestone Progress
 
@@ -114,6 +114,12 @@ v0.4.0 decisions (from 43-02):
 - Separate match arms for ParseError and NoStructuredOutput (different field sets)
 - Catch-all `Err(e)` for non-exhaustive EvaluatorError enum
 - agent_prompt concatenated from all criteria prompts (full guidance context)
+
+v0.4.0 decisions (from 44-01):
+- DiffTruncation placed in gate_run.rs co-located with GateRunRecord (its sole owner)
+- diff_truncation field uses serde(default, skip_serializing_if) for backward compat with existing records
+- context_window_for_model was already pub; only needed pub use re-export from context/mod.rs
+- extract_diff_files uses b/ path (destination) as conventional display choice
 
 v0.4.1 decisions (from brainstorm):
 - PR creation over direct merge for v0.4.x — maps to `autonomous: false`
