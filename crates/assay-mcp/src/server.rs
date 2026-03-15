@@ -1529,17 +1529,17 @@ impl AssayServer {
             })
             .collect();
 
-        let duration_ms = start.elapsed().as_millis() as u64;
         let (mut record, map_warnings) = assay_core::evaluator::map_evaluator_output(
             &spec_name,
             &evaluator_result.output,
             &enforcement_map,
-            duration_ms,
+            start.elapsed(),
         );
         warnings.extend(map_warnings);
 
         let run_id = record.run_id.clone();
         let overall_passed = evaluator_result.output.summary.passed;
+        let duration_ms = record.summary.total_duration_ms;
 
         // Build response results from the evaluator output.
         let results: Vec<EvaluateCriterionResult> = evaluator_result
@@ -2164,14 +2164,29 @@ impl AssayServer {
         let cwd = resolve_cwd()?;
         let assay_dir = cwd.join(".assay");
 
-        let mut previous_phase = None;
         let gate_run_ids = params.0.gate_run_ids.clone();
+
+        // Capture the phase before mutation so we can include it in the response.
+        let previous_phase = match assay_core::work_session::load_session(
+            &assay_dir,
+            &params.0.session_id,
+        ) {
+            Ok(s) => s.phase,
+            Err(e) => {
+                let msg = if matches!(e, assay_core::error::AssayError::WorkSessionNotFound { .. })
+                {
+                    format!("{e}. Use session_list to find valid session IDs.")
+                } else {
+                    format!("{e}")
+                };
+                return Ok(CallToolResult::error(vec![Content::text(msg)]));
+            }
+        };
 
         let session = match assay_core::work_session::with_session(
             &assay_dir,
             &params.0.session_id,
             |session| {
-                previous_phase = Some(session.phase);
                 assay_core::work_session::transition_session(
                     session,
                     params.0.phase,
@@ -2200,7 +2215,7 @@ impl AssayServer {
 
         let response = SessionUpdateResponse {
             session_id: session.id,
-            previous_phase: previous_phase.expect("set inside closure before any fallible op"),
+            previous_phase,
             current_phase: session.phase,
             gate_runs_count: session.gate_runs.len(),
             warnings: Vec::new(),

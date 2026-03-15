@@ -43,6 +43,10 @@ pub enum EvaluatorError {
     /// Claude Code CLI not found in PATH.
     #[error("Claude Code CLI (`claude`) not found in PATH. Install from https://claude.ai/code")]
     NotInstalled,
+
+    /// An I/O operation in the evaluator failed (e.g., stdin write, working directory access).
+    #[error("evaluator I/O error: {0}")]
+    Io(#[from] std::io::Error),
 }
 
 /// Unified error type for all Assay operations.
