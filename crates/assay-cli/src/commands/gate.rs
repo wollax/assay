@@ -177,7 +177,7 @@ fn load_gate_context() -> anyhow::Result<(
 struct StreamCounters {
     /// Number of criteria that passed evaluation.
     passed: usize,
-    /// Number of criteria that failed evaluation (required enforcement).
+    /// Number of required criteria that failed evaluation.
     failed: usize,
     /// Number of criteria that failed evaluation (advisory enforcement).
     warned: usize,
@@ -210,6 +210,7 @@ struct StreamConfig {
 }
 
 impl StreamConfig {
+    /// Create a new `StreamConfig` with the given timeout, verbosity, and color settings.
     fn new(
         cli_timeout: Option<u64>,
         config_timeout: Option<u64>,
