@@ -788,6 +788,18 @@ mod tests {
         assert_eq!(extract_diff_files(diff), vec!["path with spaces/file.rs"]);
     }
 
+    /// extract-diff-files-rename-test:
+    /// Rename diffs have different `a/` and `b/` paths; the `b/` (destination) path is returned.
+    #[test]
+    fn extract_diff_files_rename_returns_destination_path() {
+        let diff = "diff --git a/old/name.rs b/new/name.rs\nindex abc..def 100644\n--- a/old/name.rs\n+++ b/new/name.rs\n";
+        assert_eq!(
+            extract_diff_files(diff),
+            vec!["new/name.rs"],
+            "rename diff should return the b/ (destination) path"
+        );
+    }
+
     // ── evaluate: command execution ────────────────────────────────
 
     #[test]

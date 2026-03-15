@@ -1469,7 +1469,7 @@ impl AssayServer {
         let evaluator_result = match assay_core::evaluator::run_evaluator(
             &prompt,
             &system_prompt,
-            &schema_json,
+            schema_json,
             &eval_config,
             &working_dir,
         )
@@ -2167,21 +2167,19 @@ impl AssayServer {
         let gate_run_ids = params.0.gate_run_ids.clone();
 
         // Capture the phase before mutation so we can include it in the response.
-        let previous_phase = match assay_core::work_session::load_session(
-            &assay_dir,
-            &params.0.session_id,
-        ) {
-            Ok(s) => s.phase,
-            Err(e) => {
-                let msg = if matches!(e, assay_core::error::AssayError::WorkSessionNotFound { .. })
-                {
-                    format!("{e}. Use session_list to find valid session IDs.")
-                } else {
-                    format!("{e}")
-                };
-                return Ok(CallToolResult::error(vec![Content::text(msg)]));
-            }
-        };
+        let previous_phase =
+            match assay_core::work_session::load_session(&assay_dir, &params.0.session_id) {
+                Ok(s) => s.phase,
+                Err(e) => {
+                    let msg =
+                        if matches!(e, assay_core::error::AssayError::WorkSessionNotFound { .. }) {
+                            format!("{e}. Use session_list to find valid session IDs.")
+                        } else {
+                            format!("{e}")
+                        };
+                    return Ok(CallToolResult::error(vec![Content::text(msg)]));
+                }
+            };
 
         let session = match assay_core::work_session::with_session(
             &assay_dir,
