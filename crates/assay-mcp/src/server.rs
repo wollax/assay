@@ -223,7 +223,9 @@ pub struct WorktreeListParams {
     /// Worktree base directory override.
     /// Currently unused — list discovers worktrees from git, not the filesystem.
     /// Retained for API consistency with other worktree tools.
-    #[schemars(description = "Override worktree base directory (reserved for future use)")]
+    #[schemars(
+        description = "Override worktree base directory. Currently unused — list discovers worktrees from git, not the filesystem. Reserved for future use."
+    )]
     #[serde(default)]
     #[allow(dead_code)]
     pub worktree_dir: Option<String>,
@@ -3924,6 +3926,20 @@ cmd = "echo ok"
     }
 
     #[test]
+    fn test_gate_history_params_missing_name() {
+        let json = serde_json::json!({ "run_id": "20260305T120000Z-abc123" });
+        let err = serde_json::from_value::<GateHistoryParams>(json)
+            .err()
+            .expect("should fail when name is missing");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("missing field"),
+            "should mention missing field: {msg}"
+        );
+        assert!(msg.contains("name"), "should name the missing field: {msg}");
+    }
+
+    #[test]
     fn test_gate_history_list_response_serialization() {
         let response = GateHistoryListResponse {
             spec_name: "auth-flow".to_string(),
@@ -4472,10 +4488,12 @@ cmd = "echo ok"
     #[test]
     fn test_gate_run_params_invalid_timeout_type() {
         let json = serde_json::json!({"name": "test", "timeout": "abc"});
-        let err = serde_json::from_value::<GateRunParams>(json).err().unwrap();
+        let err = serde_json::from_value::<GateRunParams>(json)
+            .err()
+            .expect("should fail when timeout is a string");
         let msg = err.to_string();
         assert!(
-            msg.contains("invalid type") || msg.contains("invalid value"),
+            msg.contains("invalid type"),
             "should mention invalid type: {msg}"
         );
     }
@@ -4492,7 +4510,7 @@ cmd = "echo ok"
         });
         let err = serde_json::from_value::<GateReportParams>(json)
             .err()
-            .unwrap();
+            .expect("should fail when passed is a string instead of bool");
         let msg = err.to_string();
         assert!(
             msg.contains("invalid type"),
@@ -4507,7 +4525,9 @@ cmd = "echo ok"
     #[test]
     fn test_gate_run_params_invalid_include_evidence_type() {
         let json = serde_json::json!({"name": "test", "include_evidence": 42});
-        let err = serde_json::from_value::<GateRunParams>(json).err().unwrap();
+        let err = serde_json::from_value::<GateRunParams>(json)
+            .err()
+            .expect("should fail when include_evidence is a number instead of bool");
         let msg = err.to_string();
         assert!(
             msg.contains("invalid type"),

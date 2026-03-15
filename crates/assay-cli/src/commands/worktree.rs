@@ -45,9 +45,6 @@ Examples:
         /// Output as JSON instead of human-readable table
         #[arg(long)]
         json: bool,
-        /// Override worktree base directory
-        #[arg(long)]
-        worktree_dir: Option<String>,
     },
     /// Check worktree status (branch, dirty state, ahead/behind)
     #[command(after_long_help = "\
@@ -108,9 +105,7 @@ pub(crate) fn handle(command: WorktreeCommand) -> anyhow::Result<i32> {
             worktree_dir,
             json,
         } => handle_worktree_create(&name, base.as_deref(), worktree_dir.as_deref(), json),
-        WorktreeCommand::List { json, worktree_dir } => {
-            handle_worktree_list(worktree_dir.as_deref(), json)
-        }
+        WorktreeCommand::List { json } => handle_worktree_list(json),
         WorktreeCommand::Status {
             name,
             json,
@@ -172,8 +167,8 @@ fn handle_worktree_create(
     Ok(0)
 }
 
-fn handle_worktree_list(worktree_dir_override: Option<&str>, json: bool) -> anyhow::Result<i32> {
-    let (root, _worktree_dir, _specs_dir) = resolve_dirs(worktree_dir_override)?;
+fn handle_worktree_list(json: bool) -> anyhow::Result<i32> {
+    let (root, _worktree_dir, _specs_dir) = resolve_dirs(None)?;
 
     let entries = assay_core::worktree::list(&root).map_err(|e| anyhow::anyhow!("{e}"))?;
 
@@ -312,17 +307,21 @@ fn handle_worktree_cleanup(
     let (root, worktree_dir, _specs_dir) = resolve_dirs(worktree_dir_override)?;
 
     if all {
-        return handle_worktree_cleanup_all(&root, &worktree_dir, force, json);
+        return handle_worktree_cleanup_all(&root, force, json);
     }
 
     let spec_slug = name.unwrap();
     let worktree_path = worktree_dir.join(spec_slug);
 
-    // Check dirty state for confirmation; track whether user confirmed
+    // Check dirty state for confirmation; track whether user confirmed.
+    // WorktreeNotFound is treated as clean (proceed without prompt).
+    // Other status errors are propagated so the user sees the real problem.
     let effective_force = if !force {
-        let is_dirty = assay_core::worktree::status(&worktree_path, spec_slug)
-            .map(|s| s.dirty)
-            .unwrap_or(false);
+        let is_dirty = match assay_core::worktree::status(&worktree_path, spec_slug) {
+            Ok(s) => s.dirty,
+            Err(assay_core::error::AssayError::WorktreeNotFound { .. }) => false,
+            Err(e) => return Err(anyhow::anyhow!("{e}")),
+        };
 
         if is_dirty {
             if !std::io::stdin().is_terminal() {
@@ -361,7 +360,6 @@ fn handle_worktree_cleanup(
 
 fn handle_worktree_cleanup_all(
     root: &std::path::Path,
-    worktree_dir: &std::path::Path,
     force: bool,
     json: bool,
 ) -> anyhow::Result<i32> {
@@ -376,15 +374,24 @@ fn handle_worktree_cleanup_all(
         return Ok(0);
     }
 
-    // Check dirty state for each worktree to inform the user
+    // Check dirty state for each worktree to inform the user.
+    // WorktreeNotFound is treated as clean; other errors are warned and treated as clean.
     let dirty_slugs: Vec<&str> = if !force {
         entries
             .iter()
-            .filter(|e| {
-                assay_core::worktree::status(&e.path, &e.spec_slug)
-                    .map(|s| s.dirty)
-                    .unwrap_or(false)
-            })
+            .filter(
+                |e| match assay_core::worktree::status(&e.path, &e.spec_slug) {
+                    Ok(s) => s.dirty,
+                    Err(assay_core::error::AssayError::WorktreeNotFound { .. }) => false,
+                    Err(err) => {
+                        eprintln!(
+                            "Warning: could not check status of '{}': {err}",
+                            e.spec_slug
+                        );
+                        false
+                    }
+                },
+            )
             .map(|e| e.spec_slug.as_str())
             .collect()
     } else {
@@ -428,13 +435,8 @@ fn handle_worktree_cleanup_all(
 
     let mut removed = Vec::new();
     for entry in &entries {
-        // Prefer git-reported path; fall back to computed path
-        let computed_path = worktree_dir.join(&entry.spec_slug);
-        let path = if entry.path.exists() {
-            entry.path.clone()
-        } else {
-            computed_path
-        };
+        // Always use the canonical path reported by `git worktree list`.
+        let path = entry.path.clone();
         // User confirmed removal (or --force was passed), so force-remove dirty worktrees
         let entry_force = force || dirty_slugs.contains(&entry.spec_slug.as_str());
         match assay_core::worktree::cleanup(root, &path, &entry.spec_slug, entry_force) {
