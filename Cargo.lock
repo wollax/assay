@@ -636,6 +636,8 @@ dependencies = [
 [[package]]
 name = "cupel"
 version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3fceaa62149ec5483226a45d6bc8b7fdc5a5374485651f2f6ae15f68c6507f3a"
 dependencies = [
  "chrono",
  "thiserror 2.0.18",
