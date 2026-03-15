@@ -19,7 +19,7 @@ pub use budgeting::budget_context;
 pub use diagnostics::diagnose;
 pub use discovery::{discover_sessions, find_session_dir, resolve_session};
 pub use parser::{ParsedEntry, parse_session};
-pub use tokens::{estimate_tokens, extract_usage, quick_token_estimate};
+pub use tokens::{context_window_for_model, estimate_tokens, extract_usage, quick_token_estimate};
 
 /// List session files for a project (or all projects), optionally including token counts.
 ///

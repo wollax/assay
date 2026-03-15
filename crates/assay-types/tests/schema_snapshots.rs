@@ -138,6 +138,12 @@ fn agent_session_schema_snapshot() {
 }
 
 #[test]
+fn diff_truncation_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::DiffTruncation);
+    assert_json_snapshot!("diff-truncation-schema", schema.to_value());
+}
+
+#[test]
 fn gate_run_record_schema_snapshot() {
     let schema = schemars::schema_for!(assay_types::GateRunRecord);
     assert_json_snapshot!("gate-run-record-schema", schema.to_value());
