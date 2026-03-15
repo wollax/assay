@@ -1,7 +1,7 @@
 /// Error types for Assay operations.
 pub mod error;
 
-pub use error::{AssayError, Result};
+pub use error::{AssayError, EvaluatorError, Result};
 
 /// Spec authoring and validation.
 pub mod spec;
@@ -38,3 +38,6 @@ pub mod worktree;
 
 /// Work session lifecycle management.
 pub mod work_session;
+
+/// Evaluator subprocess: spawn, parse, and map Claude Code evaluator results.
+pub mod evaluator;

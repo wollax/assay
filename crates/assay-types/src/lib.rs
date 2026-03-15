@@ -11,6 +11,7 @@ pub mod checkpoint;
 pub mod context;
 pub mod criterion;
 pub mod enforcement;
+pub mod evaluator;
 pub mod feature_spec;
 pub mod gate;
 pub mod gate_run;
@@ -30,6 +31,9 @@ pub use context::{
 };
 pub use criterion::{Criterion, CriterionKind};
 pub use enforcement::{Enforcement, EnforcementSummary, GateSection};
+pub use evaluator::{
+    CriterionOutcome, EvaluatorCriterionResult, EvaluatorOutput, EvaluatorSummary,
+};
 pub use feature_spec::FeatureSpec;
 pub use gate::{GateKind, GateResult};
 pub use gate_run::{CriterionResult, GateRunRecord, GateRunSummary};
@@ -188,6 +192,18 @@ pub struct GatesConfig {
     /// A value of `0` means unlimited (no pruning). Defaults to `None` (no pruning).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_history: Option<usize>,
+
+    /// Default model for the evaluator subprocess. Defaults to `"sonnet"`.
+    #[serde(default = "default_evaluator_model")]
+    pub evaluator_model: String,
+
+    /// Maximum retries for transient evaluator subprocess failures. Defaults to 1.
+    #[serde(default = "default_evaluator_retries")]
+    pub evaluator_retries: u32,
+
+    /// Evaluator subprocess timeout in seconds. Defaults to 120.
+    #[serde(default = "default_evaluator_timeout")]
+    pub evaluator_timeout: u64,
 }
 
 inventory::submit! {
@@ -277,6 +293,18 @@ fn default_max_recoveries() -> u32 {
 }
 fn default_recovery_window() -> u64 {
     600
+}
+
+fn default_evaluator_model() -> String {
+    "sonnet".to_string()
+}
+
+fn default_evaluator_retries() -> u32 {
+    1
+}
+
+fn default_evaluator_timeout() -> u64 {
+    120
 }
 
 fn default_specs_dir() -> String {
