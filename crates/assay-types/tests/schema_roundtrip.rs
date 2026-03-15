@@ -103,6 +103,9 @@ fn config_validates() {
             default_timeout: 300,
             working_dir: Some(".".to_string()),
             max_history: None,
+            evaluator_model: "sonnet".to_string(),
+            evaluator_retries: 1,
+            evaluator_timeout: 120,
         }),
         guard: None,
         worktree: None,
@@ -116,6 +119,9 @@ fn gates_config_validates() {
         default_timeout: 300,
         working_dir: None,
         max_history: None,
+        evaluator_model: "sonnet".to_string(),
+        evaluator_retries: 1,
+        evaluator_timeout: 120,
     });
 }
 

@@ -4,6 +4,47 @@ use thiserror::Error;
 use crate::config::ConfigError;
 use crate::spec::SpecError;
 
+/// Errors from the evaluator subprocess.
+#[derive(Debug, Error)]
+#[non_exhaustive]
+pub enum EvaluatorError {
+    /// Evaluator subprocess timed out.
+    #[error("evaluator timed out after {timeout_secs}s")]
+    Timeout {
+        /// The configured timeout in seconds.
+        timeout_secs: u64,
+    },
+
+    /// Evaluator subprocess crashed or exited with non-zero status.
+    #[error("evaluator crashed (exit code: {exit_code:?}): {stderr}")]
+    Crash {
+        /// The exit code, if available.
+        exit_code: Option<i32>,
+        /// Standard error output from the subprocess.
+        stderr: String,
+    },
+
+    /// Evaluator output could not be parsed as JSON.
+    #[error("evaluator output parse error: {error}")]
+    ParseError {
+        /// The raw stdout from the subprocess.
+        raw_output: String,
+        /// Description of the parse failure.
+        error: String,
+    },
+
+    /// Evaluator output missing `structured_output` field.
+    #[error("evaluator output missing structured_output field")]
+    NoStructuredOutput {
+        /// The raw stdout from the subprocess.
+        raw_output: String,
+    },
+
+    /// Claude Code CLI not found in PATH.
+    #[error("Claude Code CLI (`claude`) not found in PATH. Install from https://claude.ai/code")]
+    NotInstalled,
+}
+
 /// Unified error type for all Assay operations.
 ///
 /// New variants are added as downstream phases consume them.
@@ -304,6 +345,14 @@ pub enum AssayError {
     ContextBudgetInvalid {
         /// Description of the validation failure.
         message: String,
+    },
+
+    /// Evaluator subprocess failed.
+    #[error("gate evaluation failed: {source}")]
+    Evaluator {
+        /// The underlying evaluator error.
+        #[source]
+        source: EvaluatorError,
     },
 
     /// WorkSession transition error (invalid phase transition).

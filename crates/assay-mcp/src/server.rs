@@ -1,10 +1,11 @@
 //! MCP server implementation with spec, gate, context, worktree, and session tools.
 //!
-//! Provides the [`AssayServer`] which exposes seventeen tools over MCP:
+//! Provides the [`AssayServer`] which exposes eighteen tools over MCP:
 //! - `spec_list` — discover available specs
 //! - `spec_get` — read a full spec definition
 //! - `spec_validate` — statically validate a spec without running it
 //! - `gate_run` — evaluate quality gate criteria (auto-creates sessions for agent criteria)
+//! - `gate_evaluate` — evaluate all criteria via headless Claude Code subprocess
 //! - `gate_report` — submit agent evaluation for a criterion in an active session
 //! - `gate_finalize` — finalize a session, persisting all evaluations as a GateRunRecord
 //! - `gate_history` — query past gate run results for a spec
@@ -349,6 +350,43 @@ pub struct SessionListParams {
     pub limit: Option<usize>,
 }
 
+/// Parameters for the `gate_evaluate` tool.
+#[derive(Deserialize, JsonSchema)]
+pub struct GateEvaluateParams {
+    /// The spec whose agent criteria to evaluate.
+    #[schemars(
+        description = "Spec name to evaluate (filename without .toml extension, e.g. 'auth-flow'). \
+        Evaluates all criteria using a headless Claude Code subprocess as an independent evaluator. \
+        Replaces the gate_run/gate_report/gate_finalize flow for agent-evaluated criteria."
+    )]
+    pub name: String,
+
+    /// Optional work session ID to auto-link results.
+    #[schemars(
+        description = "Work session ID (from session_create). When provided, the session's \
+        worktree_path is used for diff computation, and the session is transitioned to gate_evaluated \
+        with the gate run ID appended."
+    )]
+    #[serde(default)]
+    pub session_id: Option<String>,
+
+    /// Override evaluator timeout in seconds.
+    #[schemars(
+        description = "Evaluator subprocess timeout in seconds (overrides config, default: 120s). \
+        This is separate from gate command timeouts — LLM inference has different latency characteristics."
+    )]
+    #[serde(default)]
+    pub timeout: Option<u64>,
+
+    /// Override evaluator model.
+    #[schemars(
+        description = "Model for the evaluator subprocess (overrides config, default: 'sonnet'). \
+        Accepts model aliases like 'sonnet', 'opus' or full model names."
+    )]
+    #[serde(default)]
+    pub model: Option<String>,
+}
+
 // ── Response structs ─────────────────────────────────────────────────
 
 /// A single entry in the `spec_list` response.
@@ -620,6 +658,66 @@ struct SessionListResponse {
     /// Warnings about degraded operations (e.g., unreadable session files).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     warnings: Vec<String>,
+}
+
+/// Per-criterion result within a gate_evaluate response.
+#[derive(Serialize)]
+struct EvaluateCriterionResult {
+    /// Criterion name as defined in the spec.
+    name: String,
+    /// Evaluation outcome: `"pass"`, `"fail"`, `"skip"`, or `"warn"`.
+    outcome: String,
+    /// Evaluator's reasoning for this judgment.
+    reasoning: String,
+    /// Concrete evidence observed. Omitted when absent.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    evidence: Option<String>,
+    /// Enforcement level: `"required"` or `"advisory"`.
+    enforcement: String,
+}
+
+/// Response from the `gate_evaluate` tool.
+#[derive(Serialize)]
+struct GateEvaluateResponse {
+    /// Unique run ID for the persisted GateRunRecord.
+    run_id: String,
+    /// Name of the spec that was evaluated.
+    spec_name: String,
+    /// Aggregate summary: pass/fail counts and enforcement breakdown.
+    summary: GateEvaluateSummary,
+    /// Per-criterion results with outcome, reasoning, and evidence.
+    results: Vec<EvaluateCriterionResult>,
+    /// Whether the gate passed overall (from evaluator judgment).
+    /// Note: this reflects the LLM's self-reported verdict. Check
+    /// `summary.required_failed == 0` for the enforcement-derived result.
+    overall_passed: bool,
+    /// Model used for the evaluation.
+    evaluator_model: String,
+    /// Total handler wall-clock time in milliseconds (includes subprocess, git diff, and I/O).
+    duration_ms: u64,
+    /// Non-fatal warnings from evaluation, parse, history save, or session linking failures.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    warnings: Vec<String>,
+    /// Linked session ID. Omitted when session_id was not provided.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    session_id: Option<String>,
+}
+
+/// Summary counts within a gate_evaluate response.
+#[derive(Serialize)]
+struct GateEvaluateSummary {
+    /// Number of criteria that passed.
+    passed: usize,
+    /// Number of criteria that failed.
+    failed: usize,
+    /// Number of criteria that were skipped.
+    skipped: usize,
+    /// Number of required criteria that failed.
+    required_failed: usize,
+    /// Number of advisory criteria that failed.
+    advisory_failed: usize,
+    /// Whether the gate is blocked (any required criterion failed).
+    blocked: bool,
 }
 
 // ── Constants ────────────────────────────────────────────────────────
@@ -1095,6 +1193,327 @@ impl AssayServer {
                 response.warnings.push(msg);
             }
         }
+
+        let json = serde_json::to_string(&response)
+            .map_err(|e| McpError::internal_error(format!("serialization failed: {e}"), None))?;
+
+        Ok(CallToolResult::success(vec![Content::text(json)]))
+    }
+
+    /// Evaluate all criteria via headless Claude Code subprocess.
+    #[tool(
+        description = "Evaluate all criteria for a spec using a headless Claude Code subprocess as an \
+            independent evaluator. Returns per-criterion results with pass/fail/skip/warn outcome, \
+            reasoning, and evidence. The evaluator subprocess runs with --tools \"\" and --max-turns 1 \
+            (no tool use, single inference). Results are persisted as a GateRunRecord. \
+            Replaces the gate_run/gate_report/gate_finalize flow for agent-evaluated criteria. \
+            When session_id is provided, the session's worktree_path is used for diff computation \
+            and the session is transitioned to gate_evaluated."
+    )]
+    pub async fn gate_evaluate(
+        &self,
+        params: Parameters<GateEvaluateParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let start = std::time::Instant::now();
+        let p = params.0;
+        let mut warnings: Vec<String> = Vec::new();
+
+        // ── Step 1: Load config and spec ──────────────────────────────
+        let cwd = resolve_cwd()?;
+        let config = match load_config(&cwd) {
+            Ok(c) => c,
+            Err(err_result) => return Ok(err_result),
+        };
+        let entry = match load_spec_entry_mcp(&cwd, &config, &p.name) {
+            Ok(e) => e,
+            Err(err_result) => return Ok(err_result),
+        };
+
+        // Extract criteria, description, gate_section from the spec entry.
+        let (spec_name, description, criteria, gate_section) = match &entry {
+            SpecEntry::Legacy { spec, slug } => (
+                slug.clone(),
+                spec.description.clone(),
+                spec.criteria.clone(),
+                spec.gate.clone(),
+            ),
+            SpecEntry::Directory { slug, gates, .. } => (
+                slug.clone(),
+                gates.description.clone(),
+                gates.criteria.clone(),
+                gates.gate.clone(),
+            ),
+        };
+
+        if criteria.is_empty() {
+            return Ok(CallToolResult::error(vec![Content::text(
+                "spec has no criteria to evaluate",
+            )]));
+        }
+
+        // ── Step 2: Resolve working directory ─────────────────────────
+        let assay_dir = cwd.join(".assay");
+        let (working_dir, linked_session_id) = if let Some(ref session_id) = p.session_id {
+            let assay_dir_clone = assay_dir.clone();
+            let session_id_owned = session_id.clone();
+            let session = match tokio::task::spawn_blocking(move || {
+                assay_core::work_session::load_session(&assay_dir_clone, &session_id_owned)
+            })
+            .await
+            .map_err(|e| McpError::internal_error(format!("task join failed: {e}"), None))?
+            {
+                Ok(s) => s,
+                Err(e) => return Ok(domain_error(&e)),
+            };
+            (session.worktree_path.clone(), Some(session_id.clone()))
+        } else {
+            (resolve_working_dir(&cwd, &config), None)
+        };
+
+        if !working_dir.is_dir() {
+            return Ok(CallToolResult::error(vec![Content::text(format!(
+                "working directory does not exist or is not a directory: {}",
+                working_dir.display()
+            ))]));
+        }
+
+        // ── Step 3: Compute git diff ──────────────────────────────────
+        let diff = {
+            match std::process::Command::new("git")
+                .args(["diff", "HEAD"])
+                .current_dir(&working_dir)
+                .output()
+            {
+                Ok(output) if output.status.success() => {
+                    let raw = String::from_utf8_lossy(&output.stdout);
+                    let (truncated, _was_truncated, _original_bytes) =
+                        assay_core::gate::truncate_diff(&raw, DIFF_BUDGET_BYTES);
+                    truncated
+                }
+                Ok(output) => {
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    let msg = format!("git diff HEAD failed: {}", stderr.trim());
+                    tracing::warn!("{msg}");
+                    warnings.push(format!("{msg} — evaluator will assess without diff context"));
+                    None
+                }
+                Err(e) => {
+                    let msg = format!("git diff HEAD command error: {e}");
+                    tracing::warn!("{msg}");
+                    warnings.push(format!("{msg} — evaluator will assess without diff context"));
+                    None
+                }
+            }
+        };
+
+        // ── Step 4: Build evaluator prompt ────────────────────────────
+        // Criterion prompts are inlined by build_evaluator_prompt as
+        // "Evaluation guidance" under each criterion — no separate
+        // agent_prompt needed to avoid duplication.
+        let prompt = assay_core::evaluator::build_evaluator_prompt(
+            &spec_name,
+            &description,
+            &criteria,
+            diff.as_deref(),
+            None,
+        );
+
+        // ── Step 5: Build system prompt and schema ────────────────────
+        let system_prompt = assay_core::evaluator::build_system_prompt();
+        let schema_json = assay_core::evaluator::evaluator_schema_json();
+
+        // ── Step 6: Construct EvaluatorConfig ─────────────────────────
+        let gates_config = config.gates.as_ref();
+        let model = p.model.unwrap_or_else(|| {
+            gates_config
+                .map(|g| g.evaluator_model.clone())
+                .unwrap_or_else(|| "sonnet".to_string())
+        });
+        let timeout = Duration::from_secs(
+            p.timeout
+                .unwrap_or_else(|| gates_config.map(|g| g.evaluator_timeout).unwrap_or(120)),
+        );
+        let retries = gates_config.map(|g| g.evaluator_retries).unwrap_or(1);
+
+        let eval_config = assay_core::evaluator::EvaluatorConfig {
+            model: model.clone(),
+            timeout,
+            retries,
+        };
+
+        // ── Step 7: Spawn evaluator subprocess ────────────────────────
+        let evaluator_result = match assay_core::evaluator::run_evaluator(
+            &prompt,
+            &system_prompt,
+            &schema_json,
+            &eval_config,
+            &working_dir,
+        )
+        .await
+        {
+            Ok(r) => r,
+            Err(assay_core::error::EvaluatorError::NotInstalled) => {
+                return Ok(CallToolResult::error(vec![Content::text(
+                    "Claude Code CLI (`claude`) not found in PATH. \
+                     Install from https://claude.ai/code to use gate_evaluate.",
+                )]));
+            }
+            Err(assay_core::error::EvaluatorError::Timeout { timeout_secs }) => {
+                return Ok(CallToolResult::error(vec![Content::text(format!(
+                    "Evaluator timed out after {timeout_secs}s. \
+                     Increase timeout or reduce criteria count."
+                ))]));
+            }
+            Err(assay_core::error::EvaluatorError::Crash { exit_code, stderr }) => {
+                let code_str = exit_code
+                    .map(|c| format!(" (exit code: {c})"))
+                    .unwrap_or_default();
+                return Ok(CallToolResult::error(vec![Content::text(format!(
+                    "Evaluator subprocess crashed{code_str}: {}",
+                    truncate_to_char_boundary(&stderr, 500)
+                ))]));
+            }
+            Err(assay_core::error::EvaluatorError::ParseError { raw_output, error }) => {
+                return Ok(CallToolResult::error(vec![Content::text(format!(
+                    "Evaluator output parse error: {error}. Raw output: {}",
+                    truncate_to_char_boundary(&raw_output, 500)
+                ))]));
+            }
+            Err(assay_core::error::EvaluatorError::NoStructuredOutput { raw_output }) => {
+                return Ok(CallToolResult::error(vec![Content::text(format!(
+                    "Evaluator output missing structured_output. Raw output: {}",
+                    truncate_to_char_boundary(&raw_output, 500)
+                ))]));
+            }
+            Err(e) => {
+                return Ok(CallToolResult::error(vec![Content::text(format!(
+                    "Evaluator failed: {e}"
+                ))]));
+            }
+        };
+
+        // Merge evaluator parse warnings.
+        warnings.extend(evaluator_result.warnings);
+
+        // ── Step 8: Map to GateRunRecord ──────────────────────────────
+        let enforcement_map: HashMap<String, assay_types::Enforcement> = criteria
+            .iter()
+            .map(|c| {
+                let resolved =
+                    assay_core::gate::resolve_enforcement(c.enforcement, gate_section.as_ref());
+                (c.name.clone(), resolved)
+            })
+            .collect();
+
+        let duration_ms = start.elapsed().as_millis() as u64;
+        let (record, map_warnings) = assay_core::evaluator::map_evaluator_output(
+            &spec_name,
+            &evaluator_result.output,
+            &enforcement_map,
+            duration_ms,
+        );
+        warnings.extend(map_warnings);
+
+        let run_id = record.run_id.clone();
+        let overall_passed = evaluator_result.output.summary.passed;
+
+        // Build response results from the evaluator output.
+        let results: Vec<EvaluateCriterionResult> = evaluator_result
+            .output
+            .criteria
+            .iter()
+            .map(|cr| {
+                let enforcement = enforcement_map
+                    .get(&cr.name)
+                    .copied()
+                    .unwrap_or(assay_types::Enforcement::Required);
+                EvaluateCriterionResult {
+                    name: cr.name.clone(),
+                    outcome: match cr.outcome {
+                        assay_types::CriterionOutcome::Pass => "pass",
+                        assay_types::CriterionOutcome::Fail => "fail",
+                        assay_types::CriterionOutcome::Skip => "skip",
+                        assay_types::CriterionOutcome::Warn => "warn",
+                    }
+                    .to_string(),
+                    reasoning: cr.reasoning.clone(),
+                    evidence: cr.evidence.clone(),
+                    enforcement: match enforcement {
+                        assay_types::Enforcement::Required => "required",
+                        assay_types::Enforcement::Advisory => "advisory",
+                    }
+                    .to_string(),
+                }
+            })
+            .collect();
+
+        // ── Step 9: Persist via history::save ─────────────────────────
+        let max_history = gates_config.and_then(|g| g.max_history);
+        let assay_dir_for_save = assay_dir.clone();
+        let record_for_save = record.clone();
+        match tokio::task::spawn_blocking(move || {
+            assay_core::history::save(&assay_dir_for_save, &record_for_save, max_history)
+        })
+        .await
+        .map_err(|e| McpError::internal_error(format!("task join failed: {e}"), None))?
+        {
+            Ok(_) => {}
+            Err(e) => {
+                let msg = format!("history save failed: {e}");
+                tracing::warn!(run_id = %run_id, "{msg}");
+                warnings.push(msg);
+            }
+        }
+
+        // ── Step 10: Session auto-linking ─────────────────────────────
+        if let Some(ref session_id) = linked_session_id {
+            let assay_dir_for_session = assay_dir.clone();
+            let session_id_owned = session_id.clone();
+            let run_id_owned = run_id.clone();
+            let notes = format!(
+                "gate_evaluate: {}",
+                if overall_passed { "passed" } else { "failed" }
+            );
+            match tokio::task::spawn_blocking(move || {
+                assay_core::work_session::record_gate_result(
+                    &assay_dir_for_session,
+                    &session_id_owned,
+                    &run_id_owned,
+                    "gate_evaluate",
+                    Some(&notes),
+                )
+            })
+            .await
+            .map_err(|e| McpError::internal_error(format!("task join failed: {e}"), None))?
+            {
+                Ok(_) => {}
+                Err(e) => {
+                    let msg = format!("session auto-link failed: {e}");
+                    tracing::warn!(session_id = %session_id, "{msg}");
+                    warnings.push(msg);
+                }
+            }
+        }
+
+        // ── Build response ────────────────────────────────────────────
+        let response = GateEvaluateResponse {
+            run_id,
+            spec_name,
+            summary: GateEvaluateSummary {
+                passed: record.summary.passed,
+                failed: record.summary.failed,
+                skipped: record.summary.skipped,
+                required_failed: record.summary.enforcement.required_failed,
+                advisory_failed: record.summary.enforcement.advisory_failed,
+                blocked: record.summary.enforcement.required_failed > 0,
+            },
+            results,
+            overall_passed,
+            evaluator_model: model,
+            duration_ms,
+            warnings,
+            session_id: linked_session_id,
+        };
 
         let json = serde_json::to_string(&response)
             .map_err(|e| McpError::internal_error(format!("serialization failed: {e}"), None))?;
@@ -1770,8 +2189,9 @@ impl ServerHandler for AssayServer {
                 "Assay development kit. Manages specs (what to build) and gates \
                  (quality checks). Use spec_list to discover specs, spec_get to \
                  read one, gate_run to evaluate criteria. For specs with agent \
-                 criteria: gate_run returns a session_id, then call gate_report \
-                 for each criterion, and gate_finalize to persist results. \
+                 criteria: use gate_evaluate for automated single-call evaluation \
+                 via headless Claude Code subprocess, or gate_run + gate_report + \
+                 gate_finalize for manual multi-step evaluation. \
                  Use gate_history to query past run results and track quality trends. \
                  Use context_diagnose for full session diagnostics with bloat analysis, \
                  or estimate_tokens for a quick context health check. \
@@ -1832,6 +2252,19 @@ fn resolve_working_dir(cwd: &Path, config: &Config) -> PathBuf {
 /// Convert an AssayError into a tool execution error that the agent can see and act on.
 fn domain_error(err: &assay_core::AssayError) -> CallToolResult {
     CallToolResult::error(vec![Content::text(err.to_string())])
+}
+
+/// Truncate a string to at most `max_bytes`, respecting UTF-8 char boundaries.
+fn truncate_to_char_boundary(s: &str, max_bytes: usize) -> &str {
+    if s.len() <= max_bytes {
+        return s;
+    }
+    // Find the last char boundary at or before max_bytes
+    let mut end = max_bytes;
+    while end > 0 && !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    &s[..end]
 }
 
 /// Collected info about agent criteria in a spec, used to create a session.
@@ -2638,6 +3071,9 @@ cmd = "echo ok"
                 default_timeout: 300,
                 working_dir: Some("subdir".to_string()),
                 max_history: None,
+                evaluator_model: "sonnet".to_string(),
+                evaluator_retries: 1,
+                evaluator_timeout: 120,
             }),
             guard: None,
             worktree: None,
@@ -2662,6 +3098,9 @@ cmd = "echo ok"
                 default_timeout: 300,
                 working_dir: Some("/tmp/custom".to_string()),
                 max_history: None,
+                evaluator_model: "sonnet".to_string(),
+                evaluator_retries: 1,
+                evaluator_timeout: 120,
             }),
             guard: None,
             worktree: None,
