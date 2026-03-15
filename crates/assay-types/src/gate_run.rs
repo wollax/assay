@@ -68,9 +68,9 @@ inventory::submit! {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 pub struct DiffTruncation {
     /// Byte size of the original diff before truncation.
-    pub original_bytes: usize,
+    pub original_bytes: u64,
     /// Byte size of the diff after truncation.
-    pub truncated_bytes: usize,
+    pub truncated_bytes: u64,
     /// Files included in the truncated diff.
     pub included_files: Vec<String>,
     /// Files omitted from the truncated diff (present in original, absent after truncation).

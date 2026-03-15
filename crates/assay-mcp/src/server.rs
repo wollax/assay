@@ -1413,8 +1413,8 @@ impl AssayServer {
                         );
 
                         let meta = assay_types::DiffTruncation {
-                            original_bytes,
-                            truncated_bytes,
+                            original_bytes: original_bytes as u64,
+                            truncated_bytes: truncated_bytes as u64,
                             included_files: kept_files,
                             omitted_files,
                         };

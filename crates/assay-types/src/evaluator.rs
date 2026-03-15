@@ -33,7 +33,10 @@ inventory::submit! {
 /// Per-criterion evaluation result from the evaluator subprocess.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 pub struct EvaluatorCriterionResult {
-    /// Criterion name (must match a criterion in the spec).
+    /// Criterion name as reported by the evaluator.
+    ///
+    /// Expected to match a criterion name in the spec, but this is not enforced
+    /// at the type level — mismatches surface as warnings during result mapping.
     pub name: String,
     /// Four-state outcome of the evaluation.
     pub outcome: CriterionOutcome,

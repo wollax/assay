@@ -76,9 +76,9 @@ pub struct WorktreeStatus {
     /// Whether the worktree has uncommitted changes.
     pub dirty: bool,
     /// Number of commits ahead of base branch. `None` when the base ref is missing.
-    pub ahead: Option<usize>,
+    pub ahead: Option<u32>,
     /// Number of commits behind base branch. `None` when the base ref is missing.
-    pub behind: Option<usize>,
+    pub behind: Option<u32>,
     /// The base branch this worktree was created from (from metadata).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub base_branch: Option<String>,

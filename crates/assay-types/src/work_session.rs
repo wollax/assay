@@ -142,6 +142,9 @@ pub struct WorkSession {
     /// Details about the agent invocation.
     pub agent: AgentInvocation,
     /// IDs of gate runs associated with this session.
+    ///
+    /// Each entry is a `GateRunRecord.run_id` in format `<timestamp>-<6-char-hex>`
+    /// (e.g., `20260304T223015Z-a3f1b2`). Entries are deduplicated on insertion.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub gate_runs: Vec<String>,
     /// Version of assay that created this session.
