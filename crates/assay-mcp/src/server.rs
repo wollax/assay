@@ -1344,6 +1344,14 @@ impl AssayServer {
         let model_window = assay_core::context::context_window_for_model(Some(&model));
 
         let (diff, diff_truncation) = if let Some(ref raw) = raw_diff {
+            // Count non-empty overhead inputs to determine the diff's expected
+            // position in budget_context's canonical output order:
+            // [system_prompt, spec_body, criteria_text, diff]
+            let overhead_count = [&system_prompt, &description, &criteria_text]
+                .iter()
+                .filter(|s| !s.is_empty())
+                .count();
+
             match assay_core::context::budget_context(
                 &system_prompt,
                 &description,
@@ -1352,16 +1360,18 @@ impl AssayServer {
                 model_window,
             ) {
                 Ok(budgeted) => {
-                    // Extract the (possibly truncated) diff from budget_context output.
-                    // Canonical order: [system_prompt, spec_body, criteria_text, diff]
-                    // Diff is last if present and non-empty.
-                    let truncated_diff = budgeted.last().cloned().filter(|s| {
-                        s != &system_prompt && s != &description && s != &criteria_text
-                    });
+                    // Extract the diff by position: it occupies the slot after
+                    // overhead items. If budget_context dropped it entirely,
+                    // the vec will have fewer items than overhead_count + 1.
+                    let truncated_diff = if budgeted.len() > overhead_count {
+                        Some(budgeted[overhead_count].clone())
+                    } else {
+                        None // diff was fully dropped by the pipeline
+                    };
 
                     let was_truncated = match &truncated_diff {
                         Some(d) => d.len() < raw.len(),
-                        None => !raw.is_empty(), // diff was fully dropped
+                        None => true, // diff was fully dropped
                     };
 
                     if was_truncated {
@@ -1370,21 +1380,38 @@ impl AssayServer {
                             .as_deref()
                             .map(assay_core::gate::extract_diff_files)
                             .unwrap_or_default();
+                        let kept_set: std::collections::HashSet<&str> =
+                            kept_files.iter().map(|s| s.as_str()).collect();
                         let omitted_files: Vec<String> = raw_files
                             .iter()
-                            .filter(|f| !kept_files.contains(f))
+                            .filter(|f| !kept_set.contains(f.as_str()))
                             .cloned()
                             .collect();
 
                         let original_bytes = raw.len();
-                        let truncated_bytes = truncated_diff.as_ref().map(|d| d.len()).unwrap_or(0);
+                        let truncated_bytes =
+                            truncated_diff.as_ref().map(|d| d.len()).unwrap_or(0);
                         let omitted_count = omitted_files.len();
 
-                        warnings.push(format!(
-                            "Diff truncated from {original_bytes} to {truncated_bytes} bytes \
-                             ({} files kept, {omitted_count} files omitted) to fit token budget",
-                            kept_files.len()
-                        ));
+                        if truncated_bytes == 0 {
+                            warnings.push(format!(
+                                "Diff entirely omitted ({original_bytes} bytes, \
+                                 {omitted_count} files) — token budget exceeded; \
+                                 evaluator will assess without diff context"
+                            ));
+                        } else {
+                            warnings.push(format!(
+                                "Diff truncated from {original_bytes} to \
+                                 {truncated_bytes} bytes ({} files kept, \
+                                 {omitted_count} files omitted) to fit token budget",
+                                kept_files.len()
+                            ));
+                        }
+
+                        debug_assert!(
+                            truncated_bytes <= original_bytes,
+                            "truncated_bytes ({truncated_bytes}) > original_bytes ({original_bytes})"
+                        );
 
                         let meta = assay_types::DiffTruncation {
                             original_bytes,
@@ -1399,10 +1426,15 @@ impl AssayServer {
                 }
                 Err(e) => {
                     tracing::warn!("budget_context failed: {e}");
+                    // Fall back to byte-budget truncation as a safety net so the
+                    // evaluator doesn't receive an unbounded diff.
+                    let (truncated, _was_truncated, _original_bytes) =
+                        assay_core::gate::truncate_diff(raw, DIFF_BUDGET_BYTES);
                     warnings.push(format!(
-                        "Diff budget computation failed: {e} — full diff passed to evaluator"
+                        "Diff budget computation failed: {e} — \
+                         diff byte-truncated to {DIFF_BUDGET_BYTES} as fallback"
                     ));
-                    (Some(raw.clone()), None)
+                    (truncated, None)
                 }
             }
         } else {
@@ -1507,9 +1539,6 @@ impl AssayServer {
         );
         warnings.extend(map_warnings);
 
-        // Attach truncation metadata to the persisted record.
-        record.diff_truncation = diff_truncation.clone();
-
         let run_id = record.run_id.clone();
         let overall_passed = evaluator_result.output.summary.passed;
 
@@ -1544,6 +1573,11 @@ impl AssayServer {
             .collect();
 
         // ── Step 11: Persist via history::save ────────────────────────
+        // Attach truncation metadata before cloning for save so the
+        // persisted record includes it. The response takes it from the
+        // original `diff_truncation` binding (no extra clone needed).
+        record.diff_truncation = diff_truncation.clone();
+
         let max_history = gates_config.and_then(|g| g.max_history);
         let assay_dir_for_save = assay_dir.clone();
         let record_for_save = record.clone();
