@@ -181,10 +181,10 @@ where
     Ok(session)
 }
 
-/// Create a session and immediately transition to AgentRunning.
+/// Create a session and immediately transition to [`SessionPhase::AgentRunning`].
 ///
-/// This is the common Phase 43 entry point: create + transition + save
-/// in a single atomic operation. Returns the saved session.
+/// Combines create + transition + save in a single atomic operation.
+/// Returns the saved session.
 pub fn start_session(
     assay_dir: &Path,
     spec_name: &str,
@@ -252,7 +252,8 @@ pub fn abandon_session(assay_dir: &Path, session_id: &str, reason: &str) -> Resu
 pub struct RecoverySummary {
     /// Number of sessions recovered (transitioned to Abandoned).
     pub recovered: usize,
-    /// Number of sessions skipped (wrong phase, not stale, data inconsistency).
+    /// Number of eligible sessions (AgentRunning and stale) that could not be recovered
+    /// due to missing transition records or failed state transitions.
     pub skipped: usize,
     /// Number of errors encountered (corrupt files, save failures).
     pub errors: usize,
@@ -262,16 +263,18 @@ pub struct RecoverySummary {
 fn format_duration(d: chrono::Duration) -> String {
     let h = d.num_hours();
     let m = d.num_minutes() % 60;
-    if h > 0 {
-        format!("{h}h {m}m")
-    } else {
-        format!("{m}m")
+    match (h, m) {
+        (0, m) => format!("{m}m"),
+        (h, 0) => format!("{h}h"),
+        (h, m) => format!("{h}h {m}m"),
     }
 }
 
 /// Build a recovery note with timing and host details.
 ///
 /// Format: `"Recovered on startup: stale for 3h 12m (threshold: 1h). Host: macbook.local, PID: 12345"`
+///
+/// Duration formatting: "3h 12m" for mixed, "1h" for exact hours, "45m" for sub-hour.
 fn build_recovery_note(
     stale_duration: chrono::Duration,
     threshold: chrono::Duration,
@@ -359,13 +362,13 @@ pub fn recover_stale_sessions(assay_dir: &Path, stale_threshold_secs: u64) -> Re
             Some(&note),
         ) {
             tracing::warn!(session_id = %id, "recovery scan: transition failed: {e}");
-            summary.skipped += 1;
+            summary.errors += 1;
             continue;
         }
 
         match save_session(assay_dir, &session) {
             Ok(_) => {
-                tracing::warn!(
+                tracing::info!(
                     session_id = %id,
                     spec_name = %session.spec_name,
                     stale_duration = %format_duration(age),
@@ -1005,7 +1008,7 @@ mod tests {
 
         assert_eq!(
             note,
-            "Recovered on startup: stale for 3h 12m (threshold: 1h 0m). Host: testhost, PID: 12345"
+            "Recovered on startup: stale for 3h 12m (threshold: 1h). Host: testhost, PID: 12345"
         );
     }
 
