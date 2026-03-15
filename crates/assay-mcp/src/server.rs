@@ -2009,12 +2009,48 @@ fn first_nonempty_line(s: &str) -> Option<&str> {
     s.lines().find(|line| !line.trim().is_empty())
 }
 
+/// Load the stale session threshold from config, falling back to 3600 seconds.
+fn load_recovery_threshold(cwd: &Path) -> u64 {
+    let config_path = cwd.join(".assay").join("config.toml");
+    let content = match std::fs::read_to_string(&config_path) {
+        Ok(c) => c,
+        Err(_) => return 3600,
+    };
+    let config: Config = match toml::from_str(&content) {
+        Ok(c) => c,
+        Err(_) => return 3600,
+    };
+    config.sessions.map(|s| s.stale_threshold).unwrap_or(3600)
+}
+
 /// Start the MCP server on stdio transport.
 ///
 /// Creates an [`AssayServer`] and serves JSON-RPC on stdin/stdout until
 /// the transport closes. Caller must initialize tracing before calling.
+///
+/// Before accepting any tool calls, runs a recovery scan for stale
+/// `agent_running` sessions (see [`assay_core::work_session::recover_stale_sessions`]).
 pub async fn serve() -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!("Starting assay MCP server");
+
+    // Recover stale sessions before accepting any tool calls.
+    // Runs synchronously — capped at 100 sessions, completes in <50ms.
+    if let Ok(cwd) = std::env::current_dir() {
+        let assay_dir = cwd.join(".assay");
+        if assay_dir.join("sessions").is_dir() {
+            let stale_threshold = load_recovery_threshold(&cwd);
+            let summary =
+                assay_core::work_session::recover_stale_sessions(&assay_dir, stale_threshold);
+            if summary.recovered > 0 || summary.errors > 0 {
+                tracing::info!(
+                    recovered = summary.recovered,
+                    skipped = summary.skipped,
+                    errors = summary.errors,
+                    "session recovery scan complete"
+                );
+            }
+        }
+    }
 
     let service = AssayServer::new().serve(stdio()).await?;
 
