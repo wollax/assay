@@ -290,6 +290,21 @@ pub enum AssayError {
         /// The spec slug with uncommitted changes.
         spec_slug: String,
     },
+
+    /// Context budgeting failed (cupel pipeline or budget construction error).
+    #[error("context budgeting failed: {source}")]
+    ContextBudget {
+        /// The underlying cupel error.
+        #[source]
+        source: cupel::CupelError,
+    },
+
+    /// Context budget parameters are invalid.
+    #[error("invalid context budget: {message}")]
+    ContextBudgetInvalid {
+        /// Description of the validation failure.
+        message: String,
+    },
 }
 
 impl AssayError {

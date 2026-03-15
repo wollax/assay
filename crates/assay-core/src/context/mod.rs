@@ -8,12 +8,14 @@ use std::path::Path;
 
 use assay_types::context::SessionInfo;
 
+pub mod budgeting;
 mod diagnostics;
 mod discovery;
 mod parser;
 pub mod pruning;
 pub(crate) mod tokens;
 
+pub use budgeting::budget_context;
 pub use diagnostics::diagnose;
 pub use discovery::{discover_sessions, find_session_dir, resolve_session};
 pub use parser::{ParsedEntry, parse_session};

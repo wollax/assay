@@ -133,6 +133,7 @@ version = "0.3.0"
 dependencies = [
  "assay-types",
  "chrono",
+ "cupel",
  "dirs",
  "libc",
  "notify",
@@ -147,17 +148,6 @@ dependencies = [
  "tracing",
  "tracing-appender",
  "which",
-]
-
-[[package]]
-name = "assay-cupel"
-version = "0.3.0"
-dependencies = [
- "chrono",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "toml",
 ]
 
 [[package]]
@@ -640,6 +630,14 @@ checksum = "eb2a7d3066da2de787b7f032c736763eb7ae5d355f81a68bab2675a96008b0bf"
 dependencies = [
  "lab",
  "phf",
+]
+
+[[package]]
+name = "cupel"
+version = "1.0.0"
+dependencies = [
+ "chrono",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
