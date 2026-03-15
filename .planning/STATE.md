@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 2026-03-10)
 
 ## Current Position
 
-Phase: 40 — WorkSession Type & Persistence (COMPLETE)
-Plan: 2 of 2 (WorkSession persistence layer — COMPLETE)
+Phase: 41 — Session MCP Tools (COMPLETE)
+Plan: 1 of 1 (Session MCP tools — COMPLETE)
 Status: Complete
-Last activity: 2026-03-15 — Completed 40-02-PLAN.md
+Last activity: 2026-03-15 — Completed 41-01-PLAN.md
 
-Progress: v0.4.0 [███████████░░░░░░] ~55% (phases 35-40 complete)
+Progress: v0.4.0 [████████████░░░░░] ~60% (phases 35-41 complete)
 
 ## Milestone Progress
 
@@ -23,7 +23,7 @@ Progress: v0.4.0 [███████████░░░░░░] ~55% (pha
 | v0.1.0 | 10 | 43 | 100% (shipped) |
 | v0.2.0 | 15 (11-25) | 52 | 100% (shipped) |
 | v0.3.0 | 9 (26-34) | 43 | 100% (shipped) |
-| v0.4.0 | 11 (35-45) | 28 | 55% (6/11 phases) |
+| v0.4.0 | 11 (35-45) | 28 | 60% (7/11 phases) |
 | v0.4.1 | TBD | 8 | 0% (planned) |
 
 ## Accumulated Context
@@ -128,5 +128,5 @@ Run `/kata-plan-phase [N]` to start planning phases, or `/kata-discuss-phase [N]
 ### Session Continuity
 
 Last session: 2026-03-15
-Stopped at: Completed 40-02-PLAN.md (Phase 40 complete)
+Stopped at: Completed 41-01-PLAN.md (Phase 41 complete)
 Resume file: None
