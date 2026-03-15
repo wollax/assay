@@ -5,6 +5,41 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-03-15
+
+### Added
+- `gate_evaluate` MCP tool — single-call headless agent evaluation with diff computation, subprocess orchestration, structured per-criterion results, and automatic GateRunRecord persistence
+- EvaluatorOutput JSON schema with lenient serde_json::Value intermediate parsing for subprocess output
+- Diff token budgeting via context engine integration — model window minus spec/prompt overhead, head-first + tail fallback truncation
+- DiffTruncation metadata (original/truncated size, strategy, affected files) in GateRunRecord
+- `spec_validate` MCP tool with structured diagnostics — TOML parse errors, criterion uniqueness, prompt field validation, cross-spec dependency cycle detection
+- `WorkSession` type with JSON persistence, phase transitions (created → agent_running → gate_evaluated → completed | abandoned), and timestamps
+- Session MCP tools: `session_create`, `session_get`, `session_update`, `session_list` with spec_name/status filters
+- Startup recovery scan for stale `agent_running` sessions — marks abandoned with recovery notes
+- Context engine integration via external `cupel` crate for token-budgeted context windowing with passthrough optimization
+- `warnings` field on all mutating MCP tool responses for surfacing non-fatal issues
+- Outcome-filtered `gate_history` with limit parameter (default 10, max 50)
+- `spec_get` resolve parameter showing effective timeouts with 3-tier precedence and working_dir validation
+- Growth rate metrics in `estimate_tokens` — average tokens per turn, estimated turns remaining
+- Base-branch-relative ahead/behind for worktree status (fixes false 0/0 for assay-managed branches)
+- Diff context captured at gate_run time with 32 KiB head-biased truncation
+- Enriched gate session error messages distinguishing timeout vs not-found with recovery hints
+
+### Fixed
+- 120+ tech debt issues resolved across types, core, CLI, and MCP crates
+- SessionPhase marked `#[non_exhaustive]` for forward compatibility
+- DiffTruncation byte fields use u64 for platform-independent serialization
+- WorktreeInfo ahead/behind fields use u32 instead of usize
+- Evaluator schema cached with LazyLock (generated once per process)
+- EvaluateCriterionResult uses typed CriterionOutcome/Enforcement enums instead of freeform strings
+- GateHistoryEntry includes required_passed/advisory_passed count fields
+- Session path component validation prevents directory traversal
+
+### Changed
+- gate_evaluate uses subprocess model — parent process owns all parsing and persistence, evaluator never calls MCP tools
+- Session management within gate_evaluate uses direct Rust function calls, not MCP round-trips
+- RecoverySummary includes truncated flag for 100-session cap indication
+
 ## [0.3.0] - 2026-03-10
 
 ### Added
@@ -80,6 +115,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - PR review findings across phases 6-10
 
+[0.4.0]: https://github.com/wollax/assay/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/wollax/assay/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/wollax/assay/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/wollax/assay/releases/tag/v0.1.0
