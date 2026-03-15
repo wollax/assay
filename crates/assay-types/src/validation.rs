@@ -18,7 +18,7 @@ pub enum Severity {
 }
 
 /// A single validation diagnostic with location, severity, and message.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 pub struct Diagnostic {
     /// Severity level.
     pub severity: Severity,
@@ -29,7 +29,7 @@ pub struct Diagnostic {
 }
 
 /// Result of validating one or more specs.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
 pub struct ValidationResult {
     /// The spec name/slug that was validated.
     pub spec: String,
@@ -43,14 +43,34 @@ pub struct ValidationResult {
 }
 
 /// Counts of diagnostics by severity level.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
 pub struct DiagnosticSummary {
     /// Number of error-level diagnostics.
     pub errors: usize,
     /// Number of warning-level diagnostics.
     pub warnings: usize,
     /// Number of info-level diagnostics.
-    pub info: usize,
+    pub infos: usize,
+}
+
+impl DiagnosticSummary {
+    /// Count diagnostics by severity level into a new [`DiagnosticSummary`].
+    pub fn from_diagnostics(diagnostics: &[Diagnostic]) -> Self {
+        Self {
+            errors: diagnostics
+                .iter()
+                .filter(|d| d.severity == Severity::Error)
+                .count(),
+            warnings: diagnostics
+                .iter()
+                .filter(|d| d.severity == Severity::Warning)
+                .count(),
+            infos: diagnostics
+                .iter()
+                .filter(|d| d.severity == Severity::Info)
+                .count(),
+        }
+    }
 }
 
 inventory::submit! {
