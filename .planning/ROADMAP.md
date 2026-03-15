@@ -138,9 +138,13 @@
     3. `EvaluatorOutput` JSON schema is defined before prompt engineering — lenient `serde_json::Value` intermediate parse handles unexpected fields gracefully
     4. Per-criterion results include pass/fail status and evaluator reasoning
 
-- [ ] Phase 44: gate_evaluate Context Budgeting
+- [ ] Phase 44: gate_evaluate Context Budgeting (2 plans)
   - ORCH-04: Diff token budget via context engine
   - ORCH-05: Head-first + tail fallback truncation
+  - **Plans:** 2 plans
+  Plans:
+  - [ ] 44-01-PLAN.md — DiffTruncation type, context_window_for_model re-export, extract_diff_files helper
+  - [ ] 44-02-PLAN.md — Wire budget_context into gate_evaluate handler, truncation metadata, warnings
   - **Success criteria:**
     1. `gate_evaluate` computes diff token budget as: model context window − spec criteria tokens − system prompt tokens
     2. Diff is truncated to budget using head-first strategy with tail fallback — preserving most important context
