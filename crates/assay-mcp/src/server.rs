@@ -1,6 +1,6 @@
 //! MCP server implementation with spec, gate, context, worktree, and session tools.
 //!
-//! Provides the [`AssayServer`] which exposes eighteen tools over MCP:
+//! Provides the [`AssayServer`] which exposes tools over MCP:
 //! - `spec_list` — discover available specs
 //! - `spec_get` — read a full spec definition
 //! - `spec_validate` — statically validate a spec without running it
@@ -54,7 +54,6 @@ pub struct SpecGetParams {
     #[schemars(description = "Spec name (filename without .toml extension, e.g. 'auth-flow')")]
     pub name: String,
 
-    /// Include resolved configuration (effective timeouts, working_dir validation).
     #[schemars(
         description = "Include resolved configuration (effective timeouts, working_dir validation)"
     )]
@@ -111,8 +110,12 @@ pub struct GateRunParams {
 /// Parameters for the `gate_report` tool.
 #[derive(Deserialize, JsonSchema)]
 pub struct GateReportParams {
-    /// Session ID returned by gate_run.
-    #[schemars(description = "Session ID returned by gate_run")]
+    /// In-memory AgentSession ID returned by `gate_run` when the spec contains agent criteria.
+    /// This is distinct from the persisted WorkSession ID created by `session_create`.
+    #[schemars(
+        description = "In-memory AgentSession ID returned by gate_run when the spec has agent \
+            criteria. Distinct from the persisted WorkSession ID created by session_create."
+    )]
     pub session_id: String,
 
     /// Name of the criterion being evaluated (must match a criterion in the spec).
@@ -223,7 +226,9 @@ pub struct WorktreeListParams {
     /// Worktree base directory override.
     /// Currently unused — list discovers worktrees from git, not the filesystem.
     /// Retained for API consistency with other worktree tools.
-    #[schemars(description = "Override worktree base directory (reserved for future use)")]
+    #[schemars(
+        description = "Override worktree base directory. Currently unused — list discovers worktrees from git, not the filesystem. Reserved for future use."
+    )]
     #[serde(default)]
     #[allow(dead_code)]
     pub worktree_dir: Option<String>,
@@ -282,11 +287,11 @@ pub struct SessionCreateParams {
     pub worktree_path: PathBuf,
 
     /// Command used to invoke the agent.
-    #[schemars(description = "Agent invocation command (e.g. 'claude --spec auth-flow')")]
+    #[schemars(description = "Agent invocation command (e.g. 'claude --model sonnet')")]
     pub agent_command: String,
 
     /// Model used by the agent, if known.
-    #[schemars(description = "Model used by the agent (e.g. 'claude-sonnet-4-20250514')")]
+    #[schemars(description = "Model used by the agent (e.g. 'claude-sonnet-4')")]
     #[serde(default)]
     pub agent_model: Option<String>,
 }
@@ -474,9 +479,7 @@ struct GateReportResponse {
     evaluations_count: usize,
     /// Names of criteria still pending agent evaluation in this session.
     pending_criteria: Vec<String>,
-    /// Warnings about degraded operations.
-    /// Pre-wired for future observability (e.g., report validation warnings);
-    /// currently always empty since `gate_report` has no fallible side-effects.
+    /// Warnings about degraded operations (e.g., session state inconsistencies).
     /// Omitted from JSON when empty.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     warnings: Vec<String>,
@@ -515,7 +518,8 @@ struct GateFinalizeResponse {
 struct GateHistoryListResponse {
     /// Spec name that was queried.
     spec_name: String,
-    /// Total number of runs on disk for this spec (before limit AND outcome filter are applied).
+    /// Total number of run files enumerated on disk for this spec (raw file count, before
+    /// deserialization, outcome filtering, or limit are applied).
     total_runs: usize,
     /// Run summaries, most recent first.
     runs: Vec<GateHistoryEntry>,
@@ -538,8 +542,12 @@ struct GateHistoryEntry {
     failed: usize,
     /// Number of criteria that were skipped.
     skipped: usize,
+    /// Number of required criteria that passed.
+    required_passed: usize,
     /// Number of required criteria that failed.
     required_failed: usize,
+    /// Number of advisory criteria that passed.
+    advisory_passed: usize,
     /// Number of advisory criteria that failed.
     advisory_failed: usize,
     /// Whether the gate was blocked (any required criterion failed).
@@ -600,6 +608,7 @@ struct SessionCreateResponse {
     /// ISO 8601 creation timestamp.
     created_at: chrono::DateTime<chrono::Utc>,
     /// Warnings about degraded operations.
+    /// Future use: spec validation warnings, worktree path inaccessibility, etc.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     warnings: Vec<String>,
 }
@@ -613,6 +622,7 @@ struct SessionGetResponse {
     #[serde(flatten)]
     session: assay_types::work_session::WorkSession,
     /// Warnings about degraded operations.
+    /// Future use: partial data, format migration issues, missing linked gate runs, etc.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     warnings: Vec<String>,
 }
@@ -629,6 +639,7 @@ struct SessionUpdateResponse {
     /// Number of gate run IDs now linked.
     gate_runs_count: usize,
     /// Warnings about degraded operations.
+    /// Future use: gate run ID not found in history, duplicate link skipped, etc.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     warnings: Vec<String>,
 }
@@ -665,15 +676,15 @@ struct SessionListResponse {
 struct EvaluateCriterionResult {
     /// Criterion name as defined in the spec.
     name: String,
-    /// Evaluation outcome: `"pass"`, `"fail"`, `"skip"`, or `"warn"`.
-    outcome: String,
+    /// Evaluation outcome.
+    outcome: assay_types::CriterionOutcome,
     /// Evaluator's reasoning for this judgment.
     reasoning: String,
     /// Concrete evidence observed. Omitted when absent.
     #[serde(skip_serializing_if = "Option::is_none")]
     evidence: Option<String>,
-    /// Enforcement level: `"required"` or `"advisory"`.
-    enforcement: String,
+    /// Enforcement level.
+    enforcement: assay_types::Enforcement,
 }
 
 /// Response from the `gate_evaluate` tool.
@@ -702,7 +713,7 @@ struct GateEvaluateResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     session_id: Option<String>,
     /// Truncation metadata for the diff. Present only when truncation occurred.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     diff_truncation: Option<assay_types::DiffTruncation>,
 }
 
@@ -870,7 +881,7 @@ impl AssayServer {
             None
         };
 
-        let json = match &entry {
+        let json = match entry {
             SpecEntry::Legacy { spec, .. } => {
                 let mut response = serde_json::json!({
                     "format": "legacy",
@@ -878,24 +889,36 @@ impl AssayServer {
                     "description": spec.description,
                     "criteria": spec.criteria,
                 });
-                if let (Some(resolved), Some(obj)) = (&resolved_block, response.as_object_mut()) {
-                    obj.insert("resolved".to_string(), resolved.clone());
+                if let (Some(resolved), Some(obj)) = (resolved_block, response.as_object_mut()) {
+                    obj.insert("resolved".to_string(), resolved);
                 }
                 serde_json::to_string(&response)
             }
             SpecEntry::Directory {
                 gates, spec_path, ..
             } => {
-                let feature_spec = spec_path
-                    .as_ref()
-                    .and_then(|p| assay_core::spec::load_feature_spec(p).ok());
+                let (feature_spec, feature_spec_error) = match spec_path {
+                    Some(ref p) => match assay_core::spec::load_feature_spec(p) {
+                        Ok(fs) => (Some(fs), None),
+                        Err(e) => (None, Some(e.to_string())),
+                    },
+                    None => (None, None),
+                };
                 let mut response = serde_json::json!({
                     "format": "directory",
                     "gates": gates,
                     "feature_spec": feature_spec,
                 });
-                if let (Some(resolved), Some(obj)) = (&resolved_block, response.as_object_mut()) {
-                    obj.insert("resolved".to_string(), resolved.clone());
+                if let Some(err_msg) = feature_spec_error
+                    && let Some(obj) = response.as_object_mut()
+                {
+                    obj.insert(
+                        "feature_spec_error".to_string(),
+                        serde_json::Value::String(err_msg),
+                    );
+                }
+                if let (Some(resolved), Some(obj)) = (resolved_block, response.as_object_mut()) {
+                    obj.insert("resolved".to_string(), resolved);
                 }
                 serde_json::to_string(&response)
             }
@@ -939,7 +962,7 @@ impl AssayServer {
                         location: "toml".to_string(),
                         message,
                     }];
-                    let summary = assay_core::spec::validate::build_summary(&diagnostics);
+                    let summary = assay_types::DiagnosticSummary::from_diagnostics(&diagnostics);
                     let result = assay_types::ValidationResult {
                         spec: params.0.name.clone(),
                         valid: false,
@@ -953,7 +976,7 @@ impl AssayServer {
                 | Err(assay_core::AssayError::FeatureSpecValidation { errors, .. }) => {
                     let diagnostics =
                         assay_core::spec::validate::spec_errors_to_diagnostics(&errors);
-                    let summary = assay_core::spec::validate::build_summary(&diagnostics);
+                    let summary = assay_types::DiagnosticSummary::from_diagnostics(&diagnostics);
                     let result = assay_types::ValidationResult {
                         spec: params.0.name.clone(),
                         valid: false,
@@ -971,7 +994,7 @@ impl AssayServer {
                         location: "name".to_string(),
                         message: e.to_string(),
                     }];
-                    let summary = assay_core::spec::validate::build_summary(&diagnostics);
+                    let summary = assay_types::DiagnosticSummary::from_diagnostics(&diagnostics);
                     let result = assay_types::ValidationResult {
                         spec: params.0.name.clone(),
                         valid: false,
@@ -1013,6 +1036,11 @@ impl AssayServer {
             Err(err_result) => return Ok(err_result),
         };
         let include_evidence = params.0.include_evidence;
+        if let Some(0) = params.0.timeout {
+            return Ok(CallToolResult::error(vec![Content::text(
+                "timeout must be greater than zero",
+            )]));
+        }
         let gate_timeout = Duration::from_secs(params.0.timeout.unwrap_or(300));
 
         let working_dir = resolve_working_dir(&cwd, &config);
@@ -1030,19 +1058,17 @@ impl AssayServer {
         // Extract agent criteria info before moving entry into spawn_blocking.
         let agent_info = extract_agent_criteria_info(&entry);
 
-        let working_dir_owned = working_dir.clone();
-
-        let eval_future = tokio::task::spawn_blocking(move || match entry {
-            SpecEntry::Legacy { spec, .. } => {
-                assay_core::gate::evaluate_all(&spec, &working_dir_owned, None, config_timeout)
-            }
-            SpecEntry::Directory { gates, .. } => assay_core::gate::evaluate_all_gates(
-                &gates,
-                &working_dir_owned,
-                None,
-                config_timeout,
-            ),
-        });
+        let eval_future = {
+            let working_dir = working_dir.clone();
+            tokio::task::spawn_blocking(move || match entry {
+                SpecEntry::Legacy { spec, .. } => {
+                    assay_core::gate::evaluate_all(&spec, &working_dir, None, config_timeout)
+                }
+                SpecEntry::Directory { gates, .. } => {
+                    assay_core::gate::evaluate_all_gates(&gates, &working_dir, None, config_timeout)
+                }
+            })
+        };
 
         let summary = match tokio::time::timeout(gate_timeout, eval_future).await {
             Ok(Ok(summary)) => summary,
@@ -1118,7 +1144,6 @@ impl AssayServer {
             let timed_out = Arc::clone(&self.timed_out_sessions);
             let assay_dir = cwd.join(".assay");
             let max_history = config.gates.as_ref().and_then(|g| g.max_history);
-            let wd_string = working_dir.to_string_lossy().to_string();
             tokio::spawn(async move {
                 tokio::time::sleep(tokio::time::Duration::from_secs(SESSION_TIMEOUT_SECS)).await;
                 let session = {
@@ -1173,7 +1198,6 @@ impl AssayServer {
                             "timed-out session saved to history"
                         );
                     }
-                    let _ = wd_string; // suppress unused warning (captured for future use)
                 }
             });
         } else {
@@ -1257,11 +1281,13 @@ impl AssayServer {
         // ── Step 2: Resolve working directory ─────────────────────────
         let assay_dir = cwd.join(".assay");
         let (working_dir, linked_session_id) = if let Some(ref session_id) = p.session_id {
-            let assay_dir_clone = assay_dir.clone();
-            let session_id_owned = session_id.clone();
-            let session = match tokio::task::spawn_blocking(move || {
-                assay_core::work_session::load_session(&assay_dir_clone, &session_id_owned)
-            })
+            let session = match {
+                let assay_dir = assay_dir.clone();
+                let session_id = session_id.clone();
+                tokio::task::spawn_blocking(move || {
+                    assay_core::work_session::load_session(&assay_dir, &session_id)
+                })
+            }
             .await
             .map_err(|e| McpError::internal_error(format!("task join failed: {e}"), None))?
             {
@@ -1413,8 +1439,8 @@ impl AssayServer {
                         );
 
                         let meta = assay_types::DiffTruncation {
-                            original_bytes,
-                            truncated_bytes,
+                            original_bytes: original_bytes as u64,
+                            truncated_bytes: truncated_bytes as u64,
                             included_files: kept_files,
                             omitted_files,
                         };
@@ -1453,6 +1479,11 @@ impl AssayServer {
         );
 
         // ── Step 8: Construct EvaluatorConfig ─────────────────────────
+        if let Some(0) = p.timeout {
+            return Ok(CallToolResult::error(vec![Content::text(
+                "timeout must be greater than zero",
+            )]));
+        }
         let timeout = Duration::from_secs(
             p.timeout
                 .unwrap_or_else(|| gates_config.map(|g| g.evaluator_timeout).unwrap_or(120)),
@@ -1469,7 +1500,7 @@ impl AssayServer {
         let evaluator_result = match assay_core::evaluator::run_evaluator(
             &prompt,
             &system_prompt,
-            &schema_json,
+            schema_json,
             &eval_config,
             &working_dir,
         )
@@ -1529,17 +1560,17 @@ impl AssayServer {
             })
             .collect();
 
-        let duration_ms = start.elapsed().as_millis() as u64;
         let (mut record, map_warnings) = assay_core::evaluator::map_evaluator_output(
             &spec_name,
             &evaluator_result.output,
             &enforcement_map,
-            duration_ms,
+            start.elapsed(),
         );
         warnings.extend(map_warnings);
 
         let run_id = record.run_id.clone();
         let overall_passed = evaluator_result.output.summary.passed;
+        let duration_ms = record.summary.total_duration_ms;
 
         // Build response results from the evaluator output.
         let results: Vec<EvaluateCriterionResult> = evaluator_result
@@ -1553,20 +1584,10 @@ impl AssayServer {
                     .unwrap_or(assay_types::Enforcement::Required);
                 EvaluateCriterionResult {
                     name: cr.name.clone(),
-                    outcome: match cr.outcome {
-                        assay_types::CriterionOutcome::Pass => "pass",
-                        assay_types::CriterionOutcome::Fail => "fail",
-                        assay_types::CriterionOutcome::Skip => "skip",
-                        assay_types::CriterionOutcome::Warn => "warn",
-                    }
-                    .to_string(),
+                    outcome: cr.outcome,
                     reasoning: cr.reasoning.clone(),
                     evidence: cr.evidence.clone(),
-                    enforcement: match enforcement {
-                        assay_types::Enforcement::Required => "required",
-                        assay_types::Enforcement::Advisory => "advisory",
-                    }
-                    .to_string(),
+                    enforcement,
                 }
             })
             .collect();
@@ -1578,11 +1599,13 @@ impl AssayServer {
         record.diff_truncation = diff_truncation.clone();
 
         let max_history = gates_config.and_then(|g| g.max_history);
-        let assay_dir_for_save = assay_dir.clone();
-        let record_for_save = record.clone();
-        match tokio::task::spawn_blocking(move || {
-            assay_core::history::save(&assay_dir_for_save, &record_for_save, max_history)
-        })
+        match {
+            let assay_dir = assay_dir.clone();
+            let record = record.clone();
+            tokio::task::spawn_blocking(move || {
+                assay_core::history::save(&assay_dir, &record, max_history)
+            })
+        }
         .await
         .map_err(|e| McpError::internal_error(format!("task join failed: {e}"), None))?
         {
@@ -1596,22 +1619,24 @@ impl AssayServer {
 
         // ── Step 12: Session auto-linking ─────────────────────────────
         if let Some(ref session_id) = linked_session_id {
-            let assay_dir_for_session = assay_dir.clone();
-            let session_id_owned = session_id.clone();
-            let run_id_owned = run_id.clone();
             let notes = format!(
                 "gate_evaluate: {}",
                 if overall_passed { "passed" } else { "failed" }
             );
-            match tokio::task::spawn_blocking(move || {
-                assay_core::work_session::record_gate_result(
-                    &assay_dir_for_session,
-                    &session_id_owned,
-                    &run_id_owned,
-                    "gate_evaluate",
-                    Some(&notes),
-                )
-            })
+            match {
+                let assay_dir = assay_dir.clone();
+                let session_id = session_id.clone();
+                let run_id = run_id.clone();
+                tokio::task::spawn_blocking(move || {
+                    assay_core::work_session::record_gate_result(
+                        &assay_dir,
+                        &session_id,
+                        &run_id,
+                        "gate_evaluate",
+                        Some(&notes),
+                    )
+                })
+            }
             .await
             .map_err(|e| McpError::internal_error(format!("task join failed: {e}"), None))?
             {
@@ -1740,11 +1765,15 @@ impl AssayServer {
         );
 
         let mut warnings = Vec::new();
-        if let Err(e) = assay_core::history::save(&assay_dir, &record, max_history) {
+        let persisted = if let Err(e) = assay_core::history::save(&assay_dir, &record, max_history)
+        {
             let msg = format!("history save failed: {e}");
             tracing::warn!(session_id = %record.run_id, "{msg}");
             warnings.push(msg);
-        }
+            false
+        } else {
+            true
+        };
 
         let required_failed = record.summary.enforcement.required_failed;
         let response = GateFinalizeResponse {
@@ -1756,7 +1785,7 @@ impl AssayServer {
             required_failed,
             advisory_failed: record.summary.enforcement.advisory_failed,
             blocked: required_failed > 0,
-            persisted: warnings.is_empty(),
+            persisted,
             warnings,
         };
 
@@ -1775,10 +1804,6 @@ impl AssayServer {
         params: Parameters<GateHistoryParams>,
     ) -> Result<CallToolResult, McpError> {
         let cwd = resolve_cwd()?;
-        let _config = match load_config(&cwd) {
-            Ok(c) => c,
-            Err(err_result) => return Ok(err_result),
-        };
         let assay_dir = cwd.join(".assay");
 
         // Detail mode: return full record for a specific run.
@@ -1833,7 +1858,9 @@ impl AssayServer {
                             passed: record.summary.passed,
                             failed: record.summary.failed,
                             skipped: record.summary.skipped,
+                            required_passed: record.summary.enforcement.required_passed,
                             required_failed: record.summary.enforcement.required_failed,
+                            advisory_passed: record.summary.enforcement.advisory_passed,
                             advisory_failed: record.summary.enforcement.advisory_failed,
                             blocked: is_failed,
                         });
@@ -1870,12 +1897,12 @@ impl AssayServer {
         params: Parameters<ContextDiagnoseParams>,
     ) -> Result<CallToolResult, McpError> {
         let cwd = resolve_cwd()?;
-        let session_id_owned = params.0.session_id.clone();
+        let session_id = params.0.session_id;
 
         let report = tokio::task::spawn_blocking(move || {
             let session_dir = assay_core::context::find_session_dir(&cwd)?;
             let session_path =
-                assay_core::context::resolve_session(&session_dir, session_id_owned.as_deref())?;
+                assay_core::context::resolve_session(&session_dir, session_id.as_deref())?;
             let file_session_id = session_path
                 .file_stem()
                 .unwrap_or_default()
@@ -1910,12 +1937,12 @@ impl AssayServer {
         params: Parameters<EstimateTokensParams>,
     ) -> Result<CallToolResult, McpError> {
         let cwd = resolve_cwd()?;
-        let session_id_owned = params.0.session_id.clone();
+        let session_id = params.0.session_id;
 
         let estimate = tokio::task::spawn_blocking(move || {
             let session_dir = assay_core::context::find_session_dir(&cwd)?;
             let session_path =
-                assay_core::context::resolve_session(&session_dir, session_id_owned.as_deref())?;
+                assay_core::context::resolve_session(&session_dir, session_id.as_deref())?;
             let file_session_id = session_path
                 .file_stem()
                 .unwrap_or_default()
@@ -1983,6 +2010,11 @@ impl AssayServer {
         #[allow(unused_variables)] params: Parameters<WorktreeListParams>,
     ) -> Result<CallToolResult, McpError> {
         let cwd = resolve_cwd()?;
+        // Validate project context — ensures we are inside an Assay project before
+        // listing worktrees, consistent with other worktree tools.
+        if let Err(err_result) = load_config(&cwd) {
+            return Ok(err_result);
+        }
 
         let entries = match assay_core::worktree::list(&cwd) {
             Ok(e) => e,
@@ -2164,14 +2196,27 @@ impl AssayServer {
         let cwd = resolve_cwd()?;
         let assay_dir = cwd.join(".assay");
 
-        let mut previous_phase = None;
         let gate_run_ids = params.0.gate_run_ids.clone();
+
+        // Capture the phase before mutation so we can include it in the response.
+        let previous_phase =
+            match assay_core::work_session::load_session(&assay_dir, &params.0.session_id) {
+                Ok(s) => s.phase,
+                Err(e) => {
+                    let msg =
+                        if matches!(e, assay_core::error::AssayError::WorkSessionNotFound { .. }) {
+                            format!("{e}. Use session_list to find valid session IDs.")
+                        } else {
+                            format!("{e}")
+                        };
+                    return Ok(CallToolResult::error(vec![Content::text(msg)]));
+                }
+            };
 
         let session = match assay_core::work_session::with_session(
             &assay_dir,
             &params.0.session_id,
             |session| {
-                previous_phase = Some(session.phase);
                 assay_core::work_session::transition_session(
                     session,
                     params.0.phase,
@@ -2200,7 +2245,7 @@ impl AssayServer {
 
         let response = SessionUpdateResponse {
             session_id: session.id,
-            previous_phase: previous_phase.expect("set inside closure before any fallible op"),
+            previous_phase,
             current_phase: session.phase,
             gate_runs_count: session.gate_runs.len(),
             warnings: Vec::new(),
@@ -2327,12 +2372,14 @@ impl ServerHandler for AssayServer {
                  or estimate_tokens for a quick context health check. \
                  Use worktree_create to isolate spec work in a git worktree, \
                  worktree_list/worktree_status to inspect, and worktree_cleanup to remove. \
-                 Use session_create to start a long-running work session for tracking \
-                 a spec through its full lifecycle (distinct from gate_run, which creates \
-                 ephemeral in-memory evaluation sessions). Use session_get to retrieve \
-                 full session details by ID, session_update to advance session phase \
-                 and link gate runs, and session_list to enumerate sessions with \
-                 optional filters."
+                 Session tools track long-running work across the full agent lifecycle: \
+                 session_create starts a persisted WorkSession tied to a spec and worktree \
+                 (distinct from the ephemeral in-memory AgentSessions created automatically \
+                 by gate_run for agent criteria). Use session_get to retrieve full session \
+                 details by ID, session_update to advance phase and link gate run IDs, and \
+                 session_list to enumerate sessions with optional filters. Choose gate_run \
+                 when you need gate results immediately; choose session_create when you need \
+                 to track an agent's work over time with phase transitions and linked gate runs."
                     .to_string(),
             ),
         }
@@ -2590,7 +2637,10 @@ fn load_recovery_threshold(cwd: &Path) -> u64 {
             return 3600;
         }
     };
-    config.sessions.map(|s| s.stale_threshold).unwrap_or(3600)
+    config
+        .sessions
+        .map(|s| s.stale_threshold_secs)
+        .unwrap_or(3600)
 }
 
 /// Start the MCP server on stdio transport.
@@ -3020,6 +3070,69 @@ mod tests {
     // Note: both-empty → "unknown" case already covered by
     // test_format_gate_response_failed_with_empty_stderr above.
 
+    /// Build a `GateRunSummary` with a single failing criterion, reducing boilerplate in
+    /// failure-reason tests.
+    fn single_failing_summary(criterion_name: &str, stdout: &str, stderr: &str) -> GateRunSummary {
+        GateRunSummary {
+            spec_name: "test".to_string(),
+            results: vec![CriterionResult {
+                criterion_name: criterion_name.to_string(),
+                result: Some(GateResult {
+                    passed: false,
+                    kind: GateKind::Command {
+                        cmd: "failing-cmd".to_string(),
+                    },
+                    stdout: stdout.to_string(),
+                    stderr: stderr.to_string(),
+                    exit_code: Some(1),
+                    duration_ms: 42,
+                    timestamp: Utc::now(),
+                    truncated: false,
+                    original_bytes: None,
+                    evidence: None,
+                    reasoning: None,
+                    confidence: None,
+                    evaluator_role: None,
+                }),
+                enforcement: Enforcement::Required,
+            }],
+            passed: 0,
+            failed: 1,
+            skipped: 0,
+            total_duration_ms: 42,
+            enforcement: EnforcementSummary {
+                required_passed: 0,
+                required_failed: 1,
+                advisory_passed: 0,
+                advisory_failed: 0,
+            },
+        }
+    }
+
+    #[test]
+    fn test_failure_reason_stdout_multiline_uses_first_nonempty_line() {
+        // When stdout has multiple lines, only the first non-empty line should be the reason.
+        let summary = single_failing_summary("multiline-out", "first line\nsecond line\n", "");
+        let response = format_gate_response(&summary, false);
+        assert_eq!(
+            response.criteria[0].reason.as_deref(),
+            Some("first line"),
+            "reason should be first non-empty line of stdout, not entire output"
+        );
+    }
+
+    #[test]
+    fn test_failure_reason_stdout_skips_leading_empty_lines() {
+        // Leading empty lines in stdout should be skipped; the first non-empty line is used.
+        let summary = single_failing_summary("leading-empty", "\n\nreal error\nmore stuff\n", "");
+        let response = format_gate_response(&summary, false);
+        assert_eq!(
+            response.criteria[0].reason.as_deref(),
+            Some("real error"),
+            "reason should skip leading empty lines and return first non-empty line"
+        );
+    }
+
     // ── Helper function integration tests ────────────────────────────
 
     /// Create a tempdir with a valid `.assay/config.toml`.
@@ -3112,8 +3225,8 @@ mod tests {
             })
             .collect();
         assert!(
-            text.contains("No specs found") || text.contains("nonexistent"),
-            "error should contain diagnostic message, got: {text}"
+            text.contains("No specs found"),
+            "error should contain 'No specs found', got: {text}"
         );
     }
 
@@ -3908,6 +4021,20 @@ cmd = "echo ok"
     }
 
     #[test]
+    fn test_gate_history_params_missing_name() {
+        let json = serde_json::json!({ "run_id": "20260305T120000Z-abc123" });
+        let err = serde_json::from_value::<GateHistoryParams>(json)
+            .err()
+            .expect("should fail when name is missing");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("missing field"),
+            "should mention missing field: {msg}"
+        );
+        assert!(msg.contains("name"), "should name the missing field: {msg}");
+    }
+
+    #[test]
     fn test_gate_history_list_response_serialization() {
         let response = GateHistoryListResponse {
             spec_name: "auth-flow".to_string(),
@@ -3919,7 +4046,9 @@ cmd = "echo ok"
                     passed: 3,
                     failed: 1,
                     skipped: 0,
+                    required_passed: 3,
                     required_failed: 1,
+                    advisory_passed: 0,
                     advisory_failed: 0,
                     blocked: true,
                 },
@@ -3929,7 +4058,9 @@ cmd = "echo ok"
                     passed: 4,
                     failed: 0,
                     skipped: 0,
+                    required_passed: 4,
                     required_failed: 0,
+                    advisory_passed: 0,
                     advisory_failed: 0,
                     blocked: false,
                 },
@@ -4102,8 +4233,8 @@ cmd = "echo ok"
         );
         let text = extract_text(&result);
         assert!(
-            text.contains("No specs found") || text.contains("nonexistent"),
-            "error should contain diagnostic message, got: {text}"
+            text.contains("No specs found"),
+            "error should contain 'No specs found', got: {text}"
         );
     }
 
@@ -4188,8 +4319,8 @@ cmd = "echo ok"
         );
         let text = extract_text(&result);
         assert!(
-            text.contains("No specs found") || text.contains("nonexistent"),
-            "error should contain diagnostic message, got: {text}"
+            text.contains("No specs found"),
+            "error should contain 'No specs found', got: {text}"
         );
     }
 
@@ -4237,8 +4368,8 @@ cmd = "echo ok"
         );
         let text = extract_text(&result);
         assert!(
-            text.contains("does not exist") || text.contains("not a directory"),
-            "error should mention missing working dir, got: {text}"
+            text.contains("working directory does not exist or is not a directory"),
+            "error should describe the invalid working dir, got: {text}"
         );
     }
 
@@ -4456,10 +4587,12 @@ cmd = "echo ok"
     #[test]
     fn test_gate_run_params_invalid_timeout_type() {
         let json = serde_json::json!({"name": "test", "timeout": "abc"});
-        let err = serde_json::from_value::<GateRunParams>(json).err().unwrap();
+        let err = serde_json::from_value::<GateRunParams>(json)
+            .err()
+            .expect("should fail when timeout is a string");
         let msg = err.to_string();
         assert!(
-            msg.contains("invalid type") || msg.contains("invalid value"),
+            msg.contains("invalid type"),
             "should mention invalid type: {msg}"
         );
     }
@@ -4476,7 +4609,7 @@ cmd = "echo ok"
         });
         let err = serde_json::from_value::<GateReportParams>(json)
             .err()
-            .unwrap();
+            .expect("should fail when passed is a string instead of bool");
         let msg = err.to_string();
         assert!(
             msg.contains("invalid type"),
@@ -4491,7 +4624,9 @@ cmd = "echo ok"
     #[test]
     fn test_gate_run_params_invalid_include_evidence_type() {
         let json = serde_json::json!({"name": "test", "include_evidence": 42});
-        let err = serde_json::from_value::<GateRunParams>(json).err().unwrap();
+        let err = serde_json::from_value::<GateRunParams>(json)
+            .err()
+            .expect("should fail when include_evidence is a number instead of bool");
         let msg = err.to_string();
         assert!(
             msg.contains("invalid type"),
@@ -4928,6 +5063,65 @@ cmd = "echo ok"
         // CWD is a temp dir that exists and is accessible
         assert_eq!(wd["exists"], true, "CWD should exist");
         assert_eq!(wd["accessible"], true, "CWD should be accessible");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn spec_get_resolve_true_directory_format_returns_resolved_block() {
+        let dir = create_project(r#"project_name = "handler-test""#);
+        // Create a directory-format spec
+        let spec_dir = dir.path().join(".assay").join("specs").join("dir-spec");
+        std::fs::create_dir_all(&spec_dir).unwrap();
+        std::fs::write(
+            spec_dir.join("gates.toml"),
+            r#"
+name = "dir-spec"
+description = "Directory format spec"
+
+[[criteria]]
+name = "compiles"
+description = "Code compiles"
+cmd = "echo ok"
+"#,
+        )
+        .unwrap();
+
+        std::env::set_current_dir(dir.path()).unwrap();
+
+        let server = AssayServer::new();
+        let result = server
+            .spec_get(Parameters(SpecGetParams {
+                name: "dir-spec".to_string(),
+                resolve: true,
+            }))
+            .await
+            .unwrap();
+
+        assert!(
+            !result.is_error.unwrap_or(false),
+            "spec_get should succeed for directory spec"
+        );
+        let text = extract_text(&result);
+        let json: serde_json::Value = serde_json::from_str(&text).unwrap();
+
+        assert_eq!(
+            json["format"], "directory",
+            "should report directory format"
+        );
+        assert!(
+            json.get("gates").is_some(),
+            "directory spec should have gates key"
+        );
+        let resolved = json
+            .get("resolved")
+            .expect("resolved key should be present when resolve=true for directory specs");
+        let timeout = &resolved["timeout"];
+        assert_eq!(timeout["effective"], 300, "default effective timeout");
+        let wd = &resolved["working_dir"];
+        assert!(
+            wd["path"].is_string(),
+            "working_dir.path should be a string"
+        );
     }
 
     // ── Session tool tests ───────────────────────────────────────────
@@ -5491,7 +5685,7 @@ cmd = "echo ok"
         );
         let text = extract_text(&result);
         assert!(
-            text.contains("not found") || text.contains("Not found"),
+            text.contains("not found"),
             "error should mention 'not found', got: {text}"
         );
     }

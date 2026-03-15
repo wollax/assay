@@ -88,6 +88,37 @@ fn validate_commands(criteria: &[assay_types::Criterion]) -> Vec<Diagnostic> {
         .collect()
 }
 
+/// Validate the `depends` field of a spec.
+///
+/// Entries are slug-keyed (the spec file name without extension, e.g. `"auth-flow"`
+/// for `specs/auth-flow.toml`).
+///
+/// Emits:
+/// - `Severity::Error` for empty or whitespace-only entries.
+/// - `Severity::Warning` for duplicate entries.
+fn validate_depends(depends: &[String]) -> Vec<Diagnostic> {
+    let mut diagnostics = Vec::new();
+    let mut seen = HashSet::new();
+
+    for (i, dep) in depends.iter().enumerate() {
+        if dep.trim().is_empty() {
+            diagnostics.push(Diagnostic {
+                severity: Severity::Error,
+                location: format!("depends[{i}]"),
+                message: "dependency slug must not be empty or whitespace-only".to_string(),
+            });
+        } else if !seen.insert(dep.as_str()) {
+            diagnostics.push(Diagnostic {
+                severity: Severity::Warning,
+                location: format!("depends[{i}]"),
+                message: format!("duplicate dependency `{dep}` — already listed earlier"),
+            });
+        }
+    }
+
+    diagnostics
+}
+
 /// Color markers for DFS cycle detection.
 #[derive(Clone, Copy, PartialEq)]
 enum Color {
@@ -141,6 +172,7 @@ pub(crate) fn detect_cycles(specs: &HashMap<String, Vec<String>>) -> Vec<CycleDi
 }
 
 /// A diagnostic from cycle detection, with the set of spec slugs involved.
+#[derive(Debug)]
 pub(crate) struct CycleDiagnostic {
     pub diagnostic: Diagnostic,
     pub specs: HashSet<String>,
@@ -163,7 +195,22 @@ fn dfs<'a>(
                     Color::Gray => {
                         // Found a cycle — extract the cycle path
                         let Some(cycle_start) = path.iter().position(|&n| n == dep.as_str()) else {
-                            // Invariant violated — skip rather than panic
+                            // Invariant violation: a Gray node should always be on the current
+                            // path. Emit a warning diagnostic and skip rather than panic.
+                            diagnostics.push(CycleDiagnostic {
+                                diagnostic: Diagnostic {
+                                    severity: Severity::Warning,
+                                    location: "depends".to_string(),
+                                    message: format!(
+                                        "internal: cycle node `{dep}` not found on DFS path (invariant violated)"
+                                    ),
+                                },
+                                specs: {
+                                    let mut s = HashSet::new();
+                                    s.insert(dep.clone());
+                                    s
+                                },
+                            });
                             continue;
                         };
                         let cycle: Vec<&str> = path[cycle_start..].to_vec();
@@ -207,6 +254,8 @@ fn dfs<'a>(
 /// the loader does not cover:
 /// - AgentReport prompt presence (warning)
 /// - Command existence on PATH (opt-in via `check_commands`)
+/// - Duplicate `depends` entries (warning)
+/// - Empty or whitespace-only `depends` entries (error)
 ///
 /// Cycle detection is handled separately via [`detect_cycles()`] since it
 /// requires loading all specs.
@@ -214,12 +263,22 @@ fn dfs<'a>(
 /// For specs that failed to load (TOML parse, core validation errors), the MCP
 /// handler constructs `ValidationResult` directly from the error — this function
 /// is only called on the success path.
+///
+/// Note: `FeatureSpec` does not go through the `SpecEntry` type and is therefore
+/// not handled here. Feature spec validation uses [`super::validate_feature_spec`]
+/// directly.
 pub fn validate_spec(entry: &super::SpecEntry, check_commands: bool) -> ValidationResult {
-    let (slug, criteria) = match entry {
-        super::SpecEntry::Legacy { slug, spec } => (slug.clone(), spec.criteria.as_slice()),
-        super::SpecEntry::Directory { slug, gates, .. } => {
-            (slug.clone(), gates.criteria.as_slice())
-        }
+    let (slug, criteria, depends) = match entry {
+        super::SpecEntry::Legacy { slug, spec } => (
+            slug.clone(),
+            spec.criteria.as_slice(),
+            spec.depends.as_slice(),
+        ),
+        super::SpecEntry::Directory { slug, gates, .. } => (
+            slug.clone(),
+            gates.criteria.as_slice(),
+            gates.depends.as_slice(),
+        ),
     };
 
     let mut diagnostics = Vec::new();
@@ -231,7 +290,11 @@ pub fn validate_spec(entry: &super::SpecEntry, check_commands: bool) -> Validati
         diagnostics.extend(validate_commands(criteria));
     }
 
-    let summary = build_summary(&diagnostics);
+    // Validate depends entries.
+    // Entries are slug-keyed (spec file name without extension, e.g. "auth-flow").
+    diagnostics.extend(validate_depends(depends));
+
+    let summary = DiagnosticSummary::from_diagnostics(&diagnostics);
     let valid = summary.errors == 0;
 
     ValidationResult {
@@ -239,25 +302,6 @@ pub fn validate_spec(entry: &super::SpecEntry, check_commands: bool) -> Validati
         valid,
         diagnostics,
         summary,
-    }
-}
-
-/// Count diagnostics by severity level into a [`DiagnosticSummary`].
-pub fn build_summary(diagnostics: &[Diagnostic]) -> DiagnosticSummary {
-    let mut errors = 0;
-    let mut warnings = 0;
-    let mut info = 0;
-    for d in diagnostics {
-        match d.severity {
-            Severity::Error => errors += 1,
-            Severity::Warning => warnings += 1,
-            Severity::Info => info += 1,
-        }
-    }
-    DiagnosticSummary {
-        errors,
-        warnings,
-        info,
     }
 }
 
@@ -306,7 +350,7 @@ pub fn validate_spec_with_dependencies(
                     }
                 }
                 // Rebuild summary
-                result.summary = build_summary(&result.diagnostics);
+                result.summary = DiagnosticSummary::from_diagnostics(&result.diagnostics);
                 result.valid = result.summary.errors == 0;
             }
             Err(e) => {
@@ -317,7 +361,7 @@ pub fn validate_spec_with_dependencies(
                         "cycle detection skipped: could not scan specs directory: {e}"
                     ),
                 });
-                result.summary = build_summary(&result.diagnostics);
+                result.summary = DiagnosticSummary::from_diagnostics(&result.diagnostics);
             }
         }
     }
@@ -644,5 +688,262 @@ mod tests {
                 .iter()
                 .any(|d| d.severity == Severity::Warning && d.location == "criteria[0].prompt")
         );
+    }
+
+    // ── validate_agent_prompts: criteria index > 0 ──────────────────────────
+
+    #[test]
+    fn test_validate_agent_prompts_criteria_index_gt_0() {
+        // criterion at index 1 (not 0) should produce location "criteria[1].prompt"
+        let criteria = vec![
+            Criterion {
+                name: "build".to_string(),
+                description: "Build check".to_string(),
+                cmd: Some("cargo build".to_string()),
+                path: None,
+                timeout: None,
+                enforcement: None,
+                kind: None,
+                prompt: None,
+                requirements: vec![],
+            },
+            Criterion {
+                name: "review".to_string(),
+                description: "Agent review".to_string(),
+                cmd: None,
+                path: None,
+                timeout: None,
+                enforcement: None,
+                kind: Some(CriterionKind::AgentReport),
+                prompt: None,
+                requirements: vec![],
+            },
+        ];
+
+        let diagnostics = validate_agent_prompts(&criteria);
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0].location, "criteria[1].prompt");
+    }
+
+    // ── validate_depends ────────────────────────────────────────────────────
+
+    #[test]
+    fn test_validate_depends_clean() {
+        let diagnostics = validate_depends(&["auth".to_string(), "infra".to_string()]);
+        assert!(diagnostics.is_empty(), "no issues in clean list");
+    }
+
+    #[test]
+    fn test_validate_depends_duplicate_entry() {
+        let diagnostics =
+            validate_depends(&["auth".to_string(), "infra".to_string(), "auth".to_string()]);
+        let warnings: Vec<_> = diagnostics
+            .iter()
+            .filter(|d| d.severity == Severity::Warning)
+            .collect();
+        assert_eq!(warnings.len(), 1, "duplicate should produce one warning");
+        assert_eq!(warnings[0].location, "depends[2]");
+        assert!(warnings[0].message.contains("auth"));
+    }
+
+    #[test]
+    fn test_validate_depends_empty_entry() {
+        let diagnostics = validate_depends(&["auth".to_string(), "".to_string()]);
+        let errors: Vec<_> = diagnostics
+            .iter()
+            .filter(|d| d.severity == Severity::Error)
+            .collect();
+        assert_eq!(errors.len(), 1, "empty entry should produce one error");
+        assert_eq!(errors[0].location, "depends[1]");
+    }
+
+    #[test]
+    fn test_validate_depends_whitespace_only_entry() {
+        let diagnostics = validate_depends(&["auth".to_string(), "  ".to_string()]);
+        let errors: Vec<_> = diagnostics
+            .iter()
+            .filter(|d| d.severity == Severity::Error)
+            .collect();
+        assert_eq!(
+            errors.len(),
+            1,
+            "whitespace-only entry should produce one error"
+        );
+    }
+
+    #[test]
+    fn test_validate_spec_depends_duplicate_warns() {
+        let entry = super::super::SpecEntry::Legacy {
+            slug: "my-spec".to_string(),
+            spec: Spec {
+                name: "my spec".to_string(),
+                description: String::new(),
+                gate: None,
+                depends: vec!["auth".to_string(), "auth".to_string()],
+                criteria: vec![Criterion {
+                    name: "c1".to_string(),
+                    description: "d1".to_string(),
+                    cmd: None,
+                    path: None,
+                    timeout: None,
+                    enforcement: None,
+                    kind: None,
+                    prompt: None,
+                    requirements: vec![],
+                }],
+            },
+        };
+
+        let result = validate_spec(&entry, false);
+        assert!(result.valid, "duplicate depends is warning, not error");
+        assert_eq!(result.summary.warnings, 1);
+        assert!(result.diagnostics[0].location.starts_with("depends["));
+    }
+
+    #[test]
+    fn test_validate_spec_depends_empty_is_error() {
+        let entry = super::super::SpecEntry::Legacy {
+            slug: "my-spec".to_string(),
+            spec: Spec {
+                name: "my spec".to_string(),
+                description: String::new(),
+                gate: None,
+                depends: vec!["".to_string()],
+                criteria: vec![Criterion {
+                    name: "c1".to_string(),
+                    description: "d1".to_string(),
+                    cmd: None,
+                    path: None,
+                    timeout: None,
+                    enforcement: None,
+                    kind: None,
+                    prompt: None,
+                    requirements: vec![],
+                }],
+            },
+        };
+
+        let result = validate_spec(&entry, false);
+        assert!(
+            !result.valid,
+            "empty depends entry should make spec invalid"
+        );
+        assert_eq!(result.summary.errors, 1);
+    }
+
+    // ── DiagnosticSummary::from_diagnostics: info count ─────────────────────
+
+    #[test]
+    fn test_diagnostic_summary_info_count() {
+        use assay_types::DiagnosticSummary;
+        let diagnostics = vec![
+            assay_types::Diagnostic {
+                severity: Severity::Error,
+                location: "a".to_string(),
+                message: "err".to_string(),
+            },
+            assay_types::Diagnostic {
+                severity: Severity::Info,
+                location: "b".to_string(),
+                message: "info 1".to_string(),
+            },
+            assay_types::Diagnostic {
+                severity: Severity::Info,
+                location: "c".to_string(),
+                message: "info 2".to_string(),
+            },
+        ];
+        let summary = DiagnosticSummary::from_diagnostics(&diagnostics);
+        assert_eq!(summary.errors, 1);
+        assert_eq!(summary.warnings, 0);
+        assert_eq!(summary.infos, 2);
+    }
+
+    // ── detect_cycles: diamond DAG ───────────────────────────────────────────
+
+    #[test]
+    fn test_detect_cycles_diamond_dag_no_false_positive() {
+        // Diamond: A→B, A→C, B→D, C→D — valid DAG, no cycle
+        let mut specs = HashMap::new();
+        specs.insert("a".to_string(), vec!["b".to_string(), "c".to_string()]);
+        specs.insert("b".to_string(), vec!["d".to_string()]);
+        specs.insert("c".to_string(), vec!["d".to_string()]);
+        specs.insert("d".to_string(), vec![]);
+
+        let results = detect_cycles(&specs);
+        let errors: Vec<_> = results
+            .iter()
+            .filter(|cd| cd.diagnostic.severity == Severity::Error)
+            .collect();
+        assert!(
+            errors.is_empty(),
+            "diamond DAG should have no false cycle detection"
+        );
+    }
+
+    // ── detect_cycles: empty deps and multiple unknown deps ──────────────────
+
+    #[test]
+    fn test_detect_cycles_empty_deps_no_diagnostics() {
+        let mut specs = HashMap::new();
+        specs.insert("a".to_string(), vec![]);
+        specs.insert("b".to_string(), vec![]);
+
+        let results = detect_cycles(&specs);
+        assert!(
+            results.is_empty(),
+            "specs with no deps should produce no diagnostics"
+        );
+    }
+
+    #[test]
+    fn test_detect_cycles_multiple_unknown_deps() {
+        let mut specs = HashMap::new();
+        specs.insert(
+            "a".to_string(),
+            vec!["missing-x".to_string(), "missing-y".to_string()],
+        );
+
+        let results = detect_cycles(&specs);
+        let warnings: Vec<_> = results
+            .iter()
+            .filter(|cd| cd.diagnostic.severity == Severity::Warning)
+            .collect();
+        assert_eq!(
+            warnings.len(),
+            2,
+            "two unknown deps should produce two warnings"
+        );
+        assert!(
+            warnings
+                .iter()
+                .any(|w| w.diagnostic.location == "depends[0]")
+        );
+        assert!(
+            warnings
+                .iter()
+                .any(|w| w.diagnostic.location == "depends[1]")
+        );
+    }
+
+    // ── detect_cycles: unknown dep at non-zero index ─────────────────────────
+
+    #[test]
+    fn test_detect_cycles_unknown_dep_at_nonzero_index() {
+        let mut specs = HashMap::new();
+        specs.insert(
+            "a".to_string(),
+            vec!["b".to_string(), "unknown-dep".to_string()],
+        );
+        specs.insert("b".to_string(), vec![]);
+
+        let results = detect_cycles(&specs);
+        let warnings: Vec<_> = results
+            .iter()
+            .filter(|cd| cd.diagnostic.severity == Severity::Warning)
+            .collect();
+        assert_eq!(warnings.len(), 1);
+        assert_eq!(warnings[0].diagnostic.location, "depends[1]");
+        assert!(warnings[0].diagnostic.message.contains("unknown-dep"));
     }
 }

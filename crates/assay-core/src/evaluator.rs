@@ -16,6 +16,7 @@
 
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::LazyLock;
 use std::time::Duration;
 
 use chrono::Utc;
@@ -63,12 +64,20 @@ pub struct EvaluatorResult {
     pub warnings: Vec<String>,
 }
 
-/// Generate the JSON Schema string for `EvaluatorOutput`.
+/// Cached JSON Schema string for `EvaluatorOutput`.
 ///
-/// Used as the `--json-schema` argument when spawning the evaluator subprocess.
-pub fn evaluator_schema_json() -> String {
+/// Generated once at first access; subsequent calls return the same allocation.
+static EVALUATOR_SCHEMA: LazyLock<String> = LazyLock::new(|| {
     let schema = schemars::schema_for!(EvaluatorOutput);
     serde_json::to_string(&schema).expect("schema serialization cannot fail")
+});
+
+/// Return the JSON Schema string for `EvaluatorOutput`.
+///
+/// Used as the `--json-schema` argument when spawning the evaluator subprocess.
+/// The schema is generated once and cached for the lifetime of the process.
+pub fn evaluator_schema_json() -> &'static str {
+    &EVALUATOR_SCHEMA
 }
 
 /// Build the system prompt for the evaluator subprocess.
@@ -226,68 +235,89 @@ pub fn map_evaluator_output(
     spec_name: &str,
     output: &EvaluatorOutput,
     enforcement_map: &HashMap<String, Enforcement>,
-    duration_ms: u64,
+    duration: Duration,
 ) -> (GateRunRecord, Vec<String>) {
-    let mut results = Vec::new();
-    let mut passed = 0usize;
-    let mut failed = 0usize;
-    let mut skipped = 0usize;
-    let mut enforcement_summary = EnforcementSummary::default();
-    let mut warnings = Vec::new();
-
     let timestamp = Utc::now();
 
-    for criterion_result in &output.criteria {
-        let enforcement = enforcement_map
-            .get(&criterion_result.name)
-            .copied()
-            .unwrap_or(Enforcement::Required);
-
-        match criterion_result.outcome {
-            CriterionOutcome::Pass => {
-                passed += 1;
-                update_enforcement_summary(&mut enforcement_summary, enforcement, true);
-                results.push(build_criterion_result(
-                    criterion_result,
-                    enforcement,
-                    true,
-                    timestamp,
-                ));
-            }
-            CriterionOutcome::Fail => {
-                failed += 1;
-                update_enforcement_summary(&mut enforcement_summary, enforcement, false);
-                results.push(build_criterion_result(
-                    criterion_result,
-                    enforcement,
-                    false,
-                    timestamp,
-                ));
-            }
-            CriterionOutcome::Skip => {
-                skipped += 1;
-                results.push(CriterionResult {
-                    criterion_name: criterion_result.name.clone(),
-                    result: None,
-                    enforcement,
-                });
-            }
-            CriterionOutcome::Warn => {
-                passed += 1;
-                update_enforcement_summary(&mut enforcement_summary, enforcement, true);
-                warnings.push(format!(
-                    "criterion '{}': {}",
-                    criterion_result.name, criterion_result.reasoning
-                ));
-                results.push(build_criterion_result(
-                    criterion_result,
-                    enforcement,
-                    true,
-                    timestamp,
-                ));
-            }
-        }
+    // Accumulator for a single criterion result.
+    struct Acc {
+        results: Vec<CriterionResult>,
+        passed: usize,
+        failed: usize,
+        skipped: usize,
+        enforcement_summary: EnforcementSummary,
+        warnings: Vec<String>,
     }
+
+    let Acc {
+        results,
+        passed,
+        failed,
+        skipped,
+        enforcement_summary,
+        mut warnings,
+    } = output.criteria.iter().fold(
+        Acc {
+            results: Vec::new(),
+            passed: 0,
+            failed: 0,
+            skipped: 0,
+            enforcement_summary: EnforcementSummary::default(),
+            warnings: Vec::new(),
+        },
+        |mut acc, criterion_result| {
+            let enforcement = enforcement_map
+                .get(&criterion_result.name)
+                .copied()
+                .unwrap_or(Enforcement::Required);
+
+            match criterion_result.outcome {
+                CriterionOutcome::Pass => {
+                    acc.passed += 1;
+                    update_enforcement_summary(&mut acc.enforcement_summary, enforcement, true);
+                    acc.results.push(build_criterion_result(
+                        criterion_result,
+                        enforcement,
+                        true,
+                        timestamp,
+                    ));
+                }
+                CriterionOutcome::Fail => {
+                    acc.failed += 1;
+                    update_enforcement_summary(&mut acc.enforcement_summary, enforcement, false);
+                    acc.results.push(build_criterion_result(
+                        criterion_result,
+                        enforcement,
+                        false,
+                        timestamp,
+                    ));
+                }
+                CriterionOutcome::Skip => {
+                    acc.skipped += 1;
+                    acc.results.push(CriterionResult {
+                        criterion_name: criterion_result.name.clone(),
+                        result: None,
+                        enforcement,
+                    });
+                }
+                CriterionOutcome::Warn => {
+                    acc.passed += 1;
+                    update_enforcement_summary(&mut acc.enforcement_summary, enforcement, true);
+                    acc.warnings.push(format!(
+                        "criterion '{}': {}",
+                        criterion_result.name, criterion_result.reasoning
+                    ));
+                    acc.results.push(build_criterion_result(
+                        criterion_result,
+                        enforcement,
+                        true,
+                        timestamp,
+                    ));
+                }
+            }
+            acc
+        },
+    );
 
     // Cross-check: warn if the evaluator's self-reported verdict diverges
     // from the enforcement-derived result (required_failed > 0 means blocked).
@@ -317,7 +347,7 @@ pub fn map_evaluator_output(
             passed,
             failed,
             skipped,
-            total_duration_ms: duration_ms,
+            total_duration_ms: duration.as_millis() as u64,
             enforcement: enforcement_summary,
         },
         diff_truncation: None,
@@ -379,7 +409,6 @@ pub async fn run_evaluator(
     config: &EvaluatorConfig,
     working_dir: &Path,
 ) -> Result<EvaluatorResult, EvaluatorError> {
-    let mut last_error = None;
     let max_attempts = 1 + config.retries;
 
     for attempt in 0..max_attempts {
@@ -408,16 +437,19 @@ pub async fn run_evaluator(
                     "evaluator subprocess failed"
                 );
 
+                // Non-retryable errors or last attempt always return immediately.
+                // Retryable errors on non-final attempts continue the loop.
                 if !is_retryable || attempt + 1 >= max_attempts {
                     return Err(e);
                 }
-                last_error = Some(e);
             }
         }
     }
 
-    // Should be unreachable, but satisfy the compiler
-    Err(last_error.unwrap_or(EvaluatorError::NotInstalled))
+    // Every iteration either returns Ok, returns Err, or continues (with retries
+    // remaining). When all attempts are exhausted, the last iteration returns Err
+    // via the guard above — this branch is never reached.
+    unreachable!("run_evaluator exhausted retries without returning")
 }
 
 /// Spawn the subprocess, write prompt to stdin, collect output with timeout.
@@ -549,7 +581,7 @@ mod tests {
         let json = evaluator_schema_json();
         assert!(!json.is_empty());
         let value: serde_json::Value =
-            serde_json::from_str(&json).expect("schema should be valid JSON");
+            serde_json::from_str(json).expect("schema should be valid JSON");
         assert!(value.is_object());
     }
 
@@ -853,7 +885,12 @@ mod tests {
             ("naming-conventions".to_string(), Enforcement::Advisory),
         ]);
 
-        let (record, warnings) = map_evaluator_output("test-spec", &output, &enforcement_map, 5000);
+        let (record, warnings) = map_evaluator_output(
+            "test-spec",
+            &output,
+            &enforcement_map,
+            Duration::from_millis(5000),
+        );
 
         assert_eq!(record.summary.passed, 2, "pass + warn = 2 passed");
         assert_eq!(record.summary.failed, 1, "fail = 1 failed");
@@ -877,7 +914,7 @@ mod tests {
             ("naming-conventions".to_string(), Enforcement::Advisory),
         ]);
 
-        let (record, _) = map_evaluator_output("spec", &output, &enforcement_map, 0);
+        let (record, _) = map_evaluator_output("spec", &output, &enforcement_map, Duration::ZERO);
         let es = &record.summary.enforcement;
 
         assert_eq!(es.required_passed, 1, "tests-pass is required+passed");
@@ -905,7 +942,7 @@ mod tests {
         };
 
         // Empty enforcement map — should default to Required
-        let (record, _) = map_evaluator_output("spec", &output, &HashMap::new(), 0);
+        let (record, _) = map_evaluator_output("spec", &output, &HashMap::new(), Duration::ZERO);
         assert_eq!(record.summary.enforcement.required_failed, 1);
     }
 
@@ -924,7 +961,7 @@ mod tests {
             },
         };
 
-        let (record, _) = map_evaluator_output("spec", &output, &HashMap::new(), 0);
+        let (record, _) = map_evaluator_output("spec", &output, &HashMap::new(), Duration::ZERO);
         assert!(record.summary.results[0].result.is_none());
     }
 
@@ -943,7 +980,7 @@ mod tests {
             },
         };
 
-        let (record, _) = map_evaluator_output("spec", &output, &HashMap::new(), 0);
+        let (record, _) = map_evaluator_output("spec", &output, &HashMap::new(), Duration::ZERO);
         let result = record.summary.results[0].result.as_ref().unwrap();
         assert!(result.passed);
         assert_eq!(result.kind, GateKind::AgentReport);
@@ -962,7 +999,7 @@ mod tests {
             },
         };
 
-        let (record, _) = map_evaluator_output("spec", &output, &HashMap::new(), 0);
+        let (record, _) = map_evaluator_output("spec", &output, &HashMap::new(), Duration::ZERO);
         assert!(!record.run_id.is_empty());
         assert!(!record.assay_version.is_empty());
     }
@@ -999,5 +1036,124 @@ mod tests {
         };
         let display = err.to_string();
         assert!(display.contains("gate evaluation failed"));
+    }
+
+    // ── Additional tests ────────────────────────────────────────────
+
+    /// build-evaluator-prompt-empty-diff-untested:
+    /// `diff: Some("")` should produce the same output as `diff: None`.
+    #[test]
+    fn prompt_empty_string_diff_matches_none_diff() {
+        let with_none = build_evaluator_prompt("spec", "desc", &[], None, None);
+        let with_empty = build_evaluator_prompt("spec", "desc", &[], Some(""), None);
+        assert_eq!(
+            with_none, with_empty,
+            "Some(\"\") and None should produce identical prompts"
+        );
+        assert!(with_none.contains("No changes detected"));
+    }
+
+    /// map-evaluator-output-empty-criteria-no-count-assertions:
+    /// Empty criteria list should yield zero counts across all fields.
+    #[test]
+    fn map_empty_criteria_yields_zero_counts() {
+        let output = EvaluatorOutput {
+            criteria: vec![],
+            summary: assay_types::EvaluatorSummary {
+                passed: true,
+                rationale: "no criteria".to_string(),
+            },
+        };
+
+        let (record, warnings) =
+            map_evaluator_output("spec", &output, &HashMap::new(), Duration::ZERO);
+        assert_eq!(record.summary.passed, 0);
+        assert_eq!(record.summary.failed, 0);
+        assert_eq!(record.summary.skipped, 0);
+        assert_eq!(record.summary.results.len(), 0);
+        assert!(warnings.is_empty(), "no criteria — no warnings expected");
+    }
+
+    /// map-evaluator-output-warn-required-untested:
+    /// Warn outcome on a Required criterion counts as passed in enforcement.
+    #[test]
+    fn map_warn_on_required_criterion_counts_as_advisory_passed_not_failed() {
+        let output = EvaluatorOutput {
+            criteria: vec![EvaluatorCriterionResult {
+                name: "strict-check".to_string(),
+                outcome: CriterionOutcome::Warn,
+                reasoning: "soft concern".to_string(),
+                evidence: None,
+            }],
+            summary: assay_types::EvaluatorSummary {
+                passed: true,
+                rationale: "warn does not block".to_string(),
+            },
+        };
+        let enforcement_map = HashMap::from([("strict-check".to_string(), Enforcement::Required)]);
+
+        let (record, warnings) =
+            map_evaluator_output("spec", &output, &enforcement_map, Duration::ZERO);
+
+        // Warn is treated as passed — gate should not be blocked.
+        assert_eq!(record.summary.passed, 1);
+        assert_eq!(record.summary.failed, 0);
+        assert_eq!(record.summary.enforcement.required_failed, 0);
+        assert_eq!(record.summary.enforcement.required_passed, 1);
+
+        // A warning message should be emitted for the warn outcome.
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("strict-check"));
+    }
+
+    /// map-pass-outcome-kind-role-test-incomplete:
+    /// Fail outcome should also produce AgentReport kind and Independent role.
+    #[test]
+    fn map_fail_has_agent_report_kind_and_independent_role() {
+        let output = EvaluatorOutput {
+            criteria: vec![EvaluatorCriterionResult {
+                name: "failing-check".to_string(),
+                outcome: CriterionOutcome::Fail,
+                reasoning: "did not pass".to_string(),
+                evidence: Some("line 42 is wrong".to_string()),
+            }],
+            summary: assay_types::EvaluatorSummary {
+                passed: false,
+                rationale: "failed".to_string(),
+            },
+        };
+
+        let (record, _) = map_evaluator_output("spec", &output, &HashMap::new(), Duration::ZERO);
+        let result = record.summary.results[0].result.as_ref().unwrap();
+        assert!(!result.passed);
+        assert_eq!(result.kind, GateKind::AgentReport);
+        assert_eq!(result.evaluator_role, Some(EvaluatorRole::Independent));
+        assert_eq!(result.evidence.as_deref(), Some("line 42 is wrong"));
+        assert_eq!(result.reasoning.as_deref(), Some("did not pass"));
+    }
+
+    /// schema-generation-test-key-structure-not-asserted:
+    /// Schema JSON should contain "criteria" and "summary" as top-level properties.
+    #[test]
+    fn schema_json_contains_expected_top_level_properties() {
+        let json = evaluator_schema_json();
+        let value: serde_json::Value =
+            serde_json::from_str(json).expect("schema should be valid JSON");
+
+        // The schema should reference or define properties for EvaluatorOutput fields.
+        let schema_str = json;
+        assert!(
+            schema_str.contains("criteria"),
+            "schema should reference 'criteria' field"
+        );
+        assert!(
+            schema_str.contains("summary"),
+            "schema should reference 'summary' field"
+        );
+        // Verify the root is a JSON Schema object with required structural keys.
+        assert!(
+            value.get("properties").is_some() || value.get("$defs").is_some(),
+            "schema should have 'properties' or '$defs' key: {value}"
+        );
     }
 }

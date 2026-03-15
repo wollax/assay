@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 /// Outcome of evaluating a single criterion.
 ///
 /// Four-state outcome: pass, fail, skip (could not assess), or warn (soft concern).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum CriterionOutcome {
     /// Criterion satisfied.
@@ -31,9 +31,12 @@ inventory::submit! {
 }
 
 /// Per-criterion evaluation result from the evaluator subprocess.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 pub struct EvaluatorCriterionResult {
-    /// Criterion name (must match a criterion in the spec).
+    /// Criterion name as reported by the evaluator.
+    ///
+    /// Expected to match a criterion name in the spec, but this is not enforced
+    /// at the type level — mismatches surface as warnings during result mapping.
     pub name: String,
     /// Four-state outcome of the evaluation.
     pub outcome: CriterionOutcome,
@@ -52,7 +55,7 @@ inventory::submit! {
 }
 
 /// Aggregate summary from the evaluator.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 pub struct EvaluatorSummary {
     /// Whether the gate passed overall.
     pub passed: bool,

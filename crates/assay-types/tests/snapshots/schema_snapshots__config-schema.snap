@@ -115,9 +115,9 @@ expression: schema.to_value()
       "additionalProperties": false,
       "description": "Session management configuration.",
       "properties": {
-        "stale_threshold": {
+        "stale_threshold_secs": {
           "default": 3600,
-          "description": "Staleness threshold in seconds for recovery sweep.\nSessions in `agent_running` phase older than this are marked abandoned on startup.\nDefault: 3600 (1 hour).",
+          "description": "Staleness threshold in seconds for recovery sweep.\nSessions in the `AgentRunning` phase older than this are marked abandoned on startup.\nDefault: 3600 (1 hour). Must be greater than zero.",
           "format": "uint64",
           "minimum": 0,
           "type": "integer"

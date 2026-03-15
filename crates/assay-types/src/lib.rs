@@ -262,10 +262,18 @@ inventory::submit! {
 #[serde(deny_unknown_fields)]
 pub struct SessionsConfig {
     /// Staleness threshold in seconds for recovery sweep.
-    /// Sessions in `agent_running` phase older than this are marked abandoned on startup.
-    /// Default: 3600 (1 hour).
-    #[serde(default = "default_stale_threshold")]
-    pub stale_threshold: u64,
+    /// Sessions in the `AgentRunning` phase older than this are marked abandoned on startup.
+    /// Default: 3600 (1 hour). Must be greater than zero.
+    #[serde(default = "default_stale_threshold", alias = "stale_threshold")]
+    pub stale_threshold_secs: u64,
+}
+
+impl Default for SessionsConfig {
+    fn default() -> Self {
+        Self {
+            stale_threshold_secs: default_stale_threshold(),
+        }
+    }
 }
 
 inventory::submit! {

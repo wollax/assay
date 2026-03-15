@@ -1,5 +1,6 @@
 ---
 source: crates/assay-types/tests/schema_snapshots.rs
+assertion_line: 143
 expression: schema.to_value()
 ---
 {
@@ -22,13 +23,13 @@ expression: schema.to_value()
     },
     "original_bytes": {
       "description": "Byte size of the original diff before truncation.",
-      "format": "uint",
+      "format": "uint64",
       "minimum": 0,
       "type": "integer"
     },
     "truncated_bytes": {
       "description": "Byte size of the diff after truncation.",
-      "format": "uint",
+      "format": "uint64",
       "minimum": 0,
       "type": "integer"
     }
