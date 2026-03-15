@@ -1,6 +1,6 @@
 //! MCP server implementation with spec, gate, context, worktree, and session tools.
 //!
-//! Provides the [`AssayServer`] which exposes eighteen tools over MCP:
+//! Provides the [`AssayServer`] which exposes tools over MCP:
 //! - `spec_list` — discover available specs
 //! - `spec_get` — read a full spec definition
 //! - `spec_validate` — statically validate a spec without running it
@@ -54,7 +54,6 @@ pub struct SpecGetParams {
     #[schemars(description = "Spec name (filename without .toml extension, e.g. 'auth-flow')")]
     pub name: String,
 
-    /// Include resolved configuration (effective timeouts, working_dir validation).
     #[schemars(
         description = "Include resolved configuration (effective timeouts, working_dir validation)"
     )]
@@ -111,8 +110,12 @@ pub struct GateRunParams {
 /// Parameters for the `gate_report` tool.
 #[derive(Deserialize, JsonSchema)]
 pub struct GateReportParams {
-    /// Session ID returned by gate_run.
-    #[schemars(description = "Session ID returned by gate_run")]
+    /// In-memory AgentSession ID returned by `gate_run` when the spec contains agent criteria.
+    /// This is distinct from the persisted WorkSession ID created by `session_create`.
+    #[schemars(
+        description = "In-memory AgentSession ID returned by gate_run when the spec has agent \
+            criteria. Distinct from the persisted WorkSession ID created by session_create."
+    )]
     pub session_id: String,
 
     /// Name of the criterion being evaluated (must match a criterion in the spec).
@@ -284,11 +287,11 @@ pub struct SessionCreateParams {
     pub worktree_path: PathBuf,
 
     /// Command used to invoke the agent.
-    #[schemars(description = "Agent invocation command (e.g. 'claude --spec auth-flow')")]
+    #[schemars(description = "Agent invocation command (e.g. 'claude --model sonnet')")]
     pub agent_command: String,
 
     /// Model used by the agent, if known.
-    #[schemars(description = "Model used by the agent (e.g. 'claude-sonnet-4-20250514')")]
+    #[schemars(description = "Model used by the agent (e.g. 'claude-sonnet-4')")]
     #[serde(default)]
     pub agent_model: Option<String>,
 }
@@ -476,9 +479,7 @@ struct GateReportResponse {
     evaluations_count: usize,
     /// Names of criteria still pending agent evaluation in this session.
     pending_criteria: Vec<String>,
-    /// Warnings about degraded operations.
-    /// Pre-wired for future observability (e.g., report validation warnings);
-    /// currently always empty since `gate_report` has no fallible side-effects.
+    /// Warnings about degraded operations (e.g., session state inconsistencies).
     /// Omitted from JSON when empty.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     warnings: Vec<String>,
@@ -517,7 +518,8 @@ struct GateFinalizeResponse {
 struct GateHistoryListResponse {
     /// Spec name that was queried.
     spec_name: String,
-    /// Total number of runs on disk for this spec (before limit AND outcome filter are applied).
+    /// Total number of run files enumerated on disk for this spec (raw file count, before
+    /// deserialization, outcome filtering, or limit are applied).
     total_runs: usize,
     /// Run summaries, most recent first.
     runs: Vec<GateHistoryEntry>,
@@ -540,8 +542,12 @@ struct GateHistoryEntry {
     failed: usize,
     /// Number of criteria that were skipped.
     skipped: usize,
+    /// Number of required criteria that passed.
+    required_passed: usize,
     /// Number of required criteria that failed.
     required_failed: usize,
+    /// Number of advisory criteria that passed.
+    advisory_passed: usize,
     /// Number of advisory criteria that failed.
     advisory_failed: usize,
     /// Whether the gate was blocked (any required criterion failed).
@@ -602,6 +608,7 @@ struct SessionCreateResponse {
     /// ISO 8601 creation timestamp.
     created_at: chrono::DateTime<chrono::Utc>,
     /// Warnings about degraded operations.
+    /// Future use: spec validation warnings, worktree path inaccessibility, etc.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     warnings: Vec<String>,
 }
@@ -615,6 +622,7 @@ struct SessionGetResponse {
     #[serde(flatten)]
     session: assay_types::work_session::WorkSession,
     /// Warnings about degraded operations.
+    /// Future use: partial data, format migration issues, missing linked gate runs, etc.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     warnings: Vec<String>,
 }
@@ -631,6 +639,7 @@ struct SessionUpdateResponse {
     /// Number of gate run IDs now linked.
     gate_runs_count: usize,
     /// Warnings about degraded operations.
+    /// Future use: gate run ID not found in history, duplicate link skipped, etc.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     warnings: Vec<String>,
 }
@@ -667,15 +676,15 @@ struct SessionListResponse {
 struct EvaluateCriterionResult {
     /// Criterion name as defined in the spec.
     name: String,
-    /// Evaluation outcome: `"pass"`, `"fail"`, `"skip"`, or `"warn"`.
-    outcome: String,
+    /// Evaluation outcome.
+    outcome: assay_types::CriterionOutcome,
     /// Evaluator's reasoning for this judgment.
     reasoning: String,
     /// Concrete evidence observed. Omitted when absent.
     #[serde(skip_serializing_if = "Option::is_none")]
     evidence: Option<String>,
-    /// Enforcement level: `"required"` or `"advisory"`.
-    enforcement: String,
+    /// Enforcement level.
+    enforcement: assay_types::Enforcement,
 }
 
 /// Response from the `gate_evaluate` tool.
@@ -872,7 +881,7 @@ impl AssayServer {
             None
         };
 
-        let json = match &entry {
+        let json = match entry {
             SpecEntry::Legacy { spec, .. } => {
                 let mut response = serde_json::json!({
                     "format": "legacy",
@@ -880,24 +889,36 @@ impl AssayServer {
                     "description": spec.description,
                     "criteria": spec.criteria,
                 });
-                if let (Some(resolved), Some(obj)) = (&resolved_block, response.as_object_mut()) {
-                    obj.insert("resolved".to_string(), resolved.clone());
+                if let (Some(resolved), Some(obj)) = (resolved_block, response.as_object_mut()) {
+                    obj.insert("resolved".to_string(), resolved);
                 }
                 serde_json::to_string(&response)
             }
             SpecEntry::Directory {
                 gates, spec_path, ..
             } => {
-                let feature_spec = spec_path
-                    .as_ref()
-                    .and_then(|p| assay_core::spec::load_feature_spec(p).ok());
+                let (feature_spec, feature_spec_error) = match spec_path {
+                    Some(ref p) => match assay_core::spec::load_feature_spec(p) {
+                        Ok(fs) => (Some(fs), None),
+                        Err(e) => (None, Some(e.to_string())),
+                    },
+                    None => (None, None),
+                };
                 let mut response = serde_json::json!({
                     "format": "directory",
                     "gates": gates,
                     "feature_spec": feature_spec,
                 });
-                if let (Some(resolved), Some(obj)) = (&resolved_block, response.as_object_mut()) {
-                    obj.insert("resolved".to_string(), resolved.clone());
+                if let Some(err_msg) = feature_spec_error {
+                    if let Some(obj) = response.as_object_mut() {
+                        obj.insert(
+                            "feature_spec_error".to_string(),
+                            serde_json::Value::String(err_msg),
+                        );
+                    }
+                }
+                if let (Some(resolved), Some(obj)) = (resolved_block, response.as_object_mut()) {
+                    obj.insert("resolved".to_string(), resolved);
                 }
                 serde_json::to_string(&response)
             }
@@ -1015,6 +1036,11 @@ impl AssayServer {
             Err(err_result) => return Ok(err_result),
         };
         let include_evidence = params.0.include_evidence;
+        if let Some(0) = params.0.timeout {
+            return Ok(CallToolResult::error(vec![Content::text(
+                "timeout must be greater than zero",
+            )]));
+        }
         let gate_timeout = Duration::from_secs(params.0.timeout.unwrap_or(300));
 
         let working_dir = resolve_working_dir(&cwd, &config);
@@ -1032,19 +1058,17 @@ impl AssayServer {
         // Extract agent criteria info before moving entry into spawn_blocking.
         let agent_info = extract_agent_criteria_info(&entry);
 
-        let working_dir_owned = working_dir.clone();
-
-        let eval_future = tokio::task::spawn_blocking(move || match entry {
-            SpecEntry::Legacy { spec, .. } => {
-                assay_core::gate::evaluate_all(&spec, &working_dir_owned, None, config_timeout)
-            }
-            SpecEntry::Directory { gates, .. } => assay_core::gate::evaluate_all_gates(
-                &gates,
-                &working_dir_owned,
-                None,
-                config_timeout,
-            ),
-        });
+        let eval_future = {
+            let working_dir = working_dir.clone();
+            tokio::task::spawn_blocking(move || match entry {
+                SpecEntry::Legacy { spec, .. } => {
+                    assay_core::gate::evaluate_all(&spec, &working_dir, None, config_timeout)
+                }
+                SpecEntry::Directory { gates, .. } => {
+                    assay_core::gate::evaluate_all_gates(&gates, &working_dir, None, config_timeout)
+                }
+            })
+        };
 
         let summary = match tokio::time::timeout(gate_timeout, eval_future).await {
             Ok(Ok(summary)) => summary,
@@ -1120,7 +1144,6 @@ impl AssayServer {
             let timed_out = Arc::clone(&self.timed_out_sessions);
             let assay_dir = cwd.join(".assay");
             let max_history = config.gates.as_ref().and_then(|g| g.max_history);
-            let wd_string = working_dir.to_string_lossy().to_string();
             tokio::spawn(async move {
                 tokio::time::sleep(tokio::time::Duration::from_secs(SESSION_TIMEOUT_SECS)).await;
                 let session = {
@@ -1175,7 +1198,6 @@ impl AssayServer {
                             "timed-out session saved to history"
                         );
                     }
-                    let _ = wd_string; // suppress unused warning (captured for future use)
                 }
             });
         } else {
@@ -1259,11 +1281,13 @@ impl AssayServer {
         // ── Step 2: Resolve working directory ─────────────────────────
         let assay_dir = cwd.join(".assay");
         let (working_dir, linked_session_id) = if let Some(ref session_id) = p.session_id {
-            let assay_dir_clone = assay_dir.clone();
-            let session_id_owned = session_id.clone();
-            let session = match tokio::task::spawn_blocking(move || {
-                assay_core::work_session::load_session(&assay_dir_clone, &session_id_owned)
-            })
+            let session = match {
+                let assay_dir = assay_dir.clone();
+                let session_id = session_id.clone();
+                tokio::task::spawn_blocking(move || {
+                    assay_core::work_session::load_session(&assay_dir, &session_id)
+                })
+            }
             .await
             .map_err(|e| McpError::internal_error(format!("task join failed: {e}"), None))?
             {
@@ -1455,6 +1479,11 @@ impl AssayServer {
         );
 
         // ── Step 8: Construct EvaluatorConfig ─────────────────────────
+        if let Some(0) = p.timeout {
+            return Ok(CallToolResult::error(vec![Content::text(
+                "timeout must be greater than zero",
+            )]));
+        }
         let timeout = Duration::from_secs(
             p.timeout
                 .unwrap_or_else(|| gates_config.map(|g| g.evaluator_timeout).unwrap_or(120)),
@@ -1555,20 +1584,10 @@ impl AssayServer {
                     .unwrap_or(assay_types::Enforcement::Required);
                 EvaluateCriterionResult {
                     name: cr.name.clone(),
-                    outcome: match cr.outcome {
-                        assay_types::CriterionOutcome::Pass => "pass",
-                        assay_types::CriterionOutcome::Fail => "fail",
-                        assay_types::CriterionOutcome::Skip => "skip",
-                        assay_types::CriterionOutcome::Warn => "warn",
-                    }
-                    .to_string(),
+                    outcome: cr.outcome,
                     reasoning: cr.reasoning.clone(),
                     evidence: cr.evidence.clone(),
-                    enforcement: match enforcement {
-                        assay_types::Enforcement::Required => "required",
-                        assay_types::Enforcement::Advisory => "advisory",
-                    }
-                    .to_string(),
+                    enforcement,
                 }
             })
             .collect();
@@ -1580,11 +1599,13 @@ impl AssayServer {
         record.diff_truncation = diff_truncation.clone();
 
         let max_history = gates_config.and_then(|g| g.max_history);
-        let assay_dir_for_save = assay_dir.clone();
-        let record_for_save = record.clone();
-        match tokio::task::spawn_blocking(move || {
-            assay_core::history::save(&assay_dir_for_save, &record_for_save, max_history)
-        })
+        match {
+            let assay_dir = assay_dir.clone();
+            let record = record.clone();
+            tokio::task::spawn_blocking(move || {
+                assay_core::history::save(&assay_dir, &record, max_history)
+            })
+        }
         .await
         .map_err(|e| McpError::internal_error(format!("task join failed: {e}"), None))?
         {
@@ -1598,22 +1619,24 @@ impl AssayServer {
 
         // ── Step 12: Session auto-linking ─────────────────────────────
         if let Some(ref session_id) = linked_session_id {
-            let assay_dir_for_session = assay_dir.clone();
-            let session_id_owned = session_id.clone();
-            let run_id_owned = run_id.clone();
             let notes = format!(
                 "gate_evaluate: {}",
                 if overall_passed { "passed" } else { "failed" }
             );
-            match tokio::task::spawn_blocking(move || {
-                assay_core::work_session::record_gate_result(
-                    &assay_dir_for_session,
-                    &session_id_owned,
-                    &run_id_owned,
-                    "gate_evaluate",
-                    Some(&notes),
-                )
-            })
+            match {
+                let assay_dir = assay_dir.clone();
+                let session_id = session_id.clone();
+                let run_id = run_id.clone();
+                tokio::task::spawn_blocking(move || {
+                    assay_core::work_session::record_gate_result(
+                        &assay_dir,
+                        &session_id,
+                        &run_id,
+                        "gate_evaluate",
+                        Some(&notes),
+                    )
+                })
+            }
             .await
             .map_err(|e| McpError::internal_error(format!("task join failed: {e}"), None))?
             {
@@ -1742,11 +1765,15 @@ impl AssayServer {
         );
 
         let mut warnings = Vec::new();
-        if let Err(e) = assay_core::history::save(&assay_dir, &record, max_history) {
+        let persisted = if let Err(e) = assay_core::history::save(&assay_dir, &record, max_history)
+        {
             let msg = format!("history save failed: {e}");
             tracing::warn!(session_id = %record.run_id, "{msg}");
             warnings.push(msg);
-        }
+            false
+        } else {
+            true
+        };
 
         let required_failed = record.summary.enforcement.required_failed;
         let response = GateFinalizeResponse {
@@ -1758,7 +1785,7 @@ impl AssayServer {
             required_failed,
             advisory_failed: record.summary.enforcement.advisory_failed,
             blocked: required_failed > 0,
-            persisted: warnings.is_empty(),
+            persisted,
             warnings,
         };
 
@@ -1777,10 +1804,6 @@ impl AssayServer {
         params: Parameters<GateHistoryParams>,
     ) -> Result<CallToolResult, McpError> {
         let cwd = resolve_cwd()?;
-        let _config = match load_config(&cwd) {
-            Ok(c) => c,
-            Err(err_result) => return Ok(err_result),
-        };
         let assay_dir = cwd.join(".assay");
 
         // Detail mode: return full record for a specific run.
@@ -1835,7 +1858,9 @@ impl AssayServer {
                             passed: record.summary.passed,
                             failed: record.summary.failed,
                             skipped: record.summary.skipped,
+                            required_passed: record.summary.enforcement.required_passed,
                             required_failed: record.summary.enforcement.required_failed,
+                            advisory_passed: record.summary.enforcement.advisory_passed,
                             advisory_failed: record.summary.enforcement.advisory_failed,
                             blocked: is_failed,
                         });
@@ -1872,12 +1897,12 @@ impl AssayServer {
         params: Parameters<ContextDiagnoseParams>,
     ) -> Result<CallToolResult, McpError> {
         let cwd = resolve_cwd()?;
-        let session_id_owned = params.0.session_id.clone();
+        let session_id = params.0.session_id;
 
         let report = tokio::task::spawn_blocking(move || {
             let session_dir = assay_core::context::find_session_dir(&cwd)?;
             let session_path =
-                assay_core::context::resolve_session(&session_dir, session_id_owned.as_deref())?;
+                assay_core::context::resolve_session(&session_dir, session_id.as_deref())?;
             let file_session_id = session_path
                 .file_stem()
                 .unwrap_or_default()
@@ -1912,12 +1937,12 @@ impl AssayServer {
         params: Parameters<EstimateTokensParams>,
     ) -> Result<CallToolResult, McpError> {
         let cwd = resolve_cwd()?;
-        let session_id_owned = params.0.session_id.clone();
+        let session_id = params.0.session_id;
 
         let estimate = tokio::task::spawn_blocking(move || {
             let session_dir = assay_core::context::find_session_dir(&cwd)?;
             let session_path =
-                assay_core::context::resolve_session(&session_dir, session_id_owned.as_deref())?;
+                assay_core::context::resolve_session(&session_dir, session_id.as_deref())?;
             let file_session_id = session_path
                 .file_stem()
                 .unwrap_or_default()
@@ -1985,6 +2010,11 @@ impl AssayServer {
         #[allow(unused_variables)] params: Parameters<WorktreeListParams>,
     ) -> Result<CallToolResult, McpError> {
         let cwd = resolve_cwd()?;
+        // Validate project context — ensures we are inside an Assay project before
+        // listing worktrees, consistent with other worktree tools.
+        if let Err(err_result) = load_config(&cwd) {
+            return Ok(err_result);
+        }
 
         let entries = match assay_core::worktree::list(&cwd) {
             Ok(e) => e,
@@ -2342,12 +2372,14 @@ impl ServerHandler for AssayServer {
                  or estimate_tokens for a quick context health check. \
                  Use worktree_create to isolate spec work in a git worktree, \
                  worktree_list/worktree_status to inspect, and worktree_cleanup to remove. \
-                 Use session_create to start a long-running work session for tracking \
-                 a spec through its full lifecycle (distinct from gate_run, which creates \
-                 ephemeral in-memory evaluation sessions). Use session_get to retrieve \
-                 full session details by ID, session_update to advance session phase \
-                 and link gate runs, and session_list to enumerate sessions with \
-                 optional filters."
+                 Session tools track long-running work across the full agent lifecycle: \
+                 session_create starts a persisted WorkSession tied to a spec and worktree \
+                 (distinct from the ephemeral in-memory AgentSessions created automatically \
+                 by gate_run for agent criteria). Use session_get to retrieve full session \
+                 details by ID, session_update to advance phase and link gate run IDs, and \
+                 session_list to enumerate sessions with optional filters. Choose gate_run \
+                 when you need gate results immediately; choose session_create when you need \
+                 to track an agent's work over time with phase transitions and linked gate runs."
                     .to_string(),
             ),
         }
@@ -3951,7 +3983,9 @@ cmd = "echo ok"
                     passed: 3,
                     failed: 1,
                     skipped: 0,
+                    required_passed: 3,
                     required_failed: 1,
+                    advisory_passed: 0,
                     advisory_failed: 0,
                     blocked: true,
                 },
@@ -3961,7 +3995,9 @@ cmd = "echo ok"
                     passed: 4,
                     failed: 0,
                     skipped: 0,
+                    required_passed: 4,
                     required_failed: 0,
+                    advisory_passed: 0,
                     advisory_failed: 0,
                     blocked: false,
                 },
