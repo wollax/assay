@@ -144,7 +144,11 @@ pub fn list_sessions(assay_dir: &Path) -> Result<Vec<String>> {
         .filter_map(|entry| match entry {
             Ok(e) => Some(e),
             Err(e) => {
-                eprintln!("Warning: skipping session entry: {e}");
+                // NOTE: entry-level read_dir errors are logged but not surfaced to callers.
+                // Changing the return type to include warnings would be more invasive;
+                // callers that need full error reporting should use the MCP session_list
+                // which captures per-session load failures separately.
+                tracing::warn!("skipping session entry: {e}");
                 None
             }
         })
