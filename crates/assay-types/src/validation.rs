@@ -50,6 +50,7 @@ pub struct DiagnosticSummary {
     /// Number of warning-level diagnostics.
     pub warnings: usize,
     /// Number of info-level diagnostics.
+    #[serde(alias = "info")]
     pub infos: usize,
 }
 
