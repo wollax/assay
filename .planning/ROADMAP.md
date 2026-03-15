@@ -147,8 +147,17 @@
     3. Truncation metadata (original size, truncated size, strategy used) is included in GateRunRecord
     4. When diff fits within budget, no truncation occurs and no truncation metadata is recorded
 
-- [ ] Phase 45: Tech Debt Cleanup
+- [ ] Phase 45: Tech Debt Cleanup (9 plans)
   - DEBT-01: Batch sweep of highest-value backlog issues
+  - Plan 01 (wave 1): Won't-fix triage — close 30 superseded/deferred issues (no code changes)
+  - Plan 02 (wave 1): assay-types v0.4.0 sweep — derives, serde attrs, field types, rename (~15 issues)
+  - Plan 03 (wave 1): assay-core truncation + gate sweep — derives, refactors, tests (~15 issues)
+  - Plan 04 (wave 1): Spec validation sweep — derives, validation rules, refactors, tests (~15 issues)
+  - Plan 05 (wave 2): assay-core evaluator sweep — error handling, caching, API fixes, tests (~13 issues)
+  - Plan 06 (wave 2): assay-core session/recovery sweep — path validation, error handling, tests (~13 issues)
+  - Plan 07 (wave 2): assay-cli cosmetic sweep — dedup, naming, docs, tests (~18 issues)
+  - Plan 08 (wave 3): assay-mcp gate + session handler fixes — typed responses, counts, error handling (~15 issues)
+  - Plan 09 (wave 3): assay-mcp doc fixes + spec_get + tests (~13 issues)
   - **Success criteria:**
     1. Backlog issues that interact with v0.4.0 changes (worktree, MCP, types, history) are prioritized and resolved
     2. At least 10 open issues from `.planning/issues/open/` are closed
