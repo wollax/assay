@@ -110,8 +110,7 @@ mod tests {
             CriterionOutcome::Warn,
         ] {
             let json = serde_json::to_string(&outcome).expect("serialize");
-            let roundtripped: CriterionOutcome =
-                serde_json::from_str(&json).expect("deserialize");
+            let roundtripped: CriterionOutcome = serde_json::from_str(&json).expect("deserialize");
             assert_eq!(outcome, roundtripped);
         }
     }

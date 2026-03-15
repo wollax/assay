@@ -30,8 +30,10 @@ pub use context::{
     UsageData,
 };
 pub use criterion::{Criterion, CriterionKind};
-pub use evaluator::{CriterionOutcome, EvaluatorCriterionResult, EvaluatorOutput, EvaluatorSummary};
 pub use enforcement::{Enforcement, EnforcementSummary, GateSection};
+pub use evaluator::{
+    CriterionOutcome, EvaluatorCriterionResult, EvaluatorOutput, EvaluatorSummary,
+};
 pub use feature_spec::FeatureSpec;
 pub use gate::{GateKind, GateResult};
 pub use gate_run::{CriterionResult, GateRunRecord, GateRunSummary};

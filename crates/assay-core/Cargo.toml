@@ -10,6 +10,7 @@ description = "Domain logic for Assay: specs, gates, reviews, and workflows"
 assay-types.workspace = true
 chrono.workspace = true
 cupel.workspace = true
+schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tempfile.workspace = true
