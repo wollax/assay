@@ -4,6 +4,7 @@ expression: schema.to_value()
 ---
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
   "description": "Status of a worktree including runtime state.\n\nExtends worktree information with dirty state, HEAD commit, and ahead/behind counts.",
   "properties": {
     "ahead": {

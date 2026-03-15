@@ -65,7 +65,7 @@ inventory::submit! {
 ///
 /// Present only when truncation occurred (diff exceeded token budget).
 /// Omitted entirely when the diff fit within budget (clean passthrough).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 pub struct DiffTruncation {
     /// Byte size of the original diff before truncation.
     pub original_bytes: usize,

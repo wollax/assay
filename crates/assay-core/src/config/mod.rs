@@ -660,7 +660,7 @@ project_name = "test"
 "#;
         let config = super::from_str(toml).expect("sessions with defaults should parse");
         let sessions = config.sessions.expect("sessions should be Some");
-        assert_eq!(sessions.stale_threshold, 3600);
+        assert_eq!(sessions.stale_threshold_secs, 3600);
     }
 
     #[test]
@@ -671,9 +671,9 @@ project_name = "test"
 [sessions]
 stale_threshold = 7200
 "#;
-        let config = super::from_str(toml).expect("custom threshold should parse");
+        let config = super::from_str(toml).expect("custom threshold should parse via alias");
         let sessions = config.sessions.expect("sessions should be Some");
-        assert_eq!(sessions.stale_threshold, 7200);
+        assert_eq!(sessions.stale_threshold_secs, 7200);
     }
 
     #[test]

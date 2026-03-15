@@ -1,7 +1,11 @@
 use anyhow::{Context, bail};
 use assay_core::spec::SpecEntry;
+use assay_types::Criterion;
 use clap::Subcommand;
 use std::path::Path;
+
+/// Maximum number of chars to display for evidence/reasoning fields in gate history detail view.
+const EVIDENCE_DISPLAY_CHARS: usize = 200;
 
 use super::{
     ANSI_COLOR_OVERHEAD, assay_dir, colors_enabled, criterion_label, format_count,
@@ -315,6 +319,32 @@ fn stream_criterion(
     }
 }
 
+/// Returns true if a criterion is executable (has a cmd or path to evaluate).
+///
+/// See also: [`assay_core::gate::classify_exit_code`]
+fn is_executable(criterion: &Criterion) -> bool {
+    criterion.cmd.is_some() || criterion.path.is_some()
+}
+
+/// Extract gate section and criteria from a `SpecEntry`.
+///
+/// Returns `(gate_section, criteria)` for use in streaming evaluation.
+fn spec_entry_gate_info(
+    entry: &SpecEntry,
+) -> (Option<&assay_types::GateSection>, Vec<assay_types::Criterion>) {
+    match entry {
+        SpecEntry::Legacy { spec, .. } => (spec.gate.as_ref(), spec.criteria.clone()),
+        SpecEntry::Directory { gates, .. } => (
+            gates.gate.as_ref(),
+            gates
+                .criteria
+                .iter()
+                .map(assay_core::gate::to_criterion)
+                .collect(),
+        ),
+    }
+}
+
 /// Determine the exit code after gate execution.
 /// Returns 1 if any required criteria failed (gate blocked), 0 otherwise.
 fn gate_exit_code(counters: &StreamCounters) -> i32 {
@@ -412,24 +442,9 @@ fn handle_gate_run_all(cli_timeout: Option<u64>, verbose: bool, json: bool) -> a
         }
         eprintln!("--- {} ---", entry.slug());
 
-        let gate_section: Option<&assay_types::GateSection> = match entry {
-            SpecEntry::Legacy { spec, .. } => spec.gate.as_ref(),
-            SpecEntry::Directory { gates, .. } => gates.gate.as_ref(),
-        };
+        let (gate_section, criteria) = spec_entry_gate_info(entry);
 
-        let criteria: Vec<assay_types::Criterion> = match entry {
-            SpecEntry::Legacy { spec, .. } => spec.criteria.clone(),
-            SpecEntry::Directory { gates, .. } => gates
-                .criteria
-                .iter()
-                .map(assay_core::gate::to_criterion)
-                .collect(),
-        };
-
-        let executable_count = criteria
-            .iter()
-            .filter(|c| c.cmd.is_some() || c.path.is_some())
-            .count();
+        let executable_count = criteria.iter().filter(|c| is_executable(c)).count();
         if executable_count == 0 {
             eprintln!("  No executable criteria");
             counters.skipped += criteria.len();
@@ -510,27 +525,12 @@ fn handle_gate_run(
         });
     }
 
-    let criteria: Vec<assay_types::Criterion> = match &entry {
-        SpecEntry::Legacy { spec, .. } => spec.criteria.clone(),
-        SpecEntry::Directory { gates, .. } => gates
-            .criteria
-            .iter()
-            .map(assay_core::gate::to_criterion)
-            .collect(),
-    };
-
-    let gate_section: Option<&assay_types::GateSection> = match &entry {
-        SpecEntry::Legacy { spec, .. } => spec.gate.as_ref(),
-        SpecEntry::Directory { gates, .. } => gates.gate.as_ref(),
-    };
+    let (gate_section, criteria) = spec_entry_gate_info(&entry);
 
     let color = colors_enabled();
     let cfg = StreamConfig::new(cli_timeout, config_timeout, verbose, color);
     let mut counters = StreamCounters::default();
-    let executable_count = criteria
-        .iter()
-        .filter(|c| c.cmd.is_some() || c.path.is_some())
-        .count();
+    let executable_count = criteria.iter().filter(|c| is_executable(c)).count();
 
     if executable_count == 0 {
         println!("No executable criteria found");
@@ -798,13 +798,22 @@ fn handle_gate_history_detail(name: &str, run_id: &str, json: bool) -> anyhow::R
                     println!("    confidence: {confidence:?}");
                 }
                 if let Some(ref evidence) = r.evidence {
-                    let truncated: String = evidence.chars().take(200).collect();
-                    let suffix = if evidence.len() > 200 { "..." } else { "" };
+                    let truncated: String = evidence.chars().take(EVIDENCE_DISPLAY_CHARS).collect();
+                    let suffix = if evidence.chars().count() > EVIDENCE_DISPLAY_CHARS {
+                        "..."
+                    } else {
+                        ""
+                    };
                     println!("    evidence: {truncated}{suffix}");
                 }
                 if let Some(ref reasoning) = r.reasoning {
-                    let truncated: String = reasoning.chars().take(200).collect();
-                    let suffix = if reasoning.len() > 200 { "..." } else { "" };
+                    let truncated: String =
+                        reasoning.chars().take(EVIDENCE_DISPLAY_CHARS).collect();
+                    let suffix = if reasoning.chars().count() > EVIDENCE_DISPLAY_CHARS {
+                        "..."
+                    } else {
+                        ""
+                    };
                     println!("    reasoning: {truncated}{suffix}");
                 }
             }
