@@ -1,3 +1,6 @@
+> **Closed:** 2026-03-15 — Deferred. Out of scope for v0.4.0 tech debt sweep. Guard daemon issues form a coherent sub-sweep for a dedicated guard cleanup phase.
+
+
 ---
 created: 2026-03-07T08:00
 title: try_save_checkpoint uses std::env::current_dir() instead of stored project dir
