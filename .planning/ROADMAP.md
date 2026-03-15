@@ -118,7 +118,7 @@
     3. `session_list` enumerates sessions with optional `spec_name` and `status` filters returning matching sessions
     4. All session MCP tools include `warnings` field on responses (from Phase 35)
 
-- [ ] Phase 42: Session Recovery & Internal API
+- [x] Phase 42: Session Recovery & Internal API — 2026-03-15
   - SESS-06: Startup recovery for stale sessions
   - SESS-07: gate_evaluate uses Rust functions, not MCP round-trips
   - **Success criteria:**
