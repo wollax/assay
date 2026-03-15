@@ -20,15 +20,22 @@ const OUTPUT_RESERVE: i64 = 4_096;
 /// Safety margin: percentage buffer for token estimation error.
 const SAFETY_MARGIN_PERCENT: f64 = 5.0;
 
+/// Estimate tokens for a string, returning i64 for cupel compatibility.
+fn estimate_tokens(s: &str) -> i64 {
+    estimate_tokens_from_bytes(s.len() as u64) as i64
+}
+
 /// Prepare token-budgeted context from assay's content sources.
 ///
 /// Returns an ordered list of content strings that fit within the token budget
 /// derived from `model_window`. The order is:
-/// system prompt, spec body (if non-empty), criteria text, diff (if non-empty).
+/// system prompt, spec body (if non-empty), criteria text (if non-empty),
+/// diff (if non-empty).
 ///
 /// When total content fits within the budget, content passes through without
 /// pipeline overhead. When the budget is exceeded, the diff is the primary
-/// truncation target while system prompt and criteria are always included.
+/// truncation target while system prompt and criteria are pinned (always
+/// included when non-empty).
 pub fn budget_context(
     system_prompt: &str,
     spec_body: &str,
@@ -36,32 +43,40 @@ pub fn budget_context(
     diff: &str,
     model_window: u64,
 ) -> Result<Vec<String>, AssayError> {
+    // Validate model_window is large enough for meaningful budgeting.
+    if model_window <= OUTPUT_RESERVE as u64 {
+        return Err(AssayError::ContextBudgetInvalid {
+            message: format!(
+                "model_window ({model_window}) must exceed output_reserve ({OUTPUT_RESERVE})"
+            ),
+        });
+    }
+
+    // Guard against u64 values that would wrap when cast to i64.
+    debug_assert!(
+        model_window <= i64::MAX as u64,
+        "model_window exceeds i64::MAX"
+    );
     let max_tokens = model_window as i64;
     let usable = max_tokens - OUTPUT_RESERVE;
     let safety = (usable as f64 * (SAFETY_MARGIN_PERCENT / 100.0)) as i64;
     let target_tokens = usable - safety;
 
-    // Collect non-empty inputs with their token estimates.
+    // Collect non-empty inputs with their token estimates in canonical order:
+    // [system_prompt, spec_body, criteria_text, diff]
     let mut parts: Vec<(&str, i64)> = Vec::with_capacity(4);
 
-    let prompt_tokens = estimate_tokens_from_bytes(system_prompt.len() as u64) as i64;
     if !system_prompt.is_empty() {
-        parts.push((system_prompt, prompt_tokens));
+        parts.push((system_prompt, estimate_tokens(system_prompt)));
     }
-
-    let spec_tokens = estimate_tokens_from_bytes(spec_body.len() as u64) as i64;
     if !spec_body.is_empty() {
-        parts.push((spec_body, spec_tokens));
+        parts.push((spec_body, estimate_tokens(spec_body)));
     }
-
-    let criteria_tokens = estimate_tokens_from_bytes(criteria_text.len() as u64) as i64;
     if !criteria_text.is_empty() {
-        parts.push((criteria_text, criteria_tokens));
+        parts.push((criteria_text, estimate_tokens(criteria_text)));
     }
-
-    let diff_tokens = estimate_tokens_from_bytes(diff.len() as u64) as i64;
     if !diff.is_empty() {
-        parts.push((diff, diff_tokens));
+        parts.push((diff, estimate_tokens(diff)));
     }
 
     if parts.is_empty() {
@@ -75,27 +90,16 @@ pub fn budget_context(
     }
 
     // Pipeline path: build cupel items and run the pipeline.
-    let map_err = |e: cupel::CupelError| AssayError::ContextBudget {
-        message: e.to_string(),
-    };
+    // Items are inserted in canonical order (prompt, spec, criteria, diff) so that
+    // ChronologicalPlacer preserves the same ordering as the passthrough path.
+    let map_err = |e: cupel::CupelError| AssayError::ContextBudget { source: e };
 
     let mut items = Vec::with_capacity(4);
 
     if !system_prompt.is_empty() {
         items.push(
-            ContextItemBuilder::new(system_prompt, prompt_tokens)
+            ContextItemBuilder::new(system_prompt, estimate_tokens(system_prompt))
                 .kind(ContextKind::new(ContextKind::SYSTEM_PROMPT).map_err(map_err)?)
-                .pinned(true)
-                .build()
-                .map_err(map_err)?,
-        );
-    }
-
-    if !criteria_text.is_empty() {
-        items.push(
-            ContextItemBuilder::new(criteria_text, criteria_tokens)
-                .kind(ContextKind::new(ContextKind::DOCUMENT).map_err(map_err)?)
-                .source(ContextSource::new(ContextSource::RAG).map_err(map_err)?)
                 .pinned(true)
                 .build()
                 .map_err(map_err)?,
@@ -104,10 +108,21 @@ pub fn budget_context(
 
     if !spec_body.is_empty() {
         items.push(
-            ContextItemBuilder::new(spec_body, spec_tokens)
+            ContextItemBuilder::new(spec_body, estimate_tokens(spec_body))
                 .kind(ContextKind::new(ContextKind::DOCUMENT).map_err(map_err)?)
                 .source(ContextSource::new(ContextSource::RAG).map_err(map_err)?)
-                .priority(80)
+                .priority(80) // High priority: spec context for evaluator
+                .build()
+                .map_err(map_err)?,
+        );
+    }
+
+    if !criteria_text.is_empty() {
+        items.push(
+            ContextItemBuilder::new(criteria_text, estimate_tokens(criteria_text))
+                .kind(ContextKind::new(ContextKind::DOCUMENT).map_err(map_err)?)
+                .source(ContextSource::new(ContextSource::RAG).map_err(map_err)?)
+                .pinned(true)
                 .build()
                 .map_err(map_err)?,
         );
@@ -115,10 +130,10 @@ pub fn budget_context(
 
     if !diff.is_empty() {
         items.push(
-            ContextItemBuilder::new(diff, diff_tokens)
+            ContextItemBuilder::new(diff, estimate_tokens(diff))
                 .kind(ContextKind::new("Diff").map_err(map_err)?)
                 .source(ContextSource::new(ContextSource::TOOL).map_err(map_err)?)
-                .priority(50)
+                .priority(50) // Lower priority: primary truncation target
                 .build()
                 .map_err(map_err)?,
         );
@@ -128,6 +143,8 @@ pub fn budget_context(
         .scorer(Box::new(PriorityScorer))
         .slicer(Box::new(GreedySlice))
         .placer(Box::new(ChronologicalPlacer))
+        // Deduplication disabled: content sources are distinct (prompt, spec, criteria, diff)
+        // and never overlap, so content-comparison would never match.
         .deduplication(false)
         .overflow_strategy(OverflowStrategy::Truncate)
         .build()
@@ -194,13 +211,17 @@ mod tests {
         let result = budget_context("prompt", "spec", "criteria", &large_diff, 200_000)
             .expect("should succeed");
 
-        // The result should have fewer total bytes than the input diff alone
+        // Pipeline path: result should have fewer total bytes than the input diff alone.
         let total_bytes: usize = result.iter().map(|s| s.len()).sum();
         assert!(
             total_bytes < large_diff.len(),
             "total output ({total_bytes}) should be less than input diff ({})",
             large_diff.len()
         );
+
+        // Verify the pipeline path preserves canonical ordering.
+        assert!(result.len() >= 2, "should have at least prompt + criteria");
+        assert_eq!(result[0], "prompt", "system prompt should be first");
     }
 
     #[test]
@@ -215,15 +236,44 @@ mod tests {
         )
         .expect("should succeed");
 
-        // System prompt and criteria must always be present (they are pinned)
-        assert!(
-            result.iter().any(|s| s == "system prompt text"),
-            "system prompt must be included in result: {result:?}"
+        // System prompt and criteria must always be present (they are pinned).
+        assert!(result.len() >= 2, "must have at least pinned items");
+        assert_eq!(
+            result[0], "system prompt text",
+            "system prompt must be first"
         );
-        assert!(
-            result.iter().any(|s| s == "criteria text"),
-            "criteria must be included in result: {result:?}"
-        );
+
+        // Criteria must appear and must come after spec (if spec is present).
+        let criteria_pos = result
+            .iter()
+            .position(|s| s == "criteria text")
+            .expect("criteria must be included");
+        assert!(criteria_pos > 0, "criteria must not be first (prompt is)");
+    }
+
+    #[test]
+    fn pipeline_preserves_canonical_ordering() {
+        // Use a window small enough that the pipeline path is triggered but large
+        // enough that all non-empty items can fit after truncation.
+        let diff = "d".repeat(100_000);
+        let result =
+            budget_context("prompt", "spec", "criteria", &diff, 50_000).expect("should succeed");
+
+        // Verify ordering: prompt before spec before criteria.
+        // (diff may be truncated or dropped entirely)
+        let prompt_pos = result.iter().position(|s| s == "prompt");
+        let spec_pos = result.iter().position(|s| s == "spec");
+        let criteria_pos = result.iter().position(|s| s == "criteria");
+
+        if let (Some(p), Some(s)) = (prompt_pos, spec_pos) {
+            assert!(p < s, "prompt ({p}) must precede spec ({s})");
+        }
+        if let (Some(s), Some(c)) = (spec_pos, criteria_pos) {
+            assert!(s < c, "spec ({s}) must precede criteria ({c})");
+        }
+        if let (Some(p), Some(c)) = (prompt_pos, criteria_pos) {
+            assert!(p < c, "prompt ({p}) must precede criteria ({c})");
+        }
     }
 
     #[test]
@@ -247,5 +297,39 @@ mod tests {
         assert_eq!(usable, 195_904);
         assert_eq!(safety, 9_795);
         assert_eq!(target, 186_109);
+    }
+
+    #[test]
+    fn rejects_zero_model_window() {
+        let result = budget_context("prompt", "spec", "criteria", "diff", 0);
+        assert!(result.is_err(), "model_window=0 should fail");
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("must exceed output_reserve"),
+            "error should explain the constraint: {err}"
+        );
+    }
+
+    #[test]
+    fn rejects_model_window_below_output_reserve() {
+        let result = budget_context("prompt", "spec", "criteria", "diff", 4_096);
+        assert!(
+            result.is_err(),
+            "model_window=4096 should fail (equals output_reserve)"
+        );
+    }
+
+    #[test]
+    fn error_preserves_cupel_source() {
+        // Trigger a cupel error by making pinned items exceed a tiny budget.
+        // model_window = 4097 (just above OUTPUT_RESERVE) → target ≈ 0 tokens.
+        let result = budget_context(&"p".repeat(10_000), "", &"c".repeat(10_000), "", 4_097);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        // Verify the error chain works (source() returns the CupelError).
+        assert!(
+            std::error::Error::source(&err).is_some(),
+            "ContextBudget should preserve CupelError as source"
+        );
     }
 }

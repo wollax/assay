@@ -292,9 +292,17 @@ pub enum AssayError {
     },
 
     /// Context budgeting failed (cupel pipeline or budget construction error).
-    #[error("context budgeting failed: {message}")]
+    #[error("context budgeting failed: {source}")]
     ContextBudget {
-        /// Description of the budgeting error.
+        /// The underlying cupel error.
+        #[source]
+        source: cupel::CupelError,
+    },
+
+    /// Context budget parameters are invalid.
+    #[error("invalid context budget: {message}")]
+    ContextBudgetInvalid {
+        /// Description of the validation failure.
         message: String,
     },
 }
