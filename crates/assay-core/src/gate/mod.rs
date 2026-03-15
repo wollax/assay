@@ -2166,8 +2166,8 @@ mod tests {
     fn format_command_error_not_found() {
         let msg = format_command_error("cargo test", CommandErrorKind::NotFound);
         assert!(
-            msg.contains("cargo"),
-            "should contain binary name, got: {msg}"
+            msg.contains("'cargo'"),
+            "should contain quoted binary name, got: {msg}"
         );
         assert!(
             msg.contains("not found"),
@@ -2180,8 +2180,8 @@ mod tests {
     fn format_command_error_not_executable() {
         let msg = format_command_error("cargo test", CommandErrorKind::NotExecutable);
         assert!(
-            msg.contains("cargo"),
-            "should contain binary name, got: {msg}"
+            msg.contains("'cargo'"),
+            "should contain quoted binary name, got: {msg}"
         );
         assert!(
             msg.contains("not executable"),
@@ -2196,7 +2196,10 @@ mod tests {
     #[test]
     fn format_command_error_not_found_single_word() {
         let msg = format_command_error("sh", CommandErrorKind::NotFound);
-        assert!(msg.contains("sh"), "should contain binary name, got: {msg}");
+        assert!(
+            msg.contains("'sh'"),
+            "should contain quoted binary name, got: {msg}"
+        );
         assert!(
             msg.contains("not found"),
             "should say not found, got: {msg}"
