@@ -354,27 +354,35 @@ pub struct SessionListParams {
 #[derive(Deserialize, JsonSchema)]
 pub struct GateEvaluateParams {
     /// The spec whose agent criteria to evaluate.
-    #[schemars(description = "Spec name to evaluate (filename without .toml extension, e.g. 'auth-flow'). \
+    #[schemars(
+        description = "Spec name to evaluate (filename without .toml extension, e.g. 'auth-flow'). \
         Evaluates all criteria using a headless Claude Code subprocess as an independent evaluator. \
-        Replaces the gate_run/gate_report/gate_finalize flow for agent-evaluated criteria.")]
+        Replaces the gate_run/gate_report/gate_finalize flow for agent-evaluated criteria."
+    )]
     pub name: String,
 
     /// Optional work session ID to auto-link results.
-    #[schemars(description = "Work session ID (from session_create). When provided, the session's \
+    #[schemars(
+        description = "Work session ID (from session_create). When provided, the session's \
         worktree_path is used for diff computation, and the session is transitioned to gate_evaluated \
-        with the gate run ID appended.")]
+        with the gate run ID appended."
+    )]
     #[serde(default)]
     pub session_id: Option<String>,
 
     /// Override evaluator timeout in seconds.
-    #[schemars(description = "Evaluator subprocess timeout in seconds (overrides config, default: 120s). \
-        This is separate from gate command timeouts — LLM inference has different latency characteristics.")]
+    #[schemars(
+        description = "Evaluator subprocess timeout in seconds (overrides config, default: 120s). \
+        This is separate from gate command timeouts — LLM inference has different latency characteristics."
+    )]
     #[serde(default)]
     pub timeout: Option<u64>,
 
     /// Override evaluator model.
-    #[schemars(description = "Model for the evaluator subprocess (overrides config, default: 'sonnet'). \
-        Accepts model aliases like 'sonnet', 'opus' or full model names.")]
+    #[schemars(
+        description = "Model for the evaluator subprocess (overrides config, default: 'sonnet'). \
+        Accepts model aliases like 'sonnet', 'opus' or full model names."
+    )]
     #[serde(default)]
     pub model: Option<String>,
 }
@@ -1320,23 +1328,16 @@ impl AssayServer {
 
         // ── Step 6: Construct EvaluatorConfig ─────────────────────────
         let gates_config = config.gates.as_ref();
-        let model = p
-            .model
-            .unwrap_or_else(|| {
-                gates_config
-                    .map(|g| g.evaluator_model.clone())
-                    .unwrap_or_else(|| "sonnet".to_string())
-            });
+        let model = p.model.unwrap_or_else(|| {
+            gates_config
+                .map(|g| g.evaluator_model.clone())
+                .unwrap_or_else(|| "sonnet".to_string())
+        });
         let timeout = Duration::from_secs(
-            p.timeout.unwrap_or_else(|| {
-                gates_config
-                    .map(|g| g.evaluator_timeout)
-                    .unwrap_or(120)
-            }),
+            p.timeout
+                .unwrap_or_else(|| gates_config.map(|g| g.evaluator_timeout).unwrap_or(120)),
         );
-        let retries = gates_config
-            .map(|g| g.evaluator_retries)
-            .unwrap_or(1);
+        let retries = gates_config.map(|g| g.evaluator_retries).unwrap_or(1);
 
         let eval_config = assay_core::evaluator::EvaluatorConfig {
             model: model.clone(),
@@ -1367,10 +1368,7 @@ impl AssayServer {
                      Increase timeout or reduce criteria count."
                 ))]));
             }
-            Err(assay_core::error::EvaluatorError::Crash {
-                exit_code,
-                stderr,
-            }) => {
+            Err(assay_core::error::EvaluatorError::Crash { exit_code, stderr }) => {
                 let code_str = exit_code
                     .map(|c| format!(" (exit code: {c})"))
                     .unwrap_or_default();
@@ -1383,10 +1381,7 @@ impl AssayServer {
                     "Evaluator subprocess crashed{code_str}: {excerpt}"
                 ))]));
             }
-            Err(assay_core::error::EvaluatorError::ParseError {
-                raw_output,
-                error,
-            }) => {
+            Err(assay_core::error::EvaluatorError::ParseError { raw_output, error }) => {
                 let excerpt = if raw_output.len() > 500 {
                     &raw_output[..500]
                 } else {
@@ -1396,9 +1391,7 @@ impl AssayServer {
                     "Evaluator output parse error: {error}. Raw output: {excerpt}"
                 ))]));
             }
-            Err(assay_core::error::EvaluatorError::NoStructuredOutput {
-                raw_output,
-            }) => {
+            Err(assay_core::error::EvaluatorError::NoStructuredOutput { raw_output }) => {
                 let excerpt = if raw_output.len() > 500 {
                     &raw_output[..500]
                 } else {
@@ -1488,7 +1481,10 @@ impl AssayServer {
             let assay_dir_for_session = assay_dir.clone();
             let session_id_owned = session_id.clone();
             let run_id_owned = run_id.clone();
-            let notes = format!("gate_evaluate: {}", if overall_passed { "passed" } else { "failed" });
+            let notes = format!(
+                "gate_evaluate: {}",
+                if overall_passed { "passed" } else { "failed" }
+            );
             match tokio::task::spawn_blocking(move || {
                 assay_core::work_session::record_gate_result(
                     &assay_dir_for_session,
