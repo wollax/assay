@@ -77,16 +77,21 @@ v0.4.0 decisions (from 38-02):
 - Growth rate uses last cumulative token count divided by turn count for average (simple, stable)
 - `estimate_tokens` does both tail-read (usage) and full parse (growth rate)
 
-v0.4.0 decisions (from 40-01):
-- WorkSession uses `String` for id (ULID stored as string for schemars compatibility)
-- No `deny_unknown_fields` on WorkSession (mutable document, evolves in later phases)
-- ulid dependency wired into assay-core only (ID generation is business logic)
-
 v0.4.0 decisions (from 39-02):
 - `budget_context` uses passthrough optimization when content fits (avoids pipeline overhead)
 - Cupel pipeline method is `.run()` returning `Vec<ContextItem>` (not `.execute()`/`ScoredItem`)
 - `ContextBudget` variant added to `AssayError` for cupel error mapping
 - tokens module stays `pub(crate)` -- budgeting accesses via `super::tokens`
+
+v0.4.0 decisions (from 40-01):
+- WorkSession uses `String` for id (ULID stored as string for schemars compatibility)
+- No `deny_unknown_fields` on WorkSession (mutable document, evolves in later phases)
+- ulid dependency wired into assay-core only (ID generation is business logic)
+
+v0.4.0 decisions (from 40-02):
+- `validate_path_component` made pub(crate) rather than duplicated (single source of truth)
+- `load_session` returns WorkSessionNotFound for missing files, Io for other read errors
+- `list_sessions` returns empty vec when sessions/ directory absent (not an error)
 
 v0.4.1 decisions (from brainstorm):
 - PR creation over direct merge for v0.4.x — maps to `autonomous: false`
