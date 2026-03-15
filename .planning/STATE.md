@@ -14,7 +14,7 @@ Plan: 1 of 1 (Session MCP tools — COMPLETE)
 Status: Complete
 Last activity: 2026-03-15 — Completed 41-01-PLAN.md
 
-Progress: v0.4.0 [████████████░░░░░] ~60% (phases 35-41 complete)
+Progress: v0.4.0 [████████████░░░░░] ~64% (phases 35-41 complete)
 
 ## Milestone Progress
 
@@ -23,7 +23,7 @@ Progress: v0.4.0 [████████████░░░░░] ~60% (pha
 | v0.1.0 | 10 | 43 | 100% (shipped) |
 | v0.2.0 | 15 (11-25) | 52 | 100% (shipped) |
 | v0.3.0 | 9 (26-34) | 43 | 100% (shipped) |
-| v0.4.0 | 11 (35-45) | 28 | 60% (7/11 phases) |
+| v0.4.0 | 11 (35-45) | 28 | 64% (7/11 phases) |
 | v0.4.1 | TBD | 8 | 0% (planned) |
 
 ## Accumulated Context

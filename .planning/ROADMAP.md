@@ -108,7 +108,7 @@
     2. Phase transitions (`created → agent_running → gate_evaluated → completed | abandoned`) are tracked with timestamps
     3. Sessions are loadable from disk and round-trip through JSON serialization without data loss
 
-- [ ] Phase 41: Session MCP Tools
+- [x] Phase 41: Session MCP Tools — 2026-03-15
   - SESS-03: `session_create` MCP tool
   - SESS-04: `session_update` MCP tool
   - SESS-05: `session_list` MCP tool
@@ -209,5 +209,5 @@
 | v0.1.0 Proof of Concept | ✅ Shipped | 10 | 43 | 100% |
 | v0.2.0 Dual-Track Gates & Hardening | ✅ Shipped | 15 | 52 | 100% |
 | v0.3.0 Orchestration Foundation | ✅ Shipped | 9 | 43 | 100% |
-| v0.4.0 Headless Orchestration | 🔄 In Progress | 11 | 28 | 55% |
+| v0.4.0 Headless Orchestration | 🔄 In Progress | 11 | 28 | 64% |
 | v0.4.1 Merge Tools | ○ Planned | 5 | 8 | 0% |
