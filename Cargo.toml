@@ -9,7 +9,7 @@ license = "MIT"
 repository = "https://github.com/wollax/assay"
 
 [workspace.dependencies]
-cupel = { path = "../cupel/crates/cupel" }
+cupel = "1.0.0"
 assay-types = { path = "crates/assay-types" }
 assay-core = { path = "crates/assay-core" }
 assay-mcp = { path = "crates/assay-mcp" }
