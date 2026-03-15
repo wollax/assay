@@ -53,6 +53,44 @@ expression: schema.to_value()
       ],
       "type": "object"
     },
+    "DiffTruncation": {
+      "description": "Truncation metadata when the diff was truncated to fit the evaluator's token budget.\n\nPresent only when truncation occurred (diff exceeded token budget).\nOmitted entirely when the diff fit within budget (clean passthrough).",
+      "properties": {
+        "included_files": {
+          "description": "Files included in the truncated diff.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "omitted_files": {
+          "description": "Files omitted from the truncated diff (present in original, absent after truncation).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "original_bytes": {
+          "description": "Byte size of the original diff before truncation.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "truncated_bytes": {
+          "description": "Byte size of the diff after truncation.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "original_bytes",
+        "truncated_bytes",
+        "included_files",
+        "omitted_files"
+      ],
+      "type": "object"
+    },
     "Enforcement": {
       "description": "Enforcement level for a gate criterion.\n\nDetermines whether a criterion failure blocks the gate (required)\nor is informational only (advisory).",
       "oneOf": [
@@ -353,6 +391,17 @@ expression: schema.to_value()
     "assay_version": {
       "description": "Version of assay that produced this record (from `env!(\"CARGO_PKG_VERSION\")`).",
       "type": "string"
+    },
+    "diff_truncation": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/DiffTruncation"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Truncation metadata for the diff passed to the evaluator.\nPresent only when truncation occurred; omitted when diff fit within budget."
     },
     "run_id": {
       "description": "Unique run identifier: `<timestamp>-<6-char-hex>` (e.g., `20260304T223015Z-a3f1b2`).",

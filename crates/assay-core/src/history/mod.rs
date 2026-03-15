@@ -79,6 +79,7 @@ pub fn save_run(
         timestamp,
         working_dir,
         summary,
+        diff_truncation: None,
     };
     save(assay_dir, &record, max_history)
 }
@@ -282,6 +283,7 @@ mod tests {
             timestamp: ts,
             working_dir: None,
             summary: make_test_summary(spec_name),
+            diff_truncation: None,
         }
     }
 
@@ -501,6 +503,7 @@ mod tests {
             assay_version: "0.2.0-test".to_string(),
             timestamp,
             working_dir: Some("/tmp/test-project".into()),
+            diff_truncation: None,
             summary: GateRunSummary {
                 spec_name: "fidelity-spec".to_string(),
                 results: vec![
@@ -635,6 +638,7 @@ mod tests {
             timestamp,
             working_dir: None,
             summary: make_test_summary(spec_name),
+            diff_truncation: None,
         }
     }
 
@@ -805,6 +809,7 @@ mod tests {
             assay_version: env!("CARGO_PKG_VERSION").to_string(),
             timestamp: ts,
             working_dir: Some("/tmp/test".to_string()),
+            diff_truncation: None,
             summary: GateRunSummary {
                 spec_name: "results-test".to_string(),
                 results: vec![CriterionResult {
