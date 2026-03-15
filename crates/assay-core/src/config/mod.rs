@@ -379,6 +379,9 @@ default_timeout = 600
             default_timeout: 0,
             working_dir: None,
             max_history: None,
+            evaluator_model: "sonnet".to_string(),
+            evaluator_retries: 1,
+            evaluator_timeout: 120,
         });
 
         let errors = super::validate(&config).unwrap_err();
@@ -538,6 +541,9 @@ default_timeout = 600
                 default_timeout: 0,
                 working_dir: None,
                 max_history: None,
+                evaluator_model: "sonnet".to_string(),
+                evaluator_retries: 1,
+                evaluator_timeout: 120,
             }),
             guard: None,
             worktree: None,
