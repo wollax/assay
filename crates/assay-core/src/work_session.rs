@@ -248,7 +248,7 @@ pub fn abandon_session(assay_dir: &Path, session_id: &str, reason: &str) -> Resu
 // ── Recovery scan ────────────────────────────────────────────────────
 
 /// Summary of a recovery scan for stale sessions.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone, PartialEq)]
 pub struct RecoverySummary {
     /// Number of sessions recovered (transitioned to Abandoned).
     pub recovered: usize,

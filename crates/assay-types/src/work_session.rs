@@ -15,6 +15,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// Sessions follow a linear pipeline: Created → AgentRunning → GateEvaluated → Completed.
 /// Any phase can transition to Abandoned (the escape hatch).
+#[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum SessionPhase {
@@ -73,7 +74,7 @@ impl fmt::Display for SessionPhase {
 }
 
 /// A recorded phase transition within a work session.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 pub struct PhaseTransition {
     /// The phase transitioned from.
     pub from: SessionPhase,

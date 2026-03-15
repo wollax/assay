@@ -569,8 +569,8 @@ fn evaluate_command(cmd: &str, working_dir: &Path, timeout: Duration) -> Result<
     }
 
     // Apply head+tail truncation independently per stream
-    let stdout_result = truncate_head_tail(&stdout_raw, STREAM_BUDGET);
-    let stderr_result = truncate_head_tail(&stderr_raw, STREAM_BUDGET);
+    let stdout_result = truncate_head_tail(stdout_raw, STREAM_BUDGET);
+    let stderr_result = truncate_head_tail(stderr_raw, STREAM_BUDGET);
 
     let truncated = stdout_result.truncated || stderr_result.truncated;
     let original_bytes = if truncated {
@@ -658,6 +658,7 @@ fn evaluate_always_pass() -> Result<GateResult> {
 /// When truncation is applied, the output contains the first portion (head)
 /// and last portion (tail) of the original input, separated by a marker
 /// indicating how many bytes were omitted.
+#[derive(Debug)]
 pub(crate) struct TruncationResult {
     /// The possibly-truncated output string.
     pub(crate) output: String,
@@ -669,6 +670,9 @@ pub(crate) struct TruncationResult {
 
 /// Truncate output using a head+tail strategy with a byte budget.
 ///
+/// Accepts an owned `String` to avoid an allocation on the passthrough path
+/// (when no truncation is needed, the original `String` is returned as-is).
+///
 /// If the input fits within `budget` bytes, it is returned unchanged.
 /// Otherwise, the output is split into a head (~33%) and tail (~67%)
 /// section separated by a `[truncated: X bytes omitted]` marker.
@@ -679,12 +683,12 @@ pub(crate) struct TruncationResult {
 /// and `ceil_char_boundary` to avoid splitting multi-byte sequences.
 ///
 /// A `budget` of 0 produces a marker-only output with no content bytes.
-pub(crate) fn truncate_head_tail(input: &str, budget: usize) -> TruncationResult {
+pub(crate) fn truncate_head_tail(input: String, budget: usize) -> TruncationResult {
     let original_bytes = input.len();
 
     if original_bytes <= budget {
         return TruncationResult {
-            output: input.to_string(),
+            output: input,
             truncated: false,
             original_bytes,
         };
@@ -704,6 +708,13 @@ pub(crate) fn truncate_head_tail(input: &str, budget: usize) -> TruncationResult
         (&input[..head_end], &input[tail_start..])
     };
 
+    debug_assert!(
+        head.len() + tail.len() <= original_bytes,
+        "head ({}) + tail ({}) > original_bytes ({})",
+        head.len(),
+        tail.len(),
+        original_bytes,
+    );
     let omitted = original_bytes - head.len() - tail.len();
     let output = format!("{head}\n[truncated: {omitted} bytes omitted]\n{tail}");
 
@@ -734,7 +745,7 @@ pub fn truncate_diff(raw: &str, budget: usize) -> (Option<String>, bool, Option<
     if raw.is_empty() {
         return (None, false, None);
     }
-    let result = truncate_head_tail(raw, budget);
+    let result = truncate_head_tail(raw.to_owned(), budget);
     (
         Some(result.output),
         result.truncated,
@@ -1829,7 +1840,7 @@ mod tests {
     #[test]
     fn truncate_head_tail_within_budget() {
         let input = "short string";
-        let result = truncate_head_tail(input, 1024);
+        let result = truncate_head_tail(input.to_owned(), 1024);
 
         assert_eq!(result.output, input);
         assert!(!result.truncated);
@@ -1839,7 +1850,7 @@ mod tests {
     #[test]
     fn truncate_head_tail_exact_budget() {
         let input = "exactly this long";
-        let result = truncate_head_tail(input, input.len());
+        let result = truncate_head_tail(input.to_owned(), input.len());
 
         assert_eq!(result.output, input);
         assert!(!result.truncated);
@@ -1849,7 +1860,7 @@ mod tests {
     #[test]
     fn truncate_head_tail_over_budget() {
         let input = "a".repeat(300);
-        let result = truncate_head_tail(&input, 100);
+        let result = truncate_head_tail(input.clone(), 100);
 
         assert!(result.truncated);
         assert_eq!(result.original_bytes, 300);
@@ -1859,12 +1870,25 @@ mod tests {
             result.output.len() < input.len(),
             "truncated output should be shorter than input"
         );
+        // Verify exact structure: marker present, omitted count = 300 - 100 = 200
+        assert!(
+            result.output.contains("[truncated: 200 bytes omitted]"),
+            "marker should report exactly 200 bytes omitted, got: {:?}",
+            result.output
+        );
+        // Head is 1/3 of budget = 33 bytes, tail = 67 bytes
+        let marker_pos = result.output.find("[truncated: ").unwrap();
+        let before_marker = result.output[..marker_pos].trim_end_matches('\n');
+        let after_end = result.output.find(" bytes omitted]").unwrap() + " bytes omitted]".len();
+        let after_marker = result.output[after_end..].trim_start_matches('\n');
+        assert_eq!(before_marker.len(), 33, "head should be 33 bytes");
+        assert_eq!(after_marker.len(), 67, "tail should be 67 bytes");
     }
 
     #[test]
     fn truncate_head_tail_marker_format() {
         let input = "a".repeat(300);
-        let result = truncate_head_tail(&input, 100);
+        let result = truncate_head_tail(input.clone(), 100);
 
         assert!(
             result.output.contains("[truncated: "),
@@ -1876,6 +1900,22 @@ mod tests {
             "output should contain ' bytes omitted]', got: {:?}",
             result.output
         );
+        // Marker must end with a newline before the tail content
+        let marker_end = result.output.find(" bytes omitted]").unwrap() + " bytes omitted]".len();
+        assert_eq!(
+            result.output.as_bytes().get(marker_end).copied(),
+            Some(b'\n'),
+            "marker must be followed by a newline"
+        );
+        // Head must be preceded by a newline (or be at start)
+        let marker_start = result.output.find("[truncated: ").unwrap();
+        if marker_start > 0 {
+            assert_eq!(
+                result.output.as_bytes().get(marker_start - 1).copied(),
+                Some(b'\n'),
+                "marker must be preceded by a newline"
+            );
+        }
     }
 
     #[test]
@@ -1886,7 +1926,7 @@ mod tests {
         let middle = "m".repeat(300);
         let input = format!("{head_content}{middle}{tail_content}");
 
-        let result = truncate_head_tail(&input, 100);
+        let result = truncate_head_tail(input.clone(), 100);
 
         assert!(result.truncated);
         // Head portion should appear before the marker
@@ -1907,10 +1947,36 @@ mod tests {
     }
 
     #[test]
+    fn truncate_head_tail_multiline_input() {
+        // Test that multi-line input is handled correctly
+        let lines: Vec<String> = (0..50).map(|i| format!("line {i}: content here")).collect();
+        let input = lines.join("\n");
+        let budget = 100;
+        let result = truncate_head_tail(input.clone(), budget);
+
+        assert!(result.truncated, "multi-line input over budget should be truncated");
+        assert!(
+            result.output.contains("[truncated: "),
+            "truncated multi-line output should have marker"
+        );
+        // Head and tail bytes total == budget
+        let marker_start = result.output.find("[truncated: ").unwrap();
+        let marker_end =
+            result.output.find(" bytes omitted]").unwrap() + " bytes omitted]".len();
+        let before = result.output[..marker_start].trim_end_matches('\n');
+        let after = result.output[marker_end..].trim_start_matches('\n');
+        assert_eq!(
+            before.len() + after.len(),
+            budget,
+            "head + tail should equal budget"
+        );
+    }
+
+    #[test]
     fn truncate_head_tail_utf8_multibyte() {
         // '世' is 3 bytes in UTF-8
         let input = "世".repeat(100); // 300 bytes
-        let result = truncate_head_tail(&input, 100);
+        let result = truncate_head_tail(input.clone(), 100);
 
         assert!(result.truncated);
         // Must be valid UTF-8 (this would panic if not)
@@ -1929,7 +1995,7 @@ mod tests {
     fn truncate_head_tail_utf8_4byte() {
         // '🦀' is 4 bytes in UTF-8
         let input = "🦀".repeat(100); // 400 bytes
-        let result = truncate_head_tail(&input, 100);
+        let result = truncate_head_tail(input.clone(), 100);
 
         assert!(result.truncated);
         // Must be valid UTF-8
@@ -1945,7 +2011,7 @@ mod tests {
 
     #[test]
     fn truncate_head_tail_empty_input() {
-        let result = truncate_head_tail("", 1024);
+        let result = truncate_head_tail(String::new(), 1024);
 
         assert_eq!(result.output, "");
         assert!(!result.truncated);
@@ -1967,7 +2033,7 @@ mod tests {
         // aligned chars. Test with ASCII barely-over instead, which still
         // exercises the function without panic.
         let input = "a".repeat(105);
-        let result = truncate_head_tail(&input, 100);
+        let result = truncate_head_tail(input.clone(), 100);
 
         assert!(result.truncated);
         // Must not panic and must be valid UTF-8
@@ -1978,7 +2044,7 @@ mod tests {
         );
 
         // Also test budget=0 to exercise tail-only fallback
-        let result_zero = truncate_head_tail("hello world", 0);
+        let result_zero = truncate_head_tail("hello world".to_owned(), 0);
         assert!(result_zero.truncated);
         assert!(result_zero.output.contains("[truncated: 11 bytes omitted]"));
         // With budget=0: head_budget=0, tail_budget=0
@@ -1990,7 +2056,7 @@ mod tests {
     #[test]
     fn truncate_head_tail_tiny_budget() {
         let input = "hello world, this is a test string";
-        let result = truncate_head_tail(input, 1);
+        let result = truncate_head_tail(input.to_owned(), 1);
 
         assert!(result.truncated);
         // Must not panic and must be valid UTF-8

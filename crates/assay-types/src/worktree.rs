@@ -45,6 +45,7 @@ inventory::submit! {
 ///
 /// Returned by worktree create and list operations.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct WorktreeInfo {
     /// The spec slug this worktree is associated with.
     pub spec_slug: String,
@@ -62,6 +63,7 @@ pub struct WorktreeInfo {
 ///
 /// Extends worktree information with dirty state, HEAD commit, and ahead/behind counts.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct WorktreeStatus {
     /// The spec slug this worktree is associated with.
     pub spec_slug: String,

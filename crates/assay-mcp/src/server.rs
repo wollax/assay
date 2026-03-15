@@ -702,7 +702,7 @@ struct GateEvaluateResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     session_id: Option<String>,
     /// Truncation metadata for the diff. Present only when truncation occurred.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     diff_truncation: Option<assay_types::DiffTruncation>,
 }
 
@@ -939,7 +939,7 @@ impl AssayServer {
                         location: "toml".to_string(),
                         message,
                     }];
-                    let summary = assay_core::spec::validate::build_summary(&diagnostics);
+                    let summary = assay_types::DiagnosticSummary::from_diagnostics(&diagnostics);
                     let result = assay_types::ValidationResult {
                         spec: params.0.name.clone(),
                         valid: false,
@@ -953,7 +953,7 @@ impl AssayServer {
                 | Err(assay_core::AssayError::FeatureSpecValidation { errors, .. }) => {
                     let diagnostics =
                         assay_core::spec::validate::spec_errors_to_diagnostics(&errors);
-                    let summary = assay_core::spec::validate::build_summary(&diagnostics);
+                    let summary = assay_types::DiagnosticSummary::from_diagnostics(&diagnostics);
                     let result = assay_types::ValidationResult {
                         spec: params.0.name.clone(),
                         valid: false,
@@ -971,7 +971,7 @@ impl AssayServer {
                         location: "name".to_string(),
                         message: e.to_string(),
                     }];
-                    let summary = assay_core::spec::validate::build_summary(&diagnostics);
+                    let summary = assay_types::DiagnosticSummary::from_diagnostics(&diagnostics);
                     let result = assay_types::ValidationResult {
                         spec: params.0.name.clone(),
                         valid: false,
@@ -2590,7 +2590,7 @@ fn load_recovery_threshold(cwd: &Path) -> u64 {
             return 3600;
         }
     };
-    config.sessions.map(|s| s.stale_threshold).unwrap_or(3600)
+    config.sessions.map(|s| s.stale_threshold_secs).unwrap_or(3600)
 }
 
 /// Start the MCP server on stdio transport.
