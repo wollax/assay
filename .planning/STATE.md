@@ -60,9 +60,28 @@ Issues pulled into v0.4.1 scope:
 - "Default branch fallback to main gives confusing errors" (from: .planning/issues/open/2026-03-09-worktree-detect-default-branch-fallback.md)
 - "Git worktree prune failure silently discarded" (from: .planning/issues/open/2026-03-09-worktree-prune-failure-silent.md)
 
+### Milestone Scope Issues (v0.5.0)
+
+Issues pulled into v0.5.0 scope (worktree tech debt to clean up during enhancements):
+- "CLI worktree handlers discard error source chain" (from: .planning/issues/open/2026-03-09-worktree-cli-error-chain-lost.md)
+- "WorktreeConfig.base_dir uses String where Option<String> is idiomatic" (from: .planning/issues/open/2026-03-09-worktree-config-base-dir-type.md)
+- "detect_main_worktree conflates errors with is main worktree" (from: .planning/issues/open/2026-03-09-worktree-detect-main-error-handling.md)
+- "WorktreeDirty error contains CLI-specific advice" (from: .planning/issues/open/2026-03-09-worktree-dirty-error-cli-advice.md)
+- "ASSAY_WORKTREE_DIR env var not documented in CLI help" (from: .planning/issues/open/2026-03-09-worktree-env-var-undocumented.md)
+- "MCP worktree_cleanup tool has no --all equivalent" (from: .planning/issues/open/2026-03-09-worktree-mcp-cleanup-no-all.md)
+- "WorktreeInfo and WorktreeStatus missing deny_unknown_fields" (from: .planning/issues/open/2026-03-09-worktree-missing-deny-unknown-fields.md)
+- "Git worktree prune failure silently discarded" (from: .planning/issues/open/2026-03-09-worktree-prune-failure-silent.md)
+- "Missing test for resolve_worktree_dir with empty base_dir config" (from: .planning/issues/open/2026-03-09-worktree-test-empty-base-dir.md)
+- "Missing test for cleanup with force=true on clean worktree" (from: .planning/issues/open/2026-03-09-worktree-test-force-clean.md)
+- "Missing test for parse_worktree_list with malformed input" (from: .planning/issues/open/2026-03-09-worktree-test-parse-malformed.md)
+- "Worktree path uses to_string_lossy which corrupts non-UTF-8 paths" (from: .planning/issues/open/2026-03-09-worktree-to-string-lossy-non-utf8.md)
+- "WorktreeInfo and WorktreeStatus field duplication" (from: .planning/issues/open/2026-03-09-worktree-types-field-duplication.md)
+- "WorktreeInfo and WorktreeStatus not registered in schema registry" (from: .planning/issues/open/2026-03-09-worktree-types-not-in-schema-registry.md)
+- "Worktree ahead/behind use platform-dependent usize" (from: .planning/issues/open/2026-03-09-worktree-usize-serialization.md)
+
 ### Pending Issues
 
-124 open issues in .planning/issues/open/ (non-blocking tech debt carried from v0.2.0–v0.4.0)
+109 remaining open issues in .planning/issues/open/ (non-blocking tech debt carried from v0.2.0–v0.4.0)
 See .planning/issues/ for full backlog.
 
 ### Blockers
