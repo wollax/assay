@@ -331,7 +331,10 @@ fn is_executable(criterion: &Criterion) -> bool {
 /// Returns `(gate_section, criteria)` for use in streaming evaluation.
 fn spec_entry_gate_info(
     entry: &SpecEntry,
-) -> (Option<&assay_types::GateSection>, Vec<assay_types::Criterion>) {
+) -> (
+    Option<&assay_types::GateSection>,
+    Vec<assay_types::Criterion>,
+) {
     match entry {
         SpecEntry::Legacy { spec, .. } => (spec.gate.as_ref(), spec.criteria.clone()),
         SpecEntry::Directory { gates, .. } => (

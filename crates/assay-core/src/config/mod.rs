@@ -176,6 +176,15 @@ pub fn validate(config: &Config) -> std::result::Result<(), Vec<ConfigError>> {
         });
     }
 
+    if let Some(sessions) = &config.sessions
+        && sessions.stale_threshold_secs == 0
+    {
+        errors.push(ConfigError {
+            field: "[sessions].stale_threshold_secs".into(),
+            message: "must be a positive integer (greater than zero)".into(),
+        });
+    }
+
     if errors.is_empty() {
         Ok(())
     } else {
@@ -689,6 +698,43 @@ unknown_option = true
         assert!(
             msg.contains("unknown field"),
             "should reject unknown sessions key, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn validate_rejects_zero_stale_threshold_secs() {
+        let mut config = valid_config();
+        config.sessions = Some(assay_types::SessionsConfig {
+            stale_threshold_secs: 0,
+        });
+
+        let errors = super::validate(&config).unwrap_err();
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.field.contains("stale_threshold_secs")),
+            "should report stale_threshold_secs validation error, got: {errors:?}"
+        );
+        assert!(
+            errors.iter().any(|e| e.message.contains("positive")),
+            "error message should mention positive, got: {errors:?}"
+        );
+    }
+
+    #[test]
+    fn stale_threshold_secs_alias_backward_compat() {
+        // Old config files using "stale_threshold" should still parse via serde alias.
+        let toml = r#"
+project_name = "test"
+
+[sessions]
+stale_threshold = 7200
+"#;
+        let config = super::from_str(toml).expect("old stale_threshold key should parse via alias");
+        let sessions = config.sessions.expect("sessions should be Some");
+        assert_eq!(
+            sessions.stale_threshold_secs, 7200,
+            "serde alias should map old key to new field"
         );
     }
 }

@@ -1954,15 +1954,17 @@ mod tests {
         let budget = 100;
         let result = truncate_head_tail(input.clone(), budget);
 
-        assert!(result.truncated, "multi-line input over budget should be truncated");
+        assert!(
+            result.truncated,
+            "multi-line input over budget should be truncated"
+        );
         assert!(
             result.output.contains("[truncated: "),
             "truncated multi-line output should have marker"
         );
         // Head and tail bytes total == budget
         let marker_start = result.output.find("[truncated: ").unwrap();
-        let marker_end =
-            result.output.find(" bytes omitted]").unwrap() + " bytes omitted]".len();
+        let marker_end = result.output.find(" bytes omitted]").unwrap() + " bytes omitted]".len();
         let before = result.output[..marker_start].trim_end_matches('\n');
         let after = result.output[marker_end..].trim_start_matches('\n');
         assert_eq!(
