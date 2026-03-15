@@ -167,6 +167,78 @@ pub fn list_sessions(assay_dir: &Path) -> Result<Vec<String>> {
     Ok(ids)
 }
 
+/// Load a session, apply a mutation, and save atomically.
+///
+/// Returns the mutated session on success. If the closure returns an error,
+/// the session is NOT saved — the on-disk state remains unchanged.
+pub fn with_session<F>(assay_dir: &Path, session_id: &str, mutate: F) -> Result<WorkSession>
+where
+    F: FnOnce(&mut WorkSession) -> Result<()>,
+{
+    let mut session = load_session(assay_dir, session_id)?;
+    mutate(&mut session)?;
+    save_session(assay_dir, &session)?;
+    Ok(session)
+}
+
+/// Create a session and immediately transition to AgentRunning.
+///
+/// This is the common Phase 43 entry point: create + transition + save
+/// in a single atomic operation. Returns the saved session.
+pub fn start_session(
+    assay_dir: &Path,
+    spec_name: &str,
+    worktree_path: PathBuf,
+    agent_command: &str,
+    agent_model: Option<&str>,
+) -> Result<WorkSession> {
+    let mut session = create_work_session(spec_name, worktree_path, agent_command, agent_model);
+    transition_session(&mut session, SessionPhase::AgentRunning, "session_start", None)?;
+    save_session(assay_dir, &session)?;
+    Ok(session)
+}
+
+/// Transition a session to GateEvaluated and link a gate run ID.
+///
+/// Convenience for the common gate_evaluate flow: load → transition → link run → save.
+pub fn record_gate_result(
+    assay_dir: &Path,
+    session_id: &str,
+    gate_run_id: &str,
+    trigger: &str,
+    notes: Option<&str>,
+) -> Result<WorkSession> {
+    with_session(assay_dir, session_id, |session| {
+        transition_session(session, SessionPhase::GateEvaluated, trigger, notes)?;
+        if !session.gate_runs.contains(&gate_run_id.to_string()) {
+            session.gate_runs.push(gate_run_id.to_string());
+        }
+        Ok(())
+    })
+}
+
+/// Mark a session as completed after successful evaluation.
+pub fn complete_session(
+    assay_dir: &Path,
+    session_id: &str,
+    notes: Option<&str>,
+) -> Result<WorkSession> {
+    with_session(assay_dir, session_id, |session| {
+        transition_session(session, SessionPhase::Completed, "session_complete", notes)
+    })
+}
+
+/// Mark a session as abandoned with a reason.
+pub fn abandon_session(
+    assay_dir: &Path,
+    session_id: &str,
+    reason: &str,
+) -> Result<WorkSession> {
+    with_session(assay_dir, session_id, |session| {
+        transition_session(session, SessionPhase::Abandoned, "session_abandon", Some(reason))
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -426,5 +498,177 @@ mod tests {
         session.id = "../evil".to_string();
         let result = save_session(dir.path(), &session);
         assert!(result.is_err(), "should reject path-traversal session ID");
+    }
+
+    // ── with_session ─────────────────────────────────────────────
+
+    #[test]
+    fn with_session_happy_path() {
+        let dir = TempDir::new().unwrap();
+        let session = create_work_session("test-spec", PathBuf::from("/tmp/wt"), "claude", None);
+        save_session(dir.path(), &session).unwrap();
+
+        let updated = with_session(dir.path(), &session.id, |s| {
+            transition_session(s, SessionPhase::AgentRunning, "test", None)
+        })
+        .unwrap();
+
+        assert_eq!(updated.phase, SessionPhase::AgentRunning);
+
+        // Verify on-disk copy matches
+        let loaded = load_session(dir.path(), &session.id).unwrap();
+        assert_eq!(loaded.phase, SessionPhase::AgentRunning);
+        assert_eq!(loaded, updated);
+    }
+
+    #[test]
+    fn with_session_aborts_on_closure_error() {
+        let dir = TempDir::new().unwrap();
+        let session = create_work_session("test-spec", PathBuf::from("/tmp/wt"), "claude", None);
+        save_session(dir.path(), &session).unwrap();
+
+        // Attempt invalid transition: Created -> Completed
+        let result = with_session(dir.path(), &session.id, |s| {
+            transition_session(s, SessionPhase::Completed, "skip", None)
+        });
+
+        assert!(result.is_err(), "invalid transition should return error");
+
+        // On-disk session must still be in Created phase
+        let loaded = load_session(dir.path(), &session.id).unwrap();
+        assert_eq!(
+            loaded.phase,
+            SessionPhase::Created,
+            "on-disk state should not change when closure fails"
+        );
+    }
+
+    // ── start_session ────────────────────────────────────────────
+
+    #[test]
+    fn start_session_happy_path() {
+        let dir = TempDir::new().unwrap();
+        let session = start_session(
+            dir.path(),
+            "my-spec",
+            PathBuf::from("/tmp/wt"),
+            "claude",
+            Some("sonnet"),
+        )
+        .unwrap();
+
+        assert_eq!(session.phase, SessionPhase::AgentRunning);
+        assert_eq!(session.transitions.len(), 1);
+        assert_eq!(session.transitions[0].trigger, "session_start");
+        assert_eq!(session.spec_name, "my-spec");
+
+        // Verify persisted
+        let loaded = load_session(dir.path(), &session.id).unwrap();
+        assert_eq!(loaded, session);
+    }
+
+    // ── record_gate_result ───────────────────────────────────────
+
+    #[test]
+    fn record_gate_result_happy_path() {
+        let dir = TempDir::new().unwrap();
+        let session = start_session(
+            dir.path(),
+            "spec",
+            PathBuf::from("/tmp/wt"),
+            "claude",
+            None,
+        )
+        .unwrap();
+
+        let updated =
+            record_gate_result(dir.path(), &session.id, "run-001", "gate_eval", Some("passed"))
+                .unwrap();
+
+        assert_eq!(updated.phase, SessionPhase::GateEvaluated);
+        assert_eq!(updated.gate_runs, vec!["run-001"]);
+
+        let loaded = load_session(dir.path(), &session.id).unwrap();
+        assert_eq!(loaded, updated);
+    }
+
+    #[test]
+    fn record_gate_result_deduplicates() {
+        let dir = TempDir::new().unwrap();
+        let mut session = create_work_session("spec", PathBuf::from("/tmp/wt"), "claude", None);
+        transition_session(&mut session, SessionPhase::AgentRunning, "start", None).unwrap();
+        // Pre-populate gate_runs with an existing ID
+        session.gate_runs.push("run-001".to_string());
+        save_session(dir.path(), &session).unwrap();
+
+        let updated =
+            record_gate_result(dir.path(), &session.id, "run-001", "gate_eval", None).unwrap();
+
+        assert_eq!(
+            updated.gate_runs,
+            vec!["run-001"],
+            "duplicate gate_run_id should not be added"
+        );
+    }
+
+    // ── complete_session ─────────────────────────────────────────
+
+    #[test]
+    fn complete_session_full_lifecycle() {
+        let dir = TempDir::new().unwrap();
+        let session = start_session(
+            dir.path(),
+            "spec",
+            PathBuf::from("/tmp/wt"),
+            "claude",
+            None,
+        )
+        .unwrap();
+
+        let evaluated =
+            record_gate_result(dir.path(), &session.id, "run-001", "gate_eval", None).unwrap();
+
+        let completed = complete_session(dir.path(), &evaluated.id, Some("all passed")).unwrap();
+
+        assert_eq!(completed.phase, SessionPhase::Completed);
+        let last_transition = completed.transitions.last().unwrap();
+        assert_eq!(last_transition.trigger, "session_complete");
+        assert_eq!(last_transition.notes.as_deref(), Some("all passed"));
+    }
+
+    // ── abandon_session ──────────────────────────────────────────
+
+    #[test]
+    fn abandon_session_from_agent_running() {
+        let dir = TempDir::new().unwrap();
+        let session = start_session(
+            dir.path(),
+            "spec",
+            PathBuf::from("/tmp/wt"),
+            "claude",
+            None,
+        )
+        .unwrap();
+
+        let abandoned = abandon_session(dir.path(), &session.id, "agent crashed").unwrap();
+
+        assert_eq!(abandoned.phase, SessionPhase::Abandoned);
+        let last_transition = abandoned.transitions.last().unwrap();
+        assert_eq!(last_transition.trigger, "session_abandon");
+        assert_eq!(last_transition.notes.as_deref(), Some("agent crashed"));
+    }
+
+    #[test]
+    fn abandon_session_from_created() {
+        let dir = TempDir::new().unwrap();
+        let session = create_work_session("spec", PathBuf::from("/tmp/wt"), "claude", None);
+        save_session(dir.path(), &session).unwrap();
+
+        let abandoned =
+            abandon_session(dir.path(), &session.id, "stale recovery sweep").unwrap();
+
+        assert_eq!(abandoned.phase, SessionPhase::Abandoned);
+        let loaded = load_session(dir.path(), &session.id).unwrap();
+        assert_eq!(loaded, abandoned);
     }
 }
