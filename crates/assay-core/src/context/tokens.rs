@@ -119,9 +119,12 @@ fn collect_turn_tokens_from_entries(entries: &[ParsedEntry]) -> Vec<u64> {
         .iter()
         .filter(|e| !is_sidechain(&e.entry))
         .filter_map(|e| match &e.entry {
-            SessionEntry::Assistant(a) => {
-                a.message.as_ref()?.usage.as_ref().map(|u| u.context_tokens())
-            }
+            SessionEntry::Assistant(a) => a
+                .message
+                .as_ref()?
+                .usage
+                .as_ref()
+                .map(|u| u.context_tokens()),
             _ => None,
         })
         .collect()
@@ -141,11 +144,7 @@ fn compute_growth_rate(turn_tokens: &[u64], context_window: u64) -> Option<Growt
     let avg = last / turn_count;
     let available = context_window.saturating_sub(SYSTEM_OVERHEAD_TOKENS);
     let remaining_tokens = available.saturating_sub(last);
-    let remaining_turns = if avg > 0 {
-        remaining_tokens / avg
-    } else {
-        0
-    };
+    let remaining_turns = if avg > 0 { remaining_tokens / avg } else { 0 };
 
     Some(GrowthRate {
         avg_tokens_per_turn: avg,
@@ -307,9 +306,7 @@ mod tests {
     fn compute_growth_rate_returns_none_below_threshold() {
         assert!(compute_growth_rate(&[], DEFAULT_CONTEXT_WINDOW).is_none());
         assert!(compute_growth_rate(&[1000], DEFAULT_CONTEXT_WINDOW).is_none());
-        assert!(
-            compute_growth_rate(&[1000, 2000, 3000, 4000], DEFAULT_CONTEXT_WINDOW).is_none()
-        );
+        assert!(compute_growth_rate(&[1000, 2000, 3000, 4000], DEFAULT_CONTEXT_WINDOW).is_none());
     }
 
     #[test]
