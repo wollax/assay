@@ -20,7 +20,7 @@ use crate::error::{AssayError, Result};
 ///
 /// Rejects empty strings, path separators (`/`, `\`), and traversal
 /// sequences (`..`) to prevent directory escape.
-fn validate_path_component(value: &str, label: &str) -> Result<()> {
+pub(crate) fn validate_path_component(value: &str, label: &str) -> Result<()> {
     if value.is_empty()
         || value == "."
         || value == ".."
