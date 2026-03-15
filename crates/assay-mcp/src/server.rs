@@ -1294,13 +1294,17 @@ impl AssayServer {
                     let stderr = String::from_utf8_lossy(&output.stderr);
                     let msg = format!("git diff HEAD failed: {}", stderr.trim());
                     tracing::warn!("{msg}");
-                    warnings.push(format!("{msg} — evaluator will assess without diff context"));
+                    warnings.push(format!(
+                        "{msg} — evaluator will assess without diff context"
+                    ));
                     None
                 }
                 Err(e) => {
                     let msg = format!("git diff HEAD command error: {e}");
                     tracing::warn!("{msg}");
-                    warnings.push(format!("{msg} — evaluator will assess without diff context"));
+                    warnings.push(format!(
+                        "{msg} — evaluator will assess without diff context"
+                    ));
                     None
                 }
             }

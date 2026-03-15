@@ -762,10 +762,7 @@ mod tests {
     #[test]
     fn extract_diff_files_multiple_files() {
         let diff = "diff --git a/foo.rs b/foo.rs\nsome content\ndiff --git a/bar.rs b/bar.rs\nmore content\ndiff --git a/baz.rs b/baz.rs\n";
-        assert_eq!(
-            extract_diff_files(diff),
-            vec!["foo.rs", "bar.rs", "baz.rs"]
-        );
+        assert_eq!(extract_diff_files(diff), vec!["foo.rs", "bar.rs", "baz.rs"]);
     }
 
     #[test]
@@ -777,10 +774,7 @@ mod tests {
     #[test]
     fn extract_diff_files_path_with_spaces() {
         let diff = "diff --git a/path with spaces/file.rs b/path with spaces/file.rs\n";
-        assert_eq!(
-            extract_diff_files(diff),
-            vec!["path with spaces/file.rs"]
-        );
+        assert_eq!(extract_diff_files(diff), vec!["path with spaces/file.rs"]);
     }
 
     // ── evaluate: command execution ────────────────────────────────
