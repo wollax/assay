@@ -1,3 +1,6 @@
+> **Closed:** 2026-03-15 — Won't fix. Superseded by v0.4.0 architecture (phases 35-44).
+
+
 ---
 title: "Comment quality improvements from Phase 3 PR review"
 area: assay-types, assay-core

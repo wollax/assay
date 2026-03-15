@@ -1,3 +1,6 @@
+> **Closed:** 2026-03-15 — Won't fix. Superseded by v0.4.0 architecture (phases 35-44).
+
+
 ---
 created: 2026-03-01T04:30
 title: Use ratatui::try_init() instead of panicking init()
