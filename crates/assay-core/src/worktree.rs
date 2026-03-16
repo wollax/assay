@@ -993,4 +993,42 @@ cmd = "echo ok"
             "resolved path should follow symlinks to real path"
         );
     }
+
+    #[test]
+    fn test_create_without_base_branch_no_remote_returns_error() {
+        let (_tmp, _wt_tmp, root, specs_dir) = setup_repo();
+        let worktree_base = _wt_tmp.path().join("worktrees");
+
+        // setup_repo() creates a repo with no remote, so detection should fail
+        let err = create(&root, "auth-flow", None, &worktree_base, &specs_dir)
+            .expect_err("should fail when no remote is configured and base_branch is None");
+
+        let err_msg = err.to_string();
+        assert!(
+            err_msg.contains("Could not detect default branch"),
+            "error should mention detection failure, got: {err_msg}"
+        );
+        assert!(
+            err_msg.contains("init.defaultBranch"),
+            "error should mention init.defaultBranch config key, got: {err_msg}"
+        );
+        assert!(
+            err_msg.contains("git remote set-head origin --auto"),
+            "error should mention git remote set-head command, got: {err_msg}"
+        );
+    }
+
+    #[test]
+    fn test_create_with_explicit_base_branch_skips_detection() {
+        let (_tmp, _wt_tmp, root, specs_dir) = setup_repo();
+        let worktree_base = _wt_tmp.path().join("worktrees");
+
+        // Even though no remote is configured, explicit base_branch bypasses detection
+        let info = create(&root, "auth-flow", Some("main"), &worktree_base, &specs_dir)
+            .expect("create with explicit base_branch should succeed regardless of remote state");
+
+        assert_eq!(info.spec_slug, "auth-flow");
+        assert_eq!(info.base_branch.as_deref(), Some("main"));
+        assert!(info.path.exists());
+    }
 }
