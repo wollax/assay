@@ -205,10 +205,21 @@ pub fn resolve_worktree_dir(
         .unwrap_or_else(|| format!("../{}-worktrees", config.project_name));
 
     let path = Path::new(&raw);
-    if path.is_absolute() {
+    let resolved = if path.is_absolute() {
         path.to_path_buf()
     } else {
         project_root.join(path)
+    };
+
+    // Canonicalize to resolve symlinks and `..` segments.
+    if resolved.exists() {
+        std::fs::canonicalize(&resolved).unwrap_or(resolved)
+    } else if let (Some(parent), Some(leaf)) = (resolved.parent(), resolved.file_name()) {
+        std::fs::canonicalize(parent)
+            .map(|p| p.join(leaf))
+            .unwrap_or(resolved)
+    } else {
+        resolved
     }
 }
 
