@@ -31,6 +31,7 @@ use assay_types::{
 
 use crate::error::{AssayError, Result};
 
+pub mod evidence;
 pub mod session;
 
 /// Classification of command execution errors based on shell exit codes.
