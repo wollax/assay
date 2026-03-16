@@ -1,5 +1,34 @@
 # Project Milestones: Assay
 
+## v0.4.0 Headless Orchestration (Shipped: 2026-03-15)
+
+**Delivered:** Headless agent evaluation with `gate_evaluate` capstone MCP tool, `WorkSession` persistence, `spec_validate` static health checking, `cupel` context engine integration for token-budgeted diff slicing, observability improvements, and 120+ tech debt fixes.
+
+**Phases completed:** 35-45 (30 plans total)
+
+**Key accomplishments:**
+
+- `gate_evaluate` MCP tool: single-call headless agent evaluation with diff computation, subprocess orchestration, structured per-criterion results, and automatic persistence
+- `WorkSession` type with JSON persistence, phase transitions, session MCP tools (create/get/update/list), and startup recovery for stale sessions
+- `spec_validate` MCP tool with structured diagnostics: TOML parse errors, criterion uniqueness, prompt validation, cross-spec dependency cycle detection
+- Context engine integration via external `cupel` crate: token-budgeted context windowing with passthrough optimization and DiffTruncation metadata
+- Observability: warnings field on all MCP responses, outcome-filtered gate_history, spec_get resolved config, growth rate metrics
+- 120+ tech debt issues resolved in batch sweep across all crates
+
+**Stats:**
+
+- 356 files changed, 31,825 insertions, 582 deletions
+- 33,462 lines of Rust across 5 crates
+- 11 phases, 30 plans
+- 836 tests
+- 5 days from start to ship (2026-03-11 → 2026-03-15)
+
+**Git range:** `docs: start milestone v0.4.0` → `Merge pull request #131`
+
+**What's next:** v0.4.1 — Merge tools (merge_check, merge_propose, worktree fixes, gate evidence formatting)
+
+---
+
 ## v0.3.0 Orchestration Foundation (Shipped: 2026-03-10)
 
 **Delivered:** Worktree isolation foundation, gate output truncation, actionable error messages, types hygiene, CLI polish, MCP validation hardening, and core tech debt cleanup.
