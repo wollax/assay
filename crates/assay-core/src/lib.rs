@@ -41,3 +41,6 @@ pub mod work_session;
 
 /// Evaluator subprocess: spawn, parse, and map Claude Code evaluator results.
 pub mod evaluator;
+
+/// Merge check: conflict detection between git refs with zero side effects.
+pub mod merge;
