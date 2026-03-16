@@ -5,14 +5,14 @@
 See: .planning/PROJECT.md (updated 2026-03-15)
 
 **Core value:** Dual-track quality gates (deterministic + agent-evaluated) for AI coding agents
-**Current focus:** v0.4.1 Merge Tools — Phase 46 complete, Phase 47 next
+**Current focus:** v0.4.1 Merge Tools — Phase 47 in progress
 
 ## Current Position
 
 Phase: 47 (Merge Check)
-Plan: —
-Status: Planned (not started)
-Last activity: 2026-03-16 — Phase 46 (Worktree Fixes) verified and complete
+Plan: 01 of ? in phase
+Status: In progress
+Last activity: 2026-03-16 — Completed 47-01-PLAN.md (types + core logic)
 
 ## Milestone Progress
 
@@ -104,10 +104,10 @@ None. v0.4.1 must ship before v0.5.0 work begins.
 
 ### Next Actions
 
-Begin Phase 47 (Merge Check) — standalone conflict detection via `git merge-tree --write-tree`.
+Continue Phase 47 — Plan 02 (MCP tool wiring for merge_check).
 
 ### Session Continuity
 
 Last session: 2026-03-16
-Stopped at: Phase 46 complete, ready for Phase 47
+Stopped at: Completed 47-01-PLAN.md
 Resume file: None
