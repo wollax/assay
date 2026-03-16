@@ -44,11 +44,13 @@ pub fn format_gate_evidence(
     let mut footer = String::new();
     write_footer(&mut footer, record);
 
-    // Assemble the full report.
+    // Assemble the full report (used for both disk persistence and as the
+    // starting point for truncation — avoids a redundant second assembly).
     let full_report = assemble(&skeleton, &detail_sections, &footer);
 
     // Apply truncation for the PR body.
     let (pr_body, truncated) = truncate_to_fit(
+        &full_report,
         &skeleton,
         &detail_sections,
         &footer,
@@ -152,18 +154,19 @@ fn write_status_table(buf: &mut String, results: &[CriterionResult]) {
             Enforcement::Advisory => "advisory",
         };
 
+        // Escape pipe characters that would break the markdown table.
+        let name = cr.criterion_name.replace('|', "\\|");
+
         // Bold the row for failures.
         if passed == Some(false) {
             let _ = writeln!(
                 buf,
-                "| {emoji} | **{}** | **{enforcement_str}** | **{duration_str}** |",
-                cr.criterion_name,
+                "| {emoji} | **{name}** | **{enforcement_str}** | **{duration_str}** |",
             );
         } else {
             let _ = writeln!(
                 buf,
-                "| {emoji} | {} | {enforcement_str} | {duration_str} |",
-                cr.criterion_name,
+                "| {emoji} | {name} | {enforcement_str} | {duration_str} |",
             );
         }
     }
@@ -204,14 +207,13 @@ fn build_detail_sections(results: &[CriterionResult]) -> Vec<DetailSection> {
 
         let mut section = String::new();
 
+        // Escape pipe characters in criterion names for markdown safety.
+        let name = cr.criterion_name.replace('|', "\\|");
+
         if result.passed {
             // Agent pass — collapsed.
             let _ = writeln!(section, "<details>");
-            let _ = writeln!(
-                section,
-                "<summary>:white_check_mark: {}</summary>\n",
-                cr.criterion_name,
-            );
+            let _ = writeln!(section, "<summary>:white_check_mark: {name}</summary>\n",);
             write_agent_detail(&mut section, result);
             let _ = writeln!(section, "\n</details>\n");
 
@@ -222,7 +224,7 @@ fn build_detail_sections(results: &[CriterionResult]) -> Vec<DetailSection> {
         } else {
             // Failure — expanded.
             let _ = writeln!(section, "<details open>");
-            let _ = writeln!(section, "<summary>:x: {}</summary>\n", cr.criterion_name,);
+            let _ = writeln!(section, "<summary>:x: {name}</summary>\n");
             write_failure_detail(&mut section, result);
             let _ = writeln!(section, "\n</details>\n");
 
@@ -302,16 +304,16 @@ fn assemble(skeleton: &str, details: &[DetailSection], footer: &str) -> String {
 }
 
 fn truncate_to_fit(
+    full_report: &str,
     skeleton: &str,
     details: &[DetailSection],
     footer: &str,
     report_path: &Path,
     char_limit: usize,
 ) -> (String, bool) {
-    // Try the full version first.
-    let full = assemble(skeleton, details, footer);
-    if full.len() <= char_limit {
-        return (full, false);
+    // Check if the full report already fits.
+    if full_report.len() <= char_limit {
+        return (full_report.to_string(), false);
     }
 
     // Build the truncation notice we'll append.
@@ -365,9 +367,15 @@ fn truncate_to_fit(
         }
     }
 
-    // Absolute fallback: hard truncate (should be unreachable in practice).
+    // Absolute fallback: safe truncate at a char boundary (unreachable in practice).
     let mut result = format!("{skeleton}{footer}{notice}");
-    result.truncate(char_limit);
+    if char_limit < result.len() {
+        let boundary = (0..=char_limit)
+            .rev()
+            .find(|&i| result.is_char_boundary(i))
+            .unwrap_or(0);
+        result.truncate(boundary);
+    }
     (result, true)
 }
 
@@ -646,30 +654,52 @@ mod tests {
         ];
         let record = make_record(results);
 
-        // Use a limit that forces truncation but allows some sections.
+        // Get the full report to measure sizes.
         let full_evidence =
             format_gate_evidence(&record, Path::new("report.md"), GITHUB_BODY_LIMIT);
         let full_len = full_evidence.full_report.len();
 
-        // Shrink limit so it needs to truncate at least agent passes.
-        let tight_limit = full_len - 10;
+        // The truncation notice adds ~100 bytes. We need a limit that:
+        // - Is too small for full_report (forces truncation)
+        // - Is large enough for skeleton + failure detail + footer + notice
+        // Remove one agent pass (~200 bytes) worth, which should trigger removal
+        // of agent passes while keeping the failure.
+        let tight_limit = full_len - 200;
         let evidence = format_gate_evidence(&record, Path::new("report.md"), tight_limit);
 
         assert!(evidence.truncated);
-        // Should still contain the failure detail.
-        assert!(evidence.pr_body.contains("lint-check"));
+        // At least one agent pass detail should be removed (lowest priority).
+        // The failure detail should be preserved (highest priority).
+        assert!(
+            evidence.pr_body.contains("test failed"),
+            "failure detail should be preserved"
+        );
         assert!(evidence.pr_body.contains("truncated"));
     }
 
     #[test]
-    fn truncation_uses_byte_length() {
-        // Verify .len() (byte count) is used, not .chars().count().
-        let record = make_record(vec![make_passing_command_result("test")]);
-        let evidence = format_gate_evidence(&record, Path::new("report.md"), GITHUB_BODY_LIMIT);
+    fn truncation_enforces_byte_limit() {
+        // Verify that pr_body.len() (byte count) stays within the limit
+        // even when truncation is required.
+        let results = vec![
+            make_agent_pass_result("review-1"),
+            make_agent_pass_result("review-2"),
+            make_failing_command_result("build"),
+        ];
+        let record = make_record(results);
+        let full = format_gate_evidence(&record, Path::new("report.md"), GITHUB_BODY_LIMIT);
 
-        // Verify the report uses only ASCII (single-byte chars),
-        // confirming .len() byte count matches character count.
-        assert!(evidence.full_report.is_ascii());
+        // Set a limit that forces truncation.
+        let limit = full.full_report.len() - 50;
+        let evidence = format_gate_evidence(&record, Path::new("report.md"), limit);
+
+        assert!(evidence.truncated);
+        assert!(
+            evidence.pr_body.len() <= limit,
+            "pr_body byte length {} exceeds limit {}",
+            evidence.pr_body.len(),
+            limit
+        );
     }
 
     #[test]
@@ -1130,5 +1160,222 @@ mod tests {
         };
 
         assert!(save_report(dir.path(), &record, &evidence).is_err());
+    }
+
+    // ── Review fix: missing test coverage ────────────────────────────
+
+    #[test]
+    fn always_pass_has_no_detail_section() {
+        let cr = CriterionResult {
+            criterion_name: "placeholder".to_string(),
+            result: Some(GateResult {
+                passed: true,
+                kind: GateKind::AlwaysPass,
+                stdout: String::new(),
+                stderr: String::new(),
+                exit_code: None,
+                duration_ms: 0,
+                timestamp: Utc::now(),
+                truncated: false,
+                original_bytes: None,
+                evidence: None,
+                reasoning: None,
+                confidence: None,
+                evaluator_role: None,
+            }),
+            enforcement: Enforcement::Required,
+        };
+        let record = make_record(vec![cr]);
+        let evidence = format_gate_evidence(&record, Path::new("report.md"), GITHUB_BODY_LIMIT);
+
+        assert!(!evidence.full_report.contains("<details"));
+    }
+
+    #[test]
+    fn always_pass_failure_shows_unexpected_message() {
+        let cr = CriterionResult {
+            criterion_name: "broken-placeholder".to_string(),
+            result: Some(GateResult {
+                passed: false,
+                kind: GateKind::AlwaysPass,
+                stdout: String::new(),
+                stderr: String::new(),
+                exit_code: None,
+                duration_ms: 0,
+                timestamp: Utc::now(),
+                truncated: false,
+                original_bytes: None,
+                evidence: None,
+                reasoning: None,
+                confidence: None,
+                evaluator_role: None,
+            }),
+            enforcement: Enforcement::Required,
+        };
+        let record = make_record(vec![cr]);
+        let evidence = format_gate_evidence(&record, Path::new("report.md"), GITHUB_BODY_LIMIT);
+
+        assert!(
+            evidence
+                .full_report
+                .contains("AlwaysPass gate reported failure (unexpected)")
+        );
+    }
+
+    #[test]
+    fn command_failure_with_both_stdout_and_stderr() {
+        let cr = CriterionResult {
+            criterion_name: "build".to_string(),
+            result: Some(GateResult {
+                passed: false,
+                kind: GateKind::Command {
+                    cmd: "cargo build".to_string(),
+                },
+                stdout: "Compiling crate v0.1.0".to_string(),
+                stderr: "error[E0308]: mismatched types".to_string(),
+                exit_code: Some(101),
+                duration_ms: 500,
+                timestamp: Utc::now(),
+                truncated: false,
+                original_bytes: None,
+                evidence: None,
+                reasoning: None,
+                confidence: None,
+                evaluator_role: None,
+            }),
+            enforcement: Enforcement::Required,
+        };
+        let record = make_record(vec![cr]);
+        let evidence = format_gate_evidence(&record, Path::new("report.md"), GITHUB_BODY_LIMIT);
+
+        assert!(evidence.full_report.contains("**stdout:**"));
+        assert!(evidence.full_report.contains("Compiling crate v0.1.0"));
+        assert!(evidence.full_report.contains("**stderr:**"));
+        assert!(
+            evidence
+                .full_report
+                .contains("error[E0308]: mismatched types")
+        );
+    }
+
+    #[test]
+    fn command_failure_with_no_exit_code() {
+        let cr = CriterionResult {
+            criterion_name: "killed".to_string(),
+            result: Some(GateResult {
+                passed: false,
+                kind: GateKind::Command {
+                    cmd: "long-running-test".to_string(),
+                },
+                stdout: String::new(),
+                stderr: "killed by signal".to_string(),
+                exit_code: None,
+                duration_ms: 30_000,
+                timestamp: Utc::now(),
+                truncated: false,
+                original_bytes: None,
+                evidence: None,
+                reasoning: None,
+                confidence: None,
+                evaluator_role: None,
+            }),
+            enforcement: Enforcement::Required,
+        };
+        let record = make_record(vec![cr]);
+        let evidence = format_gate_evidence(&record, Path::new("report.md"), GITHUB_BODY_LIMIT);
+
+        assert!(!evidence.full_report.contains("**Exit code:**"));
+        assert!(evidence.full_report.contains("killed by signal"));
+    }
+
+    #[test]
+    fn agent_pass_with_all_none_fields() {
+        let cr = CriterionResult {
+            criterion_name: "sparse-review".to_string(),
+            result: Some(GateResult {
+                passed: true,
+                kind: GateKind::AgentReport,
+                stdout: String::new(),
+                stderr: String::new(),
+                exit_code: None,
+                duration_ms: 10,
+                timestamp: Utc::now(),
+                truncated: false,
+                original_bytes: None,
+                evidence: None,
+                reasoning: None,
+                confidence: None,
+                evaluator_role: None,
+            }),
+            enforcement: Enforcement::Required,
+        };
+        let record = make_record(vec![cr]);
+        let evidence = format_gate_evidence(&record, Path::new("report.md"), GITHUB_BODY_LIMIT);
+
+        // Should still produce a valid collapsed detail section.
+        assert!(evidence.full_report.contains("<details>"));
+        assert!(
+            evidence
+                .full_report
+                .contains("<summary>:white_check_mark: sparse-review</summary>")
+        );
+        // No content fields.
+        assert!(!evidence.full_report.contains("**Evidence:**"));
+        assert!(!evidence.full_report.contains("**Reasoning:**"));
+    }
+
+    #[test]
+    fn advisory_failure_row_is_bold() {
+        let record = make_record(vec![make_agent_fail_result("style-check")]);
+        let evidence = format_gate_evidence(&record, Path::new("report.md"), GITHUB_BODY_LIMIT);
+
+        // make_agent_fail_result uses Enforcement::Advisory.
+        assert!(evidence.full_report.contains("**style-check**"));
+        assert!(evidence.full_report.contains("**advisory**"));
+    }
+
+    #[test]
+    fn pipe_in_criterion_name_does_not_break_table() {
+        let mut cr = make_passing_command_result("foo | bar");
+        cr.criterion_name = "foo | bar".to_string();
+        let record = make_record(vec![cr]);
+        let evidence = format_gate_evidence(&record, Path::new("report.md"), GITHUB_BODY_LIMIT);
+
+        // Pipe should be escaped in table.
+        assert!(evidence.full_report.contains(r"foo \| bar"));
+        // Table row should still have exactly 5 pipe-delimited columns.
+        let data_row = evidence
+            .full_report
+            .lines()
+            .find(|l| l.contains(r"foo \| bar"))
+            .expect("should find escaped row");
+        // Count unescaped pipes (column delimiters).
+        let unescaped_pipes = data_row
+            .chars()
+            .collect::<Vec<_>>()
+            .windows(2)
+            .filter(|w| w[1] == '|' && w[0] != '\\')
+            .count()
+            + if data_row.starts_with('|') { 1 } else { 0 };
+        assert_eq!(
+            unescaped_pipes, 5,
+            "table row should have 5 column delimiters"
+        );
+    }
+
+    #[test]
+    fn hard_truncate_fallback_safe_with_multibyte() {
+        // Exercise the absolute fallback path with a limit that would land
+        // mid-character. Should not panic.
+        let mut cr = make_agent_pass_result("résumé");
+        cr.result.as_mut().unwrap().evidence = Some("日本語テスト".to_string());
+        let record = make_record(vec![cr]);
+
+        // Limit of 1 forces the hard truncate fallback.
+        let evidence = format_gate_evidence(&record, Path::new("report.md"), 1);
+
+        assert!(evidence.truncated);
+        assert!(evidence.pr_body.len() <= 1);
+        // Should not panic — that's the main assertion.
     }
 }
