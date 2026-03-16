@@ -114,17 +114,19 @@ The `assay-mcp` crate provides MCP server functionality. Future crates may inclu
 - Binary crates are thin wrappers that delegate to `assay-core`
 - Run `just ready` before considering work complete
 
-## Current Milestone: v0.4.1 Merge Tools
+## Current Milestone: v0.5.0 Single-Agent Harness End-to-End
 
-**Goal:** Ship merge conflict detection and PR-based merge proposal as MCP tools — enabling agents to safely check for conflicts and propose merges through pull requests with gate evidence.
+**Goal:** Prove the harness abstraction through one complete flow — manifest → worktree → agent → gate → merge proposal — for a single agent, with the `assay-harness` crate and Claude Code adapter as the first concrete implementation.
 
 **Target features:**
 
-- `merge_check` MCP tool (read-only conflict detection via `git merge-tree`)
-- `merge_propose` MCP tool (PR creation with gate evidence, dry_run support)
-- Worktree fixes (canonical paths, default branch errors, prune failure surfacing)
-- Gate evidence formatting for PR bodies
-- Forge-agnostic env vars for downstream tooling
+- `assay-harness` leaf crate with `HarnessProfile`, layered prompt builder, Claude Code adapter
+- Callback-based control inversion for agent invocation (closures, not traits)
+- Worktree enhancements: orphan detection, collision prevention, session linkage
+- `RunManifest` format with `[[sessions]]` array (forward-compatible for multi-agent)
+- Session vocabulary cleanup (`AgentSession` → `GateEvalContext`)
+- AgentSession write-through persistence (crash recovery prerequisite)
+- End-to-end single-agent pipeline: manifest → worktree → agent → gate → merge propose
 
 ## Current State
 
@@ -181,22 +183,29 @@ The `assay-mcp` crate provides MCP server functionality. Future crates may inclu
 - [ ] `merge_check` MCP tool — read-only conflict detection via `git merge-tree` — v0.4.1
 - [ ] `merge_propose` MCP tool — PR creation with gate evidence, dry_run support — v0.4.1
 - [ ] Worktree fixes: canonical paths, default branch errors, prune failure surfacing — v0.4.1
+- [ ] `assay-harness` crate with HarnessProfile and Claude Code adapter — v0.5.0
+- [ ] Callback-based agent invocation (closures for control inversion) — v0.5.0
+- [ ] Worktree enhancements: orphan detection, collision prevention, session linkage — v0.5.0
+- [ ] `RunManifest` with `[[sessions]]` array format — v0.5.0
+- [ ] Session vocabulary cleanup (`AgentSession` → `GateEvalContext`) — v0.5.0
+- [ ] AgentSession write-through persistence — v0.5.0
+- [ ] End-to-end single-agent pipeline — v0.5.0
 
 ### Future
 
+- [ ] Multi-agent orchestration: `OrchestratorSession`, DAG executor, MergeRunner — v0.6.0
+- [ ] `orchestrate_*` MCP tools (additive, no changes to existing tools) — v0.6.0
+- [ ] Harness orchestration layer: scope enforcement, multi-agent prompts — v0.6.0
+- [ ] AI conflict resolution via evaluator subprocess — v0.6.1
+- [ ] Cupel integration for orchestrated sessions — v0.6.1
+- [ ] Codex/OpenCode adapter stubs — v0.6.1
+- [ ] `SessionCore` struct composition for type unification — v0.6.1
 - [ ] Minimal TUI gate results viewer
 - [ ] Composable gate definitions (`gate.extends`)
 - [ ] Criteria libraries with `include` field
 - [ ] Spec preconditions section
 - [ ] Gate history summary with pass/fail rates
-- [ ] tmux session/pane management for interactive agent lifecycle
-- [ ] MCP-integrated iterative workflow (agents call gates during implementation)
-- [ ] WorkSession merge state machine (merge_ready → merged | conflict_detected)
-- [ ] Conflict resolution strategies (auto/rebase/agent/human escalation)
-- [ ] Multi-session orchestrator/daemon managing concurrent sessions
 - [ ] Full TUI dashboard for multi-session supervision
-- [ ] Agent launcher trait (extract from concrete Claude Code implementation)
-- [ ] Branch strategy configuration
 - [ ] Pluggable spec provider interface with built-in default implementation
 - [ ] Trust scores: quantified agent reliability from gate history
 
@@ -233,6 +242,12 @@ The `assay-mcp` crate provides MCP server functionality. Future crates may inclu
 | Session diagnostics + team protection appended to v0.2.0 | Orthogonal to gates (phases 20-23); fits "hardening" theme; no disruption to 11-19 | ✓ Good — v0.2.0 |
 | Guard daemon with kqueue/inotify, not polling-only | Sub-second reactive recovery for inbox-flood overflow (Cozempic's key insight) | ✓ Good — v0.2.0 |
 | Composable pruning strategies, dry-run default | Safety first — never modify without `--execute`; team messages always protected | ✓ Good — v0.2.0 |
+| Absorb Smelt orchestration into Assay, Smelt pivots to infrastructure | Assay becomes the complete agent dev platform; Smelt becomes CI/CD for agent work | Decided — v0.5.0 |
+| Closures for control inversion, not traits | Zero-trait codebase convention (0 traits across 33k lines); closures are Rust-idiomatic | Decided — v0.5.0 |
+| Orchestration as assay-core module, not separate crate | ~2 new modules + extensions, not enough for crate-level separation | Decided — v0.5.0 |
+| assay-harness as leaf crate | Adapter implementations depend on core, not vice versa; keeps dep graph clean | Decided — v0.5.0 |
+| OrchestratorSession composes WorkSessions | Linear state machine preserved; graph structure lives above it | Decided — v0.6.0 |
+| Additive orchestrate_* MCP tools, don't modify existing | Avoids interfield validation ambiguity from optional params on existing tools | Decided — v0.6.0 |
 
 ## Reference Material
 
@@ -241,7 +256,8 @@ The `assay-mcp` crate provides MCP server functionality. Future crates may inclu
 - Brainstorm session 2: `.planning/brainstorms/2026-02-28T17-45-brainstorm/SUMMARY.md`
 - Brainstorm session 3: `.planning/brainstorms/2026-03-02T20-53-brainstorm/SUMMARY.md`
 - Brainstorm session 4: `.planning/brainstorms/2026-03-08T21-22-brainstorm/SUMMARY.md`
+- Brainstorm session 5: `.planning/brainstorms/2026-03-15T16-14-brainstorm/SUMMARY.md`
 - [Cozempic](https://github.com/Ruya-AI/cozempic) — Reference for token-aware diagnostics and agent team context loss protection
 
 ---
-*Last updated: 2026-03-15 after v0.4.0 milestone shipped*
+*Last updated: 2026-03-15 after v0.5.0 milestone defined*

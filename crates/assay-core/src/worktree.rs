@@ -12,6 +12,19 @@ use assay_types::{Config, WorktreeInfo, WorktreeMetadata, WorktreeStatus};
 use crate::error::{AssayError, Result};
 
 // ---------------------------------------------------------------------------
+// Public types
+// ---------------------------------------------------------------------------
+
+/// Result of listing worktrees, including any non-fatal warnings.
+#[derive(Debug, Clone)]
+pub struct WorktreeListResult {
+    /// The worktree entries found.
+    pub entries: Vec<WorktreeInfo>,
+    /// Non-fatal warnings (e.g., prune failures).
+    pub warnings: Vec<String>,
+}
+
+// ---------------------------------------------------------------------------
 // Private helpers
 // ---------------------------------------------------------------------------
 
@@ -43,16 +56,34 @@ fn git_command(args: &[&str], cwd: &Path) -> Result<String> {
 }
 
 /// Detect the default branch from the remote HEAD ref.
-/// Falls back to "main" on failure.
-fn detect_default_branch(project_root: &Path) -> String {
-    git_command(&["symbolic-ref", "refs/remotes/origin/HEAD"], project_root)
-        .ok()
-        .and_then(|output| {
-            output
-                .strip_prefix("refs/remotes/origin/")
-                .map(|s| s.to_string())
-        })
-        .unwrap_or_else(|| "main".to_string())
+///
+/// Returns an actionable error when the remote HEAD cannot be resolved,
+/// guiding the user to configure their remote or pass `base_branch` explicitly.
+fn detect_default_branch(project_root: &Path) -> Result<String> {
+    let cmd = "git symbolic-ref refs/remotes/origin/HEAD";
+    let hint = "Could not detect default branch. \
+                Run `git remote set-head origin --auto` \
+                or set `init.defaultBranch` in git config, \
+                or pass base_branch explicitly.";
+
+    match git_command(&["symbolic-ref", "refs/remotes/origin/HEAD"], project_root) {
+        Ok(output) => output
+            .strip_prefix("refs/remotes/origin/")
+            .map(|s| s.to_string())
+            .ok_or_else(|| AssayError::WorktreeGitFailed {
+                cmd: cmd.to_string(),
+                stderr: format!("Unexpected ref format: {output}. {hint}"),
+                exit_code: None,
+            }),
+        Err(AssayError::WorktreeGitFailed {
+            stderr, exit_code, ..
+        }) => Err(AssayError::WorktreeGitFailed {
+            cmd: cmd.to_string(),
+            stderr: format!("{stderr}. {hint}"),
+            exit_code,
+        }),
+        Err(e) => Err(e),
+    }
 }
 
 /// A raw worktree entry parsed from `git worktree list --porcelain`.
@@ -205,10 +236,21 @@ pub fn resolve_worktree_dir(
         .unwrap_or_else(|| format!("../{}-worktrees", config.project_name));
 
     let path = Path::new(&raw);
-    if path.is_absolute() {
+    let resolved = if path.is_absolute() {
         path.to_path_buf()
     } else {
         project_root.join(path)
+    };
+
+    // Canonicalize to resolve symlinks and `..` segments.
+    if resolved.exists() {
+        std::fs::canonicalize(&resolved).unwrap_or(resolved)
+    } else if let (Some(parent), Some(leaf)) = (resolved.parent(), resolved.file_name()) {
+        std::fs::canonicalize(parent)
+            .map(|p| p.join(leaf))
+            .unwrap_or(resolved)
+    } else {
+        resolved
     }
 }
 
@@ -259,9 +301,10 @@ pub fn create(
         .map_err(|e| AssayError::io("creating worktree base dir", worktree_base, e))?;
 
     // Resolve base branch
-    let base = base_branch
-        .map(|s| s.to_string())
-        .unwrap_or_else(|| detect_default_branch(project_root));
+    let base = match base_branch {
+        Some(b) => b.to_string(),
+        None => detect_default_branch(project_root)?,
+    };
 
     // Create worktree with new branch
     let path_str = worktree_path.to_string_lossy().to_string();
@@ -291,9 +334,12 @@ pub fn create(
 ///
 /// Prunes stale entries first, then parses `git worktree list --porcelain`
 /// and filters to worktrees whose branch starts with `assay/`.
-pub fn list(project_root: &Path) -> Result<Vec<WorktreeInfo>> {
-    // Prune stale entries
-    let _ = git_command(&["worktree", "prune"], project_root);
+pub fn list(project_root: &Path) -> Result<WorktreeListResult> {
+    // Prune stale entries — capture failures as warnings instead of discarding.
+    let mut warnings = Vec::new();
+    if let Err(e) = git_command(&["worktree", "prune"], project_root) {
+        warnings.push(format!("git worktree prune failed: {e}"));
+    }
 
     let output = git_command(&["worktree", "list", "--porcelain"], project_root)?;
     let raw = parse_worktree_list(&output);
@@ -314,7 +360,7 @@ pub fn list(project_root: &Path) -> Result<Vec<WorktreeInfo>> {
         .collect();
 
     entries.sort_by(|a, b| a.spec_slug.cmp(&b.spec_slug));
-    Ok(entries)
+    Ok(WorktreeListResult { entries, warnings })
 }
 
 /// Get the status of a worktree including dirty state and ahead/behind counts.
@@ -696,7 +742,7 @@ cmd = "echo ok"
         assert!(info.path.exists());
 
         // List — should now include base_branch from metadata
-        let entries = list(&root).expect("list failed");
+        let entries = list(&root).expect("list failed").entries;
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].spec_slug, "auth-flow");
         assert_eq!(
@@ -720,7 +766,7 @@ cmd = "echo ok"
         assert!(!info.path.exists());
 
         // List should be empty now
-        let entries = list(&root).expect("list failed");
+        let entries = list(&root).expect("list failed").entries;
         assert!(entries.is_empty());
     }
 
@@ -892,5 +938,124 @@ cmd = "echo ok"
     fn test_detect_main_worktree_from_main_returns_none() {
         let (_tmp, _wt_tmp, root, _specs_dir) = setup_repo();
         assert!(detect_main_worktree(&root).is_none());
+    }
+
+    // -- resolve_worktree_dir canonicalization integration tests --
+
+    use serial_test::serial;
+
+    fn make_config(base_dir: Option<&str>) -> Config {
+        Config {
+            project_name: "myproject".to_string(),
+            specs_dir: "specs/".to_string(),
+            gates: None,
+            guard: None,
+            worktree: base_dir.map(|d| assay_types::WorktreeConfig {
+                base_dir: d.to_string(),
+            }),
+            sessions: None,
+        }
+    }
+
+    #[test]
+    #[serial]
+    fn test_resolve_worktree_dir_canonicalizes_dotdot_segments() {
+        // SAFETY: Test-only; env var manipulation is single-threaded via serial_test.
+        unsafe { std::env::remove_var("ASSAY_WORKTREE_DIR") };
+
+        let tmp = TempDir::new().expect("failed to create temp dir");
+        // Canonicalize the TempDir path itself (macOS /var/folders -> /private/var/folders)
+        let canonical_tmp = std::fs::canonicalize(tmp.path()).expect("canonicalize tmp");
+
+        // Create a subdirectory to use as project_root
+        let project_dir = canonical_tmp.join("project");
+        std::fs::create_dir(&project_dir).expect("failed to create project dir");
+
+        // Use a relative path with `..` segments: "../myproject-worktrees"
+        let config = make_config(Some("../myproject-worktrees"));
+        let result = resolve_worktree_dir(None, &config, &project_dir);
+
+        // The result should have no `..` segments — parent is canonicalized
+        let result_str = result.to_string_lossy();
+        assert!(
+            !result_str.contains(".."),
+            "expected no '..' segments in resolved path, got: {result_str}"
+        );
+
+        // The result should equal the canonical parent joined with the leaf
+        let expected = canonical_tmp.join("myproject-worktrees");
+        assert_eq!(
+            result, expected,
+            "resolved path should match canonicalized parent + leaf"
+        );
+    }
+
+    #[test]
+    #[serial]
+    #[cfg(unix)]
+    fn test_resolve_worktree_dir_canonicalizes_symlinks() {
+        // SAFETY: Test-only; env var manipulation is single-threaded via serial_test.
+        unsafe { std::env::remove_var("ASSAY_WORKTREE_DIR") };
+
+        let tmp = TempDir::new().expect("failed to create temp dir");
+        let canonical_tmp = std::fs::canonicalize(tmp.path()).expect("canonicalize tmp");
+
+        // Create the real directory and a symlink to it
+        let real_dir = canonical_tmp.join("real-worktrees");
+        std::fs::create_dir(&real_dir).expect("failed to create real dir");
+        let symlink_dir = canonical_tmp.join("link-worktrees");
+        std::os::unix::fs::symlink(&real_dir, &symlink_dir).expect("failed to create symlink");
+
+        // Point config at the symlink path
+        let symlink_str = symlink_dir.to_string_lossy().to_string();
+        let config = make_config(Some(&symlink_str));
+        let project_root = canonical_tmp.join("project");
+        std::fs::create_dir(&project_root).expect("failed to create project dir");
+
+        let result = resolve_worktree_dir(None, &config, &project_root);
+
+        // The result should point to the real path, not the symlink
+        assert_eq!(
+            result, real_dir,
+            "resolved path should follow symlinks to real path"
+        );
+    }
+
+    #[test]
+    fn test_create_without_base_branch_no_remote_returns_error() {
+        let (_tmp, _wt_tmp, root, specs_dir) = setup_repo();
+        let worktree_base = _wt_tmp.path().join("worktrees");
+
+        // setup_repo() creates a repo with no remote, so detection should fail
+        let err = create(&root, "auth-flow", None, &worktree_base, &specs_dir)
+            .expect_err("should fail when no remote is configured and base_branch is None");
+
+        let err_msg = err.to_string();
+        assert!(
+            err_msg.contains("Could not detect default branch"),
+            "error should mention detection failure, got: {err_msg}"
+        );
+        assert!(
+            err_msg.contains("init.defaultBranch"),
+            "error should mention init.defaultBranch config key, got: {err_msg}"
+        );
+        assert!(
+            err_msg.contains("git remote set-head origin --auto"),
+            "error should mention git remote set-head command, got: {err_msg}"
+        );
+    }
+
+    #[test]
+    fn test_create_with_explicit_base_branch_skips_detection() {
+        let (_tmp, _wt_tmp, root, specs_dir) = setup_repo();
+        let worktree_base = _wt_tmp.path().join("worktrees");
+
+        // Even though no remote is configured, explicit base_branch bypasses detection
+        let info = create(&root, "auth-flow", Some("main"), &worktree_base, &specs_dir)
+            .expect("create with explicit base_branch should succeed regardless of remote state");
+
+        assert_eq!(info.spec_slug, "auth-flow");
+        assert_eq!(info.base_branch.as_deref(), Some("main"));
+        assert!(info.path.exists());
     }
 }
