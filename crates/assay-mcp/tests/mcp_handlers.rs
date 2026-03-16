@@ -1569,4 +1569,44 @@ async fn merge_check_self_merge_is_clean() {
     );
     assert_eq!(json["ahead"], 0, "self-merge should have 0 ahead");
     assert_eq!(json["behind"], 0, "self-merge should have 0 behind");
+    assert_eq!(
+        json["fast_forward"], true,
+        "self-merge should be fast-forward (HEAD is ancestor of itself)"
+    );
+    assert_eq!(
+        json["truncated"], false,
+        "self-merge should not be truncated"
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn merge_check_both_refs_invalid_reports_both_errors() {
+    let root = project_root();
+    std::env::set_current_dir(&root).unwrap();
+
+    let server = AssayServer::new();
+    let result = server
+        .merge_check(Parameters(MergeCheckParams {
+            base: "nonexistent-base-xyz".to_string(),
+            head: "nonexistent-head-abc".to_string(),
+            max_conflicts: None,
+        }))
+        .await
+        .unwrap();
+
+    assert!(
+        result.is_error.unwrap_or(false),
+        "merge_check with both refs invalid should return domain error, got: {}",
+        extract_text(&result)
+    );
+    let text = extract_text(&result);
+    assert!(
+        text.contains("nonexistent-base-xyz"),
+        "error should mention the bad base ref, got: {text}"
+    );
+    assert!(
+        text.contains("nonexistent-head-abc"),
+        "error should mention the bad head ref, got: {text}"
+    );
 }

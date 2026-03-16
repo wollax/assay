@@ -15,7 +15,7 @@ use crate::error::{AssayError, Result};
 // Private helpers
 // ---------------------------------------------------------------------------
 
-/// Execute a git command and return (stdout, exit_code) without checking success.
+/// Execute a git command and return (stdout, stderr, exit_code) without checking success.
 ///
 /// Used when we need to inspect the exit code ourselves (e.g., merge-tree).
 fn git_raw(args: &[&str], cwd: &Path) -> Result<(String, String, Option<i32>)> {
@@ -72,7 +72,7 @@ fn is_valid_tree_oid(s: &str) -> bool {
 
 /// Parse a conflict type string from git merge-tree output.
 ///
-/// Handles both "content" and "contents" spellings (P3 pitfall).
+/// Handles both "content" and "contents" spellings (git uses both).
 fn parse_conflict_type(s: &str) -> ConflictType {
     match s {
         "content" | "contents" => ConflictType::Content,
@@ -88,11 +88,16 @@ fn parse_conflict_type(s: &str) -> ConflictType {
 }
 
 /// Parse a change type letter from `git diff-tree --name-status`.
+///
+/// Renames (`R100`) are treated as modified (the new path) and copies (`C100`)
+/// as added, since those are the most useful representations for merge output.
 fn parse_change_type(s: &str) -> Option<ChangeType> {
     match s {
         "A" => Some(ChangeType::Added),
         "M" => Some(ChangeType::Modified),
         "D" => Some(ChangeType::Deleted),
+        _ if s.starts_with('R') => Some(ChangeType::Modified),
+        _ if s.starts_with('C') => Some(ChangeType::Added),
         _ => None,
     }
 }
@@ -193,12 +198,17 @@ fn extract_path_from_message(message: &str) -> String {
 }
 
 /// Parse file changes from `git diff-tree -r --name-status` output.
+///
+/// Renames and copies emit three tab-separated fields (`R100\told\tnew`);
+/// the new (last) path is used as the `FileChange.path`.
 fn parse_file_changes(output: &str) -> Vec<FileChange> {
     output
         .lines()
         .filter_map(|line| {
-            let (status, path) = line.split_once('\t')?;
+            let (status, rest) = line.split_once('\t')?;
             let change_type = parse_change_type(status)?;
+            // R/C lines have a third field: old-path\tnew-path — use the last path.
+            let path = rest.rsplit_once('\t').map_or(rest, |(_, new)| new);
             Some(FileChange {
                 path: path.to_string(),
                 change_type,
@@ -232,7 +242,7 @@ pub fn merge_check(
 ) -> Result<MergeCheck> {
     let max = max_conflicts.unwrap_or(20) as usize;
 
-    // Step 1: Resolve refs (P5: no --verify, supports relative refs)
+    // Step 1: Resolve refs (no --verify, so relative refs like HEAD~3 work)
     let mut ref_errors = Vec::new();
     let base_sha = match git_command(&["rev-parse", base], project_root) {
         Ok(sha) => Some(sha),
@@ -258,7 +268,7 @@ pub fn merge_check(
     let base_sha = base_sha.unwrap();
     let head_sha = head_sha.unwrap();
 
-    // Step 2: Merge base (P6: may fail for unrelated histories)
+    // Step 2: Merge base (may fail for unrelated histories, hence .ok())
     let merge_base_sha = git_command(&["merge-base", &base_sha, &head_sha], project_root).ok();
 
     // Step 3: Fast-forward detection
@@ -277,13 +287,13 @@ pub fn merge_check(
     .map(|output| parse_ahead_behind(&output))
     .unwrap_or((0, 0));
 
-    // Step 5: Merge tree (P1: disambiguate exit code 1)
+    // Step 5: Merge tree (exit code 1 can mean conflicts or invalid refs)
     let (mt_stdout, mt_stderr, mt_exit) = git_raw(
         &["merge-tree", "--write-tree", &base_sha, &head_sha],
         project_root,
     )?;
 
-    // P4: Exit 128 = unrelated histories or fatal error
+    // Exit 128 = unrelated histories or fatal error
     if mt_exit == Some(128) {
         return Err(AssayError::WorktreeGitFailed {
             cmd: format!("git merge-tree --write-tree {base_sha} {head_sha}"),
@@ -292,7 +302,7 @@ pub fn merge_check(
         });
     }
 
-    // P1: Check stdout for valid tree OID to disambiguate exit code 1
+    // Check stdout for valid tree OID to disambiguate exit code 1
     if !is_valid_tree_oid(&mt_stdout) {
         // Invalid output — treat as error regardless of exit code
         let msg = if mt_stderr.is_empty() {
@@ -310,14 +320,13 @@ pub fn merge_check(
     let clean = mt_exit == Some(0);
 
     if clean {
-        // Step 6: Clean merge — get file list via diff-tree (P2)
+        // Step 6: Clean merge — get file list via diff-tree
         let tree_oid = mt_stdout.lines().next().unwrap_or("");
         let files = git_command(
             &["diff-tree", "-r", "--name-status", &base_sha, tree_oid],
             project_root,
         )
-        .map(|output| parse_file_changes(&output))
-        .unwrap_or_default();
+        .map(|output| parse_file_changes(&output))?;
 
         Ok(MergeCheck {
             clean: true,
@@ -500,6 +509,119 @@ CONFLICT (modify/delete): removed.rs deleted in HEAD and modified in feature";
         assert_eq!(
             extract_path_from_message("file.rs deleted in HEAD and modified in feature"),
             "file.rs"
+        );
+    }
+
+    #[test]
+    fn test_extract_path_renamed() {
+        assert_eq!(
+            extract_path_from_message("foo.rs renamed to bar.rs in HEAD"),
+            "foo.rs"
+        );
+    }
+
+    #[test]
+    fn test_extract_path_fallback() {
+        assert_eq!(
+            extract_path_from_message("some unknown conflict message"),
+            "some unknown conflict message"
+        );
+    }
+
+    #[test]
+    fn test_parse_conflicts_empty() {
+        let stdout = "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2";
+        let conflicts = parse_conflicts(stdout);
+        assert!(
+            conflicts.is_empty(),
+            "OID-only input should produce no conflicts"
+        );
+    }
+
+    #[test]
+    fn test_parse_conflicts_multiple() {
+        let stdout = "\
+a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2
+100644 abc123 2\tfile1.rs
+100644 def456 3\tfile1.rs
+100644 abc123 2\tfile2.rs
+100644 def456 3\tfile2.rs
+100644 abc123 2\tfile3.rs
+100644 def456 3\tfile3.rs
+
+CONFLICT (content): Merge conflict in file1.rs
+CONFLICT (content): Merge conflict in file2.rs
+CONFLICT (modify/delete): file3.rs deleted in HEAD and modified in feature";
+
+        let conflicts = parse_conflicts(stdout);
+        assert_eq!(conflicts.len(), 3, "should parse all 3 CONFLICT lines");
+        assert_eq!(conflicts[0].path, "file1.rs");
+        assert_eq!(conflicts[1].path, "file2.rs");
+        assert_eq!(conflicts[2].path, "file3.rs");
+        assert_eq!(conflicts[2].conflict_type, ConflictType::ModifyDelete);
+    }
+
+    #[test]
+    fn test_truncation_logic() {
+        let stdout = "\
+a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2
+100644 abc123 2\tfile1.rs
+100644 abc123 2\tfile2.rs
+100644 abc123 2\tfile3.rs
+
+CONFLICT (content): Merge conflict in file1.rs
+CONFLICT (content): Merge conflict in file2.rs
+CONFLICT (content): Merge conflict in file3.rs";
+
+        let all_conflicts = parse_conflicts(stdout);
+        assert_eq!(all_conflicts.len(), 3);
+
+        // Simulate max_conflicts = 2
+        let max = 2_usize;
+        let truncated = all_conflicts.len() > max;
+        let limited: Vec<_> = all_conflicts.into_iter().take(max).collect();
+
+        assert!(truncated, "3 conflicts with max 2 should be truncated");
+        assert_eq!(limited.len(), 2, "should only keep 2 conflicts");
+        assert_eq!(limited[0].path, "file1.rs");
+        assert_eq!(limited[1].path, "file2.rs");
+
+        // Simulate max_conflicts = 5 (not exceeded)
+        let all_again = parse_conflicts(stdout);
+        let max2 = 5_usize;
+        let truncated2 = all_again.len() > max2;
+        assert!(
+            !truncated2,
+            "3 conflicts with max 5 should not be truncated"
+        );
+    }
+
+    #[test]
+    fn test_parse_file_changes_empty() {
+        let changes = parse_file_changes("");
+        assert!(
+            changes.is_empty(),
+            "empty input should produce no file changes"
+        );
+    }
+
+    #[test]
+    fn test_parse_file_changes_rename_status() {
+        // R100 status from git renames maps to Modified, using the new path.
+        let output = "R100\told.rs\tnew.rs\nM\tother.rs";
+        let changes = parse_file_changes(output);
+        assert_eq!(changes.len(), 2, "R100 should be parsed as Modified");
+        assert_eq!(changes[0].path, "new.rs");
+        assert_eq!(changes[0].change_type, ChangeType::Modified);
+        assert_eq!(changes[1].path, "other.rs");
+        assert_eq!(changes[1].change_type, ChangeType::Modified);
+    }
+
+    #[test]
+    fn test_is_valid_tree_oid_39_chars() {
+        assert!(
+            !is_valid_tree_oid("a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b"),
+            "39 hex chars should be invalid (boundary test)"
         );
     }
 }
