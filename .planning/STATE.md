@@ -5,14 +5,14 @@
 See: .planning/PROJECT.md (updated 2026-03-15)
 
 **Core value:** Dual-track quality gates (deterministic + agent-evaluated) for AI coding agents
-**Current focus:** v0.4.1 Merge Tools — Phase 46 complete, Phase 47 next
+**Current focus:** v0.4.1 Merge Tools — Phase 47 complete, Phase 48 next
 
 ## Current Position
 
 Phase: 47 (Merge Check)
 Plan: —
-Status: Planned (not started)
-Last activity: 2026-03-16 — Phase 46 (Worktree Fixes) verified and complete
+Status: Complete
+Last activity: 2026-03-16 — Phase 47 verified and complete
 
 ## Milestone Progress
 
@@ -22,7 +22,7 @@ Last activity: 2026-03-16 — Phase 46 (Worktree Fixes) verified and complete
 | v0.2.0 | 15 (11-25) | 52 | 100% (shipped) |
 | v0.3.0 | 9 (26-34) | 43 | 100% (shipped) |
 | v0.4.0 | 11 (35-45) | 28 | 100% (shipped) |
-| v0.4.1 | 5 (46-50) | 8 | 20% (in progress) |
+| v0.4.1 | 5 (46-50) | 8 | 40% (in progress) |
 | v0.5.0 | 9 (51-59) | 19 | 0% (planned) |
 
 ## Accumulated Context
@@ -95,7 +95,7 @@ Issues pulled into v0.5.0 scope (worktree tech debt to clean up during enhanceme
 
 ### Pending Issues
 
-109 remaining open issues in .planning/issues/open/ (non-blocking tech debt carried from v0.2.0–v0.4.0)
+126 remaining open issues in .planning/issues/open/ (non-blocking tech debt carried from v0.2.0–v0.4.1)
 See .planning/issues/ for full backlog.
 
 ### Blockers
@@ -104,10 +104,10 @@ None. v0.4.1 must ship before v0.5.0 work begins.
 
 ### Next Actions
 
-Begin Phase 47 (Merge Check) — standalone conflict detection via `git merge-tree --write-tree`.
+Begin Phase 48 (Gate Evidence Formatting) — format gate results as markdown for PR bodies.
 
 ### Session Continuity
 
 Last session: 2026-03-16
-Stopped at: Phase 46 complete, ready for Phase 47
+Stopped at: Phase 47 complete, ready for Phase 48
 Resume file: None

@@ -339,6 +339,13 @@ pub enum AssayError {
         spec_slug: String,
     },
 
+    /// One or both git refs failed to resolve.
+    #[error("merge check ref error: {message}")]
+    MergeCheckRefError {
+        /// Actionable message describing which ref(s) failed and why.
+        message: String,
+    },
+
     /// Context budgeting failed (cupel pipeline or budget construction error).
     #[error("context budgeting failed: {source}")]
     ContextBudget {

@@ -15,6 +15,7 @@
 //! - `worktree_list` — list all active assay-managed worktrees
 //! - `worktree_status` — check worktree status (branch, dirty, ahead/behind)
 //! - `worktree_cleanup` — remove a worktree and its branch
+//! - `merge_check` — check for merge conflicts between two refs (read-only, zero side effects)
 //! - `session_create` — create a new work session for a spec
 //! - `session_get` — retrieve full session details by ID
 //! - `session_update` — transition session phase and link gate runs
@@ -273,6 +274,29 @@ pub struct WorktreeCleanupParams {
     #[schemars(description = "Override worktree base directory")]
     #[serde(default)]
     pub worktree_dir: Option<String>,
+}
+
+/// Parameters for the `merge_check` tool.
+#[derive(Deserialize, JsonSchema)]
+pub struct MergeCheckParams {
+    /// The base ref to merge into (e.g., 'main', 'origin/main', a SHA, or relative ref like 'HEAD~3').
+    #[schemars(
+        description = "Base ref (the branch being merged into). Accepts branches, tags, SHAs, or relative refs."
+    )]
+    pub base: String,
+
+    /// The head ref to merge from (e.g., 'feature/auth', a SHA, or relative ref).
+    #[schemars(
+        description = "Head ref (the branch being merged). Accepts branches, tags, SHAs, or relative refs."
+    )]
+    pub head: String,
+
+    /// Maximum number of conflicts to return. Default: 20. Excess conflicts are dropped; the `truncated` field indicates when the list was cut.
+    #[schemars(
+        description = "Maximum conflicts to return in detail (default: 20). The `truncated` field is set when excess conflicts are dropped."
+    )]
+    #[serde(default)]
+    pub max_conflicts: Option<u32>,
 }
 
 /// Parameters for the `session_create` tool.
@@ -2112,6 +2136,33 @@ impl AssayServer {
 
         let response = serde_json::json!({"removed": params.0.name});
         let json = serde_json::to_string(&response)
+            .map_err(|e| McpError::internal_error(format!("serialization failed: {e}"), None))?;
+        Ok(CallToolResult::success(vec![Content::text(json)]))
+    }
+
+    // ── Merge tools ─────────────────────────────────────────────────
+
+    /// Check for merge conflicts between two refs using git merge-tree (read-only, zero side effects).
+    #[tool(
+        description = "Check for merge conflicts between two git refs. Uses `git merge-tree --write-tree` — read-only with zero side effects (no index mutation, no working tree changes). Returns MergeCheck with clean/conflicts status, file changes, ahead/behind counts, and fast-forward detection. Does not require an Assay project — works in any git repository."
+    )]
+    pub async fn merge_check(
+        &self,
+        params: Parameters<MergeCheckParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let cwd = resolve_cwd()?;
+
+        let result = match assay_core::merge::merge_check(
+            &cwd,
+            &params.0.base,
+            &params.0.head,
+            params.0.max_conflicts,
+        ) {
+            Ok(check) => check,
+            Err(e) => return Ok(domain_error(&e)),
+        };
+
+        let json = serde_json::to_string(&result)
             .map_err(|e| McpError::internal_error(format!("serialization failed: {e}"), None))?;
         Ok(CallToolResult::success(vec![Content::text(json)]))
     }
