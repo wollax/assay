@@ -170,7 +170,11 @@ fn handle_worktree_create(
 fn handle_worktree_list(json: bool) -> anyhow::Result<i32> {
     let (root, _worktree_dir, _specs_dir) = resolve_dirs(None)?;
 
-    let entries = assay_core::worktree::list(&root).map_err(|e| anyhow::anyhow!("{e}"))?;
+    let result = assay_core::worktree::list(&root).map_err(|e| anyhow::anyhow!("{e}"))?;
+    for warning in &result.warnings {
+        eprintln!("Warning: {warning}");
+    }
+    let entries = result.entries;
 
     if json {
         let output = serde_json::to_string_pretty(&entries)?;
@@ -363,7 +367,11 @@ fn handle_worktree_cleanup_all(
     force: bool,
     json: bool,
 ) -> anyhow::Result<i32> {
-    let entries = assay_core::worktree::list(root).map_err(|e| anyhow::anyhow!("{e}"))?;
+    let result = assay_core::worktree::list(root).map_err(|e| anyhow::anyhow!("{e}"))?;
+    for warning in &result.warnings {
+        eprintln!("Warning: {warning}");
+    }
+    let entries = result.entries;
 
     if entries.is_empty() {
         if json {
