@@ -91,10 +91,10 @@
 
 **Goal:** Ship merge conflict detection and PR-based merge proposal as MCP tools — enabling agents to safely check for conflicts and propose merges through pull requests with gate evidence, backed by forge-agnostic env vars and worktree fixes.
 
-- [ ] Phase 46: Worktree Fixes
-  - WFIX-01: Cleanup `--all` uses canonical path from git
-  - WFIX-02: Default branch detection provides actionable error
-  - WFIX-03: Prune failures surfaced as warnings
+- [ ] Phase 46: Worktree Fixes (3 plans, 3 waves — sequential, shared file)
+  - WFIX-01: Cleanup `--all` uses canonical path from git (Plan 01, Wave 1)
+  - WFIX-02: Default branch detection provides actionable error (Plan 02, Wave 2)
+  - WFIX-03: Prune failures surfaced as warnings (Plan 03, Wave 3)
   - **Goal:** Fix worktree edge cases before building merge tools on top of worktree infrastructure
   - **Success criteria:**
     1. `worktree cleanup --all` resolves paths via `git worktree list` canonical output instead of string comparison — handles symlinks and relative paths
