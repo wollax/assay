@@ -781,4 +781,354 @@ mod tests {
     fn github_body_limit_constant() {
         assert_eq!(GITHUB_BODY_LIMIT, 65_536);
     }
+
+    // ── Additional helpers ────────────────────────────────────────────
+
+    fn make_file_exists_pass(name: &str, path: &str) -> CriterionResult {
+        CriterionResult {
+            criterion_name: name.to_string(),
+            result: Some(GateResult {
+                passed: true,
+                kind: GateKind::FileExists {
+                    path: path.to_string(),
+                },
+                stdout: String::new(),
+                stderr: String::new(),
+                exit_code: None,
+                duration_ms: 1,
+                timestamp: Utc::now(),
+                truncated: false,
+                original_bytes: None,
+                evidence: None,
+                reasoning: None,
+                confidence: None,
+                evaluator_role: None,
+            }),
+            enforcement: Enforcement::Required,
+        }
+    }
+
+    fn make_file_exists_fail(name: &str, path: &str) -> CriterionResult {
+        CriterionResult {
+            criterion_name: name.to_string(),
+            result: Some(GateResult {
+                passed: false,
+                kind: GateKind::FileExists {
+                    path: path.to_string(),
+                },
+                stdout: String::new(),
+                stderr: String::new(),
+                exit_code: None,
+                duration_ms: 1,
+                timestamp: Utc::now(),
+                truncated: false,
+                original_bytes: None,
+                evidence: None,
+                reasoning: None,
+                confidence: None,
+                evaluator_role: None,
+            }),
+            enforcement: Enforcement::Required,
+        }
+    }
+
+    fn make_skipped(name: &str) -> CriterionResult {
+        CriterionResult {
+            criterion_name: name.to_string(),
+            result: None,
+            enforcement: Enforcement::Required,
+        }
+    }
+
+    // ── Task 1: Formatting and detail section tests ───────────────────
+
+    #[test]
+    fn all_pass_deterministic_has_no_detail_sections() {
+        let results = vec![
+            make_passing_command_result("unit-tests"),
+            make_passing_command_result("integration-tests"),
+            make_passing_command_result("lint"),
+        ];
+        let record = make_record(results);
+        let evidence = format_gate_evidence(&record, Path::new("report.md"), GITHUB_BODY_LIMIT);
+
+        // Table should have 3 rows with pass emoji.
+        let pass_count = evidence.full_report.matches(":white_check_mark:").count();
+        assert_eq!(pass_count, 3);
+
+        // No detail sections for deterministic passes.
+        assert!(!evidence.full_report.contains("<details"));
+        assert!(!evidence.truncated);
+    }
+
+    #[test]
+    fn mixed_results_produce_correct_structure() {
+        let results = vec![
+            make_passing_command_result("build"),
+            make_failing_command_result("lint-check"),
+            make_agent_pass_result("code-review"),
+            make_agent_fail_result("quality-check"),
+            make_skipped("perf-check"),
+        ];
+        let record = make_record(results);
+        let evidence = format_gate_evidence(&record, Path::new("report.md"), GITHUB_BODY_LIMIT);
+        let report = &evidence.full_report;
+
+        // Emoji counts: table + detail section summaries.
+        // :white_check_mark: appears in table for build + code-review, AND in detail summary for code-review = 3
+        assert_eq!(report.matches(":white_check_mark:").count(), 3);
+        // :x: appears in table for lint-check + quality-check, AND in detail summaries for both = 4
+        assert_eq!(report.matches(":x:").count(), 4);
+        assert_eq!(report.matches(":fast_forward:").count(), 1); // perf-check
+
+        // Failed command has expanded detail with stderr.
+        assert!(report.contains("<details open>"));
+        assert!(report.contains("test failed")); // stderr from lint-check
+
+        // Agent pass has collapsed detail with evidence.
+        assert!(report.contains("<details>\n<summary>:white_check_mark: code-review</summary>"));
+        assert!(report.contains("Found implementation"));
+
+        // Agent fail has expanded detail with reasoning.
+        assert!(report.contains("<summary>:x: quality-check</summary>"));
+        assert!(report.contains("Missing error handling"));
+        assert!(report.contains("No try/catch blocks found"));
+
+        // Deterministic pass (build) has NO detail section.
+        assert!(!report.contains("<summary>:white_check_mark: build</summary>"));
+
+        // Skipped has no detail section.
+        assert!(!report.contains("<summary>:fast_forward: perf-check</summary>"));
+
+        // Bold on failures.
+        assert!(report.contains("**lint-check**"));
+        assert!(report.contains("**quality-check**"));
+    }
+
+    #[test]
+    fn detail_sections_have_blank_lines_for_github_rendering() {
+        let results = vec![
+            make_agent_pass_result("review"),
+            make_failing_command_result("build"),
+        ];
+        let record = make_record(results);
+        let evidence = format_gate_evidence(&record, Path::new("report.md"), GITHUB_BODY_LIMIT);
+        let report = &evidence.full_report;
+
+        // Every <details> block must have blank line after <summary> and before </details>.
+        for (i, line) in report.lines().enumerate() {
+            if line.starts_with("<summary>") {
+                // Next line must be empty (blank line after summary).
+                let lines: Vec<&str> = report.lines().collect();
+                assert!(
+                    lines.get(i + 1).is_some_and(|l| l.is_empty()),
+                    "Expected blank line after <summary> at line {i}: {line}"
+                );
+            }
+        }
+
+        // Verify blank line before </details>.
+        assert!(
+            report.contains("\n\n</details>"),
+            "Expected blank line before </details>"
+        );
+    }
+
+    #[test]
+    fn enforcement_summary_shows_breakdown() {
+        let results = vec![
+            make_passing_command_result("build"),
+            make_failing_command_result("lint"),
+        ];
+        let mut record = make_record(results);
+        record.summary.enforcement = EnforcementSummary {
+            required_passed: 1,
+            required_failed: 1,
+            advisory_passed: 0,
+            advisory_failed: 0,
+        };
+
+        let evidence = format_gate_evidence(&record, Path::new("report.md"), GITHUB_BODY_LIMIT);
+
+        assert!(evidence
+            .full_report
+            .contains("**Enforcement:** 1 required passed, 1 required failed, 0 advisory passed, 0 advisory failed"));
+    }
+
+    #[test]
+    fn file_exists_fail_detail_section_via_helper() {
+        let record = make_record(vec![make_file_exists_fail("config-check", "config.toml")]);
+        let evidence = format_gate_evidence(&record, Path::new("report.md"), GITHUB_BODY_LIMIT);
+
+        assert!(evidence.full_report.contains("<details open>"));
+        assert!(
+            evidence
+                .full_report
+                .contains("**Missing file:** `config.toml`")
+        );
+        assert!(evidence.full_report.contains(":x:"));
+    }
+
+    #[test]
+    fn file_exists_pass_has_no_detail_section() {
+        let record = make_record(vec![make_file_exists_pass("readme", "README.md")]);
+        let evidence = format_gate_evidence(&record, Path::new("report.md"), GITHUB_BODY_LIMIT);
+
+        // FileExists pass is deterministic — no detail section.
+        assert!(!evidence.full_report.contains("<details"));
+        assert!(evidence.full_report.contains(":white_check_mark:"));
+    }
+
+    // ── Task 2: Truncation tests ─────────────────────────────────────
+
+    #[test]
+    fn no_truncation_within_limit() {
+        let record = make_record(vec![make_passing_command_result("build")]);
+        let evidence = format_gate_evidence(&record, Path::new("report.md"), GITHUB_BODY_LIMIT);
+
+        assert!(!evidence.truncated);
+        assert_eq!(evidence.pr_body, evidence.full_report);
+    }
+
+    #[test]
+    fn truncation_removes_failures_last() {
+        let results = vec![
+            make_failing_command_result("fail-1"),
+            make_failing_command_result("fail-2"),
+            make_failing_command_result("fail-3"),
+            make_agent_pass_result("review"),
+        ];
+        let record = make_record(results);
+
+        let full = format_gate_evidence(&record, Path::new("report.md"), GITHUB_BODY_LIMIT);
+        let full_len = full.full_report.len();
+
+        // Tight limit — should remove agent pass first, then start removing failures.
+        // Set limit so agent pass must go but failures might fit.
+        let tight = full_len - 10;
+        let evidence = format_gate_evidence(&record, Path::new("report.md"), tight);
+
+        assert!(evidence.truncated);
+        // Agent pass detail should be removed first.
+        assert!(!evidence.pr_body.contains("Found implementation"));
+    }
+
+    #[test]
+    fn truncation_preserves_summary_table() {
+        let results = vec![
+            make_agent_pass_result("review-1"),
+            make_agent_pass_result("review-2"),
+            make_failing_command_result("build"),
+        ];
+        let record = make_record(results);
+
+        // Very tight limit — only skeleton + footer should survive.
+        let evidence = format_gate_evidence(&record, Path::new("report.md"), 600);
+
+        assert!(evidence.truncated);
+        // Summary table header must be present.
+        assert!(evidence.pr_body.contains("| Status | Criterion |"));
+        // Header must be present.
+        assert!(evidence.pr_body.contains("## Gate Results:"));
+    }
+
+    #[test]
+    fn full_report_is_never_truncated() {
+        let results = vec![
+            make_agent_pass_result("review-1"),
+            make_agent_pass_result("review-2"),
+            make_agent_pass_result("review-3"),
+            make_failing_command_result("build"),
+            make_failing_command_result("lint"),
+        ];
+        let record = make_record(results);
+
+        // Full report at max limit.
+        let full = format_gate_evidence(&record, Path::new("report.md"), GITHUB_BODY_LIMIT);
+
+        // Full report at very tight limit.
+        let tight = format_gate_evidence(&record, Path::new("report.md"), 100);
+
+        // full_report must be identical regardless of char_limit.
+        assert_eq!(full.full_report, tight.full_report);
+
+        // full_report must contain all detail sections.
+        assert!(tight.full_report.contains("review-1"));
+        assert!(tight.full_report.contains("review-2"));
+        assert!(tight.full_report.contains("review-3"));
+        assert!(tight.full_report.contains("test failed")); // failure stderr
+    }
+
+    #[test]
+    fn truncation_with_multibyte_utf8_uses_byte_length() {
+        // Create a criterion with multi-byte chars in the name.
+        let mut cr = make_agent_pass_result("résumé-chëck-日本語");
+        cr.result.as_mut().unwrap().evidence = Some("Ünïcödë evidence — «test»".to_string());
+
+        let record = make_record(vec![cr]);
+        let full = format_gate_evidence(&record, Path::new("report.md"), GITHUB_BODY_LIMIT);
+
+        // Verify we have multi-byte characters.
+        assert!(full.full_report.len() > full.full_report.chars().count());
+
+        // Force truncation using byte length just under full.
+        let tight = full.full_report.len() - 1;
+        let evidence = format_gate_evidence(&record, Path::new("report.md"), tight);
+
+        assert!(evidence.truncated);
+        // pr_body byte length must be within limit.
+        assert!(evidence.pr_body.len() <= tight);
+    }
+
+    // ── Task 2: Persistence tests ────────────────────────────────────
+
+    #[test]
+    fn save_report_creates_directories() {
+        let dir = tempfile::TempDir::new().unwrap();
+        // reports dir does not exist yet.
+        let reports_dir = dir.path().join("reports").join("test-spec");
+        assert!(!reports_dir.exists());
+
+        let record = make_record(vec![]);
+        let evidence = FormattedEvidence {
+            pr_body: String::new(),
+            full_report: "the report".to_string(),
+            truncated: false,
+        };
+
+        let path = save_report(dir.path(), &record, &evidence).unwrap();
+        assert!(path.exists());
+        assert!(reports_dir.exists());
+    }
+
+    #[test]
+    fn save_report_content_matches_full_report() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let record = make_record(vec![make_passing_command_result("test")]);
+        let evidence = format_gate_evidence(
+            &record,
+            &dir.path().join("reports/test-spec/run.md"),
+            GITHUB_BODY_LIMIT,
+        );
+
+        let path = save_report(dir.path(), &record, &evidence).unwrap();
+        let saved_content = std::fs::read_to_string(&path).unwrap();
+
+        assert_eq!(saved_content, evidence.full_report);
+    }
+
+    #[test]
+    fn save_report_rejects_slash_in_run_id() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let mut record = make_record(vec![]);
+        record.run_id = "evil/path".to_string();
+
+        let evidence = FormattedEvidence {
+            pr_body: String::new(),
+            full_report: String::new(),
+            truncated: false,
+        };
+
+        assert!(save_report(dir.path(), &record, &evidence).is_err());
+    }
 }
