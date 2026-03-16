@@ -904,4 +904,84 @@ cmd = "echo ok"
         let (_tmp, _wt_tmp, root, _specs_dir) = setup_repo();
         assert!(detect_main_worktree(&root).is_none());
     }
+
+    // -- resolve_worktree_dir canonicalization integration tests --
+
+    use serial_test::serial;
+
+    fn make_config(base_dir: Option<&str>) -> Config {
+        Config {
+            project_name: "myproject".to_string(),
+            specs_dir: "specs/".to_string(),
+            gates: None,
+            guard: None,
+            worktree: base_dir.map(|d| assay_types::WorktreeConfig {
+                base_dir: d.to_string(),
+            }),
+            sessions: None,
+        }
+    }
+
+    #[test]
+    #[serial]
+    fn test_resolve_worktree_dir_canonicalizes_dotdot_segments() {
+        // SAFETY: Test-only; env var manipulation is single-threaded via serial_test.
+        unsafe { std::env::remove_var("ASSAY_WORKTREE_DIR") };
+
+        let tmp = TempDir::new().expect("failed to create temp dir");
+        // Canonicalize the TempDir path itself (macOS /var/folders -> /private/var/folders)
+        let canonical_tmp = std::fs::canonicalize(tmp.path()).expect("canonicalize tmp");
+
+        // Create a subdirectory to use as project_root
+        let project_dir = canonical_tmp.join("project");
+        std::fs::create_dir(&project_dir).expect("failed to create project dir");
+
+        // Use a relative path with `..` segments: "../myproject-worktrees"
+        let config = make_config(Some("../myproject-worktrees"));
+        let result = resolve_worktree_dir(None, &config, &project_dir);
+
+        // The result should have no `..` segments — parent is canonicalized
+        let result_str = result.to_string_lossy();
+        assert!(
+            !result_str.contains(".."),
+            "expected no '..' segments in resolved path, got: {result_str}"
+        );
+
+        // The result should equal the canonical parent joined with the leaf
+        let expected = canonical_tmp.join("myproject-worktrees");
+        assert_eq!(
+            result, expected,
+            "resolved path should match canonicalized parent + leaf"
+        );
+    }
+
+    #[test]
+    #[serial]
+    fn test_resolve_worktree_dir_canonicalizes_symlinks() {
+        // SAFETY: Test-only; env var manipulation is single-threaded via serial_test.
+        unsafe { std::env::remove_var("ASSAY_WORKTREE_DIR") };
+
+        let tmp = TempDir::new().expect("failed to create temp dir");
+        let canonical_tmp = std::fs::canonicalize(tmp.path()).expect("canonicalize tmp");
+
+        // Create the real directory and a symlink to it
+        let real_dir = canonical_tmp.join("real-worktrees");
+        std::fs::create_dir(&real_dir).expect("failed to create real dir");
+        let symlink_dir = canonical_tmp.join("link-worktrees");
+        std::os::unix::fs::symlink(&real_dir, &symlink_dir).expect("failed to create symlink");
+
+        // Point config at the symlink path
+        let symlink_str = symlink_dir.to_string_lossy().to_string();
+        let config = make_config(Some(&symlink_str));
+        let project_root = canonical_tmp.join("project");
+        std::fs::create_dir(&project_root).expect("failed to create project dir");
+
+        let result = resolve_worktree_dir(None, &config, &project_root);
+
+        // The result should point to the real path, not the symlink
+        assert_eq!(
+            result, real_dir,
+            "resolved path should follow symlinks to real path"
+        );
+    }
 }
