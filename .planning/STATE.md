@@ -10,9 +10,9 @@ See: .planning/PROJECT.md (updated 2026-03-15)
 ## Current Position
 
 Phase: 47 (Merge Check)
-Plan: 01 of ? in phase
+Plan: 02 of ? in phase
 Status: In progress
-Last activity: 2026-03-16 — Completed 47-01-PLAN.md (types + core logic)
+Last activity: 2026-03-16 — Completed 47-02-PLAN.md (MCP tool wiring)
 
 ## Milestone Progress
 
@@ -104,10 +104,10 @@ None. v0.4.1 must ship before v0.5.0 work begins.
 
 ### Next Actions
 
-Continue Phase 47 — Plan 02 (MCP tool wiring for merge_check).
+Continue Phase 47 — Plan 03 (if exists, otherwise phase complete).
 
 ### Session Continuity
 
 Last session: 2026-03-16
-Stopped at: Completed 47-01-PLAN.md
+Stopped at: Completed 47-02-PLAN.md
 Resume file: None
