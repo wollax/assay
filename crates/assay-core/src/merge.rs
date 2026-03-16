@@ -67,10 +67,7 @@ fn git_command(args: &[&str], cwd: &Path) -> Result<String> {
 /// Check whether stdout starts with a valid 40-character hex OID.
 fn is_valid_tree_oid(s: &str) -> bool {
     let first_line = s.lines().next().unwrap_or("");
-    first_line.len() >= 40
-        && first_line[..40]
-            .chars()
-            .all(|c| c.is_ascii_hexdigit())
+    first_line.len() >= 40 && first_line[..40].chars().all(|c| c.is_ascii_hexdigit())
 }
 
 /// Parse a conflict type string from git merge-tree output.
