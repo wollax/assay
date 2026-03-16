@@ -107,7 +107,7 @@
     3. When merge is clean, `conflicts` is empty and `clean` is true
     4. When merge has conflicts, `conflicts` lists affected file paths and `clean` is false
 
-- [ ] Phase 48: Gate Evidence Formatting
+- [x] Phase 48: Gate Evidence Formatting — 2026-03-16
   - MERGE-04: Gate evidence formatting for PR body
   - **Goal:** Format gate results as markdown suitable for PR bodies with GitHub character limit handling
   - **Success criteria:**
@@ -250,7 +250,7 @@
 | v0.2.0 Dual-Track Gates & Hardening | ✅ Shipped | 15 | 52 | 100% |
 | v0.3.0 Orchestration Foundation | ✅ Shipped | 9 | 43 | 100% |
 | v0.4.0 Headless Orchestration | ✅ Shipped | 11 | 28 | 100% |
-| v0.4.1 Merge Tools | ○ In Progress | 5 | 8 | 40% |
+| v0.4.1 Merge Tools | ○ In Progress | 5 | 8 | 60% |
 | v0.5.0 Single-Agent Harness E2E | ○ Planned | 9 | 19 | 0% |
 | v0.6.0 Multi-Agent Orchestration | ○ Planned | TBD | TBD | — |
 | v0.6.1 Conflict Resolution & Polish | ○ Planned | TBD | TBD | — |

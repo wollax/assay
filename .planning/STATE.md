@@ -5,7 +5,7 @@
 See: .planning/PROJECT.md (updated 2026-03-15)
 
 **Core value:** Dual-track quality gates (deterministic + agent-evaluated) for AI coding agents
-**Current focus:** v0.4.1 Merge Tools — Phase 48 in progress
+**Current focus:** v0.4.1 Merge Tools — Phase 48 complete, Phase 49 next
 
 ## Current Position
 
@@ -22,7 +22,7 @@ Last activity: 2026-03-16 — Completed 48-02-PLAN.md (comprehensive test covera
 | v0.2.0 | 15 (11-25) | 52 | 100% (shipped) |
 | v0.3.0 | 9 (26-34) | 43 | 100% (shipped) |
 | v0.4.0 | 11 (35-45) | 28 | 100% (shipped) |
-| v0.4.1 | 5 (46-50) | 8 | 40% (in progress) |
+| v0.4.1 | 5 (46-50) | 8 | 60% (in progress) |
 | v0.5.0 | 9 (51-59) | 19 | 0% (planned) |
 
 ## Accumulated Context
