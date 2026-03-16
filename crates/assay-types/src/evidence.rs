@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 
 /// The result of formatting gate evidence for PR consumption.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct FormattedEvidence {
     /// Markdown formatted for the PR body, truncated to fit the character limit.
     pub pr_body: String,
