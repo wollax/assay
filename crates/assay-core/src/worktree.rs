@@ -16,6 +16,7 @@ use crate::error::{AssayError, Result};
 // ---------------------------------------------------------------------------
 
 /// Result of listing worktrees, including any non-fatal warnings.
+#[derive(Debug, Clone)]
 pub struct WorktreeListResult {
     /// The worktree entries found.
     pub entries: Vec<WorktreeInfo>,
@@ -59,20 +60,30 @@ fn git_command(args: &[&str], cwd: &Path) -> Result<String> {
 /// Returns an actionable error when the remote HEAD cannot be resolved,
 /// guiding the user to configure their remote or pass `base_branch` explicitly.
 fn detect_default_branch(project_root: &Path) -> Result<String> {
-    git_command(&["symbolic-ref", "refs/remotes/origin/HEAD"], project_root)
-        .ok()
-        .and_then(|output| {
-            output
-                .strip_prefix("refs/remotes/origin/")
-                .map(|s| s.to_string())
-        })
-        .ok_or_else(|| AssayError::WorktreeGitFailed {
-            cmd: "git symbolic-ref refs/remotes/origin/HEAD".to_string(),
-            stderr: "Could not detect default branch. Run `git remote set-head origin --auto` \
-                     or set `init.defaultBranch` in git config, or pass base_branch explicitly."
-                .to_string(),
-            exit_code: None,
-        })
+    let cmd = "git symbolic-ref refs/remotes/origin/HEAD";
+    let hint = "Could not detect default branch. \
+                Run `git remote set-head origin --auto` \
+                or set `init.defaultBranch` in git config, \
+                or pass base_branch explicitly.";
+
+    match git_command(&["symbolic-ref", "refs/remotes/origin/HEAD"], project_root) {
+        Ok(output) => output
+            .strip_prefix("refs/remotes/origin/")
+            .map(|s| s.to_string())
+            .ok_or_else(|| AssayError::WorktreeGitFailed {
+                cmd: cmd.to_string(),
+                stderr: format!("Unexpected ref format: {output}. {hint}"),
+                exit_code: None,
+            }),
+        Err(AssayError::WorktreeGitFailed {
+            stderr, exit_code, ..
+        }) => Err(AssayError::WorktreeGitFailed {
+            cmd: cmd.to_string(),
+            stderr: format!("{stderr}. {hint}"),
+            exit_code,
+        }),
+        Err(e) => Err(e),
+    }
 }
 
 /// A raw worktree entry parsed from `git worktree list --porcelain`.
@@ -981,6 +992,7 @@ cmd = "echo ok"
 
     #[test]
     #[serial]
+    #[cfg(unix)]
     fn test_resolve_worktree_dir_canonicalizes_symlinks() {
         // SAFETY: Test-only; env var manipulation is single-threaded via serial_test.
         unsafe { std::env::remove_var("ASSAY_WORKTREE_DIR") };
