@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 
 /// Change type for files in a clean merge.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
 pub enum ChangeType {
     /// File was added.
     Added,
@@ -28,6 +29,7 @@ impl fmt::Display for ChangeType {
 
 /// A file changed in a clean merge.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct FileChange {
     /// Path of the changed file relative to the repository root.
     pub path: String,
@@ -37,6 +39,7 @@ pub struct FileChange {
 
 /// Classification of a merge conflict.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
 pub enum ConflictType {
     /// Both sides modified the same file differently.
     Content,
@@ -76,6 +79,7 @@ impl fmt::Display for ConflictType {
 
 /// A single merge conflict.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct MergeConflict {
     /// Path of the conflicted file relative to the repository root.
     pub path: String,
@@ -90,6 +94,7 @@ pub struct MergeConflict {
 /// Contains conflict information, file changes, and divergence metadata.
 /// Produced by `merge_check()` in `assay-core`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct MergeCheck {
     /// Whether the merge is clean (no conflicts).
     pub clean: bool,

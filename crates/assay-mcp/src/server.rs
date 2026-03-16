@@ -291,9 +291,9 @@ pub struct MergeCheckParams {
     )]
     pub head: String,
 
-    /// Maximum number of conflicts to return. Default: 20. Remaining conflicts are counted but not detailed.
+    /// Maximum number of conflicts to return. Default: 20. Excess conflicts are dropped; the `truncated` field indicates when the list was cut.
     #[schemars(
-        description = "Maximum conflicts to return in detail (default: 20). Excess conflicts are truncated with a count."
+        description = "Maximum conflicts to return in detail (default: 20). The `truncated` field is set when excess conflicts are dropped."
     )]
     #[serde(default)]
     pub max_conflicts: Option<u32>,
