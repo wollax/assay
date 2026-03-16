@@ -7,9 +7,7 @@
 use std::fmt::Write;
 use std::path::{Path, PathBuf};
 
-use assay_types::{
-    CriterionResult, Enforcement, FormattedEvidence, GateKind, GateRunRecord,
-};
+use assay_types::{CriterionResult, Enforcement, FormattedEvidence, GateKind, GateRunRecord};
 
 use crate::error::{AssayError, Result};
 use crate::history::validate_path_component;
@@ -50,8 +48,13 @@ pub fn format_gate_evidence(
     let full_report = assemble(&skeleton, &detail_sections, &footer);
 
     // Apply truncation for the PR body.
-    let (pr_body, truncated) =
-        truncate_to_fit(&skeleton, &detail_sections, &footer, report_path, char_limit);
+    let (pr_body, truncated) = truncate_to_fit(
+        &skeleton,
+        &detail_sections,
+        &footer,
+        report_path,
+        char_limit,
+    );
 
     FormattedEvidence {
         pr_body,
@@ -75,9 +78,7 @@ pub fn save_report(
     validate_path_component(&record.summary.spec_name, "spec name")?;
     validate_path_component(&record.run_id, "run ID")?;
 
-    let reports_dir = assay_dir
-        .join("reports")
-        .join(&record.summary.spec_name);
+    let reports_dir = assay_dir.join("reports").join(&record.summary.spec_name);
 
     std::fs::create_dir_all(&reports_dir).map_err(|source| AssayError::Io {
         operation: "creating reports directory".into(),
@@ -111,7 +112,11 @@ fn write_summary_stats(buf: &mut String, record: &GateRunRecord) {
         "**Result:** {}/{total} passed | {} failed | {} skipped",
         s.passed, s.failed, s.skipped,
     );
-    let _ = writeln!(buf, "**Duration:** {}", format_duration(s.total_duration_ms));
+    let _ = writeln!(
+        buf,
+        "**Duration:** {}",
+        format_duration(s.total_duration_ms)
+    );
 
     let e = &s.enforcement;
     let _ = writeln!(
@@ -128,14 +133,18 @@ fn write_status_table(buf: &mut String, results: &[CriterionResult]) {
     for cr in results {
         let (emoji, passed, duration_ms) = match &cr.result {
             Some(r) => {
-                let emoji = if r.passed { ":white_check_mark:" } else { ":x:" };
+                let emoji = if r.passed {
+                    ":white_check_mark:"
+                } else {
+                    ":x:"
+                };
                 (emoji, Some(r.passed), Some(r.duration_ms))
             }
             None => (":fast_forward:", None, None),
         };
 
         let duration_str = duration_ms
-            .map(|ms| format_duration(ms))
+            .map(format_duration)
             .unwrap_or_else(|| "—".to_string());
 
         let enforcement_str = match cr.enforcement {
@@ -213,11 +222,7 @@ fn build_detail_sections(results: &[CriterionResult]) -> Vec<DetailSection> {
         } else {
             // Failure — expanded.
             let _ = writeln!(section, "<details open>");
-            let _ = writeln!(
-                section,
-                "<summary>:x: {}</summary>\n",
-                cr.criterion_name,
-            );
+            let _ = writeln!(section, "<summary>:x: {}</summary>\n", cr.criterion_name,);
             write_failure_detail(&mut section, result);
             let _ = writeln!(section, "\n</details>\n");
 
@@ -343,15 +348,14 @@ fn truncate_to_fit(
     let mut lines: Vec<&str> = skeleton.lines().collect();
     loop {
         // Find the last table data row (not header/separator).
-        let last_data_row = lines
-            .iter()
-            .rposition(|line| line.starts_with('|') && !line.starts_with("| Status") && !line.starts_with("|---"));
+        let last_data_row = lines.iter().rposition(|line| {
+            line.starts_with('|') && !line.starts_with("| Status") && !line.starts_with("|---")
+        });
 
         match last_data_row {
             Some(idx) => {
                 lines.remove(idx);
-                let trimmed_skeleton: String =
-                    lines.iter().flat_map(|l| [*l, "\n"]).collect();
+                let trimmed_skeleton: String = lines.iter().flat_map(|l| [*l, "\n"]).collect();
                 let candidate = format!("{trimmed_skeleton}{footer}{notice}");
                 if candidate.len() <= char_limit {
                     return (candidate, true);
@@ -538,10 +542,13 @@ mod tests {
     #[test]
     fn header_includes_spec_name() {
         let record = make_record(vec![make_passing_command_result("unit-tests")]);
-        let evidence =
-            format_gate_evidence(&record, Path::new("report.md"), GITHUB_BODY_LIMIT);
+        let evidence = format_gate_evidence(&record, Path::new("report.md"), GITHUB_BODY_LIMIT);
 
-        assert!(evidence.full_report.starts_with("## Gate Results: test-spec\n"));
+        assert!(
+            evidence
+                .full_report
+                .starts_with("## Gate Results: test-spec\n")
+        );
     }
 
     #[test]
@@ -556,8 +563,7 @@ mod tests {
             },
         ];
         let record = make_record(results);
-        let evidence =
-            format_gate_evidence(&record, Path::new("report.md"), GITHUB_BODY_LIMIT);
+        let evidence = format_gate_evidence(&record, Path::new("report.md"), GITHUB_BODY_LIMIT);
 
         assert!(evidence.full_report.contains(":white_check_mark:"));
         assert!(evidence.full_report.contains(":x:"));
@@ -567,8 +573,7 @@ mod tests {
     #[test]
     fn failed_rows_are_bold() {
         let record = make_record(vec![make_failing_command_result("lint-check")]);
-        let evidence =
-            format_gate_evidence(&record, Path::new("report.md"), GITHUB_BODY_LIMIT);
+        let evidence = format_gate_evidence(&record, Path::new("report.md"), GITHUB_BODY_LIMIT);
 
         assert!(evidence.full_report.contains("**lint-check**"));
     }
@@ -576,8 +581,7 @@ mod tests {
     #[test]
     fn deterministic_pass_has_no_detail_section() {
         let record = make_record(vec![make_passing_command_result("unit-tests")]);
-        let evidence =
-            format_gate_evidence(&record, Path::new("report.md"), GITHUB_BODY_LIMIT);
+        let evidence = format_gate_evidence(&record, Path::new("report.md"), GITHUB_BODY_LIMIT);
 
         assert!(!evidence.full_report.contains("<details"));
     }
@@ -585,19 +589,21 @@ mod tests {
     #[test]
     fn agent_pass_has_collapsed_detail_section() {
         let record = make_record(vec![make_agent_pass_result("code-review")]);
-        let evidence =
-            format_gate_evidence(&record, Path::new("report.md"), GITHUB_BODY_LIMIT);
+        let evidence = format_gate_evidence(&record, Path::new("report.md"), GITHUB_BODY_LIMIT);
 
         assert!(evidence.full_report.contains("<details>"));
-        assert!(evidence.full_report.contains("<summary>:white_check_mark: code-review</summary>"));
+        assert!(
+            evidence
+                .full_report
+                .contains("<summary>:white_check_mark: code-review</summary>")
+        );
         assert!(evidence.full_report.contains("Found implementation"));
     }
 
     #[test]
     fn failure_has_expanded_detail_section() {
         let record = make_record(vec![make_failing_command_result("lint-check")]);
-        let evidence =
-            format_gate_evidence(&record, Path::new("report.md"), GITHUB_BODY_LIMIT);
+        let evidence = format_gate_evidence(&record, Path::new("report.md"), GITHUB_BODY_LIMIT);
 
         assert!(evidence.full_report.contains("<details open>"));
         assert!(evidence.full_report.contains("test failed"));
@@ -606,8 +612,7 @@ mod tests {
     #[test]
     fn agent_failure_has_expanded_detail_with_reasoning() {
         let record = make_record(vec![make_agent_fail_result("quality-check")]);
-        let evidence =
-            format_gate_evidence(&record, Path::new("report.md"), GITHUB_BODY_LIMIT);
+        let evidence = format_gate_evidence(&record, Path::new("report.md"), GITHUB_BODY_LIMIT);
 
         assert!(evidence.full_report.contains("<details open>"));
         assert!(evidence.full_report.contains("Missing error handling"));
@@ -617,8 +622,7 @@ mod tests {
     #[test]
     fn details_have_blank_line_after_summary() {
         let record = make_record(vec![make_agent_pass_result("review")]);
-        let evidence =
-            format_gate_evidence(&record, Path::new("report.md"), GITHUB_BODY_LIMIT);
+        let evidence = format_gate_evidence(&record, Path::new("report.md"), GITHUB_BODY_LIMIT);
 
         // GitHub rendering requires a blank line after <summary>.
         assert!(evidence.full_report.contains("</summary>\n\n"));
@@ -627,8 +631,7 @@ mod tests {
     #[test]
     fn footer_includes_run_metadata() {
         let record = make_record(vec![]);
-        let evidence =
-            format_gate_evidence(&record, Path::new("report.md"), GITHUB_BODY_LIMIT);
+        let evidence = format_gate_evidence(&record, Path::new("report.md"), GITHUB_BODY_LIMIT);
 
         assert!(evidence.full_report.contains("20260316T120000Z-abc123"));
         assert!(evidence.full_report.contains("assay 0.4.0"));
@@ -650,8 +653,7 @@ mod tests {
 
         // Shrink limit so it needs to truncate at least agent passes.
         let tight_limit = full_len - 10;
-        let evidence =
-            format_gate_evidence(&record, Path::new("report.md"), tight_limit);
+        let evidence = format_gate_evidence(&record, Path::new("report.md"), tight_limit);
 
         assert!(evidence.truncated);
         // Should still contain the failure detail.
@@ -663,11 +665,11 @@ mod tests {
     fn truncation_uses_byte_length() {
         // Verify .len() (byte count) is used, not .chars().count().
         let record = make_record(vec![make_passing_command_result("test")]);
-        let evidence =
-            format_gate_evidence(&record, Path::new("report.md"), GITHUB_BODY_LIMIT);
+        let evidence = format_gate_evidence(&record, Path::new("report.md"), GITHUB_BODY_LIMIT);
 
-        // The full_report should have the same byte length as .len().
-        assert_eq!(evidence.full_report.len(), evidence.full_report.as_bytes().len());
+        // Verify the report uses only ASCII (single-byte chars),
+        // confirming .len() byte count matches character count.
+        assert!(evidence.full_report.is_ascii());
     }
 
     #[test]
@@ -687,9 +689,7 @@ mod tests {
         );
 
         assert!(evidence.truncated);
-        assert!(evidence
-            .pr_body
-            .contains(".assay/reports/test-spec/run.md"));
+        assert!(evidence.pr_body.contains(".assay/reports/test-spec/run.md"));
     }
 
     #[test]
@@ -716,10 +716,13 @@ mod tests {
             enforcement: Enforcement::Required,
         };
         let record = make_record(vec![cr]);
-        let evidence =
-            format_gate_evidence(&record, Path::new("report.md"), GITHUB_BODY_LIMIT);
+        let evidence = format_gate_evidence(&record, Path::new("report.md"), GITHUB_BODY_LIMIT);
 
-        assert!(evidence.full_report.contains("**Missing file:** `README.md`"));
+        assert!(
+            evidence
+                .full_report
+                .contains("**Missing file:** `README.md`")
+        );
     }
 
     #[test]
@@ -752,10 +755,11 @@ mod tests {
             std::fs::read_to_string(&path).unwrap(),
             "full report content"
         );
-        assert!(path
-            .to_str()
-            .unwrap()
-            .contains("reports/test-spec/20260316T120000Z-abc123.md"));
+        assert!(
+            path.to_str()
+                .unwrap()
+                .contains("reports/test-spec/20260316T120000Z-abc123.md")
+        );
     }
 
     #[test]
