@@ -43,8 +43,10 @@ fn git_command(args: &[&str], cwd: &Path) -> Result<String> {
 }
 
 /// Detect the default branch from the remote HEAD ref.
-/// Falls back to "main" on failure.
-fn detect_default_branch(project_root: &Path) -> String {
+///
+/// Returns an actionable error when the remote HEAD cannot be resolved,
+/// guiding the user to configure their remote or pass `base_branch` explicitly.
+fn detect_default_branch(project_root: &Path) -> Result<String> {
     git_command(&["symbolic-ref", "refs/remotes/origin/HEAD"], project_root)
         .ok()
         .and_then(|output| {
@@ -52,7 +54,13 @@ fn detect_default_branch(project_root: &Path) -> String {
                 .strip_prefix("refs/remotes/origin/")
                 .map(|s| s.to_string())
         })
-        .unwrap_or_else(|| "main".to_string())
+        .ok_or_else(|| AssayError::WorktreeGitFailed {
+            cmd: "git symbolic-ref refs/remotes/origin/HEAD".to_string(),
+            stderr: "Could not detect default branch. Run `git remote set-head origin --auto` \
+                     or set `init.defaultBranch` in git config, or pass base_branch explicitly."
+                .to_string(),
+            exit_code: None,
+        })
 }
 
 /// A raw worktree entry parsed from `git worktree list --porcelain`.
@@ -270,9 +278,10 @@ pub fn create(
         .map_err(|e| AssayError::io("creating worktree base dir", worktree_base, e))?;
 
     // Resolve base branch
-    let base = base_branch
-        .map(|s| s.to_string())
-        .unwrap_or_else(|| detect_default_branch(project_root));
+    let base = match base_branch {
+        Some(b) => b.to_string(),
+        None => detect_default_branch(project_root)?,
+    };
 
     // Create worktree with new branch
     let path_str = worktree_path.to_string_lossy().to_string();
