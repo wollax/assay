@@ -1563,10 +1563,7 @@ async fn merge_check_self_merge_is_clean() {
     let json: serde_json::Value = serde_json::from_str(&extract_text(&result)).unwrap();
     assert_eq!(json["clean"], true, "self-merge should be clean");
     assert_eq!(
-        json["conflicts"]
-            .as_array()
-            .map(|a| a.len())
-            .unwrap_or(0),
+        json["conflicts"].as_array().map(|a| a.len()).unwrap_or(0),
         0,
         "self-merge should have no conflicts"
     );
