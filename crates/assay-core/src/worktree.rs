@@ -12,6 +12,18 @@ use assay_types::{Config, WorktreeInfo, WorktreeMetadata, WorktreeStatus};
 use crate::error::{AssayError, Result};
 
 // ---------------------------------------------------------------------------
+// Public types
+// ---------------------------------------------------------------------------
+
+/// Result of listing worktrees, including any non-fatal warnings.
+pub struct WorktreeListResult {
+    /// The worktree entries found.
+    pub entries: Vec<WorktreeInfo>,
+    /// Non-fatal warnings (e.g., prune failures).
+    pub warnings: Vec<String>,
+}
+
+// ---------------------------------------------------------------------------
 // Private helpers
 // ---------------------------------------------------------------------------
 
@@ -311,9 +323,12 @@ pub fn create(
 ///
 /// Prunes stale entries first, then parses `git worktree list --porcelain`
 /// and filters to worktrees whose branch starts with `assay/`.
-pub fn list(project_root: &Path) -> Result<Vec<WorktreeInfo>> {
-    // Prune stale entries
-    let _ = git_command(&["worktree", "prune"], project_root);
+pub fn list(project_root: &Path) -> Result<WorktreeListResult> {
+    // Prune stale entries — capture failures as warnings instead of discarding.
+    let mut warnings = Vec::new();
+    if let Err(e) = git_command(&["worktree", "prune"], project_root) {
+        warnings.push(format!("git worktree prune failed: {e}"));
+    }
 
     let output = git_command(&["worktree", "list", "--porcelain"], project_root)?;
     let raw = parse_worktree_list(&output);
@@ -334,7 +349,7 @@ pub fn list(project_root: &Path) -> Result<Vec<WorktreeInfo>> {
         .collect();
 
     entries.sort_by(|a, b| a.spec_slug.cmp(&b.spec_slug));
-    Ok(entries)
+    Ok(WorktreeListResult { entries, warnings })
 }
 
 /// Get the status of a worktree including dirty state and ahead/behind counts.
@@ -716,7 +731,7 @@ cmd = "echo ok"
         assert!(info.path.exists());
 
         // List — should now include base_branch from metadata
-        let entries = list(&root).expect("list failed");
+        let entries = list(&root).expect("list failed").entries;
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].spec_slug, "auth-flow");
         assert_eq!(
@@ -740,7 +755,7 @@ cmd = "echo ok"
         assert!(!info.path.exists());
 
         // List should be empty now
-        let entries = list(&root).expect("list failed");
+        let entries = list(&root).expect("list failed").entries;
         assert!(entries.is_empty());
     }
 
