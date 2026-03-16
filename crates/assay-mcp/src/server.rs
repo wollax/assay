@@ -734,6 +734,16 @@ struct GateEvaluateSummary {
     blocked: bool,
 }
 
+/// Response from the `worktree_list` tool.
+#[derive(Serialize)]
+struct WorktreeListResponse {
+    /// The worktree entries found.
+    entries: Vec<assay_types::WorktreeInfo>,
+    /// Non-fatal warnings (e.g., prune failures). Omitted from JSON when empty.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    warnings: Vec<String>,
+}
+
 // ── Constants ────────────────────────────────────────────────────────
 
 /// Session timeout in seconds (30 minutes).
@@ -2016,12 +2026,16 @@ impl AssayServer {
             return Ok(err_result);
         }
 
-        let entries = match assay_core::worktree::list(&cwd) {
-            Ok(e) => e,
+        let result = match assay_core::worktree::list(&cwd) {
+            Ok(r) => r,
             Err(e) => return Ok(domain_error(&e)),
         };
 
-        let json = serde_json::to_string(&entries)
+        let response = WorktreeListResponse {
+            entries: result.entries,
+            warnings: result.warnings,
+        };
+        let json = serde_json::to_string(&response)
             .map_err(|e| McpError::internal_error(format!("serialization failed: {e}"), None))?;
         Ok(CallToolResult::success(vec![Content::text(json)]))
     }
