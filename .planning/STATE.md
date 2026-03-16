@@ -95,7 +95,7 @@ Issues pulled into v0.5.0 scope (worktree tech debt to clean up during enhanceme
 
 ### Pending Issues
 
-109 remaining open issues in .planning/issues/open/ (non-blocking tech debt carried from v0.2.0–v0.4.0)
+126 remaining open issues in .planning/issues/open/ (non-blocking tech debt carried from v0.2.0–v0.4.1)
 See .planning/issues/ for full backlog.
 
 ### Blockers
