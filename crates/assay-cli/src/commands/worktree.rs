@@ -171,6 +171,9 @@ fn handle_worktree_list(json: bool) -> anyhow::Result<i32> {
     let (root, _worktree_dir, _specs_dir) = resolve_dirs(None)?;
 
     let result = assay_core::worktree::list(&root).map_err(|e| anyhow::anyhow!("{e}"))?;
+    for warning in &result.warnings {
+        eprintln!("Warning: {warning}");
+    }
     let entries = result.entries;
 
     if json {
@@ -365,6 +368,9 @@ fn handle_worktree_cleanup_all(
     json: bool,
 ) -> anyhow::Result<i32> {
     let result = assay_core::worktree::list(root).map_err(|e| anyhow::anyhow!("{e}"))?;
+    for warning in &result.warnings {
+        eprintln!("Warning: {warning}");
+    }
     let entries = result.entries;
 
     if entries.is_empty() {
