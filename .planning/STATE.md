@@ -5,14 +5,14 @@
 See: .planning/PROJECT.md (updated 2026-03-15)
 
 **Core value:** Dual-track quality gates (deterministic + agent-evaluated) for AI coding agents
-**Current focus:** v0.5.0 Single-Agent Harness End-to-End — Roadmap created, ready for execution
+**Current focus:** v0.4.1 Merge Tools — Phase 46 complete, Phase 47 next
 
 ## Current Position
 
-Phase: 46 (Worktree Fixes) — complete
-Plan: 03 complete (phase done)
-Status: Phase 46 complete, ready for Phase 47
-Last activity: 2026-03-16 — Plan 03 (prune failure warning surfacing) complete
+Phase: 47 (Merge Check)
+Plan: —
+Status: Planned (not started)
+Last activity: 2026-03-16 — Phase 46 (Worktree Fixes) verified and complete
 
 ## Milestone Progress
 
@@ -22,7 +22,7 @@ Last activity: 2026-03-16 — Plan 03 (prune failure warning surfacing) complete
 | v0.2.0 | 15 (11-25) | 52 | 100% (shipped) |
 | v0.3.0 | 9 (26-34) | 43 | 100% (shipped) |
 | v0.4.0 | 11 (35-45) | 28 | 100% (shipped) |
-| v0.4.1 | 5 (46-50) | 8 | 0% (planned) |
+| v0.4.1 | 5 (46-50) | 8 | 20% (in progress) |
 | v0.5.0 | 9 (51-59) | 19 | 0% (planned) |
 
 ## Accumulated Context
@@ -104,10 +104,10 @@ None. v0.4.1 must ship before v0.5.0 work begins.
 
 ### Next Actions
 
-Begin Phase 51 (Session Vocabulary Cleanup) after v0.4.1 ships.
+Begin Phase 47 (Merge Check) — standalone conflict detection via `git merge-tree --write-tree`.
 
 ### Session Continuity
 
-Last session: 2026-03-15
-Stopped at: v0.5.0 roadmap created, ready for execution
+Last session: 2026-03-16
+Stopped at: Phase 46 complete, ready for Phase 47
 Resume file: None

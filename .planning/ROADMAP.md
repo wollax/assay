@@ -91,15 +91,10 @@
 
 **Goal:** Ship merge conflict detection and PR-based merge proposal as MCP tools — enabling agents to safely check for conflicts and propose merges through pull requests with gate evidence, backed by forge-agnostic env vars and worktree fixes.
 
-- [ ] Phase 46: Worktree Fixes (3 plans, 3 waves — sequential, shared file)
+- [x] Phase 46: Worktree Fixes (3 plans, 3 waves — sequential, shared file) — 2026-03-16
   - WFIX-01: Cleanup `--all` uses canonical path from git (Plan 01, Wave 1)
   - WFIX-02: Default branch detection provides actionable error (Plan 02, Wave 2)
   - WFIX-03: Prune failures surfaced as warnings (Plan 03, Wave 3)
-  - **Goal:** Fix worktree edge cases before building merge tools on top of worktree infrastructure
-  - **Success criteria:**
-    1. `worktree cleanup --all` resolves paths via `git worktree list` canonical output instead of string comparison — handles symlinks and relative paths
-    2. Default branch detection fails with actionable error message naming the `init.defaultBranch` config key instead of silently falling back to `main`
-    3. `git worktree prune` failures are surfaced as warnings in MCP responses (via Phase 35 `warnings` field) instead of silently discarded
 
 - [ ] Phase 47: Merge Check
   - MERGE-01: `merge_check` MCP tool
@@ -250,7 +245,7 @@
 | v0.2.0 Dual-Track Gates & Hardening | ✅ Shipped | 15 | 52 | 100% |
 | v0.3.0 Orchestration Foundation | ✅ Shipped | 9 | 43 | 100% |
 | v0.4.0 Headless Orchestration | ✅ Shipped | 11 | 28 | 100% |
-| v0.4.1 Merge Tools | ○ Planned | 5 | 8 | 0% |
+| v0.4.1 Merge Tools | ○ In Progress | 5 | 8 | 20% |
 | v0.5.0 Single-Agent Harness E2E | ○ Planned | 9 | 19 | 0% |
 | v0.6.0 Multi-Agent Orchestration | ○ Planned | TBD | TBD | — |
 | v0.6.1 Conflict Resolution & Polish | ○ Planned | TBD | TBD | — |
