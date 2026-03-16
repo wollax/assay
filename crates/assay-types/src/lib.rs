@@ -20,6 +20,7 @@ pub mod schema_registry;
 pub mod session;
 pub mod validation;
 pub mod work_session;
+pub mod merge;
 pub mod worktree;
 
 pub use checkpoint::{
@@ -41,6 +42,7 @@ pub use gates_spec::{GateCriterion, GatesSpec};
 pub use session::{AgentEvaluation, AgentSession, Confidence, EvaluatorRole};
 pub use validation::{Diagnostic, DiagnosticSummary, Severity, ValidationResult};
 pub use work_session::{AgentInvocation, PhaseTransition, SessionPhase, WorkSession};
+pub use merge::{ChangeType, ConflictType, FileChange, MergeCheck, MergeConflict};
 pub use worktree::{WorktreeConfig, WorktreeInfo, WorktreeMetadata, WorktreeStatus};
 
 /// Marker badge for directory-based specs in CLI output (e.g., `auth-flow  [srs] 3 criteria`).
