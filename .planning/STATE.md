@@ -2,19 +2,19 @@
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-03-10)
+See: .planning/PROJECT.md (updated 2026-03-15)
 
 **Core value:** Dual-track quality gates (deterministic + agent-evaluated) for AI coding agents
-**Current focus:** v0.4.0 Headless Orchestration — COMPLETE
+**Current focus:** v0.4.1 Merge Tools — Planning
 
 ## Current Position
 
-Phase: 45 — Tech Debt Cleanup (COMPLETE)
-Plan: 9 of 9 (all plans complete)
-Status: Complete
-Last activity: 2026-03-15 — Completed all 9 plans in Phase 45
+Phase: 46 of 50 (Worktree Fixes)
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-03-15 — v0.4.0 milestone shipped
 
-Progress: v0.4.0 [████████████████████] 100% (phases 35-45 complete)
+Progress: v0.4.1 [░░░░░░░░░░░░░░░░░░░░] 0% (phases 46-50 planned)
 
 ## Milestone Progress
 
@@ -23,8 +23,8 @@ Progress: v0.4.0 [████████████████████] 
 | v0.1.0 | 10 | 43 | 100% (shipped) |
 | v0.2.0 | 15 (11-25) | 52 | 100% (shipped) |
 | v0.3.0 | 9 (26-34) | 43 | 100% (shipped) |
-| v0.4.0 | 11 (35-45) | 28 | 100% (complete) |
-| v0.4.1 | TBD | 8 | 0% (planned) |
+| v0.4.0 | 11 (35-45) | 28 | 100% (shipped) |
+| v0.4.1 | 5 (46-50) | 8 | 0% (planned) |
 
 ## Accumulated Context
 
@@ -33,112 +33,7 @@ Progress: v0.4.0 [████████████████████] 
 v0.1.0 decisions archived to .planning/milestones/v0.1.0-ROADMAP.md
 v0.2.0 decisions archived to .planning/milestones/v0.2.0-ROADMAP.md
 v0.3.0 decisions archived to .planning/milestones/v0.3.0-ROADMAP.md
-
-v0.4.0 decisions (from brainstorm):
-- `gate_evaluate` uses subprocess model — parent parses structured JSON output, evaluator never calls MCP tools
-- `EvaluatorOutput` schema defined before prompt engineering — lenient `serde_json::Value` intermediate parse
-- `WorkSession` (on-disk) is distinct from `AgentSession` (in-memory v0.3.0)
-- Session management within `gate_evaluate` is Rust function calls, not MCP round-trips
-- Context engine is external crate (separate repo), not workspace crate
-- `spec_validate` check_commands is opt-in (off by default)
-
-v0.4.0 decisions (from 35-01):
-- `build_finalized_record` returns plain `GateRunRecord` (infallible without I/O)
-- `persisted` field on `GateFinalizeResponse` derives from `save_result.is_ok()` (robust, not fragile `warnings.is_empty()`)
-- `finalize_session` kept as backward-compat wrapper
-
-v0.4.0 decisions (from 35-02):
-- Unrecognized outcome values treated as "any" (graceful degradation)
-- `total_runs` reflects on-disk count, not filtered count
-
-v0.4.0 decisions (from 36-02):
-- `timed_out_sessions` capped at 100 entries with oldest-eviction
-- Session not-found errors always suggest gate_run + gate_history (no active session listing)
-
-v0.4.0 decisions (from 36-03):
-- Diff capture uses `std::process::Command` directly (not assay_core worktree module) to avoid error type coupling
-- `truncate_diff` is public API on `assay_core::gate`; `truncate_head_tail`/`TruncationResult` remain pub(crate)
-
-v0.4.0 decisions (from 37-01):
-- Command-not-found is Warning severity (binary may exist in execution env but not validation env)
-- Whitespace-only prompt treated same as missing for AgentReport validation
-- Cycle detection only runs when spec has dependencies (avoids unnecessary full-directory scan)
-
-v0.4.0 decisions (from 37-02):
-- spec_validate uses fully qualified type paths (no import additions needed)
-- FeatureSpec parse/validation errors fall through to domain_error (not converted to ValidationResult)
-
-v0.4.0 decisions (from 38-01):
-- spec_get resolved block uses inline `serde_json::json!()` (no dedicated response struct)
-- spec tier in timeout cascade is always null (per-criterion timeout is visible in criteria array)
-- Resolved block built once before match, inserted into each branch
-
-v0.4.0 decisions (from 38-02):
-- Growth rate uses last cumulative token count divided by turn count for average (simple, stable)
-- `estimate_tokens` does both tail-read (usage) and full parse (growth rate)
-
-v0.4.0 decisions (from 39-02):
-- `budget_context` uses passthrough optimization when content fits (avoids pipeline overhead)
-- Cupel pipeline method is `.run()` returning `Vec<ContextItem>` (not `.execute()`/`ScoredItem`)
-- `ContextBudget` variant added to `AssayError` for cupel error mapping
-- tokens module stays `pub(crate)` -- budgeting accesses via `super::tokens`
-
-v0.4.0 decisions (from 40-01):
-- WorkSession uses `String` for id (ULID stored as string for schemars compatibility)
-- No `deny_unknown_fields` on WorkSession (mutable document, evolves in later phases)
-- ulid dependency wired into assay-core only (ID generation is business logic)
-
-v0.4.0 decisions (from 40-02):
-- `validate_path_component` made pub(crate) rather than duplicated (single source of truth)
-- `load_session` returns WorkSessionNotFound for missing files, Io for other read errors
-- `list_sessions` returns empty vec when sessions/ directory absent (not an error)
-
-v0.4.0 decisions (from 42-01):
-- `SessionsConfig` with `stale_threshold_secs` uses `Option<SessionsConfig>` on `Config` (backward-compatible)
-- `with_session` captures `previous_phase` inside closure (avoids double-load in MCP handler)
-- Convenience functions compose `with_session` + `transition_session` (not builder pattern)
-
-v0.4.0 decisions (from 42-02):
-- Recovery runs in `serve()` before transport binding, not in `AssayServer::new()`
-- Staleness measured from `AgentRunning` transition timestamp, not `created_at`
-- Recovery scan capped at 100 sessions (oldest first via ULID sort)
-- `load_recovery_threshold` reads config with 3600-second default; recovery never fatal
-
-v0.4.0 decisions (from 43-01):
-- Subprocess uses `child.wait()` + separate stdout/stderr tasks (not `wait_with_output`) for kill-on-timeout
-- `schemars` added to assay-core for `schema_for!` macro in evaluator
-- Warn outcome maps to `passed: true` + warning string (soft concerns don't fail gates)
-- Default enforcement is `Required` when criterion not in enforcement map
-
-v0.4.0 decisions (from 43-02):
-- Separate match arms for ParseError and NoStructuredOutput (different field sets)
-- Catch-all `Err(e)` for non-exhaustive EvaluatorError enum
-- agent_prompt concatenated from all criteria prompts (full guidance context)
-
-v0.4.0 decisions (from 44-01):
-- DiffTruncation placed in gate_run.rs co-located with GateRunRecord (its sole owner)
-- diff_truncation field uses serde(default, skip_serializing_if) for backward compat with existing records
-- context_window_for_model was already pub; only needed pub use re-export from context/mod.rs
-- extract_diff_files uses b/ path (destination) as conventional display choice
-
-v0.4.0 decisions (from 44-02):
-- model resolution moved before diff capture so context_window_for_model has model available
-- criteria text built locally for budget computation (cheap double computation vs. refactoring build_evaluator_prompt API)
-- Truncation detection uses byte length comparison (budget_context passthrough returns identical strings when no truncation needed)
-- DIFF_BUDGET_BYTES constant retained (still used by gate_run handler)
-
-v0.4.0 decisions (from 45):
-- `stale_threshold` renamed to `stale_threshold_secs` with `#[serde(alias = "stale_threshold")]` for backward compat
-- `SessionPhase` is `#[non_exhaustive]` — downstream match sites use wildcard arms
-- `DiffTruncation` byte fields changed from `usize` to `u64` (platform-independent serialization)
-- `WorktreeInfo` ahead/behind changed from `usize` to `u32`
-- Evaluator schema cached with `LazyLock` (generated once per process)
-- `map_evaluator_output` accepts `Duration` instead of raw `u64`
-- `EvaluateCriterionResult` uses typed `CriterionOutcome`/`Enforcement` enums instead of freeform strings
-- `persisted` field derived from `save_result.is_ok()` (not fragile `warnings.is_empty()`)
-- `RecoverySummary` has `truncated: bool` for 100-session cap indication
-- `GateHistoryEntry` has `required_passed`/`advisory_passed` count fields
-- `load_session` validates path components to prevent directory traversal
+v0.4.0 decisions archived to .planning/milestones/v0.4.0-ROADMAP.md
 
 v0.4.1 decisions (from brainstorm):
 - PR creation over direct merge for v0.4.x — maps to `autonomous: false`
@@ -150,17 +45,13 @@ v0.4.1 decisions (from brainstorm):
 
 ### Milestone Scope Issues
 
-Issues pulled into v0.4.0 scope:
-- "History save failure not surfaced" — closed by OBS-01 warnings field
-- Tech debt batch sweep — Phase 45 closed 120+ issues
-
 Issues pulled into v0.4.1 scope:
 - "Default branch fallback to main gives confusing errors" (from: .planning/issues/open/2026-03-09-worktree-detect-default-branch-fallback.md)
 - "Git worktree prune failure silently discarded" (from: .planning/issues/open/2026-03-09-worktree-prune-failure-silent.md)
 
 ### Pending Issues
 
-122 open issues in .planning/issues/open/ (test gaps, derives, naming, refactors)
+122 open issues in .planning/issues/open/ (non-blocking tech debt carried from v0.2.0–v0.4.0)
 See .planning/issues/ for full backlog.
 
 ### Blockers
@@ -169,10 +60,10 @@ None.
 
 ### Next Actions
 
-Run `/kata-audit-milestone` to verify v0.4.0 requirements, or `/kata-complete-milestone` to archive.
+Run `/kata-add-milestone` to define v0.4.1 requirements, or start planning Phase 46.
 
 ### Session Continuity
 
 Last session: 2026-03-15
-Stopped at: Completed Phase 45 (v0.4.0 milestone complete)
+Stopped at: v0.4.0 milestone shipped
 Resume file: None

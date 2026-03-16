@@ -11,7 +11,7 @@ Assay enforces quality gates between AI agent output and your main branch. Defin
 
 Gates support **required/advisory enforcement levels**, persist results to **run history** for audit trails, and integrate with both CLI and MCP surfaces.
 
-**v0.3.0** adds git worktree isolation for agents, gate output truncation, actionable error messages with fuzzy matching, and comprehensive quality hardening across all surfaces.
+**v0.4.0** adds `gate_evaluate` — a single MCP call that computes diffs, spawns a headless evaluator subprocess, and persists structured per-criterion results. Also ships `WorkSession` persistence for tracking agent work across phases, `spec_validate` for static spec health checking, context engine integration for token-budgeted diff slicing, and comprehensive observability improvements.
 
 ## Quick Start
 
@@ -58,13 +58,19 @@ assay gate run --all
 Assay exposes tools via MCP (Model Context Protocol) for agent integration:
 
 - **spec_list** — Enumerate available specs
-- **spec_get** — Retrieve a spec by name
+- **spec_get** — Retrieve a spec by name (with optional resolved config)
+- **spec_validate** — Static spec health check with structured diagnostics
 - **gate_run** — Execute command criteria for a spec (with timeout and enforcement)
+- **gate_evaluate** — Single-call headless agent evaluation (diff + subprocess + persist)
 - **gate_report** — Submit agent-evaluated gate results with reasoning
 - **gate_finalize** — Complete an agent evaluation session
-- **gate_history** — Query past gate run results
+- **gate_history** — Query past gate run results (with outcome filter and limit)
+- **session_create** — Start a work session linking worktree, spec, and agent
+- **session_get** — Retrieve session details by ID
+- **session_update** — Transition session phase and link gate runs
+- **session_list** — Enumerate sessions with optional filters
 - **context_diagnose** — Full session diagnostics with bloat analysis
-- **estimate_tokens** — Quick token count and context %
+- **estimate_tokens** — Token count, context %, and growth rate metrics
 - **worktree_create** — Create isolated git worktree for agent work
 - **worktree_list** — List active worktrees
 - **worktree_status** — Check worktree branch and dirty state
@@ -98,7 +104,7 @@ schemas/         JSON Schemas (generated from assay-types)
 
 ```bash
 just build      # Build all crates
-just test       # Run tests (603 tests)
+just test       # Run tests (836 tests)
 just lint       # Clippy with -D warnings
 just fmt        # Format code
 just ready      # Full check suite: fmt + lint + test + deny
