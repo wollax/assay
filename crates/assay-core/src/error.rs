@@ -346,13 +346,6 @@ pub enum AssayError {
         message: String,
     },
 
-    /// Git version is too old for merge-tree --write-tree (requires 2.38+).
-    #[error("git version {version} is too old for merge-tree --write-tree (requires 2.38+)")]
-    GitVersionTooOld {
-        /// The detected git version string.
-        version: String,
-    },
-
     /// Context budgeting failed (cupel pipeline or budget construction error).
     #[error("context budgeting failed: {source}")]
     ContextBudget {
