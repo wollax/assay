@@ -115,6 +115,9 @@
     2. PR body is truncated at 65,536 chars with a link to the full gate report path
     3. Truncation preserves the summary section and truncates individual criterion details
     4. When gate results fit within limit, full content is included without truncation markers
+  - **Plans:**
+    - Plan 01 (Wave 1): FormattedEvidence type + format_gate_evidence() with semantic truncation + save_report()
+    - Plan 02 (Wave 2): Comprehensive test coverage — formatting variants, truncation edge cases, persistence
 
 - [ ] Phase 49: Forge-Agnostic Env Vars
   - MERGE-05: Forge-agnostic extensibility via env vars
