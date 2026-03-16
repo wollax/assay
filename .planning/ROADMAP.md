@@ -96,7 +96,7 @@
   - WFIX-02: Default branch detection provides actionable error (Plan 02, Wave 2)
   - WFIX-03: Prune failures surfaced as warnings (Plan 03, Wave 3)
 
-- [ ] Phase 47: Merge Check (2 plans, 2 waves — sequential)
+- [x] Phase 47: Merge Check (2 plans, 2 waves — sequential) — 2026-03-16
   - MERGE-01: `merge_check` MCP tool
   - Plan 01 (Wave 1): Types in assay-types + core logic in assay-core (merge_check function, git CLI orchestration, conflict parsing)
   - Plan 02 (Wave 2): MCP tool wiring on AssayServer + handler tests
@@ -247,7 +247,7 @@
 | v0.2.0 Dual-Track Gates & Hardening | ✅ Shipped | 15 | 52 | 100% |
 | v0.3.0 Orchestration Foundation | ✅ Shipped | 9 | 43 | 100% |
 | v0.4.0 Headless Orchestration | ✅ Shipped | 11 | 28 | 100% |
-| v0.4.1 Merge Tools | ○ In Progress | 5 | 8 | 20% |
+| v0.4.1 Merge Tools | ○ In Progress | 5 | 8 | 40% |
 | v0.5.0 Single-Agent Harness E2E | ○ Planned | 9 | 19 | 0% |
 | v0.6.0 Multi-Agent Orchestration | ○ Planned | TBD | TBD | — |
 | v0.6.1 Conflict Resolution & Polish | ○ Planned | TBD | TBD | — |
