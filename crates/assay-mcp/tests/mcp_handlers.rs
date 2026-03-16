@@ -9,7 +9,7 @@ use std::path::Path;
 
 use assay_mcp::{
     AssayServer, GateFinalizeParams, GateHistoryParams, GateReportParams, GateRunParams,
-    Parameters, SpecValidateParams,
+    MergeCheckParams, Parameters, SpecValidateParams,
 };
 use assay_types::{Confidence, EvaluatorRole};
 use rmcp::model::RawContent;
@@ -1494,5 +1494,119 @@ kind = "AgentReport"
             .as_str()
             .unwrap()
             .contains("no prompt")
+    );
+}
+
+// ── merge_check tests ────────────────────────────────────────────────
+
+/// Returns the project root (the git repo root for assay itself).
+fn project_root() -> std::path::PathBuf {
+    let manifest = std::env::var("CARGO_MANIFEST_DIR").unwrap();
+    std::path::PathBuf::from(manifest)
+        .parent() // crates/
+        .unwrap()
+        .parent() // repo root
+        .unwrap()
+        .to_path_buf()
+}
+
+#[tokio::test]
+#[serial]
+async fn merge_check_invalid_ref_returns_domain_error() {
+    let root = project_root();
+    std::env::set_current_dir(&root).unwrap();
+
+    let server = AssayServer::new();
+    let result = server
+        .merge_check(Parameters(MergeCheckParams {
+            base: "nonexistent-ref-xyz".to_string(),
+            head: "HEAD".to_string(),
+            max_conflicts: None,
+        }))
+        .await
+        .unwrap();
+
+    assert!(
+        result.is_error.unwrap_or(false),
+        "merge_check with invalid ref should return domain error, got: {}",
+        extract_text(&result)
+    );
+    let text = extract_text(&result);
+    assert!(
+        text.contains("nonexistent-ref-xyz"),
+        "error should mention the bad ref, got: {text}"
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn merge_check_self_merge_is_clean() {
+    let root = project_root();
+    std::env::set_current_dir(&root).unwrap();
+
+    let server = AssayServer::new();
+    let result = server
+        .merge_check(Parameters(MergeCheckParams {
+            base: "HEAD".to_string(),
+            head: "HEAD".to_string(),
+            max_conflicts: None,
+        }))
+        .await
+        .unwrap();
+
+    assert!(
+        !result.is_error.unwrap_or(false),
+        "merge_check HEAD..HEAD should succeed, got: {}",
+        extract_text(&result)
+    );
+
+    let json: serde_json::Value = serde_json::from_str(&extract_text(&result)).unwrap();
+    assert_eq!(json["clean"], true, "self-merge should be clean");
+    assert_eq!(
+        json["conflicts"].as_array().map(|a| a.len()).unwrap_or(0),
+        0,
+        "self-merge should have no conflicts"
+    );
+    assert_eq!(json["ahead"], 0, "self-merge should have 0 ahead");
+    assert_eq!(json["behind"], 0, "self-merge should have 0 behind");
+    assert_eq!(
+        json["fast_forward"], true,
+        "self-merge should be fast-forward (HEAD is ancestor of itself)"
+    );
+    assert_eq!(
+        json["truncated"], false,
+        "self-merge should not be truncated"
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn merge_check_both_refs_invalid_reports_both_errors() {
+    let root = project_root();
+    std::env::set_current_dir(&root).unwrap();
+
+    let server = AssayServer::new();
+    let result = server
+        .merge_check(Parameters(MergeCheckParams {
+            base: "nonexistent-base-xyz".to_string(),
+            head: "nonexistent-head-abc".to_string(),
+            max_conflicts: None,
+        }))
+        .await
+        .unwrap();
+
+    assert!(
+        result.is_error.unwrap_or(false),
+        "merge_check with both refs invalid should return domain error, got: {}",
+        extract_text(&result)
+    );
+    let text = extract_text(&result);
+    assert!(
+        text.contains("nonexistent-base-xyz"),
+        "error should mention the bad base ref, got: {text}"
+    );
+    assert!(
+        text.contains("nonexistent-head-abc"),
+        "error should mention the bad head ref, got: {text}"
     );
 }
