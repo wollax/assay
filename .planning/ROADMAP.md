@@ -96,8 +96,10 @@
   - WFIX-02: Default branch detection provides actionable error (Plan 02, Wave 2)
   - WFIX-03: Prune failures surfaced as warnings (Plan 03, Wave 3)
 
-- [ ] Phase 47: Merge Check
+- [ ] Phase 47: Merge Check (2 plans, 2 waves — sequential)
   - MERGE-01: `merge_check` MCP tool
+  - Plan 01 (Wave 1): Types in assay-types + core logic in assay-core (merge_check function, git CLI orchestration, conflict parsing)
+  - Plan 02 (Wave 2): MCP tool wiring on AssayServer + handler tests
   - **Goal:** Standalone conflict detection via `git merge-tree --write-tree` with zero side effects
   - **Success criteria:**
     1. `merge_check` MCP tool accepts `base` and `head` refs and returns `MergeCheck { clean, conflicts, base_sha, head_sha }`
