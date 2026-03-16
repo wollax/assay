@@ -9,10 +9,10 @@ See: .planning/PROJECT.md (updated 2026-03-15)
 
 ## Current Position
 
-Phase: 51 (Session Vocabulary Cleanup)
-Plan: —
-Status: Planned (not started)
-Last activity: 2026-03-15 — Roadmap created for v0.5.0
+Phase: 46 (Worktree Fixes)
+Plan: 01 complete, 02 next
+Status: Executing
+Last activity: 2026-03-16 — Plan 01 (path canonicalization) complete
 
 ## Milestone Progress
 
