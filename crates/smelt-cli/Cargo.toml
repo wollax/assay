@@ -13,18 +13,9 @@ path = "src/main.rs"
 [dependencies]
 smelt-core.path = "../smelt-core"
 clap.workspace = true
-tokio.workspace = true
 anyhow.workspace = true
-console.workspace = true
-dialoguer.workspace = true
-which.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
-comfy-table.workspace = true
-serde_json.workspace = true
-similar.workspace = true
-indicatif.workspace = true
-tokio-util.workspace = true
 
 [dev-dependencies]
 assert_cmd.workspace = true

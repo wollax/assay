@@ -1,0 +1,48 @@
+# Example Smelt job manifest — full schema demonstration.
+#
+# Run with: smelt run examples/job-manifest.toml --dry-run
+
+[job]
+name = "add-user-auth"
+repo = "https://github.com/example/webapp"
+base_ref = "main"
+
+[environment]
+runtime = "docker"
+image = "node:20-slim"
+
+[environment.resources]
+cpu = "2"
+memory = "4G"
+
+[credentials]
+provider = "anthropic"
+model = "claude-sonnet-4-20250514"
+
+[credentials.env]
+api_key = "ANTHROPIC_API_KEY"
+
+[[session]]
+name = "frontend"
+spec = "Implement the login page with email/password form, validation, and error states."
+harness = "npm test -- --filter auth"
+timeout = 300
+
+[[session]]
+name = "backend"
+spec = "Implement the /api/auth/login endpoint with JWT tokens and rate limiting."
+harness = "npm test -- --filter api-auth"
+timeout = 600
+
+[[session]]
+name = "integration"
+spec = "Add end-to-end tests for the login flow using Playwright."
+harness = "npx playwright test auth.spec.ts"
+timeout = 900
+depends_on = ["frontend", "backend"]
+
+[merge]
+strategy = "sequential"
+order = ["frontend", "backend", "integration"]
+ai_resolution = true
+target = "main"

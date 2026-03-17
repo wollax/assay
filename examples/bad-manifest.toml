@@ -1,0 +1,41 @@
+# Invalid Smelt job manifest — demonstrates validation errors.
+#
+# Run with: smelt run examples/bad-manifest.toml --dry-run
+# Expected: exits with validation errors.
+
+[job]
+name = ""
+repo = "https://github.com/example/webapp"
+base_ref = "main"
+
+[environment]
+runtime = "docker"
+image = ""
+
+[credentials]
+provider = "anthropic"
+model = "claude-sonnet-4-20250514"
+
+[[session]]
+name = "frontend"
+spec = "Implement the login page"
+harness = "npm test"
+timeout = 0
+
+[[session]]
+name = "frontend"
+spec = "Duplicate name — should be rejected"
+harness = "npm test"
+timeout = 300
+
+[[session]]
+name = "orphan"
+spec = "Depends on nonexistent session"
+harness = "npm test"
+timeout = 300
+depends_on = ["nonexistent"]
+
+[merge]
+strategy = "sequential"
+order = ["frontend", "also_nonexistent"]
+target = ""

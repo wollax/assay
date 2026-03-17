@@ -5,8 +5,7 @@ use std::path::{Path, PathBuf};
 use tokio::process::Command;
 
 use crate::error::{Result, SmeltError};
-use crate::git::GitOps;
-use crate::worktree::{GitWorktreeEntry, parse_porcelain};
+use crate::git::{GitOps, GitWorktreeEntry, parse_porcelain};
 
 /// Concrete [`GitOps`] implementation that shells out to the `git` binary.
 #[derive(Clone)]

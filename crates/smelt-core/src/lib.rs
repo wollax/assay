@@ -1,30 +1,13 @@
-//! Smelt core library — git operations, orchestration logic, and domain types.
+//! Smelt core library — infrastructure-layer job execution engine.
 
-pub mod ai;
+pub mod config;
 pub mod error;
 pub mod git;
-pub mod init;
-pub mod merge;
-pub mod orchestrate;
-pub mod session;
-pub mod summary;
-pub mod worktree;
+pub mod manifest;
+pub mod provider;
 
-pub use ai::{AiConfig, AiProvider, GenAiProvider};
+pub use config::SmeltConfig;
 pub use error::{Result, SmeltError};
 pub use git::{GitCli, GitOps, preflight};
-pub use init::init_project;
-pub use merge::{
-    AiConflictHandler, ConflictAction, ConflictHandler, MergeOpts, MergeOrderStrategy, MergePlan,
-    MergeReport, NoopConflictHandler, ResolutionMethod,
-};
-pub use orchestrate::{
-    build_dag, FailurePolicy, Orchestrator, OrchestrationOpts, OrchestrationReport, RunState,
-    RunStateManager, SessionDag,
-};
-pub use session::{AgentExecutor, Manifest, SessionResult, SessionRunner};
-pub use session::agent::resolve_claude_binary;
-pub use summary::{
-    collect_summary, FileStat, ScopeViolation, SessionSummary, SummaryReport, SummaryTotals,
-};
-pub use worktree::{CreateWorktreeOpts, RemoveResult, WorktreeInfo, WorktreeManager};
+pub use manifest::JobManifest;
+pub use provider::{CollectResult, ContainerId, ExecHandle, RuntimeProvider};

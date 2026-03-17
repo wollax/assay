@@ -8,6 +8,8 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum SmeltError {
+    // ── Git errors ──────────────────────────────────────────────
+
     /// `git` binary not found on `$PATH`.
     #[error("`git` not found on $PATH. Smelt requires git to be installed.")]
     GitNotFound,
@@ -20,9 +22,41 @@ pub enum SmeltError {
     #[error("git {operation} failed: {message}")]
     GitExecution { operation: String, message: String },
 
-    /// `.smelt/` already exists in the repository.
-    #[error(".smelt/ already exists in {path}. Already initialized.")]
-    AlreadyInitialized { path: PathBuf },
+    /// Merge conflict occurred.
+    #[error("merge conflict in session '{session}': conflicting files: {}", files.join(", "))]
+    MergeConflict { session: String, files: Vec<String> },
+
+    // ── Manifest errors ─────────────────────────────────────────
+
+    /// Manifest parsing or validation error.
+    #[error("manifest error ({field}): {message}")]
+    Manifest { field: String, message: String },
+
+    // ── Provider errors ─────────────────────────────────────────
+
+    /// A runtime provider operation failed.
+    #[error("provider {operation} failed: {message}")]
+    Provider {
+        operation: String,
+        message: String,
+        /// Optional underlying cause.
+        #[source]
+        source: Option<Box<dyn std::error::Error + Send + Sync>>,
+    },
+
+    // ── Credential errors ───────────────────────────────────────
+
+    /// Credential resolution or validation failed.
+    #[error("credential error ({provider}): {message}")]
+    Credential { provider: String, message: String },
+
+    // ── Config errors ───────────────────────────────────────────
+
+    /// Configuration loading or parsing failed.
+    #[error("config error at `{path}`: {message}")]
+    Config { path: PathBuf, message: String },
+
+    // ── I/O errors ──────────────────────────────────────────────
 
     /// An I/O operation failed with context.
     #[error("{operation} at `{path}`: {source}")]
@@ -31,74 +65,6 @@ pub enum SmeltError {
         path: PathBuf,
         source: std::io::Error,
     },
-
-    /// Worktree with this name already exists.
-    #[error("worktree '{name}' already exists")]
-    WorktreeExists { name: String },
-
-    /// Worktree not found in Smelt state.
-    #[error("worktree '{name}' not found")]
-    WorktreeNotFound { name: String },
-
-    /// Branch already exists (collision).
-    #[error("branch '{branch}' already exists")]
-    BranchExists { branch: String },
-
-    /// Worktree has uncommitted changes.
-    #[error("worktree '{name}' has uncommitted changes (use --force to override)")]
-    WorktreeDirty { name: String },
-
-    /// Branch has unmerged commits.
-    #[error("branch '{branch}' has unmerged commits (use --force to delete)")]
-    BranchUnmerged { branch: String },
-
-    /// Smelt project not initialized.
-    #[error("not a Smelt project (run `smelt init` first)")]
-    NotInitialized,
-
-    /// State file deserialization error.
-    #[error("failed to parse state file: {0}")]
-    StateDeserialization(String),
-
-    /// Manifest parsing or validation error.
-    #[error("manifest error: {0}")]
-    ManifestParse(String),
-
-    /// Session-specific error.
-    #[error("session '{session}': {message}")]
-    SessionError { session: String, message: String },
-
-    /// Merge conflict occurred during sequential merge.
-    #[error("merge conflict in session '{session}': conflicting files: {}", files.join(", "))]
-    MergeConflict { session: String, files: Vec<String> },
-
-    /// Target branch for merge already exists.
-    #[error("merge target branch '{branch}' already exists (use a different name or delete it)")]
-    MergeTargetExists { branch: String },
-
-    /// No completed sessions available to merge.
-    #[error("no completed sessions to merge — all sessions failed or are still running")]
-    NoCompletedSessions,
-
-    /// Merge was aborted by the user during conflict resolution.
-    #[error("merge aborted by user during session '{session}'")]
-    MergeAborted { session: String },
-
-    /// AI resolution failed (provider error, empty response, invalid output).
-    #[error("AI resolution failed: {message}")]
-    AiResolution { message: String },
-
-    /// Orchestration error (DAG validation, execution lifecycle).
-    #[error("orchestration error: {message}")]
-    Orchestration { message: String },
-
-    /// Dependency cycle detected in manifest.
-    #[error("dependency cycle detected in manifest: {details}")]
-    DependencyCycle { details: String },
-
-    /// `claude` CLI binary not found on `$PATH`.
-    #[error("'claude' CLI not found on $PATH. Install Claude Code to use real agent sessions.")]
-    AgentNotFound,
 }
 
 impl SmeltError {
@@ -112,6 +78,46 @@ impl SmeltError {
             operation: operation.into(),
             path: path.into(),
             source,
+        }
+    }
+
+    /// Convenience constructor for the [`Provider`](SmeltError::Provider) variant
+    /// without an underlying source error.
+    pub fn provider(operation: impl Into<String>, message: impl Into<String>) -> Self {
+        Self::Provider {
+            operation: operation.into(),
+            message: message.into(),
+            source: None,
+        }
+    }
+
+    /// Convenience constructor for the [`Provider`](SmeltError::Provider) variant
+    /// with an underlying source error.
+    pub fn provider_with_source(
+        operation: impl Into<String>,
+        message: impl Into<String>,
+        source: impl std::error::Error + Send + Sync + 'static,
+    ) -> Self {
+        Self::Provider {
+            operation: operation.into(),
+            message: message.into(),
+            source: Some(Box::new(source)),
+        }
+    }
+
+    /// Convenience constructor for the [`Credential`](SmeltError::Credential) variant.
+    pub fn credential(provider: impl Into<String>, message: impl Into<String>) -> Self {
+        Self::Credential {
+            provider: provider.into(),
+            message: message.into(),
+        }
+    }
+
+    /// Convenience constructor for the [`Config`](SmeltError::Config) variant.
+    pub fn config(path: impl Into<PathBuf>, message: impl Into<String>) -> Self {
+        Self::Config {
+            path: path.into(),
+            message: message.into(),
         }
     }
 }

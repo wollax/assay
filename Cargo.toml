@@ -28,44 +28,8 @@ anyhow = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
-# Terminal
-console = "0.16"
-
-# Date/time
-chrono = { version = "0.4", features = ["serde", "clock"] }
-
-# Interactive prompts
-dialoguer = "0.12"
-
-# POSIX
-libc = "0.2"
-
 # Utilities
 which = "8"
-
-# Glob matching
-globset = "0.4"
-
-# Table output
-comfy-table = "7"
-
-# JSON serialization
-serde_json = "1"
-
-# LLM
-genai = "0.5"
-
-# Diff display
-similar = { version = "2", features = ["unicode"] }
-
-# DAG / graph
-petgraph = "0.7"
-
-# Terminal progress
-indicatif = "0.17"
-
-# Async utilities (cancellation)
-tokio-util = { version = "0.7", features = ["rt"] }
 
 # Dev/test
 assert_cmd = "2"

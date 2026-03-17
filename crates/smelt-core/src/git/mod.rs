@@ -7,7 +7,77 @@ use std::path::{Path, PathBuf};
 pub use cli::GitCli;
 
 use crate::error::{Result, SmeltError};
-use crate::worktree::GitWorktreeEntry;
+
+/// Entry from `git worktree list --porcelain`.
+#[derive(Debug, Clone)]
+pub struct GitWorktreeEntry {
+    pub path: PathBuf,
+    pub head: String,
+    pub branch: Option<String>,
+    pub is_bare: bool,
+    pub is_locked: bool,
+}
+
+/// Parse the output of `git worktree list --porcelain` into structured entries.
+pub fn parse_porcelain(output: &str) -> Vec<GitWorktreeEntry> {
+    let mut entries = Vec::new();
+    let mut path: Option<String> = None;
+    let mut head: Option<String> = None;
+    let mut branch: Option<String> = None;
+    let mut is_bare = false;
+    let mut is_locked = false;
+
+    for line in output.lines() {
+        if let Some(p) = line.strip_prefix("worktree ") {
+            // If we already have a pending entry, push it
+            if let (Some(p_val), Some(h_val)) = (path.take(), head.take()) {
+                entries.push(GitWorktreeEntry {
+                    path: PathBuf::from(p_val),
+                    head: h_val,
+                    branch: branch.take(),
+                    is_bare,
+                    is_locked,
+                });
+                is_bare = false;
+                is_locked = false;
+            }
+            path = Some(p.to_string());
+        } else if let Some(h) = line.strip_prefix("HEAD ") {
+            head = Some(h.to_string());
+        } else if let Some(b) = line.strip_prefix("branch ") {
+            branch = Some(b.strip_prefix("refs/heads/").unwrap_or(b).to_string());
+        } else if line == "bare" {
+            is_bare = true;
+        } else if line == "locked" || line.starts_with("locked ") {
+            is_locked = true;
+        } else if line.is_empty()
+            && let (Some(p_val), Some(h_val)) = (path.take(), head.take())
+        {
+            entries.push(GitWorktreeEntry {
+                path: PathBuf::from(p_val),
+                head: h_val,
+                branch: branch.take(),
+                is_bare,
+                is_locked,
+            });
+            is_bare = false;
+            is_locked = false;
+        }
+    }
+
+    // Handle last entry if no trailing blank line
+    if let (Some(p_val), Some(h_val)) = (path.take(), head.take()) {
+        entries.push(GitWorktreeEntry {
+            path: PathBuf::from(p_val),
+            head: h_val,
+            branch: branch.take(),
+            is_bare,
+            is_locked,
+        });
+    }
+
+    entries
+}
 
 /// Async interface for git operations.
 ///
@@ -68,9 +138,6 @@ pub trait GitOps {
     fn branch_exists(&self, branch_name: &str) -> impl Future<Output = Result<bool>> + Send;
 
     /// Stage files for commit.
-    ///
-    /// # Panics
-    /// Panics if `paths` is empty. Callers must provide explicit file paths.
     fn add(&self, work_dir: &Path, paths: &[&str]) -> impl Future<Output = Result<()>> + Send;
 
     /// Create a commit in the given working directory with the provided message.
@@ -96,16 +163,13 @@ pub trait GitOps {
     ) -> impl Future<Output = Result<()>> + Send;
 
     /// Perform a squash merge of `source_ref` into the current branch of `work_dir`.
-    /// Returns `Ok(())` on clean merge (changes staged, not committed).
-    /// Returns `SmeltError::MergeConflict` on conflict (with file list, session empty).
-    /// Returns `SmeltError::GitExecution` on other git errors.
     fn merge_squash(
         &self,
         work_dir: &Path,
         source_ref: &str,
     ) -> impl Future<Output = Result<()>> + Send;
 
-    /// Check out an existing branch into a new worktree path (no `-b` flag).
+    /// Check out an existing branch into a new worktree path.
     fn worktree_add_existing(
         &self,
         path: &Path,
@@ -113,7 +177,6 @@ pub trait GitOps {
     ) -> impl Future<Output = Result<()>> + Send;
 
     /// List unmerged (conflicting) files in `work_dir`.
-    /// Uses `git diff --name-only --diff-filter=U`.
     fn unmerged_files(
         &self,
         work_dir: &Path,
@@ -126,11 +189,10 @@ pub trait GitOps {
         target_ref: &str,
     ) -> impl Future<Output = Result<()>> + Send;
 
-    /// Resolve a ref (branch name, HEAD, etc.) to a full commit hash.
+    /// Resolve a ref to a full commit hash.
     fn rev_parse(&self, rev: &str) -> impl Future<Output = Result<String>> + Send;
 
     /// List changed file paths between two refs.
-    /// Uses `git diff --name-only base_ref head_ref`.
     fn diff_name_only(
         &self,
         base_ref: &str,
@@ -138,7 +200,6 @@ pub trait GitOps {
     ) -> impl Future<Output = Result<Vec<String>>> + Send;
 
     /// List commit subjects in a range.
-    /// Uses `git log --format="%s" <range>`.
     fn log_subjects(&self, range: &str) -> impl Future<Output = Result<Vec<String>>> + Send;
 
     /// Get diff stats between two refs. Returns Vec of (insertions, deletions, filename).
@@ -149,9 +210,6 @@ pub trait GitOps {
     ) -> impl Future<Output = Result<Vec<(usize, usize, String)>>> + Send;
 
     /// Show a file at a specific index stage in `work_dir`.
-    ///
-    /// Stage 1 = base (common ancestor), 2 = ours (HEAD), 3 = theirs (merging branch).
-    /// Uses `git show :N:file`. Returns the file content as a string.
     fn show_index_stage(
         &self,
         work_dir: &Path,
@@ -189,9 +247,64 @@ mod tests {
 
     #[test]
     fn test_preflight_succeeds_in_git_repo() {
-        // This test runs inside the smelt repo itself, so preflight should succeed.
         let (git_binary, repo_root) = preflight().expect("preflight should succeed in a git repo");
         assert!(git_binary.exists(), "git binary should exist on disk");
         assert!(repo_root.is_dir(), "repo root should be a directory");
+    }
+
+    #[test]
+    fn parse_porcelain_normal_worktrees() {
+        let output = "\
+worktree /home/user/project
+HEAD abc1234567890abcdef1234567890abcdef123456
+branch refs/heads/main
+
+worktree /home/user/project-wt
+HEAD def4567890abcdef1234567890abcdef12345678
+branch refs/heads/feature/auth
+
+";
+
+        let entries = parse_porcelain(output);
+        assert_eq!(entries.len(), 2);
+
+        assert_eq!(entries[0].path, PathBuf::from("/home/user/project"));
+        assert_eq!(
+            entries[0].head,
+            "abc1234567890abcdef1234567890abcdef123456"
+        );
+        assert_eq!(entries[0].branch.as_deref(), Some("main"));
+        assert!(!entries[0].is_bare);
+        assert!(!entries[0].is_locked);
+
+        assert_eq!(entries[1].path, PathBuf::from("/home/user/project-wt"));
+        assert_eq!(entries[1].branch.as_deref(), Some("feature/auth"));
+    }
+
+    #[test]
+    fn parse_porcelain_bare_repo() {
+        let output = "\
+worktree /home/user/bare-repo
+HEAD abc1234567890abcdef1234567890abcdef123456
+bare
+
+";
+
+        let entries = parse_porcelain(output);
+        assert_eq!(entries.len(), 1);
+        assert!(entries[0].is_bare);
+        assert!(entries[0].branch.is_none());
+    }
+
+    #[test]
+    fn parse_porcelain_no_trailing_newline() {
+        let output = "\
+worktree /home/user/project
+HEAD abc1234567890abcdef1234567890abcdef123456
+branch refs/heads/main";
+
+        let entries = parse_porcelain(output);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].branch.as_deref(), Some("main"));
     }
 }
