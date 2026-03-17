@@ -10,7 +10,7 @@ Structured, repeatable quality evaluation of AI-generated code changes against e
 
 ## Current State
 
-v0.4.0 on main. ~20K lines of Rust across 6 crates. M001 (Single-Agent Harness End-to-End) complete — 7 slices, 19 requirements validated. M002 (Multi-Agent Orchestration & Harness Platform) complete — 6 slices, 24 total requirements validated, 1180 tests passing. Ships:
+v0.4.0 on main. ~20K lines of Rust across 6 crates. M001 (Single-Agent Harness End-to-End) complete — 7 slices, 19 requirements validated. M002 (Multi-Agent Orchestration & Harness Platform) complete — 6 slices, 5 new requirements validated (24 total), 1183 tests passing. Ships:
 
 - **assay-types**: Serializable DTOs — Spec, Criterion, GateRunRecord, GateEvalContext, WorkSession, WorktreeMetadata, Config, HarnessProfile, PromptLayer, SettingsOverride, HookContract, OrchestratorStatus, SessionRunState, FailurePolicy, MergeStrategy, ScopeConfig, ScopeViolation, etc.
 - **assay-core**: Domain logic — spec loading/validation, gate evaluation (command + agent), run history, worktree CRUD, work session lifecycle, merge checking/execution, guard daemon, context diagnostics/pruning, checkpoint extraction, evidence formatting, DAG validation, parallel session orchestration, sequential merge runner with ordering strategies
@@ -42,5 +42,5 @@ See `.kata/REQUIREMENTS.md` for the explicit capability contract, requirement st
 ## Milestone Sequence
 
 - [x] M001: Single-Agent Harness — manifest → worktree → agent launch → gate → merge propose (complete, 19 requirements validated)
-- [x] M002: Multi-Agent Orchestration — DAG executor, parallel sessions, sequential merge, multi-adapter harness, MCP tools, end-to-end integration (complete, 24 requirements validated, 1180 tests)
-- [ ] M003: Conflict Resolution & Polish — AI conflict resolution, type unification, OTel instrumentation
+- [x] M002: Multi-Agent Orchestration — DAG executor, parallel sessions, sequential merge, multi-adapter harness, scope enforcement, MCP tools, end-to-end integration (complete, 24 requirements validated, 1183 tests)
+- [ ] M003: Conflict Resolution & Polish — AI conflict resolution (R026), type unification (R025), OTel instrumentation (R027)
