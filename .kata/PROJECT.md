@@ -29,27 +29,28 @@ examples/
 
 ## Current State
 
-**M001 complete.** Smelt runs the full Docker-first infrastructure pipeline:
+**M002 complete.** Smelt integrates a real Assay binary with contract-correct manifest generation, streaming output, and exit-code semantics:
 
-- `smelt run manifest.toml` provisions a container, bind-mounts the host repo, executes Assay via a translated TOML manifest, collects the result branch, and tears down
+- `smelt run manifest.toml` provisions a container, writes `.assay/` setup (config + per-session spec files), runs `assay run` with the correct `[[sessions]]`-keyed manifest, streams gate output to the terminal as it arrives, collects the result branch, and tears down
 - `smelt run --dry-run` validates the manifest and prints the execution plan without touching Docker
 - `smelt status` shows live job progress (phase, container ID, sessions, elapsed time)
+- Exit code 2 from `assay run` (gate failures) is surfaced as `JobPhase::GatesFailed` — `smelt run` exits 2, not 1
 - Container lifecycle is robust: timeout enforcement, Ctrl+C handling, and idempotent teardown
-- 20 Docker integration tests verify the full pipeline including multi-session manifests, failure-path orphan safety, timeout, and cancellation
+- 23 Docker integration tests including real-assay binary parsing proof and streaming chunk delivery
 
 ## Known Issues
 
-- `run_without_dry_run_attempts_docker` in `crates/smelt-cli/tests/dry_run.rs` is a pre-existing failing test — the test logic incorrectly asserts Docker unavailability when Docker is present. Should be fixed before M002.
-- AssayInvoker contract validated against real `assay` binary (M002-S01/S02 — D043 supersedes D029).
+- Integration tests that build the Linux assay binary require Docker + the assay source repo (`ASSAY_SOURCE_DIR` or `../../assay` sibling); tests skip gracefully when unavailable.
 - Integration tests install `git` via `apk add` — require Alpine CDN network access; will fail in air-gapped CI.
 - `.assay/` directory may be written to the bind-mounted host repo during live runs; no `.gitignore` entry exists yet.
+- End-to-end operational proof (full `smelt run` producing a result branch) requires manual UAT with a real Claude API key — automated tests prove up to assay manifest parsing; full pipeline requires human verification.
 
 ## Milestones
 
 | Milestone | Title | Status |
 |-----------|-------|--------|
 | M001 | Docker-First Infrastructure MVP | ✅ Complete (2026-03-17) |
-| M002 | Real Assay Integration | 🔄 In Progress (S01 ✅, S02 ✅, S03-S04 pending) |
+| M002 | Real Assay Integration | ✅ Complete (2026-03-17) |
 
 ## Technology Decisions
 

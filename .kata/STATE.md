@@ -1,8 +1,7 @@
 # Kata State
 
-**Active Milestone:** M002 — Real Assay Integration
-**Active Slice:** S04 ✅ COMPLETE
-**Status:** M002 complete — all four slices delivered; all success criteria met; 112 smelt-core tests, 0 failures across workspace.
+**Active Milestone:** None — M002 complete, awaiting M003 planning
+**Status:** M002 fully closed — M002-SUMMARY.md written, PROJECT.md updated, all artifacts committed.
 **Phase:** Idle (awaiting next milestone)
 
 ## Recent Decisions
@@ -16,11 +15,9 @@
 - D050: Save `assay_exit` binding before branching in Phase 7; `Ok(assay_exit)` at closure end; explicit `Ok(2)` arm before generic `Ok(code)` in outcome match
 - D051: `test_collect_after_merge_commit` using `git merge --no-ff` — explicit invariant proof for ResultCollector post-Assay state
 
-## Progress (M002)
-- S01: ✅ Fix AssayInvoker — Real Assay Contract (T01 ✅, T02 ✅)
-- S02: ✅ Real Assay Binary + Production Wiring (T01 ✅, T02 ✅, T03 ✅)
-- S03: ✅ Streaming Assay Output (T01 ✅, T02 ✅)
-- S04: ✅ Exit Code 2 + Result Collection Compatibility (T01 ✅, T02 ✅)
+## Completed Milestones
+- M001: ✅ Docker-First Infrastructure MVP (2026-03-17)
+- M002: ✅ Real Assay Integration (2026-03-17)
 
 ## M002 Definition of Done — Status
 - [x] AssayInvoker unit tests pass with correct `[[sessions]]` key, spec file format, no unknown fields
@@ -32,12 +29,10 @@
 - [x] D029 superseded by D043 in DECISIONS.md
 - [ ] Manual UAT: real Docker + real assay binary + real Claude API key (operational proof, not automated)
 
-## Blockers
-- None
-
 ## Known Issues
 - Linux assay binary must be built via `docker run rust:alpine` (macOS binary is Mach-O, incompatible with Alpine containers); cached at `target/smelt-test-cache/assay-linux-aarch64`
 - `.assay/` directory may be written to the bind-mounted host repo during live runs; no `.gitignore` entry added yet
+- End-to-end operational proof requires manual UAT with a real Claude API key
 
 ## Next Action
-Manual UAT: run `smelt run` with a real manifest, real Docker, real assay binary, and real Claude API key to demonstrate the complete M002 pipeline end-to-end. Then plan M003.
+Plan M003 (Docker Compose runtime / PR integration / multi-machine coordination — scope TBD). Consider: add `.assay/` to `.gitignore`; add manual UAT runbook.
