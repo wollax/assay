@@ -7,6 +7,25 @@ use assay_types::orchestrate::{FailurePolicy, MergeStrategy};
 
 use super::{assay_dir, project_root};
 
+/// Conflict resolution mode for multi-session merge.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ConflictResolutionMode {
+    /// Use AI (Claude) to automatically resolve merge conflicts.
+    Auto,
+    /// Skip conflicting sessions (default behavior).
+    Skip,
+}
+
+fn parse_conflict_resolution(s: &str) -> Result<ConflictResolutionMode, String> {
+    match s {
+        "auto" => Ok(ConflictResolutionMode::Auto),
+        "skip" => Ok(ConflictResolutionMode::Skip),
+        _ => Err(format!(
+            "invalid conflict resolution mode '{s}': expected 'auto' or 'skip'"
+        )),
+    }
+}
+
 /// Run a manifest through the end-to-end pipeline.
 #[derive(Parser)]
 #[command(after_long_help = "\
@@ -27,7 +46,10 @@ Examples:
     assay run multi.toml --failure-policy abort
 
   Use file-overlap merge strategy:
-    assay run multi.toml --merge-strategy file-overlap")]
+    assay run multi.toml --merge-strategy file-overlap
+
+  Enable AI conflict resolution:
+    assay run multi.toml --conflict-resolution auto")]
 pub(crate) struct RunCommand {
     /// Path to the manifest TOML file
     pub manifest: PathBuf,
@@ -51,6 +73,13 @@ pub(crate) struct RunCommand {
     /// Merge strategy for combining completed session branches (completion-time or file-overlap)
     #[arg(long, default_value = "completion-time", value_parser = parse_merge_strategy)]
     pub merge_strategy: MergeStrategy,
+
+    /// Conflict resolution mode for merge phase (auto or skip)
+    ///
+    /// `auto`: use AI (Claude) to resolve merge conflicts automatically.
+    /// `skip`: skip conflicting sessions without resolving (default).
+    #[arg(long, default_value = "skip", value_parser = parse_conflict_resolution)]
+    pub conflict_resolution: ConflictResolutionMode,
 }
 
 fn parse_failure_policy(s: &str) -> Result<FailurePolicy, String> {
@@ -319,6 +348,7 @@ fn execute_orchestrated(
     manifest: &assay_types::RunManifest,
     pipeline_config: &assay_core::pipeline::PipelineConfig,
 ) -> anyhow::Result<i32> {
+    use assay_core::orchestrate::conflict_resolver::resolve_conflict;
     use assay_core::orchestrate::executor::{OrchestratorConfig, SessionOutcome};
     use assay_core::orchestrate::merge_runner::{
         MergeRunnerConfig, default_conflict_handler, extract_completed_sessions,
@@ -409,14 +439,43 @@ fn execute_orchestrated(
 
     eprintln!("Phase 3: Merging completed sessions...");
     let completed = extract_completed_sessions(&orch_result.outcomes);
-    let merge_config = MergeRunnerConfig {
-        strategy: cmd.merge_strategy,
-        project_root: pipeline_config.project_root.clone(),
-        base_branch: base_branch.clone(),
+
+    let (merge_config, merge_report) = match cmd.conflict_resolution {
+        ConflictResolutionMode::Auto => {
+            let config = assay_types::orchestrate::ConflictResolutionConfig {
+                enabled: true,
+                ..Default::default()
+            };
+            let merge_config = MergeRunnerConfig {
+                strategy: cmd.merge_strategy,
+                project_root: pipeline_config.project_root.clone(),
+                base_branch: base_branch.clone(),
+                conflict_resolution_enabled: true,
+            };
+            let handler = move |name: &str,
+                                files: &[String],
+                                scan: &assay_types::ConflictScan,
+                                dir: &std::path::Path| {
+                resolve_conflict(name, files, scan, dir, &config)
+            };
+            let report = merge_completed_sessions(completed, &merge_config, handler)
+                .map_err(|e| anyhow::anyhow!("Merge failed: {e}"))?;
+            (merge_config, report)
+        }
+        ConflictResolutionMode::Skip => {
+            let merge_config = MergeRunnerConfig {
+                strategy: cmd.merge_strategy,
+                project_root: pipeline_config.project_root.clone(),
+                base_branch: base_branch.clone(),
+                conflict_resolution_enabled: false,
+            };
+            let report =
+                merge_completed_sessions(completed, &merge_config, default_conflict_handler())
+                    .map_err(|e| anyhow::anyhow!("Merge failed: {e}"))?;
+            (merge_config, report)
+        }
     };
-    let merge_report =
-        merge_completed_sessions(completed, &merge_config, default_conflict_handler())
-            .map_err(|e| anyhow::anyhow!("Merge failed: {e}"))?;
+    drop(merge_config);
 
     eprintln!(
         "Phase 3 complete: {} merged, {} conflict-skipped, {} aborted",
@@ -530,6 +589,7 @@ mod tests {
         assert!(cmd.base_branch.is_none());
         assert_eq!(cmd.failure_policy, FailurePolicy::SkipDependents);
         assert_eq!(cmd.merge_strategy, MergeStrategy::CompletionTime);
+        assert_eq!(cmd.conflict_resolution, ConflictResolutionMode::Skip);
     }
 
     #[test]
@@ -553,6 +613,42 @@ mod tests {
         assert_eq!(cmd.base_branch.as_deref(), Some("develop"));
         assert_eq!(cmd.failure_policy, FailurePolicy::Abort);
         assert_eq!(cmd.merge_strategy, MergeStrategy::FileOverlap);
+    }
+
+    #[test]
+    fn run_command_conflict_resolution_auto() {
+        let cmd = RunCommand::parse_from(["run", "manifest.toml", "--conflict-resolution", "auto"]);
+        assert_eq!(cmd.conflict_resolution, ConflictResolutionMode::Auto);
+    }
+
+    #[test]
+    fn run_command_conflict_resolution_skip_default() {
+        let cmd = RunCommand::parse_from(["run", "manifest.toml"]);
+        assert_eq!(
+            cmd.conflict_resolution,
+            ConflictResolutionMode::Skip,
+            "default conflict resolution mode should be Skip"
+        );
+    }
+
+    #[test]
+    fn run_command_conflict_resolution_skip_explicit() {
+        let cmd = RunCommand::parse_from(["run", "manifest.toml", "--conflict-resolution", "skip"]);
+        assert_eq!(cmd.conflict_resolution, ConflictResolutionMode::Skip);
+    }
+
+    #[test]
+    fn run_command_rejects_invalid_conflict_resolution() {
+        let result = RunCommand::try_parse_from([
+            "run",
+            "manifest.toml",
+            "--conflict-resolution",
+            "invalid",
+        ]);
+        assert!(
+            result.is_err(),
+            "invalid conflict-resolution value should produce a clap error"
+        );
     }
 
     #[test]

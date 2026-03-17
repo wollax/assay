@@ -455,6 +455,7 @@ pub fn merge_execute(
     project_root: &Path,
     branch: &str,
     message: &str,
+    abort_on_conflict: bool,
 ) -> Result<MergeExecuteResult> {
     // Check for in-progress merge
     let git_dir = project_root.join(".git");
@@ -519,18 +520,23 @@ pub fn merge_execute(
         // Scan for conflict markers in the conflicting files
         let conflict_scan = scan_files_for_markers(project_root, &conflicting_files);
 
-        // Abort the merge to leave the repo clean
-        let (_, abort_stderr, abort_exit) = git_raw(&["merge", "--abort"], project_root)?;
+        if abort_on_conflict {
+            // Abort the merge to leave the repo clean (existing behavior)
+            let (_, abort_stderr, abort_exit) = git_raw(&["merge", "--abort"], project_root)?;
 
-        if abort_exit != Some(0) {
-            return Err(AssayError::MergeExecuteError {
-                branch: branch.to_string(),
-                conflicting_files,
-                message: format!(
-                    "merge conflict detected and git merge --abort failed: {stderr}; abort stderr: {abort_stderr}"
-                ),
-            });
+            if abort_exit != Some(0) {
+                return Err(AssayError::MergeExecuteError {
+                    branch: branch.to_string(),
+                    conflicting_files,
+                    message: format!(
+                        "merge conflict detected and git merge --abort failed: {stderr}; abort stderr: {abort_stderr}"
+                    ),
+                });
+            }
         }
+        // When abort_on_conflict is false, leave the working tree in a
+        // conflicted state so the caller (e.g. a conflict handler) can
+        // resolve files, stage, and commit.
 
         Ok(MergeExecuteResult {
             merge_sha: None,
@@ -933,7 +939,7 @@ CONFLICT (content): Merge conflict in file3.rs";
             .unwrap();
 
         // Merge
-        let result = merge_execute(p, "feature", "merge feature").unwrap();
+        let result = merge_execute(p, "feature", "merge feature", true).unwrap();
 
         assert!(!result.was_conflict);
         assert!(result.merge_sha.is_some());
@@ -992,8 +998,8 @@ CONFLICT (content): Merge conflict in file3.rs";
             .output()
             .unwrap();
 
-        // Attempt merge — should conflict
-        let result = merge_execute(p, "feature", "merge feature").unwrap();
+        // Attempt merge — should conflict and auto-abort
+        let result = merge_execute(p, "feature", "merge feature", true).unwrap();
 
         assert!(result.was_conflict);
         assert!(result.merge_sha.is_none());
@@ -1031,11 +1037,124 @@ CONFLICT (content): Merge conflict in file3.rs";
         )
         .unwrap();
 
-        let err = merge_execute(p, "feature", "merge").unwrap_err();
+        let err = merge_execute(p, "feature", "merge", true).unwrap_err();
         let msg = err.to_string();
         assert!(
             msg.contains("already in progress"),
             "expected in-progress error, got: {msg}"
+        );
+    }
+
+    /// Helper: create a repo with diverging branches that conflict on readme.md.
+    fn setup_conflicting_repo() -> tempfile::TempDir {
+        let dir = setup_git_repo();
+        let p = dir.path();
+
+        // Create diverging branches
+        Command::new("git")
+            .args(["checkout", "-b", "feature"])
+            .current_dir(p)
+            .output()
+            .unwrap();
+        std::fs::write(p.join("readme.md"), "# feature version\n").unwrap();
+        Command::new("git")
+            .args(["add", "."])
+            .current_dir(p)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["commit", "-m", "feature change"])
+            .current_dir(p)
+            .output()
+            .unwrap();
+
+        Command::new("git")
+            .args(["checkout", "main"])
+            .current_dir(p)
+            .output()
+            .unwrap();
+        std::fs::write(p.join("readme.md"), "# main version\n").unwrap();
+        Command::new("git")
+            .args(["add", "."])
+            .current_dir(p)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["commit", "-m", "main change"])
+            .current_dir(p)
+            .output()
+            .unwrap();
+
+        dir
+    }
+
+    #[test]
+    fn test_merge_execute_two_phase_conflict_leaves_tree_conflicted() {
+        let dir = setup_conflicting_repo();
+        let p = dir.path();
+
+        // Merge with abort_on_conflict = false — tree should remain conflicted
+        let result = merge_execute(p, "feature", "merge feature", false).unwrap();
+
+        assert!(result.was_conflict);
+        assert!(result.merge_sha.is_none());
+        assert!(result.conflict_details.is_some());
+
+        // MERGE_HEAD should still exist (merge in progress)
+        assert!(
+            p.join(".git/MERGE_HEAD").exists(),
+            "MERGE_HEAD should still exist when abort_on_conflict is false"
+        );
+
+        // The conflicted file should contain conflict markers
+        let content = std::fs::read_to_string(p.join("readme.md")).unwrap();
+        assert!(
+            content.contains("<<<<<<<"),
+            "conflicted file should contain <<<<<<< markers, got: {content}"
+        );
+
+        // Clean up: abort manually
+        Command::new("git")
+            .args(["merge", "--abort"])
+            .current_dir(p)
+            .output()
+            .unwrap();
+
+        // Verify cleanup worked
+        assert!(
+            !p.join(".git/MERGE_HEAD").exists(),
+            "MERGE_HEAD should be gone after manual abort"
+        );
+    }
+
+    #[test]
+    fn test_merge_execute_two_phase_abort_on_conflict_true_still_aborts() {
+        let dir = setup_conflicting_repo();
+        let p = dir.path();
+
+        // Merge with abort_on_conflict = true — existing behavior
+        let result = merge_execute(p, "feature", "merge feature", true).unwrap();
+
+        assert!(result.was_conflict);
+        assert!(result.merge_sha.is_none());
+        assert!(result.conflict_details.is_some());
+
+        // MERGE_HEAD should NOT exist (abort happened)
+        assert!(
+            !p.join(".git/MERGE_HEAD").exists(),
+            "MERGE_HEAD should be removed after auto-abort"
+        );
+
+        // Repo should be clean
+        let status = Command::new("git")
+            .args(["status", "--porcelain"])
+            .current_dir(p)
+            .output()
+            .unwrap();
+        let status_str = String::from_utf8_lossy(&status.stdout);
+        assert!(
+            status_str.trim().is_empty(),
+            "repo should be clean after abort, got: {status_str}"
         );
     }
 }

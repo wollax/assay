@@ -424,6 +424,17 @@ pub struct OrchestrateRunParams {
         'file_overlap': greedy pick sessions with least file overlap.")]
     #[serde(default)]
     pub merge_strategy: Option<String>,
+
+    /// Conflict resolution mode: "auto" or "skip" (default).
+    ///
+    /// `auto`: use AI (Claude) to automatically resolve merge conflicts.
+    /// `skip` (default): skip conflicting sessions without resolving.
+    #[schemars(description = "Conflict resolution mode for the merge phase. \
+        'auto': use AI (Claude) to automatically resolve merge conflicts — \
+        requires the claude CLI to be available in PATH. \
+        'skip' (default): skip conflicting sessions without resolving.")]
+    #[serde(default)]
+    pub conflict_resolution: Option<String>,
 }
 
 /// Parameters for the `orchestrate_status` tool.
@@ -2814,6 +2825,17 @@ impl AssayServer {
             }
         };
 
+        // Parse conflict resolution mode
+        let use_auto_conflict_resolution = match params.0.conflict_resolution.as_deref() {
+            Some("auto") => true,
+            Some("skip") | None => false,
+            Some(other) => {
+                return Ok(CallToolResult::error(vec![Content::text(format!(
+                    "Invalid conflict_resolution '{other}'. Expected 'auto' or 'skip'.",
+                ))]));
+            }
+        };
+
         let orch_config = assay_core::orchestrate::executor::OrchestratorConfig {
             max_concurrency: 8,
             failure_policy,
@@ -2906,18 +2928,47 @@ impl AssayServer {
             let completed = assay_core::orchestrate::merge_runner::extract_completed_sessions(
                 &orch_result.outcomes,
             );
-            let conflict_handler =
-                assay_core::orchestrate::merge_runner::default_conflict_handler();
-            let merge_config = assay_core::orchestrate::merge_runner::MergeRunnerConfig {
-                strategy: merge_strategy,
-                project_root: project_root.clone(),
-                base_branch: base_branch.clone(),
+
+            // Compose conflict handler based on resolution mode
+            let merge_report = if use_auto_conflict_resolution {
+                let cr_config = assay_types::orchestrate::ConflictResolutionConfig {
+                    enabled: true,
+                    ..Default::default()
+                };
+                let merge_config = assay_core::orchestrate::merge_runner::MergeRunnerConfig {
+                    strategy: merge_strategy,
+                    project_root: project_root.clone(),
+                    base_branch: base_branch.clone(),
+                    conflict_resolution_enabled: true,
+                };
+                let handler = move |name: &str,
+                                    files: &[String],
+                                    scan: &assay_types::ConflictScan,
+                                    dir: &std::path::Path| {
+                    assay_core::orchestrate::conflict_resolver::resolve_conflict(
+                        name, files, scan, dir, &cr_config,
+                    )
+                };
+                assay_core::orchestrate::merge_runner::merge_completed_sessions(
+                    completed,
+                    &merge_config,
+                    handler,
+                )?
+            } else {
+                let conflict_handler =
+                    assay_core::orchestrate::merge_runner::default_conflict_handler();
+                let merge_config = assay_core::orchestrate::merge_runner::MergeRunnerConfig {
+                    strategy: merge_strategy,
+                    project_root: project_root.clone(),
+                    base_branch: base_branch.clone(),
+                    conflict_resolution_enabled: false,
+                };
+                assay_core::orchestrate::merge_runner::merge_completed_sessions(
+                    completed,
+                    &merge_config,
+                    conflict_handler,
+                )?
             };
-            let merge_report = assay_core::orchestrate::merge_runner::merge_completed_sessions(
-                completed,
-                &merge_config,
-                conflict_handler,
-            )?;
 
             Ok::<_, assay_core::AssayError>((orch_result, merge_report))
         })
@@ -6815,6 +6866,39 @@ cmd = "echo ok"
             json.contains("merge_strategy"),
             "schema should contain merge_strategy"
         );
+        assert!(
+            json.contains("conflict_resolution"),
+            "schema should contain conflict_resolution"
+        );
+    }
+
+    #[test]
+    fn orchestrate_run_params_conflict_resolution_auto_deserializes() {
+        let json = r#"{"manifest_path": "multi.toml", "conflict_resolution": "auto"}"#;
+        let params: OrchestrateRunParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.manifest_path, "multi.toml");
+        assert_eq!(
+            params.conflict_resolution.as_deref(),
+            Some("auto"),
+            "conflict_resolution should be 'auto'"
+        );
+    }
+
+    #[test]
+    fn orchestrate_run_params_conflict_resolution_skip_deserializes() {
+        let json = r#"{"manifest_path": "multi.toml", "conflict_resolution": "skip"}"#;
+        let params: OrchestrateRunParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.conflict_resolution.as_deref(), Some("skip"));
+    }
+
+    #[test]
+    fn orchestrate_run_params_conflict_resolution_defaults_to_none() {
+        let json = r#"{"manifest_path": "multi.toml"}"#;
+        let params: OrchestrateRunParams = serde_json::from_str(json).unwrap();
+        assert!(
+            params.conflict_resolution.is_none(),
+            "conflict_resolution should be None when omitted (defaults to skip behavior)"
+        );
     }
 
     #[tokio::test]
@@ -6842,6 +6926,7 @@ cmd = "echo ok"
                 timeout_secs: None,
                 failure_policy: None,
                 merge_strategy: None,
+                conflict_resolution: None,
             }))
             .await
             .unwrap();

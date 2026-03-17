@@ -281,14 +281,14 @@
 
 ### R026 — AI conflict resolution
 - Class: differentiator
-- Status: active
+- Status: validated
 - Description: AI-powered conflict resolution via evaluator when merge conflicts arise
 - Why it matters: Enables fully autonomous merge flows
 - Source: user
 - Primary owning slice: M003/S01
 - Supporting slices: M003/S02
-- Validation: unmapped
-- Notes: Two-phase merge lifecycle (D044), sync subprocess (D043). S01 builds the resolver; S02 adds audit trail and validation.
+- Validation: S01 — two-phase merge_execute() + resolve_conflict() sync subprocess + merge runner lifecycle wiring + CLI --conflict-resolution auto flag + MCP conflict_resolution parameter. Integration tests with real git repos prove conflicting branches → live conflicted tree → scripted handler → Merged with valid merge commit (2-parent history). Real Claude invocation is manual UAT.
+- Notes: Core infrastructure complete. S02 adds audit trail (R029) and validation command (R028).
 
 ### R027 — OpenTelemetry instrumentation
 - Class: quality-attribute
@@ -398,7 +398,7 @@
 | R023 | core-capability | validated | M002/S03 | M002/S06 | S03 |
 | R024 | differentiator | validated | M002/S04 | M002/S05 | S04 |
 | R025 | quality-attribute | deferred | none | none | unmapped |
-| R026 | differentiator | active | M003/S01 | M003/S02 | unmapped |
+| R026 | differentiator | validated | M003/S01 | M003/S02 | S01 |
 | R027 | quality-attribute | deferred | M004+ | none | unmapped |
 | R030 | anti-feature | out-of-scope | none | none | n/a |
 | R031 | anti-feature | out-of-scope | none | none | n/a |
@@ -409,8 +409,8 @@
 
 ## Coverage Summary
 
-- Active requirements: 3 (R026, R028, R029)
-- Mapped to slices: 3
-- Validated: 24
+- Active requirements: 2 (R028, R029)
+- Mapped to slices: 2
+- Validated: 25 (R026 validated by S01)
 - Deferred: 3 (R025, R027 — with rationale)
 - Unmapped active requirements: 0

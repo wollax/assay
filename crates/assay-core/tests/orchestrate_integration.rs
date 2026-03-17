@@ -237,6 +237,7 @@ fn three_session_dag_execute_merge_end_to_end() {
         strategy: MergeStrategy::CompletionTime,
         project_root: repo.to_path_buf(),
         base_branch: "main".to_string(),
+        conflict_resolution_enabled: false,
     };
 
     let merge_report =
@@ -389,6 +390,7 @@ fn failure_propagation_a_fails_b_skipped_c_succeeds() {
         strategy: MergeStrategy::CompletionTime,
         project_root: repo.to_path_buf(),
         base_branch: "main".to_string(),
+        conflict_resolution_enabled: false,
     };
 
     let merge_report =

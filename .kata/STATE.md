@@ -1,11 +1,12 @@
 # Kata State
 
 **Active Milestone:** M003 — Conflict Resolution & Polish
-**Active Slice:** none — roadmap complete, ready for S01
+**Active Slice:** S02 — Audit Trail, Validation & End-to-End (next)
 **Phase:** Execution
-**Slice Branch:** main
+**Slice Branch:** kata/M003/S01 (complete — pending merge to main)
 **Last Updated:** 2026-03-17
-**Requirements Status:** 0 active · 24 validated · 3 deferred · 4 out of scope
+**Requirements Status:** 2 active · 25 validated · 3 deferred · 4 out of scope
+**Test Count:** 1216+ (1183 prior + 33 new across S01: 2 two-phase merge + 18 conflict_resolver + 2 merge_runner + 4 CLI + 3 MCP + existing schema count)
 
 ## Completed Milestones
 
@@ -14,7 +15,11 @@
 
 ## M003 Progress
 
-- [ ] S01: AI Conflict Resolution `risk:high`
+- [x] S01: AI Conflict Resolution `risk:high` ← **complete (4/4 tasks done)**
+  - [x] T01: Two-phase merge_execute and conflict resolution types
+  - [x] T02: Sync conflict resolver function
+  - [x] T03: Wire conflict handler into merge runner lifecycle
+  - [x] T04: CLI flag and MCP parameter for conflict resolution
 - [ ] S02: Audit Trail, Validation & End-to-End `risk:medium` `depends:[S01]`
 
 ## Blockers
@@ -23,4 +28,4 @@
 
 ## Next Action
 
-Execute S01: Two-phase merge execute + AI conflict resolver + CLI/MCP wiring.
+S01 complete. Begin S02: Audit Trail, Validation & End-to-End — `ConflictResolution` audit type on `MergeReport`, post-resolution validation command, `orchestrate_status` resolution details, end-to-end CLI integration test.

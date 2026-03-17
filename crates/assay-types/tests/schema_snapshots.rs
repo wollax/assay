@@ -336,3 +336,10 @@ fn conflict_action_schema_snapshot() {
     let schema = schemars::schema_for!(assay_types::ConflictAction);
     assert_json_snapshot!("conflict-action-schema", schema.to_value());
 }
+
+#[cfg(feature = "orchestrate")]
+#[test]
+fn conflict_resolution_config_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::ConflictResolutionConfig);
+    assert_json_snapshot!("conflict-resolution-config-schema", schema.to_value());
+}

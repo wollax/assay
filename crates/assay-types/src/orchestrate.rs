@@ -220,6 +220,41 @@ pub enum ConflictAction {
     Abort,
 }
 
+/// Configuration for AI-driven conflict resolution during merge.
+///
+/// When `enabled` is `true`, the merge runner will attempt to resolve
+/// conflicts using an AI model instead of aborting or skipping.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ConflictResolutionConfig {
+    /// Whether AI conflict resolution is active.
+    pub enabled: bool,
+    /// Model identifier for the resolver (e.g. `"claude-sonnet-4-20250514"`).
+    #[serde(default = "default_conflict_model")]
+    pub model: String,
+    /// Maximum seconds to wait for the resolver before aborting.
+    #[serde(default = "default_conflict_timeout")]
+    pub timeout_secs: u64,
+}
+
+fn default_conflict_model() -> String {
+    "claude-sonnet-4-20250514".to_string()
+}
+
+fn default_conflict_timeout() -> u64 {
+    120
+}
+
+impl Default for ConflictResolutionConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            model: default_conflict_model(),
+            timeout_secs: default_conflict_timeout(),
+        }
+    }
+}
+
 // ── Schema registry submissions ──────────────────────────────────────
 
 inventory::submit! {
@@ -303,6 +338,13 @@ inventory::submit! {
     schema_registry::SchemaEntry {
         name: "conflict-action",
         generate: || schemars::schema_for!(ConflictAction),
+    }
+}
+
+inventory::submit! {
+    schema_registry::SchemaEntry {
+        name: "conflict-resolution-config",
+        generate: || schemars::schema_for!(ConflictResolutionConfig),
     }
 }
 
@@ -608,5 +650,44 @@ mod tests {
         let json = r#"{"run_id":"x","phase":"running","failure_policy":"abort","sessions":[],"started_at":"2026-01-01T00:00:00Z","extra":1}"#;
         let result = serde_json::from_str::<OrchestratorStatus>(json);
         assert!(result.is_err(), "should reject unknown fields");
+    }
+
+    #[test]
+    fn conflict_resolution_config_default() {
+        let config = ConflictResolutionConfig::default();
+        assert!(!config.enabled);
+        assert_eq!(config.model, "claude-sonnet-4-20250514");
+        assert_eq!(config.timeout_secs, 120);
+    }
+
+    #[test]
+    fn conflict_resolution_config_serde_roundtrip() {
+        let config = ConflictResolutionConfig {
+            enabled: true,
+            model: "custom-model".to_string(),
+            timeout_secs: 60,
+        };
+        let json = serde_json::to_string_pretty(&config).unwrap();
+        let back: ConflictResolutionConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, config);
+    }
+
+    #[test]
+    fn conflict_resolution_config_defaults_applied() {
+        // Only enabled is required; model and timeout_secs have defaults
+        let json = r#"{"enabled":true}"#;
+        let config: ConflictResolutionConfig = serde_json::from_str(json).unwrap();
+        assert!(config.enabled);
+        assert_eq!(config.model, "claude-sonnet-4-20250514");
+        assert_eq!(config.timeout_secs, 120);
+    }
+
+    #[test]
+    fn conflict_resolution_config_deny_unknown_fields() {
+        let json = r#"{"enabled":false,"model":"x","timeout_secs":10,"extra":1}"#;
+        assert!(
+            serde_json::from_str::<ConflictResolutionConfig>(json).is_err(),
+            "should reject unknown fields"
+        );
     }
 }
