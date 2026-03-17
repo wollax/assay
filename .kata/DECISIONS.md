@@ -16,3 +16,5 @@
 | D008 | M001 | arch | Git interaction | Shell out to git CLI, no git2/gix | git2 is !Send+!Sync (breaks spawn_blocking), gix has 150+ transitive deps, git CLI is proven | No |
 | D009 | M001 | arch | Session persistence | JSON file-per-record, not SQLite | Single-project scope (tens-to-hundreds of sessions); consistent with existing history module | Yes — if scale exceeds thousands |
 | D010 | M001 | arch | HarnessProfile location | Type in assay-types, implementation in assay-harness | Cross-crate via serialization; follows existing pattern for types vs logic separation | No |
+| D011 | M001/S03 | convention | Settings merger field construction | Explicit struct construction (no `..base`) | Compile-time safety — adding a field to SettingsOverride forces merge_settings to handle it | No |
+| D012 | M001/S03 | convention | Vec merge semantics | Replace (non-empty override wins entirely) | Extend semantics would cause surprising duplicates; replace is predictable and explicit | Yes — if extend is needed later |

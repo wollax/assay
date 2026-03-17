@@ -48,36 +48,36 @@
 
 ### R005 — Layered prompt builder
 - Class: core-capability
-- Status: active
+- Status: validated
 - Description: Layered prompt builder assembles system prompts from composable layers: project conventions (always) → spec criteria (when spec provided)
 - Why it matters: Agents need structured prompts that compose project context with spec requirements
 - Source: user
 - Primary owning slice: M001/S03
 - Supporting slices: none
-- Validation: unmapped
-- Notes: Pure function, no side effects
+- Validation: S03 — `build_prompt()` implemented with 7 unit tests covering priority ordering, empty-layer filtering, stability, and mixed kinds
+- Notes: Pure function, no side effects. Validated by S03.
 
 ### R006 — Layered settings merger
 - Class: core-capability
-- Status: active
+- Status: validated
 - Description: Layered settings merger combines project config base settings with spec-specific overrides (permissions, model, tool access)
 - Why it matters: Different specs may need different agent permissions and tool access
 - Source: user
 - Primary owning slice: M001/S03
 - Supporting slices: none
-- Validation: unmapped
-- Notes: Pure function, merge semantics need clear precedence rules
+- Validation: S03 — `merge_settings()` implemented with 6 unit tests covering overlay (Option), replace (Vec), and preservation semantics
+- Notes: Pure function. Replace semantics for Vec fields (D012). Validated by S03.
 
 ### R007 — Hook contract definitions
 - Class: core-capability
-- Status: active
+- Status: validated
 - Description: Hook contract definitions in assay-types declare lifecycle events (pre-tool, post-tool, stop) that harness adapters translate to harness-specific formats
 - Why it matters: Hooks are how gates integrate with agent lifecycles
 - Source: user
 - Primary owning slice: M001/S03
 - Supporting slices: M001/S04
-- Validation: unmapped
-- Notes: Types only in assay-types; adapter translation in assay-harness
+- Validation: S03 — 4 tests validate HookContract/HookEvent construction and JSON round-trip for PreTool, PostTool, Stop events including realistic HarnessProfile
+- Notes: Types in assay-types; adapter translation deferred to S04. Validated by S03.
 
 ### R008 — Claude Code adapter
 - Class: core-capability
@@ -344,9 +344,9 @@
 | R002 | quality-attribute | validated | M001/S01 | none | S01 |
 | R003 | core-capability | validated | M001/S02 | none | S02 |
 | R004 | core-capability | validated | M001/S02 | M001/S03 | S02 |
-| R005 | core-capability | active | M001/S03 | none | unmapped |
-| R006 | core-capability | active | M001/S03 | none | unmapped |
-| R007 | core-capability | active | M001/S03 | M001/S04 | unmapped |
+| R005 | core-capability | validated | M001/S03 | none | S03 |
+| R006 | core-capability | validated | M001/S03 | none | S03 |
+| R007 | core-capability | validated | M001/S03 | M001/S04 | S03 |
 | R008 | core-capability | active | M001/S04 | none | unmapped |
 | R009 | constraint | active | M001/S04 | M001/S06 | unmapped |
 | R010 | quality-attribute | active | M001/S05 | none | unmapped |
@@ -373,7 +373,7 @@
 
 ## Coverage Summary
 
-- Active requirements: 15
+- Active requirements: 12
 - Mapped to slices: 19
-- Validated: 4
+- Validated: 7
 - Unmapped active requirements: 0

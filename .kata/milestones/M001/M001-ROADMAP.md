@@ -53,7 +53,7 @@ This milestone is complete only when all are true:
 - [x] **S02: Harness Crate & Profile Type** `risk:medium` `depends:[S01]`
   > After this: `assay-harness` crate exists in workspace, `HarnessProfile` type compiles in assay-types with schema snapshot. `just ready` passes.
 
-- [ ] **S03: Prompt Builder, Settings Merger & Hook Contracts** `risk:medium` `depends:[S02]`
+- [x] **S03: Prompt Builder, Settings Merger & Hook Contracts** `risk:medium` `depends:[S02]`
   > After this: prompt builder assembles layered prompts from spec + project context, settings merger combines base + overrides, hook contracts defined in types. Verified by unit tests.
 
 - [ ] **S04: Claude Code Adapter** `risk:high` `depends:[S03]`
