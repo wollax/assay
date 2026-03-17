@@ -232,12 +232,16 @@ where
             .exec_streaming(&container, &cmd, |chunk| eprint!("{chunk}"))
             .await
             .with_context(|| "failed to execute assay run")?;
-        eprintln!("Assay complete — exit code: {}", handle.exit_code);
+        let assay_exit = handle.exit_code;
+        if assay_exit == 2 {
+            eprintln!("Assay complete — gate failures (exit 2)");
+        } else {
+            eprintln!("Assay complete — exit code: {assay_exit}");
+        }
 
-        if handle.exit_code != 0 {
+        if assay_exit != 0 && assay_exit != 2 {
             anyhow::bail!(
-                "assay run exited with code {} — stderr: {}",
-                handle.exit_code,
+                "assay run exited with code {assay_exit} — stderr: {}",
                 handle.stderr.trim()
             );
         }
@@ -269,7 +273,7 @@ where
             );
         }
 
-        Ok::<i32, anyhow::Error>(0)
+        Ok::<i32, anyhow::Error>(assay_exit)
     };
 
     let outcome = tokio::select! {
@@ -280,6 +284,10 @@ where
 
     // Map outcome to result + update monitor phase
     let result = match outcome {
+        ExecOutcome::Completed(Ok(2)) => {
+            let _ = monitor.set_phase(JobPhase::GatesFailed);
+            Ok(2)
+        }
         ExecOutcome::Completed(Ok(code)) => {
             let _ = monitor.set_phase(JobPhase::Complete);
             Ok(code)

@@ -25,6 +25,7 @@ pub enum JobPhase {
     Failed,
     Timeout,
     Cancelled,
+    GatesFailed,
 }
 
 /// Serializable snapshot of job execution state.
@@ -362,5 +363,28 @@ target = "main"
 
         let state = JobMonitor::read(dir.path()).unwrap();
         assert_eq!(state.phase, JobPhase::WritingManifest);
+    }
+
+    #[test]
+    fn test_job_phase_gates_failed_serde() {
+        // TOML requires a key-value structure at the top level, so we wrap the variant
+        // in a minimal struct to exercise the serde round-trip.
+        #[derive(serde::Serialize, serde::Deserialize, Debug, PartialEq)]
+        struct Wrapper {
+            phase: JobPhase,
+        }
+
+        let input = Wrapper { phase: JobPhase::GatesFailed };
+
+        // Serialize → must produce "gates_failed" as the phase value
+        let serialized = toml::to_string(&input).unwrap();
+        assert!(
+            serialized.contains("gates_failed"),
+            "expected 'gates_failed' in serialized output, got: {serialized}"
+        );
+
+        // Deserialize → must round-trip back to GatesFailed
+        let deserialized: Wrapper = toml::from_str(&serialized).unwrap();
+        assert_eq!(deserialized.phase, JobPhase::GatesFailed);
     }
 }

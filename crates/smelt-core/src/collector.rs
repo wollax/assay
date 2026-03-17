@@ -301,4 +301,51 @@ mod tests {
         // dirty.txt is not committed, so shouldn't appear in files_changed.
         assert!(!result.files_changed.contains(&"dirty.txt".to_string()));
     }
+
+    #[tokio::test]
+    async fn test_collect_after_merge_commit() {
+        let (tmp, cli) = setup_test_repo();
+        let base = head_hash(tmp.path());
+        let git_bin = which::which("git").expect("git on PATH");
+        let run = |args: &[&str]| {
+            let out = std::process::Command::new(&git_bin)
+                .args(args)
+                .current_dir(tmp.path())
+                .output()
+                .expect("git command");
+            assert!(
+                out.status.success(),
+                "git {} failed: {}",
+                args.join(" "),
+                String::from_utf8_lossy(&out.stderr)
+            );
+        };
+
+        // Create a feature branch with one commit, then merge it back with --no-ff.
+        // This mirrors Assay's behavior: Assay merges session branches to base inside the container.
+        run(&["checkout", "-b", "feat"]);
+        add_commit(tmp.path(), "session-output.txt", "gate results", "session: gate passed");
+        run(&["checkout", "-"]);  // back to default branch
+        run(&["merge", "--no-ff", "feat", "-m", "merge session results"]);
+
+        let collector = ResultCollector::new(cli, tmp.path().to_path_buf());
+        let result = collector.collect(&base, "results/after-merge").await.unwrap();
+
+        assert!(!result.no_changes, "merge commit should be detected as new commits");
+        assert_eq!(result.commit_count, 2, "feat commit + merge commit = 2");
+        assert_eq!(result.branch, "results/after-merge");
+        assert!(!result.files_changed.is_empty(), "merged files must appear in diff");
+
+        // Branch should point at current HEAD (the merge commit).
+        let current_head = head_hash(tmp.path());
+        let branch_hash = {
+            let out = std::process::Command::new(&git_bin)
+                .args(["rev-parse", "results/after-merge"])
+                .current_dir(tmp.path())
+                .output()
+                .unwrap();
+            String::from_utf8_lossy(&out.stdout).trim().to_string()
+        };
+        assert_eq!(branch_hash, current_head, "target branch must point at merge commit HEAD");
+    }
 }
