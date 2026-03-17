@@ -1,9 +1,9 @@
 # Kata State
 
-**Active Milestone:** M001 — Docker-First Infrastructure MVP
-**Active Slice:** none — M001 COMPLETE
-**Status:** All 6 slices done. 20/20 docker_lifecycle tests passing. Full milestone definition of done satisfied.
-**Phase:** Complete
+**Active Milestone:** none — M001 complete, M002 not yet planned
+**Active Slice:** none
+**Status:** M001 complete. M001-SUMMARY.md written. PROJECT.md updated. Ready for M002 planning.
+**Phase:** Idle
 
 ## Recent Decisions
 - D034: Monitor state file as TOML at `.smelt/run-state.toml`, single-job model
