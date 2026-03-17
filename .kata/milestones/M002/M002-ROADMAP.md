@@ -60,7 +60,7 @@ No `.kata/REQUIREMENTS.md` exists — operating in legacy compatibility mode. M0
   > After this: `smelt run` prints assay gate output lines to stderr as they are produced (not buffered until assay exits) — observable by running any `assay` command that emits output over time.
 
 - [ ] **S04: Exit Code 2 + Result Collection Compatibility** `risk:low` `depends:[S03]`
-  > After this: `smelt run` exits 2 (not 1) when `assay run` exits 2 (gate failures), reports the distinction clearly, and `ResultCollector` is verified to handle Assay's merge-to-base-branch behavior correctly — confirmed by unit test and the pre-existing `run_without_dry_run_attempts_docker` test resolved.
+  > After this: `smelt run` exits 2 (not 1) when `assay run` exits 2 (gate failures), reports the distinction clearly, and `ResultCollector` is verified to handle Assay's merge-to-base-branch behavior correctly — confirmed by unit test. (`run_without_dry_run_attempts_docker` was already resolved in S02.)
 
 ## Boundary Map
 
