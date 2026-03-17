@@ -147,36 +147,36 @@
 
 ### R014 — RunManifest type
 - Class: core-capability
-- Status: active
+- Status: validated
 - Description: `RunManifest` type in assay-types represents a declarative description of work using `[[sessions]]` TOML array format
 - Why it matters: The manifest is the entry point for the entire pipeline
 - Source: user
 - Primary owning slice: M001/S06
 - Supporting slices: none
-- Validation: unmapped
-- Notes: Forward-compatible for multi-agent via `[[sessions]]` array
+- Validation: S06 — RunManifest and ManifestSession types with full derives, deny_unknown_fields, inventory registration, schema snapshots locked, round-trip TOML tests pass
+- Notes: Validated by S06. Forward-compatible for multi-agent via `[[sessions]]` array.
 
 ### R015 — Manifest parsing and validation
 - Class: core-capability
-- Status: active
+- Status: validated
 - Description: Single-session manifest parsing and validation from TOML files, with actionable error messages for malformed input
 - Why it matters: Users author manifests by hand — errors must be helpful
 - Source: user
 - Primary owning slice: M001/S06
 - Supporting slices: none
-- Validation: unmapped
-- Notes: TOML parsing, schema validation, clear error messages
+- Validation: S06 — from_str/validate/load functions with 13 tests covering round-trip, unknown fields, missing fields, empty sessions, caret-pointer errors, and file loading
+- Notes: Validated by S06. ManifestParse errors include caret-pointer display; ManifestValidation collects all errors for single-pass fix.
 
 ### R016 — Manifest forward compatibility
 - Class: quality-attribute
-- Status: active
+- Status: validated
 - Description: RunManifest schema is forward-compatible for multi-agent extension (uses `[[sessions]]` array even for single-session)
 - Why it matters: Avoids breaking change when M002 adds multi-session support
 - Source: user
 - Primary owning slice: M001/S06
 - Supporting slices: none
-- Validation: unmapped
-- Notes: Design constraint, not runtime behavior
+- Validation: S06 — all test fixtures use `[[sessions]]` array syntax even for single-session; type enforces Vec<ManifestSession>
+- Notes: Validated by S06. Design constraint verified by type system and test coverage.
 
 ### R017 — Single-agent end-to-end pipeline
 - Class: primary-user-loop
@@ -353,9 +353,9 @@
 | R011 | quality-attribute | validated | M001/S05 | none | S05 |
 | R012 | core-capability | validated | M001/S05 | none | S05 |
 | R013 | quality-attribute | validated | M001/S05 | none | S05 |
-| R014 | core-capability | active | M001/S06 | none | unmapped |
-| R015 | core-capability | active | M001/S06 | none | unmapped |
-| R016 | quality-attribute | active | M001/S06 | none | unmapped |
+| R014 | core-capability | validated | M001/S06 | none | S06 |
+| R015 | core-capability | validated | M001/S06 | none | S06 |
+| R016 | quality-attribute | validated | M001/S06 | none | S06 |
 | R017 | primary-user-loop | active | M001/S07 | none | unmapped |
 | R018 | core-capability | active | M001/S07 | none | unmapped |
 | R019 | failure-visibility | active | M001/S07 | none | unmapped |
@@ -373,7 +373,7 @@
 
 ## Coverage Summary
 
-- Active requirements: 6
+- Active requirements: 3
 - Mapped to slices: 19
-- Validated: 13
+- Validated: 16
 - Unmapped active requirements: 0

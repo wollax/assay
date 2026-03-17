@@ -1,0 +1,211 @@
+---
+source: crates/assay-types/tests/schema_snapshots.rs
+expression: schema.to_value()
+---
+{
+  "$defs": {
+    "HookContract": {
+      "additionalProperties": false,
+      "description": "A lifecycle hook that runs an external command at a specific event.",
+      "properties": {
+        "command": {
+          "description": "Shell command to execute when the event fires.",
+          "type": "string"
+        },
+        "event": {
+          "$ref": "#/$defs/HookEvent",
+          "description": "The lifecycle event that triggers this hook."
+        },
+        "timeout_secs": {
+          "description": "Maximum seconds to wait for the command to complete.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "event",
+        "command"
+      ],
+      "type": "object"
+    },
+    "HookEvent": {
+      "description": "Lifecycle event that the harness can hook into.\n\nHooks fire at specific points during agent execution:\n- `PreTool`: before a tool invocation\n- `PostTool`: after a tool invocation completes\n- `Stop`: when the agent session is stopping",
+      "oneOf": [
+        {
+          "const": "pre-tool",
+          "description": "Fires before a tool invocation.",
+          "type": "string"
+        },
+        {
+          "const": "post-tool",
+          "description": "Fires after a tool invocation completes.",
+          "type": "string"
+        },
+        {
+          "const": "stop",
+          "description": "Fires when the agent session is stopping.",
+          "type": "string"
+        }
+      ]
+    },
+    "ManifestSession": {
+      "additionalProperties": false,
+      "description": "A single session entry within a run manifest.\n\nReferences a spec by name and optionally overrides harness configuration.\nThe pipeline merges these overrides with spec defaults and project config\nto produce a complete [`HarnessProfile`](crate::HarnessProfile).",
+      "properties": {
+        "hooks": {
+          "description": "Lifecycle hooks for this session. Empty by default.",
+          "items": {
+            "$ref": "#/$defs/HookContract"
+          },
+          "type": "array"
+        },
+        "name": {
+          "description": "Optional display name for this session. Defaults to the spec name if omitted.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "prompt_layers": {
+          "description": "Prompt layers injected into this session's prompt assembly. Empty by default.",
+          "items": {
+            "$ref": "#/$defs/PromptLayer"
+          },
+          "type": "array"
+        },
+        "settings": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SettingsOverride"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Optional settings overrides applied to this session's harness profile."
+        },
+        "spec": {
+          "description": "Name of the spec to run (required). Must match a spec file in the project.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "spec"
+      ],
+      "type": "object"
+    },
+    "PromptLayer": {
+      "additionalProperties": false,
+      "description": "A single prompt layer contributing to the assembled agent prompt.\n\nPrompt layers are assembled in priority order (lowest `priority` value first)\nto build the final system prompt for an agent session.",
+      "properties": {
+        "content": {
+          "description": "The prompt text content.",
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/PromptLayerKind",
+          "description": "Category of this prompt layer."
+        },
+        "name": {
+          "description": "Human-readable name for identification and debugging.",
+          "type": "string"
+        },
+        "priority": {
+          "description": "Ordering hint for assembly (lower values assemble first).",
+          "format": "int32",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "kind",
+        "name",
+        "content",
+        "priority"
+      ],
+      "type": "object"
+    },
+    "PromptLayerKind": {
+      "description": "Category of a prompt layer, determining its priority tier in assembly.\n\nVariants are ordered from highest built-in priority to custom:\n- `System`: foundational agent instructions\n- `Project`: project-level context and conventions\n- `Spec`: spec-specific acceptance criteria and constraints\n- `Custom`: user-defined layers injected at arbitrary priority",
+      "oneOf": [
+        {
+          "const": "system",
+          "description": "Foundational agent instructions (highest built-in priority).",
+          "type": "string"
+        },
+        {
+          "const": "project",
+          "description": "Project-level context and conventions.",
+          "type": "string"
+        },
+        {
+          "const": "spec",
+          "description": "Spec-specific acceptance criteria and constraints.",
+          "type": "string"
+        },
+        {
+          "const": "custom",
+          "description": "User-defined layer injected at arbitrary priority.",
+          "type": "string"
+        }
+      ]
+    },
+    "SettingsOverride": {
+      "additionalProperties": false,
+      "description": "Settings overrides applied to an agent session.\n\nAll fields are optional or default-empty — only specified values override\nthe base configuration.",
+      "properties": {
+        "max_turns": {
+          "description": "Maximum number of agent turns before forced stop.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "model": {
+          "description": "Model identifier to use (e.g., `\"sonnet\"`, `\"opus\"`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "permissions": {
+          "description": "Permissions granted to the agent (e.g., `\"filesystem\"`, `\"network\"`).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "tools": {
+          "description": "Tools available to the agent (e.g., `\"bash\"`, `\"browser\"`).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Top-level run manifest declaring one or more agent sessions.\n\nDeserialized from TOML where sessions use the `[[sessions]]` array-of-tables\nsyntax. Each session references a spec and optionally overrides harness\nconfiguration.\n\n# Example TOML\n\n```toml\n[[sessions]]\nspec = \"auth-flow\"\n\n[[sessions]]\nspec = \"checkout\"\nname = \"checkout-with-hooks\"\n```",
+  "properties": {
+    "sessions": {
+      "description": "Ordered list of sessions to execute.\n\nMaps to `[[sessions]]` in TOML. At least one session is expected,\nbut emptiness is a validation concern, not a deserialization concern.",
+      "items": {
+        "$ref": "#/$defs/ManifestSession"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "sessions"
+  ],
+  "title": "RunManifest",
+  "type": "object"
+}

@@ -2,6 +2,7 @@ use std::path::PathBuf;
 use thiserror::Error;
 
 use crate::config::ConfigError;
+use crate::manifest::ManifestError;
 use crate::spec::SpecError;
 
 /// Errors from the evaluator subprocess.
@@ -98,6 +99,24 @@ pub enum AssayError {
         path: PathBuf,
         /// All validation errors found.
         errors: Vec<ConfigError>,
+    },
+
+    /// Manifest file parsing failed (invalid TOML or schema mismatch).
+    #[error("parsing manifest `{path}`: {message}")]
+    ManifestParse {
+        /// The manifest file that failed to parse.
+        path: PathBuf,
+        /// The parse error message (includes line/column caret-pointer).
+        message: String,
+    },
+
+    /// Manifest validation failed (structurally valid TOML but semantically invalid).
+    #[error("invalid manifest `{path}`:\n{}", .errors.iter().map(|e| format!("  - {e}")).collect::<Vec<_>>().join("\n"))]
+    ManifestValidation {
+        /// The manifest file that failed validation.
+        path: PathBuf,
+        /// All validation errors found.
+        errors: Vec<ManifestError>,
     },
 
     /// Init refused because `.assay/` already exists.

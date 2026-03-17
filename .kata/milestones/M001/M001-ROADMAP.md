@@ -62,7 +62,7 @@ This milestone is complete only when all are true:
 - [x] **S05: Worktree Enhancements & Tech Debt** `risk:low` `depends:[S01]`
   > After this: worktrees have session linkage, orphan detection, collision prevention, and 15 tech debt issues are resolved. `just ready` passes.
 
-- [ ] **S06: RunManifest Type & Parsing** `risk:low` `depends:[S02]`
+- [x] **S06: RunManifest Type & Parsing** `risk:low` `depends:[S02]`
   > After this: TOML manifests with `[[sessions]]` parse into RunManifest types with validation and actionable error messages. Verified by round-trip and error-case tests.
 
 - [ ] **S07: End-to-End Pipeline** `risk:high` `depends:[S04,S05,S06]`

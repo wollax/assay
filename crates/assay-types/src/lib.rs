@@ -18,6 +18,7 @@ pub mod gate;
 pub mod gate_run;
 pub mod gates_spec;
 pub mod harness;
+pub mod manifest;
 pub mod merge;
 pub mod schema_registry;
 pub mod session;
@@ -45,6 +46,7 @@ pub use gates_spec::{GateCriterion, GatesSpec};
 pub use harness::{
     HarnessProfile, HookContract, HookEvent, PromptLayer, PromptLayerKind, SettingsOverride,
 };
+pub use manifest::{ManifestSession, RunManifest};
 pub use merge::{ChangeType, ConflictType, FileChange, MergeCheck, MergeConflict};
 pub use session::{AgentEvaluation, Confidence, EvaluatorRole, GateEvalContext};
 pub use validation::{Diagnostic, DiagnosticSummary, Severity, ValidationResult};

@@ -18,6 +18,9 @@ pub mod workflow;
 /// Configuration loading and validation.
 pub mod config;
 
+/// Run manifest loading and validation.
+pub mod manifest;
+
 /// Run history persistence.
 pub mod history;
 

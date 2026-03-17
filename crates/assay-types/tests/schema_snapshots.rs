@@ -202,3 +202,15 @@ fn hook_event_schema_snapshot() {
     let schema = schemars::schema_for!(assay_types::HookEvent);
     assert_json_snapshot!("hook-event-schema", schema.to_value());
 }
+
+#[test]
+fn run_manifest_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::RunManifest);
+    assert_json_snapshot!("run-manifest-schema", schema.to_value());
+}
+
+#[test]
+fn manifest_session_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::ManifestSession);
+    assert_json_snapshot!("manifest-session-schema", schema.to_value());
+}
