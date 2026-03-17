@@ -154,6 +154,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "assay-harness"
+version = "0.4.0"
+dependencies = [
+ "assay-core",
+ "assay-types",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "assay-mcp"
 version = "0.4.0"
 dependencies = [

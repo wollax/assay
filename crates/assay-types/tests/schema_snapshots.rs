@@ -160,3 +160,39 @@ fn worktree_metadata_schema_snapshot() {
     let schema = schemars::schema_for!(assay_types::WorktreeMetadata);
     assert_json_snapshot!("worktree-metadata-schema", schema.to_value());
 }
+
+#[test]
+fn harness_profile_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::HarnessProfile);
+    assert_json_snapshot!("harness-profile-schema", schema.to_value());
+}
+
+#[test]
+fn prompt_layer_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::PromptLayer);
+    assert_json_snapshot!("prompt-layer-schema", schema.to_value());
+}
+
+#[test]
+fn prompt_layer_kind_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::PromptLayerKind);
+    assert_json_snapshot!("prompt-layer-kind-schema", schema.to_value());
+}
+
+#[test]
+fn settings_override_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::SettingsOverride);
+    assert_json_snapshot!("settings-override-schema", schema.to_value());
+}
+
+#[test]
+fn hook_contract_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::HookContract);
+    assert_json_snapshot!("hook-contract-schema", schema.to_value());
+}
+
+#[test]
+fn hook_event_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::HookEvent);
+    assert_json_snapshot!("hook-event-schema", schema.to_value());
+}

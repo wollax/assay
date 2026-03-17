@@ -1,0 +1,56 @@
+---
+source: crates/assay-types/tests/schema_snapshots.rs
+expression: schema.to_value()
+---
+{
+  "$defs": {
+    "HookEvent": {
+      "description": "Lifecycle event that the harness can hook into.\n\nHooks fire at specific points during agent execution:\n- `PreTool`: before a tool invocation\n- `PostTool`: after a tool invocation completes\n- `Stop`: when the agent session is stopping",
+      "oneOf": [
+        {
+          "const": "pre-tool",
+          "description": "Fires before a tool invocation.",
+          "type": "string"
+        },
+        {
+          "const": "post-tool",
+          "description": "Fires after a tool invocation completes.",
+          "type": "string"
+        },
+        {
+          "const": "stop",
+          "description": "Fires when the agent session is stopping.",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "A lifecycle hook that runs an external command at a specific event.",
+  "properties": {
+    "command": {
+      "description": "Shell command to execute when the event fires.",
+      "type": "string"
+    },
+    "event": {
+      "$ref": "#/$defs/HookEvent",
+      "description": "The lifecycle event that triggers this hook."
+    },
+    "timeout_secs": {
+      "description": "Maximum seconds to wait for the command to complete.",
+      "format": "uint64",
+      "minimum": 0,
+      "type": [
+        "integer",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "event",
+    "command"
+  ],
+  "title": "HookContract",
+  "type": "object"
+}

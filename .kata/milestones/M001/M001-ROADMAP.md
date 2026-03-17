@@ -50,7 +50,7 @@ This milestone is complete only when all are true:
 - [x] **S01: Prerequisites — Persistence & Rename** `risk:medium` `depends:[]`
   > After this: GateEvalContext persists to disk (verified by restart test), and all "AgentSession" references are renamed. `just ready` passes.
 
-- [ ] **S02: Harness Crate & Profile Type** `risk:medium` `depends:[S01]`
+- [x] **S02: Harness Crate & Profile Type** `risk:medium` `depends:[S01]`
   > After this: `assay-harness` crate exists in workspace, `HarnessProfile` type compiles in assay-types with schema snapshot. `just ready` passes.
 
 - [ ] **S03: Prompt Builder, Settings Merger & Hook Contracts** `risk:medium` `depends:[S02]`

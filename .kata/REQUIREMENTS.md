@@ -26,25 +26,25 @@
 
 ### R003 — Harness crate exists
 - Class: core-capability
-- Status: active
+- Status: validated
 - Description: `assay-harness` crate exists as a leaf in the workspace dependency graph, depending on assay-core and assay-types
 - Why it matters: Harness implementations depend on core, not vice versa — preserves clean dep graph
 - Source: user
 - Primary owning slice: M001/S02
 - Supporting slices: none
-- Validation: unmapped
-- Notes: New crate, leaf node in workspace
+- Validation: S02 — `cargo build -p assay-harness` compiles with correct dependency edges, workspace dep entry in root Cargo.toml
+- Notes: Validated by S02. Crate has module stubs for prompt, settings, claude (filled by S03/S04).
 
 ### R004 — HarnessProfile type
 - Class: core-capability
-- Status: active
+- Status: validated
 - Description: `HarnessProfile` type in assay-types describes a complete agent configuration: prompt template, settings, and hook definitions
 - Why it matters: The profile is the input contract for all harness adapters
 - Source: user
 - Primary owning slice: M001/S02
 - Supporting slices: M001/S03
-- Validation: unmapped
-- Notes: Serializable DTO — goes in assay-types
+- Validation: S02 — 6 types with full derives, deny_unknown_fields, inventory registration, schema snapshots locked, re-exported from assay-types
+- Notes: Validated by S02. Type contract locked by schema snapshots. S03 will use these types for prompt builder and settings merger.
 
 ### R005 — Layered prompt builder
 - Class: core-capability
@@ -342,8 +342,8 @@
 |---|---|---|---|---|---|
 | R001 | core-capability | validated | M001/S01 | none | S01 |
 | R002 | quality-attribute | validated | M001/S01 | none | S01 |
-| R003 | core-capability | active | M001/S02 | none | unmapped |
-| R004 | core-capability | active | M001/S02 | M001/S03 | unmapped |
+| R003 | core-capability | validated | M001/S02 | none | S02 |
+| R004 | core-capability | validated | M001/S02 | M001/S03 | S02 |
 | R005 | core-capability | active | M001/S03 | none | unmapped |
 | R006 | core-capability | active | M001/S03 | none | unmapped |
 | R007 | core-capability | active | M001/S03 | M001/S04 | unmapped |
@@ -373,7 +373,7 @@
 
 ## Coverage Summary
 
-- Active requirements: 17
+- Active requirements: 15
 - Mapped to slices: 19
-- Validated: 2
+- Validated: 4
 - Unmapped active requirements: 0
