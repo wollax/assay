@@ -380,6 +380,24 @@ pub enum AssayError {
         message: String,
     },
 
+    /// A `git merge --no-ff` execution failed.
+    #[error("merge execute failed for branch `{branch}`: {message}")]
+    MergeExecuteError {
+        /// The branch that was being merged.
+        branch: String,
+        /// Files involved in the conflict (empty if not a conflict failure).
+        conflicting_files: Vec<String>,
+        /// Description of the failure.
+        message: String,
+    },
+
+    /// Merge runner pre-flight or sequencing error.
+    #[error("merge runner error: {message}")]
+    MergeRunnerError {
+        /// Description of the failure.
+        message: String,
+    },
+
     /// Context budgeting failed (cupel pipeline or budget construction error).
     #[error("context budgeting failed: {source}")]
     ContextBudget {

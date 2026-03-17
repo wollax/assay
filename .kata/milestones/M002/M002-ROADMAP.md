@@ -63,7 +63,7 @@ This milestone is complete only when all are true:
 - [x] **S02: Parallel Session Executor** `risk:high` `depends:[S01]`
   > After this: `assay run` on a multi-session manifest launches independent sessions concurrently via `std::thread::scope` with bounded concurrency (default: min(sessions, 8)), serializes worktree creation through a mutex, respects dependency ordering, skips dependents of failed sessions, and reports per-session outcomes with timing. Orchestrator state persists to disk for status queries. Verified by unit tests with mock harness writers confirming parallel execution, correct ordering, and failure propagation. Reference spec: Smelt's `orchestrate/executor.rs` (phases, failure policy, state persistence).
 
-- [ ] **S03: Sequential Merge Runner & Conflict Contract** `risk:medium` `depends:[S02]`
+- [x] **S03: Sequential Merge Runner & Conflict Contract** `risk:medium` `depends:[S02]`
   > After this: after parallel execution completes, the orchestrator merges each successful session's branch into the base branch in topological order using `git merge --no-ff`. Merge ordering supports completion-time (default) and file-overlap strategies. Each merge re-checks for conflicts against the updated base. Conflict handler is a closure receiving (session_name, files, scan, work_dir) → Resolved/Skip/Abort. Default handler skips on conflict. Failed merges reported with conflicting files. Verified by integration tests with real git repos containing parallel branches. Reference spec: Smelt's `merge/` module (ordering.rs, conflict.rs, mod.rs squash-merge loop).
 
 - [ ] **S04: Codex & OpenCode Adapters** `risk:medium` `depends:[]`

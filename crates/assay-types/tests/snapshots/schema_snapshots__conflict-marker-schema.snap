@@ -1,0 +1,54 @@
+---
+source: crates/assay-types/tests/schema_snapshots.rs
+expression: schema.to_value()
+---
+{
+  "$defs": {
+    "MarkerType": {
+      "description": "Type of a conflict marker found in a file.",
+      "oneOf": [
+        {
+          "const": "ours",
+          "description": "Start of \"ours\" side: `<<<<<<<`",
+          "type": "string"
+        },
+        {
+          "const": "separator",
+          "description": "Separator between sides: `=======`",
+          "type": "string"
+        },
+        {
+          "const": "theirs",
+          "description": "Start of \"theirs\" side: `>>>>>>>`",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "A single conflict marker found in a file.",
+  "properties": {
+    "file": {
+      "description": "File path relative to the repository root.",
+      "type": "string"
+    },
+    "line": {
+      "description": "1-based line number where the marker was found.",
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "marker_type": {
+      "$ref": "#/$defs/MarkerType",
+      "description": "Type of marker (`<<<<<<<`, `=======`, or `>>>>>>>`)."
+    }
+  },
+  "required": [
+    "file",
+    "line",
+    "marker_type"
+  ],
+  "title": "ConflictMarker",
+  "type": "object"
+}

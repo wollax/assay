@@ -255,7 +255,7 @@
 - Primary owning slice: M002/S03
 - Supporting slices: M002/S06
 - Validation: Integration tests with real git repos verifying topological merge order, conflict detection against updated base, failed-merge reporting
-- Notes: merge_check already exists (read-only); S03 adds merge_execute (side-effecting). AI conflict resolution deferred to M003 (R026).
+- Notes: S03 delivered merge_execute (side-effecting), ordering strategies (CompletionTime/FileOverlap), merge_completed_sessions sequencing loop with conflict handler closure, and MergeReport. 41 tests (27 merge + 8 ordering + 6 merge runner) with real git repos. Awaits S06 for end-to-end wiring through the real orchestrator pipeline. AI conflict resolution deferred to M003 (R026).
 
 ### R024 — Additional harness adapters
 - Class: differentiator

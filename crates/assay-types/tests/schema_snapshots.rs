@@ -215,6 +215,26 @@ fn manifest_session_schema_snapshot() {
     assert_json_snapshot!("manifest-session-schema", schema.to_value());
 }
 
+// ── Merge execution types ────────────────────────────────────────────
+
+#[test]
+fn merge_execute_result_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::MergeExecuteResult);
+    assert_json_snapshot!("merge-execute-result-schema", schema.to_value());
+}
+
+#[test]
+fn conflict_scan_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::ConflictScan);
+    assert_json_snapshot!("conflict-scan-schema", schema.to_value());
+}
+
+#[test]
+fn conflict_marker_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::ConflictMarker);
+    assert_json_snapshot!("conflict-marker-schema", schema.to_value());
+}
+
 // ── Orchestrator types (behind orchestrate feature) ──────────────────
 
 #[cfg(feature = "orchestrate")]
@@ -250,4 +270,55 @@ fn session_status_schema_snapshot() {
 fn orchestrator_status_schema_snapshot() {
     let schema = schemars::schema_for!(assay_types::OrchestratorStatus);
     assert_json_snapshot!("orchestrator-status-schema", schema.to_value());
+}
+
+// ── Merge ordering & runner types ────────────────────────────────────
+
+#[cfg(feature = "orchestrate")]
+#[test]
+fn merge_strategy_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::MergeStrategy);
+    assert_json_snapshot!("merge-strategy-schema", schema.to_value());
+}
+
+#[cfg(feature = "orchestrate")]
+#[test]
+fn merge_plan_entry_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::MergePlanEntry);
+    assert_json_snapshot!("merge-plan-entry-schema", schema.to_value());
+}
+
+#[cfg(feature = "orchestrate")]
+#[test]
+fn merge_plan_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::MergePlan);
+    assert_json_snapshot!("merge-plan-schema", schema.to_value());
+}
+
+#[cfg(feature = "orchestrate")]
+#[test]
+fn merge_session_status_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::MergeSessionStatus);
+    assert_json_snapshot!("merge-session-status-schema", schema.to_value());
+}
+
+#[cfg(feature = "orchestrate")]
+#[test]
+fn merge_session_result_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::MergeSessionResult);
+    assert_json_snapshot!("merge-session-result-schema", schema.to_value());
+}
+
+#[cfg(feature = "orchestrate")]
+#[test]
+fn merge_report_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::MergeReport);
+    assert_json_snapshot!("merge-report-schema", schema.to_value());
+}
+
+#[cfg(feature = "orchestrate")]
+#[test]
+fn conflict_action_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::ConflictAction);
+    assert_json_snapshot!("conflict-action-schema", schema.to_value());
 }

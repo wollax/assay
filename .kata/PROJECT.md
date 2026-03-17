@@ -42,5 +42,5 @@ See `.kata/REQUIREMENTS.md` for the explicit capability contract, requirement st
 ## Milestone Sequence
 
 - [x] M001: Single-Agent Harness — manifest → worktree → agent launch → gate → merge propose (complete, 19 requirements validated, UAT pending real Claude Code invocation)
-- [ ] M002: Multi-Agent Orchestration — DAG executor, parallel sessions, sequential merge
+- [ ] M002: Multi-Agent Orchestration — DAG executor, parallel sessions, sequential merge (S01-S03 complete, S04-S06 remaining)
 - [ ] M003: Conflict Resolution & Polish — AI conflict resolution, additional adapters, type unification

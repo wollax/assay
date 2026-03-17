@@ -1,10 +1,9 @@
 # Kata State
 
 **Active Milestone:** M002 — Multi-Agent Orchestration & Harness Platform
-**Active Slice:** None — ready for next slice
-**Active Task:** None
-**Phase:** Between Slices
-**Slice Branch:** kata/M002/S02
+**Active Slice:** none (S03 complete, awaiting next slice)
+**Phase:** Between slices
+**Slice Branch:** kata/M002/S03
 **Last Updated:** 2026-03-17
 **Requirements Status:** 4 active · 19 validated · 3 deferred · 4 out of scope
 
@@ -14,9 +13,9 @@
 
 ## M002 Progress
 
-- [x] S01: Manifest Dependencies & DAG Validation (4/4 tasks, 35 new tests, 700 total assay-core tests with feature) ✅
-- [x] S02: Parallel Session Executor (4/4 tasks, 18 executor tests, 718 total assay-core tests with feature) ✅
-- [ ] S03: Sequential Merge Runner & Conflict Contract (depends: S02)
+- [x] S01: Manifest Dependencies & DAG Validation (4/4 tasks, 35 new tests) ✅
+- [x] S02: Parallel Session Executor (4/4 tasks, 18 executor tests) ✅
+- [x] S03: Sequential Merge Runner & Conflict Contract (3/3 tasks, 41 new tests) ✅
 - [ ] S04: Codex & OpenCode Adapters (independent)
 - [ ] S05: Harness CLI & Scope Enforcement (depends: S04, S02)
 - [ ] S06: MCP Tools & End-to-End Integration (depends: S03, S05)
@@ -35,4 +34,4 @@
 
 ## Next Action
 
-S02 complete. Next candidates: S03 (Sequential Merge Runner, depends S02) or S04 (Codex & OpenCode Adapters, independent). S03 and S04 can proceed in parallel.
+S03 complete. Next: S04 (Codex & OpenCode Adapters) — independent slice, no dependencies.

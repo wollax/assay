@@ -50,7 +50,10 @@ pub use harness::{
     HarnessProfile, HookContract, HookEvent, PromptLayer, PromptLayerKind, SettingsOverride,
 };
 pub use manifest::{ManifestSession, RunManifest};
-pub use merge::{ChangeType, ConflictType, FileChange, MergeCheck, MergeConflict};
+pub use merge::{
+    ChangeType, ConflictMarker, ConflictScan, ConflictType, FileChange, MarkerType, MergeCheck,
+    MergeConflict, MergeExecuteResult,
+};
 pub use session::{AgentEvaluation, Confidence, EvaluatorRole, GateEvalContext};
 pub use validation::{Diagnostic, DiagnosticSummary, Severity, ValidationResult};
 pub use work_session::{AgentInvocation, PhaseTransition, SessionPhase, WorkSession};
@@ -58,7 +61,9 @@ pub use worktree::{WorktreeConfig, WorktreeInfo, WorktreeMetadata, WorktreeStatu
 
 #[cfg(feature = "orchestrate")]
 pub use orchestrate::{
-    FailurePolicy, OrchestratorPhase, OrchestratorStatus, SessionRunState, SessionStatus,
+    ConflictAction, FailurePolicy, MergePlan, MergePlanEntry, MergeReport, MergeSessionResult,
+    MergeSessionStatus, MergeStrategy, OrchestratorPhase, OrchestratorStatus, SessionRunState,
+    SessionStatus,
 };
 
 /// Marker badge for directory-based specs in CLI output (e.g., `auth-flow  [srs] 3 criteria`).

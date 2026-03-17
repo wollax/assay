@@ -109,6 +109,117 @@ pub struct OrchestratorStatus {
     pub completed_at: Option<DateTime<Utc>>,
 }
 
+// ── Merge ordering & runner types ─────────────────────────────────────
+
+/// Strategy for ordering session branches during the merge phase.
+///
+/// Determines the sequence in which completed session branches are merged
+/// into the base branch. Order matters: merging A then B can succeed while
+/// B then A conflicts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum MergeStrategy {
+    /// Sort by completion timestamp, with topological index as tiebreak.
+    CompletionTime,
+    /// Greedy algorithm: iteratively pick the session whose changed files
+    /// have the least overlap with the already-merged set.
+    FileOverlap,
+}
+
+/// A single entry in the merge plan, recording why a session was placed
+/// at a particular position in the merge sequence.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct MergePlanEntry {
+    /// Effective session name.
+    pub session_name: String,
+    /// 0-based position in the merge sequence.
+    pub position: usize,
+    /// Human-readable reason for this placement (e.g., "earliest completion" or "0 overlapping files").
+    pub reason: String,
+}
+
+/// The planned merge order for a set of sessions, including the strategy
+/// used and per-session rationale.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct MergePlan {
+    /// Strategy used to determine the ordering.
+    pub strategy: MergeStrategy,
+    /// Per-session ordering entries.
+    pub entries: Vec<MergePlanEntry>,
+}
+
+/// Status of a single session after the merge phase.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum MergeSessionStatus {
+    /// Session branch was successfully merged.
+    Merged,
+    /// Session was skipped (e.g., not completed or filtered out before merge).
+    Skipped,
+    /// Session was skipped because its merge had a conflict and the handler chose to skip.
+    ConflictSkipped,
+    /// Merge sequence was aborted (conflict handler chose abort, or abort policy triggered).
+    Aborted,
+    /// Session merge failed due to an infrastructure error.
+    Failed,
+}
+
+/// Per-session result from the merge phase.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct MergeSessionResult {
+    /// Effective session name.
+    pub session_name: String,
+    /// Merge outcome status.
+    pub status: MergeSessionStatus,
+    /// SHA of the merge commit (present only when status is `Merged`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub merge_sha: Option<String>,
+    /// Error or skip reason (present for `Failed`, `ConflictSkipped`, `Aborted`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+/// Summary report of the entire merge phase.
+///
+/// Provides aggregate counts and per-session details for post-run inspection.
+/// Serializable for persistence alongside [`OrchestratorStatus`].
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct MergeReport {
+    /// Number of sessions successfully merged.
+    pub sessions_merged: usize,
+    /// Number of sessions skipped (pre-merge filtering).
+    pub sessions_skipped: usize,
+    /// Number of sessions skipped due to conflicts.
+    pub conflict_skipped: usize,
+    /// Number of sessions aborted.
+    pub aborted: usize,
+    /// The merge plan that determined ordering.
+    pub plan: MergePlan,
+    /// Per-session merge results in merge-order sequence.
+    pub results: Vec<MergeSessionResult>,
+    /// Wall-clock duration of the merge phase in seconds.
+    pub duration_secs: f64,
+}
+
+/// Action to take when a merge conflict is detected.
+///
+/// Passed to the conflict handler closure. Not `deny_unknown_fields` since
+/// it is operational (not a persistence contract), but has serde for logging.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ConflictAction {
+    /// Conflict was resolved; the provided string is the resolution commit SHA.
+    Resolved(String),
+    /// Skip this session and continue with the next.
+    Skip,
+    /// Abort the entire merge sequence.
+    Abort,
+}
+
 // ── Schema registry submissions ──────────────────────────────────────
 
 inventory::submit! {
@@ -143,6 +254,55 @@ inventory::submit! {
     schema_registry::SchemaEntry {
         name: "orchestrator-status",
         generate: || schemars::schema_for!(OrchestratorStatus),
+    }
+}
+
+inventory::submit! {
+    schema_registry::SchemaEntry {
+        name: "merge-strategy",
+        generate: || schemars::schema_for!(MergeStrategy),
+    }
+}
+
+inventory::submit! {
+    schema_registry::SchemaEntry {
+        name: "merge-plan-entry",
+        generate: || schemars::schema_for!(MergePlanEntry),
+    }
+}
+
+inventory::submit! {
+    schema_registry::SchemaEntry {
+        name: "merge-plan",
+        generate: || schemars::schema_for!(MergePlan),
+    }
+}
+
+inventory::submit! {
+    schema_registry::SchemaEntry {
+        name: "merge-session-status",
+        generate: || schemars::schema_for!(MergeSessionStatus),
+    }
+}
+
+inventory::submit! {
+    schema_registry::SchemaEntry {
+        name: "merge-session-result",
+        generate: || schemars::schema_for!(MergeSessionResult),
+    }
+}
+
+inventory::submit! {
+    schema_registry::SchemaEntry {
+        name: "merge-report",
+        generate: || schemars::schema_for!(MergeReport),
+    }
+}
+
+inventory::submit! {
+    schema_registry::SchemaEntry {
+        name: "conflict-action",
+        generate: || schemars::schema_for!(ConflictAction),
     }
 }
 
@@ -313,6 +473,134 @@ mod tests {
         let json = r#"{"name":"x","spec":"s","state":"pending","unknown_field":true}"#;
         let result = serde_json::from_str::<SessionStatus>(json);
         assert!(result.is_err(), "should reject unknown fields");
+    }
+
+    #[test]
+    fn merge_strategy_serde_roundtrip() {
+        let strategies = vec![MergeStrategy::CompletionTime, MergeStrategy::FileOverlap];
+        for s in &strategies {
+            let json = serde_json::to_string(s).unwrap();
+            let back: MergeStrategy = serde_json::from_str(&json).unwrap();
+            assert_eq!(&back, s);
+        }
+        assert_eq!(
+            serde_json::to_string(&MergeStrategy::CompletionTime).unwrap(),
+            "\"completion_time\""
+        );
+        assert_eq!(
+            serde_json::to_string(&MergeStrategy::FileOverlap).unwrap(),
+            "\"file_overlap\""
+        );
+    }
+
+    #[test]
+    fn merge_plan_entry_serde_roundtrip() {
+        let entry = MergePlanEntry {
+            session_name: "auth".to_string(),
+            position: 0,
+            reason: "earliest completion".to_string(),
+        };
+        let json = serde_json::to_string(&entry).unwrap();
+        let back: MergePlanEntry = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.session_name, "auth");
+        assert_eq!(back.position, 0);
+    }
+
+    #[test]
+    fn merge_plan_entry_deny_unknown_fields() {
+        let json = r#"{"session_name":"x","position":0,"reason":"y","extra":1}"#;
+        assert!(serde_json::from_str::<MergePlanEntry>(json).is_err());
+    }
+
+    #[test]
+    fn merge_plan_serde_roundtrip() {
+        let plan = MergePlan {
+            strategy: MergeStrategy::FileOverlap,
+            entries: vec![MergePlanEntry {
+                session_name: "auth".to_string(),
+                position: 0,
+                reason: "0 overlapping files".to_string(),
+            }],
+        };
+        let json = serde_json::to_string(&plan).unwrap();
+        let back: MergePlan = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.strategy, MergeStrategy::FileOverlap);
+        assert_eq!(back.entries.len(), 1);
+    }
+
+    #[test]
+    fn merge_session_status_serde_roundtrip() {
+        let statuses = vec![
+            MergeSessionStatus::Merged,
+            MergeSessionStatus::Skipped,
+            MergeSessionStatus::ConflictSkipped,
+            MergeSessionStatus::Aborted,
+            MergeSessionStatus::Failed,
+        ];
+        for s in &statuses {
+            let json = serde_json::to_string(s).unwrap();
+            let back: MergeSessionStatus = serde_json::from_str(&json).unwrap();
+            assert_eq!(&back, s);
+        }
+        assert_eq!(
+            serde_json::to_string(&MergeSessionStatus::ConflictSkipped).unwrap(),
+            "\"conflict_skipped\""
+        );
+    }
+
+    #[test]
+    fn merge_session_result_serde_roundtrip() {
+        let result = MergeSessionResult {
+            session_name: "auth".to_string(),
+            status: MergeSessionStatus::Merged,
+            merge_sha: Some("abc123".to_string()),
+            error: None,
+        };
+        let json = serde_json::to_string(&result).unwrap();
+        let back: MergeSessionResult = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.session_name, "auth");
+        assert_eq!(back.status, MergeSessionStatus::Merged);
+        assert!(back.merge_sha.is_some());
+    }
+
+    #[test]
+    fn merge_report_serde_roundtrip() {
+        let report = MergeReport {
+            sessions_merged: 2,
+            sessions_skipped: 0,
+            conflict_skipped: 1,
+            aborted: 0,
+            plan: MergePlan {
+                strategy: MergeStrategy::CompletionTime,
+                entries: vec![],
+            },
+            results: vec![],
+            duration_secs: 12.5,
+        };
+        let json = serde_json::to_string_pretty(&report).unwrap();
+        let back: MergeReport = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.sessions_merged, 2);
+        assert_eq!(back.conflict_skipped, 1);
+    }
+
+    #[test]
+    fn merge_report_deny_unknown_fields() {
+        let json = r#"{"sessions_merged":0,"sessions_skipped":0,"conflict_skipped":0,"aborted":0,"plan":{"strategy":"completion_time","entries":[]},"results":[],"duration_secs":0.0,"extra":1}"#;
+        assert!(serde_json::from_str::<MergeReport>(json).is_err());
+    }
+
+    #[test]
+    fn conflict_action_serde_roundtrip() {
+        let actions = vec![
+            ConflictAction::Resolved("abc123".to_string()),
+            ConflictAction::Skip,
+            ConflictAction::Abort,
+        ];
+        for a in &actions {
+            let json = serde_json::to_string(a).unwrap();
+            let back: ConflictAction = serde_json::from_str(&json).unwrap();
+            assert_eq!(&back, a);
+        }
     }
 
     #[test]

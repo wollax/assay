@@ -7,7 +7,10 @@
 use std::path::Path;
 use std::process::Command;
 
-use assay_types::{ChangeType, ConflictType, FileChange, MergeCheck, MergeConflict};
+use assay_types::{
+    ChangeType, ConflictMarker, ConflictScan, ConflictType, FileChange, MarkerType, MergeCheck,
+    MergeConflict, MergeExecuteResult,
+};
 
 use crate::error::{AssayError, Result};
 
@@ -18,7 +21,7 @@ use crate::error::{AssayError, Result};
 /// Execute a git command and return (stdout, stderr, exit_code) without checking success.
 ///
 /// Used when we need to inspect the exit code ourselves (e.g., merge-tree).
-fn git_raw(args: &[&str], cwd: &Path) -> Result<(String, String, Option<i32>)> {
+pub(crate) fn git_raw(args: &[&str], cwd: &Path) -> Result<(String, String, Option<i32>)> {
     let output = Command::new("git")
         .args(args)
         .current_dir(cwd)
@@ -38,7 +41,7 @@ fn git_raw(args: &[&str], cwd: &Path) -> Result<(String, String, Option<i32>)> {
 }
 
 /// Execute a git command and return stdout on success.
-fn git_command(args: &[&str], cwd: &Path) -> Result<String> {
+pub(crate) fn git_command(args: &[&str], cwd: &Path) -> Result<String> {
     let output = Command::new("git")
         .args(args)
         .current_dir(cwd)
@@ -362,6 +365,183 @@ pub fn merge_check(
 }
 
 // ---------------------------------------------------------------------------
+// Conflict marker scanning
+// ---------------------------------------------------------------------------
+
+/// Scan a string for standard git conflict markers (`<<<<<<<`, `=======`, `>>>>>>>`).
+///
+/// Returns a `ConflictScan` with the markers found and their line numbers.
+/// The `file` field on each marker is set to the provided `file_path`.
+pub fn scan_conflict_markers(content: &str, file_path: &str) -> ConflictScan {
+    let mut markers = Vec::new();
+
+    for (idx, line) in content.lines().enumerate() {
+        let trimmed = line.trim_start();
+        let marker_type = if trimmed.starts_with("<<<<<<<") {
+            Some(MarkerType::Ours)
+        } else if trimmed.starts_with("=======") {
+            Some(MarkerType::Separator)
+        } else if trimmed.starts_with(">>>>>>>") {
+            Some(MarkerType::Theirs)
+        } else {
+            None
+        };
+
+        if let Some(mt) = marker_type {
+            markers.push(ConflictMarker {
+                file: file_path.to_string(),
+                line: (idx + 1) as u32,
+                marker_type: mt,
+            });
+        }
+    }
+
+    let has_markers = !markers.is_empty();
+    ConflictScan {
+        has_markers,
+        markers,
+        truncated: false,
+    }
+}
+
+/// Scan multiple files for conflict markers, capping at 100 files.
+///
+/// Reads each file relative to `dir` and scans for conflict markers.
+/// If more than 100 files are provided, only the first 100 are scanned
+/// and `truncated` is set to `true`.
+pub fn scan_files_for_markers(dir: &Path, files: &[String]) -> ConflictScan {
+    const MAX_FILES: usize = 100;
+    let truncated = files.len() > MAX_FILES;
+    let scan_files = if truncated {
+        &files[..MAX_FILES]
+    } else {
+        files
+    };
+
+    let mut all_markers = Vec::new();
+
+    for file_path in scan_files {
+        let full_path = dir.join(file_path);
+        if let Ok(content) = std::fs::read_to_string(&full_path) {
+            let scan = scan_conflict_markers(&content, file_path);
+            all_markers.extend(scan.markers);
+        }
+    }
+
+    let has_markers = !all_markers.is_empty();
+    ConflictScan {
+        has_markers,
+        markers: all_markers,
+        truncated,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Merge execution
+// ---------------------------------------------------------------------------
+
+/// Execute `git merge --no-ff` and return a structured result.
+///
+/// On success, returns the merge commit SHA and changed files.
+/// On conflict, runs `git merge --abort` and returns conflict details.
+/// Checks for an in-progress merge before starting.
+///
+/// # Arguments
+///
+/// * `project_root` - Path to the git repository root.
+/// * `branch` - Branch name to merge into the current HEAD.
+/// * `message` - Commit message for the merge commit.
+pub fn merge_execute(
+    project_root: &Path,
+    branch: &str,
+    message: &str,
+) -> Result<MergeExecuteResult> {
+    // Check for in-progress merge
+    let git_dir = project_root.join(".git");
+    let merge_head = if git_dir.is_file() {
+        // Worktree: read the gitdir path from the .git file
+        let content = std::fs::read_to_string(&git_dir).map_err(|e| AssayError::Io {
+            operation: "reading .git file".to_string(),
+            path: git_dir.clone(),
+            source: e,
+        })?;
+        let gitdir = content
+            .trim()
+            .strip_prefix("gitdir: ")
+            .unwrap_or(content.trim());
+        Path::new(gitdir).join("MERGE_HEAD")
+    } else {
+        git_dir.join("MERGE_HEAD")
+    };
+
+    if merge_head.exists() {
+        return Err(AssayError::MergeExecuteError {
+            branch: branch.to_string(),
+            conflicting_files: Vec::new(),
+            message: "a merge is already in progress (MERGE_HEAD exists)".to_string(),
+        });
+    }
+
+    // Execute the merge
+    let (_stdout, stderr, exit_code) =
+        git_raw(&["merge", "--no-ff", "-m", message, branch], project_root)?;
+
+    if exit_code == Some(0) {
+        // Success — get the merge commit SHA
+        let merge_sha = git_command(&["rev-parse", "HEAD"], project_root)?;
+
+        // Get changed files via diff-tree against parents
+        let files_output = git_command(
+            &["diff-tree", "-r", "--name-status", "HEAD^1", "HEAD"],
+            project_root,
+        )
+        .unwrap_or_default();
+
+        let files_changed = parse_file_changes(&files_output);
+
+        Ok(MergeExecuteResult {
+            merge_sha: Some(merge_sha),
+            files_changed,
+            was_conflict: false,
+            conflict_details: None,
+        })
+    } else {
+        // Conflict — collect details before aborting
+        // List conflicting files from git status
+        let conflicting_files: Vec<String> =
+            git_command(&["diff", "--name-only", "--diff-filter=U"], project_root)
+                .unwrap_or_default()
+                .lines()
+                .filter(|l| !l.is_empty())
+                .map(|l| l.to_string())
+                .collect();
+
+        // Scan for conflict markers in the conflicting files
+        let conflict_scan = scan_files_for_markers(project_root, &conflicting_files);
+
+        // Abort the merge to leave the repo clean
+        let (_, abort_stderr, abort_exit) = git_raw(&["merge", "--abort"], project_root)?;
+
+        if abort_exit != Some(0) {
+            return Err(AssayError::MergeExecuteError {
+                branch: branch.to_string(),
+                conflicting_files,
+                message: format!(
+                    "merge conflict detected and git merge --abort failed: {stderr}; abort stderr: {abort_stderr}"
+                ),
+            });
+        }
+
+        Ok(MergeExecuteResult {
+            merge_sha: None,
+            files_changed: Vec::new(),
+            was_conflict: true,
+            conflict_details: Some(conflict_scan),
+        })
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -622,6 +802,240 @@ CONFLICT (content): Merge conflict in file3.rs";
         assert!(
             !is_valid_tree_oid("a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b"),
             "39 hex chars should be invalid (boundary test)"
+        );
+    }
+
+    // ── Conflict marker scanning tests ───────────────────────────────
+
+    #[test]
+    fn test_scan_conflict_markers_no_markers() {
+        let content = "fn main() {\n    println!(\"hello\");\n}\n";
+        let scan = scan_conflict_markers(content, "main.rs");
+        assert!(!scan.has_markers);
+        assert!(scan.markers.is_empty());
+        assert!(!scan.truncated);
+    }
+
+    #[test]
+    fn test_scan_conflict_markers_full_conflict() {
+        let content = "line 1\n<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> feature\nline 7\n";
+        let scan = scan_conflict_markers(content, "file.rs");
+        assert!(scan.has_markers);
+        assert_eq!(scan.markers.len(), 3);
+        assert_eq!(scan.markers[0].marker_type, MarkerType::Ours);
+        assert_eq!(scan.markers[0].line, 2);
+        assert_eq!(scan.markers[1].marker_type, MarkerType::Separator);
+        assert_eq!(scan.markers[1].line, 4);
+        assert_eq!(scan.markers[2].marker_type, MarkerType::Theirs);
+        assert_eq!(scan.markers[2].line, 6);
+        assert_eq!(scan.markers[0].file, "file.rs");
+    }
+
+    #[test]
+    fn test_scan_files_for_markers_real_files() {
+        let dir = tempfile::tempdir().unwrap();
+
+        // File with conflict markers
+        std::fs::write(
+            dir.path().join("conflict.rs"),
+            "<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> branch\n",
+        )
+        .unwrap();
+
+        // Clean file
+        std::fs::write(dir.path().join("clean.rs"), "fn main() {}\n").unwrap();
+
+        let files = vec!["conflict.rs".to_string(), "clean.rs".to_string()];
+        let scan = scan_files_for_markers(dir.path(), &files);
+
+        assert!(scan.has_markers);
+        assert_eq!(scan.markers.len(), 3); // 3 markers in conflict.rs
+        assert!(!scan.truncated);
+    }
+
+    #[test]
+    fn test_scan_files_for_markers_missing_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let files = vec!["nonexistent.rs".to_string()];
+        let scan = scan_files_for_markers(dir.path(), &files);
+        assert!(!scan.has_markers);
+        assert!(scan.markers.is_empty());
+    }
+
+    // ── Merge execution integration tests ────────────────────────────
+
+    /// Helper: create a new git repo in a temp dir with an initial commit.
+    fn setup_git_repo() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path();
+
+        // Init and configure
+        Command::new("git")
+            .args(["init"])
+            .current_dir(p)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["config", "user.email", "test@test.com"])
+            .current_dir(p)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["config", "user.name", "Test"])
+            .current_dir(p)
+            .output()
+            .unwrap();
+
+        // Initial commit on main
+        std::fs::write(p.join("readme.md"), "# hello\n").unwrap();
+        Command::new("git")
+            .args(["add", "."])
+            .current_dir(p)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["commit", "-m", "initial"])
+            .current_dir(p)
+            .output()
+            .unwrap();
+
+        dir
+    }
+
+    #[test]
+    fn test_merge_execute_clean_merge() {
+        let dir = setup_git_repo();
+        let p = dir.path();
+
+        // Create a feature branch with a new file
+        Command::new("git")
+            .args(["checkout", "-b", "feature"])
+            .current_dir(p)
+            .output()
+            .unwrap();
+        std::fs::write(p.join("feature.rs"), "fn feature() {}\n").unwrap();
+        Command::new("git")
+            .args(["add", "."])
+            .current_dir(p)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["commit", "-m", "add feature"])
+            .current_dir(p)
+            .output()
+            .unwrap();
+
+        // Switch back to main
+        Command::new("git")
+            .args(["checkout", "main"])
+            .current_dir(p)
+            .output()
+            .unwrap();
+
+        // Merge
+        let result = merge_execute(p, "feature", "merge feature").unwrap();
+
+        assert!(!result.was_conflict);
+        assert!(result.merge_sha.is_some());
+        assert!(!result.files_changed.is_empty());
+        assert!(result.conflict_details.is_none());
+
+        // Verify the merge SHA matches HEAD
+        let head = git_command(&["rev-parse", "HEAD"], p).unwrap();
+        assert_eq!(result.merge_sha.unwrap(), head);
+
+        // Verify the files_changed contains feature.rs
+        assert!(
+            result.files_changed.iter().any(|f| f.path == "feature.rs"),
+            "files_changed should include feature.rs, got: {:?}",
+            result.files_changed
+        );
+    }
+
+    #[test]
+    fn test_merge_execute_conflict_returns_details_and_aborts() {
+        let dir = setup_git_repo();
+        let p = dir.path();
+
+        // Create diverging branches
+        Command::new("git")
+            .args(["checkout", "-b", "feature"])
+            .current_dir(p)
+            .output()
+            .unwrap();
+        std::fs::write(p.join("readme.md"), "# feature version\n").unwrap();
+        Command::new("git")
+            .args(["add", "."])
+            .current_dir(p)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["commit", "-m", "feature change"])
+            .current_dir(p)
+            .output()
+            .unwrap();
+
+        Command::new("git")
+            .args(["checkout", "main"])
+            .current_dir(p)
+            .output()
+            .unwrap();
+        std::fs::write(p.join("readme.md"), "# main version\n").unwrap();
+        Command::new("git")
+            .args(["add", "."])
+            .current_dir(p)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["commit", "-m", "main change"])
+            .current_dir(p)
+            .output()
+            .unwrap();
+
+        // Attempt merge — should conflict
+        let result = merge_execute(p, "feature", "merge feature").unwrap();
+
+        assert!(result.was_conflict);
+        assert!(result.merge_sha.is_none());
+        assert!(result.files_changed.is_empty());
+        assert!(result.conflict_details.is_some());
+
+        // Verify repo is clean (abort worked)
+        let status = Command::new("git")
+            .args(["status", "--porcelain"])
+            .current_dir(p)
+            .output()
+            .unwrap();
+        let status_str = String::from_utf8_lossy(&status.stdout);
+        assert!(
+            status_str.trim().is_empty(),
+            "repo should be clean after abort, got: {status_str}"
+        );
+
+        // Verify MERGE_HEAD is gone
+        assert!(
+            !p.join(".git/MERGE_HEAD").exists(),
+            "MERGE_HEAD should be removed after abort"
+        );
+    }
+
+    #[test]
+    fn test_merge_execute_detects_in_progress_merge() {
+        let dir = setup_git_repo();
+        let p = dir.path();
+
+        // Simulate an in-progress merge by creating MERGE_HEAD
+        std::fs::write(
+            p.join(".git/MERGE_HEAD"),
+            "0000000000000000000000000000000000000000\n",
+        )
+        .unwrap();
+
+        let err = merge_execute(p, "feature", "merge").unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("already in progress"),
+            "expected in-progress error, got: {msg}"
         );
     }
 }

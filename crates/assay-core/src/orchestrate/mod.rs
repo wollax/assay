@@ -6,3 +6,5 @@
 
 pub mod dag;
 pub mod executor;
+pub mod merge_runner;
+pub mod ordering;
