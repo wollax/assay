@@ -50,7 +50,7 @@ No `.kata/REQUIREMENTS.md` exists — operating in legacy compatibility mode. M0
 
 ## Slices
 
-- [ ] **S01: Fix AssayInvoker — Real Assay Contract** `risk:high` `depends:[]`
+- [x] **S01: Fix AssayInvoker — Real Assay Contract** `risk:high` `depends:[]`
   > After this: `cargo test -p smelt-core` shows unit tests proving `AssayInvoker` generates `[[sessions]]` key, spec-name references (not inline descriptions), valid flat `Spec` TOML files with `[[criteria]]`, session name sanitization, and `--base-branch` flag — all verifiable without Docker.
 
 - [ ] **S02: Real Assay Binary + Production Wiring** `risk:high` `depends:[S01]`

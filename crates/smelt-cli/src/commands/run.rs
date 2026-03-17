@@ -117,7 +117,7 @@ where
         .set_phase(JobPhase::WritingManifest)
         .map_err(|e| anyhow::anyhow!("{e}"))?;
     eprintln!("Writing manifest...");
-    let toml_content = smelt_core::AssayInvoker::build_manifest_toml(&manifest);
+    let toml_content = smelt_core::AssayInvoker::build_run_manifest_toml(&manifest);
     let write_result = smelt_core::AssayInvoker::write_manifest_to_container(
         &provider,
         &container,

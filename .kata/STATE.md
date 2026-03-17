@@ -1,8 +1,9 @@
 # Kata State
 
 **Active Milestone:** M002 — Real Assay Integration
-**Active Slice:** none — roadmap written, ready to begin S01
-**Status:** M002-ROADMAP.md written. 4 slices planned (S01–S04). Ready to implement.
+**Active Slice:** S02 — Real Assay Binary + Production Wiring
+**Active Task:** S02 not yet started
+**Status:** S01 complete. All 13 AssayInvoker contract unit tests pass; cargo test --workspace exits 0 (110 smelt-core tests, 0 failed). Ready for S02.
 **Phase:** Implementation
 
 ## Recent Decisions
@@ -12,7 +13,7 @@
 - D046: `exec_streaming()` alongside `exec()` — buffered exec retained for setup phases, streaming for assay run phase
 
 ## Progress (M002)
-- S01: ⬜ Fix AssayInvoker — Real Assay Contract
+- S01: ✅ Fix AssayInvoker — Real Assay Contract (T01 ✅, T02 ✅)
 - S02: ⬜ Real Assay Binary + Production Wiring
 - S03: ⬜ Streaming Assay Output
 - S04: ⬜ Exit Code 2 + Result Collection Compatibility
@@ -22,6 +23,7 @@
 
 ## Known Issues
 - `run_without_dry_run_attempts_docker` in `dry_run.rs` is a pre-existing failing test — scheduled for fix in S02
+- Phase 5.5 methods in `AssayInvoker` exist but are not yet wired into `execute_run()` — wiring is S02's job
 
 ## Next Action
-Start S01: rewrite `AssayInvoker` serde types and methods in `crates/smelt-core/src/assay.rs` to match real Assay schema. Replace `AssayManifest`/`AssaySession` with `SmeltRunManifest`/`SmeltManifestSession`/`SmeltSpec`/`SmeltCriterion`. Add `build_spec_toml()`, `write_spec_file_to_container()`, `build_ensure_specs_dir_command()`, `build_write_assay_config_command()`. Update `build_run_command()` to include `--base-branch`. Update all unit tests. Append D043 to DECISIONS.md.
+Begin S02: Real Assay Binary + Production Wiring. Key tasks: wire Phase 5.5 into execute_run(), add test_real_assay_manifest_parsing integration test (D039 phase-chaining + D040 binary injection), fix run_without_dry_run_attempts_docker.

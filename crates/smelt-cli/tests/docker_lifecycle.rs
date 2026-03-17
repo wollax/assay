@@ -456,7 +456,7 @@ async fn test_assay_mock_execution() {
     let container = provider.provision(&manifest).await.expect("provision");
 
     // Write the assay manifest into the container
-    let toml_content = smelt_core::AssayInvoker::build_manifest_toml(&manifest);
+    let toml_content = smelt_core::AssayInvoker::build_run_manifest_toml(&manifest);
     smelt_core::AssayInvoker::write_manifest_to_container(&provider, &container, &toml_content)
         .await
         .expect("write manifest");
@@ -535,7 +535,7 @@ async fn test_assay_mock_failure() {
     let container = provider.provision(&manifest).await.expect("provision");
 
     // Write the assay manifest
-    let toml_content = smelt_core::AssayInvoker::build_manifest_toml(&manifest);
+    let toml_content = smelt_core::AssayInvoker::build_run_manifest_toml(&manifest);
     smelt_core::AssayInvoker::write_manifest_to_container(&provider, &container, &toml_content)
         .await
         .expect("write manifest");
@@ -821,7 +821,7 @@ exit 0
     assert_eq!(write_handle.exit_code, 0, "writing mock assay should succeed: {}", write_handle.stderr);
 
     // 6. Write smelt manifest into container via AssayInvoker
-    let toml = smelt_core::AssayInvoker::build_manifest_toml(&manifest);
+    let toml = smelt_core::AssayInvoker::build_run_manifest_toml(&manifest);
     smelt_core::AssayInvoker::write_manifest_to_container(&provider, &container, &toml)
         .await
         .expect("write manifest to container");
@@ -967,7 +967,7 @@ async fn test_cancellation_triggers_teardown() {
 /// Test multi-session manifest round-trip: provision → write 2-session manifest with depends_on →
 /// read manifest back from container → verify both session names and depends_on → exec assay → teardown.
 ///
-/// Confirms that `AssayInvoker::build_manifest_toml` serializes both sessions and the
+/// Confirms that `AssayInvoker::build_run_manifest_toml` serializes both sessions and the
 /// `depends_on` relationship correctly, and that the mock assay sees the manifest.
 #[tokio::test]
 async fn test_multi_session_e2e() {
@@ -1015,7 +1015,7 @@ exit 0
     assert_eq!(wh.exit_code, 0, "writing mock assay should succeed: {}", wh.stderr);
 
     // Write smelt manifest into container via AssayInvoker
-    let toml = smelt_core::AssayInvoker::build_manifest_toml(&manifest);
+    let toml = smelt_core::AssayInvoker::build_run_manifest_toml(&manifest);
     smelt_core::AssayInvoker::write_manifest_to_container(&provider, &container, &toml)
         .await
         .expect("write manifest to container");
@@ -1103,7 +1103,7 @@ async fn test_e2e_assay_failure_no_orphans() {
     assert_eq!(wh.exit_code, 0, "writing failing mock should succeed: {}", wh.stderr);
 
     // Write smelt manifest into container
-    let toml = smelt_core::AssayInvoker::build_manifest_toml(&manifest);
+    let toml = smelt_core::AssayInvoker::build_run_manifest_toml(&manifest);
     smelt_core::AssayInvoker::write_manifest_to_container(&provider, &container, &toml)
         .await
         .expect("write manifest to container");
