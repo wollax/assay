@@ -34,3 +34,6 @@
 | D031 | M001-S04 | pattern | ResultCollector generic design  | Generic `<G: GitOps>` not `dyn GitOps`                | RPITIT (D019) makes trait not object-safe; generics keep testability | No |
 | D032 | M001-S04 | pattern | Host-side collection            | Collector reads host repo directly, not via Docker exec | Bind-mount (D013) means commits are already on host filesystem     | No |
 | D033 | M001-S04 | pattern | Target branch force-update      | Delete + recreate target branch if it exists            | Simple and explicit; warns with old/new hashes for auditability    | Yes — if append-mode needed |
+| D034 | M001-S05 | pattern | Monitor state file format        | TOML at `.smelt/run-state.toml`, single-job model       | TOML already in deps; no new dependency; sufficient for M001 single-job | Yes — if concurrent jobs needed |
+| D035 | M001-S05 | pattern | Timeout source                   | Max session timeout from manifest, fallback to config default | Matches existing `AssayInvoker::build_run_command()` logic; no new manifest field | Yes — if explicit job-level timeout field added |
+| D036 | M001-S05 | pattern | Signal handling via tokio::select! | `ctrl_c()` + `sleep(timeout)` racing against exec future | Standard tokio pattern; testable via cancellation abstraction | No |

@@ -983,6 +983,7 @@ dependencies = [
  "smelt-core",
  "tempfile",
  "tokio",
+ "toml",
  "tracing",
  "tracing-subscriber",
  "which",

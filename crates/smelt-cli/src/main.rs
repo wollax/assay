@@ -1,6 +1,6 @@
 //! Smelt CLI — containerized job execution engine.
 
-mod commands;
+use smelt_cli::commands;
 
 use clap::{Parser, Subcommand};
 
@@ -20,6 +20,8 @@ struct Cli {
 enum Commands {
     /// Run a job manifest
     Run(commands::run::RunArgs),
+    /// Show status of a running job
+    Status(commands::status::StatusArgs),
 }
 
 #[tokio::main]
@@ -38,6 +40,7 @@ async fn main() {
 
     let code = match cli.command {
         Commands::Run(ref args) => commands::run::execute(args).await,
+        Commands::Status(ref args) => commands::status::execute(args).await,
     };
 
     match code {

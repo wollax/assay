@@ -305,21 +305,27 @@ impl RuntimeProvider for DockerProvider {
             }
         }
 
-        // Force remove with anonymous volumes
+        // Force remove with anonymous volumes — tolerate 404 (already gone)
         let remove_opts = RemoveContainerOptionsBuilder::default()
             .force(true)
             .v(true)
             .build();
-        self.client
-            .remove_container(id, Some(remove_opts))
-            .await
-            .map_err(|e| {
-                SmeltError::provider_with_source(
-                    "teardown",
-                    format!("failed to remove container {container}: {e}"),
-                    e,
-                )
-            })?;
+        if let Err(e) = self.client.remove_container(id, Some(remove_opts)).await {
+            match &e {
+                bollard::errors::Error::DockerResponseServerError {
+                    status_code: 404, ..
+                } => {
+                    // Container already removed — idempotent teardown
+                }
+                _ => {
+                    return Err(SmeltError::provider_with_source(
+                        "teardown",
+                        format!("failed to remove container {container}: {e}"),
+                        e,
+                    ));
+                }
+            }
+        }
 
         info!(container_id = %id, "container removed");
 

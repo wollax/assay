@@ -7,6 +7,7 @@
 //! is unavailable, tests skip gracefully instead of failing.
 
 use std::collections::HashMap;
+use std::time::Instant;
 
 use base64::Engine as _;
 use bollard::query_parameters::InspectContainerOptions;
@@ -15,6 +16,8 @@ use smelt_core::manifest::{
     CredentialConfig, Environment, JobManifest, JobMeta, MergeConfig, SessionDef,
 };
 use smelt_core::provider::RuntimeProvider;
+
+
 
 /// Try to connect to Docker. Returns `None` if the daemon is unavailable,
 /// allowing tests to skip gracefully instead of panicking.
@@ -705,4 +708,115 @@ git commit -m "assay: add result"
         "files_changed should contain 'result.txt', got: {:?}",
         result.files_changed
     );
+}
+
+// ── Timeout & cancellation tests ───────────────────────────────────────
+
+// ── Timeout & cancellation tests ───────────────────────────────────────
+//
+// These tests exercise the `tokio::select!` pattern at the provider level:
+// provision a container, start a long-running exec, then race it against a
+// timeout or cancellation signal. Verifies that teardown always runs and
+// the container is cleaned up.
+
+/// Test that a timeout racing against a long exec triggers teardown.
+///
+/// Provisions a container, starts `sleep 120` inside it, races against a
+/// 2-second timeout, then tears down the container.
+#[tokio::test]
+async fn test_timeout_triggers_teardown() {
+    let Some(provider) = docker_provider_or_skip() else { return };
+    let manifest = test_manifest("timeout-teardown");
+
+    let container = provider.provision(&manifest).await.expect("provision");
+    let container_id = container.as_str().to_string();
+
+    let timeout_duration = std::time::Duration::from_secs(2);
+    let cmd = vec!["sh".to_string(), "-c".to_string(), "sleep 120".to_string()];
+
+    let start = Instant::now();
+
+    let exec_future = provider.exec(&container, &cmd);
+    let outcome = tokio::select! {
+        result = exec_future => {
+            panic!("exec should not complete before timeout, got: {:?}", result.map(|h| h.exit_code));
+        }
+        _ = tokio::time::sleep(timeout_duration) => {
+            "timeout"
+        }
+    };
+
+    let elapsed = start.elapsed();
+    assert_eq!(outcome, "timeout");
+    assert!(
+        elapsed.as_secs() < 10,
+        "should complete promptly at ~2s, took {}s",
+        elapsed.as_secs()
+    );
+
+    // Teardown must succeed after timeout
+    provider.teardown(&container).await.expect("teardown after timeout");
+    assert_container_removed(&provider, &container_id).await;
+}
+
+/// Test that cancellation racing against a long exec triggers teardown.
+///
+/// Provisions a container, starts `sleep 120` inside it, fires a cancel
+/// signal after 2 seconds, then tears down the container.
+#[tokio::test]
+async fn test_cancellation_triggers_teardown() {
+    let Some(provider) = docker_provider_or_skip() else { return };
+    let manifest = test_manifest("cancel-teardown");
+
+    let container = provider.provision(&manifest).await.expect("provision");
+    let container_id = container.as_str().to_string();
+
+    let (tx, rx) = tokio::sync::oneshot::channel::<()>();
+
+    // Fire cancel after 2 seconds
+    tokio::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+        let _ = tx.send(());
+    });
+
+    let cmd = vec!["sh".to_string(), "-c".to_string(), "sleep 120".to_string()];
+
+    let start = Instant::now();
+
+    let exec_future = provider.exec(&container, &cmd);
+    let outcome = tokio::select! {
+        result = exec_future => {
+            panic!("exec should not complete before cancel, got: {:?}", result.map(|h| h.exit_code));
+        }
+        _ = rx => {
+            "cancelled"
+        }
+    };
+
+    let elapsed = start.elapsed();
+    assert_eq!(outcome, "cancelled");
+    assert!(
+        elapsed.as_secs() < 10,
+        "should complete promptly at ~2s, took {}s",
+        elapsed.as_secs()
+    );
+
+    // Teardown must succeed after cancellation
+    provider.teardown(&container).await.expect("teardown after cancel");
+    assert_container_removed(&provider, &container_id).await;
+}
+
+/// Test that double teardown is safe (existing 404 tolerance in DockerProvider).
+#[tokio::test]
+async fn test_double_teardown_safe() {
+    let Some(provider) = docker_provider_or_skip() else { return };
+    let manifest = test_manifest("double-teardown");
+
+    let container = provider.provision(&manifest).await.expect("provision");
+    let container_id = container.as_str().to_string();
+
+    provider.teardown(&container).await.expect("first teardown");
+    // Second teardown should not error (404 tolerance)
+    provider.teardown(&container).await.expect("second teardown should be safe");
+    assert_container_removed(&provider, &container_id).await;
 }
