@@ -145,7 +145,7 @@ fn handle_worktree_create(
 ) -> anyhow::Result<i32> {
     let (root, worktree_dir, specs_dir) = resolve_dirs(worktree_dir_override)?;
 
-    let info = assay_core::worktree::create(&root, name, base, &worktree_dir, &specs_dir)
+    let info = assay_core::worktree::create(&root, name, base, &worktree_dir, &specs_dir, None)
         .map_err(|e| anyhow::anyhow!("{e}"))?;
 
     if json {

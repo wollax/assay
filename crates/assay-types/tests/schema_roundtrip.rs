@@ -591,5 +591,6 @@ fn worktree_metadata_validates() {
     validate(&WorktreeMetadata {
         base_branch: "main".to_string(),
         spec_slug: "auth-flow".to_string(),
+        session_id: None,
     });
 }

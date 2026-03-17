@@ -103,47 +103,47 @@
 
 ### R010 — Worktree orphan detection
 - Class: quality-attribute
-- Status: active
+- Status: validated
 - Description: Orphan detection identifies worktrees with no active WorkSession linked
 - Why it matters: Worktrees leak disk and git refs without lifecycle tracking
 - Source: inferred
 - Primary owning slice: M001/S05
 - Supporting slices: none
-- Validation: unmapped
-- Notes: Part of worktree enhancement work
+- Validation: S05 — `detect_orphans()` verified by 4 unit tests covering no-session, active-session, terminal-session, and missing-session classification
+- Notes: Validated by S05. Returns Vec<WorktreeInfo> for actionable cleanup targeting.
 
 ### R011 — Worktree collision prevention
 - Class: quality-attribute
-- Status: active
+- Status: validated
 - Description: Collision prevention rejects worktree creation when spec already has an active worktree with an in-progress session
 - Why it matters: Two worktrees for the same spec causes merge conflicts and wasted work
 - Source: inferred
 - Primary owning slice: M001/S05
 - Supporting slices: none
-- Validation: unmapped
-- Notes: Guards against double-launch
+- Validation: S05 — collision check in `create()` verified by 3 unit tests: active-session rejected with WorktreeCollision, terminal-session allowed, no-existing-worktree succeeds
+- Notes: Validated by S05. WorktreeCollision error includes spec_slug and existing_path for actionable diagnosis.
 
 ### R012 — WorktreeMetadata session linkage
 - Class: core-capability
-- Status: active
+- Status: validated
 - Description: WorktreeMetadata includes `session_id: Option<String>` for session linkage
 - Why it matters: Connects worktree lifecycle to session lifecycle for orphan detection
 - Source: inferred
 - Primary owning slice: M001/S05
 - Supporting slices: none
-- Validation: unmapped
-- Notes: Additive field on existing type
+- Validation: S05 — session_id field with serde(default, skip_serializing_if), deny_unknown_fields, schema snapshot, round-trip test with/without session_id and legacy JSON backward compatibility
+- Notes: Validated by S05. Field is metadata-only (not on WorktreeInfo).
 
 ### R013 — Worktree tech debt resolution
 - Class: quality-attribute
-- Status: active
+- Status: validated
 - Description: 15 worktree tech debt issues resolved (error chain, base_dir type, detect_main conflation, dirty error advice, env var docs, MCP cleanup --all, deny_unknown_fields, prune failure, 3 missing tests, to_string_lossy, field duplication, schema registry, usize serialization)
 - Why it matters: Tech debt compounds; cleaning up before adding harness integration prevents fragile foundations
 - Source: execution
 - Primary owning slice: M001/S05
 - Supporting slices: none
-- Validation: unmapped
-- Notes: 15 tracked issues from v0.4.x work
+- Validation: S05 — zero eprintln in worktree.rs, zero detect_main_worktree references, schema snapshots for WorktreeInfo/WorktreeStatus, 3 edge-case tests (corrupt metadata, git exclude, prune warning), just ready passes
+- Notes: Validated by S05. Items fixed or explicitly deferred with rationale (worktree_cleanup_all → M002, field duplication → post-stabilization).
 
 ### R014 — RunManifest type
 - Class: core-capability
@@ -349,10 +349,10 @@
 | R007 | core-capability | validated | M001/S03 | M001/S04 | S03 |
 | R008 | core-capability | validated | M001/S04 | none | S04 |
 | R009 | constraint | validated | M001/S04 | M001/S06 | S04 |
-| R010 | quality-attribute | active | M001/S05 | none | unmapped |
-| R011 | quality-attribute | active | M001/S05 | none | unmapped |
-| R012 | core-capability | active | M001/S05 | none | unmapped |
-| R013 | quality-attribute | active | M001/S05 | none | unmapped |
+| R010 | quality-attribute | validated | M001/S05 | none | S05 |
+| R011 | quality-attribute | validated | M001/S05 | none | S05 |
+| R012 | core-capability | validated | M001/S05 | none | S05 |
+| R013 | quality-attribute | validated | M001/S05 | none | S05 |
 | R014 | core-capability | active | M001/S06 | none | unmapped |
 | R015 | core-capability | active | M001/S06 | none | unmapped |
 | R016 | quality-attribute | active | M001/S06 | none | unmapped |
@@ -373,7 +373,7 @@
 
 ## Coverage Summary
 
-- Active requirements: 10
+- Active requirements: 6
 - Mapped to slices: 19
-- Validated: 9
+- Validated: 13
 - Unmapped active requirements: 0

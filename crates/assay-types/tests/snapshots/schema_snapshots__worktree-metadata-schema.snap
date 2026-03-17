@@ -4,11 +4,19 @@ expression: schema.to_value()
 ---
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
   "description": "Metadata persisted alongside a worktree at `<worktree>/.assay/worktree.json`.",
   "properties": {
     "base_branch": {
       "description": "The base branch this worktree was created from.",
       "type": "string"
+    },
+    "session_id": {
+      "description": "Optional session ID linking this worktree to an active work session.",
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "spec_slug": {
       "description": "The spec slug this worktree is associated with.",

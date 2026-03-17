@@ -150,6 +150,12 @@ fn gate_run_record_schema_snapshot() {
 }
 
 #[test]
+fn worktree_info_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::WorktreeInfo);
+    assert_json_snapshot!("worktree-info-schema", schema.to_value());
+}
+
+#[test]
 fn worktree_status_schema_snapshot() {
     let schema = schemars::schema_for!(assay_types::WorktreeStatus);
     assert_json_snapshot!("worktree-status-schema", schema.to_value());

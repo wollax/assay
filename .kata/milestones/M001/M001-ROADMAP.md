@@ -59,7 +59,7 @@ This milestone is complete only when all are true:
 - [x] **S04: Claude Code Adapter** `risk:high` `depends:[S03]`
   > After this: adapter generates valid CLAUDE.md, .mcp.json, settings overrides, and hooks.json from a HarnessProfile. Verified by snapshot tests and file content assertions.
 
-- [ ] **S05: Worktree Enhancements & Tech Debt** `risk:low` `depends:[S01]`
+- [x] **S05: Worktree Enhancements & Tech Debt** `risk:low` `depends:[S01]`
   > After this: worktrees have session linkage, orphan detection, collision prevention, and 15 tech debt issues are resolved. `just ready` passes.
 
 - [ ] **S06: RunManifest Type & Parsing** `risk:low` `depends:[S02]`

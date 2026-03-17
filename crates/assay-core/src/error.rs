@@ -316,6 +316,21 @@ pub enum AssayError {
         exit_code: Option<i32>,
     },
 
+    /// Worktree has an active session for this spec — cannot create a second.
+    ///
+    /// Returned by `create()` when an existing worktree for the same spec
+    /// has a linked, non-terminal work session. The user should complete or
+    /// abandon the existing session, then clean up the worktree before retrying.
+    #[error(
+        "spec `{spec_slug}` already has an active worktree at `{existing_path}`. Complete or abandon the existing session, then run cleanup before retrying."
+    )]
+    WorktreeCollision {
+        /// The spec slug that already has an active worktree.
+        spec_slug: String,
+        /// The path of the existing worktree with an active session.
+        existing_path: PathBuf,
+    },
+
     /// Worktree already exists for this spec.
     #[error("worktree already exists for spec `{spec_slug}` at {path}")]
     WorktreeExists {

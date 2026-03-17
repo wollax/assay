@@ -18,3 +18,4 @@
 | D010 | M001 | arch | HarnessProfile location | Type in assay-types, implementation in assay-harness | Cross-crate via serialization; follows existing pattern for types vs logic separation | No |
 | D011 | M001/S03 | convention | Settings merger field construction | Explicit struct construction (no `..base`) | Compile-time safety — adding a field to SettingsOverride forces merge_settings to handle it | No |
 | D012 | M001/S03 | convention | Vec merge semantics | Replace (non-empty override wins entirely) | Extend semantics would cause surprising duplicates; replace is predictable and explicit | Yes — if extend is needed later |
+| D013 | M001/S05 | convention | session_id scope | Metadata-only (not on WorktreeInfo) | Session linkage is a persistence/lifecycle concern; list/status responses don't need it. Keeps WorktreeInfo lean for MCP consumers | Yes — if S07 pipeline needs session_id in list results |

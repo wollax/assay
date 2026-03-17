@@ -131,7 +131,7 @@ expression: schema.to_value()
       "properties": {
         "base_dir": {
           "default": "",
-          "description": "Base directory for worktrees.\nRelative paths are resolved from the project root.\nDefault: `\"../<project-name>-worktrees/\"` (computed at runtime when empty).",
+          "description": "Base directory for worktrees.\nRelative paths are resolved from the project root.\nDefault: `\"../<project-name>-worktrees/\"` (computed at runtime when empty).\n\nStored as `String` rather than `PathBuf` because this is a serialized config field\nand changing the type would be a schema-breaking change.",
           "type": "string"
         }
       },

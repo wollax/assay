@@ -759,6 +759,10 @@ struct GateEvaluateSummary {
 }
 
 /// Response from the `worktree_list` tool.
+///
+/// NOTE: `WorktreeInfo` fields partially duplicate `WorktreeStatus` fields (spec_slug, path, branch).
+/// This is intentional — Info is the lightweight list entry, Status adds runtime state.
+/// Unifying them would be a schema-breaking change deferred per D005.
 #[derive(Serialize)]
 struct WorktreeListResponse {
     /// The worktree entries found.
@@ -2083,6 +2087,7 @@ impl AssayServer {
             params.0.base.as_deref(),
             &worktree_dir,
             &specs_dir,
+            None, // session linkage from MCP is future work
         ) {
             Ok(info) => info,
             Err(e) => return Ok(domain_error(&e)),
@@ -2163,6 +2168,8 @@ impl AssayServer {
             .map_err(|e| McpError::internal_error(format!("serialization failed: {e}"), None))?;
         Ok(CallToolResult::success(vec![Content::text(json)]))
     }
+
+    // TODO(M002): worktree_cleanup_all tool — deferred per D005 (MCP additive-only)
 
     /// Remove a worktree and its associated branch.
     #[tool(
