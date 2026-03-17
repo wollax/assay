@@ -230,8 +230,8 @@
 - Description: `orchestrate_*` MCP tools (additive, no changes to existing tools)
 - Why it matters: Programmatic access to multi-agent orchestration
 - Source: user
-- Primary owning slice: M002/S04
-- Supporting slices: M002/S06
+- Primary owning slice: M002/S06
+- Supporting slices: none
 - Validation: orchestrate_run and orchestrate_status MCP tools registered, schema tests pass, handler unit tests verify invocation
 - Notes: Additive tools, no modification to existing 20 tools
 
@@ -259,14 +259,14 @@
 
 ### R024 — Additional harness adapters
 - Class: differentiator
-- Status: deferred
+- Status: active
 - Description: Codex and OpenCode harness adapters
 - Why it matters: Multi-harness support broadens adoption
 - Source: user
-- Primary owning slice: M003 (provisional)
-- Supporting slices: none
-- Validation: unmapped
-- Notes: Claude Code adapter in M001 establishes the pattern
+- Primary owning slice: M002/S04
+- Supporting slices: M002/S05
+- Validation: Snapshot tests and config structure assertions for Codex and OpenCode adapters
+- Notes: Pulled to M002 per D028. Claude Code adapter in M001 establishes the pattern
 
 ### R025 — SessionCore type unification
 - Class: quality-attribute
@@ -371,10 +371,10 @@
 | R018 | core-capability | validated | M001/S07 | none | S07 |
 | R019 | failure-visibility | validated | M001/S07 | none | S07 |
 | R020 | core-capability | active | M002/S02 | M002/S01, M002/S06 | unmapped |
-| R021 | core-capability | active | M002/S04 | M002/S06 | unmapped |
+| R021 | core-capability | active | M002/S06 | none | unmapped |
 | R022 | core-capability | active | M002/S05 | M002/S06 | unmapped |
 | R023 | core-capability | active | M002/S03 | M002/S06 | unmapped |
-| R024 | differentiator | deferred | M003 | none | unmapped |
+| R024 | differentiator | active | M002/S04 | M002/S05 | unmapped |
 | R025 | quality-attribute | deferred | M003 | none | unmapped |
 | R026 | differentiator | deferred | M003 | none | unmapped |
 | R027 | quality-attribute | deferred | M004+ | none | unmapped |
