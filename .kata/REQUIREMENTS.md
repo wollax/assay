@@ -274,21 +274,21 @@
 - Description: SessionCore struct composition for type unification across session concepts
 - Why it matters: Reduces confusion from 5+ "session" types
 - Source: inferred
-- Primary owning slice: M003 (provisional)
+- Primary owning slice: none (deferred indefinitely per D042)
 - Supporting slices: none
 - Validation: unmapped
-- Notes: Deferred until API stabilizes through usage
+- Notes: Deferred per D042. Only 3 fields overlap across candidates. `#[serde(flatten)]` incompatible with `deny_unknown_fields`. Cost/benefit unfavorable. Revisit if a fourth session type emerges.
 
 ### R026 — AI conflict resolution
 - Class: differentiator
-- Status: deferred
+- Status: active
 - Description: AI-powered conflict resolution via evaluator when merge conflicts arise
 - Why it matters: Enables fully autonomous merge flows
 - Source: user
-- Primary owning slice: M003 (provisional)
-- Supporting slices: none
+- Primary owning slice: M003/S01
+- Supporting slices: M003/S02
 - Validation: unmapped
-- Notes: Requires MergeRunner foundation from M002
+- Notes: Two-phase merge lifecycle (D044), sync subprocess (D043). S01 builds the resolver; S02 adds audit trail and validation.
 
 ### R027 — OpenTelemetry instrumentation
 - Class: quality-attribute
@@ -300,6 +300,28 @@
 - Supporting slices: none
 - Validation: unmapped
 - Notes: Cross-cutting concern — better as a dedicated pass after orchestration and harness surfaces stabilize. M002 should identify span boundaries but not wire them.
+
+### R028 — Post-resolution validation
+- Class: quality-attribute
+- Status: active
+- Description: After AI resolves a conflict, run a configurable validation command (e.g., `cargo check`) before accepting the merge commit
+- Why it matters: Without validation, AI resolution is a trust-me black box that can introduce subtle semantic errors
+- Source: M003 research
+- Primary owning slice: M003/S02
+- Supporting slices: none
+- Validation: unmapped
+- Notes: Validation command is optional, configurable in ConflictResolutionConfig. Non-zero exit rejects the resolution and aborts the merge.
+
+### R029 — Conflict resolution audit trail
+- Class: failure-visibility
+- Status: active
+- Description: Record original conflict markers, resolved content, and resolver output in MergeReport for every resolved conflict
+- Why it matters: Critical for debugging when AI resolutions introduce subtle bugs — without an audit trail, the resolution is opaque
+- Source: M003 research
+- Primary owning slice: M003/S02
+- Supporting slices: none
+- Validation: unmapped
+- Notes: Recorded as Vec<ConflictResolution> on MergeReport. Viewable via CLI --json and orchestrate_status MCP tool.
 
 ## Out of Scope
 
@@ -375,17 +397,20 @@
 | R022 | core-capability | validated | M002/S05 | M002/S06 | S05 |
 | R023 | core-capability | validated | M002/S03 | M002/S06 | S03 |
 | R024 | differentiator | validated | M002/S04 | M002/S05 | S04 |
-| R025 | quality-attribute | deferred | M003 | none | unmapped |
-| R026 | differentiator | deferred | M003 | none | unmapped |
+| R025 | quality-attribute | deferred | none | none | unmapped |
+| R026 | differentiator | active | M003/S01 | M003/S02 | unmapped |
 | R027 | quality-attribute | deferred | M004+ | none | unmapped |
 | R030 | anti-feature | out-of-scope | none | none | n/a |
 | R031 | anti-feature | out-of-scope | none | none | n/a |
 | R032 | anti-feature | out-of-scope | none | none | n/a |
+| R028 | quality-attribute | active | M003/S02 | none | unmapped |
+| R029 | failure-visibility | active | M003/S02 | none | unmapped |
 | R033 | anti-feature | out-of-scope | none | none | n/a |
 
 ## Coverage Summary
 
-- Active requirements: 0
-- Mapped to slices: 20
+- Active requirements: 3 (R026, R028, R029)
+- Mapped to slices: 3
 - Validated: 24
+- Deferred: 3 (R025, R027 — with rationale)
 - Unmapped active requirements: 0
