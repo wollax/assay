@@ -12,3 +12,9 @@ pub mod settings;
 
 /// Claude Code adapter for harness profile generation.
 pub mod claude;
+
+/// Codex adapter for harness profile generation.
+pub mod codex;
+
+/// OpenCode adapter for harness profile generation.
+pub mod opencode;

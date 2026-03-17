@@ -1,0 +1,16 @@
+---
+source: crates/assay-harness/src/opencode.rs
+expression: config.agents_md
+---
+## Base
+
+Base instructions.
+---
+
+## Hook Advisory
+
+The following lifecycle hooks are defined for this session but cannot be
+executed natively by OpenCode. They are listed here for reference:
+
+- **before each tool invocation**: `echo pre`
+- **after each tool invocation**: `echo post`

@@ -66,7 +66,7 @@ This milestone is complete only when all are true:
 - [x] **S03: Sequential Merge Runner & Conflict Contract** `risk:medium` `depends:[S02]`
   > After this: after parallel execution completes, the orchestrator merges each successful session's branch into the base branch in topological order using `git merge --no-ff`. Merge ordering supports completion-time (default) and file-overlap strategies. Each merge re-checks for conflicts against the updated base. Conflict handler is a closure receiving (session_name, files, scan, work_dir) → Resolved/Skip/Abort. Default handler skips on conflict. Failed merges reported with conflicting files. Verified by integration tests with real git repos containing parallel branches. Reference spec: Smelt's `merge/` module (ordering.rs, conflict.rs, mod.rs squash-merge loop).
 
-- [ ] **S04: Codex & OpenCode Adapters** `risk:medium` `depends:[]`
+- [x] **S04: Codex & OpenCode Adapters** `risk:medium` `depends:[]`
   > After this: `assay harness generate codex --spec auth` and `assay harness generate opencode --spec auth` produce valid harness-specific config from a HarnessProfile, following the same adapter pattern as Claude Code (M001/S04). Each adapter generates the target agent's config format (instructions file, settings, tool permissions). Verified by snapshot tests and config structure assertions. R024 delivered.
 
 - [ ] **S05: Harness CLI & Scope Enforcement** `risk:low` `depends:[S04,S02]`

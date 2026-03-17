@@ -259,14 +259,14 @@
 
 ### R024 — Additional harness adapters
 - Class: differentiator
-- Status: active
+- Status: validated
 - Description: Codex and OpenCode harness adapters
 - Why it matters: Multi-harness support broadens adoption
 - Source: user
 - Primary owning slice: M002/S04
 - Supporting slices: M002/S05
-- Validation: Snapshot tests and config structure assertions for Codex and OpenCode adapters
-- Notes: Pulled to M002 per D028. Claude Code adapter in M001 establishes the pattern
+- Validation: S04 — Codex adapter generates .codex/config.toml (TOML) + AGENTS.md with 12 tests and 9 snapshots. OpenCode adapter generates opencode.json (JSON with $schema) + AGENTS.md with 10 tests and 9 snapshots. Both share build_prompt() for instructions, follow identical structure to Claude adapter. 49 total harness tests, 30 snapshots, just ready green.
+- Notes: Validated by S04. Pulled to M002 per D028. CLI dispatch wired in S05.
 
 ### R025 — SessionCore type unification
 - Class: quality-attribute
@@ -374,7 +374,7 @@
 | R021 | core-capability | active | M002/S06 | none | unmapped |
 | R022 | core-capability | active | M002/S05 | M002/S06 | unmapped |
 | R023 | core-capability | validated | M002/S03 | M002/S06 | S03 |
-| R024 | differentiator | active | M002/S04 | M002/S05 | unmapped |
+| R024 | differentiator | validated | M002/S04 | M002/S05 | S04 |
 | R025 | quality-attribute | deferred | M003 | none | unmapped |
 | R026 | differentiator | deferred | M003 | none | unmapped |
 | R027 | quality-attribute | deferred | M004+ | none | unmapped |
@@ -385,7 +385,7 @@
 
 ## Coverage Summary
 
-- Active requirements: 0
-- Mapped to slices: 19
-- Validated: 19
+- Active requirements: 3
+- Mapped to slices: 20
+- Validated: 21
 - Unmapped active requirements: 0
