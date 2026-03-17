@@ -72,6 +72,21 @@ pub struct ManifestSession {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub prompt_layers: Vec<PromptLayer>,
 
+    /// Glob patterns defining the file scope for this session.
+    ///
+    /// When set, the harness enforces that the agent only modifies files
+    /// matching these patterns. Empty means no scope restriction.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub file_scope: Vec<String>,
+
+    /// Glob patterns for files shared with other sessions.
+    ///
+    /// Files matching these patterns are expected to be touched by multiple
+    /// agents. The harness uses this to detect shared-file conflicts during
+    /// scope enforcement. Empty means no shared files declared.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub shared_files: Vec<String>,
+
     /// Sessions that must complete before this one can start.
     ///
     /// Each entry is an effective session name (i.e. `name` if set, otherwise `spec`)
@@ -85,5 +100,59 @@ inventory::submit! {
     crate::schema_registry::SchemaEntry {
         name: "manifest-session",
         generate: || schemars::schema_for!(ManifestSession),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn manifest_session_with_scope_fields_toml_round_trip() {
+        let toml_str = r#"
+            [[sessions]]
+            spec = "auth"
+            file_scope = ["src/auth/**", "tests/auth/**"]
+            shared_files = ["src/shared/config.rs"]
+        "#;
+        let manifest: RunManifest = toml::from_str(toml_str).unwrap();
+        assert_eq!(manifest.sessions.len(), 1);
+        let session = &manifest.sessions[0];
+        assert_eq!(session.file_scope, vec!["src/auth/**", "tests/auth/**"]);
+        assert_eq!(session.shared_files, vec!["src/shared/config.rs"]);
+    }
+
+    #[test]
+    fn manifest_session_without_scope_fields_backward_compat() {
+        let toml_str = r#"
+            [[sessions]]
+            spec = "checkout"
+            name = "checkout-session"
+        "#;
+        let manifest: RunManifest = toml::from_str(toml_str).unwrap();
+        let session = &manifest.sessions[0];
+        assert_eq!(session.spec, "checkout");
+        assert!(session.file_scope.is_empty());
+        assert!(session.shared_files.is_empty());
+    }
+
+    #[test]
+    fn manifest_session_scope_fields_omitted_when_empty_in_toml() {
+        let session = ManifestSession {
+            spec: "test".to_string(),
+            name: None,
+            settings: None,
+            hooks: vec![],
+            prompt_layers: vec![],
+            file_scope: vec![],
+            shared_files: vec![],
+            depends_on: vec![],
+        };
+        let manifest = RunManifest {
+            sessions: vec![session],
+        };
+        let toml_out = toml::to_string(&manifest).unwrap();
+        assert!(!toml_out.contains("file_scope"));
+        assert!(!toml_out.contains("shared_files"));
     }
 }

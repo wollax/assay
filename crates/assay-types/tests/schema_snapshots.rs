@@ -215,6 +215,20 @@ fn manifest_session_schema_snapshot() {
     assert_json_snapshot!("manifest-session-schema", schema.to_value());
 }
 
+// ── Scope enforcement types ──────────────────────────────────────────
+
+#[test]
+fn scope_violation_type_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::ScopeViolationType);
+    assert_json_snapshot!("scope-violation-type-schema", schema.to_value());
+}
+
+#[test]
+fn scope_violation_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::ScopeViolation);
+    assert_json_snapshot!("scope-violation-schema", schema.to_value());
+}
+
 // ── Merge execution types ────────────────────────────────────────────
 
 #[test]

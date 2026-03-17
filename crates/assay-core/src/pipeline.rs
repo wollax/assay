@@ -827,6 +827,8 @@ mod tests {
             settings: None,
             hooks: vec![],
             prompt_layers: vec![],
+            file_scope: vec![],
+            shared_files: vec![],
             depends_on: vec![],
         };
 
@@ -863,6 +865,8 @@ mod tests {
                 content: "Be careful".into(),
                 priority: 50,
             }],
+            file_scope: vec![],
+            shared_files: vec![],
             depends_on: vec![],
         };
 
@@ -957,6 +961,8 @@ mod tests {
             settings: None,
             hooks: vec![],
             prompt_layers: vec![],
+            file_scope: vec![],
+            shared_files: vec![],
             depends_on: vec![],
         };
 
@@ -1017,6 +1023,8 @@ cmd = "echo ok"
             settings: None,
             hooks: vec![],
             prompt_layers: vec![],
+            file_scope: vec![],
+            shared_files: vec![],
             depends_on: vec![],
         };
 

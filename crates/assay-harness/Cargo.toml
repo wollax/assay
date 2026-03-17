@@ -12,6 +12,7 @@ assay-types.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 toml.workspace = true
+globset.workspace = true
 
 [dev-dependencies]
 insta.workspace = true

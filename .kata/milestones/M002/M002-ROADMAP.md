@@ -69,7 +69,7 @@ This milestone is complete only when all are true:
 - [x] **S04: Codex & OpenCode Adapters** `risk:medium` `depends:[]`
   > After this: `assay harness generate codex --spec auth` and `assay harness generate opencode --spec auth` produce valid harness-specific config from a HarnessProfile, following the same adapter pattern as Claude Code (M001/S04). Each adapter generates the target agent's config format (instructions file, settings, tool permissions). Verified by snapshot tests and config structure assertions. R024 delivered.
 
-- [ ] **S05: Harness CLI & Scope Enforcement** `risk:low` `depends:[S04,S02]`
+- [x] **S05: Harness CLI & Scope Enforcement** `risk:low` `depends:[S04,S02]`
   > After this: `assay harness generate claude-code|codex|opencode [--spec <name>] [--workflow <phase>]` generates harness config to stdout or disk. `assay harness install <adapter>` writes config into the project. `assay harness update <adapter>` applies incremental changes. `assay harness diff <adapter>` shows what would change without applying. Each session's generated config includes scope boundaries (file_scope + shared_files via globset matching) and multi-agent awareness prompts. Verified by CLI integration tests and scope violation detection tests. Reference spec: Smelt's `summary/scope.rs` (globset matching, ScopeViolation).
 
 - [ ] **S06: MCP Tools & End-to-End Integration** `risk:high` `depends:[S03,S05]`

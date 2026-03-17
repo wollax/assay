@@ -160,3 +160,83 @@ inventory::submit! {
         generate: || schemars::schema_for!(HarnessProfile),
     }
 }
+
+/// Type of scope violation detected during enforcement.
+///
+/// Used by the harness to classify file-access violations so agents and
+/// humans can distinguish between out-of-scope writes and shared-file
+/// conflicts in multi-agent sessions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum ScopeViolationType {
+    /// File is outside the session's declared `file_scope` globs.
+    OutOfScope,
+    /// File matches a `shared_files` glob claimed by another session.
+    SharedFileConflict,
+}
+
+inventory::submit! {
+    crate::schema_registry::SchemaEntry {
+        name: "scope-violation-type",
+        generate: || schemars::schema_for!(ScopeViolationType),
+    }
+}
+
+/// A single scope violation detected during enforcement.
+///
+/// Carries the file path, violation category, and the glob pattern that
+/// triggered the violation, enabling actionable diagnostics.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ScopeViolation {
+    /// Path of the file that violated scope rules.
+    pub file: String,
+    /// Category of the violation.
+    pub violation_type: ScopeViolationType,
+    /// The glob pattern that matched (or failed to match) this file.
+    pub pattern: String,
+}
+
+inventory::submit! {
+    crate::schema_registry::SchemaEntry {
+        name: "scope-violation",
+        generate: || schemars::schema_for!(ScopeViolation),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn scope_violation_round_trip_json() {
+        let violation = ScopeViolation {
+            file: "src/main.rs".to_string(),
+            violation_type: ScopeViolationType::OutOfScope,
+            pattern: "tests/**".to_string(),
+        };
+        let json = serde_json::to_string(&violation).unwrap();
+        let deserialized: ScopeViolation = serde_json::from_str(&json).unwrap();
+        assert_eq!(violation, deserialized);
+    }
+
+    #[test]
+    fn scope_violation_shared_file_conflict_round_trip() {
+        let violation = ScopeViolation {
+            file: "shared/config.toml".to_string(),
+            violation_type: ScopeViolationType::SharedFileConflict,
+            pattern: "shared/**".to_string(),
+        };
+        let json = serde_json::to_string(&violation).unwrap();
+        assert!(json.contains("shared-file-conflict"));
+        let deserialized: ScopeViolation = serde_json::from_str(&json).unwrap();
+        assert_eq!(violation, deserialized);
+    }
+
+    #[test]
+    fn scope_violation_rejects_unknown_fields() {
+        let json = r#"{"file":"a.rs","violation_type":"out-of-scope","pattern":"**","extra":true}"#;
+        let result = serde_json::from_str::<ScopeViolation>(json);
+        assert!(result.is_err());
+    }
+}

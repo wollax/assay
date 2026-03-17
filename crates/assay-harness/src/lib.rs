@@ -18,3 +18,6 @@ pub mod codex;
 
 /// OpenCode adapter for harness profile generation.
 pub mod opencode;
+
+/// Scope enforcement and multi-agent prompt generation.
+pub mod scope;

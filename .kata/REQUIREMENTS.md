@@ -237,14 +237,14 @@
 
 ### R022 — Harness orchestration layer
 - Class: core-capability
-- Status: active
+- Status: validated
 - Description: Scope enforcement, multi-agent prompt generation
 - Why it matters: Multi-agent needs coordinated prompting and scope boundaries
 - Source: user
 - Primary owning slice: M002/S05
 - Supporting slices: M002/S06
-- Validation: Snapshot tests of generated CLAUDE.md showing scope boundaries and multi-agent awareness for each session
-- Notes: Depends on single-agent harness being stable (proven by M001)
+- Validation: S05 — check_scope() detects out-of-scope and shared-file violations via globset patterns (9 tests). generate_scope_prompt() produces multi-agent awareness markdown injected as PromptLayer. CLI dispatches generate/install/update/diff for all three adapters (11 tests). ScopeViolation types with schema snapshots (2 tests). 22 total new tests. just ready passes.
+- Notes: Validated by S05. Advisory enforcement only — runtime blocking deferred.
 
 ### R023 — MergeRunner with sequential merge
 - Class: core-capability
@@ -372,7 +372,7 @@
 | R019 | failure-visibility | validated | M001/S07 | none | S07 |
 | R020 | core-capability | active | M002/S02 | M002/S01, M002/S06 | unmapped |
 | R021 | core-capability | active | M002/S06 | none | unmapped |
-| R022 | core-capability | active | M002/S05 | M002/S06 | unmapped |
+| R022 | core-capability | validated | M002/S05 | M002/S06 | S05 |
 | R023 | core-capability | validated | M002/S03 | M002/S06 | S03 |
 | R024 | differentiator | validated | M002/S04 | M002/S05 | S04 |
 | R025 | quality-attribute | deferred | M003 | none | unmapped |
@@ -385,7 +385,7 @@
 
 ## Coverage Summary
 
-- Active requirements: 3
+- Active requirements: 2
 - Mapped to slices: 20
-- Validated: 21
+- Validated: 22
 - Unmapped active requirements: 0

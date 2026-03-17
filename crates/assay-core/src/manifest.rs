@@ -290,6 +290,8 @@ unknown_session_key = true
                 hooks: vec![],
                 prompt_layers: vec![],
                 depends_on: vec![],
+                file_scope: vec![],
+                shared_files: vec![],
             }],
         };
         let errors = validate(&manifest).unwrap_err();
@@ -313,6 +315,8 @@ unknown_session_key = true
                     hooks: vec![],
                     prompt_layers: vec![],
                     depends_on: vec![],
+                    file_scope: vec![],
+                    shared_files: vec![],
                 },
                 assay_types::ManifestSession {
                     spec: "   ".into(),
@@ -321,6 +325,8 @@ unknown_session_key = true
                     hooks: vec![],
                     prompt_layers: vec![],
                     depends_on: vec![],
+                    file_scope: vec![],
+                    shared_files: vec![],
                 },
             ],
         };
@@ -427,6 +433,8 @@ spec = "auth-flow"
             settings: None,
             hooks: vec![],
             prompt_layers: vec![],
+            file_scope: vec![],
+            shared_files: vec![],
             depends_on: depends_on.into_iter().map(|s| s.into()).collect(),
         }
     }

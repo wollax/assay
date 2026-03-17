@@ -126,6 +126,21 @@ Examples:
   Output as JSON:
     assay run manifest.toml --json")]
     Run(commands::run::RunCommand),
+    /// Agent harness configuration management
+    #[command(after_long_help = "\
+Examples:
+  Generate Claude Code config:
+    assay harness generate claude-code
+
+  Install Codex config into project:
+    assay harness install codex --spec auth-flow
+
+  Check what would change:
+    assay harness diff opencode")]
+    Harness {
+        #[command(subcommand)]
+        command: commands::harness::HarnessCommand,
+    },
     /// Team state checkpointing
     #[command(after_long_help = "\
 Examples:
@@ -164,6 +179,7 @@ async fn run() -> anyhow::Result<i32> {
         Some(Command::Context { command }) => commands::context::handle(command),
         Some(Command::Worktree { command }) => commands::worktree::handle(command),
         Some(Command::Run(cmd)) => commands::run::execute(&cmd),
+        Some(Command::Harness { command }) => commands::harness::handle(command),
         Some(Command::Checkpoint { command }) => commands::checkpoint::handle(command),
         None => {
             // Note: project detection checks cwd only — no upward traversal.

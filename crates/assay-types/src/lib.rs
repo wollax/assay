@@ -47,7 +47,8 @@ pub use gate::{GateKind, GateResult};
 pub use gate_run::{CriterionResult, DiffTruncation, GateRunRecord, GateRunSummary};
 pub use gates_spec::{GateCriterion, GatesSpec};
 pub use harness::{
-    HarnessProfile, HookContract, HookEvent, PromptLayer, PromptLayerKind, SettingsOverride,
+    HarnessProfile, HookContract, HookEvent, PromptLayer, PromptLayerKind, ScopeViolation,
+    ScopeViolationType, SettingsOverride,
 };
 pub use manifest::{ManifestSession, RunManifest};
 pub use merge::{

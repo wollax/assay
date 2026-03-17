@@ -63,6 +63,13 @@ expression: schema.to_value()
           },
           "type": "array"
         },
+        "file_scope": {
+          "description": "Glob patterns defining the file scope for this session.\n\nWhen set, the harness enforces that the agent only modifies files\nmatching these patterns. Empty means no scope restriction.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "hooks": {
           "description": "Lifecycle hooks for this session. Empty by default.",
           "items": {
@@ -94,6 +101,13 @@ expression: schema.to_value()
             }
           ],
           "description": "Optional settings overrides applied to this session's harness profile."
+        },
+        "shared_files": {
+          "description": "Glob patterns for files shared with other sessions.\n\nFiles matching these patterns are expected to be touched by multiple\nagents. The harness uses this to detect shared-file conflicts during\nscope enforcement. Empty means no shared files declared.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         },
         "spec": {
           "description": "Name of the spec to run (required). Must match a spec file in the project.",

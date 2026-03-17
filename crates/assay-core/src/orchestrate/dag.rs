@@ -302,6 +302,8 @@ mod tests {
                     settings: None,
                     hooks: vec![],
                     prompt_layers: vec![],
+                    file_scope: vec![],
+                    shared_files: vec![],
                     depends_on: deps.into_iter().map(|d| d.to_string()).collect(),
                 })
                 .collect(),
