@@ -10,7 +10,7 @@ Structured, repeatable quality evaluation of AI-generated code changes against e
 
 ## Current State
 
-v0.4.0 on main. ~17K lines of Rust across 6 crates. Ships:
+v0.4.0 on main. ~17K lines of Rust across 6 crates (including new assay-harness). M001 (Single-Agent Harness End-to-End) is complete — all 7 slices merged, 19 requirements validated, 991 tests passing. Ships:
 
 - **assay-types**: Serializable DTOs — Spec, Criterion, GateRunRecord, GateEvalContext, WorkSession, WorktreeMetadata, Config, HarnessProfile, PromptLayer, SettingsOverride, HookContract, etc.
 - **assay-core**: Domain logic — spec loading/validation, gate evaluation (command + agent), run history, worktree CRUD, work session lifecycle, merge checking, guard daemon, context diagnostics/pruning, checkpoint extraction, evidence formatting
@@ -41,6 +41,6 @@ See `.kata/REQUIREMENTS.md` for the explicit capability contract, requirement st
 
 ## Milestone Sequence
 
-- [x] M001: Single-Agent Harness — manifest → worktree → agent launch → gate → merge propose (all 7 slices complete, UAT pending real Claude Code invocation)
+- [x] M001: Single-Agent Harness — manifest → worktree → agent launch → gate → merge propose (complete, 19 requirements validated, UAT pending real Claude Code invocation)
 - [ ] M002: Multi-Agent Orchestration — DAG executor, parallel sessions, sequential merge
 - [ ] M003: Conflict Resolution & Polish — AI conflict resolution, additional adapters, type unification
