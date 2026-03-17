@@ -248,14 +248,14 @@
 
 ### R023 — MergeRunner with sequential merge
 - Class: core-capability
-- Status: active
+- Status: validated
 - Description: Sequential merge runner that merges completed session branches in topological order using `git merge --no-ff`
 - Why it matters: Multiple agents produce branches that must be merged in dependency order
 - Source: user
 - Primary owning slice: M002/S03
 - Supporting slices: M002/S06
-- Validation: Integration tests with real git repos verifying topological merge order, conflict detection against updated base, failed-merge reporting
-- Notes: S03 delivered merge_execute (side-effecting), ordering strategies (CompletionTime/FileOverlap), merge_completed_sessions sequencing loop with conflict handler closure, and MergeReport. 41 tests (27 merge + 8 ordering + 6 merge runner) with real git repos. Awaits S06 for end-to-end wiring through the real orchestrator pipeline. AI conflict resolution deferred to M003 (R026).
+- Validation: S03 — merge_completed_sessions() merges branches in topological order with CompletionTime/FileOverlap strategies, closure-based conflict handler, pre-flight validation, and structured MergeReport. 21 new tests (7 merge execution + 8 ordering + 6 merge runner) with real git repos. 10 schema snapshots locked. just ready passes.
+- Notes: Validated by S03. S06 wires into orchestrator post-execution phase. AI conflict resolution deferred to M003 (R026).
 
 ### R024 — Additional harness adapters
 - Class: differentiator
@@ -373,7 +373,7 @@
 | R020 | core-capability | active | M002/S02 | M002/S01, M002/S06 | unmapped |
 | R021 | core-capability | active | M002/S06 | none | unmapped |
 | R022 | core-capability | active | M002/S05 | M002/S06 | unmapped |
-| R023 | core-capability | active | M002/S03 | M002/S06 | unmapped |
+| R023 | core-capability | validated | M002/S03 | M002/S06 | S03 |
 | R024 | differentiator | active | M002/S04 | M002/S05 | unmapped |
 | R025 | quality-attribute | deferred | M003 | none | unmapped |
 | R026 | differentiator | deferred | M003 | none | unmapped |
