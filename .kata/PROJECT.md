@@ -14,7 +14,7 @@ v0.4.0 on main. ~17K lines of Rust across 6 crates. Ships:
 
 - **assay-types**: Serializable DTOs — Spec, Criterion, GateRunRecord, GateEvalContext, WorkSession, WorktreeMetadata, Config, HarnessProfile, PromptLayer, SettingsOverride, HookContract, etc.
 - **assay-core**: Domain logic — spec loading/validation, gate evaluation (command + agent), run history, worktree CRUD, work session lifecycle, merge checking, guard daemon, context diagnostics/pruning, checkpoint extraction, evidence formatting
-- **assay-harness**: Agent harness adapters — prompt builder (`build_prompt`), settings merger (`merge_settings`), and Claude Code adapter stub (S04 fills this)
+- **assay-harness**: Agent harness adapters — prompt builder (`build_prompt`), settings merger (`merge_settings`), Claude Code adapter (`generate_config`, `write_config`, `build_cli_args`)
 - **assay-cli**: CLI binary — init, spec, gate, worktree, context, checkpoint, guard, mcp subcommands (extracted into `commands/` modules)
 - **assay-mcp**: MCP server — 18 tools (spec_list/get/validate, gate_run/evaluate/report/finalize/history, worktree_create/list/status/cleanup, session_create/get/update/list, merge_check, context_diagnose)
 - **assay-tui**: TUI binary — skeleton (42-line placeholder)

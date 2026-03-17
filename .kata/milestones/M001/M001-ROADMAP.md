@@ -56,7 +56,7 @@ This milestone is complete only when all are true:
 - [x] **S03: Prompt Builder, Settings Merger & Hook Contracts** `risk:medium` `depends:[S02]`
   > After this: prompt builder assembles layered prompts from spec + project context, settings merger combines base + overrides, hook contracts defined in types. Verified by unit tests.
 
-- [ ] **S04: Claude Code Adapter** `risk:high` `depends:[S03]`
+- [x] **S04: Claude Code Adapter** `risk:high` `depends:[S03]`
   > After this: adapter generates valid CLAUDE.md, .mcp.json, settings overrides, and hooks.json from a HarnessProfile. Verified by snapshot tests and file content assertions.
 
 - [ ] **S05: Worktree Enhancements & Tech Debt** `risk:low` `depends:[S01]`

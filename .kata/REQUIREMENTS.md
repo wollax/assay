@@ -77,29 +77,29 @@
 - Primary owning slice: M001/S03
 - Supporting slices: M001/S04
 - Validation: S03 — 4 tests validate HookContract/HookEvent construction and JSON round-trip for PreTool, PostTool, Stop events including realistic HarnessProfile
-- Notes: Types in assay-types; adapter translation deferred to S04. Validated by S03.
+- Notes: Types in assay-types (validated by S03). Adapter translation to Claude Code format completed in S04.
 
 ### R008 — Claude Code adapter
 - Class: core-capability
-- Status: active
+- Status: validated
 - Description: Claude Code adapter generates CLAUDE.md content, .mcp.json, settings overrides, and hooks.json from a HarnessProfile
 - Why it matters: Claude Code is the primary target harness — this is the first concrete adapter
 - Source: user
 - Primary owning slice: M001/S04
 - Supporting slices: none
-- Validation: unmapped
-- Notes: File generation, not process launching — adapter produces config files
+- Validation: S04 — generate_config() produces valid Claude Code artifacts locked by 12 insta snapshots; write_config() verified by tempfile tests; build_cli_args() verified by snapshot and unit tests. 27 total tests pass.
+- Notes: Validated by S04. Runtime invocation deferred to S07.
 
 ### R009 — Callback-based control inversion
 - Class: constraint
-- Status: active
+- Status: validated
 - Description: Agent invocation uses callback-based control inversion (closures passed to core orchestration functions), not trait objects
 - Why it matters: Preserves the zero-trait codebase convention
 - Source: user
 - Primary owning slice: M001/S04
 - Supporting slices: M001/S06
-- Validation: unmapped
-- Notes: Architectural constraint — all three brainstorm pairs converged on this
+- Validation: S04 — all three adapter functions (generate_config, write_config, build_cli_args) are plain functions, not trait methods. Zero traits in codebase confirmed.
+- Notes: Validated by S04. Pattern continues in S06.
 
 ### R010 — Worktree orphan detection
 - Class: quality-attribute
@@ -347,8 +347,8 @@
 | R005 | core-capability | validated | M001/S03 | none | S03 |
 | R006 | core-capability | validated | M001/S03 | none | S03 |
 | R007 | core-capability | validated | M001/S03 | M001/S04 | S03 |
-| R008 | core-capability | active | M001/S04 | none | unmapped |
-| R009 | constraint | active | M001/S04 | M001/S06 | unmapped |
+| R008 | core-capability | validated | M001/S04 | none | S04 |
+| R009 | constraint | validated | M001/S04 | M001/S06 | S04 |
 | R010 | quality-attribute | active | M001/S05 | none | unmapped |
 | R011 | quality-attribute | active | M001/S05 | none | unmapped |
 | R012 | core-capability | active | M001/S05 | none | unmapped |
@@ -373,7 +373,7 @@
 
 ## Coverage Summary
 
-- Active requirements: 12
+- Active requirements: 10
 - Mapped to slices: 19
-- Validated: 7
+- Validated: 9
 - Unmapped active requirements: 0

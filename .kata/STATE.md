@@ -1,20 +1,19 @@
 # Kata State
 
 **Active Milestone:** M001 — Single-Agent Harness End-to-End
-**Active Slice:** S03 complete — ready for squash-merge, then S04
-**Phase:** Slice complete — pending merge to main
-**Slice Branch:** kata/M001/S03
-**Active Task:** none (S03 complete)
-**Next Action:** Squash-merge S03 to main, then begin S04 (Claude Code Adapter)
+**Active Slice:** S04 — Claude Code Adapter (complete, pending merge)
+**Phase:** Slice complete
+**Slice Branch:** kata/M001/S04
+**Next Action:** Merge S04 to main, advance to S05
 **Last Updated:** 2026-03-16
-**Requirements Status:** 12 active · 7 validated · 7 deferred · 4 out of scope
+**Requirements Status:** 10 active · 9 validated · 7 deferred · 4 out of scope
 
 ## Slice Progress (M001)
 
 - [x] S01: Prerequisites — Persistence & Rename
 - [x] S02: Harness Crate & Profile Type
-- [x] S03: Prompt Builder, Settings Merger & Hook Contracts ← just completed
-- [ ] S04: Claude Code Adapter
+- [x] S03: Prompt Builder, Settings Merger & Hook Contracts
+- [x] S04: Claude Code Adapter ← complete, pending merge
 - [ ] S05: Worktree Enhancements & Tech Debt
 - [ ] S06: RunManifest Type & Parsing
 - [ ] S07: End-to-End Pipeline
