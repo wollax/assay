@@ -2970,6 +2970,16 @@ impl AssayServer {
                 )?
             };
 
+            // Persist merge report alongside state.json (non-fatal on failure).
+            let run_dir = pipeline_config
+                .project_root
+                .join(".assay")
+                .join("orchestrator")
+                .join(&orch_result.run_id);
+            if let Err(e) = persist_merge_report(&run_dir, &merge_report) {
+                tracing::warn!(run_id = %orch_result.run_id, error = %e, "failed to persist merge report");
+            }
+
             Ok::<_, assay_core::AssayError>((orch_result, merge_report))
         })
         .await
@@ -3089,7 +3099,37 @@ impl AssayServer {
             }
         };
 
-        let json = serde_json::to_string_pretty(&status)
+        // Try to load the merge report alongside state; non-fatal on missing/corrupt.
+        let run_dir = cwd.join(".assay").join("orchestrator").join(run_id);
+        let merge_report: Option<assay_types::MergeReport> = {
+            let merge_report_path = run_dir.join("merge_report.json");
+            match std::fs::read_to_string(&merge_report_path) {
+                Ok(raw) => match serde_json::from_str(&raw) {
+                    Ok(r) => Some(r),
+                    Err(e) => {
+                        tracing::warn!(run_id = %run_id, error = %e, "failed to parse merge report");
+                        None
+                    }
+                },
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+                Err(e) => {
+                    tracing::warn!(run_id = %run_id, error = %e, "failed to read merge report");
+                    None
+                }
+            }
+        };
+
+        #[derive(Serialize)]
+        struct OrchestrateStatusResponse {
+            status: assay_types::OrchestratorStatus,
+            merge_report: Option<assay_types::MergeReport>,
+        }
+
+        let response = OrchestrateStatusResponse {
+            status,
+            merge_report,
+        };
+        let json = serde_json::to_string_pretty(&response)
             .map_err(|e| McpError::internal_error(format!("serialization failed: {e}"), None))?;
 
         Ok(CallToolResult::success(vec![Content::text(json)]))
@@ -3097,6 +3137,21 @@ impl AssayServer {
 }
 
 // ── Private helpers ──────────────────────────────────────────────────
+
+/// Atomically persist a `MergeReport` to `<run_dir>/merge_report.json`.
+///
+/// Uses a temp-file + rename pattern to avoid partial writes.
+/// Returns an `io::Error` on failure; the caller logs a warning and continues.
+fn persist_merge_report(run_dir: &Path, report: &assay_types::MergeReport) -> std::io::Result<()> {
+    use std::io::Write as _;
+    let final_path = run_dir.join("merge_report.json");
+    let json = serde_json::to_string_pretty(report).map_err(std::io::Error::other)?;
+    let mut tmpfile = tempfile::NamedTempFile::new_in(run_dir)?;
+    tmpfile.write_all(json.as_bytes())?;
+    tmpfile.as_file().sync_all()?;
+    tmpfile.persist(&final_path).map_err(|e| e.error)?;
+    Ok(())
+}
 
 impl AssayServer {
     /// Build a not-found error for a session ID, distinguishing timed-out
@@ -7027,13 +7082,82 @@ cmd = "echo ok"
             "should succeed for valid state"
         );
         let text = extract_text(&result);
-        assert!(
-            text.contains("01JTESTREAD"),
-            "should contain the run_id in response, got: {text}"
+        // Response is now wrapped: { "status": {...}, "merge_report": null }
+        let value: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(
+            value["status"]["run_id"], "01JTESTREAD",
+            "status.run_id should match, got: {text}"
         );
         assert!(
-            text.contains("completed"),
-            "should contain the phase, got: {text}"
+            value.get("merge_report").is_some(),
+            "merge_report key should be present (null is fine), got: {text}"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn orchestrate_status_reads_merge_report_when_present() {
+        let dir = create_project(r#"project_name = "status-merge-report""#);
+        std::env::set_current_dir(dir.path()).unwrap();
+
+        let run_id = "01JTESTREPORT";
+        let state_dir = dir.path().join(".assay").join("orchestrator").join(run_id);
+        std::fs::create_dir_all(&state_dir).unwrap();
+
+        // Write state.json
+        let status = assay_types::OrchestratorStatus {
+            run_id: run_id.to_string(),
+            phase: assay_types::OrchestratorPhase::Completed,
+            failure_policy: assay_types::FailurePolicy::SkipDependents,
+            sessions: vec![],
+            started_at: chrono::Utc::now(),
+            completed_at: Some(chrono::Utc::now()),
+        };
+        let state_json = serde_json::to_string_pretty(&status).unwrap();
+        std::fs::write(state_dir.join("state.json"), &state_json).unwrap();
+
+        // Write a minimal merge_report.json
+        let merge_report = assay_types::MergeReport {
+            sessions_merged: 0,
+            conflict_skipped: 0,
+            aborted: 0,
+            sessions_skipped: 0,
+            duration_secs: 0.0,
+            plan: assay_types::MergePlan {
+                strategy: assay_types::MergeStrategy::CompletionTime,
+                entries: vec![],
+            },
+            results: vec![],
+            resolutions: vec![],
+        };
+        let report_json = serde_json::to_string_pretty(&merge_report).unwrap();
+        std::fs::write(state_dir.join("merge_report.json"), &report_json).unwrap();
+
+        let server = AssayServer::new();
+        let result = server
+            .orchestrate_status(Parameters(OrchestrateStatusParams {
+                run_id: run_id.to_string(),
+            }))
+            .await
+            .unwrap();
+
+        assert!(
+            !result.is_error.unwrap_or(false),
+            "should succeed when merge_report.json is present"
+        );
+        let text = extract_text(&result);
+        let value: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(
+            value["status"]["run_id"], "01JTESTREPORT",
+            "status.run_id should match, got: {text}"
+        );
+        assert!(
+            value["merge_report"].is_object(),
+            "merge_report should be an object (not null), got: {text}"
+        );
+        assert_eq!(
+            value["merge_report"]["sessions_merged"], 0,
+            "sessions_merged should be 0, got: {text}"
         );
     }
 }

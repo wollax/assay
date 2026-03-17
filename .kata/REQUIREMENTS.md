@@ -303,24 +303,24 @@
 
 ### R028 — Post-resolution validation
 - Class: quality-attribute
-- Status: active
+- Status: validated
 - Description: After AI resolves a conflict, run a configurable validation command (e.g., `cargo check`) before accepting the merge commit
 - Why it matters: Without validation, AI resolution is a trust-me black box that can introduce subtle semantic errors
 - Source: M003 research
 - Primary owning slice: M003/S02
 - Supporting slices: none
-- Validation: unmapped
+- Validation: S02 — run_validation_command() with rollback proven by unit tests (success/failure/not_found); validation_command: "sh -c 'exit 1'" causes Skip + empty resolutions in integration test; git reset --hard HEAD~1 on failure; just ready passes
 - Notes: Validation command is optional, configurable in ConflictResolutionConfig. Non-zero exit rejects the resolution and aborts the merge.
 
 ### R029 — Conflict resolution audit trail
 - Class: failure-visibility
-- Status: active
+- Status: validated
 - Description: Record original conflict markers, resolved content, and resolver output in MergeReport for every resolved conflict
 - Why it matters: Critical for debugging when AI resolutions introduce subtle bugs — without an audit trail, the resolution is opaque
 - Source: M003 research
 - Primary owning slice: M003/S02
 - Supporting slices: none
-- Validation: unmapped
+- Validation: S02 — MergeReport.resolutions[0] populated with session_name, original_contents (with markers), resolved_contents (clean), resolver_stdout in test_merge_resolutions_audit_trail integration test; persisted to merge_report.json; surfaced via orchestrate_status MCP tool returning { status, merge_report } wrapper; just ready passes
 - Notes: Recorded as Vec<ConflictResolution> on MergeReport. Viewable via CLI --json and orchestrate_status MCP tool.
 
 ## Out of Scope
@@ -403,14 +403,14 @@
 | R030 | anti-feature | out-of-scope | none | none | n/a |
 | R031 | anti-feature | out-of-scope | none | none | n/a |
 | R032 | anti-feature | out-of-scope | none | none | n/a |
-| R028 | quality-attribute | active | M003/S02 | none | unmapped |
-| R029 | failure-visibility | active | M003/S02 | none | unmapped |
+| R028 | quality-attribute | validated | M003/S02 | none | S02 |
+| R029 | failure-visibility | validated | M003/S02 | none | S02 |
 | R033 | anti-feature | out-of-scope | none | none | n/a |
 
 ## Coverage Summary
 
-- Active requirements: 2 (R028, R029)
-- Mapped to slices: 2
-- Validated: 25 (R026 validated by S01)
+- Active requirements: 0
+- Mapped to slices: 0
+- Validated: 27 (R028, R029 validated by S02)
 - Deferred: 3 (R025, R027 — with rationale)
 - Unmapped active requirements: 0

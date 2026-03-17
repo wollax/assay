@@ -343,3 +343,17 @@ fn conflict_resolution_config_schema_snapshot() {
     let schema = schemars::schema_for!(assay_types::ConflictResolutionConfig);
     assert_json_snapshot!("conflict-resolution-config-schema", schema.to_value());
 }
+
+#[cfg(feature = "orchestrate")]
+#[test]
+fn conflict_file_content_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::ConflictFileContent);
+    assert_json_snapshot!("conflict-file-content-schema", schema.to_value());
+}
+
+#[cfg(feature = "orchestrate")]
+#[test]
+fn conflict_resolution_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::ConflictResolution);
+    assert_json_snapshot!("conflict-resolution-schema", schema.to_value());
+}

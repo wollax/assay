@@ -4,6 +4,75 @@ expression: schema.to_value()
 ---
 {
   "$defs": {
+    "ConflictFileContent": {
+      "additionalProperties": false,
+      "description": "Original or resolved content of a single file captured during conflict resolution.\n\nUsed in [`ConflictResolution`] to store both the original conflict-marker content\nand the AI-resolved content for each conflicted file.",
+      "properties": {
+        "content": {
+          "description": "Full file content (with conflict markers for originals; resolved for outputs).",
+          "type": "string"
+        },
+        "path": {
+          "description": "Path relative to the repository root.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "content"
+      ],
+      "type": "object"
+    },
+    "ConflictResolution": {
+      "additionalProperties": false,
+      "description": "Audit record for a single AI-resolved merge conflict.\n\nCaptured by the merge runner when AI conflict resolution succeeds and stored\nin [`MergeReport::resolutions`]. Enables post-run inspection of what the AI\nchanged and whether the optional validation command accepted the result.",
+      "properties": {
+        "conflicting_files": {
+          "description": "Paths of files that had conflict markers, relative to the repo root.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "original_contents": {
+          "description": "Original file contents (with conflict markers) before AI resolution.",
+          "items": {
+            "$ref": "#/$defs/ConflictFileContent"
+          },
+          "type": "array"
+        },
+        "resolved_contents": {
+          "description": "Resolved file contents after AI resolution (conflict markers removed).",
+          "items": {
+            "$ref": "#/$defs/ConflictFileContent"
+          },
+          "type": "array"
+        },
+        "resolver_stdout": {
+          "description": "Raw stdout from the resolver subprocess (AI-generated content).",
+          "type": "string"
+        },
+        "session_name": {
+          "description": "The session whose branch produced the conflict.",
+          "type": "string"
+        },
+        "validation_passed": {
+          "description": "Whether the optional validation command accepted the resolution.\n\n`None` when no `validation_command` was configured.\n`Some(true)` when validation passed; `Some(false)` when it rejected the result.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "session_name",
+        "conflicting_files",
+        "original_contents",
+        "resolved_contents",
+        "resolver_stdout"
+      ],
+      "type": "object"
+    },
     "MergePlan": {
       "additionalProperties": false,
       "description": "The planned merge order for a set of sessions, including the strategy\nused and per-session rationale.",
@@ -155,6 +224,13 @@ expression: schema.to_value()
     "plan": {
       "$ref": "#/$defs/MergePlan",
       "description": "The merge plan that determined ordering."
+    },
+    "resolutions": {
+      "description": "Audit records for AI-resolved conflicts, one per resolved session.\n\nEmpty when no AI resolution occurred. Uses `default` + `skip_serializing_if`\nso pre-existing persisted reports without this field deserialize correctly.",
+      "items": {
+        "$ref": "#/$defs/ConflictResolution"
+      },
+      "type": "array"
     },
     "results": {
       "description": "Per-session merge results in merge-order sequence.",

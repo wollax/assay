@@ -13,6 +13,7 @@ use std::path::Path;
 use std::process::Command;
 use std::time::Duration;
 
+use assay_core::orchestrate::conflict_resolver::ConflictResolutionResult;
 use assay_core::orchestrate::executor::{
     OrchestratorConfig, OrchestratorResult, SessionOutcome, run_orchestrated,
 };
@@ -24,7 +25,10 @@ use assay_core::pipeline::{PipelineConfig, PipelineError, PipelineResult, Pipeli
 use assay_types::orchestrate::{
     FailurePolicy, OrchestratorPhase, OrchestratorStatus, SessionRunState,
 };
-use assay_types::{ManifestSession, MergeSessionStatus, MergeStrategy, RunManifest};
+use assay_types::{
+    ConflictAction, ConflictFileContent, ConflictResolution, ManifestSession, MergeSessionStatus,
+    MergeStrategy, RunManifest,
+};
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -495,4 +499,256 @@ fn status_persistence_round_trip() {
     assert_eq!(re_parsed.run_id, status.run_id);
     assert_eq!(re_parsed.phase, status.phase);
     assert_eq!(re_parsed.sessions.len(), status.sessions.len());
+}
+
+// ── Helpers for conflict tests ────────────────────────────────────────
+
+/// Create a branch that modifies an existing file differently from main.
+fn create_branch_modifying_file(repo: &Path, branch: &str, file: &str, content: &str) {
+    Command::new("git")
+        .args(["checkout", "-b", branch])
+        .current_dir(repo)
+        .output()
+        .unwrap();
+    std::fs::write(repo.join(file), content).unwrap();
+    Command::new("git")
+        .args(["add", "."])
+        .current_dir(repo)
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["commit", "-m", &format!("modify {file} on {branch}")])
+        .current_dir(repo)
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["checkout", "main"])
+        .current_dir(repo)
+        .output()
+        .unwrap();
+}
+
+// ── Test 4: Audit trail — resolutions populated when handler returns audit ──
+
+#[test]
+fn test_merge_resolutions_audit_trail() {
+    let dir = setup_git_repo();
+    let repo = dir.path();
+
+    // Create shared.rs on main so both sessions conflict
+    std::fs::write(repo.join("shared.rs"), "fn shared() { /* original */ }\n").unwrap();
+    Command::new("git")
+        .args(["add", "."])
+        .current_dir(repo)
+        .output()
+        .unwrap();
+    Command::new("git")
+        .args(["commit", "-m", "add shared.rs"])
+        .current_dir(repo)
+        .output()
+        .unwrap();
+
+    create_branch_modifying_file(
+        repo,
+        "assay/session-a",
+        "shared.rs",
+        "fn shared() { /* version A */ }\n",
+    );
+    create_branch_modifying_file(
+        repo,
+        "assay/session-b",
+        "shared.rs",
+        "fn shared() { /* version B */ }\n",
+    );
+
+    let t0 = chrono::DateTime::from_timestamp(0, 0).unwrap();
+    let sessions = vec![
+        assay_core::orchestrate::ordering::CompletedSession {
+            session_name: "session-a".to_string(),
+            branch_name: "assay/session-a".to_string(),
+            changed_files: vec!["shared.rs".to_string()],
+            completed_at: t0,
+            topo_order: 0,
+        },
+        assay_core::orchestrate::ordering::CompletedSession {
+            session_name: "session-b".to_string(),
+            branch_name: "assay/session-b".to_string(),
+            changed_files: vec!["shared.rs".to_string()],
+            completed_at: t0 + chrono::Duration::seconds(1),
+            topo_order: 1,
+        },
+    ];
+
+    let merge_config = MergeRunnerConfig {
+        strategy: MergeStrategy::CompletionTime,
+        project_root: repo.to_path_buf(),
+        base_branch: "main".to_string(),
+        conflict_resolution_enabled: true,
+    };
+
+    // Scripted handler: captures original, strips markers, returns full audit record
+    let resolver_handler = |name: &str,
+                            files: &[String],
+                            _scan: &assay_types::ConflictScan,
+                            work_dir: &Path|
+     -> ConflictResolutionResult {
+        let shared_path = work_dir.join("shared.rs");
+        let original = std::fs::read_to_string(&shared_path).unwrap();
+
+        // Strip conflict markers
+        let mut resolved = String::new();
+        for line in original.lines() {
+            if line.starts_with("<<<<<<<")
+                || line.starts_with("=======")
+                || line.starts_with(">>>>>>>")
+            {
+                continue;
+            }
+            resolved.push_str(line);
+            resolved.push('\n');
+        }
+
+        std::fs::write(&shared_path, &resolved).unwrap();
+
+        Command::new("git")
+            .args(["add", "shared.rs"])
+            .current_dir(work_dir)
+            .output()
+            .unwrap();
+        let output = Command::new("git")
+            .args(["commit", "--no-edit"])
+            .current_dir(work_dir)
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "commit should succeed");
+
+        let sha_output = Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .current_dir(work_dir)
+            .output()
+            .unwrap();
+        let sha = String::from_utf8_lossy(&sha_output.stdout)
+            .trim()
+            .to_string();
+
+        ConflictResolutionResult {
+            action: ConflictAction::Resolved(sha),
+            audit: Some(ConflictResolution {
+                session_name: name.to_string(),
+                conflicting_files: files.to_vec(),
+                original_contents: vec![ConflictFileContent {
+                    path: "shared.rs".into(),
+                    content: original.clone(),
+                }],
+                resolved_contents: vec![ConflictFileContent {
+                    path: "shared.rs".into(),
+                    content: resolved.clone(),
+                }],
+                resolver_stdout: "scripted".to_string(),
+                validation_passed: None,
+            }),
+            repo_clean: false,
+        }
+    };
+
+    let report = merge_completed_sessions(sessions, &merge_config, resolver_handler).unwrap();
+
+    // Check merge counts
+    assert_eq!(report.sessions_merged, 2, "both sessions should merge");
+    assert_eq!(report.conflict_skipped, 0, "no skips");
+
+    // The conflict occurs on session-b (session-a merges cleanly, session-b conflicts)
+    assert_eq!(report.resolutions.len(), 1, "one resolution audit record");
+    let res = &report.resolutions[0];
+    assert_eq!(res.session_name, "session-b");
+    assert_eq!(res.conflicting_files, vec!["shared.rs".to_string()]);
+    assert!(
+        res.original_contents[0].content.contains("<<<<<<<"),
+        "original content should contain conflict markers, got: {}",
+        res.original_contents[0].content
+    );
+    assert!(
+        !res.resolved_contents[0].content.contains("<<<<<<<"),
+        "resolved content should not contain conflict markers"
+    );
+    assert_eq!(res.resolver_stdout, "scripted");
+}
+
+// ── Test 5: Skip handler leaves resolutions empty ─────────────────────
+
+#[test]
+fn test_merge_skip_leaves_empty_resolutions() {
+    let dir = setup_git_repo();
+    let repo = dir.path();
+
+    // Three sessions, each writes its own unique file — no conflicts
+    for (branch, file) in [
+        ("assay/session-x", "x.txt"),
+        ("assay/session-y", "y.txt"),
+        ("assay/session-z", "z.txt"),
+    ] {
+        Command::new("git")
+            .args(["checkout", "-b", branch, "main"])
+            .current_dir(repo)
+            .output()
+            .unwrap();
+        std::fs::write(repo.join(file), format!("content of {file}\n")).unwrap();
+        Command::new("git")
+            .args(["add", file])
+            .current_dir(repo)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["commit", "-m", &format!("add {file}")])
+            .current_dir(repo)
+            .output()
+            .unwrap();
+        Command::new("git")
+            .args(["checkout", "main"])
+            .current_dir(repo)
+            .output()
+            .unwrap();
+    }
+
+    let t0 = chrono::DateTime::from_timestamp(0, 0).unwrap();
+    let sessions = vec![
+        assay_core::orchestrate::ordering::CompletedSession {
+            session_name: "session-x".to_string(),
+            branch_name: "assay/session-x".to_string(),
+            changed_files: vec!["x.txt".to_string()],
+            completed_at: t0,
+            topo_order: 0,
+        },
+        assay_core::orchestrate::ordering::CompletedSession {
+            session_name: "session-y".to_string(),
+            branch_name: "assay/session-y".to_string(),
+            changed_files: vec!["y.txt".to_string()],
+            completed_at: t0 + chrono::Duration::seconds(1),
+            topo_order: 0,
+        },
+        assay_core::orchestrate::ordering::CompletedSession {
+            session_name: "session-z".to_string(),
+            branch_name: "assay/session-z".to_string(),
+            changed_files: vec!["z.txt".to_string()],
+            completed_at: t0 + chrono::Duration::seconds(2),
+            topo_order: 0,
+        },
+    ];
+
+    let merge_config = MergeRunnerConfig {
+        strategy: MergeStrategy::CompletionTime,
+        project_root: repo.to_path_buf(),
+        base_branch: "main".to_string(),
+        conflict_resolution_enabled: false,
+    };
+
+    let report =
+        merge_completed_sessions(sessions, &merge_config, default_conflict_handler()).unwrap();
+
+    assert_eq!(report.sessions_merged, 3, "all 3 should merge");
+    assert_eq!(report.conflict_skipped, 0, "no conflicts expected");
+    assert!(
+        report.resolutions.is_empty(),
+        "no resolutions for clean merges"
+    );
 }

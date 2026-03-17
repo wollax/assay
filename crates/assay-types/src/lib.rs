@@ -62,9 +62,9 @@ pub use worktree::{WorktreeConfig, WorktreeInfo, WorktreeMetadata, WorktreeStatu
 
 #[cfg(feature = "orchestrate")]
 pub use orchestrate::{
-    ConflictAction, ConflictResolutionConfig, FailurePolicy, MergePlan, MergePlanEntry,
-    MergeReport, MergeSessionResult, MergeSessionStatus, MergeStrategy, OrchestratorPhase,
-    OrchestratorStatus, SessionRunState, SessionStatus,
+    ConflictAction, ConflictFileContent, ConflictResolution, ConflictResolutionConfig,
+    FailurePolicy, MergePlan, MergePlanEntry, MergeReport, MergeSessionResult, MergeSessionStatus,
+    MergeStrategy, OrchestratorPhase, OrchestratorStatus, SessionRunState, SessionStatus,
 };
 
 /// Marker badge for directory-based specs in CLI output (e.g., `auth-flow  [srs] 3 criteria`).

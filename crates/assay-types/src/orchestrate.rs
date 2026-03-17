@@ -182,6 +182,45 @@ pub struct MergeSessionResult {
     pub error: Option<String>,
 }
 
+/// Original or resolved content of a single file captured during conflict resolution.
+///
+/// Used in [`ConflictResolution`] to store both the original conflict-marker content
+/// and the AI-resolved content for each conflicted file.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ConflictFileContent {
+    /// Path relative to the repository root.
+    pub path: String,
+    /// Full file content (with conflict markers for originals; resolved for outputs).
+    pub content: String,
+}
+
+/// Audit record for a single AI-resolved merge conflict.
+///
+/// Captured by the merge runner when AI conflict resolution succeeds and stored
+/// in [`MergeReport::resolutions`]. Enables post-run inspection of what the AI
+/// changed and whether the optional validation command accepted the result.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ConflictResolution {
+    /// The session whose branch produced the conflict.
+    pub session_name: String,
+    /// Paths of files that had conflict markers, relative to the repo root.
+    pub conflicting_files: Vec<String>,
+    /// Original file contents (with conflict markers) before AI resolution.
+    pub original_contents: Vec<ConflictFileContent>,
+    /// Resolved file contents after AI resolution (conflict markers removed).
+    pub resolved_contents: Vec<ConflictFileContent>,
+    /// Raw stdout from the resolver subprocess (AI-generated content).
+    pub resolver_stdout: String,
+    /// Whether the optional validation command accepted the resolution.
+    ///
+    /// `None` when no `validation_command` was configured.
+    /// `Some(true)` when validation passed; `Some(false)` when it rejected the result.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub validation_passed: Option<bool>,
+}
+
 /// Summary report of the entire merge phase.
 ///
 /// Provides aggregate counts and per-session details for post-run inspection.
@@ -203,6 +242,12 @@ pub struct MergeReport {
     pub results: Vec<MergeSessionResult>,
     /// Wall-clock duration of the merge phase in seconds.
     pub duration_secs: f64,
+    /// Audit records for AI-resolved conflicts, one per resolved session.
+    ///
+    /// Empty when no AI resolution occurred. Uses `default` + `skip_serializing_if`
+    /// so pre-existing persisted reports without this field deserialize correctly.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub resolutions: Vec<ConflictResolution>,
 }
 
 /// Action to take when a merge conflict is detected.
@@ -235,6 +280,14 @@ pub struct ConflictResolutionConfig {
     /// Maximum seconds to wait for the resolver before aborting.
     #[serde(default = "default_conflict_timeout")]
     pub timeout_secs: u64,
+    /// Optional shell command to validate a resolution before accepting it.
+    ///
+    /// Run after the AI writes resolved files and stages them, but before the
+    /// merge commit. A non-zero exit code causes the resolution to be rejected
+    /// and the session to be skipped with `ConflictSkipped`. When `None`, no
+    /// validation is performed and the resolution is accepted unconditionally.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub validation_command: Option<String>,
 }
 
 fn default_conflict_model() -> String {
@@ -251,6 +304,7 @@ impl Default for ConflictResolutionConfig {
             enabled: false,
             model: default_conflict_model(),
             timeout_secs: default_conflict_timeout(),
+            validation_command: None,
         }
     }
 }
@@ -345,6 +399,20 @@ inventory::submit! {
     schema_registry::SchemaEntry {
         name: "conflict-resolution-config",
         generate: || schemars::schema_for!(ConflictResolutionConfig),
+    }
+}
+
+inventory::submit! {
+    schema_registry::SchemaEntry {
+        name: "conflict-file-content",
+        generate: || schemars::schema_for!(ConflictFileContent),
+    }
+}
+
+inventory::submit! {
+    schema_registry::SchemaEntry {
+        name: "conflict-resolution",
+        generate: || schemars::schema_for!(ConflictResolution),
     }
 }
 
@@ -618,6 +686,7 @@ mod tests {
             },
             results: vec![],
             duration_secs: 12.5,
+            resolutions: vec![],
         };
         let json = serde_json::to_string_pretty(&report).unwrap();
         let back: MergeReport = serde_json::from_str(&json).unwrap();
@@ -666,6 +735,7 @@ mod tests {
             enabled: true,
             model: "custom-model".to_string(),
             timeout_secs: 60,
+            validation_command: None,
         };
         let json = serde_json::to_string_pretty(&config).unwrap();
         let back: ConflictResolutionConfig = serde_json::from_str(&json).unwrap();

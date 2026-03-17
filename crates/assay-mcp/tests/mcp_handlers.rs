@@ -1684,13 +1684,14 @@ async fn orchestrate_status_reads_persisted_state_with_sessions() {
 
     let response_json: serde_json::Value = serde_json::from_str(&extract_text(&result)).unwrap();
 
-    // Verify top-level fields
-    assert_eq!(response_json["run_id"], run_id);
-    assert_eq!(response_json["phase"], "partial_failure");
-    assert_eq!(response_json["failure_policy"], "skip_dependents");
+    // Response is now wrapped: { "status": {...}, "merge_report": null_or_object }
+    let status_json = &response_json["status"];
+    assert_eq!(status_json["run_id"], run_id);
+    assert_eq!(status_json["phase"], "partial_failure");
+    assert_eq!(status_json["failure_policy"], "skip_dependents");
 
     // Verify session details
-    let sessions = response_json["sessions"].as_array().unwrap();
+    let sessions = status_json["sessions"].as_array().unwrap();
     assert_eq!(sessions.len(), 3);
 
     let auth = sessions.iter().find(|s| s["name"] == "auth").unwrap();

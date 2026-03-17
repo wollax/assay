@@ -53,7 +53,7 @@ This milestone is complete only when all are true:
 
 - [x] **S01: AI Conflict Resolution** `risk:high` `depends:[]`
   > After this: `merge_completed_sessions()` with an AI conflict handler resolves real git merge conflicts — proven by integration test with a scripted resolver subprocess against a real git repo. CLI `--conflict-resolution auto` flag routes to the handler. Existing merge behavior (auto-abort + skip) is unchanged by default.
-- [ ] **S02: Audit Trail, Validation & End-to-End** `risk:medium` `depends:[S01]`
+- [x] **S02: Audit Trail, Validation & End-to-End** `risk:medium` `depends:[S01]`
   > After this: MergeReport includes full resolution audit trail (original markers, resolved diff, resolver output). Post-resolution validation command rejects bad merges. `orchestrate_status` MCP tool shows resolution details. End-to-end CLI integration test proves the assembled pipeline: multi-session manifest → conflict → AI resolution → validation → audit trail.
 
 ## Boundary Map

@@ -23,9 +23,33 @@ use std::time::Duration;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use assay_types::{ConflictAction, ConflictResolutionConfig, ConflictScan};
+use assay_types::{
+    ConflictAction, ConflictFileContent, ConflictResolution, ConflictResolutionConfig, ConflictScan,
+};
 
 use crate::merge::git_command;
+
+// ── Result type ──────────────────────────────────────────────────────
+
+/// Result of a single conflict resolution attempt.
+///
+/// Bundles the [`ConflictAction`] decision together with the optional audit
+/// record and a flag indicating whether the working tree was left clean.
+/// Used by the merge runner (T02+) to record audit data in [`MergeReport`].
+#[derive(Debug)]
+pub struct ConflictResolutionResult {
+    /// The resolution decision: `Resolved(sha)`, `Skip`, or `Abort`.
+    pub action: ConflictAction,
+    /// Full audit record when the AI successfully resolved the conflict.
+    ///
+    /// `None` when the resolver failed or chose `Skip`/`Abort` before producing output.
+    pub audit: Option<ConflictResolution>,
+    /// Whether the repository working tree and index are clean after resolution.
+    ///
+    /// `true` after a successful resolution commit; `false` if the resolver
+    /// aborted mid-way and the caller needs to `git reset --hard`.
+    pub repo_clean: bool,
+}
 
 // ── Response type ────────────────────────────────────────────────────
 
@@ -140,55 +164,142 @@ pub fn build_conflict_prompt(
 
 // ── Subprocess execution ─────────────────────────────────────────────
 
+/// Run a shell validation command synchronously with the given timeout.
+///
+/// Uses `sh -c "<cmd>"` when the command contains spaces; otherwise invokes
+/// the binary directly. Returns `Ok(())` on zero exit, `Err(message)` on
+/// non-zero exit, timeout, or binary-not-found.
+fn run_validation_command(
+    cmd: &str,
+    work_dir: &Path,
+    timeout_secs: u64,
+) -> std::result::Result<(), String> {
+    let mut child = if cmd.contains(' ') {
+        Command::new("sh")
+            .args(["-c", cmd])
+            .current_dir(work_dir)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .map_err(|e| format!("validation command not found: {e}"))?
+    } else {
+        Command::new(cmd)
+            .current_dir(work_dir)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .map_err(|e| {
+                if e.kind() == std::io::ErrorKind::NotFound {
+                    format!("validation command not found: {cmd}")
+                } else {
+                    format!("validation command not found: {e}")
+                }
+            })?
+    };
+
+    let timeout = Duration::from_secs(timeout_secs);
+    let output = wait_with_timeout(&mut child, timeout).inspect_err(|_| {
+        let _ = child.kill();
+        let _ = child.wait();
+    })?;
+
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(format!(
+            "validation command exited with code {:?}",
+            output.status.code()
+        ))
+    }
+}
+
 /// Resolve merge conflicts using an AI subprocess.
 ///
-/// 1. Builds a structured prompt from the conflicted files.
-/// 2. Spawns `claude -p --json-schema` synchronously via `std::process::Command`.
-/// 3. Parses the JSON response into `ConflictResolutionOutput`.
-/// 4. Writes resolved file contents, stages with `git add`, commits.
-/// 5. Returns `ConflictAction::Resolved(sha)` on success.
+/// 1. Captures original file contents (with conflict markers) for the audit record.
+/// 2. Builds a structured prompt from the conflicted files.
+/// 3. Spawns `claude -p --json-schema` synchronously via `std::process::Command`.
+/// 4. Parses the JSON response into `ConflictResolutionOutput`.
+/// 5. Writes resolved file contents, stages with `git add`, commits.
+/// 6. Optionally runs a validation command; on failure, rolls back with
+///    `git reset --hard HEAD~1` and returns `repo_clean: true`.
+/// 7. Returns `ConflictResolutionResult` with full audit data on success.
 ///
-/// On any error (binary not found, timeout, parse failure, git failure),
-/// returns `ConflictAction::Skip` after logging a descriptive message.
+/// On any error before the commit, returns `repo_clean: false` (merge runner
+/// must call `git merge --abort`). On validation failure with successful
+/// rollback, returns `repo_clean: true`.
 pub fn resolve_conflict(
     session_name: &str,
     conflicting_files: &[String],
     conflict_scan: &ConflictScan,
     work_dir: &Path,
     config: &ConflictResolutionConfig,
-) -> ConflictAction {
+) -> ConflictResolutionResult {
+    // Capture original file contents before any modification
+    let original_contents: Vec<ConflictFileContent> = conflicting_files
+        .iter()
+        .map(|path| {
+            let full_path = work_dir.join(path);
+            let content = std::fs::read_to_string(&full_path)
+                .unwrap_or_else(|e| format!("(error reading file: {e})"));
+            ConflictFileContent {
+                path: path.clone(),
+                content,
+            }
+        })
+        .collect();
+
     let prompt = build_conflict_prompt(session_name, conflicting_files, conflict_scan, work_dir);
     let system_prompt = build_conflict_system_prompt();
     let schema_json = conflict_resolution_schema_json();
     let timeout = Duration::from_secs(config.timeout_secs);
 
     // Spawn the Claude subprocess synchronously
-    let output = match spawn_resolver(&prompt, &system_prompt, schema_json, &config.model, timeout)
-    {
-        Ok(output) => output,
-        Err(err) => {
-            tracing::warn!(
-                session_name,
-                error = %err,
-                "conflict resolver subprocess failed"
-            );
-            return ConflictAction::Skip;
-        }
-    };
+    let resolver_stdout =
+        match spawn_resolver(&prompt, &system_prompt, schema_json, &config.model, timeout) {
+            Ok(output) => output,
+            Err(err) => {
+                tracing::warn!(
+                    session_name,
+                    error = %err,
+                    "conflict resolver subprocess failed"
+                );
+                return ConflictResolutionResult {
+                    action: ConflictAction::Skip,
+                    audit: None,
+                    repo_clean: false,
+                };
+            }
+        };
 
     // Parse the structured output
-    let resolution = match parse_resolver_output(&output) {
+    let resolution = match parse_resolver_output(&resolver_stdout) {
         Ok(resolution) => resolution,
         Err(err) => {
             tracing::warn!(
                 session_name,
                 error = %err,
-                raw_output_len = output.len(),
+                raw_output_len = resolver_stdout.len(),
                 "conflict resolver output parse failed"
             );
-            return ConflictAction::Skip;
+            return ConflictResolutionResult {
+                action: ConflictAction::Skip,
+                audit: None,
+                repo_clean: false,
+            };
         }
     };
+
+    // Collect resolved contents for the audit record (before writing to disk)
+    let resolved_contents: Vec<ConflictFileContent> = resolution
+        .resolved_files
+        .iter()
+        .map(|rf| ConflictFileContent {
+            path: rf.path.clone(),
+            content: rf.content.clone(),
+        })
+        .collect();
 
     // Write resolved files and stage them
     for resolved_file in &resolution.resolved_files {
@@ -200,7 +311,11 @@ pub fn resolve_conflict(
                 error = %e,
                 "failed to write resolved file"
             );
-            return ConflictAction::Skip;
+            return ConflictResolutionResult {
+                action: ConflictAction::Skip,
+                audit: None,
+                repo_clean: false,
+            };
         }
 
         if let Err(e) = git_command(&["add", &resolved_file.path], work_dir) {
@@ -210,7 +325,11 @@ pub fn resolve_conflict(
                 error = %e,
                 "failed to git add resolved file"
             );
-            return ConflictAction::Skip;
+            return ConflictResolutionResult {
+                action: ConflictAction::Skip,
+                audit: None,
+                repo_clean: false,
+            };
         }
     }
 
@@ -223,29 +342,98 @@ pub fn resolve_conflict(
                 error = %e,
                 "failed to commit conflict resolution"
             );
-            return ConflictAction::Skip;
+            return ConflictResolutionResult {
+                action: ConflictAction::Skip,
+                audit: None,
+                repo_clean: false,
+            };
         }
     }
 
     // Get the commit SHA
-    match git_command(&["rev-parse", "HEAD"], work_dir) {
-        Ok(sha) => {
-            tracing::info!(
-                session_name,
-                sha = %sha,
-                resolved_files = resolution.resolved_files.len(),
-                "conflict resolved successfully"
-            );
-            ConflictAction::Resolved(sha)
-        }
+    let sha = match git_command(&["rev-parse", "HEAD"], work_dir) {
+        Ok(sha) => sha,
         Err(e) => {
             tracing::warn!(
                 session_name,
                 error = %e,
                 "conflict committed but failed to read HEAD SHA"
             );
-            ConflictAction::Skip
+            return ConflictResolutionResult {
+                action: ConflictAction::Skip,
+                audit: None,
+                repo_clean: false,
+            };
         }
+    };
+
+    // Run optional validation command after commit
+    // NOTE: MERGE_HEAD is consumed by the commit, so rollback must use
+    // `git reset --hard HEAD~1` — `git merge --abort` would fail here.
+    if let Some(validation_cmd) = &config.validation_command {
+        match run_validation_command(validation_cmd, work_dir, config.timeout_secs) {
+            Ok(()) => {
+                tracing::info!(
+                    session_name,
+                    sha = %sha,
+                    validation_cmd = %validation_cmd,
+                    validation_passed = true,
+                    resolved_files = resolution.resolved_files.len(),
+                    "conflict resolved successfully with validation"
+                );
+            }
+            Err(reason) => {
+                tracing::warn!(
+                    session_name,
+                    validation_cmd = %validation_cmd,
+                    reason = %reason,
+                    "validation command failed — rolling back merge commit"
+                );
+                // Rollback the merge commit. On reset failure, propagate as a hard error.
+                match git_command(&["reset", "--hard", "HEAD~1"], work_dir) {
+                    Ok(_) => {
+                        return ConflictResolutionResult {
+                            action: ConflictAction::Skip,
+                            audit: None,
+                            repo_clean: true,
+                        };
+                    }
+                    Err(reset_err) => {
+                        tracing::warn!(
+                            session_name,
+                            error = %reset_err,
+                            "git reset --hard HEAD~1 failed after validation failure"
+                        );
+                        // Hard error: the repo is in an unknown state
+                        return ConflictResolutionResult {
+                            action: ConflictAction::Abort,
+                            audit: None,
+                            repo_clean: false,
+                        };
+                    }
+                }
+            }
+        }
+    } else {
+        tracing::info!(
+            session_name,
+            sha = %sha,
+            resolved_files = resolution.resolved_files.len(),
+            "conflict resolved successfully"
+        );
+    }
+
+    ConflictResolutionResult {
+        action: ConflictAction::Resolved(sha),
+        audit: Some(ConflictResolution {
+            session_name: session_name.to_string(),
+            conflicting_files: conflicting_files.to_vec(),
+            original_contents,
+            resolved_contents,
+            resolver_stdout,
+            validation_passed: config.validation_command.as_ref().map(|_| true),
+        }),
+        repo_clean: false,
     }
 }
 
@@ -682,6 +870,7 @@ mod tests {
             enabled: true,
             model: "sonnet".to_string(),
             timeout_secs: 5,
+            validation_command: None,
         };
 
         // This will fail because either claude is not installed,
@@ -698,6 +887,41 @@ mod tests {
             &config,
         );
 
-        assert_eq!(result, ConflictAction::Skip);
+        assert_eq!(result.action, ConflictAction::Skip);
+        assert!(!result.repo_clean);
+        assert!(result.audit.is_none());
+    }
+
+    // ── run_validation_command ─────────────────────────────────────
+
+    #[test]
+    fn run_validation_command_success() {
+        let dir = tempfile::tempdir().unwrap();
+        let result = run_validation_command("echo ok", dir.path(), 10);
+        assert!(result.is_ok(), "expected Ok(()), got: {:?}", result);
+    }
+
+    #[test]
+    fn run_validation_command_failure() {
+        let dir = tempfile::tempdir().unwrap();
+        let result = run_validation_command("sh -c 'exit 1'", dir.path(), 10);
+        assert!(result.is_err(), "expected Err, got Ok");
+        let msg = result.unwrap_err();
+        assert!(
+            msg.contains("exited with code"),
+            "error should mention exit code: {msg}"
+        );
+    }
+
+    #[test]
+    fn run_validation_command_not_found() {
+        let dir = tempfile::tempdir().unwrap();
+        let result = run_validation_command("nonexistent_binary_xyz", dir.path(), 10);
+        assert!(result.is_err(), "expected Err, got Ok");
+        let msg = result.unwrap_err();
+        assert!(
+            msg.contains("not found"),
+            "error should mention not found: {msg}"
+        );
     }
 }

@@ -843,6 +843,7 @@ mod tests {
                     error: None,
                 }],
                 duration_secs: 1.5,
+                resolutions: vec![],
             },
             summary: OrchestrationSummary {
                 total: 3,

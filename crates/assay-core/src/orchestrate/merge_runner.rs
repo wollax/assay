@@ -12,6 +12,8 @@ use assay_types::{
     MergeStrategy,
 };
 
+use crate::orchestrate::conflict_resolver::ConflictResolutionResult;
+
 use crate::error::{AssayError, Result};
 use crate::merge::{git_raw, merge_execute};
 use crate::orchestrate::executor::SessionOutcome;
@@ -39,18 +41,18 @@ pub struct MergeRunnerConfig {
 /// 2. Orders sessions using the configured strategy.
 /// 3. Iterates in order, calling [`merge_execute`] for each.
 /// 4. On conflict, invokes the `conflict_handler` and acts on the returned
-///    [`ConflictAction`].
+///    [`ConflictResolutionResult`].
 /// 5. Returns a [`MergeReport`] with per-session results and aggregate counts.
 ///
 /// The conflict handler receives `(session_name, conflicting_files, scan, work_dir)`
-/// and must return a [`ConflictAction`].
+/// and must return a [`ConflictResolutionResult`].
 pub fn merge_completed_sessions<H>(
     completed_sessions: Vec<CompletedSession>,
     config: &MergeRunnerConfig,
     conflict_handler: H,
 ) -> Result<MergeReport>
 where
-    H: Fn(&str, &[String], &ConflictScan, &Path) -> ConflictAction,
+    H: Fn(&str, &[String], &ConflictScan, &Path) -> ConflictResolutionResult,
 {
     let start = Instant::now();
     let project_root = &config.project_root;
@@ -110,6 +112,7 @@ where
             },
             results: Vec::new(),
             duration_secs: start.elapsed().as_secs_f64(),
+            resolutions: vec![],
         });
     }
 
@@ -120,6 +123,7 @@ where
     // ── Sequential merge loop ────────────────────────────────────────
 
     let mut results: Vec<MergeSessionResult> = Vec::with_capacity(ordered.len());
+    let mut resolutions: Vec<assay_types::ConflictResolution> = Vec::new();
     let mut sessions_merged: usize = 0;
     let mut conflict_skipped: usize = 0;
     let mut aborted_count: usize = 0;
@@ -196,10 +200,18 @@ where
                         }));
 
                     match handler_result {
-                        Ok(ConflictAction::Resolved(sha)) => {
+                        Ok(ConflictResolutionResult {
+                            action: ConflictAction::Resolved(sha),
+                            audit,
+                            repo_clean: _,
+                        }) => {
                             // Verify the commit SHA exists
                             match git_raw(&["rev-parse", "--verify", &sha], project_root) {
                                 Ok((_, _, Some(0))) => {
+                                    // Push audit record if present
+                                    if let Some(audit_record) = audit {
+                                        resolutions.push(audit_record);
+                                    }
                                     results.push(MergeSessionResult {
                                         session_name: session.session_name.clone(),
                                         status: MergeSessionStatus::Merged,
@@ -223,9 +235,15 @@ where
                                 }
                             }
                         }
-                        Ok(ConflictAction::Skip) => {
-                            // Handler chose to skip — abort the conflicted merge
-                            let _ = git_raw(&["merge", "--abort"], project_root);
+                        Ok(ConflictResolutionResult {
+                            action: ConflictAction::Skip,
+                            repo_clean,
+                            ..
+                        }) => {
+                            // Handler chose to skip — abort only if repo is not already clean
+                            if !repo_clean {
+                                let _ = git_raw(&["merge", "--abort"], project_root);
+                            }
                             results.push(MergeSessionResult {
                                 session_name: session.session_name.clone(),
                                 status: MergeSessionStatus::ConflictSkipped,
@@ -237,9 +255,15 @@ where
                             });
                             conflict_skipped += 1;
                         }
-                        Ok(ConflictAction::Abort) => {
+                        Ok(ConflictResolutionResult {
+                            action: ConflictAction::Abort,
+                            repo_clean,
+                            ..
+                        }) => {
                             // Handler chose to abort — clean up and stop the loop
-                            let _ = git_raw(&["merge", "--abort"], project_root);
+                            if !repo_clean {
+                                let _ = git_raw(&["merge", "--abort"], project_root);
+                            }
                             results.push(MergeSessionResult {
                                 session_name: session.session_name.clone(),
                                 status: MergeSessionStatus::Aborted,
@@ -250,7 +274,7 @@ where
                             abort_triggered = true;
                         }
                         Err(_panic) => {
-                            // Handler panicked — abort the conflicted merge
+                            // Handler panicked — no commit was made, always abort
                             let _ = git_raw(&["merge", "--abort"], project_root);
                             results.push(MergeSessionResult {
                                 session_name: session.session_name.clone(),
@@ -266,14 +290,14 @@ where
                 } else {
                     // Default path: merge was already aborted by merge_execute.
                     // Handler receives a post-abort scan (existing behavior).
-                    let action = conflict_handler(
+                    let result = conflict_handler(
                         &session.session_name,
                         &conflicting_files,
                         scan,
                         project_root,
                     );
 
-                    match action {
+                    match result.action {
                         ConflictAction::Skip => {
                             results.push(MergeSessionResult {
                                 session_name: session.session_name.clone(),
@@ -298,6 +322,9 @@ where
                         }
                         ConflictAction::Resolved(sha) => {
                             // The handler resolved the conflict externally and committed.
+                            if let Some(audit_record) = result.audit {
+                                resolutions.push(audit_record);
+                            }
                             results.push(MergeSessionResult {
                                 session_name: session.session_name.clone(),
                                 status: MergeSessionStatus::Merged,
@@ -329,13 +356,18 @@ where
         plan,
         results,
         duration_secs: start.elapsed().as_secs_f64(),
+        resolutions,
     })
 }
 
 /// Returns a default conflict handler that always skips conflicting sessions.
-pub fn default_conflict_handler() -> impl Fn(&str, &[String], &ConflictScan, &Path) -> ConflictAction
-{
-    |_session_name, _conflicting_files, _scan, _work_dir| ConflictAction::Skip
+pub fn default_conflict_handler()
+-> impl Fn(&str, &[String], &ConflictScan, &Path) -> ConflictResolutionResult {
+    |_session_name, _conflicting_files, _scan, _work_dir| ConflictResolutionResult {
+        action: ConflictAction::Skip,
+        audit: None,
+        repo_clean: false,
+    }
 }
 
 /// Extract [`CompletedSession`]s from orchestrator outcomes.
@@ -620,7 +652,11 @@ mod tests {
 
         // Abort handler
         let abort_handler = |_name: &str, _files: &[String], _scan: &ConflictScan, _dir: &Path| {
-            ConflictAction::Abort
+            ConflictResolutionResult {
+                action: ConflictAction::Abort,
+                audit: None,
+                repo_clean: false,
+            }
         };
 
         let report = merge_completed_sessions(sessions, &config, abort_handler).unwrap();
@@ -873,7 +909,11 @@ mod tests {
                 let sha = String::from_utf8_lossy(&sha_output.stdout)
                     .trim()
                     .to_string();
-                ConflictAction::Resolved(sha)
+                ConflictResolutionResult {
+                    action: ConflictAction::Resolved(sha),
+                    audit: None,
+                    repo_clean: false,
+                }
             };
 
         let report = merge_completed_sessions(sessions, &config, resolver_handler).unwrap();
@@ -969,7 +1009,11 @@ mod tests {
         };
 
         let skip_handler = |_name: &str, _files: &[String], _scan: &ConflictScan, _dir: &Path| {
-            ConflictAction::Skip
+            ConflictResolutionResult {
+                action: ConflictAction::Skip,
+                audit: None,
+                repo_clean: false,
+            }
         };
 
         let report = merge_completed_sessions(sessions, &config, skip_handler).unwrap();
@@ -1007,10 +1051,13 @@ mod tests {
             conflict_resolution_enabled: true,
         };
 
-        let panic_handler =
-            |_name: &str, _files: &[String], _scan: &ConflictScan, _dir: &Path| -> ConflictAction {
-                panic!("handler exploded!");
-            };
+        let panic_handler = |_name: &str,
+                             _files: &[String],
+                             _scan: &ConflictScan,
+                             _dir: &Path|
+         -> ConflictResolutionResult {
+            panic!("handler exploded!");
+        };
 
         let report2 = merge_completed_sessions(sessions2, &config2, panic_handler).unwrap();
 
