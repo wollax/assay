@@ -56,7 +56,7 @@ No `.kata/REQUIREMENTS.md` exists — operating in legacy compatibility mode. M0
 - [x] **S02: Real Assay Binary + Production Wiring** `risk:high` `depends:[S01]`
   > After this: `cargo test -p smelt-cli --test docker_lifecycle test_real_assay_manifest_parsing` provisions a container, injects a real `assay` binary built from source, runs through the full smelt pipeline (provision → `.assay/` setup → spec writes → manifest write → assay exec), and asserts assay's stderr contains no TOML/schema parse errors — proving Smelt-generated files are accepted by the real binary.
 
-- [ ] **S03: Streaming Assay Output** `risk:medium` `depends:[S02]`
+- [x] **S03: Streaming Assay Output** `risk:medium` `depends:[S02]`
   > After this: `smelt run` prints assay gate output lines to stderr as they are produced (not buffered until assay exits) — observable by running any `assay` command that emits output over time.
 
 - [ ] **S04: Exit Code 2 + Result Collection Compatibility** `risk:low` `depends:[S03]`

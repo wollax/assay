@@ -212,13 +212,11 @@ impl RuntimeProvider for DockerProvider {
                         Ok(LogOutput::StdOut { message }) => {
                             let text = String::from_utf8_lossy(&message);
                             debug!(stream = "stdout", "{}", text.trim_end());
-                            eprint!("{text}");
                             stdout_buf.push_str(&text);
                         }
                         Ok(LogOutput::StdErr { message }) => {
                             let text = String::from_utf8_lossy(&message);
                             debug!(stream = "stderr", "{}", text.trim_end());
-                            eprint!("{text}");
                             stderr_buf.push_str(&text);
                         }
                         Ok(_) => {} // StdIn, Console — ignore
@@ -256,6 +254,120 @@ impl RuntimeProvider for DockerProvider {
         let exit_code = inspect.exit_code.unwrap_or(-1) as i32;
 
         info!(exec_id = %exec_id, exit_code = exit_code, "exec complete");
+
+        Ok(ExecHandle {
+            container: container.clone(),
+            exec_id,
+            exit_code,
+            stdout: stdout_buf,
+            stderr: stderr_buf,
+        })
+    }
+
+    async fn exec_streaming<F>(
+        &self,
+        container: &ContainerId,
+        command: &[String],
+        mut output_cb: F,
+    ) -> crate::Result<ExecHandle>
+    where
+        F: FnMut(&str) + Send + 'static,
+    {
+        let container_id = container.as_str();
+
+        // Create exec instance with working_dir set to /workspace
+        let exec_config = CreateExecOptions {
+            cmd: Some(command.to_vec()),
+            attach_stdout: Some(true),
+            attach_stderr: Some(true),
+            working_dir: Some("/workspace".to_string()),
+            ..Default::default()
+        };
+
+        let exec_created = self
+            .client
+            .create_exec(container_id, exec_config)
+            .await
+            .map_err(|e| {
+                SmeltError::provider_with_source(
+                    "exec_streaming",
+                    format!("failed to create exec in container {container}: {e}"),
+                    e,
+                )
+            })?;
+        let exec_id = exec_created.id;
+        info!(exec_id = %exec_id, container_id = %container_id, "exec_streaming created");
+
+        // Start exec (attached mode)
+        let start_result = self
+            .client
+            .start_exec(&exec_id, None)
+            .await
+            .map_err(|e| {
+                SmeltError::provider_with_source(
+                    "exec_streaming",
+                    format!("failed to start exec {exec_id}: {e}"),
+                    e,
+                )
+            })?;
+
+        info!(exec_id = %exec_id, "exec_streaming started");
+
+        // Consume the output stream, calling output_cb per chunk
+        let mut stdout_buf = String::new();
+        let mut stderr_buf = String::new();
+
+        match start_result {
+            bollard::exec::StartExecResults::Attached { mut output, .. } => {
+                while let Some(chunk) = output.next().await {
+                    match chunk {
+                        Ok(LogOutput::StdOut { message }) => {
+                            let text = String::from_utf8_lossy(&message);
+                            debug!(stream = "stdout", "{}", text.trim_end());
+                            output_cb(&text);
+                            stdout_buf.push_str(&text);
+                        }
+                        Ok(LogOutput::StdErr { message }) => {
+                            let text = String::from_utf8_lossy(&message);
+                            debug!(stream = "stderr", "{}", text.trim_end());
+                            output_cb(&text);
+                            stderr_buf.push_str(&text);
+                        }
+                        Ok(_) => {} // StdIn, Console — ignore
+                        Err(e) => {
+                            return Err(SmeltError::provider_with_source(
+                                "exec_streaming",
+                                format!("stream error during exec {exec_id}: {e}"),
+                                e,
+                            ));
+                        }
+                    }
+                }
+            }
+            bollard::exec::StartExecResults::Detached => {
+                return Err(SmeltError::provider(
+                    "exec_streaming",
+                    format!("exec {exec_id} unexpectedly started in detached mode"),
+                ));
+            }
+        }
+
+        // Retrieve exit code via inspect_exec
+        let inspect = self
+            .client
+            .inspect_exec(&exec_id)
+            .await
+            .map_err(|e| {
+                SmeltError::provider_with_source(
+                    "exec_streaming",
+                    format!("failed to inspect exec {exec_id}: {e}"),
+                    e,
+                )
+            })?;
+
+        let exit_code = inspect.exit_code.unwrap_or(-1) as i32;
+
+        info!(exec_id = %exec_id, exit_code = exit_code, "exec_streaming complete");
 
         Ok(ExecHandle {
             container: container.clone(),

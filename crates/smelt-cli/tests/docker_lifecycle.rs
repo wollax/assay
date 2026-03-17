@@ -7,6 +7,7 @@
 //! is unavailable, tests skip gracefully instead of failing.
 
 use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use base64::Engine as _;
@@ -1454,6 +1455,58 @@ async fn test_real_assay_manifest_parsing() {
 
     // NOTE: exit_code is intentionally NOT asserted as 0 — assay will fail after
     // parse phase without a Claude API key / worktree setup.
+}
+
+/// Test that `exec_streaming()` delivers output chunks in order and that `ExecHandle`
+/// is still populated with the full buffered output.
+///
+/// Uses `printf 'a\nb\nc\n'` (available in alpine:3) as the command.
+/// Chunks are accumulated via `Arc<Mutex<Vec<String>>>` to satisfy `Send + 'static`.
+/// Asserts:
+/// - At least one chunk was delivered
+/// - Joined chunks equal `"a\nb\nc\n"` (order preserved)
+/// - `handle.stdout` contains `"a"` (ExecHandle is populated)
+#[tokio::test]
+async fn test_exec_streaming_delivers_chunks_in_order() {
+    let Some(provider) = docker_provider_or_skip() else { return };
+    let manifest = test_manifest("exec-streaming-order");
+
+    let container = provider.provision(&manifest).await.expect("provision");
+
+    let chunks: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let chunks_cb = Arc::clone(&chunks);
+
+    let cmd = vec![
+        "printf".to_string(),
+        "a\\nb\\nc\\n".to_string(),
+    ];
+    let handle = provider
+        .exec_streaming(&container, &cmd, move |chunk| {
+            chunks_cb.lock().unwrap().push(chunk.to_string());
+        })
+        .await
+        .expect("exec_streaming should succeed");
+
+    // Teardown before asserting (D039 teardown-before-assert pattern)
+    provider.teardown(&container).await.expect("teardown");
+    assert_container_removed(&provider, container.as_str()).await;
+
+    let collected = chunks.lock().unwrap().clone();
+    let joined = collected.join("");
+
+    // Print for diagnosability without --nocapture
+    for (i, c) in collected.iter().enumerate() {
+        eprintln!("chunk[{i}] = {c:?}");
+    }
+    eprintln!("handle.stdout = {:?}", handle.stdout);
+
+    assert!(!collected.is_empty(), "streaming callback should have been invoked at least once");
+    assert_eq!(joined, "a\nb\nc\n", "joined chunks should equal 'a\\nb\\nc\\n', got: {joined:?}");
+    assert!(
+        handle.stdout.contains("a"),
+        "ExecHandle.stdout should contain 'a', got: {:?}",
+        handle.stdout
+    );
 }
 
 /// Smoke test for `build_linux_assay_binary()`.

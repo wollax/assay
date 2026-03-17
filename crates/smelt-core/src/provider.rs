@@ -100,6 +100,20 @@ pub trait RuntimeProvider: Send + Sync {
         command: &[String],
     ) -> impl std::future::Future<Output = crate::Result<ExecHandle>> + Send;
 
+    /// Execute a command inside the container, streaming output via a callback.
+    ///
+    /// Calls `output_cb` for each stdout/stderr chunk as it arrives.  The
+    /// returned [`ExecHandle`] still carries the full buffered output after
+    /// the stream completes.
+    fn exec_streaming<F>(
+        &self,
+        container: &ContainerId,
+        command: &[String],
+        output_cb: F,
+    ) -> impl std::future::Future<Output = crate::Result<ExecHandle>> + Send
+    where
+        F: FnMut(&str) + Send + 'static;
+
     /// Collect results and artifacts after a session completes.
     fn collect(
         &self,

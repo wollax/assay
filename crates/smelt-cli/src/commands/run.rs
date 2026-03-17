@@ -229,17 +229,10 @@ where
     let cmd = smelt_core::AssayInvoker::build_run_command(&manifest);
     let exec_future = async {
         let handle = provider
-            .exec(&container, &cmd)
+            .exec_streaming(&container, &cmd, |chunk| eprint!("{chunk}"))
             .await
             .with_context(|| "failed to execute assay run")?;
         eprintln!("Assay complete — exit code: {}", handle.exit_code);
-
-        if !handle.stdout.is_empty() {
-            eprint!("{}", handle.stdout);
-        }
-        if !handle.stderr.is_empty() {
-            eprint!("{}", handle.stderr);
-        }
 
         if handle.exit_code != 0 {
             anyhow::bail!(
