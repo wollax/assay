@@ -334,6 +334,36 @@ pub fn build_harness_profile(session: &ManifestSession) -> HarnessProfile {
     }
 }
 
+// ── Setup result (handoff from setup to execute) ─────────────────────
+
+/// Intermediate result from [`setup_session`], carrying all state needed
+/// by [`execute_session`] so it can run without re-loading the spec or
+/// re-creating the worktree.
+///
+/// All fields are `Send` — verified by static assertion — enabling the
+/// executor to dispatch `execute_session` across threads.
+#[derive(Debug)]
+pub struct SetupResult {
+    /// Work session ID (from `start_session`).
+    pub session_id: String,
+    /// Human-readable spec name.
+    pub spec_name: String,
+    /// The loaded spec entry (legacy or directory).
+    pub spec_entry: SpecEntry,
+    /// Worktree metadata from git worktree creation.
+    pub worktree_info: assay_types::WorktreeInfo,
+    /// Timing records for stages 1-2 (SpecLoad + WorktreeCreate).
+    pub stage_timings: Vec<StageTiming>,
+}
+
+// Static assertion: SetupResult must be Send for std::thread::scope.
+const _: () = {
+    fn _assert_send<T: Send>() {}
+    fn _check() {
+        _assert_send::<SetupResult>();
+    }
+};
+
 // ── Core orchestrator ────────────────────────────────────────────────
 
 /// Type alias for the harness writer function.
@@ -345,28 +375,21 @@ pub fn build_harness_profile(session: &ManifestSession) -> HarnessProfile {
 /// `claude::write_config` + `claude::build_cli_args` from `assay-harness`.
 pub type HarnessWriter = dyn Fn(&HarnessProfile, &Path) -> std::result::Result<Vec<String>, String>;
 
-/// Execute a single manifest session through the full pipeline.
+/// Execute the setup phase of a pipeline session (stages 1-2).
 ///
-/// Sequences through all pipeline stages:
+/// Runs:
 /// 1. **SpecLoad** — load and validate the spec
 /// 2. **WorktreeCreate** — start session + create git worktree
-/// 3. **HarnessConfig** — build profile + write config via `harness_writer`
-/// 4. **AgentLaunch** — spawn claude subprocess with timeout
-/// 5. **GateEvaluate** — evaluate quality gates
-/// 6. **MergeCheck** — check merge compatibility
 ///
-/// On failure after session start, the session is abandoned (never left
-/// in `AgentRunning`).
-pub fn run_session(
+/// Returns a [`SetupResult`] containing all state needed by
+/// [`execute_session`]. On failure after session start, the session
+/// is abandoned (never left in `AgentRunning`).
+pub fn setup_session(
     manifest_session: &ManifestSession,
     config: &PipelineConfig,
-    harness_writer: &HarnessWriter,
-) -> std::result::Result<PipelineResult, PipelineError> {
+) -> std::result::Result<SetupResult, PipelineError> {
     let mut stage_timings = Vec::new();
-    #[allow(unused_assignments)]
-    let mut session_id: Option<String> = None;
-
-    // Helper to abandon session on failure.
+    // Helper to abandon session on failure (after session start).
     let abandon_if_started = |sid: &Option<String>, assay_dir: &Path, reason: &str| {
         if let Some(id) = sid {
             let _ = crate::work_session::abandon_session(assay_dir, id, reason);
@@ -421,7 +444,7 @@ pub fn run_session(
         }
     })?;
 
-    session_id = Some(ws.id.clone());
+    let session_id = Some(ws.id.clone());
 
     // Create the worktree, passing the session ID for metadata linkage.
     let worktree_info = crate::worktree::create(
@@ -453,16 +476,51 @@ pub fn run_session(
         duration: stage_start.elapsed(),
     });
 
+    Ok(SetupResult {
+        session_id: ws.id,
+        spec_name,
+        spec_entry,
+        worktree_info,
+        stage_timings,
+    })
+}
+
+/// Execute the run phase of a pipeline session (stages 3-6).
+///
+/// Runs:
+/// 3. **HarnessConfig** — build profile + write config via `harness_writer`
+/// 4. **AgentLaunch** — spawn claude subprocess with timeout
+/// 5. **GateEvaluate** — evaluate quality gates
+/// 6. **MergeCheck** — check merge compatibility
+///
+/// Takes a [`SetupResult`] from [`setup_session`] containing the loaded
+/// spec and created worktree. On failure, the session is abandoned via
+/// the session_id from `SetupResult`.
+pub fn execute_session(
+    manifest_session: &ManifestSession,
+    config: &PipelineConfig,
+    harness_writer: &HarnessWriter,
+    setup: SetupResult,
+) -> std::result::Result<PipelineResult, PipelineError> {
+    let SetupResult {
+        session_id,
+        spec_name,
+        spec_entry,
+        worktree_info,
+        mut stage_timings,
+    } = setup;
+
+    // Helper to abandon session on failure.
+    let abandon = |assay_dir: &Path, reason: &str| {
+        let _ = crate::work_session::abandon_session(assay_dir, &session_id, reason);
+    };
+
     // ── Stage 3: HarnessConfig ───────────────────────────────────
     let stage_start = Instant::now();
     let profile = build_harness_profile(manifest_session);
     let cli_args = harness_writer(&profile, &worktree_info.path).map_err(|e| {
         let elapsed = stage_start.elapsed();
-        abandon_if_started(
-            &session_id,
-            &config.assay_dir,
-            &format!("HarnessConfig failed: {e}"),
-        );
+        abandon(&config.assay_dir, &format!("HarnessConfig failed: {e}"));
         PipelineError {
             stage: PipelineStage::HarnessConfig,
             message: format!("Failed to write harness config: {e}"),
@@ -482,8 +540,7 @@ pub fn run_session(
     let stage_start = Instant::now();
     let timeout = Duration::from_secs(config.timeout_secs);
     let agent_output = launch_agent(&cli_args, &worktree_info.path, timeout).map_err(|mut e| {
-        abandon_if_started(
-            &session_id,
+        abandon(
             &config.assay_dir,
             &format!("AgentLaunch failed: {}", e.message),
         );
@@ -493,8 +550,7 @@ pub fn run_session(
 
     if agent_output.timed_out {
         let elapsed = stage_start.elapsed();
-        abandon_if_started(
-            &session_id,
+        abandon(
             &config.assay_dir,
             &format!("Agent timed out after {}s", config.timeout_secs),
         );
@@ -526,8 +582,7 @@ pub fn run_session(
         } else {
             agent_output.stderr.clone()
         };
-        abandon_if_started(
-            &session_id,
+        abandon(
             &config.assay_dir,
             &format!("Agent crashed with {exit_info}"),
         );
@@ -567,11 +622,11 @@ pub fn run_session(
     };
 
     // Record gate result in the session. Use a synthetic run_id based on session.
-    let gate_run_id = format!("{}-gate", ws.id);
+    let gate_run_id = format!("{}-gate", session_id);
     let gate_passed = gate_summary.failed == 0;
     let _ = crate::work_session::record_gate_result(
         &config.assay_dir,
-        &ws.id,
+        &session_id,
         &gate_run_id,
         "pipeline_gate_evaluate",
         Some(if gate_passed {
@@ -588,7 +643,7 @@ pub fn run_session(
     if !gate_passed {
         // Gates failed — session stays in GateEvaluated, outcome is GateFailed.
         return Ok(PipelineResult {
-            session_id: ws.id,
+            session_id,
             spec_name,
             gate_summary: Some(gate_summary),
             merge_check: None,
@@ -629,11 +684,11 @@ pub fn run_session(
         // All good — complete the session.
         let _ = crate::work_session::complete_session(
             &config.assay_dir,
-            &ws.id,
+            &session_id,
             Some("Pipeline completed: gates passed, merge clean"),
         );
         Ok(PipelineResult {
-            session_id: ws.id,
+            session_id,
             spec_name,
             gate_summary: Some(gate_summary),
             merge_check: Some(merge_result),
@@ -643,7 +698,7 @@ pub fn run_session(
     } else {
         // Merge conflicts — session stays in GateEvaluated.
         Ok(PipelineResult {
-            session_id: ws.id,
+            session_id,
             spec_name,
             gate_summary: Some(gate_summary),
             merge_check: Some(merge_result),
@@ -651,6 +706,28 @@ pub fn run_session(
             outcome: PipelineOutcome::MergeConflict,
         })
     }
+}
+
+/// Execute a single manifest session through the full pipeline.
+///
+/// Sequences through all pipeline stages:
+/// 1. **SpecLoad** — load and validate the spec
+/// 2. **WorktreeCreate** — start session + create git worktree
+/// 3. **HarnessConfig** — build profile + write config via `harness_writer`
+/// 4. **AgentLaunch** — spawn claude subprocess with timeout
+/// 5. **GateEvaluate** — evaluate quality gates
+/// 6. **MergeCheck** — check merge compatibility
+///
+/// Thin composition of [`setup_session`] and [`execute_session`].
+/// On failure after session start, the session is abandoned (never left
+/// in `AgentRunning`).
+pub fn run_session(
+    manifest_session: &ManifestSession,
+    config: &PipelineConfig,
+    harness_writer: &HarnessWriter,
+) -> std::result::Result<PipelineResult, PipelineError> {
+    let setup = setup_session(manifest_session, config)?;
+    execute_session(manifest_session, config, harness_writer, setup)
 }
 
 /// Execute all sessions in a manifest, collecting results.

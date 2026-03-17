@@ -222,7 +222,7 @@
 - Primary owning slice: M002/S02
 - Supporting slices: M002/S01, M002/S06
 - Validation: DAG validation rejects cycles, parallel executor respects dependency ordering, skips dependents of failures, integration test with concurrent sessions
-- Notes: S01 provides manifest dependencies and DAG validation; S02 builds the executor; S06 proves end-to-end integration
+- Notes: S01 delivered DAG validation (cycles, missing refs, topological groups). S02 delivered parallel executor with bounded concurrency, failure propagation, abort policy, panic recovery, and state persistence (18 tests). Awaits S06 for end-to-end CLI routing and real agent integration.
 
 ### R021 — Orchestration MCP tools
 - Class: core-capability

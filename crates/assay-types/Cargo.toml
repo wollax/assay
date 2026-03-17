@@ -13,6 +13,9 @@ schemars.workspace = true
 chrono.workspace = true
 inventory.workspace = true
 
+[features]
+orchestrate = []
+
 [dev-dependencies]
 toml.workspace = true
 insta.workspace = true

@@ -60,7 +60,7 @@ This milestone is complete only when all are true:
 - [x] **S01: Manifest Dependencies & DAG Validation** `risk:high` `depends:[]`
   > After this: user authors a multi-session manifest with `depends_on` fields. `assay run` validates the dependency graph, rejects cycles and missing references with actionable error messages, and shows the execution plan (topological order with parallelism groups). Verified by unit tests and a real multi-session manifest parsed from disk. Reference spec: Smelt's `orchestrate/dag.rs` (ready_set, mark_skipped_dependents semantics).
 
-- [ ] **S02: Parallel Session Executor** `risk:high` `depends:[S01]`
+- [x] **S02: Parallel Session Executor** `risk:high` `depends:[S01]`
   > After this: `assay run` on a multi-session manifest launches independent sessions concurrently via `std::thread::scope` with bounded concurrency (default: min(sessions, 8)), serializes worktree creation through a mutex, respects dependency ordering, skips dependents of failed sessions, and reports per-session outcomes with timing. Orchestrator state persists to disk for status queries. Verified by unit tests with mock harness writers confirming parallel execution, correct ordering, and failure propagation. Reference spec: Smelt's `orchestrate/executor.rs` (phases, failure policy, state persistence).
 
 - [ ] **S03: Sequential Merge Runner & Conflict Contract** `risk:medium` `depends:[S02]`

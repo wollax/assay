@@ -33,7 +33,7 @@ libc.workspace = true
 serial_test.workspace = true
 
 [features]
-orchestrate = []
+orchestrate = ["assay-types/orchestrate"]
 
 [lints]
 workspace = true

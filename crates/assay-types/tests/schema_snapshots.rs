@@ -214,3 +214,40 @@ fn manifest_session_schema_snapshot() {
     let schema = schemars::schema_for!(assay_types::ManifestSession);
     assert_json_snapshot!("manifest-session-schema", schema.to_value());
 }
+
+// ── Orchestrator types (behind orchestrate feature) ──────────────────
+
+#[cfg(feature = "orchestrate")]
+#[test]
+fn session_run_state_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::SessionRunState);
+    assert_json_snapshot!("session-run-state-schema", schema.to_value());
+}
+
+#[cfg(feature = "orchestrate")]
+#[test]
+fn failure_policy_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::FailurePolicy);
+    assert_json_snapshot!("failure-policy-schema", schema.to_value());
+}
+
+#[cfg(feature = "orchestrate")]
+#[test]
+fn orchestrator_phase_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::OrchestratorPhase);
+    assert_json_snapshot!("orchestrator-phase-schema", schema.to_value());
+}
+
+#[cfg(feature = "orchestrate")]
+#[test]
+fn session_status_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::SessionStatus);
+    assert_json_snapshot!("session-status-schema", schema.to_value());
+}
+
+#[cfg(feature = "orchestrate")]
+#[test]
+fn orchestrator_status_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::OrchestratorStatus);
+    assert_json_snapshot!("orchestrator-status-schema", schema.to_value());
+}

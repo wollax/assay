@@ -12,7 +12,7 @@ testing = []
 [dependencies]
 assay-core = { workspace = true, features = ["orchestrate"] }
 assay-harness.workspace = true
-assay-types.workspace = true
+assay-types = { workspace = true, features = ["orchestrate"] }
 chrono.workspace = true
 rmcp.workspace = true
 schemars.workspace = true

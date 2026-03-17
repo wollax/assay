@@ -5,3 +5,4 @@
 //! behind the `orchestrate` Cargo feature.
 
 pub mod dag;
+pub mod executor;

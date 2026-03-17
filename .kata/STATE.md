@@ -1,12 +1,12 @@
 # Kata State
 
 **Active Milestone:** M002 — Multi-Agent Orchestration & Harness Platform
-**Active Slice:** — (between slices)
-**Active Task:** —
-**Phase:** Slice Complete → Ready for S02
-**Slice Branch:** kata/M002/S01 (ready to merge)
+**Active Slice:** None — ready for next slice
+**Active Task:** None
+**Phase:** Between Slices
+**Slice Branch:** kata/M002/S02
 **Last Updated:** 2026-03-17
-**Requirements Status:** 4 active · 19 validated · 8 deferred · 4 out of scope
+**Requirements Status:** 4 active · 19 validated · 3 deferred · 4 out of scope
 
 ## Completed Milestones
 
@@ -15,7 +15,7 @@
 ## M002 Progress
 
 - [x] S01: Manifest Dependencies & DAG Validation (4/4 tasks, 35 new tests, 700 total assay-core tests with feature) ✅
-- [ ] S02: Parallel Session Executor (depends: S01)
+- [x] S02: Parallel Session Executor (4/4 tasks, 18 executor tests, 718 total assay-core tests with feature) ✅
 - [ ] S03: Sequential Merge Runner & Conflict Contract (depends: S02)
 - [ ] S04: Codex & OpenCode Adapters (independent)
 - [ ] S05: Harness CLI & Scope Enforcement (depends: S04, S02)
@@ -23,9 +23,11 @@
 
 ## Recent Decisions
 
-- D024: Hand-rolled Kahn's algorithm for DAG, no petgraph
-- D021: depends_on references session name (or spec if no name)
-- D023: Port Smelt's orchestration patterns — adapt to Assay conventions
+- D031: Two-phase pipeline split (setup_session + execute_session) for worktree serialization
+- D032: Session runner as closure parameter for testability
+- D033: Orchestrate feature gate on assay-types for OrchestratorStatus types
+- D034: Generic `F: Fn + Sync` for session runner instead of `dyn` trait object
+- D035: HarnessWriter excluded from `run_orchestrated()` signature — caller captures in closure
 
 ## Blockers
 
@@ -33,4 +35,4 @@
 
 ## Next Action
 
-S01 complete and verified. Ready to merge slice branch to main, then begin S02 (Parallel Session Executor) or S04 (Codex & OpenCode Adapters — independent, can run in parallel).
+S02 complete. Next candidates: S03 (Sequential Merge Runner, depends S02) or S04 (Codex & OpenCode Adapters, independent). S03 and S04 can proceed in parallel.
