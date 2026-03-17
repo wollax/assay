@@ -1,9 +1,9 @@
 # Kata State
 
-**Active Milestone:** none — M001 complete, M002 not yet planned
-**Active Slice:** none
-**Status:** M001 complete. M001-SUMMARY.md written. PROJECT.md updated. Ready for M002 planning.
-**Phase:** Idle
+**Active Milestone:** M002 — Real Assay Integration
+**Active Slice:** none — context written, planning next
+**Status:** M002-CONTEXT.md written. Stale test fixed (clean baseline). Ready for M002 roadmap planning.
+**Phase:** Planning
 
 ## Recent Decisions
 - D034: Monitor state file as TOML at `.smelt/run-state.toml`, single-job model
@@ -31,4 +31,4 @@
 - `run_without_dry_run_attempts_docker` in `dry_run.rs` is a pre-existing failing test (test logic incorrect — asserts Docker unavailable but Docker is present). Not introduced by any M001 slice. Should be fixed before starting M002.
 
 ## Next Action
-M001 complete. Ready to start M002 planning.
+Write M002 roadmap. Read M002-CONTEXT.md (especially the Assay contract gap section), then plan slices starting with: S01 fixing AssayInvoker contract + assay init in container, S02 real binary integration test, S03 result collection compatibility with Assay's own merge output. The bridging strategy (generate spec files vs. reference existing specs) must be decided during planning.
