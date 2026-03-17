@@ -60,7 +60,7 @@ This milestone is complete only when all are true:
 - [x] **S03: Repo Mount & Assay Execution** `risk:medium` `depends:[S02]`
   > After this: `smelt run manifest.toml` provisions a container, bind-mounts the host repo at the specified ref, executes `assay orchestrate` (or a mock standing in for it) inside the container with the job's session definitions, and streams orchestration output to the terminal. Verified by inspecting the mounted repo inside the container and confirming Assay's output appears in the terminal stream.
 
-- [ ] **S04: Result Collection & Branch Output** `risk:medium` `depends:[S03]`
+- [x] **S04: Result Collection & Branch Output** `risk:medium` `depends:[S03]`
   > After this: After `smelt run` completes, the target branch specified in the manifest exists on the host repository containing the merged work from all sessions. The results are extracted from the container's repo mount before teardown. Verified by checking out the target branch on the host and confirming it contains commits from the agent sessions.
 
 - [ ] **S05: Job Monitoring, Timeout & Graceful Shutdown** `risk:low` `depends:[S03]`

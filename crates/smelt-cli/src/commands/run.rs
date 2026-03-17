@@ -6,7 +6,7 @@ use anyhow::{Context, Result};
 use clap::Args;
 use tracing::{error, info};
 
-use smelt_core::manifest::{CredentialStatus, JobManifest};
+use smelt_core::manifest::{self, CredentialStatus, JobManifest};
 
 /// Run a job manifest.
 #[derive(Debug, Args)]
@@ -104,6 +104,32 @@ async fn execute_run(args: &RunArgs) -> Result<i32> {
                 "assay run exited with code {} — stderr: {}",
                 handle.exit_code,
                 handle.stderr.trim()
+            );
+        }
+
+        // Phase 8: Collect results — create target branch from Assay's commits
+        eprintln!("Collecting results...");
+        let repo_path = manifest::resolve_repo_path(&manifest.job.repo)
+            .with_context(|| "failed to resolve repo path for collection")?;
+        let git_binary = which::which("git")
+            .with_context(|| "git not found on PATH during collection")?;
+        let git = smelt_core::GitCli::new(git_binary, repo_path.clone());
+        let collector = smelt_core::ResultCollector::new(git, repo_path);
+        let collect_result = collector
+            .collect(&manifest.job.base_ref, &manifest.merge.target)
+            .await
+            .with_context(|| "failed to collect results")?;
+
+        if collect_result.no_changes {
+            eprintln!(
+                "No new commits from Assay — target branch not created"
+            );
+        } else {
+            eprintln!(
+                "Collected: {} commits on branch '{}', {} files changed",
+                collect_result.commit_count,
+                collect_result.branch,
+                collect_result.files_changed.len(),
             );
         }
 

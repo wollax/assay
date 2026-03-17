@@ -31,3 +31,6 @@
 | D028 | M001-S03 | pattern | Assay manifest delivery        | Base64-encode TOML, write via exec `base64 -d`       | Avoids heredoc quoting issues with TOML special chars             | Yes — if Docker put_archive proves simpler |
 | D029 | M001-S03 | pattern | Assay manifest translation     | Smelt-side serde structs for Assay format, no import  | Keeps D002 (no crate dep); mock-based testing for now             | Yes — when real Assay integration in S06 |
 | D030 | M001-S03 | scope   | Repo path validation           | Local paths only; URLs rejected with clear error      | Bind-mount requires local path; clone support deferred            | Yes — if clone-into-container added later |
+| D031 | M001-S04 | pattern | ResultCollector generic design  | Generic `<G: GitOps>` not `dyn GitOps`                | RPITIT (D019) makes trait not object-safe; generics keep testability | No |
+| D032 | M001-S04 | pattern | Host-side collection            | Collector reads host repo directly, not via Docker exec | Bind-mount (D013) means commits are already on host filesystem     | No |
+| D033 | M001-S04 | pattern | Target branch force-update      | Delete + recreate target branch if it exists            | Simple and explicit; warns with old/new hashes for auditability    | Yes — if append-mode needed |
