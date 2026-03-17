@@ -394,6 +394,88 @@ pub struct RunManifestParams {
     pub timeout_secs: Option<u64>,
 }
 
+/// Parameters for the `orchestrate_run` tool.
+#[derive(Deserialize, JsonSchema)]
+pub struct OrchestrateRunParams {
+    /// Path to the manifest TOML file.
+    #[schemars(
+        description = "Path to the run manifest TOML file (e.g. 'manifest.toml'). \
+        Must contain multi-session content (sessions with depends_on or more than one session)."
+    )]
+    pub manifest_path: String,
+
+    /// Maximum seconds to wait for each agent subprocess (default: 600).
+    #[schemars(
+        description = "Maximum seconds per agent subprocess (default: 600). Applies to each session independently."
+    )]
+    #[serde(default)]
+    pub timeout_secs: Option<u64>,
+
+    /// Failure policy: "skip_dependents" (default) or "abort".
+    #[schemars(description = "Failure policy for the orchestrated run. \
+        'skip_dependents' (default): skip sessions that depend on failed ones, continue independent sessions. \
+        'abort': stop dispatching new sessions on first failure.")]
+    #[serde(default)]
+    pub failure_policy: Option<String>,
+
+    /// Merge strategy: "completion_time" (default) or "file_overlap".
+    #[schemars(description = "Strategy for ordering session branches during merge. \
+        'completion_time' (default): sort by completion timestamp. \
+        'file_overlap': greedy pick sessions with least file overlap.")]
+    #[serde(default)]
+    pub merge_strategy: Option<String>,
+}
+
+/// Parameters for the `orchestrate_status` tool.
+#[derive(Deserialize, JsonSchema)]
+pub struct OrchestrateStatusParams {
+    /// Unique run ID returned by `orchestrate_run`.
+    #[schemars(description = "Run ID from a previous orchestrate_run invocation (ULID string)")]
+    pub run_id: String,
+}
+
+/// Response from the `orchestrate_run` tool.
+#[derive(Serialize)]
+struct OrchestrateRunResponse {
+    /// Unique identifier for this orchestrated run.
+    run_id: String,
+    /// Total wall-clock duration in seconds.
+    duration_secs: f64,
+    /// Failure policy that was in effect.
+    failure_policy: String,
+    /// Per-session outcome summaries.
+    sessions: Vec<OrchestrateSessionOutcome>,
+    /// Aggregate counts.
+    summary: OrchestrateRunSummary,
+    /// Merge phase report (present if merge was attempted).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    merge_report: Option<assay_types::MergeReport>,
+}
+
+/// Per-session outcome in an `orchestrate_run` response.
+#[derive(Serialize)]
+struct OrchestrateSessionOutcome {
+    /// Session name.
+    name: String,
+    /// Outcome: "completed", "failed", "skipped".
+    outcome: String,
+    /// Error message (present for failed sessions).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
+    /// Skip reason (present for skipped sessions).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    skip_reason: Option<String>,
+}
+
+/// Aggregate summary for an `orchestrate_run` response.
+#[derive(Serialize)]
+struct OrchestrateRunSummary {
+    total: usize,
+    completed: usize,
+    failed: usize,
+    skipped: usize,
+}
+
 /// Parameters for the `gate_evaluate` tool.
 #[derive(Deserialize, JsonSchema)]
 pub struct GateEvaluateParams {
@@ -2668,6 +2750,298 @@ impl AssayServer {
             })?;
             Ok(CallToolResult::success(vec![Content::text(json)]))
         }
+    }
+
+    /// Launch a multi-session orchestrated run with DAG-driven dispatch and post-execution merge.
+    #[tool(
+        description = "Run a multi-session manifest through the orchestrator: DAG-driven parallel dispatch → \
+            per-session harness config → agent execution → base branch checkout → sequential merge. \
+            Returns per-session outcomes, merge report, and a run_id for status queries via orchestrate_status. \
+            Requires a manifest with multiple sessions or dependency edges. \
+            The sync orchestration and merge phases are wrapped in spawn_blocking per D007."
+    )]
+    pub async fn orchestrate_run(
+        &self,
+        params: Parameters<OrchestrateRunParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let cwd = resolve_cwd()?;
+        let config = match load_config(&cwd) {
+            Ok(c) => c,
+            Err(err_result) => return Ok(err_result),
+        };
+
+        let manifest_path = PathBuf::from(&params.0.manifest_path);
+        let manifest_path = if manifest_path.is_absolute() {
+            manifest_path
+        } else {
+            cwd.join(&manifest_path)
+        };
+
+        // Load manifest (sync, cheap)
+        let manifest = match assay_core::manifest::load(&manifest_path) {
+            Ok(m) => m,
+            Err(e) => return Ok(domain_error(&e)),
+        };
+
+        // Validate multi-session content
+        let has_deps = manifest.sessions.iter().any(|s| !s.depends_on.is_empty());
+        if manifest.sessions.len() < 2 && !has_deps {
+            return Ok(CallToolResult::error(vec![Content::text(
+                "Manifest must contain multiple sessions or dependency edges for orchestrated runs. \
+                 Use run_manifest for single-session execution.",
+            )]));
+        }
+
+        // Parse failure policy
+        let failure_policy = match params.0.failure_policy.as_deref() {
+            Some("abort") => assay_types::FailurePolicy::Abort,
+            Some("skip_dependents") | None => assay_types::FailurePolicy::SkipDependents,
+            Some(other) => {
+                return Ok(CallToolResult::error(vec![Content::text(format!(
+                    "Invalid failure_policy '{other}'. Expected 'skip_dependents' or 'abort'.",
+                ))]));
+            }
+        };
+
+        // Parse merge strategy
+        let merge_strategy = match params.0.merge_strategy.as_deref() {
+            Some("file_overlap") => assay_types::MergeStrategy::FileOverlap,
+            Some("completion_time") | None => assay_types::MergeStrategy::CompletionTime,
+            Some(other) => {
+                return Ok(CallToolResult::error(vec![Content::text(format!(
+                    "Invalid merge_strategy '{other}'. Expected 'completion_time' or 'file_overlap'.",
+                ))]));
+            }
+        };
+
+        let orch_config = assay_core::orchestrate::executor::OrchestratorConfig {
+            max_concurrency: 8,
+            failure_policy,
+        };
+
+        let specs_dir = cwd.join(".assay").join(&config.specs_dir);
+        let assay_dir = cwd.join(".assay");
+        let worktree_base = assay_core::worktree::resolve_worktree_dir(None, &config, &cwd);
+        let timeout_secs = params
+            .0
+            .timeout_secs
+            .unwrap_or(assay_core::pipeline::PipelineConfig::DEFAULT_TIMEOUT_SECS);
+
+        // Detect base branch: use git to find current branch before orchestration
+        let base_branch = {
+            let output = std::process::Command::new("git")
+                .args(["rev-parse", "--abbrev-ref", "HEAD"])
+                .current_dir(&cwd)
+                .output()
+                .map_err(|e| {
+                    McpError::internal_error(format!("Failed to detect base branch: {e}"), None)
+                })?;
+            if output.status.success() {
+                String::from_utf8_lossy(&output.stdout).trim().to_string()
+            } else {
+                "main".to_string()
+            }
+        };
+
+        let pipeline_config = assay_core::pipeline::PipelineConfig {
+            project_root: cwd.clone(),
+            assay_dir: assay_dir.clone(),
+            specs_dir,
+            worktree_base,
+            timeout_secs,
+            base_branch: Some(base_branch.clone()),
+        };
+
+        // Wrap the sync orchestration + merge in spawn_blocking (D007).
+        let result = tokio::task::spawn_blocking(move || {
+            // Session runner closure uses plain function calls (D035):
+            // constructs HarnessWriter from generate_config/write_config/build_cli_args
+            // rather than receiving a HarnessWriter dyn from the caller.
+            let session_runner = |session: &assay_types::ManifestSession,
+                                  pipe_cfg: &assay_core::pipeline::PipelineConfig|
+             -> std::result::Result<
+                assay_core::pipeline::PipelineResult,
+                assay_core::pipeline::PipelineError,
+            > {
+                let harness_writer: Box<assay_core::pipeline::HarnessWriter> = Box::new(
+                    |profile: &assay_types::HarnessProfile, worktree_path: &std::path::Path| {
+                        let claude_config = assay_harness::claude::generate_config(profile);
+                        assay_harness::claude::write_config(&claude_config, worktree_path)
+                            .map_err(|e| format!("Failed to write claude config: {e}"))?;
+                        Ok(assay_harness::claude::build_cli_args(&claude_config))
+                    },
+                );
+                assay_core::pipeline::run_session(session, pipe_cfg, &harness_writer)
+            };
+
+            // Execute orchestration
+            let orch_result = assay_core::orchestrate::executor::run_orchestrated(
+                &manifest,
+                orch_config,
+                &pipeline_config,
+                &session_runner,
+            )?;
+
+            // Checkout base branch before merge
+            let project_root = &pipeline_config.project_root;
+            let checkout_output = std::process::Command::new("git")
+                .args(["checkout", &base_branch])
+                .current_dir(project_root)
+                .output()
+                .map_err(|e| assay_core::AssayError::Io {
+                    operation: format!("git checkout {}", base_branch),
+                    path: project_root.clone(),
+                    source: e,
+                })?;
+            if !checkout_output.status.success() {
+                let stderr = String::from_utf8_lossy(&checkout_output.stderr);
+                return Err(assay_core::AssayError::WorktreeGitFailed {
+                    cmd: format!("git checkout {}", base_branch),
+                    stderr: stderr.trim().to_string(),
+                    exit_code: checkout_output.status.code(),
+                });
+            }
+
+            // Extract completed sessions and merge
+            let completed = assay_core::orchestrate::merge_runner::extract_completed_sessions(
+                &orch_result.outcomes,
+            );
+            let conflict_handler =
+                assay_core::orchestrate::merge_runner::default_conflict_handler();
+            let merge_config = assay_core::orchestrate::merge_runner::MergeRunnerConfig {
+                strategy: merge_strategy,
+                project_root: project_root.clone(),
+                base_branch: base_branch.clone(),
+            };
+            let merge_report = assay_core::orchestrate::merge_runner::merge_completed_sessions(
+                completed,
+                &merge_config,
+                conflict_handler,
+            )?;
+
+            Ok::<_, assay_core::AssayError>((orch_result, merge_report))
+        })
+        .await
+        .map_err(|e| McpError::internal_error(format!("orchestration task panicked: {e}"), None))?;
+
+        match result {
+            Ok((orch_result, merge_report)) => {
+                let mut completed_count = 0usize;
+                let mut failed_count = 0usize;
+                let mut skipped_count = 0usize;
+                let mut sessions = Vec::new();
+
+                for (name, outcome) in &orch_result.outcomes {
+                    match outcome {
+                        assay_core::orchestrate::executor::SessionOutcome::Completed { .. } => {
+                            completed_count += 1;
+                            sessions.push(OrchestrateSessionOutcome {
+                                name: name.clone(),
+                                outcome: "completed".to_string(),
+                                error: None,
+                                skip_reason: None,
+                            });
+                        }
+                        assay_core::orchestrate::executor::SessionOutcome::Failed {
+                            error, ..
+                        } => {
+                            failed_count += 1;
+                            sessions.push(OrchestrateSessionOutcome {
+                                name: name.clone(),
+                                outcome: "failed".to_string(),
+                                error: Some(error.to_string()),
+                                skip_reason: None,
+                            });
+                        }
+                        assay_core::orchestrate::executor::SessionOutcome::Skipped { reason } => {
+                            skipped_count += 1;
+                            sessions.push(OrchestrateSessionOutcome {
+                                name: name.clone(),
+                                outcome: "skipped".to_string(),
+                                error: None,
+                                skip_reason: Some(reason.clone()),
+                            });
+                        }
+                    }
+                }
+
+                let total = sessions.len();
+                let response = OrchestrateRunResponse {
+                    run_id: orch_result.run_id,
+                    duration_secs: orch_result.duration.as_secs_f64(),
+                    failure_policy: format!("{:?}", orch_result.failure_policy),
+                    sessions,
+                    summary: OrchestrateRunSummary {
+                        total,
+                        completed: completed_count,
+                        failed: failed_count,
+                        skipped: skipped_count,
+                    },
+                    merge_report: Some(merge_report),
+                };
+
+                let has_failures = failed_count > 0;
+                let json = serde_json::to_string(&response).map_err(|e| {
+                    McpError::internal_error(format!("serialization failed: {e}"), None)
+                })?;
+
+                if has_failures {
+                    Ok(CallToolResult::error(vec![Content::text(json)]))
+                } else {
+                    Ok(CallToolResult::success(vec![Content::text(json)]))
+                }
+            }
+            Err(e) => Ok(domain_error(&e)),
+        }
+    }
+
+    /// Read persisted orchestrator state for a given run.
+    #[tool(
+        description = "Read the persisted orchestrator state for a given run ID. \
+            Returns the full OrchestratorStatus snapshot including per-session states, phase, \
+            and failure policy. Use this to inspect the state of a running or completed \
+            orchestrated run launched by orchestrate_run."
+    )]
+    pub async fn orchestrate_status(
+        &self,
+        params: Parameters<OrchestrateStatusParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let cwd = resolve_cwd()?;
+        let run_id = &params.0.run_id;
+        let state_path = cwd
+            .join(".assay")
+            .join("orchestrator")
+            .join(run_id)
+            .join("state.json");
+
+        let content = match std::fs::read_to_string(&state_path) {
+            Ok(c) => c,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                return Ok(CallToolResult::error(vec![Content::text(format!(
+                    "No orchestrator state found for run_id '{run_id}'. \
+                     Check that the run_id is correct and that the run has started persisting state.",
+                ))]));
+            }
+            Err(e) => {
+                return Ok(CallToolResult::error(vec![Content::text(format!(
+                    "Failed to read orchestrator state for run_id '{run_id}': {e}",
+                ))]));
+            }
+        };
+
+        let status: assay_types::OrchestratorStatus = match serde_json::from_str(&content) {
+            Ok(s) => s,
+            Err(e) => {
+                return Ok(CallToolResult::error(vec![Content::text(format!(
+                    "Failed to parse orchestrator state for run_id '{run_id}': {e}",
+                ))]));
+            }
+        };
+
+        let json = serde_json::to_string_pretty(&status)
+            .map_err(|e| McpError::internal_error(format!("serialization failed: {e}"), None))?;
+
+        Ok(CallToolResult::success(vec![Content::text(json)]))
     }
 }
 
@@ -6400,6 +6774,181 @@ cmd = "echo ok"
         assert!(
             result.is_error.unwrap_or(false),
             "should fail for missing manifest"
+        );
+    }
+
+    // ── orchestrate_run tests ────────────────────────────────────────
+
+    #[test]
+    fn orchestrate_run_params_deserializes() {
+        let json = r#"{"manifest_path": "test.toml", "timeout_secs": 300, "failure_policy": "abort", "merge_strategy": "file_overlap"}"#;
+        let params: OrchestrateRunParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.manifest_path, "test.toml");
+        assert_eq!(params.timeout_secs, Some(300));
+        assert_eq!(params.failure_policy.as_deref(), Some("abort"));
+        assert_eq!(params.merge_strategy.as_deref(), Some("file_overlap"));
+    }
+
+    #[test]
+    fn orchestrate_run_params_deserializes_minimal() {
+        let json = r#"{"manifest_path": "multi.toml"}"#;
+        let params: OrchestrateRunParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.manifest_path, "multi.toml");
+        assert_eq!(params.timeout_secs, None);
+        assert_eq!(params.failure_policy, None);
+        assert_eq!(params.merge_strategy, None);
+    }
+
+    #[test]
+    fn orchestrate_run_params_schema_generates() {
+        let schema = schemars::schema_for!(OrchestrateRunParams);
+        let json = serde_json::to_string(&schema).unwrap();
+        assert!(
+            json.contains("manifest_path"),
+            "schema should contain manifest_path"
+        );
+        assert!(
+            json.contains("failure_policy"),
+            "schema should contain failure_policy"
+        );
+        assert!(
+            json.contains("merge_strategy"),
+            "schema should contain merge_strategy"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn orchestrate_run_tool_in_router() {
+        let server = AssayServer::new();
+        let tools = server.tool_router.list_all();
+        let tool_names: Vec<&str> = tools.iter().map(|t| t.name.as_ref()).collect();
+        assert!(
+            tool_names.contains(&"orchestrate_run"),
+            "orchestrate_run should be in tool list, got: {tool_names:?}"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn orchestrate_run_missing_manifest() {
+        let dir = create_project(r#"project_name = "orch-test""#);
+        std::env::set_current_dir(dir.path()).unwrap();
+
+        let server = AssayServer::new();
+        let result = server
+            .orchestrate_run(Parameters(OrchestrateRunParams {
+                manifest_path: "nonexistent.toml".to_string(),
+                timeout_secs: None,
+                failure_policy: None,
+                merge_strategy: None,
+            }))
+            .await
+            .unwrap();
+
+        assert!(
+            result.is_error.unwrap_or(false),
+            "should fail for missing manifest"
+        );
+    }
+
+    // ── orchestrate_status tests ─────────────────────────────────────
+
+    #[test]
+    fn orchestrate_status_params_deserializes() {
+        let json = r#"{"run_id": "01JTEST123"}"#;
+        let params: OrchestrateStatusParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.run_id, "01JTEST123");
+    }
+
+    #[test]
+    fn orchestrate_status_params_schema_generates() {
+        let schema = schemars::schema_for!(OrchestrateStatusParams);
+        let json = serde_json::to_string(&schema).unwrap();
+        assert!(json.contains("run_id"), "schema should contain run_id");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn orchestrate_status_tool_in_router() {
+        let server = AssayServer::new();
+        let tools = server.tool_router.list_all();
+        let tool_names: Vec<&str> = tools.iter().map(|t| t.name.as_ref()).collect();
+        assert!(
+            tool_names.contains(&"orchestrate_status"),
+            "orchestrate_status should be in tool list, got: {tool_names:?}"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn orchestrate_status_missing_run_id() {
+        let dir = create_project(r#"project_name = "status-test""#);
+        std::env::set_current_dir(dir.path()).unwrap();
+        // Create .assay dir so CWD resolves
+        std::fs::create_dir_all(dir.path().join(".assay")).unwrap();
+
+        let server = AssayServer::new();
+        let result = server
+            .orchestrate_status(Parameters(OrchestrateStatusParams {
+                run_id: "01JNONEXISTENT".to_string(),
+            }))
+            .await
+            .unwrap();
+
+        assert!(
+            result.is_error.unwrap_or(false),
+            "should fail for missing run_id"
+        );
+        let text = extract_text(&result);
+        assert!(
+            text.contains("No orchestrator state found"),
+            "should mention missing state, got: {text}"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn orchestrate_status_reads_valid_state() {
+        let dir = create_project(r#"project_name = "status-read""#);
+        std::env::set_current_dir(dir.path()).unwrap();
+
+        // Write a valid state.json
+        let run_id = "01JTESTREAD";
+        let state_dir = dir.path().join(".assay").join("orchestrator").join(run_id);
+        std::fs::create_dir_all(&state_dir).unwrap();
+
+        let status = assay_types::OrchestratorStatus {
+            run_id: run_id.to_string(),
+            phase: assay_types::OrchestratorPhase::Completed,
+            failure_policy: assay_types::FailurePolicy::SkipDependents,
+            sessions: vec![],
+            started_at: chrono::Utc::now(),
+            completed_at: Some(chrono::Utc::now()),
+        };
+        let json = serde_json::to_string_pretty(&status).unwrap();
+        std::fs::write(state_dir.join("state.json"), &json).unwrap();
+
+        let server = AssayServer::new();
+        let result = server
+            .orchestrate_status(Parameters(OrchestrateStatusParams {
+                run_id: run_id.to_string(),
+            }))
+            .await
+            .unwrap();
+
+        assert!(
+            !result.is_error.unwrap_or(false),
+            "should succeed for valid state"
+        );
+        let text = extract_text(&result);
+        assert!(
+            text.contains("01JTESTREAD"),
+            "should contain the run_id in response, got: {text}"
+        );
+        assert!(
+            text.contains("completed"),
+            "should contain the phase, got: {text}"
         );
     }
 }

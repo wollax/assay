@@ -3,6 +3,8 @@ use std::path::PathBuf;
 use clap::Parser;
 use serde::Serialize;
 
+use assay_types::orchestrate::{FailurePolicy, MergeStrategy};
+
 use super::{assay_dir, project_root};
 
 /// Run a manifest through the end-to-end pipeline.
@@ -19,7 +21,13 @@ Examples:
     assay run manifest.toml --json
 
   Use a specific base branch:
-    assay run manifest.toml --base-branch develop")]
+    assay run manifest.toml --base-branch develop
+
+  Run multi-session manifest with abort policy:
+    assay run multi.toml --failure-policy abort
+
+  Use file-overlap merge strategy:
+    assay run multi.toml --merge-strategy file-overlap")]
 pub(crate) struct RunCommand {
     /// Path to the manifest TOML file
     pub manifest: PathBuf,
@@ -35,6 +43,34 @@ pub(crate) struct RunCommand {
     /// Base branch for worktree creation (default: auto-detect)
     #[arg(long)]
     pub base_branch: Option<String>,
+
+    /// Failure policy for multi-session orchestration (skip-dependents or abort)
+    #[arg(long, default_value = "skip-dependents", value_parser = parse_failure_policy)]
+    pub failure_policy: FailurePolicy,
+
+    /// Merge strategy for combining completed session branches (completion-time or file-overlap)
+    #[arg(long, default_value = "completion-time", value_parser = parse_merge_strategy)]
+    pub merge_strategy: MergeStrategy,
+}
+
+fn parse_failure_policy(s: &str) -> Result<FailurePolicy, String> {
+    match s {
+        "skip-dependents" => Ok(FailurePolicy::SkipDependents),
+        "abort" => Ok(FailurePolicy::Abort),
+        _ => Err(format!(
+            "invalid failure policy '{s}': expected 'skip-dependents' or 'abort'"
+        )),
+    }
+}
+
+fn parse_merge_strategy(s: &str) -> Result<MergeStrategy, String> {
+    match s {
+        "completion-time" => Ok(MergeStrategy::CompletionTime),
+        "file-overlap" => Ok(MergeStrategy::FileOverlap),
+        _ => Err(format!(
+            "invalid merge strategy '{s}': expected 'completion-time' or 'file-overlap'"
+        )),
+    }
 }
 
 // ── JSON response types ──────────────────────────────────────────────
@@ -80,6 +116,48 @@ struct StageTimingEntry {
     duration_secs: f64,
 }
 
+// ── Orchestration response types ─────────────────────────────────────
+
+#[derive(Serialize)]
+struct OrchestrationResponse {
+    run_id: String,
+    sessions: Vec<OrchestrationSessionResult>,
+    merge_report: assay_types::MergeReport,
+    summary: OrchestrationSummary,
+}
+
+#[derive(Serialize)]
+struct OrchestrationSessionResult {
+    name: String,
+    outcome: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    skip_reason: Option<String>,
+}
+
+#[derive(Serialize)]
+struct OrchestrationSummary {
+    total: usize,
+    completed: usize,
+    failed: usize,
+    skipped: usize,
+    sessions_merged: usize,
+    merge_conflicts: usize,
+    duration_secs: f64,
+}
+
+// ── Multi-session detection ─────────────────────────────────────────
+
+/// Returns `true` if the manifest requires orchestrated execution.
+///
+/// A manifest needs orchestration when it has more than one session, or
+/// when any session declares dependencies. Single-session manifests with
+/// no dependencies use the simpler sequential `run_manifest()` path.
+fn needs_orchestration(manifest: &assay_types::RunManifest) -> bool {
+    manifest.sessions.len() > 1 || manifest.sessions.iter().any(|s| !s.depends_on.is_empty())
+}
+
 // ── Execute ──────────────────────────────────────────────────────────
 
 pub(crate) fn execute(cmd: &RunCommand) -> anyhow::Result<i32> {
@@ -108,6 +186,20 @@ pub(crate) fn execute(cmd: &RunCommand) -> anyhow::Result<i32> {
         base_branch: cmd.base_branch.clone(),
     };
 
+    // Route based on multi-session detection
+    if needs_orchestration(&manifest) {
+        execute_orchestrated(cmd, &manifest, &pipeline_config)
+    } else {
+        execute_sequential(cmd, &manifest, &pipeline_config)
+    }
+}
+
+/// Single-session path: runs through `run_manifest()` sequentially.
+fn execute_sequential(
+    cmd: &RunCommand,
+    manifest: &assay_types::RunManifest,
+    pipeline_config: &assay_core::pipeline::PipelineConfig,
+) -> anyhow::Result<i32> {
     // Concrete harness writer: composes assay_harness::claude functions
     let harness_writer: Box<assay_core::pipeline::HarnessWriter> = Box::new(
         |profile: &assay_types::HarnessProfile, worktree_path: &std::path::Path| {
@@ -119,7 +211,7 @@ pub(crate) fn execute(cmd: &RunCommand) -> anyhow::Result<i32> {
     );
 
     // Run the pipeline
-    let results = assay_core::pipeline::run_manifest(&manifest, &pipeline_config, &harness_writer);
+    let results = assay_core::pipeline::run_manifest(manifest, pipeline_config, &harness_writer);
 
     // Process results
     let mut session_results = Vec::new();
@@ -221,6 +313,207 @@ pub(crate) fn execute(cmd: &RunCommand) -> anyhow::Result<i32> {
     }
 }
 
+/// Multi-session path: orchestrated execution + sequential merge.
+fn execute_orchestrated(
+    cmd: &RunCommand,
+    manifest: &assay_types::RunManifest,
+    pipeline_config: &assay_core::pipeline::PipelineConfig,
+) -> anyhow::Result<i32> {
+    use assay_core::orchestrate::executor::{OrchestratorConfig, SessionOutcome};
+    use assay_core::orchestrate::merge_runner::{
+        MergeRunnerConfig, default_conflict_handler, extract_completed_sessions,
+        merge_completed_sessions,
+    };
+
+    eprintln!(
+        "Multi-session manifest detected ({} sessions) — using orchestrated execution",
+        manifest.sessions.len()
+    );
+
+    // ── Phase 1: Orchestrated execution ──────────────────────────────
+
+    let orch_config = OrchestratorConfig {
+        max_concurrency: 8,
+        failure_policy: cmd.failure_policy,
+    };
+
+    // Session runner closure: constructs HarnessWriter from plain function
+    // calls (D035), delegates to run_session.
+    let session_runner = |session: &assay_types::ManifestSession,
+                          pipe_cfg: &assay_core::pipeline::PipelineConfig|
+     -> Result<
+        assay_core::pipeline::PipelineResult,
+        assay_core::pipeline::PipelineError,
+    > {
+        let harness_writer: Box<assay_core::pipeline::HarnessWriter> = Box::new(
+            |profile: &assay_types::HarnessProfile, worktree_path: &std::path::Path| {
+                let claude_config = assay_harness::claude::generate_config(profile);
+                assay_harness::claude::write_config(&claude_config, worktree_path)
+                    .map_err(|e| format!("Failed to write claude config: {e}"))?;
+                Ok(assay_harness::claude::build_cli_args(&claude_config))
+            },
+        );
+        assay_core::pipeline::run_session(session, pipe_cfg, &harness_writer)
+    };
+
+    eprintln!("Phase 1: Executing sessions...");
+    let orch_result = assay_core::orchestrate::executor::run_orchestrated(
+        manifest,
+        orch_config,
+        pipeline_config,
+        &session_runner,
+    )
+    .map_err(|e| anyhow::anyhow!("Orchestration failed: {e}"))?;
+
+    eprintln!(
+        "Phase 1 complete: {} outcomes in {:.1}s",
+        orch_result.outcomes.len(),
+        orch_result.duration.as_secs_f64()
+    );
+
+    // ── Phase 2: Checkout base branch ────────────────────────────────
+
+    let base_branch = if let Some(ref branch) = cmd.base_branch {
+        branch.clone()
+    } else {
+        // Auto-detect current branch
+        let output = std::process::Command::new("git")
+            .args(["rev-parse", "--abbrev-ref", "HEAD"])
+            .current_dir(&pipeline_config.project_root)
+            .output()
+            .map_err(|e| anyhow::anyhow!("Failed to detect base branch: {e}"))?;
+        if !output.status.success() {
+            anyhow::bail!(
+                "Failed to detect base branch: {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            );
+        }
+        String::from_utf8_lossy(&output.stdout).trim().to_string()
+    };
+
+    eprintln!("Phase 2: Checking out base branch '{base_branch}'...");
+    let checkout_output = std::process::Command::new("git")
+        .args(["checkout", &base_branch])
+        .current_dir(&pipeline_config.project_root)
+        .output()
+        .map_err(|e| anyhow::anyhow!("git checkout failed: {e}"))?;
+    if !checkout_output.status.success() {
+        let stderr = String::from_utf8_lossy(&checkout_output.stderr);
+        anyhow::bail!(
+            "Failed to checkout base branch '{base_branch}': {}",
+            stderr.trim()
+        );
+    }
+
+    // ── Phase 3: Sequential merge ────────────────────────────────────
+
+    eprintln!("Phase 3: Merging completed sessions...");
+    let completed = extract_completed_sessions(&orch_result.outcomes);
+    let merge_config = MergeRunnerConfig {
+        strategy: cmd.merge_strategy,
+        project_root: pipeline_config.project_root.clone(),
+        base_branch: base_branch.clone(),
+    };
+    let merge_report =
+        merge_completed_sessions(completed, &merge_config, default_conflict_handler())
+            .map_err(|e| anyhow::anyhow!("Merge failed: {e}"))?;
+
+    eprintln!(
+        "Phase 3 complete: {} merged, {} conflict-skipped, {} aborted",
+        merge_report.sessions_merged, merge_report.conflict_skipped, merge_report.aborted
+    );
+
+    // ── Format results ───────────────────────────────────────────────
+
+    let mut completed_count = 0usize;
+    let mut failed_count = 0usize;
+    let mut skipped_count = 0usize;
+    let mut session_results = Vec::new();
+
+    for (name, outcome) in &orch_result.outcomes {
+        match outcome {
+            SessionOutcome::Completed { .. } => {
+                completed_count += 1;
+                if !cmd.json {
+                    eprintln!("  [✓] {name} — completed");
+                }
+                session_results.push(OrchestrationSessionResult {
+                    name: name.clone(),
+                    outcome: "completed".to_string(),
+                    error: None,
+                    skip_reason: None,
+                });
+            }
+            SessionOutcome::Failed { error, .. } => {
+                failed_count += 1;
+                if !cmd.json {
+                    eprintln!("  [✗] {name} — failed: {}", error.message);
+                }
+                session_results.push(OrchestrationSessionResult {
+                    name: name.clone(),
+                    outcome: "failed".to_string(),
+                    error: Some(error.message.clone()),
+                    skip_reason: None,
+                });
+            }
+            SessionOutcome::Skipped { reason } => {
+                skipped_count += 1;
+                if !cmd.json {
+                    eprintln!("  [−] {name} — skipped: {reason}");
+                }
+                session_results.push(OrchestrationSessionResult {
+                    name: name.clone(),
+                    outcome: "skipped".to_string(),
+                    error: None,
+                    skip_reason: Some(reason.clone()),
+                });
+            }
+        }
+    }
+
+    let total = session_results.len();
+    let response = OrchestrationResponse {
+        run_id: orch_result.run_id,
+        sessions: session_results,
+        merge_report: merge_report.clone(),
+        summary: OrchestrationSummary {
+            total,
+            completed: completed_count,
+            failed: failed_count,
+            skipped: skipped_count,
+            sessions_merged: merge_report.sessions_merged,
+            merge_conflicts: merge_report.conflict_skipped,
+            duration_secs: orch_result.duration.as_secs_f64(),
+        },
+    };
+
+    if cmd.json {
+        let json = serde_json::to_string_pretty(&response)?;
+        println!("{json}");
+    } else {
+        eprintln!();
+        eprintln!(
+            "Summary: {} total, {} completed, {} failed, {} skipped | \
+             Merge: {} merged, {} conflicts",
+            total,
+            completed_count,
+            failed_count,
+            skipped_count,
+            merge_report.sessions_merged,
+            merge_report.conflict_skipped,
+        );
+    }
+
+    // Exit codes: 0 = all succeed + merge clean, 1 = any error/skip, 2 = merge conflicts
+    if failed_count > 0 || skipped_count > 0 {
+        Ok(1)
+    } else if merge_report.conflict_skipped > 0 || merge_report.aborted > 0 {
+        Ok(2)
+    } else {
+        Ok(0)
+    }
+}
+
 // ── Tests ────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -235,6 +528,8 @@ mod tests {
         assert_eq!(cmd.timeout, 600);
         assert!(!cmd.json);
         assert!(cmd.base_branch.is_none());
+        assert_eq!(cmd.failure_policy, FailurePolicy::SkipDependents);
+        assert_eq!(cmd.merge_strategy, MergeStrategy::CompletionTime);
     }
 
     #[test]
@@ -247,11 +542,55 @@ mod tests {
             "--json",
             "--base-branch",
             "develop",
+            "--failure-policy",
+            "abort",
+            "--merge-strategy",
+            "file-overlap",
         ]);
         assert_eq!(cmd.manifest, PathBuf::from("path/to/manifest.toml"));
         assert_eq!(cmd.timeout, 900);
         assert!(cmd.json);
         assert_eq!(cmd.base_branch.as_deref(), Some("develop"));
+        assert_eq!(cmd.failure_policy, FailurePolicy::Abort);
+        assert_eq!(cmd.merge_strategy, MergeStrategy::FileOverlap);
+    }
+
+    #[test]
+    fn run_command_parses_orchestration_flags() {
+        // Test each combination of orchestration flags
+        let cmd = RunCommand::parse_from([
+            "run",
+            "manifest.toml",
+            "--failure-policy",
+            "skip-dependents",
+            "--merge-strategy",
+            "completion-time",
+        ]);
+        assert_eq!(cmd.failure_policy, FailurePolicy::SkipDependents);
+        assert_eq!(cmd.merge_strategy, MergeStrategy::CompletionTime);
+
+        let cmd = RunCommand::parse_from(["run", "manifest.toml", "--failure-policy", "abort"]);
+        assert_eq!(cmd.failure_policy, FailurePolicy::Abort);
+        assert_eq!(cmd.merge_strategy, MergeStrategy::CompletionTime); // default
+
+        let cmd =
+            RunCommand::parse_from(["run", "manifest.toml", "--merge-strategy", "file-overlap"]);
+        assert_eq!(cmd.failure_policy, FailurePolicy::SkipDependents); // default
+        assert_eq!(cmd.merge_strategy, MergeStrategy::FileOverlap);
+    }
+
+    #[test]
+    fn run_command_rejects_invalid_failure_policy() {
+        let result =
+            RunCommand::try_parse_from(["run", "manifest.toml", "--failure-policy", "invalid"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn run_command_rejects_invalid_merge_strategy() {
+        let result =
+            RunCommand::try_parse_from(["run", "manifest.toml", "--merge-strategy", "invalid"]);
+        assert!(result.is_err());
     }
 
     #[test]
@@ -312,5 +651,125 @@ mod tests {
         assert!(json.contains("check specs dir"));
         // session_id should be absent (skip_serializing_if)
         assert!(!json.contains("session_id"));
+    }
+
+    // ── Multi-session detection tests ────────────────────────────────
+
+    fn make_manifest(sessions: Vec<(&str, Vec<&str>)>) -> assay_types::RunManifest {
+        assay_types::RunManifest {
+            sessions: sessions
+                .into_iter()
+                .map(|(spec, deps)| assay_types::ManifestSession {
+                    spec: spec.to_string(),
+                    name: None,
+                    settings: None,
+                    hooks: vec![],
+                    prompt_layers: vec![],
+                    file_scope: vec![],
+                    shared_files: vec![],
+                    depends_on: deps.into_iter().map(|d| d.to_string()).collect(),
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn needs_orchestration_single_session_no_deps() {
+        let manifest = make_manifest(vec![("auth", vec![])]);
+        assert!(!needs_orchestration(&manifest));
+    }
+
+    #[test]
+    fn needs_orchestration_single_session_with_deps() {
+        // Odd edge case: single session with depends_on (self-referencing or
+        // external). Still triggers orchestration for validation purposes.
+        let manifest = make_manifest(vec![("auth", vec!["setup"])]);
+        assert!(needs_orchestration(&manifest));
+    }
+
+    #[test]
+    fn needs_orchestration_multi_session_no_deps() {
+        let manifest = make_manifest(vec![("auth", vec![]), ("db", vec![])]);
+        assert!(needs_orchestration(&manifest));
+    }
+
+    #[test]
+    fn needs_orchestration_multi_session_with_deps() {
+        let manifest = make_manifest(vec![
+            ("auth", vec![]),
+            ("db", vec!["auth"]),
+            ("api", vec!["auth", "db"]),
+        ]);
+        assert!(needs_orchestration(&manifest));
+    }
+
+    // ── Orchestration response serialization tests ───────────────────
+
+    #[test]
+    fn orchestration_response_serializes_to_json() {
+        use assay_types::{MergePlan, MergeReport, MergeSessionResult, MergeSessionStatus};
+
+        let response = OrchestrationResponse {
+            run_id: "01JTEST789".to_string(),
+            sessions: vec![
+                OrchestrationSessionResult {
+                    name: "auth".to_string(),
+                    outcome: "completed".to_string(),
+                    error: None,
+                    skip_reason: None,
+                },
+                OrchestrationSessionResult {
+                    name: "db".to_string(),
+                    outcome: "failed".to_string(),
+                    error: Some("agent crashed".to_string()),
+                    skip_reason: None,
+                },
+                OrchestrationSessionResult {
+                    name: "api".to_string(),
+                    outcome: "skipped".to_string(),
+                    error: None,
+                    skip_reason: Some("upstream 'db' failed".to_string()),
+                },
+            ],
+            merge_report: MergeReport {
+                sessions_merged: 1,
+                sessions_skipped: 0,
+                conflict_skipped: 0,
+                aborted: 0,
+                plan: MergePlan {
+                    strategy: MergeStrategy::CompletionTime,
+                    entries: vec![],
+                },
+                results: vec![MergeSessionResult {
+                    session_name: "auth".to_string(),
+                    status: MergeSessionStatus::Merged,
+                    merge_sha: Some("abc123".to_string()),
+                    error: None,
+                }],
+                duration_secs: 1.5,
+            },
+            summary: OrchestrationSummary {
+                total: 3,
+                completed: 1,
+                failed: 1,
+                skipped: 1,
+                sessions_merged: 1,
+                merge_conflicts: 0,
+                duration_secs: 45.2,
+            },
+        };
+
+        let json = serde_json::to_string_pretty(&response).unwrap();
+        assert!(json.contains("01JTEST789"));
+        assert!(json.contains("auth"));
+        assert!(json.contains("completed"));
+        assert!(json.contains("agent crashed"));
+        assert!(json.contains("upstream 'db' failed"));
+        assert!(json.contains("abc123"));
+        assert!(json.contains("sessions_merged"));
+        // skip_reason should be absent for completed session
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert!(parsed["sessions"][0]["skip_reason"].is_null());
+        assert!(parsed["sessions"][0]["error"].is_null());
     }
 }

@@ -72,7 +72,7 @@ This milestone is complete only when all are true:
 - [x] **S05: Harness CLI & Scope Enforcement** `risk:low` `depends:[S04,S02]`
   > After this: `assay harness generate claude-code|codex|opencode [--spec <name>] [--workflow <phase>]` generates harness config to stdout or disk. `assay harness install <adapter>` writes config into the project. `assay harness update <adapter>` applies incremental changes. `assay harness diff <adapter>` shows what would change without applying. Each session's generated config includes scope boundaries (file_scope + shared_files via globset matching) and multi-agent awareness prompts. Verified by CLI integration tests and scope violation detection tests. Reference spec: Smelt's `summary/scope.rs` (globset matching, ScopeViolation).
 
-- [ ] **S06: MCP Tools & End-to-End Integration** `risk:high` `depends:[S03,S05]`
+- [x] **S06: MCP Tools & End-to-End Integration** `risk:high` `depends:[S03,S05]`
   > After this: `orchestrate_run` MCP tool launches multi-session orchestration. `orchestrate_status` MCP tool returns live session states (waiting/running/completed/failed/skipped). `assay run <manifest.toml>` detects single vs multi-session manifests and routes accordingly. A 3+ session manifest with mixed dependencies exercises the full path: DAG validation → parallel execution → scope-enforced harness config → sequential merge with ordering → status reporting. Pipeline failures at any stage produce structured errors with orchestration context. This is proven by integration tests exercising the real entrypoint with concurrent sessions, intentional failures, and merge ordering — not just by assembling previously-tested components. `just ready` passes with all new code integrated.
 
 ## Boundary Map

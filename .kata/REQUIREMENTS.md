@@ -215,25 +215,25 @@
 
 ### R020 — Multi-agent orchestration
 - Class: core-capability
-- Status: active
+- Status: validated
 - Description: OrchestratorSession, DAG executor, parallel sessions with dependency ordering
 - Why it matters: Enables parallel agent work on independent specs
 - Source: user
 - Primary owning slice: M002/S02
 - Supporting slices: M002/S01, M002/S06
-- Validation: DAG validation rejects cycles, parallel executor respects dependency ordering, skips dependents of failures, integration test with concurrent sessions
-- Notes: S01 delivered DAG validation (cycles, missing refs, topological groups). S02 delivered parallel executor with bounded concurrency, failure propagation, abort policy, panic recovery, and state persistence (18 tests). Awaits S06 for end-to-end CLI routing and real agent integration.
+- Validation: S06 — End-to-end integration tests prove 3-session DAG with dependencies executes in correct order, failure propagation skips dependents while continuing independent sessions, all successful branches merge into base. CLI routes multi-session manifests to orchestrator. MCP tool routes correctly. 3 integration tests with real git repos, 8 CLI tests, 11 MCP tests.
+- Notes: Validated by S06. Real agent invocation is manual UAT.
 
 ### R021 — Orchestration MCP tools
 - Class: core-capability
-- Status: active
+- Status: validated
 - Description: `orchestrate_*` MCP tools (additive, no changes to existing tools)
 - Why it matters: Programmatic access to multi-agent orchestration
 - Source: user
 - Primary owning slice: M002/S06
 - Supporting slices: none
-- Validation: orchestrate_run and orchestrate_status MCP tools registered, schema tests pass, handler unit tests verify invocation
-- Notes: Additive tools, no modification to existing 20 tools
+- Validation: S06 — orchestrate_run and orchestrate_status registered in router (22 total tools), schema tests pass, param deserialization tests pass, missing-manifest and missing-run-id error handling tested, orchestrate_status reads persisted state correctly. 13 total tests (11 unit + 2 integration).
+- Notes: Validated by S06. Additive tools, no modification to existing 20 tools.
 
 ### R022 — Harness orchestration layer
 - Class: core-capability
@@ -370,8 +370,8 @@
 | R017 | primary-user-loop | validated | M001/S07 | none | S07 |
 | R018 | core-capability | validated | M001/S07 | none | S07 |
 | R019 | failure-visibility | validated | M001/S07 | none | S07 |
-| R020 | core-capability | active | M002/S02 | M002/S01, M002/S06 | unmapped |
-| R021 | core-capability | active | M002/S06 | none | unmapped |
+| R020 | core-capability | validated | M002/S02 | M002/S01, M002/S06 | S06 |
+| R021 | core-capability | validated | M002/S06 | none | S06 |
 | R022 | core-capability | validated | M002/S05 | M002/S06 | S05 |
 | R023 | core-capability | validated | M002/S03 | M002/S06 | S03 |
 | R024 | differentiator | validated | M002/S04 | M002/S05 | S04 |
@@ -385,7 +385,7 @@
 
 ## Coverage Summary
 
-- Active requirements: 2
+- Active requirements: 0
 - Mapped to slices: 20
-- Validated: 22
+- Validated: 24
 - Unmapped active requirements: 0

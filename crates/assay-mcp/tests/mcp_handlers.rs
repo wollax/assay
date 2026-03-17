@@ -1610,3 +1610,129 @@ async fn merge_check_both_refs_invalid_reports_both_errors() {
         "error should mention the bad head ref, got: {text}"
     );
 }
+
+// ── orchestrate_status integration tests ─────────────────────────────
+
+#[tokio::test]
+#[serial]
+async fn orchestrate_status_reads_persisted_state_with_sessions() {
+    use assay_mcp::OrchestrateStatusParams;
+
+    let dir = create_project(r#"project_name = "status-integration""#);
+    std::env::set_current_dir(dir.path()).unwrap();
+
+    // Write a realistic state.json with multiple session statuses
+    let run_id = "01JINTEGRATION01";
+    let state_dir = dir.path().join(".assay").join("orchestrator").join(run_id);
+    std::fs::create_dir_all(&state_dir).unwrap();
+
+    let status = assay_types::orchestrate::OrchestratorStatus {
+        run_id: run_id.to_string(),
+        phase: assay_types::orchestrate::OrchestratorPhase::PartialFailure,
+        failure_policy: assay_types::orchestrate::FailurePolicy::SkipDependents,
+        sessions: vec![
+            assay_types::orchestrate::SessionStatus {
+                name: "auth".to_string(),
+                spec: "spec-auth".to_string(),
+                state: assay_types::orchestrate::SessionRunState::Completed,
+                started_at: Some(chrono::Utc::now()),
+                completed_at: Some(chrono::Utc::now()),
+                duration_secs: Some(12.5),
+                error: None,
+                skip_reason: None,
+            },
+            assay_types::orchestrate::SessionStatus {
+                name: "db".to_string(),
+                spec: "spec-db".to_string(),
+                state: assay_types::orchestrate::SessionRunState::Failed,
+                started_at: Some(chrono::Utc::now()),
+                completed_at: Some(chrono::Utc::now()),
+                duration_secs: Some(3.2),
+                error: Some("agent crashed".to_string()),
+                skip_reason: None,
+            },
+            assay_types::orchestrate::SessionStatus {
+                name: "api".to_string(),
+                spec: "spec-api".to_string(),
+                state: assay_types::orchestrate::SessionRunState::Skipped,
+                started_at: None,
+                completed_at: None,
+                duration_secs: None,
+                error: None,
+                skip_reason: Some("upstream 'db' failed".to_string()),
+            },
+        ],
+        started_at: chrono::Utc::now(),
+        completed_at: Some(chrono::Utc::now()),
+    };
+    let json = serde_json::to_string_pretty(&status).unwrap();
+    std::fs::write(state_dir.join("state.json"), &json).unwrap();
+
+    let server = AssayServer::new();
+    let result = server
+        .orchestrate_status(Parameters(OrchestrateStatusParams {
+            run_id: run_id.to_string(),
+        }))
+        .await
+        .unwrap();
+
+    assert!(
+        !result.is_error.unwrap_or(false),
+        "should succeed for valid state, got: {}",
+        extract_text(&result)
+    );
+
+    let response_json: serde_json::Value = serde_json::from_str(&extract_text(&result)).unwrap();
+
+    // Verify top-level fields
+    assert_eq!(response_json["run_id"], run_id);
+    assert_eq!(response_json["phase"], "partial_failure");
+    assert_eq!(response_json["failure_policy"], "skip_dependents");
+
+    // Verify session details
+    let sessions = response_json["sessions"].as_array().unwrap();
+    assert_eq!(sessions.len(), 3);
+
+    let auth = sessions.iter().find(|s| s["name"] == "auth").unwrap();
+    assert_eq!(auth["state"], "completed");
+    assert!(auth["duration_secs"].as_f64().is_some());
+
+    let db = sessions.iter().find(|s| s["name"] == "db").unwrap();
+    assert_eq!(db["state"], "failed");
+    assert!(db["error"].as_str().unwrap().contains("crashed"));
+
+    let api = sessions.iter().find(|s| s["name"] == "api").unwrap();
+    assert_eq!(api["state"], "skipped");
+    assert!(api["skip_reason"].as_str().unwrap().contains("db"));
+}
+
+#[tokio::test]
+#[serial]
+async fn orchestrate_status_missing_run_id_returns_domain_error() {
+    use assay_mcp::OrchestrateStatusParams;
+
+    let dir = create_project(r#"project_name = "status-missing""#);
+    std::env::set_current_dir(dir.path()).unwrap();
+
+    let server = AssayServer::new();
+    let result = server
+        .orchestrate_status(Parameters(OrchestrateStatusParams {
+            run_id: "01JDOESNOTEXIST".to_string(),
+        }))
+        .await
+        .unwrap();
+
+    assert!(
+        result.is_error.unwrap_or(false),
+        "should return error for missing run_id"
+    );
+    let text = extract_text(&result);
+    assert!(
+        text.contains("No orchestrator state found"),
+        "error should mention missing state, got: {text}"
+    );
+    assert!(
+        text.contains("01JDOESNOTEXIST"),
+        "error should include the run_id, got: {text}"
+    );
+}

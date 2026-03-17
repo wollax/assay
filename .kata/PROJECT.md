@@ -10,16 +10,16 @@ Structured, repeatable quality evaluation of AI-generated code changes against e
 
 ## Current State
 
-v0.4.0 on main. ~17K lines of Rust across 6 crates (including new assay-harness). M001 (Single-Agent Harness End-to-End) is complete — all 7 slices merged, 19 requirements validated, 991 tests passing. Ships:
+v0.4.0 on main. ~20K lines of Rust across 6 crates. M001 (Single-Agent Harness End-to-End) complete — 7 slices, 19 requirements validated. M002 (Multi-Agent Orchestration & Harness Platform) complete — 6 slices, 24 total requirements validated, 1180 tests passing. Ships:
 
-- **assay-types**: Serializable DTOs — Spec, Criterion, GateRunRecord, GateEvalContext, WorkSession, WorktreeMetadata, Config, HarnessProfile, PromptLayer, SettingsOverride, HookContract, etc.
-- **assay-core**: Domain logic — spec loading/validation, gate evaluation (command + agent), run history, worktree CRUD, work session lifecycle, merge checking, guard daemon, context diagnostics/pruning, checkpoint extraction, evidence formatting
-- **assay-harness**: Agent harness adapters — prompt builder (`build_prompt`), settings merger (`merge_settings`), Claude Code adapter (`generate_config`, `write_config`, `build_cli_args`)
-- **assay-cli**: CLI binary — init, spec, gate, worktree, context, checkpoint, guard, mcp, run subcommands (extracted into `commands/` modules)
-- **assay-mcp**: MCP server — 19 tools (spec_list/get/validate, gate_run/evaluate/report/finalize/history, worktree_create/list/status/cleanup, session_create/get/update/list, merge_check, context_diagnose, run_manifest)
+- **assay-types**: Serializable DTOs — Spec, Criterion, GateRunRecord, GateEvalContext, WorkSession, WorktreeMetadata, Config, HarnessProfile, PromptLayer, SettingsOverride, HookContract, OrchestratorStatus, SessionRunState, FailurePolicy, MergeStrategy, ScopeConfig, ScopeViolation, etc.
+- **assay-core**: Domain logic — spec loading/validation, gate evaluation (command + agent), run history, worktree CRUD, work session lifecycle, merge checking/execution, guard daemon, context diagnostics/pruning, checkpoint extraction, evidence formatting, DAG validation, parallel session orchestration, sequential merge runner with ordering strategies
+- **assay-harness**: Agent harness adapters — prompt builder (`build_prompt`), settings merger (`merge_settings`), Claude Code/Codex/OpenCode adapters (`generate_config`, `write_config`, `build_cli_args`), scope enforcement (`check_scope`, `generate_scope_prompt`)
+- **assay-cli**: CLI binary — init, spec, gate, worktree, context, checkpoint, guard, mcp, run, harness (generate/install/update/diff) subcommands
+- **assay-mcp**: MCP server — 22 tools (spec_list/get/validate, gate_run/evaluate/report/finalize/history, worktree_create/list/status/cleanup, session_create/get/update/list, merge_check, context_diagnose, run_manifest, orchestrate_run, orchestrate_status)
 - **assay-tui**: TUI binary — skeleton (42-line placeholder)
 
-Key patterns: free functions (zero traits), sync core with async surfaces, atomic file writes, `deny_unknown_fields` on persisted types, schema registry via `inventory`, subprocess execution via `std::process::Command`.
+Key patterns: free functions (zero traits), sync core with async surfaces, atomic file writes, `deny_unknown_fields` on persisted types, schema registry via `inventory`, subprocess execution via `std::process::Command`, closure-based control inversion (D001).
 
 ## Architecture / Key Patterns
 
@@ -41,6 +41,6 @@ See `.kata/REQUIREMENTS.md` for the explicit capability contract, requirement st
 
 ## Milestone Sequence
 
-- [x] M001: Single-Agent Harness — manifest → worktree → agent launch → gate → merge propose (complete, 19 requirements validated, UAT pending real Claude Code invocation)
-- [ ] M002: Multi-Agent Orchestration — DAG executor, parallel sessions, sequential merge, multi-adapter harness (S01-S05 complete, S06 remaining — capstone)
-- [ ] M003: Conflict Resolution & Polish — AI conflict resolution, additional adapters, type unification
+- [x] M001: Single-Agent Harness — manifest → worktree → agent launch → gate → merge propose (complete, 19 requirements validated)
+- [x] M002: Multi-Agent Orchestration — DAG executor, parallel sessions, sequential merge, multi-adapter harness, MCP tools, end-to-end integration (complete, 24 requirements validated, 1180 tests)
+- [ ] M003: Conflict Resolution & Polish — AI conflict resolution, type unification, OTel instrumentation
