@@ -149,6 +149,13 @@ expression: schema.to_value()
   "additionalProperties": false,
   "description": "A single session entry within a run manifest.\n\nReferences a spec by name and optionally overrides harness configuration.\nThe pipeline merges these overrides with spec defaults and project config\nto produce a complete [`HarnessProfile`](crate::HarnessProfile).",
   "properties": {
+    "depends_on": {
+      "description": "Sessions that must complete before this one can start.\n\nEach entry is an effective session name (i.e. `name` if set, otherwise `spec`)\nof another session in the same manifest. Used by the orchestrator to build an\nexecution DAG. Empty means no dependencies — the session can run immediately.",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
     "hooks": {
       "description": "Lifecycle hooks for this session. Empty by default.",
       "items": {

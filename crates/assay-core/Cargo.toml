@@ -32,5 +32,8 @@ libc.workspace = true
 [dev-dependencies]
 serial_test.workspace = true
 
+[features]
+orchestrate = []
+
 [lints]
 workspace = true

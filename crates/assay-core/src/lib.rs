@@ -50,3 +50,9 @@ pub mod merge;
 
 /// End-to-end pipeline orchestrator: manifest → worktree → harness → agent → gate → merge.
 pub mod pipeline;
+
+/// Session dependency orchestration: DAG construction and validation.
+///
+/// Gated behind the `orchestrate` Cargo feature.
+#[cfg(feature = "orchestrate")]
+pub mod orchestrate;

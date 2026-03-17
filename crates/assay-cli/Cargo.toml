@@ -11,7 +11,7 @@ name = "assay"
 path = "src/main.rs"
 
 [dependencies]
-assay-core.workspace = true
+assay-core = { workspace = true, features = ["orchestrate"] }
 assay-harness.workspace = true
 assay-types.workspace = true
 assay-mcp.workspace = true

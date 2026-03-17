@@ -750,6 +750,7 @@ mod tests {
             settings: None,
             hooks: vec![],
             prompt_layers: vec![],
+            depends_on: vec![],
         };
 
         let profile = build_harness_profile(&session);
@@ -785,6 +786,7 @@ mod tests {
                 content: "Be careful".into(),
                 priority: 50,
             }],
+            depends_on: vec![],
         };
 
         let profile = build_harness_profile(&session);
@@ -878,6 +880,7 @@ mod tests {
             settings: None,
             hooks: vec![],
             prompt_layers: vec![],
+            depends_on: vec![],
         };
 
         let writer: Box<HarnessWriter> =
@@ -937,6 +940,7 @@ cmd = "echo ok"
             settings: None,
             hooks: vec![],
             prompt_layers: vec![],
+            depends_on: vec![],
         };
 
         let writer: Box<HarnessWriter> =

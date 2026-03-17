@@ -71,6 +71,14 @@ pub struct ManifestSession {
     /// Prompt layers injected into this session's prompt assembly. Empty by default.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub prompt_layers: Vec<PromptLayer>,
+
+    /// Sessions that must complete before this one can start.
+    ///
+    /// Each entry is an effective session name (i.e. `name` if set, otherwise `spec`)
+    /// of another session in the same manifest. Used by the orchestrator to build an
+    /// execution DAG. Empty means no dependencies — the session can run immediately.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub depends_on: Vec<String>,
 }
 
 inventory::submit! {

@@ -211,51 +211,51 @@
 - Validation: S07 — PipelineError struct carries stage (PipelineStage enum), message, recovery guidance, and elapsed time. Tests verify stage-tagged errors for SpecLoad, WorktreeCreate, and AgentLaunch failure paths.
 - Notes: Validated by S07. Recovery strings provide actionable fix guidance per stage.
 
-## Deferred
+## Active
 
 ### R020 — Multi-agent orchestration
 - Class: core-capability
-- Status: deferred
+- Status: active
 - Description: OrchestratorSession, DAG executor, parallel sessions with dependency ordering
 - Why it matters: Enables parallel agent work on independent specs
 - Source: user
-- Primary owning slice: M002 (provisional)
-- Supporting slices: none
-- Validation: unmapped
-- Notes: Deferred to M002 — requires single-agent foundation first
+- Primary owning slice: M002/S02
+- Supporting slices: M002/S01, M002/S06
+- Validation: DAG validation rejects cycles, parallel executor respects dependency ordering, skips dependents of failures, integration test with concurrent sessions
+- Notes: S01 provides manifest dependencies and DAG validation; S02 builds the executor; S06 proves end-to-end integration
 
 ### R021 — Orchestration MCP tools
 - Class: core-capability
-- Status: deferred
+- Status: active
 - Description: `orchestrate_*` MCP tools (additive, no changes to existing tools)
 - Why it matters: Programmatic access to multi-agent orchestration
 - Source: user
-- Primary owning slice: M002 (provisional)
-- Supporting slices: none
-- Validation: unmapped
-- Notes: Additive tools, no modification to existing 18
+- Primary owning slice: M002/S04
+- Supporting slices: M002/S06
+- Validation: orchestrate_run and orchestrate_status MCP tools registered, schema tests pass, handler unit tests verify invocation
+- Notes: Additive tools, no modification to existing 20 tools
 
 ### R022 — Harness orchestration layer
 - Class: core-capability
-- Status: deferred
+- Status: active
 - Description: Scope enforcement, multi-agent prompt generation
 - Why it matters: Multi-agent needs coordinated prompting and scope boundaries
 - Source: user
-- Primary owning slice: M002 (provisional)
-- Supporting slices: none
-- Validation: unmapped
-- Notes: Depends on single-agent harness being stable
+- Primary owning slice: M002/S05
+- Supporting slices: M002/S06
+- Validation: Snapshot tests of generated CLAUDE.md showing scope boundaries and multi-agent awareness for each session
+- Notes: Depends on single-agent harness being stable (proven by M001)
 
 ### R023 — MergeRunner with sequential merge
 - Class: core-capability
-- Status: deferred
-- Description: Sequential merge runner with AI conflict resolution
+- Status: active
+- Description: Sequential merge runner that merges completed session branches in topological order using `git merge --no-ff`
 - Why it matters: Multiple agents produce branches that must be merged in dependency order
 - Source: user
-- Primary owning slice: M002 (provisional)
-- Supporting slices: M003
-- Validation: unmapped
-- Notes: merge_check already exists; this adds automated execution
+- Primary owning slice: M002/S03
+- Supporting slices: M002/S06
+- Validation: Integration tests with real git repos verifying topological merge order, conflict detection against updated base, failed-merge reporting
+- Notes: merge_check already exists (read-only); S03 adds merge_execute (side-effecting). AI conflict resolution deferred to M003 (R026).
 
 ### R024 — Additional harness adapters
 - Class: differentiator
@@ -289,6 +289,17 @@
 - Supporting slices: none
 - Validation: unmapped
 - Notes: Requires MergeRunner foundation from M002
+
+### R027 — OpenTelemetry instrumentation
+- Class: quality-attribute
+- Status: deferred
+- Description: OTel tracing spans and metrics across pipeline stages, session lifecycle, merge phases, and harness generation
+- Why it matters: Observability is critical for debugging multi-agent orchestration at scale — which session is slow, where merges fail, harness generation latency
+- Source: user
+- Primary owning slice: M004+ (provisional)
+- Supporting slices: none
+- Validation: unmapped
+- Notes: Cross-cutting concern — better as a dedicated pass after orchestration and harness surfaces stabilize. M002 should identify span boundaries but not wire them.
 
 ## Out of Scope
 
@@ -359,13 +370,14 @@
 | R017 | primary-user-loop | validated | M001/S07 | none | S07 |
 | R018 | core-capability | validated | M001/S07 | none | S07 |
 | R019 | failure-visibility | validated | M001/S07 | none | S07 |
-| R020 | core-capability | deferred | M002 | none | unmapped |
-| R021 | core-capability | deferred | M002 | none | unmapped |
-| R022 | core-capability | deferred | M002 | none | unmapped |
-| R023 | core-capability | deferred | M002 | M003 | unmapped |
+| R020 | core-capability | active | M002/S02 | M002/S01, M002/S06 | unmapped |
+| R021 | core-capability | active | M002/S04 | M002/S06 | unmapped |
+| R022 | core-capability | active | M002/S05 | M002/S06 | unmapped |
+| R023 | core-capability | active | M002/S03 | M002/S06 | unmapped |
 | R024 | differentiator | deferred | M003 | none | unmapped |
 | R025 | quality-attribute | deferred | M003 | none | unmapped |
 | R026 | differentiator | deferred | M003 | none | unmapped |
+| R027 | quality-attribute | deferred | M004+ | none | unmapped |
 | R030 | anti-feature | out-of-scope | none | none | n/a |
 | R031 | anti-feature | out-of-scope | none | none | n/a |
 | R032 | anti-feature | out-of-scope | none | none | n/a |

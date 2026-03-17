@@ -58,6 +58,62 @@ pub fn validate(manifest: &RunManifest) -> std::result::Result<(), Vec<ManifestE
         }
     }
 
+    // Dependency-aware structural checks — only when at least one session uses depends_on.
+    let has_deps = manifest.sessions.iter().any(|s| !s.depends_on.is_empty());
+
+    if has_deps {
+        // Build effective name index for reference resolution.
+        let effective_names: Vec<String> = manifest
+            .sessions
+            .iter()
+            .map(|s| s.name.as_deref().unwrap_or(&s.spec).to_string())
+            .collect();
+
+        // Check for duplicate effective names.
+        let mut seen: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
+        let mut has_duplicates = false;
+        for (i, name) in effective_names.iter().enumerate() {
+            if let Some(&prev_idx) = seen.get(name.as_str()) {
+                has_duplicates = true;
+                errors.push(ManifestError {
+                    field: format!("sessions[{i}]"),
+                    message: format!(
+                        "duplicate effective name '{}' (conflicts with sessions[{}])",
+                        name, prev_idx
+                    ),
+                });
+            } else {
+                seen.insert(name, i);
+            }
+        }
+
+        // Only check references if names are unique (otherwise resolution is ambiguous).
+        if !has_duplicates {
+            let name_set: std::collections::HashSet<&str> =
+                effective_names.iter().map(|s| s.as_str()).collect();
+
+            for (i, session) in manifest.sessions.iter().enumerate() {
+                let self_name = &effective_names[i];
+                for (j, dep) in session.depends_on.iter().enumerate() {
+                    if dep == self_name {
+                        errors.push(ManifestError {
+                            field: format!("sessions[{i}].depends_on[{j}]"),
+                            message: format!("session '{}' depends on itself", self_name),
+                        });
+                    } else if !name_set.contains(dep.as_str()) {
+                        errors.push(ManifestError {
+                            field: format!("sessions[{i}].depends_on[{j}]"),
+                            message: format!(
+                                "session '{}' depends on unknown session '{}'",
+                                self_name, dep
+                            ),
+                        });
+                    }
+                }
+            }
+        }
+    }
+
     if errors.is_empty() {
         Ok(())
     } else {
@@ -233,6 +289,7 @@ unknown_session_key = true
                 settings: None,
                 hooks: vec![],
                 prompt_layers: vec![],
+                depends_on: vec![],
             }],
         };
         let errors = validate(&manifest).unwrap_err();
@@ -255,6 +312,7 @@ unknown_session_key = true
                     settings: None,
                     hooks: vec![],
                     prompt_layers: vec![],
+                    depends_on: vec![],
                 },
                 assay_types::ManifestSession {
                     spec: "   ".into(),
@@ -262,6 +320,7 @@ unknown_session_key = true
                     settings: None,
                     hooks: vec![],
                     prompt_layers: vec![],
+                    depends_on: vec![],
                 },
             ],
         };
@@ -353,5 +412,123 @@ spec = "auth-flow"
             }
             other => panic!("expected ManifestValidation, got: {other:?}"),
         }
+    }
+
+    // ── dependency validation tests ─────────────────────────────────
+
+    fn session(
+        spec: &str,
+        name: Option<&str>,
+        depends_on: Vec<&str>,
+    ) -> assay_types::ManifestSession {
+        assay_types::ManifestSession {
+            spec: spec.into(),
+            name: name.map(|n| n.into()),
+            settings: None,
+            hooks: vec![],
+            prompt_layers: vec![],
+            depends_on: depends_on.into_iter().map(|s| s.into()).collect(),
+        }
+    }
+
+    #[test]
+    fn validate_deps_unknown_reference_rejected() {
+        let manifest = RunManifest {
+            sessions: vec![
+                session("a", None, vec![]),
+                session("b", None, vec!["nonexistent"]),
+            ],
+        };
+        let errors = validate(&manifest).unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert_eq!(errors[0].field, "sessions[1].depends_on[0]");
+        assert!(
+            errors[0].message.contains("unknown session 'nonexistent'"),
+            "got: {}",
+            errors[0].message
+        );
+    }
+
+    #[test]
+    fn validate_deps_self_dependency_rejected() {
+        let manifest = RunManifest {
+            sessions: vec![session("a", None, vec!["a"])],
+        };
+        let errors = validate(&manifest).unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert_eq!(errors[0].field, "sessions[0].depends_on[0]");
+        assert!(
+            errors[0].message.contains("depends on itself"),
+            "got: {}",
+            errors[0].message
+        );
+    }
+
+    #[test]
+    fn validate_deps_duplicate_names_rejected() {
+        let manifest = RunManifest {
+            sessions: vec![session("a", None, vec![]), session("a", None, vec!["a"])],
+        };
+        let errors = validate(&manifest).unwrap_err();
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.message.contains("duplicate effective name")),
+            "expected duplicate name error, got: {errors:?}"
+        );
+    }
+
+    #[test]
+    fn validate_deps_valid_references_accepted() {
+        let manifest = RunManifest {
+            sessions: vec![
+                session("a", None, vec![]),
+                session("b", None, vec!["a"]),
+                session("c", Some("custom"), vec!["a", "b"]),
+            ],
+        };
+        assert!(validate(&manifest).is_ok());
+    }
+
+    #[test]
+    fn validate_deps_effective_name_uses_name_over_spec() {
+        // Session has name="custom", spec="x". depends_on should reference "custom" not "x".
+        let manifest = RunManifest {
+            sessions: vec![
+                session("x", Some("custom"), vec![]),
+                session("b", None, vec!["x"]), // "x" is not the effective name
+            ],
+        };
+        let errors = validate(&manifest).unwrap_err();
+        assert!(
+            errors[0].message.contains("unknown session 'x'"),
+            "got: {}",
+            errors[0].message
+        );
+    }
+
+    #[test]
+    fn validate_no_deps_allows_duplicate_specs() {
+        // Without depends_on, duplicate specs are fine (backward compat).
+        let manifest = RunManifest {
+            sessions: vec![session("a", None, vec![]), session("a", None, vec![])],
+        };
+        assert!(validate(&manifest).is_ok());
+    }
+
+    #[test]
+    fn validate_deps_collects_multiple_errors() {
+        let manifest = RunManifest {
+            sessions: vec![
+                session("a", None, vec!["a"]),           // self-dep
+                session("b", None, vec!["nonexistent"]), // unknown ref
+            ],
+        };
+        let errors = validate(&manifest).unwrap_err();
+        assert_eq!(
+            errors.len(),
+            2,
+            "should collect both errors, got: {errors:?}"
+        );
     }
 }

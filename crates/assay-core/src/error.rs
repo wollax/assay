@@ -403,6 +403,25 @@ pub enum AssayError {
         source: EvaluatorError,
     },
 
+    /// Dependency graph contains a cycle.
+    ///
+    /// The `sessions` field names the sessions that participate in the cycle,
+    /// enabling actionable diagnostics.
+    #[cfg(feature = "orchestrate")]
+    #[error("dependency cycle detected among sessions: {}", sessions.join(", "))]
+    DagCycle {
+        /// Effective names of sessions involved in the cycle.
+        sessions: Vec<String>,
+    },
+
+    /// Dependency graph validation failed (missing refs, self-deps, duplicates).
+    #[cfg(feature = "orchestrate")]
+    #[error("dependency graph validation failed:\n{}", .errors.iter().map(|e| format!("  - {e}")).collect::<Vec<_>>().join("\n"))]
+    DagValidation {
+        /// All validation errors found during graph construction.
+        errors: Vec<ManifestError>,
+    },
+
     /// WorkSession transition error (invalid phase transition).
     #[error("work session `{session_id}` invalid transition: {from} -> {to}")]
     WorkSessionTransition {
