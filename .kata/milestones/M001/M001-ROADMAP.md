@@ -57,7 +57,7 @@ This milestone is complete only when all are true:
 - [x] **S02: Docker Container Provisioning & Teardown** `risk:high` `depends:[S01]`
   > After this: `smelt run manifest.toml` creates a Docker container from the specified image with configured resource limits and environment variables, executes a health-check command inside it, streams the output to the terminal, and removes the container on completion or failure. Verified by running `smelt run` against a real Docker daemon — the container appears in `docker ps` during execution and is gone after.
 
-- [ ] **S03: Repo Mount & Assay Execution** `risk:medium` `depends:[S02]`
+- [x] **S03: Repo Mount & Assay Execution** `risk:medium` `depends:[S02]`
   > After this: `smelt run manifest.toml` provisions a container, bind-mounts the host repo at the specified ref, executes `assay orchestrate` (or a mock standing in for it) inside the container with the job's session definitions, and streams orchestration output to the terminal. Verified by inspecting the mounted repo inside the container and confirming Assay's output appears in the terminal stream.
 
 - [ ] **S04: Result Collection & Branch Output** `risk:medium` `depends:[S03]`

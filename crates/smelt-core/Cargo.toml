@@ -7,6 +7,7 @@ repository.workspace = true
 description = "Smelt core library — job execution engine and domain types"
 
 [dependencies]
+base64.workspace = true
 bollard.workspace = true
 futures-util.workspace = true
 serde.workspace = true

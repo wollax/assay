@@ -1,9 +1,0 @@
-{
-  "pid": 63539,
-  "startedAt": "2026-03-17T15:51:10.306Z",
-  "unitType": "reassess-roadmap",
-  "unitId": "M001/S02",
-  "unitStartedAt": "2026-03-17T15:51:10.306Z",
-  "completedUnits": 13,
-  "sessionFile": "/Users/wollax/.kata-cli/sessions/2026-03-17T15-51-10-306Z_03e42661-cab5-4503-a8dd-753b71b9f417.jsonl"
-}

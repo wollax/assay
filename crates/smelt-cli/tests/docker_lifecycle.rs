@@ -8,6 +8,7 @@
 
 use std::collections::HashMap;
 
+use base64::Engine as _;
 use bollard::query_parameters::InspectContainerOptions;
 use smelt_core::docker::DockerProvider;
 use smelt_core::manifest::{
@@ -28,11 +29,13 @@ fn docker_provider_or_skip() -> Option<DockerProvider> {
 }
 
 /// Build a minimal [`JobManifest`] suitable for Docker lifecycle tests.
-fn test_manifest(name: &str) -> JobManifest {
+///
+/// `repo` should be a local filesystem path (bind-mounted into the container).
+fn test_manifest_with_repo(name: &str, repo: &str) -> JobManifest {
     JobManifest {
         job: JobMeta {
             name: name.to_string(),
-            repo: "https://github.com/example/test".to_string(),
+            repo: repo.to_string(),
             base_ref: "main".to_string(),
         },
         environment: Environment {
@@ -59,6 +62,12 @@ fn test_manifest(name: &str) -> JobManifest {
             target: "main".to_string(),
         },
     }
+}
+
+/// Build a test manifest with repo set to the current directory.
+fn test_manifest(name: &str) -> JobManifest {
+    // Use the project root (or cwd) as a valid local path.
+    test_manifest_with_repo(name, ".")
 }
 
 /// Verify that the container no longer exists via the bollard API.
@@ -202,7 +211,7 @@ async fn test_teardown_on_error() {
 
 // ── CLI-level tests ────────────────────────────────────────────────────
 
-/// Test the full CLI lifecycle: `smelt run examples/job-manifest.toml`
+/// Test the full CLI lifecycle: `smelt run <manifest>` with a local repo path.
 /// This exercises provision → health-check exec → teardown from the real binary.
 #[tokio::test]
 async fn test_cli_run_lifecycle() {
@@ -211,29 +220,70 @@ async fn test_cli_run_lifecycle() {
         return;
     }
 
+    // Create a temp dir as the repo path and a manifest pointing to it
+    let repo_dir = tempfile::tempdir().unwrap();
+    let manifest_dir = tempfile::tempdir().unwrap();
+    let manifest_path = manifest_dir.path().join("manifest.toml");
+    let manifest_content = format!(
+        r#"
+[job]
+name = "cli-lifecycle"
+repo = "{}"
+base_ref = "main"
+
+[environment]
+runtime = "docker"
+image = "alpine:3"
+
+[credentials]
+provider = "none"
+model = "none"
+
+[[session]]
+name = "test"
+spec = "test"
+harness = "echo ok"
+timeout = 60
+
+[merge]
+strategy = "sequential"
+target = "main"
+"#,
+        repo_dir.path().display()
+    );
+    std::fs::write(&manifest_path, manifest_content).unwrap();
+
     let cmd = assert_cmd::Command::cargo_bin("smelt")
         .expect("binary should exist")
         .arg("run")
-        .arg("examples/job-manifest.toml")
+        .arg(manifest_path.to_str().unwrap())
         .timeout(std::time::Duration::from_secs(120))
         .output()
         .expect("failed to run smelt");
 
     let stderr = String::from_utf8_lossy(&cmd.stderr);
 
-    // The health check output is streamed to stderr via eprint! in exec()
+    // Verify lifecycle phase messages appear in order
     assert!(
-        stderr.contains("smelt: container ready"),
-        "output should contain health check message, stderr:\n{stderr}"
+        stderr.contains("Writing manifest..."),
+        "output should contain manifest write phase, stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("Executing assay run..."),
+        "output should contain assay execution phase, stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("Assay complete"),
+        "output should contain assay completion, stderr:\n{stderr}"
     );
     assert!(
         stderr.contains("Container removed"),
         "output should confirm teardown, stderr:\n{stderr}"
     );
-    assert!(
-        cmd.status.success(),
-        "smelt run should exit 0, stderr:\n{stderr}"
-    );
+
+    // The assay binary won't exist in alpine, so exit code will be non-zero.
+    // But the lifecycle messages should show mount and manifest write succeeded.
+    // Don't assert success — the real assay isn't installed in the test container.
 
     // Verify no leaked containers
     let ps = std::process::Command::new("docker")
@@ -245,6 +295,266 @@ async fn test_cli_run_lifecycle() {
         remaining.trim().is_empty(),
         "no smelt containers should remain, got: {remaining}"
     );
+}
+
+// ── Bind-mount tests ───────────────────────────────────────────────────
+
+#[tokio::test]
+async fn test_bind_mount_read() {
+    let Some(provider) = docker_provider_or_skip() else { return };
+
+    // Create a temp dir with a test file
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("test.txt"), "hello from host").unwrap();
+
+    let manifest = test_manifest_with_repo("mount-read", dir.path().to_str().unwrap());
+    let container = provider.provision(&manifest).await.expect("provision");
+
+    // Read the test file inside the container at /workspace
+    let cmd = vec!["cat".to_string(), "/workspace/test.txt".to_string()];
+    let handle = provider.exec(&container, &cmd).await.expect("exec cat");
+    assert_eq!(handle.exit_code, 0, "cat should exit 0");
+    assert!(
+        handle.stdout.contains("hello from host"),
+        "should read host file content, got: {:?}",
+        handle.stdout
+    );
+
+    provider.teardown(&container).await.expect("teardown");
+    assert_container_removed(&provider, container.as_str()).await;
+}
+
+#[tokio::test]
+async fn test_bind_mount_write() {
+    let Some(provider) = docker_provider_or_skip() else { return };
+
+    let dir = tempfile::tempdir().unwrap();
+    let manifest = test_manifest_with_repo("mount-write", dir.path().to_str().unwrap());
+    let container = provider.provision(&manifest).await.expect("provision");
+
+    // Create a file inside the container at /workspace
+    let cmd = vec![
+        "sh".to_string(),
+        "-c".to_string(),
+        "echo 'written by container' > /workspace/newfile.txt".to_string(),
+    ];
+    let handle = provider.exec(&container, &cmd).await.expect("exec touch");
+    assert_eq!(handle.exit_code, 0, "write should exit 0");
+
+    // Verify the file exists on the host
+    let content = std::fs::read_to_string(dir.path().join("newfile.txt"))
+        .expect("file should exist on host");
+    assert!(
+        content.contains("written by container"),
+        "host file should have container content, got: {:?}",
+        content
+    );
+
+    provider.teardown(&container).await.expect("teardown");
+    assert_container_removed(&provider, container.as_str()).await;
+}
+
+#[tokio::test]
+async fn test_bind_mount_working_dir() {
+    let Some(provider) = docker_provider_or_skip() else { return };
+
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("marker.txt"), "found it").unwrap();
+
+    let manifest = test_manifest_with_repo("mount-workdir", dir.path().to_str().unwrap());
+    let container = provider.provision(&manifest).await.expect("provision");
+
+    // `pwd` should return /workspace (the working_dir set in exec)
+    let cmd = vec!["pwd".to_string()];
+    let handle = provider.exec(&container, &cmd).await.expect("exec pwd");
+    assert_eq!(handle.exit_code, 0);
+    assert!(
+        handle.stdout.trim().contains("/workspace"),
+        "working dir should be /workspace, got: {:?}",
+        handle.stdout
+    );
+
+    // `cat marker.txt` without path prefix should work via working_dir
+    let cmd = vec!["cat".to_string(), "marker.txt".to_string()];
+    let handle = provider.exec(&container, &cmd).await.expect("exec cat");
+    assert_eq!(handle.exit_code, 0);
+    assert!(
+        handle.stdout.contains("found it"),
+        "should read file via working_dir, got: {:?}",
+        handle.stdout
+    );
+
+    provider.teardown(&container).await.expect("teardown");
+    assert_container_removed(&provider, container.as_str()).await;
+}
+
+#[tokio::test]
+async fn test_repo_url_rejected() {
+    let Some(provider) = docker_provider_or_skip() else { return };
+
+    let manifest = test_manifest_with_repo("url-rejected", "https://github.com/example/repo");
+    let err = provider.provision(&manifest).await.unwrap_err();
+    let msg = err.to_string();
+    assert!(
+        msg.contains("not a URL"),
+        "should reject URL repo with clear message, got: {msg}"
+    );
+}
+
+// ── CLI-level tests ────────────────────────────────────────────────────
+
+// ── Assay mock tests ───────────────────────────────────────────────────
+
+/// Test the full assay mock execution: mount repo → write manifest → run mock assay.
+///
+/// Creates a temp repo dir with a marker file, provisions a container, writes
+/// the Smelt manifest into it, then runs a mock script that validates:
+/// 1. The repo is mounted and the marker file is readable
+/// 2. The manifest file is present and contains expected session data
+#[tokio::test]
+async fn test_assay_mock_execution() {
+    let Some(provider) = docker_provider_or_skip() else { return };
+
+    // Create a temp dir with a marker file as the "repo"
+    let repo_dir = tempfile::tempdir().unwrap();
+    std::fs::write(repo_dir.path().join("marker.txt"), "smelt-test").unwrap();
+
+    // Build manifest with two sessions, one depending on the other
+    let mut manifest = test_manifest_with_repo("assay-mock", repo_dir.path().to_str().unwrap());
+    manifest.session = vec![
+        smelt_core::manifest::SessionDef {
+            name: "alpha".to_string(),
+            spec: "First session".to_string(),
+            harness: "echo ok".to_string(),
+            timeout: 60,
+            depends_on: vec![],
+        },
+        smelt_core::manifest::SessionDef {
+            name: "beta".to_string(),
+            spec: "Second session".to_string(),
+            harness: "echo ok".to_string(),
+            timeout: 120,
+            depends_on: vec!["alpha".to_string()],
+        },
+    ];
+
+    let container = provider.provision(&manifest).await.expect("provision");
+
+    // Write the assay manifest into the container
+    let toml_content = smelt_core::AssayInvoker::build_manifest_toml(&manifest);
+    smelt_core::AssayInvoker::write_manifest_to_container(&provider, &container, &toml_content)
+        .await
+        .expect("write manifest");
+
+    // Write a mock assay script that validates the mount and manifest
+    let mock_script = r#"#!/bin/sh
+set -e
+# Check marker file from mounted repo
+if [ ! -f /workspace/marker.txt ]; then
+    echo "MOCK_ASSAY: ERROR — marker.txt not found" >&2
+    exit 1
+fi
+marker_content=$(cat /workspace/marker.txt)
+echo "MOCK_ASSAY: marker=$marker_content"
+
+# Check manifest file
+if [ ! -f /tmp/smelt-manifest.toml ]; then
+    echo "MOCK_ASSAY: ERROR — manifest not found" >&2
+    exit 1
+fi
+
+# Count sessions (lines matching 'name = ')
+session_count=$(grep -c 'name = ' /tmp/smelt-manifest.toml)
+session_names=$(grep 'name = ' /tmp/smelt-manifest.toml | sed 's/.*name = "\(.*\)"/\1/' | tr '\n' ',' | sed 's/,$//')
+echo "MOCK_ASSAY: found $session_count sessions: $session_names"
+"#;
+    let write_script_cmd = vec![
+        "sh".to_string(),
+        "-c".to_string(),
+        format!(
+            "echo '{}' | base64 -d > /tmp/mock-assay.sh && chmod +x /tmp/mock-assay.sh",
+            base64::engine::general_purpose::STANDARD.encode(mock_script.as_bytes())
+        ),
+    ];
+    let write_handle = provider.exec(&container, &write_script_cmd).await.expect("write mock script");
+    assert_eq!(write_handle.exit_code, 0, "writing mock script should succeed");
+
+    // Execute the mock assay script
+    let run_cmd = vec!["sh".to_string(), "/tmp/mock-assay.sh".to_string()];
+    let handle = provider.exec(&container, &run_cmd).await.expect("exec mock assay");
+
+    assert_eq!(handle.exit_code, 0, "mock assay should exit 0, stderr: {}", handle.stderr);
+    assert!(
+        handle.stdout.contains("MOCK_ASSAY: marker=smelt-test"),
+        "should confirm marker file, got: {:?}",
+        handle.stdout
+    );
+    assert!(
+        handle.stdout.contains("found 2 sessions"),
+        "should find 2 sessions, got: {:?}",
+        handle.stdout
+    );
+    assert!(
+        handle.stdout.contains("alpha"),
+        "should contain session name 'alpha', got: {:?}",
+        handle.stdout
+    );
+    assert!(
+        handle.stdout.contains("beta"),
+        "should contain session name 'beta', got: {:?}",
+        handle.stdout
+    );
+
+    provider.teardown(&container).await.expect("teardown");
+    assert_container_removed(&provider, container.as_str()).await;
+}
+
+/// Test that a non-zero assay exit code is surfaced correctly.
+#[tokio::test]
+async fn test_assay_mock_failure() {
+    let Some(provider) = docker_provider_or_skip() else { return };
+
+    let repo_dir = tempfile::tempdir().unwrap();
+    let manifest = test_manifest_with_repo("assay-failure", repo_dir.path().to_str().unwrap());
+
+    let container = provider.provision(&manifest).await.expect("provision");
+
+    // Write the assay manifest
+    let toml_content = smelt_core::AssayInvoker::build_manifest_toml(&manifest);
+    smelt_core::AssayInvoker::write_manifest_to_container(&provider, &container, &toml_content)
+        .await
+        .expect("write manifest");
+
+    // Write a mock script that fails with exit code 1 and stderr output
+    let fail_script = r#"#!/bin/sh
+echo "MOCK_ASSAY: starting" >&1
+echo "MOCK_ASSAY: fatal error — session 'test' harness timed out" >&2
+exit 1
+"#;
+    let write_cmd = vec![
+        "sh".to_string(),
+        "-c".to_string(),
+        format!(
+            "echo '{}' | base64 -d > /tmp/mock-fail.sh && chmod +x /tmp/mock-fail.sh",
+            base64::engine::general_purpose::STANDARD.encode(fail_script.as_bytes())
+        ),
+    ];
+    let wh = provider.exec(&container, &write_cmd).await.expect("write fail script");
+    assert_eq!(wh.exit_code, 0);
+
+    // Execute the failing mock
+    let run_cmd = vec!["sh".to_string(), "/tmp/mock-fail.sh".to_string()];
+    let handle = provider.exec(&container, &run_cmd).await.expect("exec mock fail");
+
+    assert_eq!(handle.exit_code, 1, "mock should exit with code 1");
+    assert!(
+        handle.stderr.contains("fatal error"),
+        "stderr should contain the failure message, got: {:?}",
+        handle.stderr
+    );
+
+    provider.teardown(&container).await.expect("teardown");
+    assert_container_removed(&provider, container.as_str()).await;
 }
 
 /// Test that running with an invalid manifest produces exit code 1 and an error message.

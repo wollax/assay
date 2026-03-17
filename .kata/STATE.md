@@ -1,22 +1,20 @@
 # Kata State
 
 **Active Milestone:** M001 — Docker-First Infrastructure MVP
-**Active Slice:** S03 — Repo Mount & Assay Execution (next)
-**Status:** S02 complete and merged. S03 ready to begin.
-**Phase:** Between slices — reassess roadmap for S03
+**Active Slice:** S04 — Result Collection & Branch Output
+**Status:** S03 complete. Ready to begin S04.
+**Phase:** Between slices
 
 ## Recent Decisions
-- D024: Docker lifecycle tests skip gracefully when daemon unavailable
-- D025: ExecHandle extended with exit_code/stdout/stderr fields
-- D026: CLI teardown via async block pattern — unconditional cleanup
+- D027: Fixed `/workspace` mount point for host repo in container
+- D028: Base64-encode TOML manifest, write via exec into container
+- D029: Smelt-side serde structs for Assay format (no crate import, per D002)
+- D030: Repo path validation — local paths only, URLs rejected
 
 ## Progress
 - S01: ✅ Scaffold, Manifest & Dry-Run CLI (4 tasks, 71 tests)
 - S02: ✅ Docker Container Provisioning & Teardown (4 tasks, 96 tests total)
-  - DockerProvider: provision (image pull, resource limits, env vars, labels), exec (streaming output, exit codes), teardown (force-remove)
-  - CLI async main, `smelt run` drives full Docker lifecycle
-  - bollard exec reliability risk retired
-- S03: ⏳ Repo Mount & Assay Execution
+- S03: ✅ Repo Mount & Assay Execution (3 tasks, 117 tests total)
 - S04: ⏳ Result Collection & Branch Output
 - S05: ⏳ Job Monitoring, Timeout & Graceful Shutdown
 - S06: ⏳ End-to-End Integration
@@ -25,4 +23,4 @@
 - None
 
 ## Next Action
-Plan and execute S03: add bind-mount support to DockerProvider, invoke assay orchestrate inside container
+Plan and execute S04 — Result Collection & Branch Output.

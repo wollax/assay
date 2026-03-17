@@ -72,21 +72,36 @@ async fn execute_run(args: &RunArgs) -> Result<i32> {
 
     // From here, teardown must run regardless of what happens.
     let result = async {
-        // Phase 6: Execute health-check command
-        eprintln!("Executing health check...");
-        let cmd = vec!["echo".to_string(), "smelt: container ready".to_string()];
+        // Phase 6: Write assay manifest into container
+        eprintln!("Writing manifest...");
+        let toml_content = smelt_core::AssayInvoker::build_manifest_toml(&manifest);
+        smelt_core::AssayInvoker::write_manifest_to_container(&provider, &container, &toml_content)
+            .await
+            .with_context(|| "failed to write assay manifest to container")?;
+        eprintln!("Manifest written.");
+
+        // Phase 7: Execute assay run
+        eprintln!("Executing assay run...");
+        let cmd = smelt_core::AssayInvoker::build_run_command(&manifest);
         let handle = provider
             .exec(&container, &cmd)
             .await
-            .with_context(|| "failed to execute health check")?;
+            .with_context(|| "failed to execute assay run")?;
         eprintln!(
-            "Health check complete — exit code: {}",
+            "Assay complete — exit code: {}",
             handle.exit_code
         );
 
+        if !handle.stdout.is_empty() {
+            eprint!("{}", handle.stdout);
+        }
+        if !handle.stderr.is_empty() {
+            eprint!("{}", handle.stderr);
+        }
+
         if handle.exit_code != 0 {
             anyhow::bail!(
-                "health check exited with code {} — stderr: {}",
+                "assay run exited with code {} — stderr: {}",
                 handle.exit_code,
                 handle.stderr.trim()
             );

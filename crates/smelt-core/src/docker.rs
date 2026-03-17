@@ -15,7 +15,7 @@ use futures_util::{StreamExt, TryStreamExt};
 use tracing::{debug, info};
 
 use crate::error::SmeltError;
-use crate::manifest::JobManifest;
+use crate::manifest::{resolve_repo_path, JobManifest};
 use crate::provider::{CollectResult, ContainerId, ExecHandle, RuntimeProvider};
 
 /// Docker-backed runtime provider.
@@ -101,9 +101,15 @@ impl RuntimeProvider for DockerProvider {
         let mut labels = HashMap::new();
         labels.insert("smelt.job".to_string(), manifest.job.name.clone());
 
+        // Resolve and bind-mount the repo path
+        let repo_path = resolve_repo_path(&manifest.job.repo)?;
+        let bind_string = format!("{}:/workspace", repo_path.display());
+        info!(repo_path = %repo_path.display(), bind = %bind_string, "resolved repo bind-mount");
+
         let host_config = HostConfig {
             memory,
             nano_cpus,
+            binds: Some(vec![bind_string]),
             ..Default::default()
         };
 
@@ -157,11 +163,12 @@ impl RuntimeProvider for DockerProvider {
     ) -> crate::Result<ExecHandle> {
         let container_id = container.as_str();
 
-        // Create exec instance
+        // Create exec instance with working_dir set to /workspace
         let exec_config = CreateExecOptions {
             cmd: Some(command.to_vec()),
             attach_stdout: Some(true),
             attach_stderr: Some(true),
+            working_dir: Some("/workspace".to_string()),
             ..Default::default()
         };
 

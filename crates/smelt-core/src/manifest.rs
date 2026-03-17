@@ -4,7 +4,7 @@
 //! what container image to use, which sessions to run, and how to merge results.
 
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
@@ -339,6 +339,55 @@ impl std::fmt::Display for CredentialStatus {
             Self::Missing { source } => write!(f, "{source} → MISSING"),
         }
     }
+}
+
+/// URL-like prefixes that indicate a remote repo (not a local path).
+const URL_PREFIXES: &[&str] = &["http://", "https://", "git://", "ssh://"];
+
+/// Resolve a repo path string to a canonicalized absolute [`PathBuf`].
+///
+/// Rejects strings that look like URLs (starting with `http://`, `https://`,
+/// `git://`, `ssh://`, or containing `@` before `:`  — the SCP-style SSH syntax).
+/// Canonicalizes relative paths to absolute via [`std::fs::canonicalize`].
+///
+/// # Errors
+///
+/// Returns [`SmeltError::Manifest`] if the path looks like a URL or cannot be
+/// canonicalized (e.g., does not exist on disk).
+pub fn resolve_repo_path(repo: &str) -> crate::Result<PathBuf> {
+    let repo = repo.trim();
+
+    // Reject URL-like strings
+    for prefix in URL_PREFIXES {
+        if repo.starts_with(prefix) {
+            return Err(SmeltError::Manifest {
+                field: "job.repo".to_string(),
+                message: format!(
+                    "repo must be a local path, not a URL: {repo:?}"
+                ),
+            });
+        }
+    }
+
+    // Reject SCP-style SSH syntax: user@host:path
+    if let Some(at_pos) = repo.find('@') {
+        if let Some(colon_pos) = repo.find(':') {
+            if at_pos < colon_pos {
+                return Err(SmeltError::Manifest {
+                    field: "job.repo".to_string(),
+                    message: format!(
+                        "repo must be a local path, not a URL: {repo:?}"
+                    ),
+                });
+            }
+        }
+    }
+
+    // Canonicalize (resolves relative paths, symlinks, verifies existence)
+    std::fs::canonicalize(repo).map_err(|e| SmeltError::Manifest {
+        field: "job.repo".to_string(),
+        message: format!("cannot resolve repo path {repo:?}: {e}"),
+    })
 }
 
 #[cfg(test)]
@@ -852,5 +901,76 @@ target = ""
         assert!(msg.contains("environment.image"), "should report empty image: {msg}");
         assert!(msg.contains("timeout"), "should report zero timeout: {msg}");
         assert!(msg.contains("merge.target"), "should report empty target: {msg}");
+    }
+
+    // ── resolve_repo_path tests ─────────────────────────────────
+
+    #[test]
+    fn resolve_repo_path_valid_absolute() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path();
+        let result = resolve_repo_path(path.to_str().unwrap()).unwrap();
+        assert!(result.is_absolute());
+        assert_eq!(result, std::fs::canonicalize(path).unwrap());
+    }
+
+    #[test]
+    fn resolve_repo_path_rejects_http() {
+        let err = resolve_repo_path("http://github.com/example/repo").unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("not a URL"), "should reject http URL: {msg}");
+    }
+
+    #[test]
+    fn resolve_repo_path_rejects_https() {
+        let err = resolve_repo_path("https://github.com/example/repo").unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("not a URL"), "should reject https URL: {msg}");
+    }
+
+    #[test]
+    fn resolve_repo_path_rejects_git() {
+        let err = resolve_repo_path("git://github.com/example/repo").unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("not a URL"), "should reject git URL: {msg}");
+    }
+
+    #[test]
+    fn resolve_repo_path_rejects_ssh() {
+        let err = resolve_repo_path("ssh://git@github.com/example/repo").unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("not a URL"), "should reject ssh URL: {msg}");
+    }
+
+    #[test]
+    fn resolve_repo_path_rejects_scp_style() {
+        let err = resolve_repo_path("git@github.com:example/repo").unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("not a URL"), "should reject SCP-style SSH: {msg}");
+    }
+
+    #[test]
+    fn resolve_repo_path_relative_path() {
+        // "." should resolve to the current working directory
+        let result = resolve_repo_path(".").unwrap();
+        assert!(result.is_absolute());
+        assert_eq!(result, std::fs::canonicalize(".").unwrap());
+    }
+
+    #[test]
+    fn resolve_repo_path_nonexistent() {
+        let err = resolve_repo_path("/tmp/smelt-nonexistent-path-12345xyz").unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("cannot resolve repo path"), "should report nonexistent: {msg}");
+    }
+
+    #[test]
+    fn resolve_repo_path_with_spaces() {
+        let dir = tempfile::tempdir().unwrap();
+        let spaced = dir.path().join("path with spaces");
+        std::fs::create_dir_all(&spaced).unwrap();
+        let result = resolve_repo_path(spaced.to_str().unwrap()).unwrap();
+        assert!(result.is_absolute());
+        assert_eq!(result, std::fs::canonicalize(&spaced).unwrap());
     }
 }

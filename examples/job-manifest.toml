@@ -1,10 +1,14 @@
 # Example Smelt job manifest — full schema demonstration.
 #
 # Run with: smelt run examples/job-manifest.toml --dry-run
+#
+# Note: `job.repo` must be an absolute local path when running `smelt run`.
+# The "." placeholder works for --dry-run but `smelt run` will resolve it
+# to the current working directory at runtime.
 
 [job]
 name = "add-user-auth"
-repo = "https://github.com/example/webapp"
+repo = "."
 base_ref = "main"
 
 [environment]
