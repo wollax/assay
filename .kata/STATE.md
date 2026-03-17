@@ -1,22 +1,28 @@
 # Kata State
 
 **Active Milestone:** M001 — Docker-First Infrastructure MVP
-**Active Slice:** S01 complete → S02 next
-**Status:** S01 merged — scaffold, manifest, dry-run CLI all working (71 tests)
-**Phase:** Ready for S02
+**Active Slice:** S03 — Repo Mount & Assay Execution (next)
+**Status:** S02 complete and merged. S03 ready to begin.
+**Phase:** Between slices — reassess roadmap for S03
 
 ## Recent Decisions
-- D017: deny_unknown_fields on all manifest structs
-- D018: Validation collects all errors (not fail-fast)
-- D019: RPITIT for async traits (Rust 2024 edition)
-- D020: SmeltConfig returns defaults when config file missing
+- D024: Docker lifecycle tests skip gracefully when daemon unavailable
+- D025: ExecHandle extended with exit_code/stdout/stderr fields
+- D026: CLI teardown via async block pattern — unconditional cleanup
 
 ## Progress
-- S01: ✅ Scaffold, Manifest & Dry-Run CLI (4 tasks, 71 tests, all passing)
-- S02: ⏳ Docker Container Provisioning & Teardown (not started)
+- S01: ✅ Scaffold, Manifest & Dry-Run CLI (4 tasks, 71 tests)
+- S02: ✅ Docker Container Provisioning & Teardown (4 tasks, 96 tests total)
+  - DockerProvider: provision (image pull, resource limits, env vars, labels), exec (streaming output, exit codes), teardown (force-remove)
+  - CLI async main, `smelt run` drives full Docker lifecycle
+  - bollard exec reliability risk retired
+- S03: ⏳ Repo Mount & Assay Execution
+- S04: ⏳ Result Collection & Branch Output
+- S05: ⏳ Job Monitoring, Timeout & Graceful Shutdown
+- S06: ⏳ End-to-End Integration
 
 ## Blockers
 - None
 
 ## Next Action
-Begin S02: Docker Container Provisioning & Teardown (high risk — bollard exec reliability)
+Plan and execute S03: add bind-mount support to DockerProvider, invoke assay orchestrate inside container

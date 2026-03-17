@@ -22,7 +22,8 @@ enum Commands {
     Run(commands::run::RunArgs),
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let cli = Cli::parse();
 
     // Initialize tracing subscriber
@@ -36,7 +37,7 @@ fn main() {
         .init();
 
     let code = match cli.command {
-        Commands::Run(ref args) => commands::run::execute(args),
+        Commands::Run(ref args) => commands::run::execute(args).await,
     };
 
     match code {

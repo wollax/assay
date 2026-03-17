@@ -21,3 +21,9 @@
 | D018 | M001-S01 | pattern | Validation error aggregation   | Collect all errors before returning, not fail-fast | Users see every issue at once instead of fixing one at a time   | No                          |
 | D019 | M001-S01 | library | Async trait style              | RPITIT instead of async_trait macro               | Rust 2024 edition supports this natively; avoids boxing overhead | Yes — if edition downgraded |
 | D020 | M001-S01 | pattern | Config missing file behavior   | Return defaults when .smelt/config.toml missing   | Non-fatal — first run should work without config file            | No                          |
+| D021 | M001-S02 | pattern | Container keep-alive strategy  | `sleep 3600` as container CMD, work via exec      | Container stays running while exec commands are issued against it | No                          |
+| D022 | M001-S02 | pattern | Container labeling             | `smelt.job=<name>` label on all containers        | Enables identification and cleanup via `docker ps --filter`       | No                          |
+| D023 | M001-S02 | pattern | Teardown guarantee             | Explicit teardown in both success and error paths  | No scopeguard/Drop — explicit match ensures cleanup visibility    | Yes — if signal handling in S05 changes pattern |
+| D024 | M001-S02 | pattern | Docker test skip pattern       | Tests skip gracefully when daemon unavailable       | Keeps `cargo test --workspace` green in all environments          | No                          |
+| D025 | M001-S02 | pattern | ExecHandle result fields       | exit_code/stdout/stderr on ExecHandle directly      | Simpler API — results returned to caller without indirection      | No                          |
+| D026 | M001-S02 | pattern | CLI teardown via async block   | Async block for exec work, teardown unconditional   | Guarantees cleanup without Drop/scopeguard complexity             | Yes — if signal handling in S05 changes pattern |

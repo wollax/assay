@@ -30,7 +30,7 @@ fn dry_run_valid_manifest_prints_execution_plan() {
         .stdout(
             predicate::str::contains("═══ Execution Plan ═══")
                 .and(predicate::str::contains("add-user-auth"))
-                .and(predicate::str::contains("node:20-slim"))
+                .and(predicate::str::contains("alpine:3"))
                 .and(predicate::str::contains("frontend"))
                 .and(predicate::str::contains("backend"))
                 .and(predicate::str::contains("integration"))
@@ -133,12 +133,26 @@ fn dry_run_nonexistent_manifest_exits_with_error() {
 // ── Without --dry-run ──────────────────────────────────────────
 
 #[test]
-fn run_without_dry_run_exits_unimplemented() {
-    smelt()
+fn run_without_dry_run_attempts_docker() {
+    // Now that Docker lifecycle is wired, running without --dry-run
+    // attempts to connect to Docker. In CI without Docker, it fails
+    // with a connection error. With Docker, it succeeds.
+    let assert = smelt()
         .args(["run", "examples/job-manifest.toml"])
-        .assert()
-        .failure()
-        .stderr(predicate::str::contains("Docker execution not yet implemented"));
+        .assert();
+
+    // Either succeeds (Docker available) or fails with a provider error (no Docker)
+    let output = assert.get_output().clone();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let success = output.status.success();
+
+    if !success {
+        // Must be a Docker connection error, not the old "not implemented" message
+        assert!(
+            stderr.contains("Docker") || stderr.contains("docker") || stderr.contains("connect"),
+            "expected Docker-related error, got: {stderr}"
+        );
+    }
 }
 
 // ── Credential value never leaked ──────────────────────────────

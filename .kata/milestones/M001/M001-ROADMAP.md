@@ -54,7 +54,7 @@ This milestone is complete only when all are true:
 - [x] **S01: Scaffold, Manifest & Dry-Run CLI** `risk:low` `depends:[]`
   > After this: `smelt run manifest.toml --dry-run` parses a complete job manifest, validates all fields (sessions, environment, credentials, merge config), resolves credential sources from environment, and prints the execution plan — or rejects malformed input with clear errors. Verified by running `smelt run --dry-run` against valid and invalid manifests from the terminal.
 
-- [ ] **S02: Docker Container Provisioning & Teardown** `risk:high` `depends:[S01]`
+- [x] **S02: Docker Container Provisioning & Teardown** `risk:high` `depends:[S01]`
   > After this: `smelt run manifest.toml` creates a Docker container from the specified image with configured resource limits and environment variables, executes a health-check command inside it, streams the output to the terminal, and removes the container on completion or failure. Verified by running `smelt run` against a real Docker daemon — the container appears in `docker ps` during execution and is gone after.
 
 - [ ] **S03: Repo Mount & Assay Execution** `risk:medium` `depends:[S02]`

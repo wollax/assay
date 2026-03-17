@@ -9,7 +9,7 @@ base_ref = "main"
 
 [environment]
 runtime = "docker"
-image = "node:20-slim"
+image = "alpine:3"
 
 [environment.resources]
 cpu = "2"

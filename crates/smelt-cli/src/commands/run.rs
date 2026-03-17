@@ -20,14 +20,94 @@ pub struct RunArgs {
 }
 
 /// Execute the `run` subcommand.
-pub fn execute(args: &RunArgs) -> Result<i32> {
+pub async fn execute(args: &RunArgs) -> Result<i32> {
     if args.dry_run {
         execute_dry_run(args)
     } else {
-        eprintln!("Error: Docker execution not yet implemented.");
-        eprintln!("Hint: use --dry-run to validate the manifest and preview the execution plan.");
-        Ok(1)
+        execute_run(args).await
     }
+}
+
+/// Load, validate, and run the full Docker lifecycle for a manifest.
+async fn execute_run(args: &RunArgs) -> Result<i32> {
+    use smelt_core::docker::DockerProvider;
+    use smelt_core::provider::RuntimeProvider;
+
+    // Phase 1: Load manifest
+    info!(path = %args.manifest.display(), "loading manifest");
+    let manifest = JobManifest::load(&args.manifest)
+        .with_context(|| format!("failed to load manifest `{}`", args.manifest.display()))?;
+    info!("manifest loaded successfully");
+
+    // Phase 2: Validate
+    info!("validating manifest");
+    if let Err(e) = manifest.validate() {
+        error!(%e, "manifest validation failed");
+        eprintln!("Validation failed for `{}`:\n", args.manifest.display());
+        eprintln!("{e}");
+        return Ok(1);
+    }
+    info!("manifest validation passed");
+
+    // Phase 3: Runtime type check
+    if manifest.environment.runtime != "docker" {
+        eprintln!(
+            "Error: unsupported runtime `{}`. Only `docker` is currently supported.",
+            manifest.environment.runtime
+        );
+        return Ok(1);
+    }
+
+    // Phase 4: Connect to Docker
+    eprintln!("Provisioning container...");
+    let provider = DockerProvider::new()
+        .with_context(|| "failed to connect to Docker daemon")?;
+
+    // Phase 5: Provision container
+    let container = provider
+        .provision(&manifest)
+        .await
+        .with_context(|| "failed to provision container")?;
+    eprintln!("Container provisioned: {container}");
+
+    // From here, teardown must run regardless of what happens.
+    let result = async {
+        // Phase 6: Execute health-check command
+        eprintln!("Executing health check...");
+        let cmd = vec!["echo".to_string(), "smelt: container ready".to_string()];
+        let handle = provider
+            .exec(&container, &cmd)
+            .await
+            .with_context(|| "failed to execute health check")?;
+        eprintln!(
+            "Health check complete — exit code: {}",
+            handle.exit_code
+        );
+
+        if handle.exit_code != 0 {
+            anyhow::bail!(
+                "health check exited with code {} — stderr: {}",
+                handle.exit_code,
+                handle.stderr.trim()
+            );
+        }
+
+        Ok::<i32, anyhow::Error>(0)
+    }
+    .await;
+
+    // Phase 7: Teardown — always runs
+    eprintln!("Tearing down container...");
+    if let Err(e) = provider.teardown(&container).await {
+        eprintln!("Warning: teardown failed: {e:#}");
+        // If the inner result was ok, promote teardown error
+        if result.is_ok() {
+            return Err(e.into());
+        }
+    }
+    eprintln!("Container removed.");
+
+    result
 }
 
 /// Load, validate, and print the execution plan for a manifest.

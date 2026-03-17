@@ -37,16 +37,22 @@ impl std::fmt::Display for ContainerId {
     }
 }
 
-/// Handle to a running command execution inside a container.
+/// Result of executing a command inside a container.
 ///
-/// Carries the container and an execution-specific identifier so callers
-/// can track or cancel individual commands.
+/// Carries the container, execution identifier, exit code, and captured
+/// stdout/stderr from the completed command.
 #[derive(Debug, Clone)]
 pub struct ExecHandle {
     /// The container this execution belongs to.
     pub container: ContainerId,
     /// Provider-specific execution identifier.
     pub exec_id: String,
+    /// Exit code of the executed command (0 = success).
+    pub exit_code: i32,
+    /// Captured stdout from the command.
+    pub stdout: String,
+    /// Captured stderr from the command.
+    pub stderr: String,
 }
 
 /// Result of collecting artifacts and outputs from a completed session.
