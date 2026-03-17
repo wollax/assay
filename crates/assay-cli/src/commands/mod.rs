@@ -3,6 +3,7 @@ pub mod context;
 pub mod gate;
 pub mod init;
 pub mod mcp;
+pub mod run;
 pub mod spec;
 pub mod worktree;
 

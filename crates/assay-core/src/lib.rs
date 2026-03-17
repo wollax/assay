@@ -47,3 +47,6 @@ pub mod evaluator;
 
 /// Merge check: conflict detection between git refs with zero side effects.
 pub mod merge;
+
+/// End-to-end pipeline orchestrator: manifest → worktree → harness → agent → gate → merge.
+pub mod pipeline;

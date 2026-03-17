@@ -180,36 +180,36 @@
 
 ### R017 — Single-agent end-to-end pipeline
 - Class: primary-user-loop
-- Status: active
+- Status: validated
 - Description: Single-agent pipeline executes the full flow: RunManifest → worktree create → agent launch (via harness) → gate evaluate → merge propose
 - Why it matters: This is the core value loop — the reason assay exists
 - Source: user
 - Primary owning slice: M001/S07
 - Supporting slices: none
-- Validation: unmapped
-- Notes: Capstone slice, composes everything
+- Validation: S07 — run_session() orchestrates 6-stage pipeline with 10 unit tests covering success and failure paths per stage; CLI and MCP entry points compile and pass tests; just ready green
+- Notes: Validated by S07. Full runtime verification with real Claude Code is manual UAT.
 
 ### R018 — Pipeline as MCP tool
 - Class: core-capability
-- Status: active
+- Status: validated
 - Description: Pipeline is exposed as an MCP tool or composable MCP tool sequence that agents can invoke
 - Why it matters: Agents need to trigger the pipeline programmatically
 - Source: user
 - Primary owning slice: M001/S07
 - Supporting slices: none
-- Validation: unmapped
-- Notes: Could be single tool or composed sequence of existing tools
+- Validation: S07 — run_manifest MCP tool registered in router with manifest_path and timeout_secs params, schema generates correctly, spawn_blocking wrapping verified, missing-manifest error handling tested (5 tests)
+- Notes: Validated by S07. Single run_manifest tool wraps full pipeline.
 
 ### R019 — Pipeline structured errors
 - Class: failure-visibility
-- Status: active
+- Status: validated
 - Description: Pipeline failures at any stage produce structured errors with the stage that failed and recovery guidance
 - Why it matters: Agents need to know what failed and how to recover
 - Source: user
 - Primary owning slice: M001/S07
 - Supporting slices: none
-- Validation: unmapped
-- Notes: Error types must include pipeline stage context
+- Validation: S07 — PipelineError struct carries stage (PipelineStage enum), message, recovery guidance, and elapsed time. Tests verify stage-tagged errors for SpecLoad, WorktreeCreate, and AgentLaunch failure paths.
+- Notes: Validated by S07. Recovery strings provide actionable fix guidance per stage.
 
 ## Deferred
 
@@ -356,9 +356,9 @@
 | R014 | core-capability | validated | M001/S06 | none | S06 |
 | R015 | core-capability | validated | M001/S06 | none | S06 |
 | R016 | quality-attribute | validated | M001/S06 | none | S06 |
-| R017 | primary-user-loop | active | M001/S07 | none | unmapped |
-| R018 | core-capability | active | M001/S07 | none | unmapped |
-| R019 | failure-visibility | active | M001/S07 | none | unmapped |
+| R017 | primary-user-loop | validated | M001/S07 | none | S07 |
+| R018 | core-capability | validated | M001/S07 | none | S07 |
+| R019 | failure-visibility | validated | M001/S07 | none | S07 |
 | R020 | core-capability | deferred | M002 | none | unmapped |
 | R021 | core-capability | deferred | M002 | none | unmapped |
 | R022 | core-capability | deferred | M002 | none | unmapped |
@@ -373,7 +373,7 @@
 
 ## Coverage Summary
 
-- Active requirements: 3
+- Active requirements: 0
 - Mapped to slices: 19
-- Validated: 16
+- Validated: 19
 - Unmapped active requirements: 0

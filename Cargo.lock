@@ -117,10 +117,12 @@ version = "0.4.0"
 dependencies = [
  "anyhow",
  "assay-core",
+ "assay-harness",
  "assay-mcp",
  "assay-types",
  "chrono",
  "clap",
+ "serde",
  "serde_json",
  "tokio",
  "tracing-appender",
@@ -170,6 +172,7 @@ name = "assay-mcp"
 version = "0.4.0"
 dependencies = [
  "assay-core",
+ "assay-harness",
  "assay-mcp",
  "assay-types",
  "chrono",

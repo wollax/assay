@@ -12,10 +12,12 @@ path = "src/main.rs"
 
 [dependencies]
 assay-core.workspace = true
+assay-harness.workspace = true
 assay-types.workspace = true
 assay-mcp.workspace = true
 chrono.workspace = true
 clap.workspace = true
+serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
 tracing-appender.workspace = true

@@ -65,7 +65,7 @@ This milestone is complete only when all are true:
 - [x] **S06: RunManifest Type & Parsing** `risk:low` `depends:[S02]`
   > After this: TOML manifests with `[[sessions]]` parse into RunManifest types with validation and actionable error messages. Verified by round-trip and error-case tests.
 
-- [ ] **S07: End-to-End Pipeline** `risk:high` `depends:[S04,S05,S06]`
+- [x] **S07: End-to-End Pipeline** `risk:high` `depends:[S04,S05,S06]`
   > After this: `assay run <manifest.toml>` and `run_manifest` MCP tool execute the full pipeline: manifest → worktree → harness config → agent launch → gate evaluate → merge propose. Pipeline failures produce structured errors with stage context.
 
 ## Boundary Map

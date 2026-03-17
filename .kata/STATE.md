@@ -1,12 +1,11 @@
 # Kata State
 
 **Active Milestone:** M001 — Single-Agent Harness End-to-End
-**Active Slice:** S07 — End-to-End Pipeline (next)
-**Phase:** Slice complete — ready for S07 planning
-**Slice Branch:** kata/M001/S06 (completing)
-**Next Action:** Plan and execute S07 (capstone — manifest → worktree → harness → agent → gate → merge)
+**Phase:** Complete — all 7 slices done, pending squash-merge to main
+**Slice Branch:** kata/M001/S07
+**Next Action:** Squash-merge S07 to main, then manual UAT with real Claude Code invocation
 **Last Updated:** 2026-03-16
-**Requirements Status:** 3 active · 16 validated · 7 deferred · 4 out of scope
+**Requirements Status:** 0 active · 19 validated · 7 deferred · 4 out of scope
 
 ## Slice Progress (M001)
 
@@ -16,17 +15,14 @@
 - [x] S04: Claude Code Adapter
 - [x] S05: Worktree Enhancements & Tech Debt
 - [x] S06: RunManifest Type & Parsing
-  - [x] T01: Define RunManifest and ManifestSession types with schema snapshots
-  - [x] T02: Add manifest parsing, validation, error variants, and tests
-- [ ] S07: End-to-End Pipeline
+- [x] S07: End-to-End Pipeline
+  - [x] T01: Pipeline module with PipelineStage, PipelineError, and run_session orchestrator
+  - [x] T02: CLI `run` subcommand and MCP `run_manifest` tool
 
 ## Recent Decisions
 
-- D001–D010: Architectural decisions seeded from brainstorm convergence
-- D011: Explicit struct construction in merge_settings for compile-time field coverage
-- D012: Vec merge semantics use replace (non-empty override wins entirely)
-- D013: session_id is metadata-only (not on WorktreeInfo) — persistence concern, not list/status
-- D014: ManifestSession uses inline optional overrides, not embedded HarnessProfile
+- D015: Pipeline harness config injection via HarnessWriter closure (assay-core cannot depend on assay-harness)
+- D016: PipelineError wraps String, not AssayError (AssayError is not Clone)
 
 ## Blockers
 

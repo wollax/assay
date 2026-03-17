@@ -379,6 +379,21 @@ pub struct SessionListParams {
     pub limit: Option<usize>,
 }
 
+/// Parameters for the `run_manifest` tool.
+#[derive(Deserialize, JsonSchema)]
+pub struct RunManifestParams {
+    /// Path to the manifest TOML file.
+    #[schemars(description = "Path to the run manifest TOML file (e.g. 'manifest.toml')")]
+    pub manifest_path: String,
+
+    /// Maximum seconds to wait for each agent subprocess (default: 600).
+    #[schemars(
+        description = "Maximum seconds per agent subprocess (default: 600). Applies to each session independently."
+    )]
+    #[serde(default)]
+    pub timeout_secs: Option<u64>,
+}
+
 /// Parameters for the `gate_evaluate` tool.
 #[derive(Deserialize, JsonSchema)]
 pub struct GateEvaluateParams {
@@ -709,6 +724,65 @@ struct EvaluateCriterionResult {
     evidence: Option<String>,
     /// Enforcement level.
     enforcement: assay_types::Enforcement,
+}
+
+/// Per-session result in a `run_manifest` response.
+#[derive(Serialize)]
+struct RunManifestSessionResult {
+    /// Spec name for this session.
+    spec_name: String,
+    /// Session ID assigned by the pipeline. Absent on early-stage failure.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    session_id: Option<String>,
+    /// Outcome: "Success", "GateFailed", "MergeConflict", or "Error".
+    outcome: String,
+    /// Error details. Present only when outcome is "Error".
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<RunManifestError>,
+    /// Per-stage timing. Present on successful pipeline completion.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    stage_timings: Option<Vec<RunManifestStageTiming>>,
+}
+
+/// Error detail for a failed pipeline session.
+#[derive(Serialize)]
+struct RunManifestError {
+    /// Which pipeline stage failed.
+    stage: String,
+    /// Error description.
+    message: String,
+    /// Actionable recovery guidance.
+    recovery: String,
+    /// Elapsed seconds before failure.
+    elapsed_secs: f64,
+}
+
+/// Timing for a single pipeline stage.
+#[derive(Serialize)]
+struct RunManifestStageTiming {
+    /// Stage name.
+    stage: String,
+    /// Duration in seconds.
+    duration_secs: f64,
+}
+
+/// Response from the `run_manifest` tool.
+#[derive(Serialize)]
+struct RunManifestResponse {
+    /// Per-session results.
+    sessions: Vec<RunManifestSessionResult>,
+    /// Aggregate summary.
+    summary: RunManifestSummary,
+}
+
+/// Aggregate summary for a `run_manifest` response.
+#[derive(Serialize)]
+struct RunManifestSummary {
+    total: usize,
+    succeeded: usize,
+    gate_failed: usize,
+    merge_conflict: usize,
+    errored: usize,
 }
 
 /// Response from the `gate_evaluate` tool.
@@ -2453,6 +2527,147 @@ impl AssayServer {
         let json = serde_json::to_string(&response)
             .map_err(|e| McpError::internal_error(format!("serialization failed: {e}"), None))?;
         Ok(CallToolResult::success(vec![Content::text(json)]))
+    }
+
+    /// Run a manifest through the end-to-end pipeline.
+    #[tool(
+        description = "Run a manifest through the end-to-end pipeline: spec load → worktree create → harness config → agent launch → gate evaluate → merge check. \
+            Returns per-session results with outcomes, stage timings, and structured error details. \
+            Each session runs sequentially. One session's failure does not block subsequent sessions. \
+            The sync pipeline is wrapped in spawn_blocking per D007."
+    )]
+    pub async fn run_manifest(
+        &self,
+        params: Parameters<RunManifestParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let cwd = resolve_cwd()?;
+        let config = match load_config(&cwd) {
+            Ok(c) => c,
+            Err(err_result) => return Ok(err_result),
+        };
+
+        let manifest_path = PathBuf::from(&params.0.manifest_path);
+        let manifest_path = if manifest_path.is_absolute() {
+            manifest_path
+        } else {
+            cwd.join(&manifest_path)
+        };
+
+        let specs_dir = cwd.join(".assay").join(&config.specs_dir);
+        let assay_dir = cwd.join(".assay");
+        let worktree_base = assay_core::worktree::resolve_worktree_dir(None, &config, &cwd);
+        let timeout_secs = params
+            .0
+            .timeout_secs
+            .unwrap_or(assay_core::pipeline::PipelineConfig::DEFAULT_TIMEOUT_SECS);
+
+        // Load manifest (sync, cheap)
+        let manifest = match assay_core::manifest::load(&manifest_path) {
+            Ok(m) => m,
+            Err(e) => return Ok(domain_error(&e)),
+        };
+
+        let session_specs: Vec<String> = manifest.sessions.iter().map(|s| s.spec.clone()).collect();
+
+        let pipeline_config = assay_core::pipeline::PipelineConfig {
+            project_root: cwd.clone(),
+            assay_dir,
+            specs_dir,
+            worktree_base,
+            timeout_secs,
+            base_branch: None,
+        };
+
+        // Wrap the sync pipeline in spawn_blocking (D007).
+        let results = tokio::task::spawn_blocking(move || {
+            let harness_writer: Box<assay_core::pipeline::HarnessWriter> = Box::new(
+                |profile: &assay_types::HarnessProfile, worktree_path: &std::path::Path| {
+                    let claude_config = assay_harness::claude::generate_config(profile);
+                    assay_harness::claude::write_config(&claude_config, worktree_path)
+                        .map_err(|e| format!("Failed to write claude config: {e}"))?;
+                    Ok(assay_harness::claude::build_cli_args(&claude_config))
+                },
+            );
+            assay_core::pipeline::run_manifest(&manifest, &pipeline_config, &harness_writer)
+        })
+        .await
+        .map_err(|e| McpError::internal_error(format!("pipeline task panicked: {e}"), None))?;
+
+        // Build response
+        let mut sessions = Vec::new();
+        let mut succeeded = 0usize;
+        let mut gate_failed = 0usize;
+        let mut merge_conflict = 0usize;
+        let mut errored = 0usize;
+
+        for (i, result) in results.into_iter().enumerate() {
+            let spec_name = session_specs[i].clone();
+            match result {
+                Ok(pr) => {
+                    let timings: Vec<RunManifestStageTiming> = pr
+                        .stage_timings
+                        .iter()
+                        .map(|t| RunManifestStageTiming {
+                            stage: t.stage.to_string(),
+                            duration_secs: t.duration.as_secs_f64(),
+                        })
+                        .collect();
+
+                    match pr.outcome {
+                        assay_core::pipeline::PipelineOutcome::Success => succeeded += 1,
+                        assay_core::pipeline::PipelineOutcome::GateFailed => gate_failed += 1,
+                        assay_core::pipeline::PipelineOutcome::MergeConflict => merge_conflict += 1,
+                    }
+
+                    sessions.push(RunManifestSessionResult {
+                        spec_name,
+                        session_id: Some(pr.session_id),
+                        outcome: pr.outcome.to_string(),
+                        error: None,
+                        stage_timings: Some(timings),
+                    });
+                }
+                Err(pe) => {
+                    errored += 1;
+                    sessions.push(RunManifestSessionResult {
+                        spec_name,
+                        session_id: None,
+                        outcome: "Error".to_string(),
+                        error: Some(RunManifestError {
+                            stage: pe.stage.to_string(),
+                            message: pe.message,
+                            recovery: pe.recovery,
+                            elapsed_secs: pe.elapsed.as_secs_f64(),
+                        }),
+                        stage_timings: None,
+                    });
+                }
+            }
+        }
+
+        let total = sessions.len();
+        let response = RunManifestResponse {
+            sessions,
+            summary: RunManifestSummary {
+                total,
+                succeeded,
+                gate_failed,
+                merge_conflict,
+                errored,
+            },
+        };
+
+        if errored > 0 {
+            let json = serde_json::to_string(&response).map_err(|e| {
+                McpError::internal_error(format!("serialization failed: {e}"), None)
+            })?;
+            Ok(CallToolResult::error(vec![Content::text(json)]))
+        } else {
+            let json = serde_json::to_string(&response).map_err(|e| {
+                McpError::internal_error(format!("serialization failed: {e}"), None)
+            })?;
+            Ok(CallToolResult::success(vec![Content::text(json)]))
+        }
     }
 }
 
@@ -6121,5 +6336,70 @@ cmd = "echo ok"
         );
         assert_eq!(sessions[0]["spec_name"], "combo-a");
         assert_eq!(sessions[0]["phase"], "created");
+    }
+
+    // ── run_manifest tests ───────────────────────────────────────────
+
+    #[test]
+    fn run_manifest_params_deserializes() {
+        let json = r#"{"manifest_path": "test.toml", "timeout_secs": 300}"#;
+        let params: RunManifestParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.manifest_path, "test.toml");
+        assert_eq!(params.timeout_secs, Some(300));
+    }
+
+    #[test]
+    fn run_manifest_params_deserializes_minimal() {
+        let json = r#"{"manifest_path": "test.toml"}"#;
+        let params: RunManifestParams = serde_json::from_str(json).unwrap();
+        assert_eq!(params.manifest_path, "test.toml");
+        assert_eq!(params.timeout_secs, None);
+    }
+
+    #[test]
+    fn run_manifest_params_schema_generates() {
+        let schema = schemars::schema_for!(RunManifestParams);
+        let json = serde_json::to_string(&schema).unwrap();
+        assert!(
+            json.contains("manifest_path"),
+            "schema should contain manifest_path"
+        );
+        assert!(
+            json.contains("timeout_secs"),
+            "schema should contain timeout_secs"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn run_manifest_tool_in_router() {
+        let server = AssayServer::new();
+        let tools = server.tool_router.list_all();
+        let tool_names: Vec<&str> = tools.iter().map(|t| t.name.as_ref()).collect();
+        assert!(
+            tool_names.contains(&"run_manifest"),
+            "run_manifest should be in tool list, got: {tool_names:?}"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn run_manifest_missing_manifest_file() {
+        let dir = create_project(r#"project_name = "run-test""#);
+        std::env::set_current_dir(dir.path()).unwrap();
+
+        let server = AssayServer::new();
+        let result = server
+            .run_manifest(Parameters(RunManifestParams {
+                manifest_path: "nonexistent.toml".to_string(),
+                timeout_secs: None,
+            }))
+            .await
+            .unwrap();
+
+        assert!(
+            result.is_error.unwrap_or(false),
+            "should fail for missing manifest"
+        );
     }
 }

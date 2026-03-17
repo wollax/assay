@@ -114,6 +114,18 @@ Examples:
         #[command(subcommand)]
         command: commands::worktree::WorktreeCommand,
     },
+    /// Run a manifest through the end-to-end pipeline
+    #[command(after_long_help = "\
+Examples:
+  Run a manifest:
+    assay run manifest.toml
+
+  Override timeout:
+    assay run manifest.toml --timeout 900
+
+  Output as JSON:
+    assay run manifest.toml --json")]
+    Run(commands::run::RunCommand),
     /// Team state checkpointing
     #[command(after_long_help = "\
 Examples:
@@ -151,6 +163,7 @@ async fn run() -> anyhow::Result<i32> {
         Some(Command::Gate { command }) => commands::gate::handle(command),
         Some(Command::Context { command }) => commands::context::handle(command),
         Some(Command::Worktree { command }) => commands::worktree::handle(command),
+        Some(Command::Run(cmd)) => commands::run::execute(&cmd),
         Some(Command::Checkpoint { command }) => commands::checkpoint::handle(command),
         None => {
             // Note: project detection checks cwd only — no upward traversal.

@@ -11,6 +11,7 @@ testing = []
 
 [dependencies]
 assay-core.workspace = true
+assay-harness.workspace = true
 assay-types.workspace = true
 chrono.workspace = true
 rmcp.workspace = true
