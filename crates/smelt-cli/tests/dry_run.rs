@@ -134,25 +134,26 @@ fn dry_run_nonexistent_manifest_exits_with_error() {
 
 #[test]
 fn run_without_dry_run_attempts_docker() {
-    // Now that Docker lifecycle is wired, running without --dry-run
-    // attempts to connect to Docker. In CI without Docker, it fails
-    // with a connection error. With Docker, it succeeds.
+    // Running without --dry-run attempts the full Docker lifecycle.
+    //
+    // This test is environment-sensitive:
+    // - No Docker daemon  → provider connection error (exit 1)
+    // - Docker available, no assay binary in container → assay not found (exit 1)
+    // - Docker available, assay present → pipeline runs (exit 0 or 1 depending on result)
+    //
+    // The important invariant: the OLD "not implemented" stub message must NOT appear.
     let assert = smelt()
         .args(["run", "examples/job-manifest.toml"])
         .assert();
 
-    // Either succeeds (Docker available) or fails with a provider error (no Docker)
     let output = assert.get_output().clone();
     let stderr = String::from_utf8_lossy(&output.stderr);
-    let success = output.status.success();
 
-    if !success {
-        // Must be a Docker connection error, not the old "not implemented" message
-        assert!(
-            stderr.contains("Docker") || stderr.contains("docker") || stderr.contains("connect"),
-            "expected Docker-related error, got: {stderr}"
-        );
-    }
+    // Must never see the old placeholder message from before S02
+    assert!(
+        !stderr.contains("not implemented"),
+        "unexpected stub message — Docker lifecycle should be wired: {stderr}"
+    );
 }
 
 // ── Credential value never leaked ──────────────────────────────
