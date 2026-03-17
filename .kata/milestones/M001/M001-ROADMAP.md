@@ -63,7 +63,7 @@ This milestone is complete only when all are true:
 - [x] **S04: Result Collection & Branch Output** `risk:medium` `depends:[S03]`
   > After this: After `smelt run` completes, the target branch specified in the manifest exists on the host repository containing the merged work from all sessions. The results are extracted from the container's repo mount before teardown. Verified by checking out the target branch on the host and confirming it contains commits from the agent sessions.
 
-- [ ] **S05: Job Monitoring, Timeout & Graceful Shutdown** `risk:low` `depends:[S03]`
+- [x] **S05: Job Monitoring, Timeout & Graceful Shutdown** `risk:low` `depends:[S03]`
   > After this: `smelt status` shows live progress for a running job (active sessions, elapsed time, container health). Jobs exceeding their timeout are terminated and cleaned up. Ctrl+C during `smelt run` triggers graceful container teardown with no orphans. Verified by running a long job, checking `smelt status` in another terminal, sending Ctrl+C, and confirming containers are removed.
 
 - [ ] **S06: End-to-End Integration** `risk:low` `depends:[S04,S05]`
