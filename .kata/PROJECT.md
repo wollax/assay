@@ -40,15 +40,16 @@ examples/
 ## Known Issues
 
 - `run_without_dry_run_attempts_docker` in `crates/smelt-cli/tests/dry_run.rs` is a pre-existing failing test — the test logic incorrectly asserts Docker unavailability when Docker is present. Should be fixed before M002.
-- `AssayInvoker` manifest format is based on assumed Assay CLI contract (D029) — not yet validated against a real `assay` binary. Should be validated early in M002.
+- AssayInvoker contract validated against real `assay` binary (M002-S01/S02 — D043 supersedes D029).
 - Integration tests install `git` via `apk add` — require Alpine CDN network access; will fail in air-gapped CI.
+- `.assay/` directory may be written to the bind-mounted host repo during live runs; no `.gitignore` entry exists yet.
 
 ## Milestones
 
 | Milestone | Title | Status |
 |-----------|-------|--------|
 | M001 | Docker-First Infrastructure MVP | ✅ Complete (2026-03-17) |
-| M002 | (planned) | Not started |
+| M002 | Real Assay Integration | 🔄 In Progress (S01 ✅, S02 ✅, S03-S04 pending) |
 
 ## Technology Decisions
 

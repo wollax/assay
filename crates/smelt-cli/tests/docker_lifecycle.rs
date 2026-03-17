@@ -19,6 +19,134 @@ use smelt_core::provider::RuntimeProvider;
 
 
 
+/// Returns the workspace root directory (two levels up from this crate's manifest).
+///
+/// `CARGO_MANIFEST_DIR` points to `crates/smelt-cli/`, so `../..` is the workspace root.
+fn workspace_root() -> std::path::PathBuf {
+    let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    manifest_dir.join("../..").canonicalize().unwrap_or_else(|_| manifest_dir.join("../.."))
+}
+
+/// Build the assay binary for Linux aarch64 inside a `rust:alpine` Docker container.
+///
+/// - Detects the assay source directory via `ASSAY_SOURCE_DIR` env var, or falls back to
+///   `<workspace_root>/../../assay` (sibling repo pattern for local dev).
+/// - Returns `None` immediately if neither source location exists, or if the Docker build fails.
+/// - On success, caches the binary at `target/smelt-test-cache/assay-linux-aarch64` and returns
+///   `Some(cache_path)`. Subsequent calls return the cached path without rebuilding.
+fn build_linux_assay_binary() -> Option<std::path::PathBuf> {
+    let workspace = workspace_root();
+
+    // Resolve cache path first — cache hit bypasses source detection entirely
+    let cache_dir = workspace.join("target/smelt-test-cache");
+    let cache_path = cache_dir.join("assay-linux-aarch64");
+
+    if cache_path.exists() {
+        return Some(cache_path);
+    }
+
+    // Cache miss — need to build from source; detect assay source directory
+    let assay_src = if let Ok(dir) = std::env::var("ASSAY_SOURCE_DIR") {
+        let p = std::path::PathBuf::from(dir);
+        if p.exists() { p } else {
+            eprintln!("Skipping: ASSAY_SOURCE_DIR set but does not exist: {}", p.display());
+            return None;
+        }
+    } else {
+        // Sibling repo pattern: <workspace_root>/../../assay
+        let sibling = workspace.join("../../assay");
+        match sibling.canonicalize() {
+            Ok(p) if p.exists() => p,
+            _ => {
+                eprintln!("Skipping: assay source not found at {} (set ASSAY_SOURCE_DIR to override)", sibling.display());
+                return None;
+            }
+        }
+    };
+
+    // Ensure cache directories exist
+    let build_dir = cache_dir.join("assay-build");
+    if let Err(e) = std::fs::create_dir_all(&build_dir) {
+        eprintln!("Failed to create cache build dir {}: {e}", build_dir.display());
+        return None;
+    }
+
+    // Resolve cargo home for registry cache mount
+    let cargo_home = std::env::var("CARGO_HOME")
+        .unwrap_or_else(|_| format!("{}/.cargo", std::env::var("HOME").unwrap()));
+
+    let assay_src_str = assay_src.to_string_lossy();
+    let build_dir_str = build_dir.to_string_lossy();
+    let registry_mount = format!("{cargo_home}/registry:/usr/local/cargo/registry");
+
+    eprintln!("Building Linux aarch64 assay binary from {} ...", assay_src_str);
+
+    let output = std::process::Command::new("docker")
+        .args([
+            "run", "--rm",
+            "--platform", "linux/arm64",
+            "-v", &format!("{assay_src_str}:/assay:ro"),
+            "-v", &registry_mount,
+            "-v", &format!("{build_dir_str}:/build"),
+            "-e", "CARGO_TARGET_DIR=/build",
+            "-w", "/assay",
+            "rust:alpine",
+            "sh", "-c", "apk add --no-cache musl-dev && cargo build --bin assay 2>&1",
+        ])
+        .output();
+
+    match output {
+        Err(e) => {
+            eprintln!("Failed to run docker for Linux assay build: {e}");
+            return None;
+        }
+        Ok(out) if !out.status.success() => {
+            eprintln!("Docker build of Linux assay binary failed (exit {:?}):", out.status.code());
+            eprintln!("{}", String::from_utf8_lossy(&out.stdout));
+            eprintln!("{}", String::from_utf8_lossy(&out.stderr));
+            return None;
+        }
+        Ok(_) => {}
+    }
+
+    // Copy the built binary to the cache path
+    let built_binary = build_dir.join("debug/assay");
+    if !built_binary.exists() {
+        eprintln!("Build succeeded but binary not found at {}", built_binary.display());
+        return None;
+    }
+
+    if let Err(e) = std::fs::copy(&built_binary, &cache_path) {
+        eprintln!("Failed to copy binary to cache: {e}");
+        return None;
+    }
+
+    eprintln!("Cached Linux aarch64 assay binary at {}", cache_path.display());
+    Some(cache_path)
+}
+
+/// Inject a host file into a running container using `docker cp`.
+///
+/// Returns `true` iff the `docker cp` command exits successfully.
+/// This avoids the base64-exec approach, which is too slow/unreliable for large binaries.
+#[allow(dead_code)]
+fn inject_binary_to_container(container_id: &str, host_path: &std::path::Path, dest_path: &str) -> bool {
+    let status = std::process::Command::new("docker")
+        .args(["cp", &host_path.to_string_lossy().to_string(), &format!("{container_id}:{dest_path}")])
+        .status();
+    match status {
+        Ok(s) if s.success() => true,
+        Ok(s) => {
+            eprintln!("docker cp failed with exit code {:?}", s.code());
+            false
+        }
+        Err(e) => {
+            eprintln!("Failed to run docker cp: {e}");
+            false
+        }
+    }
+}
+
 /// Try to connect to Docker. Returns `None` if the daemon is unavailable,
 /// allowing tests to skip gracefully instead of panicking.
 fn docker_provider_or_skip() -> Option<DockerProvider> {
@@ -1152,4 +1280,231 @@ async fn test_double_teardown_safe() {
     // Second teardown should not error (404 tolerance)
     provider.teardown(&container).await.expect("second teardown should be safe");
     assert_container_removed(&provider, &container_id).await;
+}
+
+// ── Linux assay binary builder tests ──────────────────────────────────
+
+/// Integration test: run the real Linux assay binary inside a Docker container and
+/// assert it progresses past the manifest/spec parse phase without TOML schema errors.
+///
+/// This test proves that:
+/// - Smelt's generated TOML files pass assay's `deny_unknown_fields` validation
+/// - The `[[sessions]]` key is correct (not `[[session]]`)
+/// - Spec files written to `/workspace/.assay/specs/<name>.toml` are found by assay
+/// - The `.assay/config.toml` created by Phase 5.5 satisfies assay's project root detection
+///
+/// Assay will fail after parsing (no Claude API key / worktree setup), but the test only
+/// asserts on the parse-phase outcome. Exit code is expected to be non-zero.
+///
+/// Skips gracefully when Docker or the Linux assay binary are unavailable.
+#[tokio::test]
+async fn test_real_assay_manifest_parsing() {
+    // Step 1: Get Docker provider (skip if unavailable)
+    let Some(provider) = docker_provider_or_skip() else { return };
+
+    // Step 2: Build (or locate cached) Linux assay binary (skip if unavailable)
+    let Some(binary_path) = build_linux_assay_binary() else {
+        eprintln!("Skipping test_real_assay_manifest_parsing — assay Linux binary unavailable");
+        return;
+    };
+
+    // Build a two-session manifest — alpha (no deps) and beta (depends on alpha)
+    let repo_dir = tempfile::tempdir().unwrap();
+    let mut manifest = test_manifest_with_repo("real-assay-parse", repo_dir.path().to_str().unwrap());
+    manifest.job.base_ref = "main".to_string();
+    manifest.session = vec![
+        SessionDef {
+            name: "parse-test-alpha".to_string(),
+            spec: "First parse test session".to_string(),
+            harness: "echo ok".to_string(),
+            timeout: 60,
+            depends_on: vec![],
+        },
+        SessionDef {
+            name: "parse-test-beta".to_string(),
+            spec: "Second parse test session".to_string(),
+            harness: "echo ok".to_string(),
+            timeout: 60,
+            depends_on: vec!["parse-test-alpha".to_string()],
+        },
+    ];
+
+    // Step 3: Provision container
+    let container = provider.provision(&manifest).await.expect("provision should succeed");
+
+    // Step 4: Inject real Linux assay binary into container and make it executable
+    let injected = inject_binary_to_container(container.as_str(), &binary_path, "/usr/local/bin/assay");
+    if !injected {
+        provider.teardown(&container).await.ok();
+        panic!("inject_binary_to_container failed — cannot proceed with test");
+    }
+
+    let chmod_handle = provider
+        .exec(&container, &["chmod".to_string(), "+x".to_string(), "/usr/local/bin/assay".to_string()])
+        .await
+        .expect("chmod exec should not error");
+    assert_eq!(
+        chmod_handle.exit_code, 0,
+        "chmod +x /usr/local/bin/assay should succeed, stderr: {}",
+        chmod_handle.stderr
+    );
+
+    // Step 5: Phase 5.5 — mirror the exact sequence from execute_run()
+
+    // 5a: Write assay config into container (idempotent mkdir + config.toml)
+    let config_cmd = smelt_core::AssayInvoker::build_write_assay_config_command(&manifest.job.name);
+    let config_handle = provider
+        .exec(&container, &config_cmd)
+        .await
+        .expect("exec assay config write should not error");
+    assert_eq!(
+        config_handle.exit_code, 0,
+        "assay config write should exit 0, stderr: {}",
+        config_handle.stderr
+    );
+
+    // 5b: Ensure specs directory exists
+    let specs_dir_cmd = smelt_core::AssayInvoker::build_ensure_specs_dir_command();
+    let specs_dir_handle = provider
+        .exec(&container, &specs_dir_cmd)
+        .await
+        .expect("exec ensure specs dir should not error");
+    assert_eq!(
+        specs_dir_handle.exit_code, 0,
+        "ensure specs dir should exit 0, stderr: {}",
+        specs_dir_handle.stderr
+    );
+
+    // 5c: Write per-session spec TOML files
+    for s in manifest.session.iter() {
+        let spec_name = smelt_core::AssayInvoker::sanitize_session_name(&s.name);
+        let spec_toml = smelt_core::AssayInvoker::build_spec_toml(s);
+        let spec_handle = smelt_core::AssayInvoker::write_spec_file_to_container(
+            &provider,
+            &container,
+            &spec_name,
+            &spec_toml,
+        )
+        .await
+        .expect("write_spec_file_to_container should not error");
+        assert_eq!(
+            spec_handle.exit_code, 0,
+            "spec file write for '{spec_name}' should exit 0, stderr: {}",
+            spec_handle.stderr
+        );
+    }
+
+    // 5d: Write assay run manifest into container
+    let manifest_toml = smelt_core::AssayInvoker::build_run_manifest_toml(&manifest);
+    smelt_core::AssayInvoker::write_manifest_to_container(&provider, &container, &manifest_toml)
+        .await
+        .expect("write_manifest_to_container should succeed");
+
+    // Step 6: Exec `assay run` and capture output
+    let run_cmd = smelt_core::AssayInvoker::build_run_command(&manifest);
+    let assay_handle = provider
+        .exec(&container, &run_cmd)
+        .await
+        .expect("exec assay run should not error at the transport level");
+
+    // Print unconditionally — visible with --nocapture, essential for diagnosing parse failures
+    eprintln!("assay stdout: {}", assay_handle.stdout);
+    eprintln!("assay stderr: {}", assay_handle.stderr);
+
+    // Teardown before asserting (ensures container is cleaned up on panic too,
+    // since Rust tests run assertion panics after this point)
+    provider.teardown(&container).await.expect("teardown should succeed");
+    assert_container_removed(&provider, container.as_str()).await;
+
+    // Step 7: Assert parse phase succeeded
+    // Primary signal: assay progressed past manifest parse and emitted "Manifest loaded:"
+    assert!(
+        assay_handle.stderr.contains("Manifest loaded:"),
+        "assay should have progressed past parse phase (expected 'Manifest loaded:' in stderr);\
+        \nassay stdout: {}\nassay stderr: {}",
+        assay_handle.stdout,
+        assay_handle.stderr
+    );
+
+    // Negative assertions — these would indicate TOML schema or setup failures
+    assert!(
+        !assay_handle.stderr.contains("No Assay project found"),
+        "Phase 5.5 config write should have succeeded (got 'No Assay project found');\
+        \nassay stderr: {}",
+        assay_handle.stderr
+    );
+    assert!(
+        !assay_handle.stderr.contains("unknown field"),
+        "No deny_unknown_fields violations expected;\
+        \nassay stderr: {}",
+        assay_handle.stderr
+    );
+    assert!(
+        !assay_handle.stderr.contains("ManifestParse"),
+        "No manifest TOML parse errors expected;\
+        \nassay stderr: {}",
+        assay_handle.stderr
+    );
+    assert!(
+        !assay_handle.stderr.contains("ManifestValidation"),
+        "No manifest validation errors expected;\
+        \nassay stderr: {}",
+        assay_handle.stderr
+    );
+
+    // NOTE: exit_code is intentionally NOT asserted as 0 — assay will fail after
+    // parse phase without a Claude API key / worktree setup.
+}
+
+/// Smoke test for `build_linux_assay_binary()`.
+///
+/// Calls the builder and checks that:
+/// - The function returns `Some(path)` when assay source + Docker are available, OR
+/// - Returns `None` and the test skips gracefully when either is unavailable.
+///
+/// On success, verifies the cached binary exists, has non-zero size, and the
+/// path ends with `assay-linux-aarch64`.
+#[tokio::test]
+async fn test_build_linux_assay_binary_caches() {
+    let result = build_linux_assay_binary();
+
+    match result {
+        None => {
+            // Assay source or Docker unavailable — skip gracefully
+            eprintln!("test_build_linux_assay_binary_caches: skipped (assay source or Docker not available)");
+            return;
+        }
+        Some(path) => {
+            assert!(
+                path.exists(),
+                "cached binary should exist at {}", path.display()
+            );
+            let meta = path.metadata().expect("should be able to read metadata");
+            assert!(
+                meta.len() > 0,
+                "cached binary should have non-zero size, got {} bytes", meta.len()
+            );
+            assert!(
+                path.ends_with("assay-linux-aarch64"),
+                "cache path should end with 'assay-linux-aarch64', got: {}", path.display()
+            );
+            eprintln!(
+                "test_build_linux_assay_binary_caches: PASS — binary at {} ({} bytes)",
+                path.display(),
+                meta.len()
+            );
+
+            // Second call must return the same cached path without rebuilding (fast path)
+            let second = build_linux_assay_binary();
+            assert!(
+                second.is_some(),
+                "second call should also return Some (cache hit)"
+            );
+            assert_eq!(
+                second.unwrap(),
+                path,
+                "cache hit should return the same path"
+            );
+        }
+    }
 }

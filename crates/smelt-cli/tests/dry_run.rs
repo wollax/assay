@@ -141,6 +141,15 @@ fn run_without_dry_run_attempts_docker() {
     // - Docker available, no assay binary in container → assay not found (exit 1)
     // - Docker available, assay present → pipeline runs (exit 0 or 1 depending on result)
     //
+    // Phase 5.5 wiring (S02/T01): Before assay is invoked, execute_run() now runs
+    // three setup steps inside the container:
+    //   1. Write /workspace/.assay/config.toml (via sh -c base64 -d)
+    //   2. Create /workspace/.assay/specs/ directory (mkdir -p)
+    //   3. Write per-session spec TOML files under /workspace/.assay/specs/
+    // All three steps succeed in alpine:3 (sh, mkdir, and base64 are all available).
+    // After Phase 5.5, assay is invoked and exits 127 (not found) — a non-zero exit
+    // code — so this test still observes a failure. The test behavior is unchanged.
+    //
     // The important invariant: the OLD "not implemented" stub message must NOT appear.
     let assert = smelt()
         .args(["run", "examples/job-manifest.toml"])

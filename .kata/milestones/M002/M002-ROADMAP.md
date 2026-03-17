@@ -53,7 +53,7 @@ No `.kata/REQUIREMENTS.md` exists — operating in legacy compatibility mode. M0
 - [x] **S01: Fix AssayInvoker — Real Assay Contract** `risk:high` `depends:[]`
   > After this: `cargo test -p smelt-core` shows unit tests proving `AssayInvoker` generates `[[sessions]]` key, spec-name references (not inline descriptions), valid flat `Spec` TOML files with `[[criteria]]`, session name sanitization, and `--base-branch` flag — all verifiable without Docker.
 
-- [ ] **S02: Real Assay Binary + Production Wiring** `risk:high` `depends:[S01]`
+- [x] **S02: Real Assay Binary + Production Wiring** `risk:high` `depends:[S01]`
   > After this: `cargo test -p smelt-cli --test docker_lifecycle test_real_assay_manifest_parsing` provisions a container, injects a real `assay` binary built from source, runs through the full smelt pipeline (provision → `.assay/` setup → spec writes → manifest write → assay exec), and asserts assay's stderr contains no TOML/schema parse errors — proving Smelt-generated files are accepted by the real binary.
 
 - [ ] **S03: Streaming Assay Output** `risk:medium` `depends:[S02]`

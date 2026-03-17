@@ -112,6 +112,90 @@ where
     // Pin the cancel future so it can be polled in select!
     tokio::pin!(cancel);
 
+    // Phase 5.5: Assay setup — config, specs dir, per-session spec files
+
+    // Write assay config into container (idempotent — skips if already present)
+    eprintln!("Writing assay config...");
+    let config_cmd = smelt_core::AssayInvoker::build_write_assay_config_command(&manifest.job.name);
+    match provider.exec(&container, &config_cmd).await {
+        Err(e) => {
+            let _ = monitor.set_phase(JobPhase::Failed);
+            eprintln!("Tearing down container...");
+            let _ = monitor.set_phase(JobPhase::TearingDown);
+            let _ = provider.teardown(&container).await;
+            eprintln!("Container removed.");
+            let _ = monitor.cleanup();
+            return Err(e).with_context(|| "failed to exec assay config write");
+        }
+        Ok(handle) if handle.exit_code != 0 => {
+            let _ = monitor.set_phase(JobPhase::Failed);
+            eprintln!("Tearing down container...");
+            let _ = monitor.set_phase(JobPhase::TearingDown);
+            let _ = provider.teardown(&container).await;
+            eprintln!("Container removed.");
+            let _ = monitor.cleanup();
+            return Err(anyhow::anyhow!(
+                "assay config write exited with code {} in container {container}: stderr={}",
+                handle.exit_code,
+                handle.stderr.trim()
+            ));
+        }
+        Ok(_) => {}
+    }
+
+    // Ensure the specs directory exists inside the container
+    eprintln!("Writing specs dir...");
+    let specs_dir_cmd = smelt_core::AssayInvoker::build_ensure_specs_dir_command();
+    match provider.exec(&container, &specs_dir_cmd).await {
+        Err(e) => {
+            let _ = monitor.set_phase(JobPhase::Failed);
+            eprintln!("Tearing down container...");
+            let _ = monitor.set_phase(JobPhase::TearingDown);
+            let _ = provider.teardown(&container).await;
+            eprintln!("Container removed.");
+            let _ = monitor.cleanup();
+            return Err(e).with_context(|| "failed to exec specs dir creation");
+        }
+        Ok(handle) if handle.exit_code != 0 => {
+            let _ = monitor.set_phase(JobPhase::Failed);
+            eprintln!("Tearing down container...");
+            let _ = monitor.set_phase(JobPhase::TearingDown);
+            let _ = provider.teardown(&container).await;
+            eprintln!("Container removed.");
+            let _ = monitor.cleanup();
+            return Err(anyhow::anyhow!(
+                "specs dir creation exited with code {} in container {container}: stderr={}",
+                handle.exit_code,
+                handle.stderr.trim()
+            ));
+        }
+        Ok(_) => {}
+    }
+
+    // Write per-session spec TOML files into the container
+    for s in manifest.session.iter() {
+        let spec_name = smelt_core::AssayInvoker::sanitize_session_name(&s.name);
+        let spec_toml = smelt_core::AssayInvoker::build_spec_toml(s);
+        eprintln!("Writing spec: {spec_name}...");
+        if let Err(e) = smelt_core::AssayInvoker::write_spec_file_to_container(
+            &provider,
+            &container,
+            &spec_name,
+            &spec_toml,
+        )
+        .await
+        {
+            let _ = monitor.set_phase(JobPhase::Failed);
+            eprintln!("Tearing down container...");
+            let _ = monitor.set_phase(JobPhase::TearingDown);
+            let _ = provider.teardown(&container).await;
+            eprintln!("Container removed.");
+            let _ = monitor.cleanup();
+            return Err(e)
+                .with_context(|| format!("failed to write spec '{spec_name}' to container"));
+        }
+    }
+
     // Phase 6: Write assay manifest into container
     monitor
         .set_phase(JobPhase::WritingManifest)
