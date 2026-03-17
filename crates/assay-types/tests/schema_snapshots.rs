@@ -132,9 +132,9 @@ fn agent_evaluation_schema_snapshot() {
 }
 
 #[test]
-fn agent_session_schema_snapshot() {
-    let schema = schemars::schema_for!(assay_types::AgentSession);
-    assert_json_snapshot!("agent-session-schema", schema.to_value());
+fn gate_eval_context_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::GateEvalContext);
+    assert_json_snapshot!("gate-eval-context-schema", schema.to_value());
 }
 
 #[test]

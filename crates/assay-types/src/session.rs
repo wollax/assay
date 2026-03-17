@@ -101,12 +101,13 @@ inventory::submit! {
     }
 }
 
-/// A crash-recoverable agent session for gate evaluation.
+/// A crash-recoverable context for gate evaluation.
 ///
 /// Tracks in-progress evaluations so that a session can be resumed
 /// after an unexpected interruption without losing completed work.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-pub struct AgentSession {
+#[serde(deny_unknown_fields)]
+pub struct GateEvalContext {
     /// Unique session identifier.
     pub session_id: String,
     /// Name of the spec being evaluated.
@@ -144,8 +145,8 @@ pub struct AgentSession {
 
 inventory::submit! {
     crate::schema_registry::SchemaEntry {
-        name: "agent-session",
-        generate: || schemars::schema_for!(AgentSession),
+        name: "gate-eval-context",
+        generate: || schemars::schema_for!(GateEvalContext),
     }
 }
 
@@ -258,7 +259,7 @@ mod tests {
         spec_enforcement.insert("code-compiles".to_string(), Enforcement::Required);
         spec_enforcement.insert("tests-pass".to_string(), Enforcement::Advisory);
 
-        let session = AgentSession {
+        let session = GateEvalContext {
             session_id: "20260305T200000Z-a1b2c3".to_string(),
             spec_name: "auth-flow".to_string(),
             created_at: Utc::now(),
@@ -272,13 +273,13 @@ mod tests {
         };
 
         let json = serde_json::to_string_pretty(&session).expect("serialize");
-        let roundtripped: AgentSession = serde_json::from_str(&json).expect("deserialize");
+        let roundtripped: GateEvalContext = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(session, roundtripped);
     }
 
     #[test]
     fn agent_session_empty_collections_omitted() {
-        let session = AgentSession {
+        let session = GateEvalContext {
             session_id: "test-session".to_string(),
             spec_name: "minimal".to_string(),
             created_at: Utc::now(),

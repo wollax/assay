@@ -43,7 +43,7 @@ use tokio::sync::Mutex;
 use assay_core::spec::SpecEntry;
 use assay_types::work_session::SessionPhase;
 use assay_types::{
-    AgentEvaluation, AgentSession, Confidence, Config, CriterionKind, EvaluatorRole,
+    AgentEvaluation, Confidence, Config, CriterionKind, EvaluatorRole, GateEvalContext,
 };
 
 // ── Parameter structs ────────────────────────────────────────────────
@@ -111,10 +111,10 @@ pub struct GateRunParams {
 /// Parameters for the `gate_report` tool.
 #[derive(Deserialize, JsonSchema)]
 pub struct GateReportParams {
-    /// In-memory AgentSession ID returned by `gate_run` when the spec contains agent criteria.
+    /// In-memory GateEvalContext ID returned by `gate_run` when the spec contains agent criteria.
     /// This is distinct from the persisted WorkSession ID created by `session_create`.
     #[schemars(
-        description = "In-memory AgentSession ID returned by gate_run when the spec has agent \
+        description = "In-memory GateEvalContext ID returned by gate_run when the spec has agent \
             criteria. Distinct from the persisted WorkSession ID created by session_create."
     )]
     pub session_id: String,
@@ -797,7 +797,7 @@ struct TimedOutInfo {
 #[derive(Clone)]
 pub struct AssayServer {
     tool_router: ToolRouter<Self>,
-    sessions: Arc<Mutex<HashMap<String, AgentSession>>>,
+    sessions: Arc<Mutex<HashMap<String, GateEvalContext>>>,
     timed_out_sessions: Arc<Mutex<HashMap<String, TimedOutInfo>>>,
 }
 
@@ -1167,11 +1167,19 @@ impl AssayServer {
             response.session_id = Some(session_id.clone());
             response.pending_criteria = Some(pending);
 
-            // Store the session.
+            // Store the session in memory and persist to disk (write-through).
             self.sessions
                 .lock()
                 .await
-                .insert(session_id.clone(), session);
+                .insert(session_id.clone(), session.clone());
+
+            // Write-through: persist to disk so sessions survive restarts.
+            if let Err(e) = assay_core::gate::session::save_context(&cwd.join(".assay"), &session) {
+                tracing::warn!(
+                    session_id = %session_id,
+                    "gate_run: failed to persist session to disk: {e}"
+                );
+            }
 
             // Spawn timeout task.
             let sessions = Arc::clone(&self.sessions);
@@ -1752,13 +1760,24 @@ impl AssayServer {
             .get(&p.criterion_name)
             .map_or(0, |v| v.len());
 
+        // Write-through: persist updated session to disk.
+        let mut warnings = Vec::new();
+        {
+            let cwd = resolve_cwd()?;
+            if let Err(e) = assay_core::gate::session::save_context(&cwd.join(".assay"), session) {
+                let msg = format!("gate_report: failed to persist session to disk: {e}");
+                tracing::warn!(session_id = %p.session_id, "{msg}");
+                warnings.push(msg);
+            }
+        }
+
         let response = GateReportResponse {
             session_id: p.session_id,
             criterion_name: p.criterion_name,
             accepted: true,
             evaluations_count,
             pending_criteria: pending,
-            warnings: Vec::new(),
+            warnings,
         };
 
         let json = serde_json::to_string(&response)
@@ -1776,13 +1795,6 @@ impl AssayServer {
         params: Parameters<GateFinalizeParams>,
     ) -> Result<CallToolResult, McpError> {
         let session_id = params.0.session_id;
-        let session = {
-            let mut sessions = self.sessions.lock().await;
-            sessions.remove(&session_id)
-        };
-        let Some(session) = session else {
-            return Ok(self.session_not_found_error(&session_id).await);
-        };
 
         let cwd = resolve_cwd()?;
         let config = match load_config(&cwd) {
@@ -1790,6 +1802,38 @@ impl AssayServer {
             Err(e) => return Ok(e),
         };
         let assay_dir = cwd.join(".assay");
+
+        // Try in-memory first, then fall back to disk load.
+        let session = {
+            let mut sessions = self.sessions.lock().await;
+            sessions.remove(&session_id)
+        };
+        let session = match session {
+            Some(s) => s,
+            None => {
+                // Fallback: try loading from persisted disk state.
+                match assay_core::gate::session::load_context(&assay_dir, &session_id) {
+                    Ok(s) => {
+                        tracing::info!(
+                            session_id = %session_id,
+                            "gate_finalize: recovered session from disk (not in memory)"
+                        );
+                        s
+                    }
+                    Err(assay_core::AssayError::GateEvalContextNotFound { .. }) => {
+                        return Ok(self.session_not_found_error(&session_id).await);
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            session_id = %session_id,
+                            "gate_finalize: disk load failed: {e}"
+                        );
+                        return Ok(self.session_not_found_error(&session_id).await);
+                    }
+                }
+            }
+        };
+
         let working_dir = resolve_working_dir(&cwd, &config);
         let max_history = config.gates.as_ref().and_then(|g| g.max_history);
 
@@ -1808,6 +1852,20 @@ impl AssayServer {
         } else {
             true
         };
+
+        // Clean up on-disk session file (best-effort).
+        let disk_path = assay_dir
+            .join("gate_sessions")
+            .join(format!("{}.json", session_id));
+        if disk_path.exists()
+            && let Err(e) = std::fs::remove_file(&disk_path)
+        {
+            tracing::warn!(
+                session_id = %session_id,
+                path = %disk_path.display(),
+                "gate_finalize: failed to clean up on-disk session: {e}"
+            );
+        }
 
         let required_failed = record.summary.enforcement.required_failed;
         let response = GateFinalizeResponse {
@@ -2439,7 +2497,7 @@ impl ServerHandler for AssayServer {
                  worktree_list/worktree_status to inspect, and worktree_cleanup to remove. \
                  Session tools track long-running work across the full agent lifecycle: \
                  session_create starts a persisted WorkSession tied to a spec and worktree \
-                 (distinct from the ephemeral in-memory AgentSessions created automatically \
+                 (distinct from the ephemeral in-memory GateEvalContexts created automatically \
                  by gate_run for agent criteria). Use session_get to retrieve full session \
                  details by ID, session_update to advance phase and link gate run IDs, and \
                  session_list to enumerate sessions with optional filters. Choose gate_run \

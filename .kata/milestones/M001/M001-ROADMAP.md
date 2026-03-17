@@ -47,7 +47,7 @@ This milestone is complete only when all are true:
 
 ## Slices
 
-- [ ] **S01: Prerequisites — Persistence & Rename** `risk:medium` `depends:[]`
+- [x] **S01: Prerequisites — Persistence & Rename** `risk:medium` `depends:[]`
   > After this: GateEvalContext persists to disk (verified by restart test), and all "AgentSession" references are renamed. `just ready` passes.
 
 - [ ] **S02: Harness Crate & Profile Type** `risk:medium` `depends:[S01]`

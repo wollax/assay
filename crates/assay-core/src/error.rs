@@ -386,6 +386,13 @@ pub enum AssayError {
         /// The session ID that was looked up.
         session_id: String,
     },
+
+    /// GateEvalContext not found on disk.
+    #[error("gate eval context '{session_id}' not found")]
+    GateEvalContextNotFound {
+        /// The session ID that was looked up.
+        session_id: String,
+    },
 }
 
 impl AssayError {

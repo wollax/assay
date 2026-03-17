@@ -4,25 +4,25 @@
 
 ### R001 — AgentSession persistence to disk
 - Class: core-capability
-- Status: active
-- Description: GateEvalContext (currently AgentSession) persists to disk via write-through cache, surviving MCP server restarts without losing active evaluation sessions
+- Status: validated
+- Description: GateEvalContext (renamed from AgentSession) persists to disk via write-through cache, surviving MCP server restarts without losing active evaluation sessions
 - Why it matters: In-memory sessions are lost on crash/restart, blocking reliable orchestration
 - Source: inferred
 - Primary owning slice: M001/S01
 - Supporting slices: none
-- Validation: unmapped
-- Notes: Prerequisite for all harness work — must land first
+- Validation: S01 — persistence round-trip test, MCP write-through compilation, disk fallback code path
+- Notes: Validated by S01. Full MCP-protocol-level restart test deferred to S07.
 
 ### R002 — Session vocabulary cleanup
 - Class: quality-attribute
-- Status: active
+- Status: validated
 - Description: AgentSession renamed to GateEvalContext across assay-types and assay-mcp; Smelt concepts renamed: manifest → RunManifest, runner → RunExecutor
 - Why it matters: Five "session" concepts cause confusion; clean vocabulary before adding more types
 - Source: inferred
 - Primary owning slice: M001/S01
 - Supporting slices: none
-- Validation: unmapped
-- Notes: Mechanical rename, high churn but low risk
+- Validation: S01 — zero grep matches for AgentSession, schema snapshot updated, all tests pass
+- Notes: GateEvalContext rename complete. RunManifest/RunExecutor will be created with correct names in S06 (no rename needed).
 
 ### R003 — Harness crate exists
 - Class: core-capability
@@ -340,8 +340,8 @@
 
 | ID | Class | Status | Primary owner | Supporting | Proof |
 |---|---|---|---|---|---|
-| R001 | core-capability | active | M001/S01 | none | unmapped |
-| R002 | quality-attribute | active | M001/S01 | none | unmapped |
+| R001 | core-capability | validated | M001/S01 | none | S01 |
+| R002 | quality-attribute | validated | M001/S01 | none | S01 |
 | R003 | core-capability | active | M001/S02 | none | unmapped |
 | R004 | core-capability | active | M001/S02 | M001/S03 | unmapped |
 | R005 | core-capability | active | M001/S03 | none | unmapped |
@@ -373,7 +373,7 @@
 
 ## Coverage Summary
 
-- Active requirements: 19
+- Active requirements: 17
 - Mapped to slices: 19
-- Validated: 0
+- Validated: 2
 - Unmapped active requirements: 0
