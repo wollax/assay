@@ -223,6 +223,17 @@ async fn test_cli_run_lifecycle() {
         return;
     }
 
+    // Pre-clean any stale smelt containers from prior test runs
+    let stale = std::process::Command::new("docker")
+        .args(["ps", "-aq", "--filter", "label=smelt.job"])
+        .output()
+        .expect("docker ps");
+    for id in String::from_utf8_lossy(&stale.stdout).split_whitespace() {
+        let _ = std::process::Command::new("docker")
+            .args(["rm", "-f", id])
+            .output();
+    }
+
     // Create a temp dir as the repo path and a manifest pointing to it
     let repo_dir = tempfile::tempdir().unwrap();
     let manifest_dir = tempfile::tempdir().unwrap();
@@ -288,15 +299,16 @@ target = "main"
     // But the lifecycle messages should show mount and manifest write succeeded.
     // Don't assert success — the real assay isn't installed in the test container.
 
-    // Verify no leaked containers
+    // Verify no containers from THIS job remain (filter by job name to avoid
+    // interference from concurrent tests running other smelt jobs)
     let ps = std::process::Command::new("docker")
-        .args(["ps", "-a", "--filter", "label=smelt.job", "-q"])
+        .args(["ps", "-a", "--filter", "label=smelt.job=cli-lifecycle", "-q"])
         .output()
         .expect("docker ps should work");
     let remaining = String::from_utf8_lossy(&ps.stdout);
     assert!(
         remaining.trim().is_empty(),
-        "no smelt containers should remain, got: {remaining}"
+        "no cli-lifecycle containers should remain, got: {remaining}"
     );
 }
 
@@ -635,6 +647,20 @@ async fn test_collect_creates_target_branch() {
     // 3. Provision container
     let container = provider.provision(&manifest).await.expect("provision");
 
+    // Install git in alpine (not present by default)
+    let install = provider
+        .exec(
+            &container,
+            &[
+                "sh".to_string(),
+                "-c".to_string(),
+                "apk add --no-cache git".to_string(),
+            ],
+        )
+        .await
+        .expect("install git");
+    assert_eq!(install.exit_code, 0, "git install should succeed");
+
     // 4. Write a mock script that creates a file and commits it in /workspace
     let mock_script = r#"#!/bin/sh
 set -e
@@ -707,6 +733,138 @@ git commit -m "assay: add result"
         result.files_changed.contains(&"result.txt".to_string()),
         "files_changed should contain 'result.txt', got: {:?}",
         result.files_changed
+    );
+}
+
+/// Test the full end-to-end pipeline: provision → install git → write mock assay binary →
+/// write smelt manifest → exec assay via `build_run_command` → collect result branch → teardown.
+///
+/// The mock assay binary is placed at `/usr/local/bin/assay` so it is on PATH, which is
+/// exactly how `AssayInvoker::build_run_command()` constructs the command. After exec,
+/// `ResultCollector::collect()` runs on the host repo to create the target branch.
+#[tokio::test]
+async fn test_full_e2e_pipeline() {
+    let Some(provider) = docker_provider_or_skip() else { return };
+
+    // 1. Create a temp git repo with an initial commit
+    let repo_dir = tempfile::tempdir().unwrap();
+    let git_bin = which::which("git").expect("git on PATH");
+    let run_git = |args: &[&str]| {
+        let out = std::process::Command::new(&git_bin)
+            .args(args)
+            .current_dir(repo_dir.path())
+            .output()
+            .expect("git command");
+        assert!(
+            out.status.success(),
+            "git {} failed: {}",
+            args.join(" "),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        out
+    };
+
+    run_git(&["init"]);
+    run_git(&["config", "user.email", "test@example.com"]);
+    run_git(&["config", "user.name", "Test"]);
+    std::fs::write(repo_dir.path().join("README.md"), "# test\n").unwrap();
+    run_git(&["add", "README.md"]);
+    run_git(&["commit", "-m", "initial"]);
+
+    let base_ref = {
+        let out = run_git(&["rev-parse", "HEAD"]);
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
+    };
+
+    // 2. Build manifest pointing at the temp repo
+    let mut manifest = test_manifest_with_repo("e2e-pipeline", repo_dir.path().to_str().unwrap());
+    manifest.job.base_ref = base_ref.clone();
+    manifest.merge.target = "smelt/e2e-result".to_string();
+
+    // 3. Provision container
+    let container = provider.provision(&manifest).await.expect("provision");
+
+    // 4. Install git in alpine (not present by default)
+    let install = provider
+        .exec(
+            &container,
+            &[
+                "sh".to_string(),
+                "-c".to_string(),
+                "apk add --no-cache git".to_string(),
+            ],
+        )
+        .await
+        .expect("install git");
+    assert_eq!(install.exit_code, 0, "git install should succeed: {}", install.stderr);
+
+    // 5. Write mock assay binary to /usr/local/bin/assay (on PATH)
+    //    The script reads the manifest, creates a file + commit in /workspace, and exits 0.
+    //    This matches exactly how AssayInvoker::build_run_command() invokes it.
+    let mock_assay_script = r#"#!/bin/sh
+set -e
+cd /workspace
+git config user.email "assay@smelt.dev"
+git config user.name "Assay Mock"
+echo "generated by assay" > assay-output.txt
+git add assay-output.txt
+git commit -m "assay: generated output"
+exit 0
+"#;
+    let encoded = base64::engine::general_purpose::STANDARD.encode(mock_assay_script.as_bytes());
+    let write_assay_cmd = vec![
+        "sh".to_string(),
+        "-c".to_string(),
+        format!("echo '{}' | base64 -d > /usr/local/bin/assay && chmod +x /usr/local/bin/assay", encoded),
+    ];
+    let write_handle = provider.exec(&container, &write_assay_cmd).await.expect("write assay binary");
+    assert_eq!(write_handle.exit_code, 0, "writing mock assay should succeed: {}", write_handle.stderr);
+
+    // 6. Write smelt manifest into container via AssayInvoker
+    let toml = smelt_core::AssayInvoker::build_manifest_toml(&manifest);
+    smelt_core::AssayInvoker::write_manifest_to_container(&provider, &container, &toml)
+        .await
+        .expect("write manifest to container");
+
+    // 7. Exec assay via build_run_command — ["assay", "run", "/tmp/smelt-manifest.toml", "--timeout", "<max>"]
+    let cmd = smelt_core::AssayInvoker::build_run_command(&manifest);
+    let handle = provider.exec(&container, &cmd).await.expect("exec assay");
+    assert_eq!(
+        handle.exit_code, 0,
+        "assay run should exit 0: stdout={} stderr={}",
+        handle.stdout, handle.stderr
+    );
+
+    // 8. Collect result onto target branch
+    let git_cli = smelt_core::GitCli::new(git_bin.clone(), repo_dir.path().to_path_buf());
+    let collector = smelt_core::ResultCollector::new(git_cli, repo_dir.path().to_path_buf());
+    let result = collector
+        .collect(&base_ref, "smelt/e2e-result")
+        .await
+        .expect("collect should succeed");
+
+    // 9. Teardown container
+    provider.teardown(&container).await.expect("teardown");
+    assert_container_removed(&provider, container.as_str()).await;
+
+    // 10. Assertions
+    assert!(!result.no_changes, "should have changes from mock assay");
+    assert!(result.commit_count >= 1, "should have at least 1 commit, got {}", result.commit_count);
+    assert!(
+        result.files_changed.contains(&"assay-output.txt".to_string()),
+        "expected assay-output.txt in files_changed, got: {:?}",
+        result.files_changed
+    );
+
+    // Verify target branch exists on host
+    let branch_check = std::process::Command::new(&git_bin)
+        .args(["rev-parse", "--verify", "smelt/e2e-result"])
+        .current_dir(repo_dir.path())
+        .output()
+        .unwrap();
+    assert!(
+        branch_check.status.success(),
+        "target branch 'smelt/e2e-result' should exist on host"
     );
 }
 
@@ -804,6 +962,181 @@ async fn test_cancellation_triggers_teardown() {
     // Teardown must succeed after cancellation
     provider.teardown(&container).await.expect("teardown after cancel");
     assert_container_removed(&provider, &container_id).await;
+}
+
+/// Test multi-session manifest round-trip: provision → write 2-session manifest with depends_on →
+/// read manifest back from container → verify both session names and depends_on → exec assay → teardown.
+///
+/// Confirms that `AssayInvoker::build_manifest_toml` serializes both sessions and the
+/// `depends_on` relationship correctly, and that the mock assay sees the manifest.
+#[tokio::test]
+async fn test_multi_session_e2e() {
+    let Some(provider) = docker_provider_or_skip() else { return };
+
+    // Build manifest with two sessions, second depending on first
+    let mut manifest = test_manifest("multi-session-e2e");
+    manifest.session = vec![
+        SessionDef {
+            name: "session-one".to_string(),
+            spec: "spec-one".to_string(),
+            harness: "echo one".to_string(),
+            timeout: 60,
+            depends_on: vec![],
+        },
+        SessionDef {
+            name: "session-two".to_string(),
+            spec: "spec-two".to_string(),
+            harness: "echo two".to_string(),
+            timeout: 60,
+            depends_on: vec!["session-one".to_string()],
+        },
+    ];
+
+    // Provision container
+    let container = provider.provision(&manifest).await.expect("provision");
+
+    // Write mock assay binary to /usr/local/bin/assay (on PATH):
+    // verifies /tmp/smelt-manifest.toml exists, then exits 0.
+    let mock_assay_script = r#"#!/bin/sh
+set -e
+test -f /tmp/smelt-manifest.toml || { echo "manifest missing"; exit 1; }
+exit 0
+"#;
+    let encoded = base64::engine::general_purpose::STANDARD.encode(mock_assay_script.as_bytes());
+    let write_assay_cmd = vec![
+        "sh".to_string(),
+        "-c".to_string(),
+        format!(
+            "echo '{}' | base64 -d > /usr/local/bin/assay && chmod +x /usr/local/bin/assay",
+            encoded
+        ),
+    ];
+    let wh = provider.exec(&container, &write_assay_cmd).await.expect("write assay binary");
+    assert_eq!(wh.exit_code, 0, "writing mock assay should succeed: {}", wh.stderr);
+
+    // Write smelt manifest into container via AssayInvoker
+    let toml = smelt_core::AssayInvoker::build_manifest_toml(&manifest);
+    smelt_core::AssayInvoker::write_manifest_to_container(&provider, &container, &toml)
+        .await
+        .expect("write manifest to container");
+
+    // Read manifest back from container and verify contents
+    let cat_cmd = vec!["cat".to_string(), "/tmp/smelt-manifest.toml".to_string()];
+    let cat_handle = provider.exec(&container, &cat_cmd).await.expect("cat manifest");
+    assert_eq!(
+        cat_handle.exit_code, 0,
+        "cat manifest should succeed, stderr: {}",
+        cat_handle.stderr
+    );
+    let manifest_toml = &cat_handle.stdout;
+
+    // Both session names must be present
+    assert!(
+        manifest_toml.contains("session-one"),
+        "manifest should contain 'session-one', got:\n{manifest_toml}"
+    );
+    assert!(
+        manifest_toml.contains("session-two"),
+        "manifest should contain 'session-two', got:\n{manifest_toml}"
+    );
+    // The depends_on relationship must be serialized
+    assert!(
+        manifest_toml.contains("depends_on"),
+        "manifest should contain 'depends_on', got:\n{manifest_toml}"
+    );
+    assert!(
+        manifest_toml.contains("\"session-one\""),
+        "manifest should contain 'session-one' in depends_on context, got:\n{manifest_toml}"
+    );
+
+    // Execute assay via build_run_command — must exit 0
+    let run_cmd = smelt_core::AssayInvoker::build_run_command(&manifest);
+    let handle = provider.exec(&container, &run_cmd).await.expect("exec assay");
+    assert_eq!(
+        handle.exit_code, 0,
+        "assay run should exit 0: stdout={} stderr={}",
+        handle.stdout, handle.stderr
+    );
+
+    // Teardown and verify container removed
+    provider.teardown(&container).await.expect("teardown");
+    assert_container_removed(&provider, container.as_str()).await;
+}
+
+/// Test the error path: when assay exits non-zero, teardown is still called and
+/// no orphaned smelt containers remain.
+///
+/// This closes the error branch: assay non-zero exit → teardown → no orphans.
+#[tokio::test]
+async fn test_e2e_assay_failure_no_orphans() {
+    let Some(provider) = docker_provider_or_skip() else { return };
+
+    // Pre-clean any stale smelt containers to avoid false positives
+    let stale = std::process::Command::new("docker")
+        .args(["ps", "-aq", "--filter", "label=smelt.job"])
+        .output()
+        .expect("docker ps");
+    for id in String::from_utf8_lossy(&stale.stdout).split_whitespace() {
+        let _ = std::process::Command::new("docker")
+            .args(["rm", "-f", id])
+            .output();
+    }
+
+    let manifest = test_manifest("failure-no-orphans");
+
+    // Provision container
+    let container = provider.provision(&manifest).await.expect("provision");
+    let container_id = container.as_str().to_string();
+
+    // Write failing mock assay to /usr/local/bin/assay
+    let fail_script = b"#!/bin/sh\nexit 1\n";
+    let encoded = base64::engine::general_purpose::STANDARD.encode(fail_script);
+    let write_cmd = vec![
+        "sh".to_string(),
+        "-c".to_string(),
+        format!(
+            "echo '{}' | base64 -d > /usr/local/bin/assay && chmod +x /usr/local/bin/assay",
+            encoded
+        ),
+    ];
+    let wh = provider.exec(&container, &write_cmd).await.expect("write failing assay");
+    assert_eq!(wh.exit_code, 0, "writing failing mock should succeed: {}", wh.stderr);
+
+    // Write smelt manifest into container
+    let toml = smelt_core::AssayInvoker::build_manifest_toml(&manifest);
+    smelt_core::AssayInvoker::write_manifest_to_container(&provider, &container, &toml)
+        .await
+        .expect("write manifest to container");
+
+    // Exec assay via build_run_command — must exit 1
+    let run_cmd = smelt_core::AssayInvoker::build_run_command(&manifest);
+    let handle = provider.exec(&container, &run_cmd).await.expect("exec failing assay");
+    assert_eq!(
+        handle.exit_code, 1,
+        "failing assay should exit 1, got exit_code={}",
+        handle.exit_code
+    );
+
+    // Teardown must succeed even after assay failure
+    provider
+        .teardown(&container)
+        .await
+        .expect("teardown should succeed after assay failure");
+
+    // Container must be removed
+    assert_container_removed(&provider, &container_id).await;
+
+    // No containers for THIS job should remain (filter by job-specific label value
+    // to avoid false positives from other concurrent tests using the same label key).
+    let ps = std::process::Command::new("docker")
+        .args(["ps", "-aq", "--filter", "label=smelt.job=failure-no-orphans"])
+        .output()
+        .expect("docker ps should work");
+    let remaining = String::from_utf8_lossy(&ps.stdout);
+    assert!(
+        remaining.trim().is_empty(),
+        "no failure-no-orphans containers should remain after teardown, got:\n{remaining}"
+    );
 }
 
 /// Test that double teardown is safe (existing 404 tolerance in DockerProvider).

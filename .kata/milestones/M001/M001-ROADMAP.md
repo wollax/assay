@@ -66,7 +66,7 @@ This milestone is complete only when all are true:
 - [x] **S05: Job Monitoring, Timeout & Graceful Shutdown** `risk:low` `depends:[S03]`
   > After this: `smelt status` shows live progress for a running job (active sessions, elapsed time, container health). Jobs exceeding their timeout are terminated and cleaned up. Ctrl+C during `smelt run` triggers graceful container teardown with no orphans. Verified by running a long job, checking `smelt status` in another terminal, sending Ctrl+C, and confirming containers are removed.
 
-- [ ] **S06: End-to-End Integration** `risk:low` `depends:[S04,S05]`
+- [x] **S06: End-to-End Integration** `risk:low` `depends:[S04,S05]`
   > After this: `smelt run` with a multi-session manifest provisions containers, executes all sessions through Assay with dependency ordering, collects results into the target branch, tears down all containers, and handles failures gracefully — the full deploy → execute → collect → teardown cycle works through the real `smelt run` entrypoint with real Docker. Verified by running a complete multi-session job and confirming the output branch, container cleanup, and error handling in a real environment.
 
 ## Boundary Map
