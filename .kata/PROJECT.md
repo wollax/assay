@@ -10,7 +10,7 @@ Structured, repeatable quality evaluation of AI-generated code changes against e
 
 ## Current State
 
-v0.4.0 on main. ~20K lines of Rust across 6 crates. M001 (Single-Agent Harness End-to-End) complete — 7 slices, 19 requirements validated. M002 (Multi-Agent Orchestration & Harness Platform) complete — 6 slices, 5 new requirements validated (24 total), 1183 tests. M003 complete — AI conflict resolution with full audit trail and post-resolution validation; 1230+ tests passing, 27 requirements validated. Ships:
+v0.4.0 on main. ~20K lines of Rust across 6 crates. M001 (Single-Agent Harness End-to-End) complete — 7 slices, 19 requirements validated. M002 (Multi-Agent Orchestration & Harness Platform) complete — 6 slices, 5 new requirements validated (24 total), 1183 tests. M003 complete — AI conflict resolution with full audit trail and post-resolution validation; 1222 tests passing, 27 requirements validated. Ships:
 
 - **assay-types**: Serializable DTOs — Spec, Criterion, GateRunRecord, GateEvalContext, WorkSession, WorktreeMetadata, Config, HarnessProfile, PromptLayer, SettingsOverride, HookContract, OrchestratorStatus, SessionRunState, FailurePolicy, MergeStrategy, ScopeConfig, ScopeViolation, etc.
 - **assay-core**: Domain logic — spec loading/validation, gate evaluation (command + agent), run history, worktree CRUD, work session lifecycle, merge checking/execution, guard daemon, context diagnostics/pruning, checkpoint extraction, evidence formatting, DAG validation, parallel session orchestration, sequential merge runner with ordering strategies
