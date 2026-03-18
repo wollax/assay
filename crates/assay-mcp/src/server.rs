@@ -5416,6 +5416,7 @@ cmd = "echo ok"
     }
 
     #[tokio::test]
+    #[serial]
     async fn context_diagnose_no_session_dir_returns_error() {
         // Use a temp dir that has no Claude Code sessions
         let dir = tempfile::tempdir().unwrap();
@@ -5435,6 +5436,7 @@ cmd = "echo ok"
     }
 
     #[tokio::test]
+    #[serial]
     async fn estimate_tokens_no_session_dir_returns_error() {
         let dir = tempfile::tempdir().unwrap();
         std::env::set_current_dir(dir.path()).unwrap();

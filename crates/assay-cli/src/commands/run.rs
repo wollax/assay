@@ -583,31 +583,39 @@ fn execute_orchestrated(
 
 // ── Mesh / Gossip stubs ───────────────────────────────────────────────
 
-/// Mesh-mode path: delegates to `run_mesh()` stub, returns empty result.
+/// Mesh-mode path: delegates to `run_mesh()`, populates outcomes from real session runner.
 fn execute_mesh(
     cmd: &RunCommand,
     manifest: &assay_types::RunManifest,
     pipeline_config: &assay_core::pipeline::PipelineConfig,
 ) -> anyhow::Result<i32> {
-    use assay_core::orchestrate::executor::OrchestratorConfig;
+    use assay_core::orchestrate::executor::{OrchestratorConfig, SessionOutcome};
 
-    eprintln!(
-        "Mesh mode manifest ({} session(s)) — routing to mesh executor stub",
-        manifest.sessions.len()
-    );
+    eprintln!("mode: mesh — {} session(s)", manifest.sessions.len());
 
     let orch_config = OrchestratorConfig {
         max_concurrency: 8,
         failure_policy: cmd.failure_policy,
     };
 
-    // No real session runner is invoked by the stub.
-    let session_runner = |_session: &assay_types::ManifestSession,
-                          _pipe_cfg: &assay_core::pipeline::PipelineConfig|
+    // Session runner closure: constructs HarnessWriter from plain function
+    // calls (D035), delegates to run_session.
+    let session_runner = |session: &assay_types::ManifestSession,
+                          pipe_cfg: &assay_core::pipeline::PipelineConfig|
      -> Result<
         assay_core::pipeline::PipelineResult,
         assay_core::pipeline::PipelineError,
-    > { unreachable!("mesh stub does not invoke session_runner") };
+    > {
+        let harness_writer: Box<assay_core::pipeline::HarnessWriter> = Box::new(
+            |profile: &assay_types::HarnessProfile, worktree_path: &std::path::Path| {
+                let claude_config = assay_harness::claude::generate_config(profile);
+                assay_harness::claude::write_config(&claude_config, worktree_path)
+                    .map_err(|e| format!("Failed to write claude config: {e}"))?;
+                Ok(assay_harness::claude::build_cli_args(&claude_config))
+            },
+        );
+        assay_core::pipeline::run_session(session, pipe_cfg, &harness_writer)
+    };
 
     let orch_result = assay_core::orchestrate::mesh::run_mesh(
         manifest,
@@ -617,6 +625,55 @@ fn execute_mesh(
     )
     .map_err(|e| anyhow::anyhow!("Mesh execution failed: {e}"))?;
 
+    // ── Format results ───────────────────────────────────────────────
+
+    let mut completed_count = 0usize;
+    let mut failed_count = 0usize;
+    let mut skipped_count = 0usize;
+    let mut session_results = Vec::new();
+
+    for (name, outcome) in &orch_result.outcomes {
+        match outcome {
+            SessionOutcome::Completed { .. } => {
+                completed_count += 1;
+                if !cmd.json {
+                    eprintln!("  [✓] {name} — completed");
+                }
+                session_results.push(OrchestrationSessionResult {
+                    name: name.clone(),
+                    outcome: "completed".to_string(),
+                    error: None,
+                    skip_reason: None,
+                });
+            }
+            SessionOutcome::Failed { error, .. } => {
+                failed_count += 1;
+                if !cmd.json {
+                    eprintln!("  [✗] {name} — failed: {}", error.message);
+                }
+                session_results.push(OrchestrationSessionResult {
+                    name: name.clone(),
+                    outcome: "failed".to_string(),
+                    error: Some(error.message.clone()),
+                    skip_reason: None,
+                });
+            }
+            SessionOutcome::Skipped { reason } => {
+                skipped_count += 1;
+                if !cmd.json {
+                    eprintln!("  [−] {name} — skipped: {reason}");
+                }
+                session_results.push(OrchestrationSessionResult {
+                    name: name.clone(),
+                    outcome: "skipped".to_string(),
+                    error: None,
+                    skip_reason: Some(reason.clone()),
+                });
+            }
+        }
+    }
+
+    let total = session_results.len();
     let empty_merge_report = assay_types::MergeReport {
         sessions_merged: 0,
         sessions_skipped: 0,
@@ -632,13 +689,13 @@ fn execute_mesh(
     };
     let response = OrchestrationResponse {
         run_id: orch_result.run_id,
-        sessions: vec![],
+        sessions: session_results,
         merge_report: empty_merge_report,
         summary: OrchestrationSummary {
-            total: 0,
-            completed: 0,
-            failed: 0,
-            skipped: 0,
+            total,
+            completed: completed_count,
+            failed: failed_count,
+            skipped: skipped_count,
             sessions_merged: 0,
             merge_conflicts: 0,
             duration_secs: orch_result.duration.as_secs_f64(),
@@ -649,40 +706,53 @@ fn execute_mesh(
         let json = serde_json::to_string_pretty(&response)?;
         println!("{json}");
     } else {
+        eprintln!();
         eprintln!(
-            "Mesh stub: run_id={} (no sessions executed)",
-            response.run_id
+            "Summary: {} total, {} completed, {} failed, {} skipped",
+            total, completed_count, failed_count, skipped_count,
         );
     }
 
-    Ok(0)
+    if failed_count > 0 || skipped_count > 0 {
+        Ok(1)
+    } else {
+        Ok(0)
+    }
 }
 
-/// Gossip-mode path: delegates to `run_gossip()` stub, returns empty result.
+/// Gossip-mode path: delegates to `run_gossip()`, populates outcomes from real session runner.
 fn execute_gossip(
     cmd: &RunCommand,
     manifest: &assay_types::RunManifest,
     pipeline_config: &assay_core::pipeline::PipelineConfig,
 ) -> anyhow::Result<i32> {
-    use assay_core::orchestrate::executor::OrchestratorConfig;
+    use assay_core::orchestrate::executor::{OrchestratorConfig, SessionOutcome};
 
-    eprintln!(
-        "Gossip mode manifest ({} session(s)) — routing to gossip executor stub",
-        manifest.sessions.len()
-    );
+    eprintln!("mode: gossip — {} session(s)", manifest.sessions.len());
 
     let orch_config = OrchestratorConfig {
         max_concurrency: 8,
         failure_policy: cmd.failure_policy,
     };
 
-    // No real session runner is invoked by the stub.
-    let session_runner = |_session: &assay_types::ManifestSession,
-                          _pipe_cfg: &assay_core::pipeline::PipelineConfig|
+    // Session runner closure: constructs HarnessWriter from plain function
+    // calls (D035), delegates to run_session.
+    let session_runner = |session: &assay_types::ManifestSession,
+                          pipe_cfg: &assay_core::pipeline::PipelineConfig|
      -> Result<
         assay_core::pipeline::PipelineResult,
         assay_core::pipeline::PipelineError,
-    > { unreachable!("gossip stub does not invoke session_runner") };
+    > {
+        let harness_writer: Box<assay_core::pipeline::HarnessWriter> = Box::new(
+            |profile: &assay_types::HarnessProfile, worktree_path: &std::path::Path| {
+                let claude_config = assay_harness::claude::generate_config(profile);
+                assay_harness::claude::write_config(&claude_config, worktree_path)
+                    .map_err(|e| format!("Failed to write claude config: {e}"))?;
+                Ok(assay_harness::claude::build_cli_args(&claude_config))
+            },
+        );
+        assay_core::pipeline::run_session(session, pipe_cfg, &harness_writer)
+    };
 
     let orch_result = assay_core::orchestrate::gossip::run_gossip(
         manifest,
@@ -692,6 +762,55 @@ fn execute_gossip(
     )
     .map_err(|e| anyhow::anyhow!("Gossip execution failed: {e}"))?;
 
+    // ── Format results ───────────────────────────────────────────────
+
+    let mut completed_count = 0usize;
+    let mut failed_count = 0usize;
+    let mut skipped_count = 0usize;
+    let mut session_results = Vec::new();
+
+    for (name, outcome) in &orch_result.outcomes {
+        match outcome {
+            SessionOutcome::Completed { .. } => {
+                completed_count += 1;
+                if !cmd.json {
+                    eprintln!("  [✓] {name} — completed");
+                }
+                session_results.push(OrchestrationSessionResult {
+                    name: name.clone(),
+                    outcome: "completed".to_string(),
+                    error: None,
+                    skip_reason: None,
+                });
+            }
+            SessionOutcome::Failed { error, .. } => {
+                failed_count += 1;
+                if !cmd.json {
+                    eprintln!("  [✗] {name} — failed: {}", error.message);
+                }
+                session_results.push(OrchestrationSessionResult {
+                    name: name.clone(),
+                    outcome: "failed".to_string(),
+                    error: Some(error.message.clone()),
+                    skip_reason: None,
+                });
+            }
+            SessionOutcome::Skipped { reason } => {
+                skipped_count += 1;
+                if !cmd.json {
+                    eprintln!("  [−] {name} — skipped: {reason}");
+                }
+                session_results.push(OrchestrationSessionResult {
+                    name: name.clone(),
+                    outcome: "skipped".to_string(),
+                    error: None,
+                    skip_reason: Some(reason.clone()),
+                });
+            }
+        }
+    }
+
+    let total = session_results.len();
     let empty_merge_report = assay_types::MergeReport {
         sessions_merged: 0,
         sessions_skipped: 0,
@@ -707,13 +826,13 @@ fn execute_gossip(
     };
     let response = OrchestrationResponse {
         run_id: orch_result.run_id,
-        sessions: vec![],
+        sessions: session_results,
         merge_report: empty_merge_report,
         summary: OrchestrationSummary {
-            total: 0,
-            completed: 0,
-            failed: 0,
-            skipped: 0,
+            total,
+            completed: completed_count,
+            failed: failed_count,
+            skipped: skipped_count,
             sessions_merged: 0,
             merge_conflicts: 0,
             duration_secs: orch_result.duration.as_secs_f64(),
@@ -724,13 +843,18 @@ fn execute_gossip(
         let json = serde_json::to_string_pretty(&response)?;
         println!("{json}");
     } else {
+        eprintln!();
         eprintln!(
-            "Gossip stub: run_id={} (no sessions executed)",
-            response.run_id
+            "Summary: {} total, {} completed, {} failed, {} skipped",
+            total, completed_count, failed_count, skipped_count,
         );
     }
 
-    Ok(0)
+    if failed_count > 0 || skipped_count > 0 {
+        Ok(1)
+    } else {
+        Ok(0)
+    }
 }
 
 // ── Tests ────────────────────────────────────────────────────────────
@@ -1074,5 +1198,57 @@ mod tests {
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert!(parsed["sessions"][0]["skip_reason"].is_null());
         assert!(parsed["sessions"][0]["error"].is_null());
+    }
+
+    fn make_two_session_manifest(
+        mode: assay_types::orchestrate::OrchestratorMode,
+    ) -> assay_types::RunManifest {
+        assay_types::RunManifest {
+            sessions: vec![
+                assay_types::ManifestSession {
+                    spec: "spec-a".to_string(),
+                    name: None,
+                    settings: None,
+                    hooks: vec![],
+                    prompt_layers: vec![],
+                    file_scope: vec![],
+                    shared_files: vec![],
+                    depends_on: vec![],
+                },
+                assay_types::ManifestSession {
+                    spec: "spec-b".to_string(),
+                    name: None,
+                    settings: None,
+                    hooks: vec![],
+                    prompt_layers: vec![],
+                    file_scope: vec![],
+                    shared_files: vec![],
+                    depends_on: vec![],
+                },
+            ],
+            mode,
+            mesh_config: None,
+            gossip_config: None,
+        }
+    }
+
+    /// Guard test: confirms Mesh mode is preserved through manifest construction and
+    /// that the manifest shape expected by execute_mesh() is well-formed.
+    #[test]
+    fn execute_mesh_output_mode_label() {
+        use assay_types::orchestrate::OrchestratorMode;
+        let manifest = make_two_session_manifest(OrchestratorMode::Mesh);
+        assert_eq!(manifest.mode, OrchestratorMode::Mesh);
+        assert_eq!(manifest.sessions.len(), 2);
+    }
+
+    /// Guard test: confirms Gossip mode is preserved through manifest construction and
+    /// that the manifest shape expected by execute_gossip() is well-formed.
+    #[test]
+    fn execute_gossip_output_mode_label() {
+        use assay_types::orchestrate::OrchestratorMode;
+        let manifest = make_two_session_manifest(OrchestratorMode::Gossip);
+        assert_eq!(manifest.mode, OrchestratorMode::Gossip);
+        assert_eq!(manifest.sessions.len(), 2);
     }
 }

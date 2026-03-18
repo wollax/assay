@@ -1,12 +1,12 @@
 # Kata State
 
-**Active Milestone:** M004 — Coordination Modes (Mesh and Gossip)
-**Active Slice:** S04 — Integration + observability (next)
-**Active Task:** none — S03 complete; S04 ready to start
-**Phase:** S03 complete — just ready green, 1264 tests, 0 warnings; R037 and R038 validated
+**Active Milestone:** M005 — (to be planned)
+**Active Slice:** —
+**Active Task:** —
+**Phase:** M004 complete — all 4 slices done; next milestone not yet planned
 **Last Updated:** 2026-03-18
-**Requirements Status:** 0 active · 32 validated · 3 deferred · 4 out of scope
-**Test Count:** 1264 (all passing — `just ready` exit 0; both gossip integration tests pass)
+**Requirements Status:** 0 active · 36 validated · 3 deferred · 4 out of scope
+**Test Count:** 1271 (all passing — 7 new tests from S04)
 
 ## Completed Milestones
 
@@ -19,7 +19,7 @@
 - [x] S01: Mode infrastructure `risk:low` — OrchestratorMode enum, mode field on RunManifest, dispatch routing, schema snapshots locked (R034 validated)
 - [x] S02: Mesh mode `risk:high` — parallel executor, roster injection, inbox/outbox directories, message routing thread, SWIM membership (R035, R036 validated)
 - [x] S03: Gossip mode `risk:high` — parallel executor, coordinator thread, knowledge manifest, manifest path injection (R037, R038 validated)
-- [ ] S04: Integration + observability `risk:low` — end-to-end tests all three modes, orchestrate_status mode-specific fields, CLI mode display, just ready green
+- [x] S04: Integration + observability `risk:low` — end-to-end tests all three modes, orchestrate_status mode-specific fields, CLI mode display, just ready green
 
 ## Recent Decisions
 
@@ -37,6 +37,10 @@
 
 None.
 
+## Recent Decisions (continued)
+
+- D061: execute_mesh/execute_gossip use HarnessWriter pattern without merge phase — same closure as execute_orchestrated, skip checkout/merge phases
+
 ## Next Action
 
-Execute S04: Integration + observability — end-to-end tests all three modes, `orchestrate_status` returns mode-specific state (`mesh_status` or `gossip_status`), CLI shows mode in run output, `just ready` green with 0 warnings.
+Plan M005. M004 is complete: S01 ✓ S02 ✓ S03 ✓ S04 ✓. All schema snapshots locked. 1271 tests passing. No blockers.

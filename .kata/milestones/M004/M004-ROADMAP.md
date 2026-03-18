@@ -58,7 +58,7 @@ This milestone is complete only when all are true:
 - [x] **S03: Gossip mode** `risk:high` `depends:[S01]`
   > After this: Integration test with mock runners proves parallel launch with knowledge manifest path in prompt layers, coordinator updates knowledge.json as sessions complete, and `gossip_status` is visible in `orchestrate_status`; `just ready` passes.
 
-- [ ] **S04: Integration + observability** `risk:low` `depends:[S02,S03]`
+- [x] **S04: Integration + observability** `risk:low` `depends:[S02,S03]`
   > After this: All three modes have end-to-end integration coverage, `orchestrate_status` returns mode-specific state (mesh_status or gossip_status), CLI shows mode in run output, `just ready` green with 0 warnings.
 
 ## Boundary Map

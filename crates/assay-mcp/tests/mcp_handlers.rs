@@ -1739,3 +1739,158 @@ async fn orchestrate_status_missing_run_id_returns_domain_error() {
         "error should include the run_id, got: {text}"
     );
 }
+
+#[tokio::test]
+#[serial]
+async fn orchestrate_status_returns_mesh_status() {
+    use assay_mcp::OrchestrateStatusParams;
+    use assay_types::orchestrate::{MeshMemberState, MeshMemberStatus, MeshStatus};
+
+    let dir = create_project(r#"project_name = "status-mesh""#);
+    std::env::set_current_dir(dir.path()).unwrap();
+
+    let run_id = "01JMESHSTATUS01";
+    let state_dir = dir.path().join(".assay").join("orchestrator").join(run_id);
+    std::fs::create_dir_all(&state_dir).unwrap();
+
+    let status = assay_types::orchestrate::OrchestratorStatus {
+        run_id: run_id.to_string(),
+        phase: assay_types::orchestrate::OrchestratorPhase::Completed,
+        failure_policy: assay_types::orchestrate::FailurePolicy::SkipDependents,
+        sessions: vec![],
+        started_at: chrono::Utc::now(),
+        completed_at: Some(chrono::Utc::now()),
+        mesh_status: Some(MeshStatus {
+            members: vec![MeshMemberStatus {
+                name: "alpha".into(),
+                state: MeshMemberState::Completed,
+                last_heartbeat_at: None,
+            }],
+            messages_routed: 3,
+        }),
+        gossip_status: None,
+    };
+    let json = serde_json::to_string_pretty(&status).unwrap();
+    std::fs::write(state_dir.join("state.json"), &json).unwrap();
+
+    let server = AssayServer::new();
+    let result = server
+        .orchestrate_status(Parameters(OrchestrateStatusParams {
+            run_id: run_id.to_string(),
+        }))
+        .await
+        .unwrap();
+
+    assert!(
+        !result.is_error.unwrap_or(false),
+        "should succeed for valid state, got: {}",
+        extract_text(&result)
+    );
+
+    let response_json: serde_json::Value = serde_json::from_str(&extract_text(&result)).unwrap();
+    let status_json = &response_json["status"];
+
+    // mesh_status must be present with correct values
+    assert!(
+        !status_json["mesh_status"].is_null(),
+        "mesh_status should be present in response"
+    );
+    assert_eq!(
+        status_json["mesh_status"]["messages_routed"], 3,
+        "messages_routed should be 3"
+    );
+    assert_eq!(
+        status_json["mesh_status"]["members"][0]["name"], "alpha",
+        "first member name should be alpha"
+    );
+    assert_eq!(
+        status_json["mesh_status"]["members"][0]["state"], "completed",
+        "first member state should be completed"
+    );
+
+    // gossip_status must be absent (skip_serializing_if = None)
+    assert!(
+        status_json["gossip_status"].is_null()
+            || !status_json
+                .as_object()
+                .unwrap()
+                .contains_key("gossip_status"),
+        "gossip_status should be null or absent when None"
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn orchestrate_status_returns_gossip_status() {
+    use assay_mcp::OrchestrateStatusParams;
+    use assay_types::orchestrate::GossipStatus;
+
+    let dir = create_project(r#"project_name = "status-gossip""#);
+    std::env::set_current_dir(dir.path()).unwrap();
+
+    let run_id = "01JGOSSIPSTATUS1";
+    let state_dir = dir.path().join(".assay").join("orchestrator").join(run_id);
+    std::fs::create_dir_all(&state_dir).unwrap();
+
+    let status = assay_types::orchestrate::OrchestratorStatus {
+        run_id: run_id.to_string(),
+        phase: assay_types::orchestrate::OrchestratorPhase::Completed,
+        failure_policy: assay_types::orchestrate::FailurePolicy::SkipDependents,
+        sessions: vec![],
+        started_at: chrono::Utc::now(),
+        completed_at: Some(chrono::Utc::now()),
+        mesh_status: None,
+        gossip_status: Some(GossipStatus {
+            sessions_synthesized: 2,
+            knowledge_manifest_path: std::path::PathBuf::from("/tmp/run/gossip/knowledge.json"),
+            coordinator_rounds: 4,
+        }),
+    };
+    let json = serde_json::to_string_pretty(&status).unwrap();
+    std::fs::write(state_dir.join("state.json"), &json).unwrap();
+
+    let server = AssayServer::new();
+    let result = server
+        .orchestrate_status(Parameters(OrchestrateStatusParams {
+            run_id: run_id.to_string(),
+        }))
+        .await
+        .unwrap();
+
+    assert!(
+        !result.is_error.unwrap_or(false),
+        "should succeed for valid state, got: {}",
+        extract_text(&result)
+    );
+
+    let response_json: serde_json::Value = serde_json::from_str(&extract_text(&result)).unwrap();
+    let status_json = &response_json["status"];
+
+    // gossip_status must be present with correct values
+    assert!(
+        !status_json["gossip_status"].is_null(),
+        "gossip_status should be present in response"
+    );
+    assert_eq!(
+        status_json["gossip_status"]["sessions_synthesized"], 2,
+        "sessions_synthesized should be 2"
+    );
+    assert_eq!(
+        status_json["gossip_status"]["coordinator_rounds"], 4,
+        "coordinator_rounds should be 4"
+    );
+    assert!(
+        status_json["gossip_status"]["knowledge_manifest_path"]
+            .as_str()
+            .map(|s| !s.is_empty())
+            .unwrap_or(false),
+        "knowledge_manifest_path should be a non-empty string"
+    );
+
+    // mesh_status must be absent (skip_serializing_if = None)
+    assert!(
+        status_json["mesh_status"].is_null()
+            || !status_json.as_object().unwrap().contains_key("mesh_status"),
+        "mesh_status should be null or absent when None"
+    );
+}
