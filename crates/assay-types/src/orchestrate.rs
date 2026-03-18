@@ -107,6 +107,9 @@ pub struct OrchestratorStatus {
     /// When the run completed (None if still running).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub completed_at: Option<DateTime<Utc>>,
+    /// Mesh coordination status (present only when `mode = "mesh"`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mesh_status: Option<MeshStatus>,
 }
 
 // ── Merge ordering & runner types ─────────────────────────────────────
@@ -309,6 +312,54 @@ impl Default for ConflictResolutionConfig {
     }
 }
 
+// ── Mesh membership status types ─────────────────────────────────────
+
+/// SWIM-inspired membership state for a single peer in Mesh mode.
+///
+/// Transitions: `Alive` → `Suspect` (heartbeat missed) → `Dead` (timeout exceeded).
+/// `Completed` distinguishes a normal graceful exit from a crash (`Dead`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum MeshMemberState {
+    /// Peer is actively sending heartbeats.
+    Alive,
+    /// Heartbeat missed; peer may be slow or partitioned.
+    Suspect,
+    /// Heartbeat timed out; peer is presumed crashed.
+    Dead,
+    /// Peer exited normally (sent a completed sentinel).
+    Completed,
+}
+
+/// Per-member status snapshot for Mesh mode membership tracking.
+///
+/// Persisted as part of [`MeshStatus`] inside [`OrchestratorStatus`].
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct MeshMemberStatus {
+    /// Session name of this peer.
+    pub name: String,
+    /// Current SWIM-inspired membership state.
+    pub state: MeshMemberState,
+    /// Timestamp of the most recent heartbeat received from this peer.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_heartbeat_at: Option<DateTime<Utc>>,
+}
+
+/// Aggregate mesh coordination status snapshot.
+///
+/// Written into [`OrchestratorStatus::mesh_status`] on each routing tick
+/// and on session state transitions. Readable via
+/// `cat .assay/orchestrator/<run_id>/state.json | jq .mesh_status`.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct MeshStatus {
+    /// Per-member membership snapshots.
+    pub members: Vec<MeshMemberStatus>,
+    /// Total count of messages routed between session inboxes and outboxes.
+    pub messages_routed: u64,
+}
+
 // ── Coordination mode types ───────────────────────────────────────────
 
 /// Coordination mode for multi-session orchestrated runs.
@@ -505,6 +556,27 @@ inventory::submit! {
 
 inventory::submit! {
     schema_registry::SchemaEntry {
+        name: "mesh-member-state",
+        generate: || schemars::schema_for!(MeshMemberState),
+    }
+}
+
+inventory::submit! {
+    schema_registry::SchemaEntry {
+        name: "mesh-member-status",
+        generate: || schemars::schema_for!(MeshMemberStatus),
+    }
+}
+
+inventory::submit! {
+    schema_registry::SchemaEntry {
+        name: "mesh-status",
+        generate: || schemars::schema_for!(MeshStatus),
+    }
+}
+
+inventory::submit! {
+    schema_registry::SchemaEntry {
         name: "mesh-config",
         generate: || schemars::schema_for!(MeshConfig),
     }
@@ -670,6 +742,7 @@ mod tests {
             ],
             started_at: now,
             completed_at: Some(now),
+            mesh_status: None,
         };
         let json = serde_json::to_string_pretty(&status).unwrap();
         let back: OrchestratorStatus = serde_json::from_str(&json).unwrap();
@@ -944,6 +1017,119 @@ mod tests {
         let json = r#"{"coordinator_interval_secs":5,"extra":1}"#;
         assert!(
             serde_json::from_str::<GossipConfig>(json).is_err(),
+            "should reject unknown fields"
+        );
+    }
+
+    // ── MeshMemberState tests ─────────────────────────────────────────
+
+    #[test]
+    fn mesh_member_state_serde_roundtrip() {
+        let states = vec![
+            MeshMemberState::Alive,
+            MeshMemberState::Suspect,
+            MeshMemberState::Dead,
+            MeshMemberState::Completed,
+        ];
+        for state in &states {
+            let json = serde_json::to_string(state).unwrap();
+            let back: MeshMemberState = serde_json::from_str(&json).unwrap();
+            assert_eq!(&back, state);
+        }
+        // Verify snake_case serialization
+        assert_eq!(
+            serde_json::to_string(&MeshMemberState::Alive).unwrap(),
+            "\"alive\""
+        );
+        assert_eq!(
+            serde_json::to_string(&MeshMemberState::Suspect).unwrap(),
+            "\"suspect\""
+        );
+        assert_eq!(
+            serde_json::to_string(&MeshMemberState::Dead).unwrap(),
+            "\"dead\""
+        );
+        assert_eq!(
+            serde_json::to_string(&MeshMemberState::Completed).unwrap(),
+            "\"completed\""
+        );
+    }
+
+    // ── MeshMemberStatus tests ────────────────────────────────────────
+
+    #[test]
+    fn mesh_member_status_serde_roundtrip() {
+        let now = Utc::now();
+        let status = MeshMemberStatus {
+            name: "writer".to_string(),
+            state: MeshMemberState::Alive,
+            last_heartbeat_at: Some(now),
+        };
+        let json = serde_json::to_string_pretty(&status).unwrap();
+        let back: MeshMemberStatus = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.name, "writer");
+        assert_eq!(back.state, MeshMemberState::Alive);
+        assert!(back.last_heartbeat_at.is_some());
+    }
+
+    #[test]
+    fn mesh_member_status_optional_heartbeat_omitted() {
+        let status = MeshMemberStatus {
+            name: "dead-peer".to_string(),
+            state: MeshMemberState::Dead,
+            last_heartbeat_at: None,
+        };
+        let json = serde_json::to_string(&status).unwrap();
+        assert!(
+            !json.contains("last_heartbeat_at"),
+            "should be omitted when None"
+        );
+        let back: MeshMemberStatus = serde_json::from_str(&json).unwrap();
+        assert!(back.last_heartbeat_at.is_none());
+    }
+
+    #[test]
+    fn mesh_member_status_deny_unknown_fields() {
+        let json = r#"{"name":"x","state":"alive","unknown":1}"#;
+        assert!(
+            serde_json::from_str::<MeshMemberStatus>(json).is_err(),
+            "should reject unknown fields"
+        );
+    }
+
+    // ── MeshStatus tests ──────────────────────────────────────────────
+
+    #[test]
+    fn mesh_status_serde_roundtrip() {
+        let now = Utc::now();
+        let status = MeshStatus {
+            members: vec![
+                MeshMemberStatus {
+                    name: "writer".to_string(),
+                    state: MeshMemberState::Alive,
+                    last_heartbeat_at: Some(now),
+                },
+                MeshMemberStatus {
+                    name: "reader".to_string(),
+                    state: MeshMemberState::Completed,
+                    last_heartbeat_at: None,
+                },
+            ],
+            messages_routed: 42,
+        };
+        let json = serde_json::to_string_pretty(&status).unwrap();
+        let back: MeshStatus = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.members.len(), 2);
+        assert_eq!(back.messages_routed, 42);
+        assert_eq!(back.members[0].name, "writer");
+        assert_eq!(back.members[1].state, MeshMemberState::Completed);
+    }
+
+    #[test]
+    fn mesh_status_deny_unknown_fields() {
+        let json = r#"{"members":[],"messages_routed":0,"extra":1}"#;
+        assert!(
+            serde_json::from_str::<MeshStatus>(json).is_err(),
             "should reject unknown fields"
         );
     }

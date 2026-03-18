@@ -15,25 +15,25 @@
 
 ### R035 — Mesh mode execution
 - Class: core-capability
-- Status: active
+- Status: validated
 - Description: In Mesh mode, all sessions launch in parallel (no dependency tiers). Each session receives a roster prompt layer listing peer session names and their inbox paths, enabling agents to know who else is running.
 - Why it matters: Mesh semantics require awareness of peers — the roster is the minimal contract that gives agents the information needed to decide whether to message peers
 - Source: user
 - Primary owning slice: M004/S02
 - Supporting slices: none
-- Validation: unmapped
-- Notes: Roster is injected as a PromptLayer at session launch time. No depends_on processing in mesh mode.
+- Validation: S02 — test_mesh_mode_completed_not_dead proves parallel launch with roster PromptLayer injection; all sessions start without DAG ordering; depends_on emits warn and is ignored; state.json persists correct membership states; schema snapshots locked; just ready green
+- Notes: Roster injected as PromptLayer (kind: System, priority: -5). Roster format includes "Outbox: <path>" as machine-parseable line (D058).
 
 ### R036 — Mesh peer messaging
 - Class: core-capability
-- Status: active
+- Status: validated
 - Description: Sessions in Mesh mode can write message files to their outbox directory (`.assay/orchestrator/<run_id>/mesh/<name>/outbox/`). The orchestrator polls outboxes and routes messages to target sessions' inbox directories. SWIM-inspired membership tracks alive/suspect/dead states via heartbeat files.
 - Why it matters: Peer messaging is the distinctive behavior of Mesh mode — without it, Mesh is just parallel DAG without deps, which is less useful
 - Source: user
 - Primary owning slice: M004/S02
 - Supporting slices: none
-- Validation: unmapped
-- Notes: Message routing is file-based (no sockets/channels). Heartbeat polling intervals and suspect/dead timeouts are configurable in `MeshConfig` on RunManifest.
+- Validation: S02 — test_mesh_mode_message_routing proves outbox→inbox routing with real filesystem ops; messages_routed counter accurate; MeshMemberState Completed vs Dead distinguishes normal exit from crash; routing thread polls every 50ms, exits when active_count==0. Note: Suspect state (heartbeat-based) is defined but unreachable until S04 adds heartbeat polling.
+- Notes: Message routing is file-based (no sockets/channels). Heartbeat polling intervals and suspect/dead timeouts are configurable in MeshConfig. Suspect transitions deferred to S04.
 
 ### R037 — Gossip mode execution
 - Class: core-capability
@@ -462,15 +462,15 @@
 | R029 | failure-visibility | validated | M003/S02 | none | S02 |
 | R033 | anti-feature | out-of-scope | none | none | n/a |
 | R034 | core-capability | validated | M004/S01 | M004/S02, M004/S03 | S01 |
-| R035 | core-capability | active | M004/S02 | none | unmapped |
-| R036 | core-capability | active | M004/S02 | none | unmapped |
+| R035 | core-capability | validated | M004/S02 | none | S02 |
+| R036 | core-capability | validated | M004/S02 | none | S02 |
 | R037 | core-capability | active | M004/S03 | none | unmapped |
 | R038 | core-capability | active | M004/S03 | none | unmapped |
 
 ## Coverage Summary
 
-- Active requirements: 4 (R035–R038)
-- Mapped to slices: 4
-- Validated: 28 (R001–R029, R034)
+- Active requirements: 2 (R037–R038)
+- Mapped to slices: 2
+- Validated: 30 (R001–R029, R034–R036)
 - Deferred: 3 (R025, R027 — with rationale)
 - Unmapped active requirements: 0

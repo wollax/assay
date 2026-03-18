@@ -1664,6 +1664,7 @@ async fn orchestrate_status_reads_persisted_state_with_sessions() {
         ],
         started_at: chrono::Utc::now(),
         completed_at: Some(chrono::Utc::now()),
+        mesh_status: None,
     };
     let json = serde_json::to_string_pretty(&status).unwrap();
     std::fs::write(state_dir.join("state.json"), &json).unwrap();

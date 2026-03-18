@@ -106,7 +106,10 @@ struct ExecutorState {
 
 /// Persist an `OrchestratorStatus` snapshot to `state.json` using atomic
 /// tempfile-then-rename.
-fn persist_state(run_dir: &std::path::Path, status: &OrchestratorStatus) -> Result<(), AssayError> {
+pub(crate) fn persist_state(
+    run_dir: &std::path::Path,
+    status: &OrchestratorStatus,
+) -> Result<(), AssayError> {
     let final_path = run_dir.join("state.json");
     let json = serde_json::to_string_pretty(status)
         .map_err(|e| AssayError::json("serializing orchestrator status", &final_path, e))?;
@@ -181,6 +184,7 @@ where
         sessions: initial_statuses.clone(),
         started_at,
         completed_at: None,
+        mesh_status: None,
     };
 
     // Persist initial state.
@@ -437,6 +441,7 @@ where
                         sessions: guard.session_statuses.clone(),
                         started_at: started_at_run,
                         completed_at: None,
+                        mesh_status: None,
                     };
                     // Best-effort persistence — don't fail the whole run.
                     let _ = persist_state(run_dir, &snapshot);
@@ -468,6 +473,7 @@ where
         sessions: guard.session_statuses.clone(),
         started_at,
         completed_at: Some(Utc::now()),
+        mesh_status: None,
     };
     let _ = persist_state(&run_dir, &final_status);
 

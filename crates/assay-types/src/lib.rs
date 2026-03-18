@@ -64,8 +64,8 @@ pub use worktree::{WorktreeConfig, WorktreeInfo, WorktreeMetadata, WorktreeStatu
 pub use orchestrate::{
     ConflictAction, ConflictFileContent, ConflictResolution, ConflictResolutionConfig,
     FailurePolicy, GossipConfig, MergePlan, MergePlanEntry, MergeReport, MergeSessionResult,
-    MergeSessionStatus, MergeStrategy, MeshConfig, OrchestratorMode, OrchestratorPhase,
-    OrchestratorStatus, SessionRunState, SessionStatus,
+    MergeSessionStatus, MergeStrategy, MeshConfig, MeshMemberState, MeshMemberStatus, MeshStatus,
+    OrchestratorMode, OrchestratorPhase, OrchestratorStatus, SessionRunState, SessionStatus,
 };
 
 /// Marker badge for directory-based specs in CLI output (e.g., `auth-flow  [srs] 3 criteria`).

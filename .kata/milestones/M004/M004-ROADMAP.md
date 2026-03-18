@@ -52,7 +52,7 @@ This milestone is complete only when all are true:
 - [x] **S01: Mode infrastructure** `risk:low` `depends:[]`
   > After this: `mode = "mesh"` and `mode = "gossip"` parse in RunManifest TOML, dispatch to correct executor entry point (stub implementations), existing DAG tests pass, schema snapshots updated.
 
-- [ ] **S02: Mesh mode** `risk:high` `depends:[S01]`
+- [x] **S02: Mesh mode** `risk:high` `depends:[S01]`
   > After this: Integration test with mock runners proves parallel launch with roster prompt layers, outbox message files are routed to target inboxes, and membership states are tracked in state.json; `just ready` passes.
 
 - [ ] **S03: Gossip mode** `risk:high` `depends:[S01]`

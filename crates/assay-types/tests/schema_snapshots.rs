@@ -378,3 +378,24 @@ fn gossip_config_schema_snapshot() {
     let schema = schemars::schema_for!(assay_types::GossipConfig);
     assert_json_snapshot!("gossip-config-schema", schema.to_value());
 }
+
+#[cfg(feature = "orchestrate")]
+#[test]
+fn mesh_member_state_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::MeshMemberState);
+    assert_json_snapshot!("mesh-member-state-schema", schema.to_value());
+}
+
+#[cfg(feature = "orchestrate")]
+#[test]
+fn mesh_member_status_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::MeshMemberStatus);
+    assert_json_snapshot!("mesh-member-status-schema", schema.to_value());
+}
+
+#[cfg(feature = "orchestrate")]
+#[test]
+fn mesh_status_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::MeshStatus);
+    assert_json_snapshot!("mesh-status-schema", schema.to_value());
+}
