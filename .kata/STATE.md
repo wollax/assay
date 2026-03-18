@@ -1,12 +1,12 @@
 # Kata State
 
 **Active Milestone:** M004 — Coordination Modes (Mesh and Gossip)
-**Active Slice:** S03 — Gossip mode (next)
-**Active Task:** none — S02 complete, ready to begin S03
-**Phase:** S02 complete — T01 ✓, T02 ✓, T03 ✓, T04 ✓; `just ready` green
+**Active Slice:** S04 — Integration + observability (next)
+**Active Task:** none — S03 complete; S04 ready to start
+**Phase:** S03 complete — just ready green, 1264 tests, 0 warnings; R037 and R038 validated
 **Last Updated:** 2026-03-18
-**Requirements Status:** 2 active (R037–R038) · 30 validated · 3 deferred · 4 out of scope
-**Test Count:** 1230+ (all passing — `just ready` green; both mesh integration tests pass)
+**Requirements Status:** 0 active · 32 validated · 3 deferred · 4 out of scope
+**Test Count:** 1264 (all passing — `just ready` exit 0; both gossip integration tests pass)
 
 ## Completed Milestones
 
@@ -18,7 +18,7 @@
 
 - [x] S01: Mode infrastructure `risk:low` — OrchestratorMode enum, mode field on RunManifest, dispatch routing, schema snapshots locked (R034 validated)
 - [x] S02: Mesh mode `risk:high` — parallel executor, roster injection, inbox/outbox directories, message routing thread, SWIM membership (R035, R036 validated)
-- [ ] S03: Gossip mode `risk:high` — parallel executor, coordinator thread, knowledge manifest, manifest path injection
+- [x] S03: Gossip mode `risk:high` — parallel executor, coordinator thread, knowledge manifest, manifest path injection (R037, R038 validated)
 - [ ] S04: Integration + observability `risk:low` — end-to-end tests all three modes, orchestrate_status mode-specific fields, CLI mode display, just ready green
 
 ## Recent Decisions
@@ -30,6 +30,8 @@
 - D056: impl Default for RunManifest instead of cascading struct-literal updates — serde contract unchanged
 - D057: persist_state made pub(crate) in executor.rs — reused by mesh.rs without duplication
 - D058: Mesh roster PromptLayer uses "Outbox: <path>" as machine-parseable line for session outbox discovery
+- D059: Gossip PromptLayer uses "Knowledge manifest: <path>" as machine-parseable line — mirrors D058 convention
+- D060: Coordinator thread uses mpsc channel; drain loop prevents last-message loss on rapid worker completion
 
 ## Blockers
 
@@ -37,9 +39,4 @@ None.
 
 ## Next Action
 
-Begin S03 — Gossip mode: GossipStatus/KnowledgeManifest/KnowledgeEntry types, OrchestratorStatus.gossip_status field, coordinator thread that watches session completions and updates knowledge.json atomically, manifest path injected as PromptLayer at session launch.
-
-S03 forward intelligence from S02:
-- Follow the same `thread::scope` + `Arc<AtomicUsize> active_count` pattern; coordinator thread replaces routing thread
-- `persist_state` is `pub(crate)` in executor.rs — reuse directly in gossip.rs
-- All OrchestratorStatus construction sites (assay-core, assay-mcp) need `gossip_status: None` added — about 10 sites
+Execute S04: Integration + observability — end-to-end tests all three modes, `orchestrate_status` returns mode-specific state (`mesh_status` or `gossip_status`), CLI shows mode in run output, `just ready` green with 0 warnings.

@@ -19,6 +19,34 @@ expression: schema.to_value()
         }
       ]
     },
+    "GossipStatus": {
+      "additionalProperties": false,
+      "description": "Aggregate gossip coordination status snapshot.\n\nWritten into [`OrchestratorStatus::gossip_status`] on each coordinator\ncycle and on run completion. Readable via\n`cat .assay/orchestrator/<run_id>/state.json | jq .gossip_status`.",
+      "properties": {
+        "coordinator_rounds": {
+          "description": "Number of coordinator synthesis rounds completed.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "knowledge_manifest_path": {
+          "description": "Absolute path to `knowledge.json` on disk.",
+          "type": "string"
+        },
+        "sessions_synthesized": {
+          "description": "Number of sessions whose results have been synthesized into the\nknowledge manifest so far.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "sessions_synthesized",
+        "knowledge_manifest_path",
+        "coordinator_rounds"
+      ],
+      "type": "object"
+    },
     "MeshMemberState": {
       "description": "SWIM-inspired membership state for a single peer in Mesh mode.\n\nTransitions: `Alive` → `Suspect` (heartbeat missed) → `Dead` (timeout exceeded).\n`Completed` distinguishes a normal graceful exit from a crash (`Dead`).",
       "oneOf": [
@@ -228,6 +256,17 @@ expression: schema.to_value()
     "failure_policy": {
       "$ref": "#/$defs/FailurePolicy",
       "description": "Failure policy in effect for this run."
+    },
+    "gossip_status": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/GossipStatus"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Gossip coordination status (present only when `mode = \"gossip\"`)."
     },
     "mesh_status": {
       "anyOf": [

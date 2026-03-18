@@ -110,6 +110,9 @@ pub struct OrchestratorStatus {
     /// Mesh coordination status (present only when `mode = "mesh"`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mesh_status: Option<MeshStatus>,
+    /// Gossip coordination status (present only when `mode = "gossip"`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gossip_status: Option<GossipStatus>,
 }
 
 // ── Merge ordering & runner types ─────────────────────────────────────
@@ -360,6 +363,62 @@ pub struct MeshStatus {
     pub messages_routed: u64,
 }
 
+/// Single entry in the gossip knowledge manifest for a completed session.
+///
+/// Written by the coordinator thread into
+/// `.assay/orchestrator/<run_id>/gossip/knowledge.json` after each session
+/// completes. Readable via `cat .assay/orchestrator/<run_id>/gossip/knowledge.json | jq .entries`.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct KnowledgeEntry {
+    /// Session name that produced this entry.
+    pub session_name: String,
+    /// Spec file path used for this session.
+    pub spec: String,
+    /// Number of gates that passed in this session.
+    pub gate_pass_count: u32,
+    /// Number of gates that failed in this session.
+    pub gate_fail_count: u32,
+    /// Files changed during this session (omitted if empty).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub changed_files: Vec<String>,
+    /// UTC timestamp when this session completed.
+    pub completed_at: DateTime<Utc>,
+}
+
+/// Gossip coordinator's knowledge manifest.
+///
+/// Persisted to `.assay/orchestrator/<run_id>/gossip/knowledge.json` after
+/// each coordinator synthesis round. All entries are cumulative — later
+/// entries for the same session name replace earlier ones.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct KnowledgeManifest {
+    /// Unique identifier for the orchestrated run that owns this manifest.
+    pub run_id: String,
+    /// Ordered list of completed-session knowledge entries.
+    pub entries: Vec<KnowledgeEntry>,
+    /// UTC timestamp of the most recent manifest write.
+    pub last_updated_at: DateTime<Utc>,
+}
+
+/// Aggregate gossip coordination status snapshot.
+///
+/// Written into [`OrchestratorStatus::gossip_status`] on each coordinator
+/// cycle and on run completion. Readable via
+/// `cat .assay/orchestrator/<run_id>/state.json | jq .gossip_status`.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct GossipStatus {
+    /// Number of sessions whose results have been synthesized into the
+    /// knowledge manifest so far.
+    pub sessions_synthesized: u32,
+    /// Absolute path to `knowledge.json` on disk.
+    pub knowledge_manifest_path: std::path::PathBuf,
+    /// Number of coordinator synthesis rounds completed.
+    pub coordinator_rounds: u32,
+}
+
 // ── Coordination mode types ───────────────────────────────────────────
 
 /// Coordination mode for multi-session orchestrated runs.
@@ -589,6 +648,27 @@ inventory::submit! {
     }
 }
 
+inventory::submit! {
+    schema_registry::SchemaEntry {
+        name: "knowledge-entry",
+        generate: || schemars::schema_for!(KnowledgeEntry),
+    }
+}
+
+inventory::submit! {
+    schema_registry::SchemaEntry {
+        name: "knowledge-manifest",
+        generate: || schemars::schema_for!(KnowledgeManifest),
+    }
+}
+
+inventory::submit! {
+    schema_registry::SchemaEntry {
+        name: "gossip-status",
+        generate: || schemars::schema_for!(GossipStatus),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -743,6 +823,7 @@ mod tests {
             started_at: now,
             completed_at: Some(now),
             mesh_status: None,
+            gossip_status: None,
         };
         let json = serde_json::to_string_pretty(&status).unwrap();
         let back: OrchestratorStatus = serde_json::from_str(&json).unwrap();

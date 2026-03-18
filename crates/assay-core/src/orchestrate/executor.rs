@@ -185,6 +185,7 @@ where
         started_at,
         completed_at: None,
         mesh_status: None,
+        gossip_status: None,
     };
 
     // Persist initial state.
@@ -442,6 +443,7 @@ where
                         started_at: started_at_run,
                         completed_at: None,
                         mesh_status: None,
+                        gossip_status: None,
                     };
                     // Best-effort persistence — don't fail the whole run.
                     let _ = persist_state(run_dir, &snapshot);
@@ -474,6 +476,7 @@ where
         started_at,
         completed_at: Some(Utc::now()),
         mesh_status: None,
+        gossip_status: None,
     };
     let _ = persist_state(&run_dir, &final_status);
 

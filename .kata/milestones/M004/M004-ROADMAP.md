@@ -55,7 +55,7 @@ This milestone is complete only when all are true:
 - [x] **S02: Mesh mode** `risk:high` `depends:[S01]`
   > After this: Integration test with mock runners proves parallel launch with roster prompt layers, outbox message files are routed to target inboxes, and membership states are tracked in state.json; `just ready` passes.
 
-- [ ] **S03: Gossip mode** `risk:high` `depends:[S01]`
+- [x] **S03: Gossip mode** `risk:high` `depends:[S01]`
   > After this: Integration test with mock runners proves parallel launch with knowledge manifest path in prompt layers, coordinator updates knowledge.json as sessions complete, and `gossip_status` is visible in `orchestrate_status`; `just ready` passes.
 
 - [ ] **S04: Integration + observability** `risk:low` `depends:[S02,S03]`

@@ -399,3 +399,24 @@ fn mesh_status_schema_snapshot() {
     let schema = schemars::schema_for!(assay_types::MeshStatus);
     assert_json_snapshot!("mesh-status-schema", schema.to_value());
 }
+
+#[cfg(feature = "orchestrate")]
+#[test]
+fn knowledge_entry_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::KnowledgeEntry);
+    assert_json_snapshot!("knowledge-entry-schema", schema.to_value());
+}
+
+#[cfg(feature = "orchestrate")]
+#[test]
+fn knowledge_manifest_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::KnowledgeManifest);
+    assert_json_snapshot!("knowledge-manifest-schema", schema.to_value());
+}
+
+#[cfg(feature = "orchestrate")]
+#[test]
+fn gossip_status_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::GossipStatus);
+    assert_json_snapshot!("gossip-status-schema", schema.to_value());
+}

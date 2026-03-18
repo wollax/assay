@@ -7257,6 +7257,7 @@ spec = "auth"
             started_at: chrono::Utc::now(),
             completed_at: Some(chrono::Utc::now()),
             mesh_status: None,
+            gossip_status: None,
         };
         let json = serde_json::to_string_pretty(&status).unwrap();
         std::fs::write(state_dir.join("state.json"), &json).unwrap();
@@ -7305,6 +7306,7 @@ spec = "auth"
             started_at: chrono::Utc::now(),
             completed_at: Some(chrono::Utc::now()),
             mesh_status: None,
+            gossip_status: None,
         };
         let state_json = serde_json::to_string_pretty(&status).unwrap();
         std::fs::write(state_dir.join("state.json"), &state_json).unwrap();

@@ -168,6 +168,7 @@ where
         started_at,
         completed_at: None,
         mesh_status: Some(initial_mesh_status),
+        gossip_status: None,
     };
 
     persist_state(&run_dir, &initial_status)?;
@@ -341,6 +342,7 @@ where
                         started_at: started_at_run,
                         completed_at: None,
                         mesh_status: Some(mesh),
+                        gossip_status: None,
                     };
                     let _ = persist_state(run_dir, &snapshot);
                 }
@@ -384,6 +386,7 @@ where
         started_at,
         completed_at: Some(Utc::now()),
         mesh_status: Some(final_mesh),
+        gossip_status: None,
     };
     let _ = persist_state(&run_dir, &final_status);
 

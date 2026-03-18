@@ -37,24 +37,24 @@
 
 ### R037 — Gossip mode execution
 - Class: core-capability
-- Status: active
+- Status: validated
 - Description: In Gossip mode, all sessions launch in parallel (no dependency tiers). A coordinator thread watches for session completions and updates a knowledge manifest (`.assay/orchestrator/<run_id>/gossip/knowledge.json`) with gate results, pass/fail summary, and changed files from each completed session.
 - Why it matters: Gossip enables cross-pollination of findings without explicit inter-session communication — the coordinator synthesizes on behalf of all sessions
 - Source: user
 - Primary owning slice: M004/S03
 - Supporting slices: none
-- Validation: unmapped
+- Validation: S03 — test_gossip_mode_knowledge_manifest proves 3 mock sessions → knowledge.json with 3 entries, gossip_status.sessions_synthesized == 3; coordinator thread uses mpsc channel with drain loop to guarantee all completions captured; GossipStatus, KnowledgeEntry, KnowledgeManifest schema snapshots locked; just ready green
 - Notes: Sessions run fully independently; knowledge manifest is updated post-completion by the coordinator. No mid-run injection needed — the manifest path is injected at launch as a readable path.
 
 ### R038 — Gossip knowledge manifest injection
 - Class: core-capability
-- Status: active
+- Status: validated
 - Description: At session launch in Gossip mode, each session's prompt layers include the knowledge manifest path. As sessions complete, the coordinator atomically updates the manifest so still-running sessions can read it at any point during their execution.
 - Why it matters: The manifest injection closes the loop — agents can read what other agents have already done, enabling genuine cross-pollination of results
 - Source: user
 - Primary owning slice: M004/S03
 - Supporting slices: none
-- Validation: unmapped
+- Validation: S03 — test_gossip_mode_manifest_path_in_prompt_layer proves each session receives a "gossip-knowledge-manifest" PromptLayer with a "Knowledge manifest: <path>" line under the run's orchestrator directory; atomic knowledge.json writes via tempfile+rename+sync_all; manifest path predictable as <run_dir>/gossip/knowledge.json
 - Notes: Knowledge manifest is a JSON file with a stable schema (schema snapshot locked). Session reads it by path at any point during execution — no push mechanism needed.
 
 ### R001 — AgentSession persistence to disk
@@ -464,13 +464,13 @@
 | R034 | core-capability | validated | M004/S01 | M004/S02, M004/S03 | S01 |
 | R035 | core-capability | validated | M004/S02 | none | S02 |
 | R036 | core-capability | validated | M004/S02 | none | S02 |
-| R037 | core-capability | active | M004/S03 | none | unmapped |
-| R038 | core-capability | active | M004/S03 | none | unmapped |
+| R037 | core-capability | validated | M004/S03 | none | S03 |
+| R038 | core-capability | validated | M004/S03 | none | S03 |
 
 ## Coverage Summary
 
-- Active requirements: 2 (R037–R038)
-- Mapped to slices: 2
-- Validated: 30 (R001–R029, R034–R036)
+- Active requirements: 0
+- Mapped to slices: 0
+- Validated: 32 (R001–R029, R034–R038)
 - Deferred: 3 (R025, R027 — with rationale)
 - Unmapped active requirements: 0
