@@ -7,5 +7,7 @@
 pub mod conflict_resolver;
 pub mod dag;
 pub mod executor;
+pub mod gossip;
 pub mod merge_runner;
+pub mod mesh;
 pub mod ordering;

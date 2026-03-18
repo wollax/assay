@@ -929,7 +929,10 @@ mod tests {
 
     #[test]
     fn run_manifest_empty_sessions() {
-        let manifest = RunManifest { sessions: vec![] };
+        let manifest = RunManifest {
+            sessions: vec![],
+            ..Default::default()
+        };
         let config = PipelineConfig::default();
         let writer: Box<HarnessWriter> =
             Box::new(|_profile: &HarnessProfile, _path: &Path| Ok(vec![]));

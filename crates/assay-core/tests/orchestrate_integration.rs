@@ -110,6 +110,9 @@ fn make_manifest(sessions: Vec<(&str, Option<&str>, Vec<&str>)>) -> RunManifest 
                 depends_on: deps.into_iter().map(|d| d.to_string()).collect(),
             })
             .collect(),
+        mode: assay_types::OrchestratorMode::Dag,
+        mesh_config: None,
+        gossip_config: None,
     }
 }
 

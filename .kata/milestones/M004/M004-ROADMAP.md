@@ -49,7 +49,7 @@ This milestone is complete only when all are true:
 
 ## Slices
 
-- [ ] **S01: Mode infrastructure** `risk:low` `depends:[]`
+- [x] **S01: Mode infrastructure** `risk:low` `depends:[]`
   > After this: `mode = "mesh"` and `mode = "gossip"` parse in RunManifest TOML, dispatch to correct executor entry point (stub implementations), existing DAG tests pass, schema snapshots updated.
 
 - [ ] **S02: Mesh mode** `risk:high` `depends:[S01]`

@@ -269,7 +269,10 @@ unknown_session_key = true
 
     #[test]
     fn validate_empty_sessions_rejected() {
-        let manifest = RunManifest { sessions: vec![] };
+        let manifest = RunManifest {
+            sessions: vec![],
+            ..Default::default()
+        };
         let errors = validate(&manifest).unwrap_err();
         assert_eq!(errors.len(), 1);
         assert_eq!(errors[0].field, "sessions");
@@ -293,6 +296,7 @@ unknown_session_key = true
                 file_scope: vec![],
                 shared_files: vec![],
             }],
+            ..Default::default()
         };
         let errors = validate(&manifest).unwrap_err();
         assert_eq!(errors.len(), 1);
@@ -329,6 +333,7 @@ unknown_session_key = true
                     shared_files: vec![],
                 },
             ],
+            ..Default::default()
         };
         let errors = validate(&manifest).unwrap_err();
         assert_eq!(
@@ -446,6 +451,7 @@ spec = "auth-flow"
                 session("a", None, vec![]),
                 session("b", None, vec!["nonexistent"]),
             ],
+            ..Default::default()
         };
         let errors = validate(&manifest).unwrap_err();
         assert_eq!(errors.len(), 1);
@@ -461,6 +467,7 @@ spec = "auth-flow"
     fn validate_deps_self_dependency_rejected() {
         let manifest = RunManifest {
             sessions: vec![session("a", None, vec!["a"])],
+            ..Default::default()
         };
         let errors = validate(&manifest).unwrap_err();
         assert_eq!(errors.len(), 1);
@@ -476,6 +483,7 @@ spec = "auth-flow"
     fn validate_deps_duplicate_names_rejected() {
         let manifest = RunManifest {
             sessions: vec![session("a", None, vec![]), session("a", None, vec!["a"])],
+            ..Default::default()
         };
         let errors = validate(&manifest).unwrap_err();
         assert!(
@@ -494,6 +502,7 @@ spec = "auth-flow"
                 session("b", None, vec!["a"]),
                 session("c", Some("custom"), vec!["a", "b"]),
             ],
+            ..Default::default()
         };
         assert!(validate(&manifest).is_ok());
     }
@@ -506,6 +515,7 @@ spec = "auth-flow"
                 session("x", Some("custom"), vec![]),
                 session("b", None, vec!["x"]), // "x" is not the effective name
             ],
+            ..Default::default()
         };
         let errors = validate(&manifest).unwrap_err();
         assert!(
@@ -520,6 +530,7 @@ spec = "auth-flow"
         // Without depends_on, duplicate specs are fine (backward compat).
         let manifest = RunManifest {
             sessions: vec![session("a", None, vec![]), session("a", None, vec![])],
+            ..Default::default()
         };
         assert!(validate(&manifest).is_ok());
     }
@@ -531,6 +542,7 @@ spec = "auth-flow"
                 session("a", None, vec!["a"]),           // self-dep
                 session("b", None, vec!["nonexistent"]), // unknown ref
             ],
+            ..Default::default()
         };
         let errors = validate(&manifest).unwrap_err();
         assert_eq!(

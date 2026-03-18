@@ -44,6 +44,7 @@ use assay_core::spec::SpecEntry;
 use assay_types::work_session::SessionPhase;
 use assay_types::{
     AgentEvaluation, Confidence, Config, CriterionKind, EvaluatorRole, GateEvalContext,
+    OrchestratorMode,
 };
 
 // ── Parameter structs ────────────────────────────────────────────────
@@ -2794,9 +2795,9 @@ impl AssayServer {
             Err(e) => return Ok(domain_error(&e)),
         };
 
-        // Validate multi-session content
+        // Validate multi-session content (DAG mode only — Mesh/Gossip allow single sessions).
         let has_deps = manifest.sessions.iter().any(|s| !s.depends_on.is_empty());
-        if manifest.sessions.len() < 2 && !has_deps {
+        if manifest.mode == OrchestratorMode::Dag && manifest.sessions.len() < 2 && !has_deps {
             return Ok(CallToolResult::error(vec![Content::text(
                 "Manifest must contain multiple sessions or dependency edges for orchestrated runs. \
                  Use run_manifest for single-session execution.",
@@ -2873,6 +2874,110 @@ impl AssayServer {
             timeout_secs,
             base_branch: Some(base_branch.clone()),
         };
+
+        // ── Mesh / Gossip stub routing ────────────────────────────────
+        // These modes bypass the full DAG+merge pipeline and delegate to stubs.
+        match manifest.mode {
+            OrchestratorMode::Mesh => {
+                let orch_config = assay_core::orchestrate::executor::OrchestratorConfig {
+                    max_concurrency: 8,
+                    failure_policy,
+                };
+                let manifest_clone = manifest.clone();
+                let pipeline_config_clone = pipeline_config.clone();
+                let result = tokio::task::spawn_blocking(move || {
+                    let session_runner = |_session: &assay_types::ManifestSession,
+                                          _pipe_cfg: &assay_core::pipeline::PipelineConfig|
+                     -> std::result::Result<
+                        assay_core::pipeline::PipelineResult,
+                        assay_core::pipeline::PipelineError,
+                    > {
+                        unreachable!("mesh stub does not invoke session_runner")
+                    };
+                    assay_core::orchestrate::mesh::run_mesh(
+                        &manifest_clone,
+                        &orch_config,
+                        &pipeline_config_clone,
+                        &session_runner,
+                    )
+                })
+                .await
+                .map_err(|e| McpError::internal_error(format!("mesh task panicked: {e}"), None))?;
+                return match result {
+                    Ok(orch_result) => {
+                        let response = OrchestrateRunResponse {
+                            run_id: orch_result.run_id,
+                            duration_secs: orch_result.duration.as_secs_f64(),
+                            failure_policy: format!("{:?}", orch_result.failure_policy),
+                            sessions: vec![],
+                            summary: OrchestrateRunSummary {
+                                total: 0,
+                                completed: 0,
+                                failed: 0,
+                                skipped: 0,
+                            },
+                            merge_report: None,
+                        };
+                        let json = serde_json::to_string(&response).map_err(|e| {
+                            McpError::internal_error(format!("serialization failed: {e}"), None)
+                        })?;
+                        Ok(CallToolResult::success(vec![Content::text(json)]))
+                    }
+                    Err(e) => Ok(domain_error(&e)),
+                };
+            }
+            OrchestratorMode::Gossip => {
+                let orch_config = assay_core::orchestrate::executor::OrchestratorConfig {
+                    max_concurrency: 8,
+                    failure_policy,
+                };
+                let manifest_clone = manifest.clone();
+                let pipeline_config_clone = pipeline_config.clone();
+                let result = tokio::task::spawn_blocking(move || {
+                    let session_runner = |_session: &assay_types::ManifestSession,
+                                          _pipe_cfg: &assay_core::pipeline::PipelineConfig|
+                     -> std::result::Result<
+                        assay_core::pipeline::PipelineResult,
+                        assay_core::pipeline::PipelineError,
+                    > {
+                        unreachable!("gossip stub does not invoke session_runner")
+                    };
+                    assay_core::orchestrate::gossip::run_gossip(
+                        &manifest_clone,
+                        &orch_config,
+                        &pipeline_config_clone,
+                        &session_runner,
+                    )
+                })
+                .await
+                .map_err(|e| {
+                    McpError::internal_error(format!("gossip task panicked: {e}"), None)
+                })?;
+                return match result {
+                    Ok(orch_result) => {
+                        let response = OrchestrateRunResponse {
+                            run_id: orch_result.run_id,
+                            duration_secs: orch_result.duration.as_secs_f64(),
+                            failure_policy: format!("{:?}", orch_result.failure_policy),
+                            sessions: vec![],
+                            summary: OrchestrateRunSummary {
+                                total: 0,
+                                completed: 0,
+                                failed: 0,
+                                skipped: 0,
+                            },
+                            merge_report: None,
+                        };
+                        let json = serde_json::to_string(&response).map_err(|e| {
+                            McpError::internal_error(format!("serialization failed: {e}"), None)
+                        })?;
+                        Ok(CallToolResult::success(vec![Content::text(json)]))
+                    }
+                    Err(e) => Ok(domain_error(&e)),
+                };
+            }
+            OrchestratorMode::Dag => {} // fall through to existing DAG path
+        }
 
         // Wrap the sync orchestration + merge in spawn_blocking (D007).
         let result = tokio::task::spawn_blocking(move || {
@@ -6989,6 +7094,92 @@ cmd = "echo ok"
         assert!(
             result.is_error.unwrap_or(false),
             "should fail for missing manifest"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn orchestrate_run_mesh_skips_session_count_guard() {
+        // A single-session manifest with mode = "mesh" must NOT be rejected by
+        // the multi-session guard (which only applies to DAG mode).
+        let dir = create_project(r#"project_name = "mesh-test""#);
+        std::env::set_current_dir(dir.path()).unwrap();
+
+        // Write a single-session mesh manifest.
+        let manifest_content = r#"mode = "mesh"
+[[sessions]]
+spec = "auth"
+"#;
+        let manifest_path = dir.path().join("mesh.toml");
+        std::fs::write(&manifest_path, manifest_content).unwrap();
+
+        let server = AssayServer::new();
+        let result = server
+            .orchestrate_run(Parameters(OrchestrateRunParams {
+                manifest_path: manifest_path.to_string_lossy().to_string(),
+                timeout_secs: None,
+                failure_policy: None,
+                merge_strategy: None,
+                conflict_resolution: None,
+            }))
+            .await
+            .unwrap();
+
+        // The guard should NOT reject this — it will fail for other reasons
+        // (missing spec file), but NOT with the "must contain multiple sessions"
+        // error that the DAG guard produces.
+        let text = result
+            .content
+            .iter()
+            .filter_map(|c| match &c.raw {
+                RawContent::Text(t) => Some(t.text.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join("");
+        assert!(
+            !text.contains("must contain multiple sessions"),
+            "mesh mode should not trigger the DAG multi-session guard; got: {text}"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn orchestrate_run_gossip_skips_session_count_guard() {
+        let dir = create_project(r#"project_name = "gossip-test""#);
+        std::env::set_current_dir(dir.path()).unwrap();
+
+        let manifest_content = r#"mode = "gossip"
+[[sessions]]
+spec = "auth"
+"#;
+        let manifest_path = dir.path().join("gossip.toml");
+        std::fs::write(&manifest_path, manifest_content).unwrap();
+
+        let server = AssayServer::new();
+        let result = server
+            .orchestrate_run(Parameters(OrchestrateRunParams {
+                manifest_path: manifest_path.to_string_lossy().to_string(),
+                timeout_secs: None,
+                failure_policy: None,
+                merge_strategy: None,
+                conflict_resolution: None,
+            }))
+            .await
+            .unwrap();
+
+        let text = result
+            .content
+            .iter()
+            .filter_map(|c| match &c.raw {
+                RawContent::Text(t) => Some(t.text.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join("");
+        assert!(
+            !text.contains("must contain multiple sessions"),
+            "gossip mode should not trigger the DAG multi-session guard; got: {text}"
         );
     }
 

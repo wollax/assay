@@ -4,14 +4,14 @@
 
 ### R034 — OrchestratorMode selection
 - Class: core-capability
-- Status: active
+- Status: validated
 - Description: `RunManifest` has a top-level `mode` field (`dag` | `mesh` | `gossip`, default `dag`). The orchestration entry point dispatches to the appropriate executor based on mode. DAG mode preserves all existing behavior; Mesh and Gossip modes ignore `depends_on` with a warning.
 - Why it matters: Mode selection is the user-facing contract that determines coordination pattern — it must be stable, schema-locked, and backward-compatible before Mesh/Gossip executors are built
 - Source: user
 - Primary owning slice: M004/S01
 - Supporting slices: M004/S02, M004/S03
-- Validation: unmapped
-- Notes: Schema snapshot must be updated. Existing manifests without `mode` default to `dag`.
+- Validation: S01 — OrchestratorMode enum with schema snapshot locked; mode field on RunManifest with serde(default) backward-compatible; CLI and MCP dispatch routing exercised by unit tests; all 1222+ tests pass; just ready green
+- Notes: Schema snapshot updated and committed. Existing manifests without `mode` default to `dag`. Mesh/Gossip executors are stubs (full implementations in S02/S03).
 
 ### R035 — Mesh mode execution
 - Class: core-capability
@@ -461,7 +461,7 @@
 | R028 | quality-attribute | validated | M003/S02 | none | S02 |
 | R029 | failure-visibility | validated | M003/S02 | none | S02 |
 | R033 | anti-feature | out-of-scope | none | none | n/a |
-| R034 | core-capability | active | M004/S01 | M004/S02, M004/S03 | unmapped |
+| R034 | core-capability | validated | M004/S01 | M004/S02, M004/S03 | S01 |
 | R035 | core-capability | active | M004/S02 | none | unmapped |
 | R036 | core-capability | active | M004/S02 | none | unmapped |
 | R037 | core-capability | active | M004/S03 | none | unmapped |
@@ -469,8 +469,8 @@
 
 ## Coverage Summary
 
-- Active requirements: 5 (R034–R038)
-- Mapped to slices: 5
-- Validated: 27
+- Active requirements: 4 (R035–R038)
+- Mapped to slices: 4
+- Validated: 28 (R001–R029, R034)
 - Deferred: 3 (R025, R027 — with rationale)
 - Unmapped active requirements: 0

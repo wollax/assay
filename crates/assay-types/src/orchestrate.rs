@@ -309,6 +309,86 @@ impl Default for ConflictResolutionConfig {
     }
 }
 
+// ── Coordination mode types ───────────────────────────────────────────
+
+/// Coordination mode for multi-session orchestrated runs.
+///
+/// Selects the execution topology: the default DAG mode uses explicit
+/// `depends_on` edges; Mesh uses heartbeat-based peer coordination;
+/// Gossip uses periodic coordinator broadcast.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum OrchestratorMode {
+    /// Directed-acyclic-graph execution using explicit `depends_on` edges.
+    /// This is the default coordination mode.
+    #[default]
+    Dag,
+    /// Heartbeat-based peer mesh coordination.
+    Mesh,
+    /// Periodic gossip-based coordinator broadcast.
+    Gossip,
+}
+
+/// Configuration for Mesh coordination mode.
+///
+/// Controls the heartbeat and timeout thresholds used when `mode = "mesh"`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct MeshConfig {
+    /// Interval in seconds between heartbeat pings. Defaults to 5.
+    #[serde(default = "default_heartbeat_interval")]
+    pub heartbeat_interval_secs: u64,
+    /// Seconds without a heartbeat before a peer is considered suspect. Defaults to 10.
+    #[serde(default = "default_suspect_timeout")]
+    pub suspect_timeout_secs: u64,
+    /// Seconds without a heartbeat before a peer is considered dead. Defaults to 30.
+    #[serde(default = "default_dead_timeout")]
+    pub dead_timeout_secs: u64,
+}
+
+fn default_heartbeat_interval() -> u64 {
+    5
+}
+fn default_suspect_timeout() -> u64 {
+    10
+}
+fn default_dead_timeout() -> u64 {
+    30
+}
+
+impl Default for MeshConfig {
+    fn default() -> Self {
+        Self {
+            heartbeat_interval_secs: default_heartbeat_interval(),
+            suspect_timeout_secs: default_suspect_timeout(),
+            dead_timeout_secs: default_dead_timeout(),
+        }
+    }
+}
+
+/// Configuration for Gossip coordination mode.
+///
+/// Controls the coordinator broadcast interval used when `mode = "gossip"`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct GossipConfig {
+    /// Interval in seconds between coordinator gossip rounds. Defaults to 5.
+    #[serde(default = "default_coordinator_interval")]
+    pub coordinator_interval_secs: u64,
+}
+
+fn default_coordinator_interval() -> u64 {
+    5
+}
+
+impl Default for GossipConfig {
+    fn default() -> Self {
+        Self {
+            coordinator_interval_secs: default_coordinator_interval(),
+        }
+    }
+}
+
 // ── Schema registry submissions ──────────────────────────────────────
 
 inventory::submit! {
@@ -413,6 +493,27 @@ inventory::submit! {
     schema_registry::SchemaEntry {
         name: "conflict-resolution",
         generate: || schemars::schema_for!(ConflictResolution),
+    }
+}
+
+inventory::submit! {
+    schema_registry::SchemaEntry {
+        name: "orchestrator-mode",
+        generate: || schemars::schema_for!(OrchestratorMode),
+    }
+}
+
+inventory::submit! {
+    schema_registry::SchemaEntry {
+        name: "mesh-config",
+        generate: || schemars::schema_for!(MeshConfig),
+    }
+}
+
+inventory::submit! {
+    schema_registry::SchemaEntry {
+        name: "gossip-config",
+        generate: || schemars::schema_for!(GossipConfig),
     }
 }
 
@@ -757,6 +858,92 @@ mod tests {
         let json = r#"{"enabled":false,"model":"x","timeout_secs":10,"extra":1}"#;
         assert!(
             serde_json::from_str::<ConflictResolutionConfig>(json).is_err(),
+            "should reject unknown fields"
+        );
+    }
+
+    // ── OrchestratorMode tests ────────────────────────────────────────
+
+    #[test]
+    fn orchestrator_mode_default_is_dag() {
+        assert_eq!(OrchestratorMode::default(), OrchestratorMode::Dag);
+    }
+
+    #[test]
+    fn orchestrator_mode_serde_roundtrip() {
+        let modes = vec![
+            OrchestratorMode::Dag,
+            OrchestratorMode::Mesh,
+            OrchestratorMode::Gossip,
+        ];
+        for mode in &modes {
+            let json = serde_json::to_string(mode).unwrap();
+            let back: OrchestratorMode = serde_json::from_str(&json).unwrap();
+            assert_eq!(&back, mode);
+        }
+        // Verify snake_case serialization
+        assert_eq!(
+            serde_json::to_string(&OrchestratorMode::Dag).unwrap(),
+            "\"dag\""
+        );
+        assert_eq!(
+            serde_json::to_string(&OrchestratorMode::Mesh).unwrap(),
+            "\"mesh\""
+        );
+        assert_eq!(
+            serde_json::to_string(&OrchestratorMode::Gossip).unwrap(),
+            "\"gossip\""
+        );
+    }
+
+    // ── MeshConfig tests ──────────────────────────────────────────────
+
+    #[test]
+    fn mesh_config_default_values() {
+        let config = MeshConfig::default();
+        assert_eq!(config.heartbeat_interval_secs, 5);
+        assert_eq!(config.suspect_timeout_secs, 10);
+        assert_eq!(config.dead_timeout_secs, 30);
+    }
+
+    #[test]
+    fn mesh_config_serde_roundtrip() {
+        let config = MeshConfig::default();
+        let json = serde_json::to_string_pretty(&config).unwrap();
+        let back: MeshConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, config);
+    }
+
+    #[test]
+    fn mesh_config_deny_unknown_fields() {
+        let json = r#"{"heartbeat_interval_secs":5,"suspect_timeout_secs":10,"dead_timeout_secs":30,"extra":1}"#;
+        assert!(
+            serde_json::from_str::<MeshConfig>(json).is_err(),
+            "should reject unknown fields"
+        );
+    }
+
+    // ── GossipConfig tests ────────────────────────────────────────────
+
+    #[test]
+    fn gossip_config_default_values() {
+        let config = GossipConfig::default();
+        assert_eq!(config.coordinator_interval_secs, 5);
+    }
+
+    #[test]
+    fn gossip_config_serde_roundtrip() {
+        let config = GossipConfig::default();
+        let json = serde_json::to_string_pretty(&config).unwrap();
+        let back: GossipConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, config);
+    }
+
+    #[test]
+    fn gossip_config_deny_unknown_fields() {
+        let json = r#"{"coordinator_interval_secs":5,"extra":1}"#;
+        assert!(
+            serde_json::from_str::<GossipConfig>(json).is_err(),
             "should reject unknown fields"
         );
     }

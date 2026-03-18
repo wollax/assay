@@ -706,5 +706,8 @@ fn run_manifest_with_scoped_sessions_validates() {
                 depends_on: vec!["auth".to_string()],
             },
         ],
+        mode: assay_types::orchestrate::OrchestratorMode::Dag,
+        mesh_config: None,
+        gossip_config: None,
     });
 }

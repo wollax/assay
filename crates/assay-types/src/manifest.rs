@@ -11,6 +11,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::harness::{HookContract, PromptLayer, SettingsOverride};
+use crate::orchestrate::{GossipConfig, MeshConfig, OrchestratorMode};
 
 /// Top-level run manifest declaring one or more agent sessions.
 ///
@@ -36,12 +37,35 @@ pub struct RunManifest {
     /// Maps to `[[sessions]]` in TOML. At least one session is expected,
     /// but emptiness is a validation concern, not a deserialization concern.
     pub sessions: Vec<ManifestSession>,
+
+    /// Coordination mode for this run. Defaults to `dag` (existing behavior).
+    #[serde(default)]
+    pub mode: OrchestratorMode,
+
+    /// Mesh mode configuration. Ignored unless `mode = "mesh"`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mesh_config: Option<MeshConfig>,
+
+    /// Gossip mode configuration. Ignored unless `mode = "gossip"`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gossip_config: Option<GossipConfig>,
 }
 
 inventory::submit! {
     crate::schema_registry::SchemaEntry {
         name: "run-manifest",
         generate: || schemars::schema_for!(RunManifest),
+    }
+}
+
+impl Default for RunManifest {
+    fn default() -> Self {
+        Self {
+            sessions: vec![],
+            mode: OrchestratorMode::Dag,
+            mesh_config: None,
+            gossip_config: None,
+        }
     }
 }
 
@@ -150,9 +174,79 @@ mod tests {
         };
         let manifest = RunManifest {
             sessions: vec![session],
+            mode: OrchestratorMode::Dag,
+            mesh_config: None,
+            gossip_config: None,
         };
         let toml_out = toml::to_string(&manifest).unwrap();
         assert!(!toml_out.contains("file_scope"));
         assert!(!toml_out.contains("shared_files"));
+    }
+
+    #[test]
+    fn manifest_without_mode_defaults_to_dag() {
+        let toml_str = "[[sessions]]\nspec = \"auth\"\n";
+        let manifest: RunManifest = toml::from_str(toml_str).unwrap();
+        assert_eq!(manifest.mode, OrchestratorMode::Dag);
+        assert!(manifest.mesh_config.is_none());
+        assert!(manifest.gossip_config.is_none());
+    }
+
+    #[test]
+    fn manifest_with_mode_mesh_parses() {
+        let toml_str = "mode = \"mesh\"\n[[sessions]]\nspec = \"auth\"\n";
+        let manifest: RunManifest = toml::from_str(toml_str).unwrap();
+        assert_eq!(manifest.mode, OrchestratorMode::Mesh);
+    }
+
+    #[test]
+    fn manifest_with_mode_gossip_parses() {
+        let toml_str = "mode = \"gossip\"\n[[sessions]]\nspec = \"auth\"\n";
+        let manifest: RunManifest = toml::from_str(toml_str).unwrap();
+        assert_eq!(manifest.mode, OrchestratorMode::Gossip);
+    }
+
+    #[test]
+    fn manifest_mode_round_trip() {
+        let manifest = RunManifest {
+            sessions: vec![ManifestSession {
+                spec: "auth".to_string(),
+                name: None,
+                settings: None,
+                hooks: vec![],
+                prompt_layers: vec![],
+                file_scope: vec![],
+                shared_files: vec![],
+                depends_on: vec![],
+            }],
+            mode: OrchestratorMode::Dag,
+            mesh_config: None,
+            gossip_config: None,
+        };
+        let toml_out = toml::to_string(&manifest).unwrap();
+        let back: RunManifest = toml::from_str(&toml_out).unwrap();
+        assert_eq!(back.mode, OrchestratorMode::Dag);
+    }
+
+    #[test]
+    fn manifest_mesh_config_omitted_when_none() {
+        let manifest = RunManifest {
+            sessions: vec![ManifestSession {
+                spec: "auth".to_string(),
+                name: None,
+                settings: None,
+                hooks: vec![],
+                prompt_layers: vec![],
+                file_scope: vec![],
+                shared_files: vec![],
+                depends_on: vec![],
+            }],
+            mode: OrchestratorMode::Mesh,
+            mesh_config: None,
+            gossip_config: None,
+        };
+        let toml_out = toml::to_string(&manifest).unwrap();
+        assert!(!toml_out.contains("mesh_config"));
+        assert!(!toml_out.contains("gossip_config"));
     }
 }

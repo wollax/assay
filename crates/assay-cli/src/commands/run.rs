@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use clap::Parser;
 use serde::Serialize;
 
+use assay_types::OrchestratorMode;
 use assay_types::orchestrate::{FailurePolicy, MergeStrategy};
 
 use super::{assay_dir, project_root};
@@ -214,6 +215,13 @@ pub(crate) fn execute(cmd: &RunCommand) -> anyhow::Result<i32> {
         timeout_secs: cmd.timeout,
         base_branch: cmd.base_branch.clone(),
     };
+
+    // Route based on mode first, then fall through to multi-session detection.
+    match manifest.mode {
+        OrchestratorMode::Mesh => return execute_mesh(cmd, &manifest, &pipeline_config),
+        OrchestratorMode::Gossip => return execute_gossip(cmd, &manifest, &pipeline_config),
+        OrchestratorMode::Dag => {} // fall through to existing logic
+    }
 
     // Route based on multi-session detection
     if needs_orchestration(&manifest) {
@@ -573,6 +581,158 @@ fn execute_orchestrated(
     }
 }
 
+// ── Mesh / Gossip stubs ───────────────────────────────────────────────
+
+/// Mesh-mode path: delegates to `run_mesh()` stub, returns empty result.
+fn execute_mesh(
+    cmd: &RunCommand,
+    manifest: &assay_types::RunManifest,
+    pipeline_config: &assay_core::pipeline::PipelineConfig,
+) -> anyhow::Result<i32> {
+    use assay_core::orchestrate::executor::OrchestratorConfig;
+
+    eprintln!(
+        "Mesh mode manifest ({} session(s)) — routing to mesh executor stub",
+        manifest.sessions.len()
+    );
+
+    let orch_config = OrchestratorConfig {
+        max_concurrency: 8,
+        failure_policy: cmd.failure_policy,
+    };
+
+    // No real session runner is invoked by the stub.
+    let session_runner = |_session: &assay_types::ManifestSession,
+                          _pipe_cfg: &assay_core::pipeline::PipelineConfig|
+     -> Result<
+        assay_core::pipeline::PipelineResult,
+        assay_core::pipeline::PipelineError,
+    > { unreachable!("mesh stub does not invoke session_runner") };
+
+    let orch_result = assay_core::orchestrate::mesh::run_mesh(
+        manifest,
+        &orch_config,
+        pipeline_config,
+        &session_runner,
+    )
+    .map_err(|e| anyhow::anyhow!("Mesh execution failed: {e}"))?;
+
+    let empty_merge_report = assay_types::MergeReport {
+        sessions_merged: 0,
+        sessions_skipped: 0,
+        conflict_skipped: 0,
+        aborted: 0,
+        plan: assay_types::MergePlan {
+            strategy: assay_types::MergeStrategy::CompletionTime,
+            entries: vec![],
+        },
+        results: vec![],
+        duration_secs: 0.0,
+        resolutions: vec![],
+    };
+    let response = OrchestrationResponse {
+        run_id: orch_result.run_id,
+        sessions: vec![],
+        merge_report: empty_merge_report,
+        summary: OrchestrationSummary {
+            total: 0,
+            completed: 0,
+            failed: 0,
+            skipped: 0,
+            sessions_merged: 0,
+            merge_conflicts: 0,
+            duration_secs: orch_result.duration.as_secs_f64(),
+        },
+    };
+
+    if cmd.json {
+        let json = serde_json::to_string_pretty(&response)?;
+        println!("{json}");
+    } else {
+        eprintln!(
+            "Mesh stub: run_id={} (no sessions executed)",
+            response.run_id
+        );
+    }
+
+    Ok(0)
+}
+
+/// Gossip-mode path: delegates to `run_gossip()` stub, returns empty result.
+fn execute_gossip(
+    cmd: &RunCommand,
+    manifest: &assay_types::RunManifest,
+    pipeline_config: &assay_core::pipeline::PipelineConfig,
+) -> anyhow::Result<i32> {
+    use assay_core::orchestrate::executor::OrchestratorConfig;
+
+    eprintln!(
+        "Gossip mode manifest ({} session(s)) — routing to gossip executor stub",
+        manifest.sessions.len()
+    );
+
+    let orch_config = OrchestratorConfig {
+        max_concurrency: 8,
+        failure_policy: cmd.failure_policy,
+    };
+
+    // No real session runner is invoked by the stub.
+    let session_runner = |_session: &assay_types::ManifestSession,
+                          _pipe_cfg: &assay_core::pipeline::PipelineConfig|
+     -> Result<
+        assay_core::pipeline::PipelineResult,
+        assay_core::pipeline::PipelineError,
+    > { unreachable!("gossip stub does not invoke session_runner") };
+
+    let orch_result = assay_core::orchestrate::gossip::run_gossip(
+        manifest,
+        &orch_config,
+        pipeline_config,
+        &session_runner,
+    )
+    .map_err(|e| anyhow::anyhow!("Gossip execution failed: {e}"))?;
+
+    let empty_merge_report = assay_types::MergeReport {
+        sessions_merged: 0,
+        sessions_skipped: 0,
+        conflict_skipped: 0,
+        aborted: 0,
+        plan: assay_types::MergePlan {
+            strategy: assay_types::MergeStrategy::CompletionTime,
+            entries: vec![],
+        },
+        results: vec![],
+        duration_secs: 0.0,
+        resolutions: vec![],
+    };
+    let response = OrchestrationResponse {
+        run_id: orch_result.run_id,
+        sessions: vec![],
+        merge_report: empty_merge_report,
+        summary: OrchestrationSummary {
+            total: 0,
+            completed: 0,
+            failed: 0,
+            skipped: 0,
+            sessions_merged: 0,
+            merge_conflicts: 0,
+            duration_secs: orch_result.duration.as_secs_f64(),
+        },
+    };
+
+    if cmd.json {
+        let json = serde_json::to_string_pretty(&response)?;
+        println!("{json}");
+    } else {
+        eprintln!(
+            "Gossip stub: run_id={} (no sessions executed)",
+            response.run_id
+        );
+    }
+
+    Ok(0)
+}
+
 // ── Tests ────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -766,6 +926,7 @@ mod tests {
                     depends_on: deps.into_iter().map(|d| d.to_string()).collect(),
                 })
                 .collect(),
+            ..Default::default()
         }
     }
 
@@ -796,6 +957,51 @@ mod tests {
             ("db", vec!["auth"]),
             ("api", vec!["auth", "db"]),
         ]);
+        assert!(needs_orchestration(&manifest));
+    }
+
+    // ── Mode dispatch tests ──────────────────────────────────────────
+
+    fn make_manifest_with_mode(
+        mode: OrchestratorMode,
+        sessions: Vec<(&str, Vec<&str>)>,
+    ) -> assay_types::RunManifest {
+        let mut m = make_manifest(sessions);
+        m.mode = mode;
+        m
+    }
+
+    #[test]
+    fn mode_mesh_bypasses_needs_orchestration() {
+        // A single-session Mesh manifest: needs_orchestration returns false
+        // (no DAG reason to orchestrate), but the mode match routes to execute_mesh
+        // before the needs_orchestration check runs.
+        let manifest = make_manifest_with_mode(OrchestratorMode::Mesh, vec![("auth", vec![])]);
+        // DAG orchestration check: single session, no deps → false.
+        assert!(
+            !needs_orchestration(&manifest),
+            "single-session no-dep manifest does not need DAG orchestration"
+        );
+        // The mode is Mesh, so the match arm catches it before needs_orchestration.
+        assert_eq!(manifest.mode, OrchestratorMode::Mesh);
+        // This proves the routing decision: mode == Mesh → execute_mesh, not execute_sequential.
+    }
+
+    #[test]
+    fn mode_gossip_bypasses_needs_orchestration() {
+        let manifest = make_manifest_with_mode(OrchestratorMode::Gossip, vec![("auth", vec![])]);
+        assert!(!needs_orchestration(&manifest));
+        assert_eq!(manifest.mode, OrchestratorMode::Gossip);
+    }
+
+    #[test]
+    fn mode_dag_falls_through_to_needs_orchestration() {
+        let manifest = make_manifest_with_mode(
+            OrchestratorMode::Dag,
+            vec![("auth", vec![]), ("db", vec![])],
+        );
+        // Dag mode falls through; multi-session triggers needs_orchestration.
+        assert_eq!(manifest.mode, OrchestratorMode::Dag);
         assert!(needs_orchestration(&manifest));
     }
 

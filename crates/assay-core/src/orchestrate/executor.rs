@@ -515,6 +515,7 @@ mod tests {
                     depends_on: deps.into_iter().map(|d| d.to_string()).collect(),
                 })
                 .collect(),
+            ..Default::default()
         }
     }
 

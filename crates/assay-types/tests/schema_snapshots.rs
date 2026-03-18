@@ -357,3 +357,24 @@ fn conflict_resolution_schema_snapshot() {
     let schema = schemars::schema_for!(assay_types::ConflictResolution);
     assert_json_snapshot!("conflict-resolution-schema", schema.to_value());
 }
+
+#[cfg(feature = "orchestrate")]
+#[test]
+fn orchestrator_mode_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::OrchestratorMode);
+    assert_json_snapshot!("orchestrator-mode-schema", schema.to_value());
+}
+
+#[cfg(feature = "orchestrate")]
+#[test]
+fn mesh_config_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::MeshConfig);
+    assert_json_snapshot!("mesh-config-schema", schema.to_value());
+}
+
+#[cfg(feature = "orchestrate")]
+#[test]
+fn gossip_config_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::GossipConfig);
+    assert_json_snapshot!("gossip-config-schema", schema.to_value());
+}
