@@ -44,3 +44,4 @@ See `.kata/REQUIREMENTS.md` for the explicit capability contract, requirement st
 - [x] M001: Single-Agent Harness — manifest → worktree → agent launch → gate → merge propose (complete, 19 requirements validated)
 - [x] M002: Multi-Agent Orchestration — DAG executor, parallel sessions, sequential merge, multi-adapter harness, scope enforcement, MCP tools, end-to-end integration (complete, 24 requirements validated, 1183 tests)
 - [x] M003: Conflict Resolution & Polish — AI conflict resolution, audit trail, post-resolution validation, MergeReport persistence, orchestrate_status extension (complete, 27 requirements validated, 1230+ tests)
+- [ ] M004: Coordination Modes — Mesh and Gossip — mode field on RunManifest, Mesh (parallel + roster + file-based peer messaging), Gossip (parallel + coordinator knowledge synthesis)

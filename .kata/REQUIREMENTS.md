@@ -2,6 +2,61 @@
 
 ## Active
 
+### R034 — OrchestratorMode selection
+- Class: core-capability
+- Status: active
+- Description: `RunManifest` has a top-level `mode` field (`dag` | `mesh` | `gossip`, default `dag`). The orchestration entry point dispatches to the appropriate executor based on mode. DAG mode preserves all existing behavior; Mesh and Gossip modes ignore `depends_on` with a warning.
+- Why it matters: Mode selection is the user-facing contract that determines coordination pattern — it must be stable, schema-locked, and backward-compatible before Mesh/Gossip executors are built
+- Source: user
+- Primary owning slice: M004/S01
+- Supporting slices: M004/S02, M004/S03
+- Validation: unmapped
+- Notes: Schema snapshot must be updated. Existing manifests without `mode` default to `dag`.
+
+### R035 — Mesh mode execution
+- Class: core-capability
+- Status: active
+- Description: In Mesh mode, all sessions launch in parallel (no dependency tiers). Each session receives a roster prompt layer listing peer session names and their inbox paths, enabling agents to know who else is running.
+- Why it matters: Mesh semantics require awareness of peers — the roster is the minimal contract that gives agents the information needed to decide whether to message peers
+- Source: user
+- Primary owning slice: M004/S02
+- Supporting slices: none
+- Validation: unmapped
+- Notes: Roster is injected as a PromptLayer at session launch time. No depends_on processing in mesh mode.
+
+### R036 — Mesh peer messaging
+- Class: core-capability
+- Status: active
+- Description: Sessions in Mesh mode can write message files to their outbox directory (`.assay/orchestrator/<run_id>/mesh/<name>/outbox/`). The orchestrator polls outboxes and routes messages to target sessions' inbox directories. SWIM-inspired membership tracks alive/suspect/dead states via heartbeat files.
+- Why it matters: Peer messaging is the distinctive behavior of Mesh mode — without it, Mesh is just parallel DAG without deps, which is less useful
+- Source: user
+- Primary owning slice: M004/S02
+- Supporting slices: none
+- Validation: unmapped
+- Notes: Message routing is file-based (no sockets/channels). Heartbeat polling intervals and suspect/dead timeouts are configurable in `MeshConfig` on RunManifest.
+
+### R037 — Gossip mode execution
+- Class: core-capability
+- Status: active
+- Description: In Gossip mode, all sessions launch in parallel (no dependency tiers). A coordinator thread watches for session completions and updates a knowledge manifest (`.assay/orchestrator/<run_id>/gossip/knowledge.json`) with gate results, pass/fail summary, and changed files from each completed session.
+- Why it matters: Gossip enables cross-pollination of findings without explicit inter-session communication — the coordinator synthesizes on behalf of all sessions
+- Source: user
+- Primary owning slice: M004/S03
+- Supporting slices: none
+- Validation: unmapped
+- Notes: Sessions run fully independently; knowledge manifest is updated post-completion by the coordinator. No mid-run injection needed — the manifest path is injected at launch as a readable path.
+
+### R038 — Gossip knowledge manifest injection
+- Class: core-capability
+- Status: active
+- Description: At session launch in Gossip mode, each session's prompt layers include the knowledge manifest path. As sessions complete, the coordinator atomically updates the manifest so still-running sessions can read it at any point during their execution.
+- Why it matters: The manifest injection closes the loop — agents can read what other agents have already done, enabling genuine cross-pollination of results
+- Source: user
+- Primary owning slice: M004/S03
+- Supporting slices: none
+- Validation: unmapped
+- Notes: Knowledge manifest is a JSON file with a stable schema (schema snapshot locked). Session reads it by path at any point during execution — no push mechanism needed.
+
 ### R001 — AgentSession persistence to disk
 - Class: core-capability
 - Status: validated
@@ -406,11 +461,16 @@
 | R028 | quality-attribute | validated | M003/S02 | none | S02 |
 | R029 | failure-visibility | validated | M003/S02 | none | S02 |
 | R033 | anti-feature | out-of-scope | none | none | n/a |
+| R034 | core-capability | active | M004/S01 | M004/S02, M004/S03 | unmapped |
+| R035 | core-capability | active | M004/S02 | none | unmapped |
+| R036 | core-capability | active | M004/S02 | none | unmapped |
+| R037 | core-capability | active | M004/S03 | none | unmapped |
+| R038 | core-capability | active | M004/S03 | none | unmapped |
 
 ## Coverage Summary
 
-- Active requirements: 0
-- Mapped to slices: 0
-- Validated: 27 (R028, R029 validated by S02)
+- Active requirements: 5 (R034–R038)
+- Mapped to slices: 5
+- Validated: 27
 - Deferred: 3 (R025, R027 — with rationale)
 - Unmapped active requirements: 0
