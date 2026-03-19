@@ -2,11 +2,11 @@
 
 **Active Milestone:** M005 — Spec-Driven Development Core
 **Active Slice:** S01 — Milestone & Chunk Type Foundation
-**Active Task:** T01 — Define Milestone types in assay-types and extend GatesSpec
-**Phase:** Planned — ready to execute
+**Active Task:** T02 — Milestone file I/O in assay-core
+**Phase:** Executing
 **Last Updated:** 2026-03-19
 **Requirements Status:** 21 active (R039–R059) · 32 validated · 2 deferred · 4 out of scope
-**Test Count:** 1271 (all passing — M004 complete)
+**Test Count:** 1283 (all passing — T01 complete)
 
 ## Completed Milestones
 
@@ -45,8 +45,8 @@ None.
 
 ## Next Action
 
-Execute M005/S01/T01: Define Milestone types in assay-types and extend GatesSpec.
+Execute M005/S01/T02: Milestone file I/O in assay-core.
 
-Read `.kata/milestones/M005/slices/S01/S01-PLAN.md` for full task list and verification criteria. Branch already exists: `kata/assay/M005/S01`.
+T01 ✅ complete — Milestone/ChunkRef/MilestoneStatus types in assay-types, GatesSpec extended with milestone/order, all snapshots accepted, 1283 tests green.
 
-T01: `crates/assay-types/src/gates_spec.rs` (add milestone/order fields) + `crates/assay-types/src/milestone.rs` (new — Milestone, ChunkRef, MilestoneStatus) + schema snapshots. Run `cargo insta review` to accept new snapshots. Verify `cargo test -p assay-types` green including `gates_spec_rejects_unknown_fields`.
+T02: Create `crates/assay-core/src/milestone/` module with `milestone_load`, `milestone_save`, `milestone_scan` functions. Write `cargo test -p assay-core --test milestone_io` integration tests. Branch: `kata/root/M005/S01`.
