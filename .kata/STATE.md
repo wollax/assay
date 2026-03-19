@@ -2,8 +2,8 @@
 
 **Active Milestone:** M005 — Spec-Driven Development Core
 **Active Slice:** S02 — Development Cycle State Machine
-**Active Task:** (none — S02 planning next)
-**Phase:** Planning
+**Active Task:** T01 — Add `completed_chunks` to Milestone and write failing cycle integration tests
+**Phase:** Executing
 **Last Updated:** 2026-03-19
 **Requirements Status:** 18 active (R042–R059) · 35 validated (R039–R041 newly validated) · 2 deferred · 4 out of scope
 **Test Count:** 1293 (all passing — S01 complete)
@@ -26,12 +26,11 @@
 
 ## Recent Decisions
 
-- D062: Milestone persistence as TOML files in `.assay/milestones/` (not JSON)
-- D063: Chunk = spec with `milestone`/`order` metadata fields on GatesSpec (backward-compat)
-- D064: `assay-core::milestone` module mirrors `assay-core::spec` structure
-- D065: PR creation shells out to `gh` CLI (consistent with D008 git-CLI-first)
+- D071: CycleStatus lives in assay-core::milestone::cycle (derived view, not persisted)
+- D072: cycle_advance CLI error exits code 1 via eprintln, not anyhow propagation
+- D073: ChunkStatusResponse is a local struct in server.rs (D051 pattern)
+- D069: Milestone.slug stored in TOML body (filename is lookup key, TOML is authoritative)
 - D067: New MCP tools use `milestone_`, `cycle_`, `spec_create`, `pr_create` prefixes
-- D069: `Milestone.slug` stored in TOML body (filename is lookup key, TOML is authoritative)
 
 ## Blockers
 
@@ -39,10 +38,4 @@ None.
 
 ## Next Action
 
-Plan and execute M005/S02: Development Cycle State Machine.
-
-S01 ✅ complete — Milestone/ChunkRef/MilestoneStatus types, milestone I/O, milestone_list/milestone_get MCP tools (24 total), assay milestone list CLI, just ready green, 1293 tests.
-
-S02 depends on S01 (done). S02 adds: MilestoneStatus state machine transition guards in assay-core, cycle_status/cycle_advance/chunk_status MCP tools, `assay milestone status` / `assay milestone advance` CLI subcommands. Branch: `kata/root/M005/S02`.
-
-Note: MCP tool count is now 24. S02 tests that assert tool count must be updated when adding new tools.
+Execute T01: Add `completed_chunks: Vec<String>` to `Milestone` in `crates/assay-types/src/milestone.rs` (serde default + skip_serializing_if), update struct literals in tests, run `INSTA_UPDATE=always cargo test -p assay-types` to regenerate schema snapshot, then create `crates/assay-core/tests/cycle.rs` with all 10 integration test bodies fully written.
