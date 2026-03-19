@@ -95,7 +95,7 @@ Tests:
   - Verify: `cargo test -p assay-mcp -- cycle` passes 3 tests; `cargo test --workspace` green
   - Done when: `cycle_status`, `cycle_advance`, `chunk_status` appear in `tool_router.list_all()`; all 3 presence tests pass; existing 4 milestone tool tests still pass
 
-- [ ] **T04: Add `assay milestone status` and `assay milestone advance` CLI subcommands** `est:30m`
+- [x] **T04: Add `assay milestone status` and `assay milestone advance` CLI subcommands** `est:30m`
   - Why: Makes the cycle state machine accessible from the CLI; completes the CLI surface for R043/R044
   - Files: `crates/assay-cli/src/commands/milestone.rs`
   - Do: (1) Add `Status` and `Advance { milestone_slug: Option<String> }` variants to `MilestoneCommand`; (2) Add arms in `handle()`; (3) Implement `milestone_status_cmd()` — call `milestone_scan`, filter to `InProgress`, for each milestone: print header `MILESTONE: <slug> (<status>)`, then for each chunk print `  [x] <slug>  (complete)` or `  [ ] <slug>  (active)` based on `completed_chunks`; if no InProgress milestones print "No active milestones."; (4) Implement `milestone_advance_cmd(milestone_slug: Option<String>)` — resolve `project_root()`, compute `specs_dir` as `project_root.join(".assay/specs")`, `working_dir` = `project_root`, call `assay_core::milestone::cycle_advance(&assay_dir, &specs_dir, &working_dir, milestone_slug.as_deref(), None)`, on Ok print summary, on Err print descriptive error and return exit code 1; (5) Add test `milestone_status_no_milestones` (empty .assay dir, expect "No active milestones."); add test `milestone_advance_no_active_milestone` (no milestones → advance exits with error)

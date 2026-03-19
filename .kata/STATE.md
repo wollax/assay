@@ -1,12 +1,12 @@
 # Kata State
 
 **Active Milestone:** M005 — Spec-Driven Development Core
-**Active Slice:** S02 — Development Cycle State Machine
-**Active Task:** T04 — Add `assay milestone status` and `assay milestone advance` CLI subcommands
-**Phase:** Executing
+**Active Slice:** S02 — Development Cycle State Machine (COMPLETE)
+**Active Task:** None — all T01–T04 complete
+**Phase:** Summarizing
 **Last Updated:** 2026-03-19
 **Requirements Status:** 18 active (R042–R059) · 35 validated (R039–R041 newly validated) · 2 deferred · 4 out of scope
-**Test Count:** 1293 (all passing — S01 complete)
+**Test Count:** ~1293+ (all passing)
 
 ## Completed Milestones
 
@@ -38,4 +38,4 @@ None.
 
 ## Next Action
 
-Execute T04: Add `assay milestone status` and `assay milestone advance` CLI subcommands in `crates/assay-cli/src/commands/milestone.rs`. Run `cargo test -p assay-cli -- milestone` — 2+ tests must pass. Then run `just ready` to confirm all slice verification passes.
+S02 all tasks complete (T01–T04). Write S02-SUMMARY.md, mark S02 done in M005-ROADMAP.md, then begin S03: Guided Authoring Wizard.
