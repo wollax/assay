@@ -1,0 +1,7 @@
+---
+source: crates/assay-harness/src/opencode.rs
+expression: "args.join(\"\\n\")"
+---
+run
+--format
+json

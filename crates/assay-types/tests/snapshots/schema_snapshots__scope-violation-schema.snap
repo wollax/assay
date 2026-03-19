@@ -1,0 +1,47 @@
+---
+source: crates/assay-types/tests/schema_snapshots.rs
+expression: schema.to_value()
+---
+{
+  "$defs": {
+    "ScopeViolationType": {
+      "description": "Type of scope violation detected during enforcement.\n\nUsed by the harness to classify file-access violations so agents and\nhumans can distinguish between out-of-scope writes and shared-file\nconflicts in multi-agent sessions.",
+      "oneOf": [
+        {
+          "const": "out-of-scope",
+          "description": "File is outside the session's declared `file_scope` globs.",
+          "type": "string"
+        },
+        {
+          "const": "shared-file-conflict",
+          "description": "File matches a `shared_files` glob claimed by another session.",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "A single scope violation detected during enforcement.\n\nCarries the file path, violation category, and the glob pattern that\ntriggered the violation, enabling actionable diagnostics.",
+  "properties": {
+    "file": {
+      "description": "Path of the file that violated scope rules.",
+      "type": "string"
+    },
+    "pattern": {
+      "description": "The glob pattern that matched (or failed to match) this file.",
+      "type": "string"
+    },
+    "violation_type": {
+      "$ref": "#/$defs/ScopeViolationType",
+      "description": "Category of the violation."
+    }
+  },
+  "required": [
+    "file",
+    "violation_type",
+    "pattern"
+  ],
+  "title": "ScopeViolation",
+  "type": "object"
+}

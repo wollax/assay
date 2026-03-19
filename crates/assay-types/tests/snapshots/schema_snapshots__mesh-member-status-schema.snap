@@ -1,0 +1,60 @@
+---
+source: crates/assay-types/tests/schema_snapshots.rs
+expression: schema.to_value()
+---
+{
+  "$defs": {
+    "MeshMemberState": {
+      "description": "SWIM-inspired membership state for a single peer in Mesh mode.\n\nTransitions: `Alive` → `Suspect` (heartbeat missed) → `Dead` (timeout exceeded).\n`Completed` distinguishes a normal graceful exit from a crash (`Dead`).",
+      "oneOf": [
+        {
+          "const": "alive",
+          "description": "Peer is actively sending heartbeats.",
+          "type": "string"
+        },
+        {
+          "const": "suspect",
+          "description": "Heartbeat missed; peer may be slow or partitioned.",
+          "type": "string"
+        },
+        {
+          "const": "dead",
+          "description": "Heartbeat timed out; peer is presumed crashed.",
+          "type": "string"
+        },
+        {
+          "const": "completed",
+          "description": "Peer exited normally (sent a completed sentinel).",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Per-member status snapshot for Mesh mode membership tracking.\n\nPersisted as part of [`MeshStatus`] inside [`OrchestratorStatus`].",
+  "properties": {
+    "last_heartbeat_at": {
+      "description": "Timestamp of the most recent heartbeat received from this peer.",
+      "format": "date-time",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "name": {
+      "description": "Session name of this peer.",
+      "type": "string"
+    },
+    "state": {
+      "$ref": "#/$defs/MeshMemberState",
+      "description": "Current SWIM-inspired membership state."
+    }
+  },
+  "required": [
+    "name",
+    "state"
+  ],
+  "title": "MeshMemberStatus",
+  "type": "object"
+}

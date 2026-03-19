@@ -1,0 +1,82 @@
+---
+source: crates/assay-types/tests/schema_snapshots.rs
+expression: schema.to_value()
+---
+{
+  "$defs": {
+    "KnowledgeEntry": {
+      "additionalProperties": false,
+      "description": "Single entry in the gossip knowledge manifest for a completed session.\n\nWritten by the coordinator thread into\n`.assay/orchestrator/<run_id>/gossip/knowledge.json` after each session\ncompletes. Readable via `cat .assay/orchestrator/<run_id>/gossip/knowledge.json | jq .entries`.",
+      "properties": {
+        "changed_files": {
+          "description": "Files changed during this session (omitted if empty).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "completed_at": {
+          "description": "UTC timestamp when this session completed.",
+          "format": "date-time",
+          "type": "string"
+        },
+        "gate_fail_count": {
+          "description": "Number of gates that failed in this session.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "gate_pass_count": {
+          "description": "Number of gates that passed in this session.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "session_name": {
+          "description": "Session name that produced this entry.",
+          "type": "string"
+        },
+        "spec": {
+          "description": "Spec file path used for this session.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "session_name",
+        "spec",
+        "gate_pass_count",
+        "gate_fail_count",
+        "completed_at"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Gossip coordinator's knowledge manifest.\n\nPersisted to `.assay/orchestrator/<run_id>/gossip/knowledge.json` after\neach coordinator synthesis round. All entries are cumulative — later\nentries for the same session name replace earlier ones.",
+  "properties": {
+    "entries": {
+      "description": "Ordered list of completed-session knowledge entries.",
+      "items": {
+        "$ref": "#/$defs/KnowledgeEntry"
+      },
+      "type": "array"
+    },
+    "last_updated_at": {
+      "description": "UTC timestamp of the most recent manifest write.",
+      "format": "date-time",
+      "type": "string"
+    },
+    "run_id": {
+      "description": "Unique identifier for the orchestrated run that owns this manifest.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "run_id",
+    "entries",
+    "last_updated_at"
+  ],
+  "title": "KnowledgeManifest",
+  "type": "object"
+}

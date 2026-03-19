@@ -2,6 +2,7 @@ use std::path::PathBuf;
 use thiserror::Error;
 
 use crate::config::ConfigError;
+use crate::manifest::ManifestError;
 use crate::spec::SpecError;
 
 /// Errors from the evaluator subprocess.
@@ -98,6 +99,24 @@ pub enum AssayError {
         path: PathBuf,
         /// All validation errors found.
         errors: Vec<ConfigError>,
+    },
+
+    /// Manifest file parsing failed (invalid TOML or schema mismatch).
+    #[error("parsing manifest `{path}`: {message}")]
+    ManifestParse {
+        /// The manifest file that failed to parse.
+        path: PathBuf,
+        /// The parse error message (includes line/column caret-pointer).
+        message: String,
+    },
+
+    /// Manifest validation failed (structurally valid TOML but semantically invalid).
+    #[error("invalid manifest `{path}`:\n{}", .errors.iter().map(|e| format!("  - {e}")).collect::<Vec<_>>().join("\n"))]
+    ManifestValidation {
+        /// The manifest file that failed validation.
+        path: PathBuf,
+        /// All validation errors found.
+        errors: Vec<ManifestError>,
     },
 
     /// Init refused because `.assay/` already exists.
@@ -316,6 +335,21 @@ pub enum AssayError {
         exit_code: Option<i32>,
     },
 
+    /// Worktree has an active session for this spec — cannot create a second.
+    ///
+    /// Returned by `create()` when an existing worktree for the same spec
+    /// has a linked, non-terminal work session. The user should complete or
+    /// abandon the existing session, then clean up the worktree before retrying.
+    #[error(
+        "spec `{spec_slug}` already has an active worktree at `{existing_path}`. Complete or abandon the existing session, then run cleanup before retrying."
+    )]
+    WorktreeCollision {
+        /// The spec slug that already has an active worktree.
+        spec_slug: String,
+        /// The path of the existing worktree with an active session.
+        existing_path: PathBuf,
+    },
+
     /// Worktree already exists for this spec.
     #[error("worktree already exists for spec `{spec_slug}` at {path}")]
     WorktreeExists {
@@ -346,6 +380,24 @@ pub enum AssayError {
         message: String,
     },
 
+    /// A `git merge --no-ff` execution failed.
+    #[error("merge execute failed for branch `{branch}`: {message}")]
+    MergeExecuteError {
+        /// The branch that was being merged.
+        branch: String,
+        /// Files involved in the conflict (empty if not a conflict failure).
+        conflicting_files: Vec<String>,
+        /// Description of the failure.
+        message: String,
+    },
+
+    /// Merge runner pre-flight or sequencing error.
+    #[error("merge runner error: {message}")]
+    MergeRunnerError {
+        /// Description of the failure.
+        message: String,
+    },
+
     /// Context budgeting failed (cupel pipeline or budget construction error).
     #[error("context budgeting failed: {source}")]
     ContextBudget {
@@ -369,6 +421,25 @@ pub enum AssayError {
         source: EvaluatorError,
     },
 
+    /// Dependency graph contains a cycle.
+    ///
+    /// The `sessions` field names the sessions that participate in the cycle,
+    /// enabling actionable diagnostics.
+    #[cfg(feature = "orchestrate")]
+    #[error("dependency cycle detected among sessions: {}", sessions.join(", "))]
+    DagCycle {
+        /// Effective names of sessions involved in the cycle.
+        sessions: Vec<String>,
+    },
+
+    /// Dependency graph validation failed (missing refs, self-deps, duplicates).
+    #[cfg(feature = "orchestrate")]
+    #[error("dependency graph validation failed:\n{}", .errors.iter().map(|e| format!("  - {e}")).collect::<Vec<_>>().join("\n"))]
+    DagValidation {
+        /// All validation errors found during graph construction.
+        errors: Vec<ManifestError>,
+    },
+
     /// WorkSession transition error (invalid phase transition).
     #[error("work session `{session_id}` invalid transition: {from} -> {to}")]
     WorkSessionTransition {
@@ -383,6 +454,13 @@ pub enum AssayError {
     /// WorkSession not found on disk.
     #[error("work session `{session_id}` not found")]
     WorkSessionNotFound {
+        /// The session ID that was looked up.
+        session_id: String,
+    },
+
+    /// GateEvalContext not found on disk.
+    #[error("gate eval context '{session_id}' not found")]
+    GateEvalContextNotFound {
         /// The session ID that was looked up.
         session_id: String,
     },

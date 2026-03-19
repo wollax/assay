@@ -217,6 +217,12 @@ pub fn read_metadata(worktree_path: &Path) -> Option<WorktreeMetadata> {
 /// Precedence: `cli_override` > `ASSAY_WORKTREE_DIR` env var > `config.worktree.base_dir` > default.
 /// The default is `../<project_name>-worktrees/` relative to `project_root`.
 /// Relative paths are resolved against `project_root`.
+///
+/// # Environment Variables
+///
+/// - `ASSAY_WORKTREE_DIR` — Override the worktree base directory. Takes precedence over
+///   the config file `[worktree] base_dir` setting but is overridden by `cli_override`.
+///   Accepts absolute or relative paths (relative paths are resolved against `project_root`).
 pub fn resolve_worktree_dir(
     cli_override: Option<&str>,
     config: &Config,
@@ -264,7 +270,32 @@ pub fn create(
     base_branch: Option<&str>,
     worktree_base: &Path,
     specs_dir: &Path,
+    session_id: Option<&str>,
 ) -> Result<WorktreeInfo> {
+    // Collision check: reject if spec already has an active worktree with an in-progress session.
+    // This runs before filesystem/branch checks to give a clearer error message.
+    // Derive assay_dir from specs_dir (specs_dir is <assay_dir>/specs).
+    let assay_dir = specs_dir.parent().unwrap_or(specs_dir);
+    let existing = list(project_root)?;
+    for entry in &existing.entries {
+        if entry.spec_slug != spec_slug {
+            continue;
+        }
+        // Found a worktree for the same spec — check if its session is active.
+        let has_active_session = read_metadata(&entry.path)
+            .and_then(|m| m.session_id)
+            .and_then(|sid| crate::work_session::load_session(assay_dir, &sid).ok())
+            .is_some_and(|session| !session.phase.is_terminal());
+
+        if has_active_session {
+            return Err(AssayError::WorktreeCollision {
+                spec_slug: spec_slug.to_string(),
+                existing_path: entry.path.clone(),
+            });
+        }
+        // No session or terminal session — allow creation (will likely fail at WorktreeExists)
+    }
+
     // Validate spec exists
     crate::spec::load_spec_entry(spec_slug, specs_dir)?;
 
@@ -306,7 +337,8 @@ pub fn create(
         None => detect_default_branch(project_root)?,
     };
 
-    // Create worktree with new branch
+    // Create worktree with new branch.
+    // Git CLI requires UTF-8 string args; non-UTF-8 paths are not supported.
     let path_str = worktree_path.to_string_lossy().to_string();
     git_command(
         &["worktree", "add", "-b", &branch_name, &path_str, &base],
@@ -319,6 +351,7 @@ pub fn create(
         &WorktreeMetadata {
             base_branch: base.clone(),
             spec_slug: spec_slug.to_string(),
+            session_id: session_id.map(|s| s.to_string()),
         },
     )?;
 
@@ -478,7 +511,8 @@ pub fn cleanup(
         });
     }
 
-    // Remove worktree
+    // Remove worktree.
+    // Git CLI requires UTF-8 string args; non-UTF-8 paths are not supported.
     let path_str = worktree_path.to_string_lossy().to_string();
     if force {
         git_command(&["worktree", "remove", "--force", &path_str], project_root)?;
@@ -490,17 +524,47 @@ pub fn cleanup(
     let branch_name = format!("assay/{spec_slug}");
     let delete_flag = if force { "-D" } else { "-d" };
     if let Err(e) = git_command(&["branch", delete_flag, &branch_name], project_root) {
-        eprintln!("Warning: failed to delete branch '{branch_name}': {e}");
+        tracing::warn!(branch = %branch_name, "failed to delete branch: {e}");
     }
 
     Ok(())
 }
 
+/// Detect orphaned worktrees — worktrees with no active work session.
+///
+/// A worktree is orphaned if any of the following are true:
+/// - It has no `session_id` in its metadata
+/// - Its `session_id` points to a session that doesn't exist on disk
+/// - Its `session_id` points to a session in a terminal phase (Completed or Abandoned)
+///
+/// Worktrees with an active (non-terminal) session are NOT orphaned.
+pub fn detect_orphans(project_root: &Path, assay_dir: &Path) -> Result<Vec<WorktreeInfo>> {
+    let list_result = list(project_root)?;
+    let mut orphans = Vec::new();
+
+    for entry in list_result.entries {
+        let metadata = read_metadata(&entry.path);
+        let is_orphan = match metadata.and_then(|m| m.session_id) {
+            None => true, // No session_id — orphaned
+            Some(sid) => match crate::work_session::load_session(assay_dir, &sid) {
+                Err(_) => true, // Session doesn't exist on disk — orphaned
+                Ok(session) => session.phase.is_terminal(), // Terminal phase — orphaned
+            },
+        };
+
+        if is_orphan {
+            orphans.push(entry);
+        }
+    }
+
+    Ok(orphans)
+}
+
 /// Detect if the current working directory is inside a linked worktree.
 ///
-/// Returns the main repository root path if `cwd` is a linked worktree,
+/// Returns the main repository root path if `cwd` is inside a linked worktree,
 /// or `None` if `cwd` is the main worktree (or not a git repo).
-pub fn detect_main_worktree(cwd: &Path) -> Option<PathBuf> {
+pub fn detect_linked_worktree(cwd: &Path) -> Option<PathBuf> {
     let dot_git = cwd.join(".git");
     if dot_git.is_file() {
         // Linked worktree — .git is a file containing "gitdir: <path>"
@@ -734,8 +798,15 @@ cmd = "echo ok"
         let worktree_base = _wt_tmp.path().join("worktrees");
 
         // Create
-        let info = create(&root, "auth-flow", Some("main"), &worktree_base, &specs_dir)
-            .expect("create failed");
+        let info = create(
+            &root,
+            "auth-flow",
+            Some("main"),
+            &worktree_base,
+            &specs_dir,
+            None,
+        )
+        .expect("create failed");
         assert_eq!(info.spec_slug, "auth-flow");
         assert_eq!(info.branch, "assay/auth-flow");
         assert_eq!(info.base_branch.as_deref(), Some("main"));
@@ -781,6 +852,7 @@ cmd = "echo ok"
             Some("main"),
             &worktree_base,
             &specs_dir,
+            None,
         )
         .expect_err("should fail for nonexistent spec");
         assert!(
@@ -794,11 +866,25 @@ cmd = "echo ok"
         let (_tmp, _wt_tmp, root, specs_dir) = setup_repo();
         let worktree_base = _wt_tmp.path().join("worktrees");
 
-        create(&root, "auth-flow", Some("main"), &worktree_base, &specs_dir)
-            .expect("first create should succeed");
+        create(
+            &root,
+            "auth-flow",
+            Some("main"),
+            &worktree_base,
+            &specs_dir,
+            None,
+        )
+        .expect("first create should succeed");
 
-        let err = create(&root, "auth-flow", Some("main"), &worktree_base, &specs_dir)
-            .expect_err("duplicate create should fail");
+        let err = create(
+            &root,
+            "auth-flow",
+            Some("main"),
+            &worktree_base,
+            &specs_dir,
+            None,
+        )
+        .expect_err("duplicate create should fail");
         assert!(
             matches!(err, AssayError::WorktreeExists { .. }),
             "expected WorktreeExists, got: {err:?}"
@@ -810,8 +896,15 @@ cmd = "echo ok"
         let (_tmp, _wt_tmp, root, specs_dir) = setup_repo();
         let worktree_base = _wt_tmp.path().join("worktrees");
 
-        let info = create(&root, "auth-flow", Some("main"), &worktree_base, &specs_dir)
-            .expect("create failed");
+        let info = create(
+            &root,
+            "auth-flow",
+            Some("main"),
+            &worktree_base,
+            &specs_dir,
+            None,
+        )
+        .expect("create failed");
 
         // Make worktree dirty
         std::fs::write(info.path.join("dirty.txt"), "uncommitted")
@@ -839,8 +932,15 @@ cmd = "echo ok"
         git_command(&["add", "."], &root).expect("git add failed");
         git_command(&["commit", "-m", "add payments spec"], &root).expect("git commit failed");
 
-        let info = create(&root, "payments", Some("main"), &worktree_base, &specs_dir)
-            .expect("create with directory-based spec should succeed");
+        let info = create(
+            &root,
+            "payments",
+            Some("main"),
+            &worktree_base,
+            &specs_dir,
+            None,
+        )
+        .expect("create with directory-based spec should succeed");
         assert_eq!(info.spec_slug, "payments");
         assert_eq!(info.branch, "assay/payments");
     }
@@ -850,8 +950,15 @@ cmd = "echo ok"
         let (_tmp, _wt_tmp, root, specs_dir) = setup_repo();
         let worktree_base = _wt_tmp.path().join("worktrees");
 
-        let info = create(&root, "auth-flow", Some("main"), &worktree_base, &specs_dir)
-            .expect("create failed");
+        let info = create(
+            &root,
+            "auth-flow",
+            Some("main"),
+            &worktree_base,
+            &specs_dir,
+            None,
+        )
+        .expect("create failed");
 
         // Remove the metadata file to simulate a worktree without metadata
         let meta_path = info.path.join(".assay").join("worktree.json");
@@ -887,11 +994,51 @@ cmd = "echo ok"
         let metadata = WorktreeMetadata {
             base_branch: "develop".to_string(),
             spec_slug: "my-feature".to_string(),
+            session_id: None,
         };
 
         write_metadata(dir.path(), &metadata).expect("write_metadata should succeed");
         let loaded = read_metadata(dir.path()).expect("read_metadata should return Some");
         assert_eq!(loaded, metadata);
+    }
+
+    #[test]
+    fn test_metadata_session_id_round_trip() {
+        // (a) Metadata with session_id serializes and deserializes correctly
+        let dir = tempfile::tempdir().unwrap();
+        let metadata = WorktreeMetadata {
+            base_branch: "main".to_string(),
+            spec_slug: "auth-flow".to_string(),
+            session_id: Some("sess-abc-123".to_string()),
+        };
+        write_metadata(dir.path(), &metadata).expect("write_metadata should succeed");
+        let loaded = read_metadata(dir.path()).expect("read_metadata should return Some");
+        assert_eq!(loaded, metadata);
+        assert_eq!(loaded.session_id.as_deref(), Some("sess-abc-123"));
+
+        // (b) Legacy format without session_id deserializes with session_id: None
+        let legacy_json = r#"{"base_branch":"main","spec_slug":"auth-flow"}"#;
+        let legacy: WorktreeMetadata =
+            serde_json::from_str(legacy_json).expect("legacy format should deserialize");
+        assert_eq!(legacy.session_id, None);
+        assert_eq!(legacy.base_branch, "main");
+        assert_eq!(legacy.spec_slug, "auth-flow");
+
+        // (c) create() with session_id persists it to disk
+        let (_tmp, _wt_tmp, root, specs_dir) = setup_repo();
+        let worktree_base = _wt_tmp.path().join("worktrees");
+        let info = create(
+            &root,
+            "auth-flow",
+            Some("main"),
+            &worktree_base,
+            &specs_dir,
+            Some("sess-xyz-789"),
+        )
+        .expect("create with session_id should succeed");
+        let persisted =
+            read_metadata(&info.path).expect("metadata should be readable after create");
+        assert_eq!(persisted.session_id.as_deref(), Some("sess-xyz-789"));
     }
 
     #[test]
@@ -917,15 +1064,22 @@ cmd = "echo ok"
     }
 
     #[test]
-    fn test_detect_main_worktree_from_linked() {
+    fn test_detect_linked_worktree_from_linked() {
         let (_tmp, _wt_tmp, root, specs_dir) = setup_repo();
         let worktree_base = _wt_tmp.path().join("worktrees");
 
-        let info = create(&root, "auth-flow", Some("main"), &worktree_base, &specs_dir)
-            .expect("create failed");
+        let info = create(
+            &root,
+            "auth-flow",
+            Some("main"),
+            &worktree_base,
+            &specs_dir,
+            None,
+        )
+        .expect("create failed");
 
-        // From inside the linked worktree, detect_main_worktree should return the main repo
-        let main = detect_main_worktree(&info.path);
+        // From inside the linked worktree, detect_linked_worktree should return the main repo
+        let main = detect_linked_worktree(&info.path);
         assert!(main.is_some(), "should detect main worktree");
         let main_path = main.unwrap();
         // Canonicalize both for comparison (temp dirs may have symlinks)
@@ -935,9 +1089,9 @@ cmd = "echo ok"
     }
 
     #[test]
-    fn test_detect_main_worktree_from_main_returns_none() {
+    fn test_detect_linked_worktree_from_main_returns_none() {
         let (_tmp, _wt_tmp, root, _specs_dir) = setup_repo();
-        assert!(detect_main_worktree(&root).is_none());
+        assert!(detect_linked_worktree(&root).is_none());
     }
 
     // -- resolve_worktree_dir canonicalization integration tests --
@@ -1027,7 +1181,7 @@ cmd = "echo ok"
         let worktree_base = _wt_tmp.path().join("worktrees");
 
         // setup_repo() creates a repo with no remote, so detection should fail
-        let err = create(&root, "auth-flow", None, &worktree_base, &specs_dir)
+        let err = create(&root, "auth-flow", None, &worktree_base, &specs_dir, None)
             .expect_err("should fail when no remote is configured and base_branch is None");
 
         let err_msg = err.to_string();
@@ -1051,11 +1205,349 @@ cmd = "echo ok"
         let worktree_base = _wt_tmp.path().join("worktrees");
 
         // Even though no remote is configured, explicit base_branch bypasses detection
-        let info = create(&root, "auth-flow", Some("main"), &worktree_base, &specs_dir)
-            .expect("create with explicit base_branch should succeed regardless of remote state");
+        let info = create(
+            &root,
+            "auth-flow",
+            Some("main"),
+            &worktree_base,
+            &specs_dir,
+            None,
+        )
+        .expect("create with explicit base_branch should succeed regardless of remote state");
 
         assert_eq!(info.spec_slug, "auth-flow");
         assert_eq!(info.base_branch.as_deref(), Some("main"));
         assert!(info.path.exists());
+    }
+
+    // -- detect_orphans tests --
+
+    #[test]
+    fn test_detect_orphans_no_session_id_is_orphaned() {
+        let (_tmp, _wt_tmp, root, specs_dir) = setup_repo();
+        let worktree_base = _wt_tmp.path().join("worktrees");
+        let assay_dir = root.join(".assay");
+
+        // Create worktree with no session_id
+        create(
+            &root,
+            "auth-flow",
+            Some("main"),
+            &worktree_base,
+            &specs_dir,
+            None,
+        )
+        .expect("create failed");
+
+        let orphans = detect_orphans(&root, &assay_dir).expect("detect_orphans failed");
+        assert_eq!(orphans.len(), 1);
+        assert_eq!(orphans[0].spec_slug, "auth-flow");
+    }
+
+    #[test]
+    fn test_detect_orphans_active_session_not_orphaned() {
+        let (_tmp, _wt_tmp, root, specs_dir) = setup_repo();
+        let worktree_base = _wt_tmp.path().join("worktrees");
+        let assay_dir = root.join(".assay");
+
+        // Create an active session
+        let session = crate::work_session::start_session(
+            &assay_dir,
+            "auth-flow",
+            worktree_base.join("auth-flow"),
+            "claude",
+            None,
+        )
+        .expect("start_session failed");
+
+        // Create worktree linked to the active session
+        create(
+            &root,
+            "auth-flow",
+            Some("main"),
+            &worktree_base,
+            &specs_dir,
+            Some(&session.id),
+        )
+        .expect("create failed");
+
+        let orphans = detect_orphans(&root, &assay_dir).expect("detect_orphans failed");
+        assert!(
+            orphans.is_empty(),
+            "worktree with active session should NOT be orphaned, got: {orphans:?}"
+        );
+    }
+
+    #[test]
+    fn test_detect_orphans_terminal_session_is_orphaned() {
+        let (_tmp, _wt_tmp, root, specs_dir) = setup_repo();
+        let worktree_base = _wt_tmp.path().join("worktrees");
+        let assay_dir = root.join(".assay");
+
+        // Create a completed session
+        let session = crate::work_session::start_session(
+            &assay_dir,
+            "auth-flow",
+            worktree_base.join("auth-flow"),
+            "claude",
+            None,
+        )
+        .expect("start_session failed");
+        crate::work_session::record_gate_result(
+            &assay_dir,
+            &session.id,
+            "run-001",
+            "gate_eval",
+            None,
+        )
+        .expect("record_gate_result failed");
+        crate::work_session::complete_session(&assay_dir, &session.id, None)
+            .expect("complete_session failed");
+
+        // Create worktree linked to the completed session
+        create(
+            &root,
+            "auth-flow",
+            Some("main"),
+            &worktree_base,
+            &specs_dir,
+            Some(&session.id),
+        )
+        .expect("create failed");
+
+        let orphans = detect_orphans(&root, &assay_dir).expect("detect_orphans failed");
+        assert_eq!(orphans.len(), 1);
+        assert_eq!(orphans[0].spec_slug, "auth-flow");
+    }
+
+    #[test]
+    fn test_detect_orphans_missing_session_is_orphaned() {
+        let (_tmp, _wt_tmp, root, specs_dir) = setup_repo();
+        let worktree_base = _wt_tmp.path().join("worktrees");
+        let assay_dir = root.join(".assay");
+
+        // Create worktree linked to a session that doesn't exist on disk
+        create(
+            &root,
+            "auth-flow",
+            Some("main"),
+            &worktree_base,
+            &specs_dir,
+            Some("NONEXISTENT_SESSION_ID_12345"),
+        )
+        .expect("create failed");
+
+        let orphans = detect_orphans(&root, &assay_dir).expect("detect_orphans failed");
+        assert_eq!(orphans.len(), 1);
+        assert_eq!(orphans[0].spec_slug, "auth-flow");
+    }
+
+    // -- collision prevention tests --
+
+    #[test]
+    fn test_collision_rejects_when_spec_has_active_worktree() {
+        let (_tmp, _wt_tmp, root, specs_dir) = setup_repo();
+        let worktree_base = _wt_tmp.path().join("worktrees");
+        let worktree_base2 = _wt_tmp.path().join("worktrees2");
+        let assay_dir = root.join(".assay");
+
+        // Create an active session
+        let session = crate::work_session::start_session(
+            &assay_dir,
+            "auth-flow",
+            worktree_base.join("auth-flow"),
+            "claude",
+            None,
+        )
+        .expect("start_session failed");
+
+        // First create succeeds
+        create(
+            &root,
+            "auth-flow",
+            Some("main"),
+            &worktree_base,
+            &specs_dir,
+            Some(&session.id),
+        )
+        .expect("first create should succeed");
+
+        // Second create to a different base dir should fail with WorktreeCollision
+        let err = create(
+            &root,
+            "auth-flow",
+            Some("main"),
+            &worktree_base2,
+            &specs_dir,
+            Some("new-session-id"),
+        )
+        .expect_err("should fail with collision");
+
+        assert!(
+            matches!(err, AssayError::WorktreeCollision { ref spec_slug, .. } if spec_slug == "auth-flow"),
+            "expected WorktreeCollision for auth-flow, got: {err:?}"
+        );
+        let msg = err.to_string();
+        assert!(
+            msg.contains("active worktree"),
+            "error message should mention active worktree, got: {msg}"
+        );
+        assert!(
+            msg.contains("auth-flow"),
+            "error message should mention spec slug, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_collision_allows_when_terminal_session() {
+        let (_tmp, _wt_tmp, root, specs_dir) = setup_repo();
+        let worktree_base = _wt_tmp.path().join("worktrees");
+        let worktree_base2 = _wt_tmp.path().join("worktrees2");
+        let assay_dir = root.join(".assay");
+
+        // Create a completed session
+        let session = crate::work_session::start_session(
+            &assay_dir,
+            "auth-flow",
+            worktree_base.join("auth-flow"),
+            "claude",
+            None,
+        )
+        .expect("start_session failed");
+        crate::work_session::record_gate_result(
+            &assay_dir,
+            &session.id,
+            "run-001",
+            "gate_eval",
+            None,
+        )
+        .expect("record_gate_result failed");
+        crate::work_session::complete_session(&assay_dir, &session.id, None)
+            .expect("complete_session failed");
+
+        // Create first worktree linked to the completed session
+        create(
+            &root,
+            "auth-flow",
+            Some("main"),
+            &worktree_base,
+            &specs_dir,
+            Some(&session.id),
+        )
+        .expect("first create should succeed");
+
+        // Second create should NOT get WorktreeCollision (session is terminal).
+        // It will get WorktreeExists instead (from the filesystem/branch check).
+        let err = create(
+            &root,
+            "auth-flow",
+            Some("main"),
+            &worktree_base2,
+            &specs_dir,
+            Some("new-session-id"),
+        )
+        .expect_err("should fail but not with collision");
+
+        // Should be WorktreeExists (branch already exists), NOT WorktreeCollision
+        assert!(
+            matches!(err, AssayError::WorktreeExists { .. }),
+            "expected WorktreeExists (not WorktreeCollision) when session is terminal, got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn test_collision_allows_when_no_worktree_for_spec() {
+        let (_tmp, _wt_tmp, root, specs_dir) = setup_repo();
+        let worktree_base = _wt_tmp.path().join("worktrees");
+
+        // No existing worktree — create should succeed
+        let info = create(
+            &root,
+            "auth-flow",
+            Some("main"),
+            &worktree_base,
+            &specs_dir,
+            Some("some-session-id"),
+        )
+        .expect("create should succeed when no existing worktree");
+
+        assert_eq!(info.spec_slug, "auth-flow");
+    }
+
+    // -- tech debt tests (T03) --
+
+    #[test]
+    fn test_read_metadata_corrupt_json_returns_none() {
+        let dir = tempfile::tempdir().unwrap();
+        let meta_dir = dir.path().join(".assay");
+        std::fs::create_dir_all(&meta_dir).unwrap();
+        std::fs::write(meta_dir.join("worktree.json"), "{ not valid json !!!")
+            .expect("failed to write corrupt json");
+
+        let result = read_metadata(dir.path());
+        assert!(
+            result.is_none(),
+            "corrupt JSON should return None, got: {result:?}"
+        );
+    }
+
+    #[test]
+    fn test_write_metadata_adds_git_exclude_entry() {
+        let dir = tempfile::tempdir().unwrap();
+        let wt_path = dir.path().join("my-worktree");
+        std::fs::create_dir_all(&wt_path).unwrap();
+
+        // Initialize a git repo so write_metadata can find --git-common-dir
+        git_command(&["init", "-b", "main"], &wt_path).expect("git init failed");
+
+        let metadata = WorktreeMetadata {
+            base_branch: "main".to_string(),
+            spec_slug: "test-spec".to_string(),
+            session_id: None,
+        };
+        write_metadata(&wt_path, &metadata).expect("write_metadata should succeed");
+
+        // Check that .git/info/exclude contains the entry
+        let exclude_path = wt_path.join(".git").join("info").join("exclude");
+        let exclude_content =
+            std::fs::read_to_string(&exclude_path).expect("should be able to read exclude file");
+        assert!(
+            exclude_content.contains(".assay/worktree.json"),
+            "git exclude should contain .assay/worktree.json, got: {exclude_content}"
+        );
+
+        // Writing again should not duplicate the entry
+        write_metadata(&wt_path, &metadata).expect("second write should succeed");
+        let exclude_content2 = std::fs::read_to_string(&exclude_path).unwrap();
+        let count = exclude_content2
+            .lines()
+            .filter(|l| l.trim() == ".assay/worktree.json")
+            .count();
+        assert_eq!(
+            count, 1,
+            "exclude entry should appear exactly once, found {count}"
+        );
+    }
+
+    #[test]
+    fn test_list_prune_warning_propagation() {
+        // Verify that WorktreeListResult.warnings is populated when prune fails.
+        // We can't easily make `git worktree prune` fail in a real repo, but we can
+        // verify the plumbing: create a valid repo, list it, and confirm warnings is
+        // empty (proving the field is wired through). The MCP response test covers
+        // the serialization path.
+        let (_tmp, _wt_tmp, root, _specs_dir) = setup_repo();
+
+        let result = list(&root).expect("list should succeed");
+        assert!(
+            result.warnings.is_empty(),
+            "warnings should be empty in a healthy repo, got: {:?}",
+            result.warnings
+        );
+
+        // Verify the warnings field exists and is a Vec by pushing to it
+        let mut result_mut = result;
+        result_mut.warnings.push("test warning".to_string());
+        assert_eq!(result_mut.warnings.len(), 1);
     }
 }

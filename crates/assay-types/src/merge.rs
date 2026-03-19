@@ -127,3 +127,95 @@ inventory::submit! {
         generate: || schemars::schema_for!(MergeCheck),
     }
 }
+
+// ---------------------------------------------------------------------------
+// Merge execution types
+// ---------------------------------------------------------------------------
+
+/// Type of a conflict marker found in a file.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum MarkerType {
+    /// Start of "ours" side: `<<<<<<<`
+    Ours,
+    /// Separator between sides: `=======`
+    Separator,
+    /// Start of "theirs" side: `>>>>>>>`
+    Theirs,
+}
+
+impl fmt::Display for MarkerType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Ours => write!(f, "ours"),
+            Self::Separator => write!(f, "separator"),
+            Self::Theirs => write!(f, "theirs"),
+        }
+    }
+}
+
+/// A single conflict marker found in a file.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ConflictMarker {
+    /// File path relative to the repository root.
+    pub file: String,
+    /// 1-based line number where the marker was found.
+    pub line: u32,
+    /// Type of marker (`<<<<<<<`, `=======`, or `>>>>>>>`).
+    pub marker_type: MarkerType,
+}
+
+/// Result of scanning files for conflict markers.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ConflictScan {
+    /// Whether any conflict markers were found.
+    pub has_markers: bool,
+    /// Individual markers found (may be empty).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub markers: Vec<ConflictMarker>,
+    /// Whether the scan was truncated (too many files or markers).
+    pub truncated: bool,
+}
+
+/// Result of executing `git merge --no-ff`.
+///
+/// On success, contains the merge commit SHA and changed files.
+/// On conflict, contains conflict details with automatic abort cleanup.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct MergeExecuteResult {
+    /// SHA of the merge commit (present only on success).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub merge_sha: Option<String>,
+    /// Files changed by the merge (present only on success).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub files_changed: Vec<FileChange>,
+    /// Whether the merge had a conflict.
+    pub was_conflict: bool,
+    /// Conflict details when `was_conflict` is true.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub conflict_details: Option<ConflictScan>,
+}
+
+inventory::submit! {
+    crate::schema_registry::SchemaEntry {
+        name: "merge-execute-result",
+        generate: || schemars::schema_for!(MergeExecuteResult),
+    }
+}
+
+inventory::submit! {
+    crate::schema_registry::SchemaEntry {
+        name: "conflict-scan",
+        generate: || schemars::schema_for!(ConflictScan),
+    }
+}
+
+inventory::submit! {
+    crate::schema_registry::SchemaEntry {
+        name: "conflict-marker",
+        generate: || schemars::schema_for!(ConflictMarker),
+    }
+}

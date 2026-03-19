@@ -1,0 +1,7 @@
+---
+source: crates/assay-harness/src/claude.rs
+expression: config.hooks_json
+---
+{
+  "hooks": {}
+}

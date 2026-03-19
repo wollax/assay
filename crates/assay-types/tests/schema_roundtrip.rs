@@ -285,6 +285,8 @@ fn gates_spec_validates() {
         description: String::new(),
         gate: None,
         depends: vec![],
+        milestone: None,
+        order: None,
         criteria: vec![GateCriterion {
             name: "auth-compiles".to_string(),
             description: "Auth module compiles".to_string(),
@@ -591,5 +593,123 @@ fn worktree_metadata_validates() {
     validate(&WorktreeMetadata {
         base_branch: "main".to_string(),
         spec_slug: "auth-flow".to_string(),
+        session_id: None,
+    });
+}
+
+// ── Scope enforcement types ──────────────────────────────────────────
+
+#[test]
+fn scope_violation_out_of_scope_validates() {
+    validate(&ScopeViolation {
+        file: "src/main.rs".to_string(),
+        violation_type: ScopeViolationType::OutOfScope,
+        pattern: "crates/auth/**".to_string(),
+    });
+}
+
+#[test]
+fn scope_violation_shared_file_conflict_validates() {
+    validate(&ScopeViolation {
+        file: "Cargo.lock".to_string(),
+        violation_type: ScopeViolationType::SharedFileConflict,
+        pattern: "Cargo.lock".to_string(),
+    });
+}
+
+#[test]
+fn scope_violation_json_roundtrip() {
+    let original = ScopeViolation {
+        file: "src/lib.rs".to_string(),
+        violation_type: ScopeViolationType::OutOfScope,
+        pattern: "tests/**".to_string(),
+    };
+    let json = serde_json::to_string(&original).expect("serialize");
+    let restored: ScopeViolation = serde_json::from_str(&json).expect("deserialize");
+    assert_eq!(original, restored);
+}
+
+// ── Manifest session types ───────────────────────────────────────────
+
+#[test]
+fn manifest_session_with_scope_validates() {
+    validate(&ManifestSession {
+        spec: "auth-flow".to_string(),
+        name: Some("auth-scoped".to_string()),
+        settings: None,
+        hooks: vec![],
+        prompt_layers: vec![],
+        file_scope: vec!["crates/auth/**".to_string(), "tests/auth_*".to_string()],
+        shared_files: vec!["Cargo.lock".to_string(), "Cargo.toml".to_string()],
+        depends_on: vec![],
+    });
+}
+
+#[test]
+fn manifest_session_without_scope_validates() {
+    validate(&ManifestSession {
+        spec: "checkout".to_string(),
+        name: None,
+        settings: None,
+        hooks: vec![],
+        prompt_layers: vec![],
+        file_scope: vec![],
+        shared_files: vec![],
+        depends_on: vec![],
+    });
+}
+
+#[test]
+fn manifest_session_toml_backward_compat() {
+    // A TOML manifest without file_scope/shared_files should still parse
+    let toml_str = r#"
+spec = "auth-flow"
+"#;
+    let session: ManifestSession = toml::from_str(toml_str).expect("parse without scope fields");
+    assert_eq!(session.spec, "auth-flow");
+    assert!(session.file_scope.is_empty());
+    assert!(session.shared_files.is_empty());
+}
+
+#[test]
+fn manifest_session_toml_with_scope_roundtrip() {
+    let toml_str = r#"
+spec = "auth-flow"
+file_scope = ["crates/auth/**", "tests/auth_*"]
+shared_files = ["Cargo.lock"]
+"#;
+    let session: ManifestSession = toml::from_str(toml_str).expect("parse with scope fields");
+    assert_eq!(session.file_scope, vec!["crates/auth/**", "tests/auth_*"]);
+    assert_eq!(session.shared_files, vec!["Cargo.lock"]);
+}
+
+#[test]
+fn run_manifest_with_scoped_sessions_validates() {
+    validate(&RunManifest {
+        sessions: vec![
+            ManifestSession {
+                spec: "auth".to_string(),
+                name: None,
+                settings: None,
+                hooks: vec![],
+                prompt_layers: vec![],
+                file_scope: vec!["crates/auth/**".to_string()],
+                shared_files: vec!["Cargo.lock".to_string()],
+                depends_on: vec![],
+            },
+            ManifestSession {
+                spec: "checkout".to_string(),
+                name: None,
+                settings: None,
+                hooks: vec![],
+                prompt_layers: vec![],
+                file_scope: vec![],
+                shared_files: vec![],
+                depends_on: vec!["auth".to_string()],
+            },
+        ],
+        mode: assay_types::orchestrate::OrchestratorMode::Dag,
+        mesh_config: None,
+        gossip_config: None,
     });
 }

@@ -1,0 +1,19 @@
+---
+source: crates/assay-harness/src/claude.rs
+expression: config.claude_md
+---
+## Agent Rules
+
+You are a coding agent. Follow best practices.
+
+---
+
+## Project Context
+
+This is a Rust workspace using Cargo.
+
+---
+
+## Task Spec
+
+Implement the login endpoint with JWT auth.
