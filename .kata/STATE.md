@@ -2,7 +2,7 @@
 
 **Active Milestone:** M005 — Spec-Driven Development Core
 **Active Slice:** S02 — Development Cycle State Machine
-**Active Task:** T03 — Wire three cycle MCP tools
+**Active Task:** T04 — Add `assay milestone status` and `assay milestone advance` CLI subcommands
 **Phase:** Executing
 **Last Updated:** 2026-03-19
 **Requirements Status:** 18 active (R042–R059) · 35 validated (R039–R041 newly validated) · 2 deferred · 4 out of scope
@@ -38,4 +38,4 @@ None.
 
 ## Next Action
 
-Execute T03: Wire `cycle_status`, `cycle_advance`, and `milestone_phase_transition` as three new MCP tools in `crates/assay-mcp/src/server.rs`. Run `cargo test -p assay-mcp -- cycle` — 3 presence tests must pass.
+Execute T04: Add `assay milestone status` and `assay milestone advance` CLI subcommands in `crates/assay-cli/src/commands/milestone.rs`. Run `cargo test -p assay-cli -- milestone` — 2+ tests must pass. Then run `just ready` to confirm all slice verification passes.

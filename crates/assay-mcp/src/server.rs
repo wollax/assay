@@ -539,6 +539,25 @@ pub struct MilestoneGetParams {
     pub slug: String,
 }
 
+/// Parameters for the `cycle_status` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct CycleStatusParams {}
+
+/// Parameters for the `cycle_advance` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct CycleAdvanceParams {
+    /// Optional milestone slug to advance. If omitted, targets the first in_progress milestone.
+    #[serde(default)]
+    pub milestone_slug: Option<String>,
+}
+
+/// Parameters for the `chunk_status` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ChunkStatusParams {
+    /// Slug of the chunk (spec) to report gate status for.
+    pub chunk_slug: String,
+}
+
 // ── Response structs ─────────────────────────────────────────────────
 
 /// A single entry in the `spec_list` response.
@@ -699,6 +718,27 @@ struct GateHistoryEntry {
     advisory_failed: usize,
     /// Whether the gate was blocked (any required criterion failed).
     blocked: bool,
+}
+
+/// Response for the `chunk_status` tool — last gate run summary for a chunk.
+#[derive(Debug, Serialize)]
+struct ChunkStatusResponse {
+    /// Slug of the queried chunk.
+    chunk_slug: String,
+    /// Whether any gate history exists for this chunk.
+    has_history: bool,
+    /// Run ID of the most recent gate run. `None` when `has_history` is `false`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    latest_run_id: Option<String>,
+    /// Number of criteria that passed in the latest run. `None` when `has_history` is `false`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    passed: Option<usize>,
+    /// Number of criteria that failed in the latest run. `None` when `has_history` is `false`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    failed: Option<usize>,
+    /// Number of required criteria that failed in the latest run. `None` when `has_history` is `false`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    required_failed: Option<usize>,
 }
 
 /// Per-criterion result within a gate run response.
@@ -3295,6 +3335,127 @@ impl AssayServer {
         let json = serde_json::to_string(&milestone)
             .map_err(|e| McpError::internal_error(format!("serialization failed: {e}"), None))?;
 
+        Ok(CallToolResult::success(vec![Content::text(json)]))
+    }
+
+    /// Return the active development cycle status.
+    #[tool(
+        description = "Return the active development cycle status: the first in_progress milestone, \
+            its active chunk, and progress counts. Returns null if no milestone is in_progress."
+    )]
+    pub async fn cycle_status(
+        &self,
+        _params: Parameters<CycleStatusParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let cwd = resolve_cwd()?;
+        let assay_dir = cwd.join(".assay");
+        match assay_core::milestone::cycle_status(&assay_dir) {
+            Ok(Some(status)) => {
+                let json = serde_json::to_string(&status).map_err(|e| {
+                    McpError::internal_error(format!("serialization failed: {e}"), None)
+                })?;
+                Ok(CallToolResult::success(vec![Content::text(json)]))
+            }
+            Ok(None) => Ok(CallToolResult::success(vec![Content::text("null")])),
+            Err(e) => Ok(domain_error(&e)),
+        }
+    }
+
+    /// Evaluate gates for the active chunk and advance the development cycle.
+    #[tool(
+        description = "Evaluate gates for the active chunk of the in_progress milestone and advance \
+            the development cycle. Targets the first in_progress milestone unless milestone_slug is \
+            specified. Returns updated CycleStatus on success, or error if required gates fail or \
+            preconditions are not met."
+    )]
+    pub async fn cycle_advance(
+        &self,
+        params: Parameters<CycleAdvanceParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let cwd = resolve_cwd()?;
+        let config = match load_config(&cwd) {
+            Ok(c) => c,
+            Err(err_result) => return Ok(err_result),
+        };
+        let assay_dir = cwd.join(".assay");
+        let specs_dir = cwd.join(".assay").join(&config.specs_dir);
+        let working_dir = resolve_working_dir(&cwd, &config);
+        let config_timeout = config.gates.as_ref().map(|g| g.default_timeout);
+        let milestone_slug = params.0.milestone_slug.clone();
+        let result = tokio::task::spawn_blocking(move || {
+            assay_core::milestone::cycle_advance(
+                &assay_dir,
+                &specs_dir,
+                &working_dir,
+                milestone_slug.as_deref(),
+            )
+        })
+        .await
+        .map_err(|e| McpError::internal_error(format!("cycle_advance panicked: {e}"), None))?;
+        let _ = config_timeout; // used for doc consistency; core uses None/None for cli/config timeouts
+        match result {
+            Ok(status) => {
+                let json = serde_json::to_string(&status).map_err(|e| {
+                    McpError::internal_error(format!("serialization failed: {e}"), None)
+                })?;
+                Ok(CallToolResult::success(vec![Content::text(json)]))
+            }
+            Err(e) => Ok(domain_error(&e)),
+        }
+    }
+
+    /// Return the last gate run result for a chunk without running new gates.
+    #[tool(
+        description = "Return the last gate run result for a chunk (spec) without running new gates. \
+            Use this to check whether a chunk's gates passed in the most recent run. \
+            Returns { has_history: false } when no run history exists for the chunk."
+    )]
+    pub async fn chunk_status(
+        &self,
+        params: Parameters<ChunkStatusParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let cwd = resolve_cwd()?;
+        let assay_dir = cwd.join(".assay");
+        let chunk_slug = &params.0.chunk_slug;
+
+        let all_ids = match assay_core::history::list(&assay_dir, chunk_slug) {
+            Ok(ids) => ids,
+            Err(e) => return Ok(domain_error(&e)),
+        };
+
+        if all_ids.is_empty() {
+            let response = ChunkStatusResponse {
+                chunk_slug: chunk_slug.clone(),
+                has_history: false,
+                latest_run_id: None,
+                passed: None,
+                failed: None,
+                required_failed: None,
+            };
+            let json = serde_json::to_string(&response).map_err(|e| {
+                McpError::internal_error(format!("serialization failed: {e}"), None)
+            })?;
+            return Ok(CallToolResult::success(vec![Content::text(json)]));
+        }
+
+        // list returns oldest-first; last() is the most recent run.
+        let latest_run_id = all_ids.last().unwrap().clone();
+        let record =
+            match assay_core::history::load(&assay_dir, chunk_slug, &latest_run_id) {
+                Ok(r) => r,
+                Err(e) => return Ok(domain_error(&e)),
+            };
+
+        let response = ChunkStatusResponse {
+            chunk_slug: chunk_slug.clone(),
+            has_history: true,
+            latest_run_id: Some(latest_run_id),
+            passed: Some(record.summary.passed),
+            failed: Some(record.summary.failed),
+            required_failed: Some(record.summary.enforcement.required_failed),
+        };
+        let json = serde_json::to_string(&response)
+            .map_err(|e| McpError::internal_error(format!("serialization failed: {e}"), None))?;
         Ok(CallToolResult::success(vec![Content::text(json)]))
     }
 }
@@ -7489,6 +7650,42 @@ spec = "auth"
         assert!(
             result.is_error.unwrap_or(false),
             "milestone_get should return isError: true for a missing slug"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn cycle_status_tool_in_router() {
+        let server = AssayServer::new();
+        let tools = server.tool_router.list_all();
+        let tool_names: Vec<&str> = tools.iter().map(|t| t.name.as_ref()).collect();
+        assert!(
+            tool_names.contains(&"cycle_status"),
+            "cycle_status should be in tool list, got: {tool_names:?}"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn cycle_advance_tool_in_router() {
+        let server = AssayServer::new();
+        let tools = server.tool_router.list_all();
+        let tool_names: Vec<&str> = tools.iter().map(|t| t.name.as_ref()).collect();
+        assert!(
+            tool_names.contains(&"cycle_advance"),
+            "cycle_advance should be in tool list, got: {tool_names:?}"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn chunk_status_tool_in_router() {
+        let server = AssayServer::new();
+        let tools = server.tool_router.list_all();
+        let tool_names: Vec<&str> = tools.iter().map(|t| t.name.as_ref()).collect();
+        assert!(
+            tool_names.contains(&"chunk_status"),
+            "chunk_status should be in tool list, got: {tool_names:?}"
         );
     }
 }
