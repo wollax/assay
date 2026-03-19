@@ -115,8 +115,8 @@ inventory::submit! {
 
 /// An on-disk work session linking worktrees, agent invocations, and gate runs.
 ///
-/// This is distinct from [`AgentSession`](crate::session::AgentSession), which is
-/// an in-memory crash-recoverable session for gate evaluation. `WorkSession` is the
+/// This is distinct from [`GateEvalContext`](crate::session::GateEvalContext), which is
+/// an in-memory crash-recoverable context for gate evaluation. `WorkSession` is the
 /// persistent record of an entire spec evaluation lifecycle.
 ///
 /// # Schema policy

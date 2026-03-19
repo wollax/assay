@@ -1,0 +1,15 @@
+---
+source: crates/assay-harness/src/claude.rs
+expression: "args.join(\"\\n\")"
+---
+--print
+--output-format
+json
+--model
+sonnet
+--system-prompt
+You are a coding agent.
+--mcp-config
+.mcp.json
+--settings
+.claude/settings.json

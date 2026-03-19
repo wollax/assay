@@ -1,0 +1,13 @@
+//! Session dependency orchestration.
+//!
+//! This module provides DAG construction and validation for multi-session
+//! manifests where sessions declare `depends_on` relationships. It is gated
+//! behind the `orchestrate` Cargo feature.
+
+pub mod conflict_resolver;
+pub mod dag;
+pub mod executor;
+pub mod gossip;
+pub mod merge_runner;
+pub mod mesh;
+pub mod ordering;

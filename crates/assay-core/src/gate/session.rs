@@ -5,14 +5,17 @@
 //! pattern for agent-reported criteria.
 
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
+use std::io::Write;
+use std::path::{Path, PathBuf};
 use std::time::Instant;
+
+use tempfile::NamedTempFile;
 
 use chrono::Utc;
 
 use assay_types::{
-    AgentEvaluation, AgentSession, CriterionResult, Enforcement, EnforcementSummary, EvaluatorRole,
-    GateKind, GateResult, GateRunRecord, GateRunSummary,
+    AgentEvaluation, CriterionResult, Enforcement, EnforcementSummary, EvaluatorRole,
+    GateEvalContext, GateKind, GateResult, GateRunRecord, GateRunSummary,
 };
 
 use crate::error::{AssayError, Result};
@@ -31,11 +34,11 @@ pub fn create_session(
     diff: Option<String>,
     diff_truncated: bool,
     diff_bytes_original: Option<usize>,
-) -> AgentSession {
+) -> GateEvalContext {
     let ts = Utc::now();
     let session_id = history::generate_run_id(&ts);
 
-    AgentSession {
+    GateEvalContext {
         session_id,
         spec_name: spec_name.to_string(),
         created_at: ts,
@@ -55,7 +58,7 @@ pub fn create_session(
 /// Multiple evaluations per criterion are allowed (e.g., re-evaluation
 /// after a fix, or evaluations from different roles).
 pub fn report_evaluation(
-    session: &mut AgentSession,
+    session: &mut GateEvalContext,
     criterion_name: &str,
     evaluation: AgentEvaluation,
 ) -> Result<()> {
@@ -139,7 +142,10 @@ fn resolve_evaluator_priority(evaluations: &[AgentEvaluation]) -> Option<&AgentE
 ///
 /// Agent-reported criteria default to advisory enforcement unless
 /// overridden by the spec's enforcement map.
-pub fn build_finalized_record(session: &AgentSession, working_dir: Option<&str>) -> GateRunRecord {
+pub fn build_finalized_record(
+    session: &GateEvalContext,
+    working_dir: Option<&str>,
+) -> GateRunRecord {
     let start = Instant::now();
 
     let mut results = session.command_results.clone();
@@ -236,7 +242,7 @@ pub fn build_finalized_record(session: &AgentSession, working_dir: Option<&str>)
 /// record via [`history::save`]. Keeps the original signature for backward
 /// compatibility with existing callers and tests.
 pub fn finalize_session(
-    session: &AgentSession,
+    session: &GateEvalContext,
     assay_dir: &Path,
     working_dir: Option<&str>,
     max_history: Option<usize>,
@@ -250,7 +256,7 @@ pub fn finalize_session(
 ///
 /// Any un-evaluated required agent criteria count as failures.
 /// Returns the record for the caller to decide whether to persist.
-pub fn finalize_as_timed_out(session: &AgentSession) -> GateRunRecord {
+pub fn finalize_as_timed_out(session: &GateEvalContext) -> GateRunRecord {
     let mut results = session.command_results.clone();
 
     // Build results for agent criteria not already present in command_results
@@ -344,6 +350,105 @@ pub fn finalize_as_timed_out(session: &AgentSession) -> GateRunRecord {
         },
         diff_truncation: None,
     }
+}
+
+/// Persist a gate eval context as atomic pretty-printed JSON.
+///
+/// Creates `.assay/gate_sessions/` if it does not exist. Uses the tempfile-then-rename
+/// pattern to guarantee the file is either fully written or absent.
+///
+/// Returns the final path on success.
+pub fn save_context(assay_dir: &Path, context: &GateEvalContext) -> Result<PathBuf> {
+    let sessions_dir = assay_dir.join("gate_sessions");
+    std::fs::create_dir_all(&sessions_dir)
+        .map_err(|e| AssayError::io("creating gate_sessions directory", &sessions_dir, e))?;
+
+    history::validate_path_component(&context.session_id, "session ID")?;
+
+    let final_path = sessions_dir.join(format!("{}.json", context.session_id));
+
+    let json = serde_json::to_string_pretty(context).map_err(|e| {
+        AssayError::json(
+            format!("serializing gate eval context {}", context.session_id),
+            &final_path,
+            e,
+        )
+    })?;
+
+    let mut tmpfile = NamedTempFile::new_in(&sessions_dir).map_err(|e| {
+        AssayError::io("creating temp file for gate eval context", &sessions_dir, e)
+    })?;
+
+    tmpfile
+        .write_all(json.as_bytes())
+        .map_err(|e| AssayError::io("writing gate eval context", &final_path, e))?;
+
+    tmpfile
+        .as_file()
+        .sync_all()
+        .map_err(|e| AssayError::io("syncing gate eval context", &final_path, e))?;
+    tmpfile
+        .persist(&final_path)
+        .map_err(|e| AssayError::io("persisting gate eval context", &final_path, e.error))?;
+
+    Ok(final_path)
+}
+
+/// Load a gate eval context by ID from `.assay/gate_sessions/<session_id>.json`.
+///
+/// Returns [`AssayError::GateEvalContextNotFound`] if the file does not exist.
+/// Returns an error if `session_id` contains path traversal components.
+pub fn load_context(assay_dir: &Path, session_id: &str) -> Result<GateEvalContext> {
+    history::validate_path_component(session_id, "session ID")?;
+
+    let path = assay_dir
+        .join("gate_sessions")
+        .join(format!("{session_id}.json"));
+
+    let content = std::fs::read_to_string(&path).map_err(|e| {
+        if e.kind() == std::io::ErrorKind::NotFound {
+            AssayError::GateEvalContextNotFound {
+                session_id: session_id.to_string(),
+            }
+        } else {
+            AssayError::io("reading gate eval context", &path, e)
+        }
+    })?;
+
+    serde_json::from_str(&content)
+        .map_err(|e| AssayError::json("deserializing gate eval context", &path, e))
+}
+
+/// List gate eval context IDs in lexicographic order.
+///
+/// Returns an empty vec if the `gate_sessions` directory does not exist.
+pub fn list_contexts(assay_dir: &Path) -> Result<Vec<String>> {
+    let sessions_dir = assay_dir.join("gate_sessions");
+    if !sessions_dir.is_dir() {
+        return Ok(Vec::new());
+    }
+
+    let mut ids: Vec<String> = std::fs::read_dir(&sessions_dir)
+        .map_err(|e| AssayError::io("listing gate eval contexts", &sessions_dir, e))?
+        .filter_map(|entry| match entry {
+            Ok(e) => Some(e),
+            Err(e) => {
+                tracing::warn!("skipping gate eval context entry: {e}");
+                None
+            }
+        })
+        .filter_map(|entry| {
+            let path = entry.path();
+            if path.extension().is_some_and(|ext| ext == "json") {
+                path.file_stem().and_then(|s| s.to_str()).map(String::from)
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    ids.sort();
+    Ok(ids)
 }
 
 #[cfg(test)]
@@ -608,5 +713,105 @@ mod tests {
     fn resolve_evaluator_priority_empty_returns_none() {
         let evals: Vec<AgentEvaluation> = vec![];
         assert!(resolve_evaluator_priority(&evals).is_none());
+    }
+
+    // ── save / load / list contexts ──────────────────────────────
+
+    fn make_test_context(spec_name: &str) -> GateEvalContext {
+        create_session(
+            spec_name,
+            HashSet::from(["c1".to_string()]),
+            HashMap::new(),
+            vec![],
+            None,
+            false,
+            None,
+        )
+    }
+
+    #[test]
+    fn save_and_load_round_trip() {
+        let dir = tempfile::tempdir().unwrap();
+        let ctx = make_test_context("round-trip");
+        save_context(dir.path(), &ctx).unwrap();
+        let loaded = load_context(dir.path(), &ctx.session_id).unwrap();
+        assert_eq!(ctx, loaded);
+    }
+
+    #[test]
+    fn save_creates_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let gate_dir = dir.path().join("gate_sessions");
+        assert!(!gate_dir.exists());
+
+        let ctx = make_test_context("dir-create");
+        save_context(dir.path(), &ctx).unwrap();
+        assert!(gate_dir.is_dir());
+    }
+
+    #[test]
+    fn load_not_found() {
+        let dir = tempfile::tempdir().unwrap();
+        let result = load_context(dir.path(), "01NONEXISTENT0000000000000");
+        assert!(result.is_err());
+        assert!(
+            matches!(
+                result.unwrap_err(),
+                AssayError::GateEvalContextNotFound { .. }
+            ),
+            "expected GateEvalContextNotFound"
+        );
+    }
+
+    #[test]
+    fn list_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        let ids = list_contexts(dir.path()).unwrap();
+        assert!(ids.is_empty());
+    }
+
+    #[test]
+    fn list_returns_sorted() {
+        let dir = tempfile::tempdir().unwrap();
+        let c1 = make_test_context("spec");
+        let c2 = make_test_context("spec");
+        let c3 = make_test_context("spec");
+
+        // Save in non-sorted order.
+        save_context(dir.path(), &c3).unwrap();
+        save_context(dir.path(), &c1).unwrap();
+        save_context(dir.path(), &c2).unwrap();
+
+        let ids = list_contexts(dir.path()).unwrap();
+        assert_eq!(ids.len(), 3);
+
+        let mut sorted = ids.clone();
+        sorted.sort();
+        assert_eq!(ids, sorted, "list_contexts should return sorted IDs");
+
+        assert!(ids.contains(&c1.session_id));
+        assert!(ids.contains(&c2.session_id));
+        assert!(ids.contains(&c3.session_id));
+    }
+
+    #[test]
+    fn save_rejects_path_traversal() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut ctx = make_test_context("spec");
+        ctx.session_id = "../evil".to_string();
+        let result = save_context(dir.path(), &ctx);
+        assert!(result.is_err(), "should reject path-traversal session ID");
+    }
+
+    #[test]
+    fn load_rejects_path_traversal() {
+        let dir = tempfile::tempdir().unwrap();
+        let result = load_context(dir.path(), "../evil");
+        let err = result.unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("invalid session ID"),
+            "should reject via path validation, got: {msg}"
+        );
     }
 }

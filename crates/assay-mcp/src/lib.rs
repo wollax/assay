@@ -28,8 +28,9 @@ mod server;
 #[cfg(any(test, feature = "testing"))]
 pub use server::{
     AssayServer, ContextDiagnoseParams, EstimateTokensParams, GateFinalizeParams,
-    GateHistoryParams, GateReportParams, GateRunParams, MergeCheckParams, SessionCreateParams,
-    SessionGetParams, SessionListParams, SessionUpdateParams, SpecGetParams, SpecValidateParams,
+    GateHistoryParams, GateReportParams, GateRunParams, MergeCheckParams, OrchestrateRunParams,
+    OrchestrateStatusParams, SessionCreateParams, SessionGetParams, SessionListParams,
+    SessionUpdateParams, SpecGetParams, SpecValidateParams,
 };
 
 #[cfg(any(test, feature = "testing"))]

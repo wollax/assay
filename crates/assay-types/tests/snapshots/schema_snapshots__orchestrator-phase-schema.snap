@@ -1,0 +1,31 @@
+---
+source: crates/assay-types/tests/schema_snapshots.rs
+expression: schema.to_value()
+---
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "High-level phase of an orchestrated run.",
+  "oneOf": [
+    {
+      "const": "running",
+      "description": "Sessions are still being dispatched/executed.",
+      "type": "string"
+    },
+    {
+      "const": "completed",
+      "description": "All sessions completed successfully.",
+      "type": "string"
+    },
+    {
+      "const": "partial_failure",
+      "description": "At least one session failed; others may have completed or been skipped.",
+      "type": "string"
+    },
+    {
+      "const": "aborted",
+      "description": "Run was aborted (due to [`FailurePolicy::Abort`] or external signal).",
+      "type": "string"
+    }
+  ],
+  "title": "OrchestratorPhase"
+}

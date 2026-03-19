@@ -1,0 +1,32 @@
+---
+source: crates/assay-types/tests/schema_snapshots.rs
+expression: schema.to_value()
+---
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "A single entry in the merge plan, recording why a session was placed\nat a particular position in the merge sequence.",
+  "properties": {
+    "position": {
+      "description": "0-based position in the merge sequence.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "reason": {
+      "description": "Human-readable reason for this placement (e.g., \"earliest completion\" or \"0 overlapping files\").",
+      "type": "string"
+    },
+    "session_name": {
+      "description": "Effective session name.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "session_name",
+    "position",
+    "reason"
+  ],
+  "title": "MergePlanEntry",
+  "type": "object"
+}

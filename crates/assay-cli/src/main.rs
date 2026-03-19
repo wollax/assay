@@ -114,6 +114,33 @@ Examples:
         #[command(subcommand)]
         command: commands::worktree::WorktreeCommand,
     },
+    /// Run a manifest through the end-to-end pipeline
+    #[command(after_long_help = "\
+Examples:
+  Run a manifest:
+    assay run manifest.toml
+
+  Override timeout:
+    assay run manifest.toml --timeout 900
+
+  Output as JSON:
+    assay run manifest.toml --json")]
+    Run(commands::run::RunCommand),
+    /// Agent harness configuration management
+    #[command(after_long_help = "\
+Examples:
+  Generate Claude Code config:
+    assay harness generate claude-code
+
+  Install Codex config into project:
+    assay harness install codex --spec auth-flow
+
+  Check what would change:
+    assay harness diff opencode")]
+    Harness {
+        #[command(subcommand)]
+        command: commands::harness::HarnessCommand,
+    },
     /// Team state checkpointing
     #[command(after_long_help = "\
 Examples:
@@ -138,6 +165,15 @@ Examples:
         #[command(subcommand)]
         command: commands::checkpoint::CheckpointCommand,
     },
+    /// Manage project milestones
+    #[command(after_long_help = "\
+Examples:
+  List all milestones in the project:
+    assay milestone list")]
+    Milestone {
+        #[command(subcommand)]
+        command: commands::milestone::MilestoneCommand,
+    },
 }
 
 /// Core CLI logic. Returns an exit code on success.
@@ -151,7 +187,10 @@ async fn run() -> anyhow::Result<i32> {
         Some(Command::Gate { command }) => commands::gate::handle(command),
         Some(Command::Context { command }) => commands::context::handle(command),
         Some(Command::Worktree { command }) => commands::worktree::handle(command),
+        Some(Command::Run(cmd)) => commands::run::execute(&cmd),
+        Some(Command::Harness { command }) => commands::harness::handle(command),
         Some(Command::Checkpoint { command }) => commands::checkpoint::handle(command),
+        Some(Command::Milestone { command }) => commands::milestone::handle(command),
         None => {
             // Note: project detection checks cwd only — no upward traversal.
             // Running `assay` from a subdirectory of a project shows the hint.

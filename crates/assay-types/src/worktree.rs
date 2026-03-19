@@ -14,8 +14,18 @@ pub struct WorktreeConfig {
     /// Base directory for worktrees.
     /// Relative paths are resolved from the project root.
     /// Default: `"../<project-name>-worktrees/"` (computed at runtime when empty).
+    ///
+    /// Stored as `String` rather than `PathBuf` because this is a serialized config field
+    /// and changing the type would be a schema-breaking change.
     #[serde(default)]
     pub base_dir: String,
+}
+
+impl WorktreeConfig {
+    /// Return `base_dir` as a `Path` reference for convenient filesystem operations.
+    pub fn as_path(&self) -> &std::path::Path {
+        std::path::Path::new(&self.base_dir)
+    }
 }
 
 inventory::submit! {
@@ -27,11 +37,15 @@ inventory::submit! {
 
 /// Metadata persisted alongside a worktree at `<worktree>/.assay/worktree.json`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct WorktreeMetadata {
     /// The base branch this worktree was created from.
     pub base_branch: String,
     /// The spec slug this worktree is associated with.
     pub spec_slug: String,
+    /// Optional session ID linking this worktree to an active work session.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
 }
 
 inventory::submit! {
@@ -57,6 +71,13 @@ pub struct WorktreeInfo {
     /// Populated on create and list (from metadata), `None` when metadata is missing.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub base_branch: Option<String>,
+}
+
+inventory::submit! {
+    crate::schema_registry::SchemaEntry {
+        name: "worktree-info",
+        generate: || schemars::schema_for!(WorktreeInfo),
+    }
 }
 
 /// Status of a worktree including runtime state.
@@ -85,4 +106,11 @@ pub struct WorktreeStatus {
     /// Warnings about degraded status (e.g., missing base ref).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub warnings: Vec<String>,
+}
+
+inventory::submit! {
+    crate::schema_registry::SchemaEntry {
+        name: "worktree-status",
+        generate: || schemars::schema_for!(WorktreeStatus),
+    }
 }
