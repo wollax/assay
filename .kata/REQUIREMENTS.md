@@ -424,25 +424,25 @@
 
 ### R043 — Development cycle state machine
 - Class: core-capability
-- Status: active
+- Status: validated
 - Description: Milestones track development phases: draft → in_progress → verify → complete. Transitions are guarded: in_progress requires at least one chunk; verify requires all chunks' required gates to pass; complete requires the milestone to have been in verify state. Invalid transitions return structured errors.
 - Why it matters: The state machine is what turns Assay into a workflow engine — without it, milestones are just labeled buckets of specs
 - Source: user
 - Primary owning slice: M005/S02
 - Supporting slices: M005/S01
-- Validation: unmapped
-- Notes: State is persisted in the milestone TOML file. Transitions driven by `cycle_advance` MCP tool and `assay milestone advance` CLI command.
+- Validation: S02 — milestone_phase_transition enforces guarded transitions; cycle_advance evaluates gates before marking a chunk complete and auto-transitions to Verify when last chunk done; test_milestone_phase_transition_valid + test_milestone_phase_transition_invalid prove all guard conditions; all 1308 workspace tests green; just ready green
+- Notes: State persisted in milestone TOML file. Transitions driven by cycle_advance MCP tool and assay milestone advance CLI command. Invalid transitions return AssayError::Io with descriptive from/to message.
 
 ### R044 — Cycle MCP tools
 - Class: core-capability
-- Status: active
+- Status: validated
 - Description: New MCP tools: `milestone_list` (list all milestones with status/progress), `milestone_get` (full milestone details including chunk statuses), `cycle_status` (current active milestone + active chunk + phase), `cycle_advance` (mark current chunk gates-verified, activate next chunk or advance milestone phase), `chunk_status` (gate pass/fail summary for a specific chunk).
 - Why it matters: Agent-driven workflows require MCP tools to query and advance the development cycle — without them the agent has no way to know where it is or what comes next
 - Source: user
 - Primary owning slice: M005/S02
 - Supporting slices: M005/S01
-- Validation: unmapped
-- Notes: Additive tools only. `cycle_advance` checks all required gates pass before advancing. Returns structured errors when guard conditions are not met.
+- Validation: S02 — cycle_status, cycle_advance, chunk_status registered in MCP router (3 presence tests pass); cycle_status returns null/CycleStatus JSON; cycle_advance wraps spawn_blocking and returns updated CycleStatus or domain_error; chunk_status reads history without triggering gate evaluation; milestone_list and milestone_get validated in S01; all tools additive
+- Notes: cycle_advance rejects advancement when required gates fail, returning AssayError::Io with required_failed count and chunk slug. chunk_status returns { has_history: false } gracefully for new chunks.
 
 ### R045 — Gate-gated PR creation
 - Class: primary-user-loop
@@ -701,8 +701,8 @@
 | R040 | core-capability | validated | M005/S01 | M005/S02 | S01 |
 | R041 | core-capability | validated | M005/S01 | M005/S02, M005/S03, M005/S04 | S01 |
 | R042 | primary-user-loop | active | M005/S03 | M005/S01 | mapped |
-| R043 | core-capability | active | M005/S02 | M005/S01 | mapped |
-| R044 | core-capability | active | M005/S02 | M005/S01 | mapped |
+| R043 | core-capability | validated | M005/S02 | M005/S01 | S02 |
+| R044 | core-capability | validated | M005/S02 | M005/S01 | S02 |
 | R045 | primary-user-loop | active | M005/S04 | M005/S01, M005/S02 | mapped |
 | R046 | convention | active | M005/S04 | M005/S01 | mapped |
 | R047 | differentiator | active | M005/S05 | M005/S01–S04 | mapped |
