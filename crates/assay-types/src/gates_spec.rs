@@ -325,7 +325,8 @@ description = "Code compiles"
 
         // Roundtrip
         let re_serialized = toml::to_string(&spec).expect("re-serialize");
-        let roundtripped: GatesSpec = toml::from_str(&re_serialized).expect("roundtrip deserialize");
+        let roundtripped: GatesSpec =
+            toml::from_str(&re_serialized).expect("roundtrip deserialize");
         assert_eq!(spec, roundtripped);
         assert_eq!(roundtripped.milestone, Some("my-feature".to_string()));
         assert_eq!(roundtripped.order, Some(2));
@@ -342,7 +343,10 @@ description = "A check"
 "#;
         let spec: GatesSpec = toml::from_str(toml_str).expect("legacy TOML should parse fine");
         assert_eq!(spec.name, "legacy-spec");
-        assert!(spec.milestone.is_none(), "milestone should be None when absent");
+        assert!(
+            spec.milestone.is_none(),
+            "milestone should be None when absent"
+        );
         assert!(spec.order.is_none(), "order should be None when absent");
     }
 

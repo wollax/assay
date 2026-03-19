@@ -17,10 +17,10 @@ pub mod feature_spec;
 pub mod gate;
 pub mod gate_run;
 pub mod gates_spec;
-pub mod milestone;
 pub mod harness;
 pub mod manifest;
 pub mod merge;
+pub mod milestone;
 pub mod schema_registry;
 pub mod session;
 pub mod validation;
@@ -47,7 +47,6 @@ pub use feature_spec::FeatureSpec;
 pub use gate::{GateKind, GateResult};
 pub use gate_run::{CriterionResult, DiffTruncation, GateRunRecord, GateRunSummary};
 pub use gates_spec::{GateCriterion, GatesSpec};
-pub use milestone::{ChunkRef, Milestone, MilestoneStatus};
 pub use harness::{
     HarnessProfile, HookContract, HookEvent, PromptLayer, PromptLayerKind, ScopeViolation,
     ScopeViolationType, SettingsOverride,
@@ -57,6 +56,7 @@ pub use merge::{
     ChangeType, ConflictMarker, ConflictScan, ConflictType, FileChange, MarkerType, MergeCheck,
     MergeConflict, MergeExecuteResult,
 };
+pub use milestone::{ChunkRef, Milestone, MilestoneStatus};
 pub use session::{AgentEvaluation, Confidence, EvaluatorRole, GateEvalContext};
 pub use validation::{Diagnostic, DiagnosticSummary, Severity, ValidationResult};
 pub use work_session::{AgentInvocation, PhaseTransition, SessionPhase, WorkSession};

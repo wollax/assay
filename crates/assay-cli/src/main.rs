@@ -165,6 +165,15 @@ Examples:
         #[command(subcommand)]
         command: commands::checkpoint::CheckpointCommand,
     },
+    /// Manage project milestones
+    #[command(after_long_help = "\
+Examples:
+  List all milestones in the project:
+    assay milestone list")]
+    Milestone {
+        #[command(subcommand)]
+        command: commands::milestone::MilestoneCommand,
+    },
 }
 
 /// Core CLI logic. Returns an exit code on success.
@@ -181,6 +190,7 @@ async fn run() -> anyhow::Result<i32> {
         Some(Command::Run(cmd)) => commands::run::execute(&cmd),
         Some(Command::Harness { command }) => commands::harness::handle(command),
         Some(Command::Checkpoint { command }) => commands::checkpoint::handle(command),
+        Some(Command::Milestone { command }) => commands::milestone::handle(command),
         None => {
             // Note: project detection checks cwd only — no upward traversal.
             // Running `assay` from a subdirectory of a project shows the hint.

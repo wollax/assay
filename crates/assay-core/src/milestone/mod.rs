@@ -31,9 +31,8 @@ pub fn milestone_scan(assay_dir: &Path) -> Result<Vec<Milestone>> {
         return Ok(vec![]);
     }
 
-    let entries = std::fs::read_dir(&milestones_dir).map_err(|e| {
-        AssayError::io("reading milestones directory", &milestones_dir, e)
-    })?;
+    let entries = std::fs::read_dir(&milestones_dir)
+        .map_err(|e| AssayError::io("reading milestones directory", &milestones_dir, e))?;
 
     let mut milestones = Vec::new();
 

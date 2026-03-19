@@ -4,6 +4,7 @@ pub mod gate;
 pub mod harness;
 pub mod init;
 pub mod mcp;
+pub mod milestone;
 pub mod run;
 pub mod spec;
 pub mod worktree;

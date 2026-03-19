@@ -60,7 +60,7 @@ inventory::submit! {
 ///
 /// Persisted to `.assay/milestones/<slug>.toml`. The `slug` field in the file
 /// must match the filename (e.g. `my-feature.toml` → `slug = "my-feature"`).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Milestone {
     /// Unique identifier for this milestone; must match the TOML filename without extension.
@@ -125,8 +125,14 @@ mod tests {
             description: Some("Delivers the my-feature capability".to_string()),
             status: MilestoneStatus::InProgress,
             chunks: vec![
-                ChunkRef { slug: "auth-flow".to_string(), order: 1 },
-                ChunkRef { slug: "payment-flow".to_string(), order: 2 },
+                ChunkRef {
+                    slug: "auth-flow".to_string(),
+                    order: 1,
+                },
+                ChunkRef {
+                    slug: "payment-flow".to_string(),
+                    order: 2,
+                },
             ],
             depends_on: vec!["auth-foundation".to_string()],
             pr_branch: Some("feat/my-feature".to_string()),

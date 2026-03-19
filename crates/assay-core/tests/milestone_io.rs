@@ -106,8 +106,8 @@ fn test_milestone_load_error_for_missing_slug() {
     let tmp = TempDir::new().expect("create temp dir");
     let assay_dir = make_assay_dir(&tmp);
 
-    let err = milestone_load(&assay_dir, "nonexistent")
-        .expect_err("expected Err for nonexistent slug");
+    let err =
+        milestone_load(&assay_dir, "nonexistent").expect_err("expected Err for nonexistent slug");
 
     let display = err.to_string();
     assert!(
@@ -130,8 +130,7 @@ fn test_milestone_slug_validation_rejects_traversal() {
     let mut evil = make_milestone("evil");
     evil.slug = "../evil".to_string();
 
-    let err = milestone_save(&assay_dir, &evil)
-        .expect_err("expected Err for traversal slug");
+    let err = milestone_save(&assay_dir, &evil).expect_err("expected Err for traversal slug");
 
     let display = err.to_string();
     assert!(
