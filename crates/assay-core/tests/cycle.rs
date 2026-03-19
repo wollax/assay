@@ -7,8 +7,10 @@ use chrono::Utc;
 use std::fs;
 use tempfile::TempDir;
 
+use assay_core::milestone::cycle::{
+    active_chunk, cycle_advance, cycle_status, milestone_phase_transition,
+};
 use assay_core::milestone::{milestone_save, milestone_scan};
-use assay_core::milestone::cycle::{active_chunk, cycle_advance, cycle_status, milestone_phase_transition};
 use assay_types::{ChunkRef, Milestone, MilestoneStatus};
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -19,7 +21,11 @@ fn make_assay_dir(tmp: &TempDir) -> std::path::PathBuf {
     assay_dir
 }
 
-fn make_milestone_with_status(slug: &str, status: MilestoneStatus, chunks: Vec<ChunkRef>) -> Milestone {
+fn make_milestone_with_status(
+    slug: &str,
+    status: MilestoneStatus,
+    chunks: Vec<ChunkRef>,
+) -> Milestone {
     let now = Utc::now();
     Milestone {
         slug: slug.to_string(),
@@ -80,7 +86,10 @@ fn test_cycle_status_draft_milestone() {
     let draft = make_milestone_with_status(
         "draft-ms",
         MilestoneStatus::Draft,
-        vec![ChunkRef { slug: "chunk-a".to_string(), order: 1 }],
+        vec![ChunkRef {
+            slug: "chunk-a".to_string(),
+            order: 1,
+        }],
     );
     milestone_save(&assay_dir, &draft).expect("save draft milestone");
 
@@ -102,8 +111,14 @@ fn test_cycle_status_in_progress() {
         "active-ms",
         MilestoneStatus::InProgress,
         vec![
-            ChunkRef { slug: "chunk-a".to_string(), order: 1 },
-            ChunkRef { slug: "chunk-b".to_string(), order: 2 },
+            ChunkRef {
+                slug: "chunk-a".to_string(),
+                order: 1,
+            },
+            ChunkRef {
+                slug: "chunk-b".to_string(),
+                order: 2,
+            },
         ],
     );
     milestone_save(&assay_dir, &milestone).expect("save milestone");
@@ -135,8 +150,14 @@ fn test_active_chunk_sorted_by_order() {
         "order-test",
         MilestoneStatus::InProgress,
         vec![
-            ChunkRef { slug: "chunk-b".to_string(), order: 2 },
-            ChunkRef { slug: "chunk-a".to_string(), order: 1 },
+            ChunkRef {
+                slug: "chunk-b".to_string(),
+                order: 2,
+            },
+            ChunkRef {
+                slug: "chunk-a".to_string(),
+                order: 1,
+            },
         ],
     );
     milestone_save(&assay_dir, &milestone).expect("save milestone");
@@ -170,8 +191,14 @@ fn test_cycle_advance_marks_chunk_complete() {
         "advance-test",
         MilestoneStatus::InProgress,
         vec![
-            ChunkRef { slug: "chunk-a".to_string(), order: 1 },
-            ChunkRef { slug: "chunk-b".to_string(), order: 2 },
+            ChunkRef {
+                slug: "chunk-a".to_string(),
+                order: 1,
+            },
+            ChunkRef {
+                slug: "chunk-b".to_string(),
+                order: 2,
+            },
         ],
     );
     milestone_save(&assay_dir, &milestone).expect("save milestone");
@@ -217,8 +244,14 @@ fn test_cycle_advance_all_chunks_move_to_verify() {
         "two-chunk-ms",
         MilestoneStatus::InProgress,
         vec![
-            ChunkRef { slug: "chunk-a".to_string(), order: 1 },
-            ChunkRef { slug: "chunk-b".to_string(), order: 2 },
+            ChunkRef {
+                slug: "chunk-a".to_string(),
+                order: 1,
+            },
+            ChunkRef {
+                slug: "chunk-b".to_string(),
+                order: 2,
+            },
         ],
     );
     milestone_save(&assay_dir, &milestone).expect("save milestone");
@@ -267,7 +300,10 @@ fn test_cycle_advance_gates_fail_returns_error() {
     let milestone = make_milestone_with_status(
         "fail-test",
         MilestoneStatus::InProgress,
-        vec![ChunkRef { slug: "chunk-fail".to_string(), order: 1 }],
+        vec![ChunkRef {
+            slug: "chunk-fail".to_string(),
+            order: 1,
+        }],
     );
     milestone_save(&assay_dir, &milestone).expect("save milestone");
 
@@ -305,7 +341,10 @@ fn test_milestone_phase_transition_valid() {
         name: "Trans Test".to_string(),
         description: None,
         status: MilestoneStatus::Draft,
-        chunks: vec![ChunkRef { slug: "chunk-a".to_string(), order: 1 }],
+        chunks: vec![ChunkRef {
+            slug: "chunk-a".to_string(),
+            order: 1,
+        }],
         completed_chunks: vec![],
         depends_on: vec![],
         pr_branch: None,
@@ -358,7 +397,10 @@ fn test_milestone_phase_transition_invalid() {
         .expect_err("Verify → InProgress should be invalid");
     let msg = err.to_string();
     assert!(
-        msg.contains("verify") || msg.contains("in_progress") || msg.contains("invalid") || msg.contains("transition"),
+        msg.contains("verify")
+            || msg.contains("in_progress")
+            || msg.contains("invalid")
+            || msg.contains("transition"),
         "error should describe the invalid transition, got: {msg}"
     );
 
@@ -368,7 +410,10 @@ fn test_milestone_phase_transition_invalid() {
         .expect_err("Draft → Verify should be invalid");
     let msg2 = err2.to_string();
     assert!(
-        msg2.contains("draft") || msg2.contains("verify") || msg2.contains("invalid") || msg2.contains("transition"),
+        msg2.contains("draft")
+            || msg2.contains("verify")
+            || msg2.contains("invalid")
+            || msg2.contains("transition"),
         "error should describe the invalid transition, got: {msg2}"
     );
 
@@ -394,7 +439,10 @@ fn test_cycle_advance_no_active_milestone() {
     let draft = make_milestone_with_status(
         "draft-only",
         MilestoneStatus::Draft,
-        vec![ChunkRef { slug: "chunk-a".to_string(), order: 1 }],
+        vec![ChunkRef {
+            slug: "chunk-a".to_string(),
+            order: 1,
+        }],
     );
     milestone_save(&assay_dir, &draft).expect("save draft milestone");
 
@@ -409,7 +457,10 @@ fn test_cycle_advance_no_active_milestone() {
 
     let msg = result.unwrap_err().to_string();
     assert!(
-        msg.contains("no active") || msg.contains("InProgress") || msg.contains("in_progress") || msg.contains("milestone"),
+        msg.contains("no active")
+            || msg.contains("InProgress")
+            || msg.contains("in_progress")
+            || msg.contains("milestone"),
         "error should describe missing active milestone, got: {msg}"
     );
 }

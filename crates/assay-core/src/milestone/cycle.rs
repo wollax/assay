@@ -19,7 +19,7 @@ use crate::error::{AssayError, Result};
 use crate::gate::evaluate_all_gates;
 use crate::history::validate_path_component;
 use crate::milestone::{milestone_load, milestone_save, milestone_scan};
-use crate::spec::{load_spec_entry_with_diagnostics, SpecEntry};
+use crate::spec::{SpecEntry, load_spec_entry_with_diagnostics};
 
 // ── CycleStatus ──────────────────────────────────────────────────────────────
 
