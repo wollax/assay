@@ -2,7 +2,7 @@
 
 **Active Milestone:** M005 — Spec-Driven Development Core
 **Active Slice:** S02 — Development Cycle State Machine
-**Active Task:** T02 — Implement `cycle.rs` state machine in assay-core
+**Active Task:** T03 — Wire three cycle MCP tools
 **Phase:** Executing
 **Last Updated:** 2026-03-19
 **Requirements Status:** 18 active (R042–R059) · 35 validated (R039–R041 newly validated) · 2 deferred · 4 out of scope
@@ -38,4 +38,4 @@ None.
 
 ## Next Action
 
-Execute T02: Create `crates/assay-core/src/milestone/cycle.rs` with `CycleStatus` struct and four public functions: `active_chunk`, `cycle_status`, `milestone_phase_transition`, `cycle_advance`. Add `pub mod cycle;` to `milestone/mod.rs`. Run `cargo test -p assay-core --features assay-types/orchestrate --test cycle` — all 10 tests must pass.
+Execute T03: Wire `cycle_status`, `cycle_advance`, and `milestone_phase_transition` as three new MCP tools in `crates/assay-mcp/src/server.rs`. Run `cargo test -p assay-mcp -- cycle` — 3 presence tests must pass.
