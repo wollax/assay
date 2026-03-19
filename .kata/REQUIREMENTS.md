@@ -380,35 +380,35 @@
 
 ### R039 — Milestone concept
 - Class: core-capability
-- Status: active
+- Status: validated
 - Description: Milestones are first-class project organization units stored as TOML files in `.assay/milestones/`. A milestone has a name, description, ordered list of chunk references (spec slugs), status (draft/in_progress/verify/complete), optional depends_on other milestones, and optional PR settings (base_branch, branch_prefix).
 - Why it matters: Without a milestone layer, Assay is a gate runner — with it, Assay becomes a development cycle manager that tracks progress across related chunks of work
 - Source: user
 - Primary owning slice: M005/S01
 - Supporting slices: M005/S02, M005/S03, M005/S04
-- Validation: unmapped
+- Validation: S01 — Milestone, ChunkRef, MilestoneStatus types in assay-types with TOML round-trip tests and schema snapshots locked; milestone_list and milestone_get MCP tools registered; assay milestone list CLI subcommand functional; just ready green
 - Notes: Milestone files live in `.assay/milestones/<slug>.toml`. Chunk references are spec slugs that must exist in `.assay/specs/`.
 
 ### R040 — Chunk-as-spec
 - Class: core-capability
-- Status: active
+- Status: validated
 - Description: Specs gain backward-compatible `milestone` and `order` metadata fields. A chunk IS a spec — it has gates.toml criteria, can be run independently via `gate run`, and also belongs to a milestone with an explicit ordering. Existing specs without these fields continue to work unchanged.
 - Why it matters: Reusing the existing spec format avoids a parallel system — milestone membership is a metadata overlay, not a separate entity type
 - Source: user
 - Primary owning slice: M005/S01
 - Supporting slices: M005/S02
-- Validation: unmapped
+- Validation: S01 — GatesSpec extended with serde(default, skip_serializing_if) fields; gates_spec_rejects_unknown_fields still passes; 3 new backward-compat tests pass; 1293 workspace tests green
 - Notes: Fields added to GatesSpec: `milestone: Option<String>` and `order: Option<u32>`. Fully backward-compatible.
 
 ### R041 — Milestone file I/O
 - Class: core-capability
-- Status: active
+- Status: validated
 - Description: `assay-core` provides `milestone_load()`, `milestone_save()`, and `milestone_scan()` for TOML-based milestone persistence under `.assay/milestones/`. Atomic writes (tempfile-rename), validation on load, clear errors on malformed files.
 - Why it matters: Reliable milestone persistence is the foundation for all cycle state tracking, wizard output, and PR workflow
 - Source: inferred
 - Primary owning slice: M005/S01
 - Supporting slices: M005/S02, M005/S03, M005/S04
-- Validation: unmapped
+- Validation: S01 — milestone_load, milestone_save, milestone_scan implemented with atomic NamedTempFile+sync_all+persist; 5 integration tests in crates/assay-core/tests/milestone_io.rs all pass; AssayError::Io carries path and operation label on every failure
 - Notes: Same atomic write pattern established in history.rs and work_session.rs.
 
 ### R042 — Guided authoring wizard
@@ -697,9 +697,9 @@
 | R036 | core-capability | validated | M004/S02 | none | S02 |
 | R037 | core-capability | validated | M004/S03 | none | S03 |
 | R038 | core-capability | validated | M004/S03 | none | S03 |
-| R039 | core-capability | active | M005/S01 | M005/S02, M005/S03, M005/S04 | mapped |
-| R040 | core-capability | active | M005/S01 | M005/S02 | mapped |
-| R041 | core-capability | active | M005/S01 | M005/S02, M005/S03, M005/S04 | mapped |
+| R039 | core-capability | validated | M005/S01 | M005/S02, M005/S03, M005/S04 | S01 |
+| R040 | core-capability | validated | M005/S01 | M005/S02 | S01 |
+| R041 | core-capability | validated | M005/S01 | M005/S02, M005/S03, M005/S04 | S01 |
 | R042 | primary-user-loop | active | M005/S03 | M005/S01 | mapped |
 | R043 | core-capability | active | M005/S02 | M005/S01 | mapped |
 | R044 | core-capability | active | M005/S02 | M005/S01 | mapped |

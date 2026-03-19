@@ -52,7 +52,7 @@ This milestone is complete only when all are true:
 
 ## Slices
 
-- [ ] **S01: Milestone & Chunk Type Foundation** `risk:high` `depends:[]`
+- [x] **S01: Milestone & Chunk Type Foundation** `risk:high` `depends:[]`
   > After this: `assay milestone list` shows milestones from `.assay/milestones/`; existing specs with added `milestone` field still pass all gate runs; `milestone_list` and `milestone_get` MCP tools return structured data.
 
 - [ ] **S02: Development Cycle State Machine** `risk:high` `depends:[S01]`

@@ -20,6 +20,8 @@ v0.4.0 on main. ~20K lines of Rust across 6 crates. M001–M004 complete. 1271 t
 
 **M004 (complete):** Coordination modes — OrchestratorMode enum, Mesh executor (parallel + roster + file-based peer messaging + SWIM membership), Gossip executor (coordinator + knowledge manifest + PromptLayer injection). 32 requirements validated, 1271 tests.
 
+**M005 (in progress, S01 complete):** Spec-driven development core — S01 delivered: `Milestone`, `ChunkRef`, `MilestoneStatus` types in assay-types, backward-compatible GatesSpec extension (`milestone`/`order` fields), `milestone_scan`/`milestone_load`/`milestone_save` in assay-core, `milestone_list`/`milestone_get` MCP tools (tool count: 24), `assay milestone list` CLI subcommand. 35 requirements validated. 1293 tests.
+
 Crates:
 
 - **assay-types**: Serializable DTOs — Spec, Criterion, GateRunRecord, GateEvalContext, WorkSession, WorktreeMetadata, Config, HarnessProfile, PromptLayer, SettingsOverride, HookContract, OrchestratorStatus, SessionRunState, FailurePolicy, MergeStrategy, ScopeConfig, ScopeViolation, etc.
@@ -56,7 +58,7 @@ See `.kata/REQUIREMENTS.md` for the explicit capability contract, requirement st
 - [x] M002: Multi-Agent Orchestration — DAG executor, parallel sessions, sequential merge, multi-adapter harness, scope enforcement (complete, 24 requirements validated, 1183 tests)
 - [x] M003: Conflict Resolution & Polish — AI conflict resolution, audit trail, post-resolution validation (complete, 27 requirements validated, 1222 tests)
 - [x] M004: Coordination Modes — Mesh and Gossip modes, mode dispatch, knowledge manifest, SWIM membership (complete, 32 requirements validated, 1271 tests)
-- [ ] M005: Spec-Driven Development Core — milestone/chunk hierarchy, guided authoring wizard, development cycle state machine, gate-gated PR, plugin upgrades
+- [ ] M005: Spec-Driven Development Core — S01 complete (types/I/O/MCP/CLI foundation); S02–S06 in progress (cycle state machine, wizard, PR workflow, plugins)
 - [ ] M006: TUI as Primary Surface — real Ratatui TUI with project dashboard, interactive wizard, spec browser, provider config
 - [ ] M007: TUI Agent Harness — TUI spawns and controls AI agents, provider abstraction (Anthropic/OpenAI/Ollama), MCP management, slash commands
 - [ ] M008: PR Workflow + Plugin Parity — advanced PR automation, OpenCode plugin, history analytics
