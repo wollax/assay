@@ -8,7 +8,7 @@ use std::fs;
 use tempfile::TempDir;
 
 use assay_core::milestone::{milestone_save, milestone_scan};
-use assay_core::milestone::cycle::{active_chunk, cycle_advance, cycle_status, milestone_phase_transition, CycleStatus};
+use assay_core::milestone::cycle::{active_chunk, cycle_advance, cycle_status, milestone_phase_transition};
 use assay_types::{ChunkRef, Milestone, MilestoneStatus};
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -40,7 +40,9 @@ fn make_milestone_with_status(slug: &str, status: MilestoneStatus, chunks: Vec<C
 fn create_passing_spec(assay_dir: &std::path::Path, chunk_slug: &str) {
     let spec_dir = assay_dir.join("specs").join(chunk_slug);
     fs::create_dir_all(&spec_dir).expect("create spec dir");
-    let gates_toml = "[gates]\n[[gates.criteria]]\nname = \"pass\"\nshell = \"true\"\n";
+    let gates_toml = format!(
+        "name = \"{chunk_slug}\"\n\n[[criteria]]\nname = \"pass\"\ndescription = \"always passes\"\ncmd = \"true\"\n"
+    );
     fs::write(spec_dir.join("gates.toml"), gates_toml).expect("write gates.toml");
 }
 
@@ -48,7 +50,9 @@ fn create_passing_spec(assay_dir: &std::path::Path, chunk_slug: &str) {
 fn create_failing_spec(assay_dir: &std::path::Path, chunk_slug: &str) {
     let spec_dir = assay_dir.join("specs").join(chunk_slug);
     fs::create_dir_all(&spec_dir).expect("create spec dir");
-    let gates_toml = "[gates]\n[[gates.criteria]]\nname = \"fail\"\nshell = \"false\"\n";
+    let gates_toml = format!(
+        "name = \"{chunk_slug}\"\n\n[[criteria]]\nname = \"fail\"\ndescription = \"always fails\"\ncmd = \"false\"\n"
+    );
     fs::write(spec_dir.join("gates.toml"), gates_toml).expect("write gates.toml");
 }
 
