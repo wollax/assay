@@ -74,7 +74,7 @@ Tests:
 
 ## Tasks
 
-- [ ] **T01: Add `completed_chunks` to Milestone and write failing cycle integration tests** `est:45m`
+- [x] **T01: Add `completed_chunks` to Milestone and write failing cycle integration tests** `est:45m`
   - Why: Extends the Milestone type with the field that tracks which chunks are done (the central S02 data model change), and establishes the integration test suite that drives T02 implementation
   - Files: `crates/assay-types/src/milestone.rs`, `crates/assay-types/tests/snapshots/schema_snapshots__milestone-schema.snap`, `crates/assay-core/tests/cycle.rs`
   - Do: (1) Add `completed_chunks: Vec<String>` to `Milestone` with `#[serde(default, skip_serializing_if = "Vec::is_empty")]`; update both struct literals in the `#[cfg(test)]` block to include `completed_chunks: vec![]`; (2) Run `INSTA_UPDATE=always cargo test -p assay-types` to regenerate the milestone schema snapshot; (3) Create `crates/assay-core/tests/cycle.rs` with all 10 tests listed in the Verification section — these tests call `cycle::cycle_status`, `cycle::active_chunk`, `cycle::cycle_advance`, `cycle::milestone_phase_transition` which don't exist yet, so they fail to compile; (4) Confirm `cargo test --workspace` (with the feature flag) still passes at 1293+
