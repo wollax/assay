@@ -88,7 +88,7 @@ Tests:
   - Verify: `cargo test -p assay-core --features assay-types/orchestrate --test cycle` passes all 10 tests; `cargo test --workspace` green
   - Done when: All 10 cycle integration tests pass; `just ready` green
 
-- [ ] **T03: Add `cycle_status`, `cycle_advance`, `chunk_status` MCP tools** `est:45m`
+- [x] **T03: Add `cycle_status`, `cycle_advance`, `chunk_status` MCP tools** `est:45m`
   - Why: Exposes the cycle state machine to MCP consumers (agent tools); completes R044
   - Files: `crates/assay-mcp/src/server.rs`
   - Do: (1) Add `CycleStatusParams {}`, `CycleAdvanceParams { milestone_slug: Option<String> }`, `ChunkStatusParams { chunk_slug: String }` near the other milestone param structs; (2) Define a local `ChunkStatusResponse { chunk_slug, has_history, latest_run_id, passed, failed, required_failed }` struct with `#[derive(Serialize)]` in server.rs (consistent with D051 pattern); (3) Add `cycle_status` tool method: resolve cwd + assay_dir, call `assay_core::milestone::cycle_status(&assay_dir)`, serialize result as JSON (null for None, CycleStatus JSON for Some); (4) Add `cycle_advance` tool method: resolve cwd + config, call `tokio::task::spawn_blocking(move || assay_core::milestone::cycle_advance(&assay_dir, &specs_dir, &working_dir, slug.as_deref(), config_timeout))`, serialize `CycleStatus` on Ok or return `domain_error` on Err; (5) Add `chunk_status` tool method: resolve cwd + assay_dir, validate slug via `validate_path_component`, call `assay_core::history::list(&assay_dir, &params.chunk_slug)`, get last run_id, if Some call `history::load`, build `ChunkStatusResponse`; (6) Add 3 presence tests mirroring `milestone_list_tool_in_router`
