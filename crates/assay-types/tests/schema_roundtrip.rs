@@ -285,6 +285,8 @@ fn gates_spec_validates() {
         description: String::new(),
         gate: None,
         depends: vec![],
+        milestone: None,
+        order: None,
         criteria: vec![GateCriterion {
             name: "auth-compiles".to_string(),
             description: "Auth module compiles".to_string(),

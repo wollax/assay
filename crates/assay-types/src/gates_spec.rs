@@ -41,6 +41,19 @@ pub struct GatesSpec {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub depends: Vec<String>,
 
+    /// Optional milestone slug this spec belongs to (e.g. `"my-feature"`).
+    ///
+    /// When set, this spec is associated with a milestone tracked in
+    /// `.assay/milestones/<slug>.toml`. Omitted from serialized output when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub milestone: Option<String>,
+
+    /// Optional ordering hint within the milestone's chunk sequence.
+    ///
+    /// Lower values sort earlier. Omitted from serialized output when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub order: Option<u32>,
+
     /// Gate criteria that must be satisfied.
     pub criteria: Vec<GateCriterion>,
 }
@@ -72,6 +85,8 @@ mod tests {
             description: String::new(),
             gate: None,
             depends: vec![],
+            milestone: None,
+            order: None,
             criteria: vec![GateCriterion {
                 name: "compiles".to_string(),
                 description: "Code compiles".to_string(),
@@ -253,6 +268,8 @@ unknown_crit_key = true
             description: "Both command and agent criteria".to_string(),
             gate: None,
             depends: vec![],
+            milestone: None,
+            order: None,
             criteria: vec![
                 GateCriterion {
                     name: "compiles".to_string(),
@@ -291,6 +308,45 @@ unknown_crit_key = true
     }
 
     #[test]
+    fn gates_spec_milestone_fields_roundtrip() {
+        let toml_str = r#"
+name = "auth-flow"
+milestone = "my-feature"
+order = 2
+
+[[criteria]]
+name = "compiles"
+description = "Code compiles"
+"#;
+        let spec: GatesSpec = toml::from_str(toml_str).expect("parse with milestone fields");
+        assert_eq!(spec.name, "auth-flow");
+        assert_eq!(spec.milestone, Some("my-feature".to_string()));
+        assert_eq!(spec.order, Some(2));
+
+        // Roundtrip
+        let re_serialized = toml::to_string(&spec).expect("re-serialize");
+        let roundtripped: GatesSpec = toml::from_str(&re_serialized).expect("roundtrip deserialize");
+        assert_eq!(spec, roundtripped);
+        assert_eq!(roundtripped.milestone, Some("my-feature".to_string()));
+        assert_eq!(roundtripped.order, Some(2));
+    }
+
+    #[test]
+    fn gates_spec_milestone_fields_absent_from_legacy_toml() {
+        let toml_str = r#"
+name = "legacy-spec"
+
+[[criteria]]
+name = "check"
+description = "A check"
+"#;
+        let spec: GatesSpec = toml::from_str(toml_str).expect("legacy TOML should parse fine");
+        assert_eq!(spec.name, "legacy-spec");
+        assert!(spec.milestone.is_none(), "milestone should be None when absent");
+        assert!(spec.order.is_none(), "order should be None when absent");
+    }
+
+    #[test]
     fn gates_spec_gate_section_toml_roundtrip() {
         let spec = GatesSpec {
             name: "gated-spec".to_string(),
@@ -299,6 +355,8 @@ unknown_crit_key = true
                 enforcement: Enforcement::Advisory,
             }),
             depends: vec![],
+            milestone: None,
+            order: None,
             criteria: vec![GateCriterion {
                 name: "check".to_string(),
                 description: "A check".to_string(),

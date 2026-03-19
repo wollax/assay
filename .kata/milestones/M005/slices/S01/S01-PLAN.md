@@ -41,7 +41,7 @@
 
 ## Tasks
 
-- [ ] **T01: Define Milestone types in assay-types and extend GatesSpec** `est:1h`
+- [x] **T01: Define Milestone types in assay-types and extend GatesSpec** `est:1h`
   - Why: Every downstream task (I/O, MCP, CLI) depends on the type definitions; locking the schema here prevents drift. GatesSpec backward-compat is a high-risk item that must be verified first.
   - Files: `crates/assay-types/src/gates_spec.rs`, `crates/assay-types/src/milestone.rs` (new), `crates/assay-types/src/lib.rs`, `crates/assay-types/tests/schema_snapshots.rs`
   - Do: Add `milestone: Option<String>` and `order: Option<u32>` to `GatesSpec` with `#[serde(default, skip_serializing_if = "Option::is_none")]` after the `depends` field and before `criteria`. Create `milestone.rs` with `MilestoneStatus` enum (`draft`, `in_progress`, `verify`, `complete`; `#[serde(rename_all = "snake_case")]`), `ChunkRef` struct (`slug: String`, `order: u32`), and `Milestone` struct (`slug: String`, `name: String`, `description: Option<String>`, `chunks: Vec<ChunkRef>`, `status: MilestoneStatus`, `depends_on: Vec<String>`, `pr_branch: Option<String>`, `pr_base: Option<String>`, `created_at: DateTime<Utc>`, `updated_at: DateTime<Utc>`). Apply `deny_unknown_fields`, `JsonSchema`, `Serialize`/`Deserialize`, `Debug`, `Clone`, `PartialEq`. Register `SchemaEntry` via `inventory::submit!` for all three new types. Re-export `Milestone`, `ChunkRef`, `MilestoneStatus` from `assay-types/src/lib.rs`. Add schema snapshot tests to `schema_snapshots.rs` for all three types plus the updated `GatesSpec`. Run `cargo test -p assay-types` → new snapshots generated → run `cargo insta review` → run `cargo test -p assay-types` again to confirm green.

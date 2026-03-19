@@ -229,6 +229,32 @@ fn scope_violation_schema_snapshot() {
     assert_json_snapshot!("scope-violation-schema", schema.to_value());
 }
 
+// ── Milestone types ──────────────────────────────────────────────────
+
+#[test]
+fn milestone_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::Milestone);
+    assert_json_snapshot!("milestone-schema", schema.to_value());
+}
+
+#[test]
+fn chunk_ref_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::ChunkRef);
+    assert_json_snapshot!("chunk-ref-schema", schema.to_value());
+}
+
+#[test]
+fn milestone_status_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::MilestoneStatus);
+    assert_json_snapshot!("milestone-status-schema", schema.to_value());
+}
+
+#[test]
+fn gates_spec_schema_updated_snapshot() {
+    let schema = schemars::schema_for!(assay_types::GatesSpec);
+    assert_json_snapshot!("gates-spec-schema", schema.to_value());
+}
+
 // ── Merge execution types ────────────────────────────────────────────
 
 #[test]

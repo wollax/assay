@@ -1788,6 +1788,8 @@ cmd = "true"
             description: String::new(),
             gate: None,
             depends: vec![],
+            milestone: None,
+            order: None,
             criteria: vec![assay_types::GateCriterion {
                 name: "c1".into(),
                 description: "d1".into(),
@@ -1810,6 +1812,8 @@ cmd = "true"
             description: String::new(),
             gate: None,
             depends: vec![],
+            milestone: None,
+            order: None,
             criteria: vec![],
         };
         let errors = validate_gates_spec(&spec).unwrap_err();
@@ -1823,6 +1827,8 @@ cmd = "true"
             description: String::new(),
             gate: None,
             depends: vec![],
+            milestone: None,
+            order: None,
             criteria: vec![
                 assay_types::GateCriterion {
                     name: "dup".into(),
@@ -1945,6 +1951,8 @@ cmd = "true"
                 enforcement: Enforcement::Advisory,
             }),
             depends: vec![],
+            milestone: None,
+            order: None,
             criteria: vec![assay_types::GateCriterion {
                 name: "lint".into(),
                 description: "lint".into(),
