@@ -62,6 +62,13 @@ expression: schema.to_value()
       },
       "type": "array"
     },
+    "completed_chunks": {
+      "description": "Slugs of chunks that have been verified and advanced past in the development cycle.\n\nThis is the central state for the cycle state machine: the \"active chunk\" is\nderived at runtime as the lowest-`order` `ChunkRef` whose slug is not in this list.",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
     "created_at": {
       "description": "When this milestone record was first created.",
       "format": "date-time",
