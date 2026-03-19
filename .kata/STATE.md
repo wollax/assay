@@ -2,11 +2,11 @@
 
 **Active Milestone:** M005 — Spec-Driven Development Core
 **Active Slice:** S01 — Milestone & Chunk Type Foundation
-**Active Task:** T02 — Milestone file I/O in assay-core
+**Active Task:** T03 — Register milestone_list and milestone_get MCP tools and add assay milestone CLI stub
 **Phase:** Executing
 **Last Updated:** 2026-03-19
 **Requirements Status:** 21 active (R039–R059) · 32 validated · 2 deferred · 4 out of scope
-**Test Count:** 1283 (all passing — T01 complete)
+**Test Count:** 1288+ (all passing — T01+T02 complete)
 
 ## Completed Milestones
 
@@ -45,8 +45,9 @@ None.
 
 ## Next Action
 
-Execute M005/S01/T02: Milestone file I/O in assay-core.
+Execute M005/S01/T03: Register milestone_list and milestone_get MCP tools, add assay milestone CLI stub.
 
-T01 ✅ complete — Milestone/ChunkRef/MilestoneStatus types in assay-types, GatesSpec extended with milestone/order, all snapshots accepted, 1283 tests green.
+T01 ✅ complete — Milestone/ChunkRef/MilestoneStatus types in assay-types, GatesSpec extended, 1283 tests green.
+T02 ✅ complete — milestone_scan/load/save in assay-core::milestone, 5 integration tests green, atomic writes.
 
-T02: Create `crates/assay-core/src/milestone/` module with `milestone_load`, `milestone_save`, `milestone_scan` functions. Write `cargo test -p assay-core --test milestone_io` integration tests. Branch: `kata/root/M005/S01`.
+T03: Add milestone_list and milestone_get tools to AssayServer in assay-mcp; add `assay milestone list` CLI subcommand in assay-cli. Branch: `kata/root/M005/S01`.
