@@ -1,4 +1,4 @@
-//! MCP server implementation with spec, gate, context, worktree, and session tools.
+//! MCP server implementation with spec, gate, context, worktree, session, and milestone tools.
 //!
 //! Provides the [`AssayServer`] which exposes tools over MCP:
 //! - `spec_list` — discover available specs
@@ -20,6 +20,8 @@
 //! - `session_get` — retrieve full session details by ID
 //! - `session_update` — transition session phase and link gate runs
 //! - `session_list` — list sessions with optional spec_name and status filters
+//! - `milestone_list` — list all milestones in the current project
+//! - `milestone_get` — get full details of a milestone by slug
 //!
 //! All domain errors are returned as `CallToolResult` with `isError: true`
 //! so that agents can see and self-correct. Protocol errors (`McpError`)
@@ -40,6 +42,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
+use assay_core::milestone::{milestone_load, milestone_scan};
 use assay_core::spec::SpecEntry;
 use assay_types::work_session::SessionPhase;
 use assay_types::{
@@ -523,6 +526,17 @@ pub struct GateEvaluateParams {
     )]
     #[serde(default)]
     pub model: Option<String>,
+}
+
+/// Parameters for the `milestone_list` tool.
+#[derive(Deserialize, JsonSchema)]
+pub struct MilestoneListParams {}
+
+/// Parameters for the `milestone_get` tool.
+#[derive(Deserialize, JsonSchema)]
+pub struct MilestoneGetParams {
+    #[schemars(description = "Milestone slug (filename without .toml, e.g. 'my-feature')")]
+    pub slug: String,
 }
 
 // ── Response structs ─────────────────────────────────────────────────
@@ -3235,6 +3249,50 @@ impl AssayServer {
             merge_report,
         };
         let json = serde_json::to_string_pretty(&response)
+            .map_err(|e| McpError::internal_error(format!("serialization failed: {e}"), None))?;
+
+        Ok(CallToolResult::success(vec![Content::text(json)]))
+    }
+
+    /// List all milestones in the current project.
+    #[tool(
+        description = "List all milestones in the current project. Returns an array of milestone summaries including slug, name, status, and chunk count."
+    )]
+    pub async fn milestone_list(
+        &self,
+        _params: Parameters<MilestoneListParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let cwd = resolve_cwd()?;
+        let assay_dir = cwd.join(".assay");
+
+        let milestones = match milestone_scan(&assay_dir) {
+            Ok(m) => m,
+            Err(e) => return Ok(domain_error(&e)),
+        };
+
+        let json = serde_json::to_string(&milestones)
+            .map_err(|e| McpError::internal_error(format!("serialization failed: {e}"), None))?;
+
+        Ok(CallToolResult::success(vec![Content::text(json)]))
+    }
+
+    /// Get full details of a milestone by slug.
+    #[tool(
+        description = "Get full details of a milestone by slug, including all chunk references and status."
+    )]
+    pub async fn milestone_get(
+        &self,
+        params: Parameters<MilestoneGetParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let cwd = resolve_cwd()?;
+        let assay_dir = cwd.join(".assay");
+
+        let milestone = match milestone_load(&assay_dir, &params.0.slug) {
+            Ok(m) => m,
+            Err(e) => return Ok(domain_error(&e)),
+        };
+
+        let json = serde_json::to_string(&milestone)
             .map_err(|e| McpError::internal_error(format!("serialization failed: {e}"), None))?;
 
         Ok(CallToolResult::success(vec![Content::text(json)]))
@@ -7355,6 +7413,82 @@ spec = "auth"
         assert_eq!(
             value["merge_report"]["sessions_merged"], 0,
             "sessions_merged should be 0, got: {text}"
+        );
+    }
+
+    // ── milestone_list tests ─────────────────────────────────────────
+
+    #[tokio::test]
+    #[serial]
+    async fn milestone_list_tool_in_router() {
+        let server = AssayServer::new();
+        let tools = server.tool_router.list_all();
+        let tool_names: Vec<&str> = tools.iter().map(|t| t.name.as_ref()).collect();
+        assert!(
+            tool_names.contains(&"milestone_list"),
+            "milestone_list should be in tool list, got: {tool_names:?}"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn milestone_get_tool_in_router() {
+        let server = AssayServer::new();
+        let tools = server.tool_router.list_all();
+        let tool_names: Vec<&str> = tools.iter().map(|t| t.name.as_ref()).collect();
+        assert!(
+            tool_names.contains(&"milestone_get"),
+            "milestone_get should be in tool list, got: {tool_names:?}"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn milestone_list_returns_empty_json_array_for_no_milestones() {
+        let dir = create_project(r#"project_name = "milestone-test""#);
+        std::env::set_current_dir(dir.path()).unwrap();
+
+        let server = AssayServer::new();
+        let result = server
+            .milestone_list(Parameters(MilestoneListParams {}))
+            .await
+            .unwrap();
+
+        assert!(
+            !result.is_error.unwrap_or(false),
+            "milestone_list should succeed for a project with no milestones"
+        );
+        let text = extract_text(&result);
+        let value: serde_json::Value = serde_json::from_str(&text)
+            .unwrap_or_else(|e| panic!("response should be valid JSON, got: {text:?}, err: {e}"));
+        assert!(
+            value.is_array(),
+            "response should be a JSON array, got: {text}"
+        );
+        assert_eq!(
+            value.as_array().unwrap().len(),
+            0,
+            "response should be an empty array for no milestones, got: {text}"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn milestone_get_returns_error_for_missing_slug() {
+        let dir = create_project(r#"project_name = "milestone-test""#);
+        std::env::set_current_dir(dir.path()).unwrap();
+
+        let server = AssayServer::new();
+        let result = server
+            .milestone_get(Parameters(MilestoneGetParams {
+                slug: "nonexistent".to_string(),
+            }))
+            .await
+            .unwrap();
+
+        assert!(
+            result.is_error.unwrap_or(false),
+            "milestone_get should return isError: true for a missing slug"
         );
     }
 }

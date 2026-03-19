@@ -20,6 +20,7 @@ pub mod gates_spec;
 pub mod harness;
 pub mod manifest;
 pub mod merge;
+pub mod milestone;
 pub mod schema_registry;
 pub mod session;
 pub mod validation;
@@ -55,6 +56,7 @@ pub use merge::{
     ChangeType, ConflictMarker, ConflictScan, ConflictType, FileChange, MarkerType, MergeCheck,
     MergeConflict, MergeExecuteResult,
 };
+pub use milestone::{ChunkRef, Milestone, MilestoneStatus};
 pub use session::{AgentEvaluation, Confidence, EvaluatorRole, GateEvalContext};
 pub use validation::{Diagnostic, DiagnosticSummary, Severity, ValidationResult};
 pub use work_session::{AgentInvocation, PhaseTransition, SessionPhase, WorkSession};

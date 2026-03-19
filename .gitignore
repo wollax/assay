@@ -50,3 +50,6 @@ vendor/
 coverage/
 .cache/
 tmp/
+
+# ── Kata baseline (auto-generated) ──
+.kata/debug.log
