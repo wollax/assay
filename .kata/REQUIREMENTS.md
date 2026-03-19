@@ -378,6 +378,237 @@
 - Validation: S02 — MergeReport.resolutions[0] populated with session_name, original_contents (with markers), resolved_contents (clean), resolver_stdout in test_merge_resolutions_audit_trail integration test; persisted to merge_report.json; surfaced via orchestrate_status MCP tool returning { status, merge_report } wrapper; just ready passes
 - Notes: Recorded as Vec<ConflictResolution> on MergeReport. Viewable via CLI --json and orchestrate_status MCP tool.
 
+### R039 — Milestone concept
+- Class: core-capability
+- Status: active
+- Description: Milestones are first-class project organization units stored as TOML files in `.assay/milestones/`. A milestone has a name, description, ordered list of chunk references (spec slugs), status (draft/in_progress/verify/complete), optional depends_on other milestones, and optional PR settings (base_branch, branch_prefix).
+- Why it matters: Without a milestone layer, Assay is a gate runner — with it, Assay becomes a development cycle manager that tracks progress across related chunks of work
+- Source: user
+- Primary owning slice: M005/S01
+- Supporting slices: M005/S02, M005/S03, M005/S04
+- Validation: unmapped
+- Notes: Milestone files live in `.assay/milestones/<slug>.toml`. Chunk references are spec slugs that must exist in `.assay/specs/`.
+
+### R040 — Chunk-as-spec
+- Class: core-capability
+- Status: active
+- Description: Specs gain backward-compatible `milestone` and `order` metadata fields. A chunk IS a spec — it has gates.toml criteria, can be run independently via `gate run`, and also belongs to a milestone with an explicit ordering. Existing specs without these fields continue to work unchanged.
+- Why it matters: Reusing the existing spec format avoids a parallel system — milestone membership is a metadata overlay, not a separate entity type
+- Source: user
+- Primary owning slice: M005/S01
+- Supporting slices: M005/S02
+- Validation: unmapped
+- Notes: Fields added to GatesSpec: `milestone: Option<String>` and `order: Option<u32>`. Fully backward-compatible.
+
+### R041 — Milestone file I/O
+- Class: core-capability
+- Status: active
+- Description: `assay-core` provides `milestone_load()`, `milestone_save()`, and `milestone_scan()` for TOML-based milestone persistence under `.assay/milestones/`. Atomic writes (tempfile-rename), validation on load, clear errors on malformed files.
+- Why it matters: Reliable milestone persistence is the foundation for all cycle state tracking, wizard output, and PR workflow
+- Source: inferred
+- Primary owning slice: M005/S01
+- Supporting slices: M005/S02, M005/S03, M005/S04
+- Validation: unmapped
+- Notes: Same atomic write pattern established in history.rs and work_session.rs.
+
+### R042 — Guided authoring wizard
+- Class: primary-user-loop
+- Status: active
+- Description: `assay plan` is an interactive CLI wizard that asks structured questions (goal description, success criteria per chunk, verification commands) and generates a complete milestone TOML + chunk specs (gates.toml + optional spec.toml) from the answers. Also available as a `milestone_create` / `spec_create` MCP tool pair for agent-driven authoring.
+- Why it matters: A beginning developer cannot write gate criteria from scratch — the wizard is the primary entry point that makes Assay accessible without prior knowledge of the spec format
+- Source: user
+- Primary owning slice: M005/S03
+- Supporting slices: M005/S01
+- Validation: unmapped
+- Notes: Wizard asks: milestone goal, chunk breakdown (1-7 chunks), success criteria per chunk, shell commands that verify each criterion. Generates valid, immediately-runnable spec files.
+
+### R043 — Development cycle state machine
+- Class: core-capability
+- Status: active
+- Description: Milestones track development phases: draft → in_progress → verify → complete. Transitions are guarded: in_progress requires at least one chunk; verify requires all chunks' required gates to pass; complete requires the milestone to have been in verify state. Invalid transitions return structured errors.
+- Why it matters: The state machine is what turns Assay into a workflow engine — without it, milestones are just labeled buckets of specs
+- Source: user
+- Primary owning slice: M005/S02
+- Supporting slices: M005/S01
+- Validation: unmapped
+- Notes: State is persisted in the milestone TOML file. Transitions driven by `cycle_advance` MCP tool and `assay milestone advance` CLI command.
+
+### R044 — Cycle MCP tools
+- Class: core-capability
+- Status: active
+- Description: New MCP tools: `milestone_list` (list all milestones with status/progress), `milestone_get` (full milestone details including chunk statuses), `cycle_status` (current active milestone + active chunk + phase), `cycle_advance` (mark current chunk gates-verified, activate next chunk or advance milestone phase), `chunk_status` (gate pass/fail summary for a specific chunk).
+- Why it matters: Agent-driven workflows require MCP tools to query and advance the development cycle — without them the agent has no way to know where it is or what comes next
+- Source: user
+- Primary owning slice: M005/S02
+- Supporting slices: M005/S01
+- Validation: unmapped
+- Notes: Additive tools only. `cycle_advance` checks all required gates pass before advancing. Returns structured errors when guard conditions are not met.
+
+### R045 — Gate-gated PR creation
+- Class: primary-user-loop
+- Status: active
+- Description: `assay pr create <milestone>` checks that all required gates in all milestone chunks pass, then creates a GitHub PR via `gh` CLI. PR is opened only when the gate check succeeds. PR number and URL are stored in the milestone file for tracking. Also available as a `pr_create` MCP tool.
+- Why it matters: The PR is the delivery artifact — gate-gating it ensures only verified work ships, closing the quality loop between spec → implementation → PR
+- Source: user
+- Primary owning slice: M005/S04
+- Supporting slices: M005/S01, M005/S02
+- Validation: unmapped
+- Notes: Shells out to `gh pr create` (consistent with D008 git-CLI-first). Returns structured error when gates fail, listing which chunks have failing criteria.
+
+### R046 — Branch-per-chunk naming
+- Class: convention
+- Status: active
+- Description: Worktree branches for chunk work follow the naming convention `assay/<milestone-slug>/<chunk-slug>`. The existing worktree system (D008) creates these branches. The PR command opens the PR from this branch to the configured base branch (default: main).
+- Why it matters: Consistent branch naming makes the development history readable and enables the PR workflow to locate the correct branch without ambiguity
+- Source: inferred
+- Primary owning slice: M005/S04
+- Supporting slices: M005/S01
+- Validation: unmapped
+- Notes: Extends the existing `assay/<spec>` worktree branch convention (already used in M001-M004).
+
+### R047 — Claude Code plugin upgrade
+- Class: differentiator
+- Status: active
+- Description: The Claude Code plugin gains new skills (`/assay:plan`, `/assay:status`, `/assay:next-chunk`) and updated CLAUDE.md that describes the full guided workflow cycle. New hooks: Stop hook checks cycle status and reports incomplete chunks, PreCompact hook saves milestone checkpoint. Commands directory populated with workflow commands.
+- Why it matters: The plugin is the integration surface for Claude Code users — without upgraded skills the guided workflow is invisible inside Claude Code
+- Source: user
+- Primary owning slice: M005/S05
+- Supporting slices: M005/S01, M005/S02, M005/S03, M005/S04
+- Validation: unmapped
+- Notes: Builds on the existing plugin structure (hooks, skills, CLAUDE.md). New skills consume `milestone_list`, `cycle_status`, `cycle_advance`, `pr_create` MCP tools.
+
+### R048 — Codex plugin (basic)
+- Class: differentiator
+- Status: active
+- Description: The Codex plugin gains a complete AGENTS.md workflow guide and four skills: gate-check, spec-show, cycle-status, and plan. These give Codex users the same spec-driven workflow experience as Claude Code users.
+- Why it matters: Plugin parity at launch — both major agent platforms get a working plugin in M005
+- Source: user
+- Primary owning slice: M005/S06
+- Supporting slices: M005/S01, M005/S02
+- Validation: unmapped
+- Notes: Ports gate-check and spec-show skills from Claude Code plugin; adds cycle-status and plan as new skills mirroring M005/S05.
+
+### R049 — TUI project dashboard
+- Class: primary-user-loop
+- Status: active
+- Description: A real Ratatui TUI application (replacing the current stub) with a project dashboard showing: list of milestones with status indicators, chunk progress per milestone (X/N complete), gate status summary per chunk (pass/fail/pending), and keyboard navigation.
+- Why it matters: The TUI is the preferred primary interface — a real dashboard is what makes Assay feel like a first-class development tool rather than a CLI
+- Source: user
+- Primary owning slice: M006/S01
+- Supporting slices: none
+- Validation: unmapped
+- Notes: Reads milestone and gate data from `.assay/` via assay-core. No agent spawning in M006/S01.
+
+### R050 — TUI interactive wizard
+- Class: primary-user-loop
+- Status: active
+- Description: The guided authoring wizard (R042) runs inside the TUI as an interactive form, allowing spec creation without dropping to the CLI.
+- Why it matters: The TUI should be self-sufficient — requiring CLI for wizard defeats the purpose of a primary-surface TUI
+- Source: user
+- Primary owning slice: M006/S02
+- Supporting slices: M006/S01
+- Validation: unmapped
+- Notes: Reuses the wizard logic from assay-core; the TUI provides the interactive rendering.
+
+### R051 — TUI spec browser
+- Class: primary-user-loop
+- Status: active
+- Description: The TUI allows navigation into any spec, displaying criteria, their descriptions, and the latest gate run result (pass/fail/pending) with evidence on demand.
+- Why it matters: Developers need to inspect what's being verified — the spec browser gives visibility into the gate criteria without reading raw TOML
+- Source: user
+- Primary owning slice: M006/S02
+- Supporting slices: M006/S01
+- Validation: unmapped
+- Notes: Reads from assay-core spec scan + gate history.
+
+### R052 — TUI provider configuration
+- Class: operability
+- Status: active
+- Description: The TUI has a configuration screen for AI provider selection (Anthropic, OpenAI, Ollama) and model selection per phase (planning, execution, review). Settings persist to `.assay/config.toml`.
+- Why it matters: Different providers and models have different cost/quality tradeoffs — users need to configure without editing TOML files
+- Source: user
+- Primary owning slice: M006/S03
+- Supporting slices: none
+- Validation: unmapped
+- Notes: Extends the existing Config type in assay-types.
+
+### R053 — TUI agent spawning
+- Class: core-capability
+- Status: active
+- Description: The TUI can spawn, monitor, and display output from AI agent sessions (assay pipeline runs) for the active chunk. Shows live status, gate results as they come in, and surfaces failures inline.
+- Why it matters: The TUI becomes the primary development loop — spawning agents from the dashboard closes the cycle without leaving the TUI
+- Source: user
+- Primary owning slice: M007/S01
+- Supporting slices: M006/S01
+- Validation: unmapped
+- Notes: Uses assay-core pipeline. Agent output streamed to TUI panel. Gate results update dashboard in real time.
+
+### R054 — Provider abstraction
+- Class: core-capability
+- Status: active
+- Description: Assay abstracts the AI provider layer so users can configure Anthropic (Claude), OpenAI (GPT), or Ollama (local) as the agent backend. Provider selection affects harness adapter choice and model configuration.
+- Why it matters: Lock-in to a single provider limits adoption — provider abstraction enables beginners to use whichever AI tool they have access to
+- Source: user
+- Primary owning slice: M007/S01
+- Supporting slices: M007/S02
+- Validation: unmapped
+- Notes: Anthropic (Claude Code) already works. OpenAI and Ollama require new harness adapters or config-level switching.
+
+### R055 — TUI MCP server management
+- Class: operability
+- Status: active
+- Description: The TUI has a panel for connecting, disconnecting, and inspecting MCP servers. Shows connected servers, available tools, and connection status.
+- Why it matters: Power users need to extend Assay's capabilities via MCP without editing JSON config files
+- Source: user
+- Primary owning slice: M007/S02
+- Supporting slices: none
+- Validation: unmapped
+- Notes: Connects to MCP servers via the same mechanism as the CLI. Server list configured in `.assay/mcp.json`.
+
+### R056 — TUI slash commands
+- Class: primary-user-loop
+- Status: active
+- Description: The TUI has a command input (triggered by `/`) that accepts slash commands: `/gate-check`, `/spec-show`, `/plan`, `/status`, `/next-chunk`, `/pr-create`. Commands execute against the active milestone/chunk context.
+- Why it matters: Power users expect keyboard-driven control — slash commands provide a fast path for common operations without mouse navigation
+- Source: user
+- Primary owning slice: M007/S03
+- Supporting slices: M007/S01, M007/S02
+- Validation: unmapped
+- Notes: Same commands as the plugin skills, but executed locally in the TUI context.
+
+### R057 — OpenCode plugin
+- Class: differentiator
+- Status: active
+- Description: Full OpenCode plugin matching Claude Code plugin: AGENTS.md, skills (gate-check, spec-show, cycle-status, plan), and opencode.json configuration. Completes the three-platform plugin parity.
+- Why it matters: OpenCode is the third major agent platform — parity across all three platforms maximizes reach
+- Source: user
+- Primary owning slice: M008/S01
+- Supporting slices: none
+- Validation: unmapped
+- Notes: OpenCode plugin scaffold already exists in `plugins/opencode/` (package.json, opencode.json, tsconfig.json). M008 fills in the content.
+
+### R058 — Advanced PR workflow
+- Class: primary-user-loop
+- Status: active
+- Description: PR creation supports configurable labels, reviewers, and PR body templates. The TUI shows PR status (open/merged/closed, CI status, review status) for milestones with open PRs.
+- Why it matters: The basic PR creation (R045) gets work out the door — labels, reviewers, and templates make it usable in team workflows
+- Source: user
+- Primary owning slice: M008/S02
+- Supporting slices: M008/S01
+- Validation: unmapped
+- Notes: Extends the milestone TOML pr_settings field. PR status from `gh pr view --json`.
+
+### R059 — Gate history analytics
+- Class: failure-visibility
+- Status: active
+- Description: Assay tracks and surfaces gate failure trends across runs — which criteria fail most often, which chunks require the most retries, milestone completion velocity. Accessible from TUI analytics panel and `assay history --analytics` CLI command.
+- Why it matters: Identifying recurring failures helps developers improve their specs and find systemic quality issues before they reach PR
+- Source: user
+- Primary owning slice: M008/S03
+- Supporting slices: none
+- Validation: unmapped
+- Notes: Aggregates from existing `.assay/history/` records. No new storage format needed.
+
 ## Out of Scope
 
 ### R030 — Trait objects for adapter dispatch
@@ -466,11 +697,33 @@
 | R036 | core-capability | validated | M004/S02 | none | S02 |
 | R037 | core-capability | validated | M004/S03 | none | S03 |
 | R038 | core-capability | validated | M004/S03 | none | S03 |
+| R039 | core-capability | active | M005/S01 | M005/S02, M005/S03, M005/S04 | mapped |
+| R040 | core-capability | active | M005/S01 | M005/S02 | mapped |
+| R041 | core-capability | active | M005/S01 | M005/S02, M005/S03, M005/S04 | mapped |
+| R042 | primary-user-loop | active | M005/S03 | M005/S01 | mapped |
+| R043 | core-capability | active | M005/S02 | M005/S01 | mapped |
+| R044 | core-capability | active | M005/S02 | M005/S01 | mapped |
+| R045 | primary-user-loop | active | M005/S04 | M005/S01, M005/S02 | mapped |
+| R046 | convention | active | M005/S04 | M005/S01 | mapped |
+| R047 | differentiator | active | M005/S05 | M005/S01–S04 | mapped |
+| R048 | differentiator | active | M005/S06 | M005/S01, M005/S02 | mapped |
+| R049 | primary-user-loop | active | M006/S01 | none | mapped |
+| R050 | primary-user-loop | active | M006/S02 | M006/S01 | mapped |
+| R051 | primary-user-loop | active | M006/S02 | M006/S01 | mapped |
+| R052 | operability | active | M006/S03 | none | mapped |
+| R053 | core-capability | active | M007/S01 | M006/S01 | mapped |
+| R054 | core-capability | active | M007/S01 | M007/S02 | mapped |
+| R055 | operability | active | M007/S02 | none | mapped |
+| R056 | primary-user-loop | active | M007/S03 | M007/S01, M007/S02 | mapped |
+| R057 | differentiator | active | M008/S01 | none | mapped |
+| R058 | primary-user-loop | active | M008/S02 | M008/S01 | mapped |
+| R059 | failure-visibility | active | M008/S03 | none | mapped |
 
 ## Coverage Summary
 
-- Active requirements: 0
-- Mapped to slices: 0
+- Active requirements: 21 (R039–R059)
+- Mapped to slices: 21
 - Validated: 32 (R001–R029, R034–R038)
-- Deferred: 3 (R025, R027 — with rationale)
+- Deferred: 2 (R025, R027 — with rationale)
+- Out of scope: 4 (R030, R031, R032, R033)
 - Unmapped active requirements: 0

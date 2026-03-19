@@ -5,9 +5,18 @@ prefer_skills: []
 avoid_skills: []
 skill_rules: []
 custom_instructions: []
-models: {}
-skill_discovery: {}
+pr:
+  enabled: true
+  auto_create: true
+  base_branch: main
+  review_on_create: true
+models:
+  review: claude-sonnet-4-6
+  planner: claude-opus-4-6
+skill_discovery: suggest
 auto_supervisor: {}
+workflow:
+  mode: file
 ---
 
 # Kata Skill Preferences
