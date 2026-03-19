@@ -3440,11 +3440,10 @@ impl AssayServer {
 
         // list returns oldest-first; last() is the most recent run.
         let latest_run_id = all_ids.last().unwrap().clone();
-        let record =
-            match assay_core::history::load(&assay_dir, chunk_slug, &latest_run_id) {
-                Ok(r) => r,
-                Err(e) => return Ok(domain_error(&e)),
-            };
+        let record = match assay_core::history::load(&assay_dir, chunk_slug, &latest_run_id) {
+            Ok(r) => r,
+            Err(e) => return Ok(domain_error(&e)),
+        };
 
         let response = ChunkStatusResponse {
             chunk_slug: chunk_slug.clone(),

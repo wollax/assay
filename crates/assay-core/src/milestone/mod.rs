@@ -11,7 +11,7 @@
 pub mod cycle;
 
 pub use cycle::{
-    active_chunk, cycle_advance, cycle_status, milestone_phase_transition, CycleStatus,
+    CycleStatus, active_chunk, cycle_advance, cycle_status, milestone_phase_transition,
 };
 
 use std::io::Write as _;
