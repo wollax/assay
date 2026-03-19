@@ -51,6 +51,9 @@ pub mod merge;
 /// End-to-end pipeline orchestrator: manifest → worktree → harness → agent → gate → merge.
 pub mod pipeline;
 
+/// Milestone I/O: scan, load, and save milestones under `.assay/milestones/`.
+pub mod milestone;
+
 /// Session dependency orchestration: DAG construction and validation.
 ///
 /// Gated behind the `orchestrate` Cargo feature.
