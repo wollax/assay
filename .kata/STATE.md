@@ -1,9 +1,9 @@
 # Kata State
 
 **Active Milestone:** M005 — Spec-Driven Development Core
-**Active Slice:** — (planning complete; ready to execute S01)
-**Active Task:** —
-**Phase:** M005 planned — S01 next
+**Active Slice:** S01 — Milestone & Chunk Type Foundation
+**Active Task:** T01 — Define Milestone types in assay-types and extend GatesSpec
+**Phase:** Planned — ready to execute
 **Last Updated:** 2026-03-19
 **Requirements Status:** 21 active (R039–R059) · 32 validated · 2 deferred · 4 out of scope
 **Test Count:** 1271 (all passing — M004 complete)
@@ -38,13 +38,15 @@
 
 None.
 
+## Recent Decisions
+
+- D069: `Milestone.slug` is stored in TOML (like `GatesSpec.name`), not derived from filename — authoritative round-trip
+- D070: S01 verification strategy is contract + integration proof (no agent spawning; no end-to-end workflow)
+
 ## Next Action
 
-Begin M005/S01: Milestone & Chunk Type Foundation. Branch: `kata/assay/M005/S01`. Read M005-CONTEXT.md and M005-ROADMAP.md S01 boundary map before starting. Add `dialoguer` to Cargo.toml workspace deps for S03 (can be added now to unblock S03 later).
+Execute M005/S01/T01: Define Milestone types in assay-types and extend GatesSpec.
 
-Tasks:
-1. Add `Milestone`, `ChunkRef`, `MilestoneStatus` types to `assay-types/src/milestone.rs` with schema snapshots
-2. Add `milestone: Option<String>`, `order: Option<u32>` to `GatesSpec` in `assay-types/src/gates_spec.rs` (serde default)
-3. Add `assay-core::milestone` module: `milestone_load()`, `milestone_save()`, `milestone_scan()`
-4. Register `milestone_list` and `milestone_get` MCP tools in `assay-mcp/src/server.rs`
-5. Verify all 1271 existing tests still pass
+Read `.kata/milestones/M005/slices/S01/S01-PLAN.md` for full task list and verification criteria. Branch already exists: `kata/assay/M005/S01`.
+
+T01: `crates/assay-types/src/gates_spec.rs` (add milestone/order fields) + `crates/assay-types/src/milestone.rs` (new — Milestone, ChunkRef, MilestoneStatus) + schema snapshots. Run `cargo insta review` to accept new snapshots. Verify `cargo test -p assay-types` green including `gates_spec_rejects_unknown_fields`.
