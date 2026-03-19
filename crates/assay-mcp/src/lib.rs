@@ -2,12 +2,13 @@
 //!
 //! This crate provides the MCP server implementation that exposes Assay's
 //! spec, gate, context, worktree, and session operations as MCP tools.
-//! Eighteen tools are available:
+//! Twenty-two tools are available:
 //!
 //! - `spec_list` — discover available specs in the project
 //! - `spec_get` — read a full spec definition by name
 //! - `spec_validate` — statically validate a spec without running it
 //! - `gate_run` — evaluate quality gate criteria (auto-creates sessions for agent criteria)
+//! - `gate_evaluate` — evaluate all criteria via headless Claude Code subprocess
 //! - `gate_report` — submit an agent evaluation for a criterion in an active session
 //! - `gate_finalize` — finalize a session, persisting all evaluations as a GateRunRecord
 //! - `gate_history` — query past gate run results for a spec
@@ -22,6 +23,9 @@
 //! - `session_get` — retrieve full session details by ID
 //! - `session_update` — transition session phase and link gate runs
 //! - `session_list` — list sessions with optional spec_name and status filters
+//! - `run_manifest` — run a manifest through the end-to-end pipeline
+//! - `orchestrate_run` — run a multi-session manifest through the orchestrator
+//! - `orchestrate_status` — read persisted orchestrator state for a run ID
 
 mod server;
 
