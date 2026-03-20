@@ -51,7 +51,7 @@ This milestone is complete only when all are true:
 
 ## Slices
 
-- [ ] **S01: App Scaffold, Dashboard, and Binary Fix** `risk:high` `depends:[]`
+- [x] **S01: App Scaffold, Dashboard, and Binary Fix** `risk:high` `depends:[]`
   > After this: `cargo build -p assay-tui` produces a real `assay-tui` binary; launching it on any project shows a live dashboard with milestones (name, status badge, chunk progress fraction) loaded from `assay-core::milestone_scan`; arrow keys navigate the list; `q` quits; no panic on missing `.assay/`
 
 - [ ] **S02: In-TUI Authoring Wizard** `risk:high` `depends:[S01]`
