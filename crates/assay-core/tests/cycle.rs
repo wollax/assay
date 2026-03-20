@@ -142,10 +142,10 @@ fn test_cycle_status_in_progress() {
 
 #[test]
 fn test_active_chunk_sorted_by_order() {
-    let tmp = TempDir::new().expect("create temp dir");
-    let assay_dir = make_assay_dir(&tmp);
+    // No tempdir or disk I/O needed — active_chunk is a pure in-memory function.
 
-    // Stored with order=2 before order=1 (intentionally reversed)
+    // Chunks stored with order=2 before order=1 (intentionally reversed insertion order).
+    // active_chunk must sort by order and return chunk-a (order=1).
     let mut milestone = make_milestone_with_status(
         "order-test",
         MilestoneStatus::InProgress,
@@ -160,7 +160,6 @@ fn test_active_chunk_sorted_by_order() {
             },
         ],
     );
-    milestone_save(&assay_dir, &milestone).expect("save milestone");
 
     let chunk = active_chunk(&milestone).expect("expected active chunk");
     assert_eq!(

@@ -47,8 +47,9 @@ pub struct CycleStatus {
 
 /// Return the next incomplete chunk in order, or `None` if all are done.
 ///
-/// Chunks are sorted ascending by [`ChunkRef::order`].  The first chunk whose
-/// slug does not appear in `milestone.completed_chunks` is returned.
+/// Chunks are sorted ascending by [`ChunkRef::order`] (a required `u32`).
+/// The first chunk whose slug does not appear in `milestone.completed_chunks`
+/// is returned.  Ties in `order` preserve insertion order (stable sort).
 pub fn active_chunk(milestone: &Milestone) -> Option<&ChunkRef> {
     let mut ordered: Vec<&ChunkRef> = milestone.chunks.iter().collect();
     ordered.sort_by_key(|c| c.order);
