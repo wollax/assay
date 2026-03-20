@@ -413,14 +413,14 @@
 
 ### R042 — Guided authoring wizard
 - Class: primary-user-loop
-- Status: active
+- Status: validated
 - Description: `assay plan` is an interactive CLI wizard that asks structured questions (goal description, success criteria per chunk, verification commands) and generates a complete milestone TOML + chunk specs (gates.toml + optional spec.toml) from the answers. Also available as a `milestone_create` / `spec_create` MCP tool pair for agent-driven authoring.
 - Why it matters: A beginning developer cannot write gate criteria from scratch — the wizard is the primary entry point that makes Assay accessible without prior knowledge of the spec format
 - Source: user
 - Primary owning slice: M005/S03
 - Supporting slices: M005/S01
-- Validation: unmapped
-- Notes: Wizard asks: milestone goal, chunk breakdown (1-7 chunks), success criteria per chunk, shell commands that verify each criterion. Generates valid, immediately-runnable spec files.
+- Validation: S03 — create_from_inputs integration tests prove atomic milestone TOML + per-chunk gates.toml creation, milestone/order metadata on specs, slug collision rejection, and spec-patches-milestone behavior; MCP milestone_create and spec_create tool tests prove programmatic authoring; assay plan non-TTY guard proven by unit test; interactive TTY path is UAT-only (see S03-UAT.md); all 1320+ workspace tests green; just ready green
+- Notes: Wizard asks: milestone goal, chunk breakdown (1-7 chunks), success criteria per chunk (as descriptions; cmd fields require manual editing). Generates valid milestone TOML + gates.toml per chunk. Criteria are text-only in the current implementation — runnable commands not collected by the wizard (known limitation D076).
 
 ### R043 — Development cycle state machine
 - Class: core-capability
@@ -700,7 +700,7 @@
 | R039 | core-capability | validated | M005/S01 | M005/S02, M005/S03, M005/S04 | S01 |
 | R040 | core-capability | validated | M005/S01 | M005/S02 | S01 |
 | R041 | core-capability | validated | M005/S01 | M005/S02, M005/S03, M005/S04 | S01 |
-| R042 | primary-user-loop | active | M005/S03 | M005/S01 | mapped |
+| R042 | primary-user-loop | validated | M005/S03 | M005/S01 | S03 |
 | R043 | core-capability | validated | M005/S02 | M005/S01 | S02 |
 | R044 | core-capability | validated | M005/S02 | M005/S01 | S02 |
 | R045 | primary-user-loop | active | M005/S04 | M005/S01, M005/S02 | mapped |
