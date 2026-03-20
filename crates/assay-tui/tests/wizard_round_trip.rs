@@ -59,7 +59,11 @@ fn wizard_round_trip() {
     };
 
     let result = create_from_inputs(&inputs, &assay_dir, &specs_dir);
-    assert!(result.is_ok(), "create_from_inputs failed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "create_from_inputs failed: {:?}",
+        result.err()
+    );
     assert!(
         assay_dir.join("milestones/auth-layer.toml").exists(),
         "milestone TOML missing"
