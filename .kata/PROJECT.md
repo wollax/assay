@@ -29,7 +29,7 @@ Crates:
 - **assay-harness**: Agent harness adapters — prompt builder, settings merger, Claude Code/Codex/OpenCode adapters, scope enforcement
 - **assay-cli**: CLI binary — init, spec, gate, worktree, context, checkpoint, guard, mcp, run, harness, milestone, plan, pr subcommands
 - **assay-mcp**: MCP server — 30 tools (spec, gate, worktree, session, merge, context, orchestrate, milestone, cycle, pr)
-- **assay-tui**: TUI binary — stub placeholder
+- **assay-tui**: TUI binary — full Ratatui app (M006/S01): App+Screen state machine, live dashboard loading milestones + gate history from assay-core, keyboard navigation, no-project guard
 
 Key patterns: free functions (zero traits), sync core with async surfaces, atomic file writes, `deny_unknown_fields` on persisted types, schema registry via `inventory`, shell-out to git CLI, closure-based control inversion (D001).
 

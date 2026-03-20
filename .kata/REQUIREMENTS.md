@@ -490,13 +490,13 @@
 
 ### R049 — TUI project dashboard
 - Class: primary-user-loop
-- Status: active
+- Status: validated
 - Description: A real Ratatui TUI application (replacing the current stub) with a project dashboard showing: list of milestones with status indicators, chunk progress per milestone (X/N complete), gate status summary per chunk (pass/fail/pending), and keyboard navigation.
 - Why it matters: The TUI is the preferred primary interface — a real dashboard is what makes Assay feel like a first-class development tool rather than a CLI
 - Source: user
 - Primary owning slice: M006/S01
 - Supporting slices: none
-- Validation: unmapped
+- Validation: S01 — assay-tui binary produced (no collision with assay-cli); App::new() with Screen::NoProject guard (unit test); compute_gate_data() loads gate history from assay-core::history (integration test); handle_event() Up/Down/q tested; draw_dashboard() renders milestone name + status badge + chunk fraction + gate counts; 5 unit tests pass; just ready fmt/clippy/test green
 - Notes: Reads milestone and gate data from `.assay/` via assay-core. No agent spawning in M006/S01.
 
 ### R050 — TUI interactive wizard
@@ -707,7 +707,7 @@
 | R046 | convention | validated | M005/S04 | M005/S01 | S04 |
 | R047 | differentiator | validated | M005/S05 | M005/S01–S04 | S05 |
 | R048 | differentiator | validated | M005/S06 | M005/S01, M005/S02 | S06 |
-| R049 | primary-user-loop | active | M006/S01 | none | mapped |
+| R049 | primary-user-loop | validated | M006/S01 | none | S01 |
 | R050 | primary-user-loop | active | M006/S02 | M006/S01 | mapped |
 | R051 | primary-user-loop | active | M006/S02 | M006/S01 | mapped |
 | R052 | operability | active | M006/S03 | none | mapped |
