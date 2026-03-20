@@ -1,12 +1,12 @@
 # Kata State
 
 **Active Milestone:** M005 — Spec-Driven Development Core
-**Active Slice:** S04 — Gate-Gated PR Workflow
-**Active Task:** T03 — Wire CLI `assay pr create` and MCP `pr_create` tool (DONE)
-**Phase:** Executing
+**Active Slice:** S05 — Claude Code Plugin Upgrade
+**Active Task:** (not started)
+**Phase:** Planning
 **Last Updated:** 2026-03-20
-**Requirements Status:** 14 active (R045–R059 minus R042) · 39 validated (R039–R044 all validated) · 2 deferred · 4 out of scope
-**Test Count:** 1320+ (all passing)
+**Requirements Status:** 12 active (R047–R059) · 41 validated (R039–R046 all validated) · 2 deferred · 4 out of scope
+**Test Count:** 1331 (all passing)
 
 ## Completed Milestones
 
@@ -20,7 +20,7 @@
 - [x] S01: Milestone & Chunk Type Foundation `risk:high` — COMPLETE. Milestone/ChunkRef/MilestoneStatus types, atomic I/O, milestone_list/milestone_get MCP tools, assay milestone list CLI. R039, R040, R041 validated. 1293 tests green.
 - [x] S02: Development Cycle State Machine `risk:high` — COMPLETE. cycle_status/cycle_advance/chunk_status MCP tools, milestone phase transitions (Draft→InProgress→Verify→Complete), CLI milestone status/advance subcommands. R043, R044 validated. 1308 tests green.
 - [x] S03: Guided Authoring Wizard `risk:medium` — COMPLETE. T01✓ T02✓ T03✓ T04✓ wizard core (create_from_inputs, create_milestone_from_params, create_spec_from_params), assay plan CLI with TTY guard, milestone_create/spec_create MCP tools. R042 validated. 1320+ tests green.
-- [ ] S04: Gate-Gated PR Workflow `risk:medium` — assay pr create CLI, pr_create MCP tool, branch-per-chunk naming, PR tracking in milestone (R045, R046)
+- [x] S04: Gate-Gated PR Workflow `risk:medium` — COMPLETE. pr_check_milestone_gates + pr_create_if_gates_pass (pre-flight gh check, idempotency, Verify→Complete transition), assay pr create CLI, pr_create MCP tool. R045, R046 validated. 1331 tests green.
 - [ ] S05: Claude Code Plugin Upgrade `risk:low` — 3 new skills (/assay:plan, /assay:status, /assay:next-chunk), updated CLAUDE.md, Stop+PreCompact hooks (R047)
 - [ ] S06: Codex Plugin `risk:low` — AGENTS.md workflow guide, 4 skills (gate-check, spec-show, cycle-status, plan) (R048)
 
@@ -38,4 +38,4 @@ None.
 
 ## Next Action
 
-S04 is complete — all 3 tasks done. Write S04 slice summary, UAT, mark S04 done in M005-ROADMAP.md, update milestone summary.
+Start S05: Claude Code Plugin Upgrade. Depends on S01–S04. Read S04-SUMMARY.md and S03-SUMMARY.md for context on new MCP tools before planning.
