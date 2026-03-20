@@ -2,7 +2,7 @@
 
 **Active Milestone:** M005 — Spec-Driven Development Core
 **Active Slice:** S04 — Gate-Gated PR Workflow
-**Active Task:** T02 — Implement `assay-core::pr` module
+**Active Task:** T03 — Wire CLI `assay pr create` and MCP `pr_create` tool
 **Phase:** Executing
 **Last Updated:** 2026-03-20
 **Requirements Status:** 14 active (R045–R059 minus R042) · 39 validated (R039–R044 all validated) · 2 deferred · 4 out of scope
@@ -38,4 +38,4 @@ None.
 
 ## Next Action
 
-Execute T02: Implement `assay-core::pr` module — define `ChunkGateFailure`, `PrCreateResult`, `pr_check_milestone_gates`, and `pr_create_if_gates_pass` in `crates/assay-core/src/pr.rs`; add `pub mod pr;` to `lib.rs`. All 8 tests in `tests/pr.rs` must pass after T02.
+Execute T03: Wire CLI `assay pr create` and MCP `pr_create` tool — create `crates/assay-cli/src/commands/pr.rs` with `PrCommand::Create`, add `Pr` variant to `main.rs`, add `pr_create` tool to `assay-mcp/src/server.rs`. All CLI unit tests and MCP presence test must pass.
