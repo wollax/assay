@@ -2,7 +2,7 @@
 
 **Active Milestone:** M005 — Spec-Driven Development Core
 **Active Slice:** S05 — Claude Code Plugin Upgrade
-**Active Task:** T01
+**Active Task:** T02
 **Phase:** Executing
 **Last Updated:** 2026-03-20
 **Requirements Status:** 12 active (R047–R059) · 41 validated (R039–R046 all validated) · 2 deferred · 4 out of scope
@@ -40,4 +40,4 @@ None.
 
 ## Next Action
 
-Execute S05/T01: Add `--json` flag to `assay milestone status` CLI command.
+Execute S05/T02: Write skill files (plan, status, next-chunk) and update CLAUDE.md.
