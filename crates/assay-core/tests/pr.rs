@@ -478,8 +478,8 @@ fn test_pr_create_parse_gh_missing_fields() {
     );
 
     // Milestone TOML must not be modified — pr_number still None
-    let reloaded = milestone_load(&assay_dir, "missing-fields")
-        .expect("load milestone after failed parse");
+    let reloaded =
+        milestone_load(&assay_dir, "missing-fields").expect("load milestone after failed parse");
     assert!(
         reloaded.pr_number.is_none(),
         "pr_number must remain None when JSON parse fails, got: {:?}",

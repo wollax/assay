@@ -14,7 +14,6 @@ use crate::harness::{HookContract, PromptLayer, SettingsOverride};
 #[cfg(feature = "orchestrate")]
 use crate::orchestrate::{GossipConfig, MeshConfig, OrchestratorMode};
 
-
 /// Top-level run manifest declaring one or more agent sessions.
 ///
 /// Deserialized from TOML where sessions use the `[[sessions]]` array-of-tables
