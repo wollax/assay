@@ -81,6 +81,13 @@ pub struct Milestone {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub chunks: Vec<ChunkRef>,
 
+    /// Slugs of chunks that have been verified and advanced past in the development cycle.
+    ///
+    /// This is the central state for the cycle state machine: the "active chunk" is
+    /// derived at runtime as the lowest-`order` `ChunkRef` whose slug is not in this list.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub completed_chunks: Vec<String>,
+
     /// Milestone slugs that must be `Complete` before this one can start.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub depends_on: Vec<String>,
@@ -134,6 +141,7 @@ mod tests {
                     order: 2,
                 },
             ],
+            completed_chunks: vec![],
             depends_on: vec!["auth-foundation".to_string()],
             pr_branch: Some("feat/my-feature".to_string()),
             pr_base: Some("main".to_string()),
@@ -166,6 +174,7 @@ mod tests {
             description: None,
             status: MilestoneStatus::Draft,
             chunks: vec![],
+            completed_chunks: vec![],
             depends_on: vec![],
             pr_branch: None,
             pr_base: None,
@@ -182,10 +191,16 @@ mod tests {
         assert!(roundtripped.pr_branch.is_none());
         assert!(roundtripped.pr_base.is_none());
         assert!(roundtripped.chunks.is_empty());
+        assert!(roundtripped.completed_chunks.is_empty());
         assert!(roundtripped.depends_on.is_empty());
         assert!(!toml_str.contains("description"));
         assert!(!toml_str.contains("pr_branch"));
         assert!(!toml_str.contains("depends_on"));
+        // skip_serializing_if = "Vec::is_empty" — empty completed_chunks must not appear in TOML
+        assert!(
+            !toml_str.contains("completed_chunks"),
+            "empty completed_chunks should be omitted from TOML, got: {toml_str}"
+        );
     }
 
     #[test]
