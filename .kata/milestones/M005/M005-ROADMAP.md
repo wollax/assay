@@ -61,7 +61,7 @@ This milestone is complete only when all are true:
 - [x] **S03: Guided Authoring Wizard** `risk:medium` `depends:[S01]`
   > After this: `assay plan` interactively collects a goal + chunk breakdown + criteria per chunk and writes valid milestone TOML + gates.toml files; `milestone_create` and `spec_create` MCP tools do the same programmatically.
 
-- [ ] **S04: Gate-Gated PR Workflow** `risk:medium` `depends:[S01,S02]`
+- [x] **S04: Gate-Gated PR Workflow** `risk:medium` `depends:[S01,S02]`
   > After this: `assay pr create my-feature` opens a real GitHub PR only when all chunk gates pass; failing chunks are listed with their failed criteria; PR number and URL are stored in the milestone file.
 
 - [ ] **S05: Claude Code Plugin Upgrade** `risk:low` `depends:[S01,S02,S03,S04]`

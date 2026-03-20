@@ -106,6 +106,22 @@ expression: schema.to_value()
         "null"
       ]
     },
+    "pr_number": {
+      "description": "GitHub pull request number, set after successful PR creation.",
+      "format": "uint64",
+      "minimum": 0,
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "pr_url": {
+      "description": "GitHub pull request URL, set after successful PR creation.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "slug": {
       "description": "Unique identifier for this milestone; must match the TOML filename without extension.",
       "type": "string"

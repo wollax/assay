@@ -21,6 +21,8 @@ fn make_milestone(slug: &str) -> Milestone {
         depends_on: vec!["foundation".to_string()],
         pr_branch: Some(format!("feat/{slug}")),
         pr_base: Some("main".to_string()),
+        pr_number: None,
+        pr_url: None,
         created_at: now,
         updated_at: now,
     }

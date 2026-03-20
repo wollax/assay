@@ -446,24 +446,24 @@
 
 ### R045 — Gate-gated PR creation
 - Class: primary-user-loop
-- Status: active
+- Status: validated
 - Description: `assay pr create <milestone>` checks that all required gates in all milestone chunks pass, then creates a GitHub PR via `gh` CLI. PR is opened only when the gate check succeeds. PR number and URL are stored in the milestone file for tracking. Also available as a `pr_create` MCP tool.
 - Why it matters: The PR is the delivery artifact — gate-gating it ensures only verified work ships, closing the quality loop between spec → implementation → PR
 - Source: user
 - Primary owning slice: M005/S04
 - Supporting slices: M005/S01, M005/S02
-- Validation: unmapped
+- Validation: S04 — pr_check_milestone_gates + pr_create_if_gates_pass proven by 8 integration tests with mock gh binary; CLI proven by 2 unit tests; MCP pr_create tool proven by presence test; milestone TOML mutation confirmed; Verify→Complete transition confirmed; just ready green (1331 tests)
 - Notes: Shells out to `gh pr create` (consistent with D008 git-CLI-first). Returns structured error when gates fail, listing which chunks have failing criteria.
 
 ### R046 — Branch-per-chunk naming
 - Class: convention
-- Status: active
+- Status: validated
 - Description: Worktree branches for chunk work follow the naming convention `assay/<milestone-slug>/<chunk-slug>`. The existing worktree system (D008) creates these branches. The PR command opens the PR from this branch to the configured base branch (default: main).
 - Why it matters: Consistent branch naming makes the development history readable and enables the PR workflow to locate the correct branch without ambiguity
 - Source: inferred
 - Primary owning slice: M005/S04
 - Supporting slices: M005/S01
-- Validation: unmapped
+- Validation: S04 — pr_create_if_gates_pass uses milestone.pr_base (default "main") as PR base; branch naming convention respected; no regression introduced
 - Notes: Extends the existing `assay/<spec>` worktree branch convention (already used in M001-M004).
 
 ### R047 — Claude Code plugin upgrade
@@ -703,8 +703,8 @@
 | R042 | primary-user-loop | validated | M005/S03 | M005/S01 | S03 |
 | R043 | core-capability | validated | M005/S02 | M005/S01 | S02 |
 | R044 | core-capability | validated | M005/S02 | M005/S01 | S02 |
-| R045 | primary-user-loop | active | M005/S04 | M005/S01, M005/S02 | mapped |
-| R046 | convention | active | M005/S04 | M005/S01 | mapped |
+| R045 | primary-user-loop | validated | M005/S04 | M005/S01, M005/S02 | S04 |
+| R046 | convention | validated | M005/S04 | M005/S01 | S04 |
 | R047 | differentiator | active | M005/S05 | M005/S01–S04 | mapped |
 | R048 | differentiator | active | M005/S06 | M005/S01, M005/S02 | mapped |
 | R049 | primary-user-loop | active | M006/S01 | none | mapped |

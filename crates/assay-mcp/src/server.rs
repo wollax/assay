@@ -24,6 +24,7 @@
 //! - `milestone_get` — get full details of a milestone by slug
 //! - `milestone_create` — create a milestone TOML from structured parameters
 //! - `spec_create` — create a chunk spec (gates.toml) from structured parameters
+//! - `pr_create` — create a GitHub PR for a milestone after all chunk gates pass
 //!
 //! All domain errors are returned as `CallToolResult` with `isError: true`
 //! so that agents can see and self-correct. Protocol errors (`McpError`)
@@ -539,6 +540,18 @@ pub struct MilestoneListParams {}
 pub struct MilestoneGetParams {
     #[schemars(description = "Milestone slug (filename without .toml, e.g. 'my-feature')")]
     pub slug: String,
+}
+
+/// Parameters for the `pr_create` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct PrCreateParams {
+    /// Slug of the milestone to create a PR for (e.g. 'my-feature').
+    pub milestone_slug: String,
+    /// PR title (e.g. 'feat: my-feature').
+    pub title: String,
+    /// Optional PR body text.
+    #[serde(default)]
+    pub body: Option<String>,
 }
 
 /// Parameters for the `cycle_status` tool.
@@ -3444,6 +3457,50 @@ impl AssayServer {
                     McpError::internal_error(format!("serialization failed: {e}"), None)
                 })?;
                 Ok(CallToolResult::success(vec![Content::text(json)]))
+            }
+            Err(e) => Ok(domain_error(&e)),
+        }
+    }
+
+    /// Create a GitHub PR for a milestone after all chunk gates pass.
+    #[tool(
+        description = "Create a GitHub PR for a milestone after all chunk gates pass. \
+            Evaluates required gates for every chunk in the milestone. If all required gates \
+            pass, opens a PR via `gh` and persists the PR number and URL to the milestone TOML. \
+            Returns { pr_number, pr_url } on success. Returns a domain error if required gates \
+            fail, the PR was already created, or `gh` is not available."
+    )]
+    pub async fn pr_create(
+        &self,
+        params: Parameters<PrCreateParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let cwd = resolve_cwd()?;
+        let config = match load_config(&cwd) {
+            Ok(c) => c,
+            Err(err_result) => return Ok(err_result),
+        };
+        let assay_dir = cwd.join(".assay");
+        let specs_dir = cwd.join(".assay").join(&config.specs_dir);
+        let working_dir = resolve_working_dir(&cwd, &config);
+        let p = params.0;
+        let result = tokio::task::spawn_blocking(move || {
+            assay_core::pr::pr_create_if_gates_pass(
+                &assay_dir,
+                &specs_dir,
+                &working_dir,
+                &p.milestone_slug,
+                &p.title,
+                p.body.as_deref(),
+            )
+        })
+        .await
+        .map_err(|e| McpError::internal_error(format!("pr_create panicked: {e}"), None))?;
+        match result {
+            Ok(r) => {
+                let json = serde_json::json!({ "pr_number": r.pr_number, "pr_url": r.pr_url });
+                Ok(CallToolResult::success(vec![Content::text(
+                    json.to_string(),
+                )]))
             }
             Err(e) => Ok(domain_error(&e)),
         }
@@ -7814,6 +7871,18 @@ spec = "auth"
         assert!(
             tool_names.contains(&"cycle_advance"),
             "cycle_advance should be in tool list, got: {tool_names:?}"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn pr_create_tool_in_router() {
+        let server = AssayServer::new();
+        let tools = server.tool_router.list_all();
+        let tool_names: Vec<&str> = tools.iter().map(|t| t.name.as_ref()).collect();
+        assert!(
+            tool_names.contains(&"pr_create"),
+            "pr_create should be in tool list, got: {tool_names:?}"
         );
     }
 

@@ -177,6 +177,18 @@ Examples:
     /// Run the guided authoring wizard to create a milestone and chunk specs.
     #[command(name = "plan", about = "Run the guided authoring wizard")]
     Plan,
+    /// Create a GitHub PR for a milestone after all chunk gates pass
+    #[command(after_long_help = "\
+Examples:
+  Create a PR for a milestone (title defaults to 'feat: <milestone-slug>'):
+    assay pr create my-feature
+
+  Create a PR with a custom title and body:
+    assay pr create my-feature --title 'feat: my feature' --body 'Implements the feature'")]
+    Pr {
+        #[command(subcommand)]
+        command: commands::pr::PrCommand,
+    },
 }
 
 /// Core CLI logic. Returns an exit code on success.
@@ -195,6 +207,7 @@ async fn run() -> anyhow::Result<i32> {
         Some(Command::Checkpoint { command }) => commands::checkpoint::handle(command),
         Some(Command::Milestone { command }) => commands::milestone::handle(command),
         Some(Command::Plan) => commands::plan::handle(),
+        Some(Command::Pr { command }) => commands::pr::handle(command),
         None => {
             // Note: project detection checks cwd only — no upward traversal.
             // Running `assay` from a subdirectory of a project shows the hint.
