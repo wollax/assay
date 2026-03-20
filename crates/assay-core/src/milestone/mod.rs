@@ -1,8 +1,18 @@
-//! Milestone I/O: scan, load, and save milestones under `.assay/milestones/`.
+//! Milestone I/O and cycle state machine.
 //!
 //! Milestones are persisted as TOML files named `<slug>.toml` inside the
 //! `.assay/milestones/` directory.  All writes are atomic (NamedTempFile +
 //! `sync_all` + `persist`) so a crash mid-write never leaves a corrupt file.
+//!
+//! The [`cycle`] submodule provides the development cycle state machine:
+//! [`cycle::active_chunk`], [`cycle::cycle_status`],
+//! [`cycle::milestone_phase_transition`], and [`cycle::cycle_advance`].
+
+pub mod cycle;
+
+pub use cycle::{
+    CycleStatus, active_chunk, cycle_advance, cycle_status, milestone_phase_transition,
+};
 
 use std::io::Write as _;
 use std::path::Path;

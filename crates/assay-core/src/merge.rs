@@ -875,9 +875,11 @@ CONFLICT (content): Merge conflict in file3.rs";
         let dir = tempfile::tempdir().unwrap();
         let p = dir.path();
 
-        // Init and configure
+        // Init and configure — force `main` as the initial branch so tests that
+        // call `git checkout main` work regardless of the system git default
+        // (CI environments often default to `master`).
         Command::new("git")
-            .args(["init"])
+            .args(["init", "-b", "main"])
             .current_dir(p)
             .output()
             .unwrap();

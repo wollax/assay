@@ -17,6 +17,7 @@ fn make_milestone(slug: &str) -> Milestone {
             slug: "auth-flow".to_string(),
             order: 1,
         }],
+        completed_chunks: vec![],
         depends_on: vec!["foundation".to_string()],
         pr_branch: Some(format!("feat/{slug}")),
         pr_base: Some("main".to_string()),

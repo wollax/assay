@@ -55,7 +55,7 @@ This milestone is complete only when all are true:
 - [x] **S01: Milestone & Chunk Type Foundation** `risk:high` `depends:[]`
   > After this: `assay milestone list` shows milestones from `.assay/milestones/`; existing specs with added `milestone` field still pass all gate runs; `milestone_list` and `milestone_get` MCP tools return structured data.
 
-- [ ] **S02: Development Cycle State Machine** `risk:high` `depends:[S01]`
+- [x] **S02: Development Cycle State Machine** `risk:high` `depends:[S01]`
   > After this: `cycle_status` reports the active milestone/chunk/phase; `cycle_advance` moves to the next chunk when gates pass; `assay milestone status` prints a readable progress summary.
 
 - [ ] **S03: Guided Authoring Wizard** `risk:medium` `depends:[S01]`
