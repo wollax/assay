@@ -20,7 +20,7 @@ v0.4.0 on main. ~20K lines of Rust across 6 crates. M001–M004 complete. 1271 t
 
 **M004 (complete):** Coordination modes — OrchestratorMode enum, Mesh executor (parallel + roster + file-based peer messaging + SWIM membership), Gossip executor (coordinator + knowledge manifest + PromptLayer injection). 32 requirements validated, 1271 tests.
 
-**M005 (in progress, S01+S02 complete):** Spec-driven development core — S01 delivered Milestone/ChunkRef/MilestoneStatus types, atomic I/O, milestone_list/milestone_get MCP tools. S02 delivered the full development cycle state machine: `cycle_status`/`cycle_advance`/`chunk_status` MCP tools, guarded phase transitions (Draft→InProgress→Verify→Complete), `assay milestone status`/`advance` CLI subcommands, 10 integration tests. 37 requirements validated. 1308 tests.
+**M005 (in progress, S01–S03 complete):** Spec-driven development core — S01 delivered Milestone/ChunkRef/MilestoneStatus types, atomic I/O, milestone_list/milestone_get MCP tools. S02 delivered the full development cycle state machine: `cycle_status`/`cycle_advance`/`chunk_status` MCP tools, guarded phase transitions (Draft→InProgress→Verify→Complete), `assay milestone status`/`advance` CLI subcommands. S03 delivered the guided authoring wizard: `assay_core::wizard` module (create_from_inputs, create_milestone_from_params, create_spec_from_params), `assay plan` CLI with dialoguer TTY guard, `milestone_create`/`spec_create` MCP tools. 39 requirements validated. 1320+ tests.
 
 Crates:
 

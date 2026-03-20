@@ -174,6 +174,9 @@ Examples:
         #[command(subcommand)]
         command: commands::milestone::MilestoneCommand,
     },
+    /// Run the guided authoring wizard to create a milestone and chunk specs.
+    #[command(name = "plan", about = "Run the guided authoring wizard")]
+    Plan,
 }
 
 /// Core CLI logic. Returns an exit code on success.
@@ -191,6 +194,7 @@ async fn run() -> anyhow::Result<i32> {
         Some(Command::Harness { command }) => commands::harness::handle(command),
         Some(Command::Checkpoint { command }) => commands::checkpoint::handle(command),
         Some(Command::Milestone { command }) => commands::milestone::handle(command),
+        Some(Command::Plan) => commands::plan::handle(),
         None => {
             // Note: project detection checks cwd only — no upward traversal.
             // Running `assay` from a subdirectory of a project shows the hint.
