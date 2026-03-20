@@ -2,8 +2,8 @@
 
 **Active Milestone:** M005 — Spec-Driven Development Core
 **Active Slice:** S05 — Claude Code Plugin Upgrade
-**Active Task:** (not started)
-**Phase:** Planning
+**Active Task:** T01
+**Phase:** Executing
 **Last Updated:** 2026-03-20
 **Requirements Status:** 12 active (R047–R059) · 41 validated (R039–R046 all validated) · 2 deferred · 4 out of scope
 **Test Count:** 1331 (all passing)
@@ -26,6 +26,8 @@
 
 ## Recent Decisions
 
+- D081: `assay milestone status --json` exits 0 always; callers check exit 0 = JSON valid
+- D080: `{"active":false}` bash detection via `jq 'has("milestone_slug")'`
 - D079: S04 test-first — tests/pr.rs written in T01 (red) before assay-core::pr exists in T02
 - D078: ChunkGateFailure and PrCreateResult are local types in assay-core::pr (D073 pattern)
 - D077: pr_create_if_gates_pass uses `gh --json number,url` for stable structured output
@@ -38,4 +40,4 @@ None.
 
 ## Next Action
 
-Start S05: Claude Code Plugin Upgrade. Depends on S01–S04. Read S04-SUMMARY.md and S03-SUMMARY.md for context on new MCP tools before planning.
+Execute S05/T01: Add `--json` flag to `assay milestone status` CLI command.
