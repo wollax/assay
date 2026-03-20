@@ -99,7 +99,14 @@ fn milestone_status_cmd() -> anyhow::Result<i32> {
 fn milestone_advance_cmd(milestone_slug: Option<String>) -> anyhow::Result<i32> {
     let root = project_root()?;
     let assay_dir = assay_dir(&root);
-    let specs_dir = root.join(".assay").join("specs");
+    let config = match assay_core::config::load(&root) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("Error: {e}");
+            return Ok(1);
+        }
+    };
+    let specs_dir = assay_dir.join(&config.specs_dir);
     let working_dir = root.clone();
 
     match assay_core::milestone::cycle_advance(

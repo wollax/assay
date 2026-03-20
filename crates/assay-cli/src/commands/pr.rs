@@ -38,7 +38,14 @@ fn pr_create_cmd(
 ) -> anyhow::Result<i32> {
     let root = project_root()?;
     let assay_dir = assay_dir(&root);
-    let specs_dir = root.join(".assay").join("specs");
+    let config = match assay_core::config::load(&root) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("Error: {e}");
+            return Ok(1);
+        }
+    };
+    let specs_dir = assay_dir.join(&config.specs_dir);
     let working_dir = root.clone();
 
     let effective_title = title.unwrap_or_else(|| format!("feat: {milestone}"));
@@ -65,8 +72,10 @@ fn pr_create_cmd(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
 
     #[test]
+    #[serial]
     fn pr_create_cmd_exits_1_no_assay_dir() {
         let dir = tempfile::tempdir().unwrap();
         std::env::set_current_dir(dir.path()).unwrap();
@@ -81,6 +90,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn pr_create_cmd_exits_1_already_created() {
         let dir = tempfile::tempdir().unwrap();
         let assay_milestones = dir.path().join(".assay").join("milestones");
@@ -90,10 +100,8 @@ mod tests {
         let toml_content = r#"slug = "my-feature"
 name = "My Feature"
 status = "in_progress"
-started_at = "2024-01-01T00:00:00Z"
-completed_at = ""
-chunks = []
-completed_chunks = []
+created_at = "2024-01-01T00:00:00Z"
+updated_at = "2024-01-01T00:00:00Z"
 pr_number = 42
 pr_url = "https://github.com/o/r/pull/42"
 "#;
