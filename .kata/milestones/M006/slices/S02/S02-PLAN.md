@@ -59,7 +59,7 @@ Operational smoke (manual UAT):
 
 ## Tasks
 
-- [ ] **T01: Add library target and integration test contract** `est:45m`
+- [x] **T01: Add library target and integration test contract** `est:45m`
   - Why: Establishes the test-first contract for `WizardState`/`WizardAction`; restructures `assay-tui` from pure binary to binary+library so integration tests can import types; adds `tempfile` dev-dep
   - Files: `crates/assay-tui/Cargo.toml`, `crates/assay-tui/src/lib.rs`, `crates/assay-tui/src/wizard.rs`, `crates/assay-tui/tests/wizard_round_trip.rs`
   - Do: (1) Add `[lib] name = "assay_tui" path = "src/lib.rs"` section + `tempfile.workspace = true` to `[dev-dependencies]` in Cargo.toml; (2) Create `src/lib.rs` with `pub mod wizard;`; (3) Create `src/wizard.rs` with stub types — `WizardState` with public fields matching the contract, `WizardAction` enum, `StepKind` enum, `impl WizardState { pub fn new() -> Self { ... } }` (unimplemented bodies ok); (4) Write `tests/wizard_round_trip.rs` — full integration test that constructs `WizardState::new()`, drives `handle_wizard_event` in a loop with synthetic `KeyEvent`s for N=2 chunks (name "Auth Layer", chunks "login"/"register", 1 criterion each), waits for `WizardAction::Submit(inputs)`, calls `create_from_inputs` on a `TempDir`, asserts milestone TOML and two `gates.toml` files exist; (5) Run `cargo build -p assay-tui` → succeeds (stubs compile); run `cargo test -p assay-tui wizard_round_trip` → test fails/panics (red state, expected)

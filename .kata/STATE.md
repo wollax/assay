@@ -1,9 +1,9 @@
 # Kata State
 
 **Active Milestone:** M006 — TUI as Primary Surface
-**Active Slice:** S01 — App Scaffold, Dashboard, and Binary Fix (S02 plan complete, awaiting S01 execution)
-**Active Task:** none (S01 execution pending; S02 planned)
-**Phase:** M006 S01 execution pending; S02 plan written
+**Active Slice:** S02 — In-TUI Authoring Wizard
+**Active Task:** T02 — Implement WizardState state machine and make integration test green
+**Phase:** Executing
 **Last Updated:** 2026-03-20
 **Requirements Status:** 10 active (R049–R059) · 43 validated (R001–R048) · 2 deferred · 4 out of scope
 **Test Count:** 1333 (all passing)
@@ -39,4 +39,4 @@ None.
 
 ## Next Action
 
-Execute M006/S01: create `kata/M006/S01` branch, add `[[bin]] name = "assay-tui"` to assay-tui/Cargo.toml, replace main.rs stub with real App struct + Screen enum + dashboard rendering + no-project guard + keyboard navigation. (S02 plan is written and ready — execute S01 first, then S02.)
+Execute M006/S02/T02: Implement full WizardState state machine (step routing, Enter/Backspace/Esc/Char handling, dynamic field allocation, Submit assembly) in `crates/assay-tui/src/wizard.rs` to make `wizard_round_trip` integration test green.
