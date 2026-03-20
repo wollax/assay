@@ -58,7 +58,7 @@ This milestone is complete only when all are true:
 - [x] **S02: Development Cycle State Machine** `risk:high` `depends:[S01]`
   > After this: `cycle_status` reports the active milestone/chunk/phase; `cycle_advance` moves to the next chunk when gates pass; `assay milestone status` prints a readable progress summary.
 
-- [ ] **S03: Guided Authoring Wizard** `risk:medium` `depends:[S01]`
+- [x] **S03: Guided Authoring Wizard** `risk:medium` `depends:[S01]`
   > After this: `assay plan` interactively collects a goal + chunk breakdown + criteria per chunk and writes valid milestone TOML + gates.toml files; `milestone_create` and `spec_create` MCP tools do the same programmatically.
 
 - [ ] **S04: Gate-Gated PR Workflow** `risk:medium` `depends:[S01,S02]`

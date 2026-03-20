@@ -5,6 +5,7 @@ pub mod harness;
 pub mod init;
 pub mod mcp;
 pub mod milestone;
+pub mod plan;
 pub mod run;
 pub mod spec;
 pub mod worktree;

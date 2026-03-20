@@ -22,6 +22,8 @@
 //! - `session_list` — list sessions with optional spec_name and status filters
 //! - `milestone_list` — list all milestones in the current project
 //! - `milestone_get` — get full details of a milestone by slug
+//! - `milestone_create` — create a milestone TOML from structured parameters
+//! - `spec_create` — create a chunk spec (gates.toml) from structured parameters
 //!
 //! All domain errors are returned as `CallToolResult` with `isError: true`
 //! so that agents can see and self-correct. Protocol errors (`McpError`)
@@ -556,6 +558,45 @@ pub struct CycleAdvanceParams {
 pub struct ChunkStatusParams {
     /// Slug of the chunk (spec) to report gate status for.
     pub chunk_slug: String,
+}
+
+/// A single chunk entry within [`MilestoneCreateParams`].
+#[derive(Deserialize, JsonSchema)]
+pub struct MilestoneChunkInput {
+    /// Slug for this chunk (used as the spec directory name in `spec_create`).
+    pub slug: String,
+    /// Human-readable display name.
+    pub name: String,
+    /// Criterion name strings for this chunk.
+    pub criteria: Vec<String>,
+}
+
+/// Parameters for the `milestone_create` tool.
+#[derive(Deserialize, JsonSchema)]
+pub struct MilestoneCreateParams {
+    /// Milestone slug (used as the `.toml` filename without extension).
+    pub slug: String,
+    /// Human-readable milestone name.
+    pub name: String,
+    /// Optional longer description.
+    pub description: Option<String>,
+    /// Ordered list of chunk references to include in the milestone.
+    pub chunks: Vec<MilestoneChunkInput>,
+}
+
+/// Parameters for the `spec_create` tool.
+#[derive(Deserialize, JsonSchema)]
+pub struct SpecCreateParams {
+    /// Spec slug (used as the directory name under `.assay/specs/`).
+    pub slug: String,
+    /// Human-readable spec name.
+    pub name: String,
+    /// Optional longer description.
+    pub description: Option<String>,
+    /// Optionally link the spec to a milestone by slug. Patches the milestone's chunk list.
+    pub milestone_slug: Option<String>,
+    /// Criterion name strings. Each becomes a gate criterion with `name = string` and `description = ""`.
+    pub criteria: Vec<String>,
 }
 
 // ── Response structs ─────────────────────────────────────────────────
@@ -3460,6 +3501,102 @@ impl AssayServer {
         let json = serde_json::to_string(&response)
             .map_err(|e| McpError::internal_error(format!("serialization failed: {e}"), None))?;
         Ok(CallToolResult::success(vec![Content::text(json)]))
+    }
+
+    /// Create a milestone TOML in `.assay/milestones/` from structured parameters.
+    #[tool(
+        description = "Create a milestone TOML in .assay/milestones/ from structured parameters. \
+            Creates a Draft milestone with the given slug, name, optional description, and ordered \
+            chunk references. Returns the milestone slug on success. \
+            Fails if a milestone with the same slug already exists."
+    )]
+    pub async fn milestone_create(
+        &self,
+        params: Parameters<MilestoneCreateParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let cwd = resolve_cwd()?;
+        let assay_dir = cwd.join(".assay");
+
+        let slug = params.0.slug.clone();
+        let name = params.0.name.clone();
+        let description = params.0.description.clone();
+        let chunks: Vec<(String, u32)> = params
+            .0
+            .chunks
+            .iter()
+            .enumerate()
+            .map(|(i, c)| (c.slug.clone(), i as u32))
+            .collect();
+
+        let result = tokio::task::spawn_blocking(move || {
+            assay_core::wizard::create_milestone_from_params(
+                &slug,
+                &name,
+                description.as_deref(),
+                chunks,
+                &assay_dir,
+            )
+        })
+        .await
+        .map_err(|e| McpError::internal_error(format!("milestone_create panicked: {e}"), None))?;
+
+        match result {
+            Ok(milestone) => {
+                let json = serde_json::to_string(&milestone.slug).map_err(|e| {
+                    McpError::internal_error(format!("serialization failed: {e}"), None)
+                })?;
+                Ok(CallToolResult::success(vec![Content::text(json)]))
+            }
+            Err(e) => Ok(domain_error(&e)),
+        }
+    }
+
+    /// Create a chunk spec (`gates.toml`) in `.assay/specs/<slug>/` from structured parameters.
+    #[tool(
+        description = "Create a chunk spec (gates.toml) in .assay/specs/<slug>/ from structured \
+            parameters. Optionally links the spec to a milestone by slug and patches the \
+            milestone's chunk list. Returns the path to the created gates.toml on success. \
+            Fails if the spec directory already exists."
+    )]
+    pub async fn spec_create(
+        &self,
+        params: Parameters<SpecCreateParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let cwd = resolve_cwd()?;
+        let config = match load_config(&cwd) {
+            Ok(c) => c,
+            Err(err_result) => return Ok(err_result),
+        };
+        let specs_dir = cwd.join(".assay").join(&config.specs_dir);
+        let assay_dir = cwd.join(".assay");
+
+        let slug = params.0.slug.clone();
+        let name = params.0.name.clone();
+        let milestone_slug = params.0.milestone_slug.clone();
+        let criteria = params.0.criteria.clone();
+
+        let result = tokio::task::spawn_blocking(move || {
+            assay_core::wizard::create_spec_from_params(
+                &slug,
+                &name,
+                milestone_slug.as_deref(),
+                &assay_dir,
+                &specs_dir,
+                criteria,
+            )
+        })
+        .await
+        .map_err(|e| McpError::internal_error(format!("spec_create panicked: {e}"), None))?;
+
+        match result {
+            Ok(path) => {
+                let json = serde_json::to_string(&path.display().to_string()).map_err(|e| {
+                    McpError::internal_error(format!("serialization failed: {e}"), None)
+                })?;
+                Ok(CallToolResult::success(vec![Content::text(json)]))
+            }
+            Err(e) => Ok(domain_error(&e)),
+        }
     }
 }
 
@@ -7689,6 +7826,152 @@ spec = "auth"
         assert!(
             tool_names.contains(&"chunk_status"),
             "chunk_status should be in tool list, got: {tool_names:?}"
+        );
+    }
+
+    // ── wizard tool tests ─────────────────────────────────────────────
+
+    #[tokio::test]
+    #[serial]
+    async fn milestone_create_tool_in_router() {
+        let server = AssayServer::new();
+        let tools = server.tool_router.list_all();
+        let tool_names: Vec<&str> = tools.iter().map(|t| t.name.as_ref()).collect();
+        assert!(
+            tool_names.contains(&"milestone_create"),
+            "milestone_create should be in tool list, got: {tool_names:?}"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn spec_create_tool_in_router() {
+        let server = AssayServer::new();
+        let tools = server.tool_router.list_all();
+        let tool_names: Vec<&str> = tools.iter().map(|t| t.name.as_ref()).collect();
+        assert!(
+            tool_names.contains(&"spec_create"),
+            "spec_create should be in tool list, got: {tool_names:?}"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn milestone_create_writes_milestone_toml() {
+        let dir = create_project(r#"project_name = "wizard-test""#);
+        std::env::set_current_dir(dir.path()).unwrap();
+
+        let server = AssayServer::new();
+        let result = server
+            .milestone_create(Parameters(MilestoneCreateParams {
+                slug: "test-ms".to_string(),
+                name: "Test MS".to_string(),
+                description: None,
+                chunks: vec![MilestoneChunkInput {
+                    slug: "chunk-1".to_string(),
+                    name: "Chunk 1".to_string(),
+                    criteria: vec!["criterion-1".to_string()],
+                }],
+            }))
+            .await
+            .unwrap();
+
+        assert!(
+            !result.is_error.unwrap_or(false),
+            "milestone_create should succeed, got: {:?}",
+            extract_text(&result)
+        );
+
+        let text = extract_text(&result);
+        assert!(
+            text.contains("test-ms"),
+            "response should mention the new milestone slug, got: {text}"
+        );
+
+        // The milestone TOML must exist on disk.
+        let milestone_path = dir
+            .path()
+            .join(".assay")
+            .join("milestones")
+            .join("test-ms.toml");
+        assert!(
+            milestone_path.exists(),
+            ".assay/milestones/test-ms.toml should exist on disk"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn spec_create_writes_gates_toml() {
+        let dir = create_project(r#"project_name = "wizard-test""#);
+        std::env::set_current_dir(dir.path()).unwrap();
+
+        let server = AssayServer::new();
+        let result = server
+            .spec_create(Parameters(SpecCreateParams {
+                slug: "chunk-1".to_string(),
+                name: "Chunk 1".to_string(),
+                description: None,
+                milestone_slug: None,
+                criteria: vec!["criterion-1".to_string()],
+            }))
+            .await
+            .unwrap();
+
+        assert!(
+            !result.is_error.unwrap_or(false),
+            "spec_create should succeed, got: {:?}",
+            extract_text(&result)
+        );
+
+        // gates.toml must exist on disk.
+        let gates_path = dir
+            .path()
+            .join(".assay")
+            .join("specs")
+            .join("chunk-1")
+            .join("gates.toml");
+        assert!(
+            gates_path.exists(),
+            ".assay/specs/chunk-1/gates.toml should exist on disk"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn spec_create_rejects_duplicate() {
+        let dir = create_project(r#"project_name = "wizard-test""#);
+        std::env::set_current_dir(dir.path()).unwrap();
+
+        let server = AssayServer::new();
+
+        // First call: must succeed.
+        server
+            .spec_create(Parameters(SpecCreateParams {
+                slug: "dup-chunk".to_string(),
+                name: "Dup Chunk".to_string(),
+                description: None,
+                milestone_slug: None,
+                criteria: vec!["criterion-1".to_string()],
+            }))
+            .await
+            .unwrap();
+
+        // Second call with same slug: must return isError: true.
+        let result = server
+            .spec_create(Parameters(SpecCreateParams {
+                slug: "dup-chunk".to_string(),
+                name: "Dup Chunk Again".to_string(),
+                description: None,
+                milestone_slug: None,
+                criteria: vec!["criterion-1".to_string()],
+            }))
+            .await
+            .unwrap();
+
+        assert!(
+            result.is_error.unwrap_or(false),
+            "duplicate spec_create should return isError: true"
         );
     }
 }
