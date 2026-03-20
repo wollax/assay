@@ -38,7 +38,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash ${CLAUDE_PLUGIN_ROOT}/scripts/stop-gate-check.sh",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/scripts/cycle-stop-check.sh",
             "timeout": 120
           },
           {
