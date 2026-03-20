@@ -1,11 +1,11 @@
 # Kata State
 
 **Active Milestone:** M005 — Spec-Driven Development Core
-**Active Slice:** S05 — Claude Code Plugin Upgrade
-**Active Task:** T03 — (next task in S05 if any, else S05 complete)
-**Phase:** Executing
+**Active Slice:** S06 — Codex Plugin (next)
+**Active Task:** T01 — (first task in S06)
+**Phase:** Planning
 **Last Updated:** 2026-03-20
-**Requirements Status:** 12 active (R047–R059) · 41 validated (R039–R046 all validated) · 2 deferred · 4 out of scope
+**Requirements Status:** 11 active (R048–R059) · 47 validated (R001–R029, R034–R047) · 2 deferred · 4 out of scope
 **Test Count:** 1331 (all passing)
 
 ## Completed Milestones
@@ -19,18 +19,18 @@
 
 - [x] S01: Milestone & Chunk Type Foundation `risk:high` — COMPLETE. Milestone/ChunkRef/MilestoneStatus types, atomic I/O, milestone_list/milestone_get MCP tools, assay milestone list CLI. R039, R040, R041 validated. 1293 tests green.
 - [x] S02: Development Cycle State Machine `risk:high` — COMPLETE. cycle_status/cycle_advance/chunk_status MCP tools, milestone phase transitions (Draft→InProgress→Verify→Complete), CLI milestone status/advance subcommands. R043, R044 validated. 1308 tests green.
-- [x] S03: Guided Authoring Wizard `risk:medium` — COMPLETE. T01✓ T02✓ T03✓ T04✓ wizard core (create_from_inputs, create_milestone_from_params, create_spec_from_params), assay plan CLI with TTY guard, milestone_create/spec_create MCP tools. R042 validated. 1320+ tests green.
-- [x] S04: Gate-Gated PR Workflow `risk:medium` — COMPLETE. pr_check_milestone_gates + pr_create_if_gates_pass (pre-flight gh check, idempotency, Verify→Complete transition), assay pr create CLI, pr_create MCP tool. R045, R046 validated. 1331 tests green.
-- [ ] S05: Claude Code Plugin Upgrade `risk:low` — 3 new skills (/assay:plan, /assay:status, /assay:next-chunk), updated CLAUDE.md, Stop+PreCompact hooks (R047)
+- [x] S03: Guided Authoring Wizard `risk:medium` — COMPLETE. T01✓ T02✓ T03✓ T04✓ wizard core, assay plan CLI with TTY guard, milestone_create/spec_create MCP tools. R042 validated. 1320+ tests green.
+- [x] S04: Gate-Gated PR Workflow `risk:medium` — COMPLETE. pr_check_milestone_gates + pr_create_if_gates_pass, assay pr create CLI, pr_create MCP tool. R045, R046 validated. 1331 tests green.
+- [x] S05: Claude Code Plugin Upgrade `risk:low` — COMPLETE. 3 new skills (/assay:plan interview-first, /assay:status, /assay:next-chunk with Verify-phase null guard), rewritten CLAUDE.md (33 lines, 5-skill table, 11-tool table), cycle-stop-check.sh (7 guards + BLOCKING_CHUNKS in reason), updated post-tool-use.sh, hooks.json wired, plugin.json v0.5.0. R047 validated. D080–D083.
 - [ ] S06: Codex Plugin `risk:low` — AGENTS.md workflow guide, 4 skills (gate-check, spec-show, cycle-status, plan) (R048)
 
 ## Recent Decisions
 
-- D079: S04 test-first — tests/pr.rs written in T01 (red) before assay-core::pr exists in T02
-- D078: ChunkGateFailure and PrCreateResult are local types in assay-core::pr (D073 pattern)
-- D077: pr_create_if_gates_pass uses `gh --json number,url` for stable structured output
-- D076: create_spec_from_params criteria as Vec<String> (descriptions only, no cmd; known limitation)
-- D075: WizardChunkInput slug is caller-provided, not auto-derived
+- D083: BLOCKING_CHUNKS named verbatim in Stop hook block reason for immediate agent actionability
+- D082: guard-order pattern in cycle-stop-check.sh: jq → stop_hook_active → MODE → dir → binary → work
+- D081: next-chunk skill handles active_chunk_slug=null (Verify phase) with "run assay pr create" hint
+- D080: skill interview-first pattern — all input collection before any MCP tool call
+- D079: S04 test-first — tests/pr.rs written before assay-core::pr exists
 
 ## Blockers
 
@@ -38,4 +38,4 @@ None.
 
 ## Next Action
 
-T02 complete. Check S05-PLAN.md for next task in S05. If S05 has no remaining tasks, write S05-SUMMARY.md and mark S05 done in M005-ROADMAP.md.
+S05 complete. Begin S06 (Codex Plugin). Read S06-PLAN.md (or create it if it doesn't exist). Ports gate-check and spec-show skills from claude-code plugin; adds cycle-status and plan skills; writes AGENTS.md workflow guide.

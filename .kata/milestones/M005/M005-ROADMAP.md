@@ -64,7 +64,7 @@ This milestone is complete only when all are true:
 - [x] **S04: Gate-Gated PR Workflow** `risk:medium` `depends:[S01,S02]`
   > After this: `assay pr create my-feature` opens a real GitHub PR only when all chunk gates pass; failing chunks are listed with their failed criteria; PR number and URL are stored in the milestone file.
 
-- [ ] **S05: Claude Code Plugin Upgrade** `risk:low` `depends:[S01,S02,S03,S04]`
+- [x] **S05: Claude Code Plugin Upgrade** `risk:low` `depends:[S01,S02,S03,S04]`
   > After this: Claude Code users can `/assay:plan` to start the wizard, `/assay:status` to see cycle progress, and `/assay:next-chunk` to get the active chunk context; Stop hook reports incomplete chunks.
 
 - [x] **S06: Codex Plugin** `risk:low` `depends:[S01,S02]`

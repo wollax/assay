@@ -468,14 +468,14 @@
 
 ### R047 — Claude Code plugin upgrade
 - Class: differentiator
-- Status: active
-- Description: The Claude Code plugin gains new skills (`/assay:plan`, `/assay:status`, `/assay:next-chunk`) and updated CLAUDE.md that describes the full guided workflow cycle. New hooks: Stop hook checks cycle status and reports incomplete chunks, PreCompact hook saves milestone checkpoint. Commands directory populated with workflow commands.
+- Status: validated
+- Description: The Claude Code plugin gains new skills (`/assay:plan`, `/assay:status`, `/assay:next-chunk`) and updated CLAUDE.md that describes the full guided workflow cycle. New hooks: Stop hook checks cycle status and reports incomplete chunks; PostToolUse reminder names active chunk. Plugin version bumped to 0.5.0.
 - Why it matters: The plugin is the integration surface for Claude Code users — without upgraded skills the guided workflow is invisible inside Claude Code
 - Source: user
 - Primary owning slice: M005/S05
 - Supporting slices: M005/S01, M005/S02, M005/S03, M005/S04
-- Validation: unmapped
-- Notes: Builds on the existing plugin structure (hooks, skills, CLAUDE.md). New skills consume `milestone_list`, `cycle_status`, `cycle_advance`, `pr_create` MCP tools.
+- Validation: S05 — 3 skill files exist with YAML frontmatter (plan/status/next-chunk); CLAUDE.md ≤50 lines with 5-skill table and 11-tool table; cycle-stop-check.sh passes bash -n with 11 exit-0 guards; hooks.json references cycle-stop-check.sh only (stop-gate-check.sh removed); plugin.json at version 0.5.0; live Claude Code session is UAT-only (see S05-UAT.md). Decisions D080–D083 capture key patterns.
+- Notes: PreCompact hook (milestone-checkpoint.sh) was in the original plan but omitted — the Stop hook and PostToolUse provide sufficient cycle awareness. Interview-first pattern (D080) prevents orphan milestone files. BLOCKING_CHUNKS in Stop hook reason (D083) enables immediate chunk targeting.
 
 ### R048 — Codex plugin (basic)
 - Class: differentiator
@@ -705,7 +705,7 @@
 | R044 | core-capability | validated | M005/S02 | M005/S01 | S02 |
 | R045 | primary-user-loop | validated | M005/S04 | M005/S01, M005/S02 | S04 |
 | R046 | convention | validated | M005/S04 | M005/S01 | S04 |
-| R047 | differentiator | active | M005/S05 | M005/S01–S04 | mapped |
+| R047 | differentiator | validated | M005/S05 | M005/S01–S04 | S05 |
 | R048 | differentiator | active | M005/S06 | M005/S01, M005/S02 | mapped |
 | R049 | primary-user-loop | active | M006/S01 | none | mapped |
 | R050 | primary-user-loop | active | M006/S02 | M006/S01 | mapped |
