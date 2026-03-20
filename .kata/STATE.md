@@ -2,8 +2,8 @@
 
 **Active Milestone:** M006 — TUI as Primary Surface
 **Active Slice:** S02 — In-TUI Authoring Wizard
-**Active Task:** T03 — Implement draw_wizard rendering function
-**Phase:** Executing
+**Active Task:** — (all tasks complete; slice ready for summary + merge)
+**Phase:** Summarizing
 **Last Updated:** 2026-03-20
 **Requirements Status:** 10 active (R049–R059) · 43 validated (R001–R048) · 2 deferred · 4 out of scope
 **Test Count:** 1333 (all passing)
@@ -19,7 +19,7 @@
 ## M006 Roadmap
 
 - [ ] S01: App Scaffold, Dashboard, and Binary Fix `risk:high` — binary name fix (`assay-tui`), App+Screen enum, dashboard with real milestone data, no-project guard. R049.
-- [ ] S02: In-TUI Authoring Wizard `risk:high` `depends:[S01]` — WizardState multi-step form, create_from_inputs round-trip, new milestone appears in dashboard. R050.
+- [x] S02: In-TUI Authoring Wizard `risk:high` `depends:[S01]` — WizardState multi-step form, draw_wizard popup, App wiring (n/Cancel/Submit); 23 assay-tui tests green. R050. (pending slice summary + PR)
 - [ ] S03: Chunk Detail View and Spec Browser `risk:medium` `depends:[S01]` — milestone → chunk list → chunk detail with criteria and gate results. R051.
 - [ ] S04: Provider Configuration Screen `risk:medium` `depends:[S01]` — ProviderConfig type in assay-types (D056 pattern), settings screen, config_save, backward-compat. R052.
 - [ ] S05: Help Overlay, Status Bar, and Integration Polish `risk:low` `depends:[S01,S02,S03,S04]` — help overlay, status bar, just ready passes, full flow integration.
