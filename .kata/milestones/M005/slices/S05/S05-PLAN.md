@@ -56,7 +56,7 @@
   - Verify: `cargo test -p assay-cli -- milestone_status_json` passes; `just ready` green
   - Done when: `cargo test -p assay-cli -- milestone_status_json` shows 1 passed, `just ready` exits 0
 
-- [ ] **T02: Write skill files and update CLAUDE.md** `est:30m`
+- [x] **T02: Write skill files and update CLAUDE.md** `est:30m`
   - Why: The three new skills are the primary user-facing surface of this slice — without them, Claude Code users have no workflow entry points for planning, status, and chunk context.
   - Files: `plugins/claude-code/skills/plan/SKILL.md`, `plugins/claude-code/skills/status/SKILL.md`, `plugins/claude-code/skills/next-chunk/SKILL.md`, `plugins/claude-code/CLAUDE.md`
   - Do:
