@@ -1,54 +1,30 @@
 ---
 name: next-chunk
 description: >
-  Load the active chunk's spec and gate status for implementation context.
-  Use when the user wants to know what to implement next, what the current
-  criteria are, or which gates are passing/failing for the active chunk.
+  Show the active chunk's spec criteria and gate status. Use before starting work on a chunk,
+  to understand what needs to pass, or to check current gate results.
 ---
 
 # Next Chunk
 
-Load the active chunk's criteria and current gate status.
+Load context for the active chunk: cycle state, gate status, and spec criteria.
 
 ## Steps
 
-1. **Find the active chunk:**
-   - Call the `cycle_status` MCP tool (no parameters)
-   - Extract `active_chunk_slug` from the response
+1. **Call `cycle_status`** (no parameters):
+   - If `{ "active": false }`: stop and tell the user no milestone is active. Suggest `/assay:plan` to create one.
+   - If `active_chunk_slug` is `null`: all chunks are complete and the milestone is in the Verify phase. Tell the user: *"All chunks are complete. Create a PR with `assay pr create <milestone-slug>` or use the `pr_create` tool."*
+   - Otherwise proceed with `active_chunk_slug`
 
-2. **Handle no active chunk:**
-   - If `active == false` or `active_chunk_slug` is null or missing, report:
-     > No active chunk — all chunks complete (or no active milestone).
-     > Use `assay milestone advance` to evaluate gates and complete the milestone, or `assay pr create <milestone-slug>` to create a PR.
+2. **Call `chunk_status`** with `{ "chunk_slug": "<active_chunk_slug>" }`:
+   - Display a gate summary: `passed`, `failed`, `required_failed` counts
+   - If `has_history: false`: note that no gate runs exist yet for this chunk
 
-3. **Fetch gate pass/fail summary:**
-   - Call `chunk_status` with `{ "chunk_slug": "<active_chunk_slug>" }`
-   - This returns pass/fail status for each gate in the chunk
+3. **Call `spec_get`** with `{ "name": "<active_chunk_slug>" }`:
+   - Display the full criteria list for the chunk: criterion name, description, whether executable, and `cmd` if present
 
-4. **Fetch full spec criteria:**
-   - Call `spec_get` with `{ "name": "<active_chunk_slug>" }`
-   - This returns the full spec definition including all criteria descriptions
-
-5. **Present the chunk context:**
-   - Show:
-     - **Chunk:** `active_chunk_slug`
-     - **Criteria list:** for each criterion, show:
-       - Name
-       - Description
-       - Status: ✓ pass or ✗ fail (from `chunk_status` results)
-   - Suggest next action:
-     - If all pass: "All gates passing — run `assay milestone advance` to mark this chunk complete"
-     - If any fail: "Fix failing criteria, then run `/assay:gate-check <chunk-slug>` to re-verify"
+4. **Summarise:** State the active chunk name, gate pass/fail status, and what criteria must pass before calling `cycle_advance`.
 
 ## Output Format
 
-```
-Active chunk: chunk-2
-
-Criteria:
-  ✓ endpoint-returns-200   — POST /token returns 200 with valid body
-  ✗ token-expiry-respected — Token expires after configured TTL
-  ✓ error-on-bad-password  — Returns 401 for wrong credentials
-
-1/3 passing — fix failing criteria, then run /assay:gate-check chunk-2
-```
+Show gate status first (pass/fail counts), then criteria list. Keep it scannable — one line per criterion is enough for passing criteria. Flag failing or unrun criteria clearly so the user knows what to focus on.

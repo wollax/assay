@@ -1,65 +1,39 @@
 ---
 name: plan
 description: >
-  Guide the user through creating a new Assay milestone with chunks and specs.
-  Use when the user wants to start a new development milestone, define a feature,
-  or set up a milestone-driven development cycle. Interviews the user before
-  making any MCP calls — never creates immediately on invocation.
+  Guide the user through creating a new milestone with chunks and specs.
+  Use when the user wants to start planning a new feature, task, or project milestone.
+  Collects goal, chunk names, and acceptance criteria conversationally before calling any MCP tools.
 ---
 
 # Plan
 
-Create a new milestone with chunks and specs through a guided interview.
+Collect all inputs from the user before creating anything, then create the milestone and specs.
 
 ## Steps
 
-1. **Interview the user (do this first — no MCP calls yet):**
-   - Ask for the milestone goal / name (you will derive a slug: lowercase, hyphen-separated, e.g. `auth-refresh`)
-   - Ask how many chunks the milestone has (1–7 recommended)
-   - For each chunk, ask:
-     - A name (e.g. "Core API changes")
-     - A slug (e.g. `core-api`, derived from the name if not provided)
-     - Two to four success criteria as plain descriptions (e.g. "POST /token returns 200 with valid body")
-   - Confirm the full plan with the user before proceeding
+1. **Interview the user — do not call any tools yet:**
+   - Ask: *"What is the goal of this milestone? Describe what you want to build or achieve."*
+   - Ask: *"How many chunks do you want to break this into? (Suggest 2–5 for most milestones)"*
+   - For each chunk, ask: *"What is the name of chunk N?"* — then derive the slug as lowercase with spaces replaced by hyphens (e.g. "Auth Layer" → `auth-layer`)
+   - Ask: *"What are the acceptance criteria for [chunk name]? List one per line — each criterion should be verifiable."*
+   - Repeat criteria collection for each chunk
+   - Show a summary of what will be created and ask the user to confirm before proceeding
 
 2. **Create the milestone:**
-   - Call `milestone_create` with:
-     ```json
-     {
-       "slug": "<milestone-slug>",
-       "name": "<Milestone Name>",
-       "chunks": [
-         { "slug": "<chunk-slug>", "name": "<Chunk Name>" }
-       ]
-     }
-     ```
+   - Call `milestone_create` with `{ slug, name, description, chunks: [{ slug, name, criteria: [] }, ...] }`
+   - Pass `criteria: []` for each chunk here — specs are created per-chunk in Step 3
 
-3. **Create specs (one per chunk):**
-   - For each chunk, call `spec_create` with:
-     ```json
-     {
-       "slug": "<chunk-slug>",
-       "name": "<Chunk Name>",
-       "milestone_slug": "<milestone-slug>",
-       "criteria": ["<criterion 1>", "<criterion 2>"]
-     }
-     ```
-   - Criteria are plain text descriptions — they do **not** need to be executable commands yet
+3. **Create a spec for each chunk:**
+   - For each chunk, call `spec_create` with `{ slug: <chunk-slug>, name: <chunk-name>, milestone_slug: <milestone-slug>, criteria: ["<criterion 1>", "<criterion 2>", ...] }`
+   - Pass each criterion exactly as the user entered it — one plain string per criterion
+   - If `spec_create` returns `isError: true` (e.g. duplicate slug): tell the user which chunk failed and suggest a different slug. Do NOT silently continue to the next chunk.
 
-4. **Confirm and warn:**
-   - Show a summary: milestone slug, chunk count, spec files created
-   - Remind the user: **Generated gate files have no `cmd` field** — they contain descriptive criteria only. To make gates runnable, edit each `specs/<chunk-slug>/gates.toml` and add a `cmd` field to each gate entry.
-   - Suggest next steps: use `/assay:status` to see cycle progress, or `assay milestone advance` to evaluate gates when ready
+4. **Confirm results:**
+   - Report the created milestone slug and name
+   - List each chunk with its spec path (typically `specs/<chunk-slug>.toml`)
+   - Tell the user: *"Run `/assay:next-chunk` to see the first chunk's criteria and start working."*
 
 ## Output Format
 
-Keep the interview conversational. After creation, show a concise confirmation:
-
-```
-✓ Milestone created: my-feature (3 chunks)
-  Specs created: chunk-1, chunk-2, chunk-3
-
-⚠ Gates have no cmd — edit specs/<slug>/gates.toml to add runnable commands.
-
-Next: /assay:status to check cycle progress
-```
+During the interview, ask one question at a time. Keep the conversation focused. After creation, show a compact summary table of milestone slug, chunks, and spec locations.

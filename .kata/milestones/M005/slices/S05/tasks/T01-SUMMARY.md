@@ -3,49 +3,60 @@ id: T01
 parent: S05
 milestone: M005
 provides:
-  - --json flag on `assay milestone status` outputting CycleStatus JSON or {"active":false}
+  - plugins/claude-code/skills/plan/SKILL.md — interview-first milestone creation skill
+  - plugins/claude-code/skills/status/SKILL.md — cycle status display skill
+  - plugins/claude-code/skills/next-chunk/SKILL.md — active chunk context loading skill
+  - plugins/claude-code/CLAUDE.md — rewritten with 5-skill table, 11-tool table, workflow paragraph
 key_files:
-  - crates/assay-cli/src/commands/milestone.rs
+  - plugins/claude-code/skills/plan/SKILL.md
+  - plugins/claude-code/skills/status/SKILL.md
+  - plugins/claude-code/skills/next-chunk/SKILL.md
+  - plugins/claude-code/CLAUDE.md
 key_decisions:
-  - D072 error pattern: cycle_status Err → eprintln + return Ok(1), not panic/propagation
+  - plan skill uses interview-first pattern — all input collection precedes any MCP tool call to avoid premature tool calls
+  - next-chunk handles two null states: active=false (no milestone) and active_chunk_slug=null (all chunks done, in Verify phase)
+  - CLAUDE.md kept to 33 lines (well within 50-line budget) by using tables for reference and one paragraph for workflow
 patterns_established:
-  - JSON output branch in CLI commands: check flag first, call domain fn, serialize, return early
+  - skill interview-first pattern: conversational collection → confirm summary → then tool calls
+  - skill null-guard pattern: check cycle_status.active before proceeding, check active_chunk_slug for Verify phase
 observability_surfaces:
-  - "`assay milestone status --json | jq .` — shows active CycleStatus or {\"active\":false}; exits 0 always; non-zero only on I/O error to stderr"
-duration: ~10 minutes
+  - none (pure documentation task)
+duration: 10min
 verification_result: passed
-completed_at: 2026-03-20
+completed_at: 2026-03-20T00:00:00Z
 blocker_discovered: false
 ---
 
-# T01: Add `--json` flag to `assay milestone status`
+# T01: Write plan/status/next-chunk skill files and update CLAUDE.md
 
-**Added `--json` flag to `assay milestone status` outputting `{"active":false}` or full `CycleStatus` JSON — enabling machine-readable cycle state inspection for hooks and scripts.**
+**Three new Claude Code skills and a rewritten CLAUDE.md expose the full M005 development cycle workflow to Claude Code users.**
 
 ## What Happened
 
-Extended `MilestoneCommand::Status` with a `json: bool` field via `#[arg(long)] json: bool`. Updated `milestone_status_cmd` to accept the flag and branch: when `json` is true, calls `assay_core::milestone::cycle_status(&dir)`, serializes with `serde_json::to_string`, and prints to stdout. `Ok(None)` → `{"active":false}`; `Err(e)` → eprintln + `Ok(1)` (D072). When false, existing table-print behavior is unchanged.
+Created `plan/SKILL.md` with an interview-first pattern: Step 1 explicitly collects goal, chunk count, chunk names/slugs, and criteria per chunk before Step 2 calls `milestone_create`. This ordering is enforced by structure — the interview heading appears on line 6, `milestone_create` on line 24.
 
-Added `milestone_status_json_no_active` test: creates tempdir with `.assay/` (no milestones), calls `handle(MilestoneCommand::Status { json: true })`, asserts `Ok(0)`.
+Created `status/SKILL.md` as a minimal 2-step skill: call `cycle_status`, branch on `active: false` vs. active milestone to display name/phase/chunk/progress.
 
-Also updated the existing `milestone_status_no_milestones` test to pass `Status { json: false }` to match the new variant shape.
+Created `next-chunk/SKILL.md` with 3 sequential tool calls plus two null guards: one for `active: false` (no active milestone) and one for `active_chunk_slug: null` (milestone in Verify phase — all chunks done, user should `pr_create`).
+
+Rewrote `CLAUDE.md` to 33 lines: one workflow paragraph, a 5-row Skills table, and an 11-row MCP Tools table. Removed the old 2-command table.
 
 ## Verification
 
-- `cargo test -p assay-cli -- milestone` — 4 tests pass (3 existing + 1 new)
-- `cargo test --workspace` — all tests pass (1331+ total)
-- `just ready` — fmt + clippy + test + deny all green, "All checks passed."
-
-Note: `just ready` exhibited a single flaky failure on first run (`test_pr_check_one_fails` in `assay-core`) due to a pre-existing `set_current_dir` test pollution issue across parallel test binaries. Isolated run and full `--workspace` run both pass cleanly. This is not caused by T01 changes.
+```
+plugins/claude-code/skills/plan/SKILL.md     ✓ exists, name: plan in frontmatter
+plugins/claude-code/skills/status/SKILL.md   ✓ exists, name: status in frontmatter
+plugins/claude-code/skills/next-chunk/SKILL.md ✓ exists, name: next-chunk in frontmatter
+Interview before tool: line 6 < line 24      ✓ OK
+null/pr_create guard count in next-chunk: 1  ✓ OK
+CLAUDE.md line count: 33                     ✓ ≤50
+/assay: occurrences in CLAUDE.md: 6          ✓ ≥5
+cycle_status, pr_create, milestone_create    ✓ all present in CLAUDE.md
+```
 
 ## Diagnostics
 
-```bash
-# Inspect current cycle state (exits 0 always):
-assay milestone status --json | jq .
-# → {"active":false}  when no in_progress milestone
-# → {"milestone_slug":"...","active_chunk_slug":"...","completed_count":N,...}  when active
-```
+Inspect with: `cat plugins/claude-code/skills/plan/SKILL.md` to verify interview ordering; `wc -l plugins/claude-code/CLAUDE.md` to confirm line budget.
 
 ## Deviations
 
@@ -53,8 +64,11 @@ None.
 
 ## Known Issues
 
-Pre-existing flaky test `test_pr_check_one_fails` in `assay-core` fails intermittently when run as part of `just ready` (full workspace test suite) due to `set_current_dir` test pollution across parallel test binaries. Not introduced by T01; exists on the base branch.
+None.
 
 ## Files Created/Modified
 
-- `crates/assay-cli/src/commands/milestone.rs` — Added `json: bool` to `Status` variant; updated `handle` match arm; updated `milestone_status_cmd(json: bool)` with JSON branch; added `milestone_status_json_no_active` test; updated `milestone_status_no_milestones` test for new variant shape
+- `plugins/claude-code/skills/plan/SKILL.md` — new: interview-first milestone creation skill (5 steps)
+- `plugins/claude-code/skills/status/SKILL.md` — new: cycle status display skill (2 steps)
+- `plugins/claude-code/skills/next-chunk/SKILL.md` — new: active chunk context loading skill (3 steps + null guards)
+- `plugins/claude-code/CLAUDE.md` — rewritten: 33 lines, 5-skill table, 11-tool table, workflow paragraph
