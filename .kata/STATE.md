@@ -2,7 +2,7 @@
 
 **Active Milestone:** M006 — TUI as Primary Surface
 **Active Slice:** S01 — App Scaffold, Dashboard, and Binary Fix
-**Active Task:** T01 — Binary fix, `App`/`Screen` scaffold, and failing tests
+**Active Task:** T02 — Dashboard rendering, event loop, and gate data — all tests pass
 **Phase:** Executing S01
 **Last Updated:** 2026-03-20
 **Requirements Status:** 10 active (R049–R059) · 43 validated (R001–R048) · 2 deferred · 4 out of scope
@@ -39,4 +39,4 @@ None.
 
 ## Next Action
 
-Execute T01: add `[[bin]] name = "assay-tui"` + `tempfile` dev-dep to `assay-tui/Cargo.toml`; create `src/app.rs` with `App`, `Screen`, `GateSummary` types and stubs; update `main.rs` to delegate to `app::run()`; add `#[cfg(test)]` module with 4 failing unit tests; verify `cargo build -p assay-tui` produces `target/debug/assay-tui`.
+Execute T02: implement dashboard rendering, gate data loading via `history::list`/`history::load`, full event loop with `event::poll`, draw_dashboard with milestone name/status/chunk-fraction/gate columns, draw_no_project/draw_no_milestones, until `cargo test -p assay-tui` and `just ready` both pass.

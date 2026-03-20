@@ -43,7 +43,7 @@
 
 ## Tasks
 
-- [ ] **T01: Binary fix, `App`/`Screen` scaffold, and failing tests** `est:30m`
+- [x] **T01: Binary fix, `App`/`Screen` scaffold, and failing tests** `est:30m`
   - Why: The `[[bin]]` declaration is the blocking prerequisite — without it `cargo build -p assay-tui` produces nothing. The scaffold defines the `App` and `Screen` types and writes the test assertions that will drive T02 implementation.
   - Files: `crates/assay-tui/Cargo.toml`, `crates/assay-tui/src/main.rs`, `crates/assay-tui/src/app.rs`
   - Do: (1) Add `[[bin]] name = "assay-tui" path = "src/main.rs"` to `Cargo.toml`. (2) Create `src/app.rs` with `App { screen, milestones, list_state, project_root, config }`, `Screen` enum (`Dashboard`, `NoProject`), stub `App::new()`, stub `run()`, stub `handle_event()`, stub `draw()`. (3) Update `main.rs` to call `app::run(terminal)` instead of the inline loop. (4) Add `#[cfg(test)]` module in `app.rs` with unit tests covering: `no_assay_dir → Screen::NoProject`, `handle_event(Up/Down)` list state changes, `handle_event('q') → true`, empty milestone list guard. (5) `cargo build -p assay-tui` — verify binary produced. Tests will fail at this stage (stubs return wrong values) — that is expected and correct.
