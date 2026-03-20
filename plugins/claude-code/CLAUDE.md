@@ -4,7 +4,7 @@ This project uses Assay for spec-driven development with quality gates.
 
 ## Workflow
 
-Plan a milestone with `/assay:plan` (guides you through goal, chunks, and criteria). Work through chunks using `/assay:next-chunk` to see the active chunk's criteria and gate status. Run `/assay:gate-check` after implementing to verify criteria. When all chunk gates pass, call `cycle_advance` to move to the next chunk. When all chunks are complete, open a PR with `assay pr create <milestone-slug>`.
+Plan a milestone with `/assay:plan` (guides you through goal, chunks, and criteria). Work through chunks using `/assay:next-chunk` to see the active chunk's criteria and gate status. Run `/assay:gate-check` after implementing to verify criteria. When all chunk gates pass (confirm with `/assay:next-chunk` or the `chunk_status` MCP tool), call the `cycle_advance` MCP tool to move to the next chunk. When all chunks are complete, open a PR with `assay pr create <milestone-slug>`.
 
 ## Skills
 

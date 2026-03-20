@@ -51,6 +51,7 @@ cd "$CWD" || exit 0
 
 # Cycle detection: find incomplete chunk slugs from active milestone.
 # Format: "  [ ] chunk-slug  (active)" — extract third field (the slug).
+# Field mapping: $1='[', $2=']', $3=chunk-slug, $4='(active)' — use $3, not $2.
 # Capture stderr to surface errors rather than silently falling back.
 MILESTONE_STATUS_ERR=$(mktemp)
 MILESTONE_STATUS_OUT=$(assay milestone status 2>"$MILESTONE_STATUS_ERR")

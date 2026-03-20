@@ -14,6 +14,7 @@ cat > /dev/null
 
 # Cycle detection: find first incomplete chunk slug.
 # Format: "  [ ] chunk-slug  (active)" — extract third field (the slug).
+# Field mapping: $1='[', $2=']', $3=chunk-slug, $4='(active)' — use $3, not $2.
 # Only probed when this looks like an Assay project with the binary available.
 ACTIVE_CHUNK=""
 if [ -d "$PWD/.assay" ] && command -v assay &>/dev/null; then
@@ -28,7 +29,8 @@ fi
 
 # Guard: jq required to format the hook output JSON
 if ! command -v jq &>/dev/null; then
-  printf '{"hookSpecificOutput":{"hookEventName":"PostToolUse","additionalContext":"%s"}}\n' "$MESSAGE"
+  # Use a static string — printf with $MESSAGE is unsafe if the slug contains quotes or backslashes
+  printf '{"hookSpecificOutput":{"hookEventName":"PostToolUse","additionalContext":"File modified. Run /assay:gate-check when ready."}}\n'
   exit 0
 fi
 
