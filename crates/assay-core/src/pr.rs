@@ -129,6 +129,8 @@ pub fn pr_create_if_gates_pass(
     specs_dir: &Path,
     working_dir: &Path,
     milestone_slug: &str,
+    title: &str,
+    body: Option<&str>,
 ) -> Result<PrCreateResult> {
     // ── Step 1: Load milestone + idempotency guard ────────────────────────
     let milestone_check = milestone_load(assay_dir, milestone_slug)?;
@@ -181,13 +183,17 @@ pub fn pr_create_if_gates_pass(
     }
 
     // ── Step 3: Check gates ───────────────────────────────────────────────
-    let failures =
-        pr_check_milestone_gates(assay_dir, specs_dir, working_dir, milestone_slug)?;
+    let failures = pr_check_milestone_gates(assay_dir, specs_dir, working_dir, milestone_slug)?;
 
     if !failures.is_empty() {
         let detail = failures
             .iter()
-            .map(|f| format!("  - {}: {} required criteria failed", f.chunk_slug, f.required_failed))
+            .map(|f| {
+                format!(
+                    "  - {}: {} required criteria failed",
+                    f.chunk_slug, f.required_failed
+                )
+            })
             .collect::<Vec<_>>()
             .join("\n");
         return Err(AssayError::Io {
@@ -208,22 +214,22 @@ pub fn pr_create_if_gates_pass(
         .unwrap_or("main")
         .to_string();
 
-    // ── Step 5: Derive title from milestone name ───────────────────────────
-    let title = milestone_check.name.clone();
-
-    // ── Step 6: Build gh args ─────────────────────────────────────────────
-    let args: Vec<String> = vec![
+    // ── Step 5: Build gh args ─────────────────────────────────────────────
+    let mut args: Vec<String> = vec![
         "pr".to_string(),
         "create".to_string(),
         "--title".to_string(),
-        title,
+        title.to_string(),
         "--base".to_string(),
         base_branch,
         "--json".to_string(),
         "number,url".to_string(),
     ];
 
-    // body is not passed in the current API — kept for future extension
+    if let Some(b) = body {
+        args.push("--body".to_string());
+        args.push(b.to_string());
+    }
 
     // ── Step 7: Run gh ────────────────────────────────────────────────────
     let output = Command::new("gh")
@@ -273,15 +279,14 @@ pub fn pr_create_if_gates_pass(
 /// On parse failure, falls back to a defensive default: `pr_number = 0` and
 /// `pr_url = raw_stdout_trimmed`.
 fn parse_gh_output(stdout: &[u8], milestone_slug: &str) -> Result<(u64, String)> {
-    let parsed: serde_json::Value =
-        serde_json::from_slice(stdout).map_err(|e| AssayError::Io {
-            operation: "pr_create_if_gates_pass".to_string(),
-            path: std::path::PathBuf::from(milestone_slug),
-            source: io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!("failed to parse gh JSON output: {e}"),
-            ),
-        })?;
+    let parsed: serde_json::Value = serde_json::from_slice(stdout).map_err(|e| AssayError::Io {
+        operation: "pr_create_if_gates_pass".to_string(),
+        path: std::path::PathBuf::from(milestone_slug),
+        source: io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("failed to parse gh JSON output: {e}"),
+        ),
+    })?;
 
     let pr_number = parsed["number"].as_u64().unwrap_or(0);
     let pr_url = parsed["url"]

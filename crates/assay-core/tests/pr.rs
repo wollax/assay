@@ -12,7 +12,7 @@ use std::path::Path;
 use tempfile::TempDir;
 
 use assay_core::milestone::{milestone_load, milestone_save};
-use assay_core::pr::{pr_check_milestone_gates, pr_create_if_gates_pass, ChunkGateFailure, PrCreateResult};
+use assay_core::pr::{ChunkGateFailure, pr_check_milestone_gates, pr_create_if_gates_pass};
 use assay_types::{ChunkRef, Milestone, MilestoneStatus};
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -111,8 +111,14 @@ fn test_pr_check_all_pass() {
         "all-pass",
         MilestoneStatus::Verify,
         vec![
-            ChunkRef { slug: "chunk-a".to_string(), order: 1 },
-            ChunkRef { slug: "chunk-b".to_string(), order: 2 },
+            ChunkRef {
+                slug: "chunk-a".to_string(),
+                order: 1,
+            },
+            ChunkRef {
+                slug: "chunk-b".to_string(),
+                order: 2,
+            },
         ],
     );
     milestone_save(&assay_dir, &milestone).expect("save milestone");
@@ -143,8 +149,14 @@ fn test_pr_check_one_fails() {
         "one-fail",
         MilestoneStatus::Verify,
         vec![
-            ChunkRef { slug: "pass-chunk".to_string(), order: 1 },
-            ChunkRef { slug: "fail-chunk".to_string(), order: 2 },
+            ChunkRef {
+                slug: "pass-chunk".to_string(),
+                order: 1,
+            },
+            ChunkRef {
+                slug: "fail-chunk".to_string(),
+                order: 2,
+            },
         ],
     );
     milestone_save(&assay_dir, &milestone).expect("save milestone");
@@ -155,7 +167,11 @@ fn test_pr_check_one_fails() {
     let failures = pr_check_milestone_gates(&assay_dir, &specs_dir, &working_dir, "one-fail")
         .expect("pr_check_milestone_gates should return Ok with failures listed");
 
-    assert_eq!(failures.len(), 1, "expected exactly 1 failure, got: {failures:?}");
+    assert_eq!(
+        failures.len(),
+        1,
+        "expected exactly 1 failure, got: {failures:?}"
+    );
     let failure: &ChunkGateFailure = &failures[0];
     assert_eq!(
         failure.chunk_slug, "fail-chunk",
@@ -180,7 +196,10 @@ fn test_pr_check_missing_spec() {
     let milestone = make_milestone_with_status(
         "missing-spec",
         MilestoneStatus::Verify,
-        vec![ChunkRef { slug: "ghost-chunk".to_string(), order: 1 }],
+        vec![ChunkRef {
+            slug: "ghost-chunk".to_string(),
+            order: 1,
+        }],
     );
     milestone_save(&assay_dir, &milestone).expect("save milestone");
 
@@ -188,10 +207,7 @@ fn test_pr_check_missing_spec() {
     let working_dir = tmp.path().to_path_buf();
 
     let result = pr_check_milestone_gates(&assay_dir, &specs_dir, &working_dir, "missing-spec");
-    assert!(
-        result.is_err(),
-        "expected Err when spec is missing, got Ok"
-    );
+    assert!(result.is_err(), "expected Err when spec is missing, got Ok");
     // Should be an Io error — cannot open the non-existent gates.toml
     let err = result.unwrap_err();
     let msg = err.to_string();
@@ -213,7 +229,10 @@ fn test_pr_create_already_created() {
     let mut milestone = make_milestone_with_status(
         "already-created",
         MilestoneStatus::Verify,
-        vec![ChunkRef { slug: "chunk-a".to_string(), order: 1 }],
+        vec![ChunkRef {
+            slug: "chunk-a".to_string(),
+            order: 1,
+        }],
     );
     // PR has already been created
     milestone.pr_number = Some(42);
@@ -223,7 +242,14 @@ fn test_pr_create_already_created() {
     let specs_dir = assay_dir.join("specs");
     let working_dir = tmp.path().to_path_buf();
 
-    let result = pr_create_if_gates_pass(&assay_dir, &specs_dir, &working_dir, "already-created");
+    let result = pr_create_if_gates_pass(
+        &assay_dir,
+        &specs_dir,
+        &working_dir,
+        "already-created",
+        "feat: already-created",
+        None,
+    );
     assert!(
         result.is_err(),
         "expected Err when PR is already created, got Ok"
@@ -247,21 +273,29 @@ fn test_pr_create_gates_fail() {
     let milestone = make_milestone_with_status(
         "gates-fail",
         MilestoneStatus::InProgress,
-        vec![ChunkRef { slug: "fail-chunk".to_string(), order: 1 }],
+        vec![ChunkRef {
+            slug: "fail-chunk".to_string(),
+            order: 1,
+        }],
     );
     milestone_save(&assay_dir, &milestone).expect("save milestone");
 
     let specs_dir = assay_dir.join("specs");
     let working_dir = tmp.path().to_path_buf();
 
-    let result = pr_create_if_gates_pass(&assay_dir, &specs_dir, &working_dir, "gates-fail");
-    assert!(
-        result.is_err(),
-        "expected Err when gates fail, got Ok"
+    let result = pr_create_if_gates_pass(
+        &assay_dir,
+        &specs_dir,
+        &working_dir,
+        "gates-fail",
+        "feat: gates-fail",
+        None,
     );
+    assert!(result.is_err(), "expected Err when gates fail, got Ok");
 
     // Milestone TOML must not have been modified — pr_number still None
-    let reloaded = milestone_load(&assay_dir, "gates-fail").expect("load milestone after failed attempt");
+    let reloaded =
+        milestone_load(&assay_dir, "gates-fail").expect("load milestone after failed attempt");
     assert!(
         reloaded.pr_number.is_none(),
         "pr_number must remain None after gate failure, got: {:?}",
@@ -284,7 +318,10 @@ fn test_pr_create_gh_not_found() {
     let milestone = make_milestone_with_status(
         "gh-not-found",
         MilestoneStatus::Verify,
-        vec![ChunkRef { slug: "chunk-a".to_string(), order: 1 }],
+        vec![ChunkRef {
+            slug: "chunk-a".to_string(),
+            order: 1,
+        }],
     );
     milestone_save(&assay_dir, &milestone).expect("save milestone");
 
@@ -296,7 +333,14 @@ fn test_pr_create_gh_not_found() {
     // SAFETY: guarded by #[serial]; no concurrent thread modifies PATH.
     unsafe { std::env::set_var("PATH", empty_bin_dir.display().to_string()) };
 
-    let result = pr_create_if_gates_pass(&assay_dir, &specs_dir, &working_dir, "gh-not-found");
+    let result = pr_create_if_gates_pass(
+        &assay_dir,
+        &specs_dir,
+        &working_dir,
+        "gh-not-found",
+        "feat: gh-not-found",
+        None,
+    );
 
     unsafe { std::env::set_var("PATH", original_path) };
 
@@ -306,7 +350,9 @@ fn test_pr_create_gh_not_found() {
     );
     let msg = result.unwrap_err().to_string();
     assert!(
-        msg.contains("gh CLI not found") || msg.contains("gh not found") || msg.contains("No such file"),
+        msg.contains("gh CLI not found")
+            || msg.contains("gh not found")
+            || msg.contains("No such file"),
         "error should mention gh CLI not found, got: {msg}"
     );
 }
@@ -328,8 +374,14 @@ fn test_pr_create_success_mock_gh() {
         "pr-success",
         MilestoneStatus::Verify,
         vec![
-            ChunkRef { slug: "chunk-a".to_string(), order: 1 },
-            ChunkRef { slug: "chunk-b".to_string(), order: 2 },
+            ChunkRef {
+                slug: "chunk-a".to_string(),
+                order: 1,
+            },
+            ChunkRef {
+                slug: "chunk-b".to_string(),
+                order: 2,
+            },
         ],
     );
     milestone_save(&assay_dir, &milestone).expect("save milestone");
@@ -344,7 +396,14 @@ fn test_pr_create_success_mock_gh() {
     let working_dir = tmp.path().to_path_buf();
 
     let result = with_mock_gh_path(&bin_dir, |_| {
-        pr_create_if_gates_pass(&assay_dir, &specs_dir, &working_dir, "pr-success")
+        pr_create_if_gates_pass(
+            &assay_dir,
+            &specs_dir,
+            &working_dir,
+            "pr-success",
+            "feat: pr-success",
+            None,
+        )
     });
 
     let outcome = result.expect("pr_create_if_gates_pass should succeed with mock gh");
@@ -355,7 +414,8 @@ fn test_pr_create_success_mock_gh() {
     );
 
     // Milestone TOML must be updated with pr_number and pr_url
-    let reloaded = milestone_load(&assay_dir, "pr-success").expect("reload milestone after PR creation");
+    let reloaded =
+        milestone_load(&assay_dir, "pr-success").expect("reload milestone after PR creation");
     assert_eq!(
         reloaded.pr_number,
         Some(42),
@@ -383,7 +443,10 @@ fn test_pr_create_verify_transitions_to_complete() {
     let milestone = make_milestone_with_status(
         "verify-to-complete",
         MilestoneStatus::Verify,
-        vec![ChunkRef { slug: "chunk-a".to_string(), order: 1 }],
+        vec![ChunkRef {
+            slug: "chunk-a".to_string(),
+            order: 1,
+        }],
     );
     milestone_save(&assay_dir, &milestone).expect("save milestone");
 
@@ -397,8 +460,15 @@ fn test_pr_create_verify_transitions_to_complete() {
     let working_dir = tmp.path().to_path_buf();
 
     with_mock_gh_path(&bin_dir, |_| {
-        pr_create_if_gates_pass(&assay_dir, &specs_dir, &working_dir, "verify-to-complete")
-            .expect("pr_create_if_gates_pass should succeed");
+        pr_create_if_gates_pass(
+            &assay_dir,
+            &specs_dir,
+            &working_dir,
+            "verify-to-complete",
+            "feat: verify-to-complete",
+            None,
+        )
+        .expect("pr_create_if_gates_pass should succeed");
     });
 
     // Milestone status must have transitioned to Complete
