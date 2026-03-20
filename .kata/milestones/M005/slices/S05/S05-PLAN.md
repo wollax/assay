@@ -49,7 +49,7 @@
 
 ## Tasks
 
-- [ ] **T01: Add `--json` flag to `assay milestone status`** `est:30m`
+- [x] **T01: Add `--json` flag to `assay milestone status`** `est:30m`
   - Why: The cycle-stop-check.sh hook needs machine-readable cycle state from the CLI. The `--json` flag exposes `CycleStatus` JSON (or `{"active":false}`) using the existing `assay_core::milestone::cycle_status` function — no new domain logic required.
   - Files: `crates/assay-cli/src/commands/milestone.rs`
   - Do: Add `#[arg(long)] json: bool` to `MilestoneCommand::Status` variant. In `milestone_status_cmd`, add a `json: bool` parameter; when true, call `assay_core::milestone::cycle_status(&dir)` and serialize the result to stdout with `serde_json::to_string` — output `{"active":false}` on `Ok(None)`, the CycleStatus JSON on `Ok(Some(s))`, and exit 1 with eprintln on error (D072 pattern). Add a unit test `milestone_status_json_no_active` that sets up a tempdir with `.assay/` (no milestones), calls `handle(MilestoneCommand::Status { json: true })`, and asserts `result.is_ok()` and exit code 0. Run `just ready` after.
