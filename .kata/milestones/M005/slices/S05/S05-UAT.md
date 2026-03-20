@@ -5,142 +5,105 @@
 
 ## UAT Type
 
-- UAT mode: mixed (artifact-driven + human-experience)
-- Why this mode is sufficient: The Rust CLI change (`--json` flag) and bash hook logic are fully verified by automated tests and `bash -n` syntax checks. The human-experience component (interactive skill invocation in Claude Code) cannot be automated — it requires a real Claude Code session to verify the UX flow. Both modes are needed for complete coverage.
+- UAT mode: mixed (artifact-driven for file/syntax checks; live-runtime for Claude Code session behavior)
+- Why this mode is sufficient: Automated checks verify all static correctness (file existence, YAML frontmatter, bash syntax, JSON validity, line counts). Live runtime is required only to verify that skills render correctly inside Claude Code, that the Stop hook actually blocks, and that MCP tool calls succeed end-to-end. The automated tier covers ~80% of the surface; live session covers the remaining 20% of user-visible behavior.
 
 ## Preconditions
 
-For automated verification (already completed):
-- `just ready` passes (1331+ tests, fmt, clippy, deny all green)
-- `assay` binary available on PATH (`cargo build --release` or `cargo install --path crates/assay-cli`)
-
-For human UAT:
-- Claude Code installed and connected to an MCP server running Assay
-- The Assay MCP server has `milestone_create`, `spec_create`, `cycle_status`, `chunk_status`, `spec_get`, `pr_create` tools registered
-- A project with `.assay/` directory initialized (`assay init` run)
-- `plugins/claude-code/` installed as a Claude Code plugin (`claude plugin install`)
-- Plugin version 0.5.0 confirmed in Claude Code plugin list
+- Assay binary built and on PATH (`just build`)
+- Claude Code installed with the Assay plugin loaded from `plugins/claude-code/`
+- MCP server running with all M005 tools registered (`assay mcp`)
+- At least one milestone exists in `.assay/milestones/` (or run `assay plan` to create one)
+- `ASSAY_STOP_HOOK_MODE` unset or set to `enforce` for Stop hook testing
 
 ## Smoke Test
 
-Run `assay milestone status --json` in a project with no active milestone and confirm output is exactly `{"active":false}` and exit code is 0.
-
-```bash
-assay milestone status --json
-echo "Exit: $?"
-# Expected: {"active":false}\nExit: 0
-```
+Open Claude Code, type `/assay:status`, confirm it displays either "No active milestone" or a milestone name/phase/chunk summary without errors.
 
 ## Test Cases
 
-### 1. `--json` flag — no active milestone
-
-```bash
-cd /tmp/test-assay && mkdir -p .assay && assay milestone status --json
-```
-
-1. Run in a directory with `.assay/` but no milestone files
-2. **Expected:** stdout is `{"active":false}`, exit code 0, stderr empty
-
-### 2. `--json` flag — active milestone
-
-1. Create a milestone TOML in `.assay/milestones/my-feature.toml` with `status = "in_progress"` and at least one chunk ref
-2. Run `assay milestone status --json`
-3. **Expected:** stdout is valid CycleStatus JSON with `milestone_slug`, `phase`, `active_chunk_slug`, `completed_count`, `total_count` fields; exit code 0
-
-### 3. `/assay:plan` skill — happy path
+### 1. /assay:plan creates a milestone interactively
 
 1. In Claude Code, invoke `/assay:plan`
-2. **Expected:** Claude asks for milestone goal (does NOT immediately call `milestone_create`)
-3. Provide goal, chunk count (e.g. 2), and per-chunk slug/name/criteria when asked
-4. **Expected:** Claude calls `milestone_create` with the collected inputs, then calls `spec_create` twice (once per chunk), reports success, and warns that generated gates have no `cmd` field
+2. Answer the goal prompt: "Add user authentication"
+3. Specify 2 chunks: "database-schema" and "api-endpoints"
+4. Provide 2 criteria each
+5. Confirm the summary
+6. **Expected:** `milestone_create` is called once; `spec_create` is called twice; milestone TOML appears in `.assay/milestones/`; gates.toml appears in `.assay/specs/` for each chunk
 
-### 4. `/assay:status` skill — no active milestone
+### 2. /assay:status shows active milestone
 
-1. In Claude Code, invoke `/assay:status` with no active milestone in the project
-2. **Expected:** Claude reports "No active milestone" (does not error or show partial data)
+1. Ensure a milestone exists in `in_progress` state
+2. Invoke `/assay:status`
+3. **Expected:** Claude Code displays milestone name, phase (In Progress), active chunk slug, and progress count (e.g., "0/2 chunks complete")
 
-### 5. `/assay:status` skill — active milestone
+### 3. /assay:status on empty project
 
-1. Ensure a milestone is `in_progress` in `.assay/milestones/`
-2. In Claude Code, invoke `/assay:status`
-3. **Expected:** Claude shows milestone slug, name, phase, active chunk slug, and a progress display like `[x][ ][ ]` reflecting completed_count/total_count
+1. Ensure no milestones exist in `.assay/milestones/`
+2. Invoke `/assay:status`
+3. **Expected:** Claude Code displays "No active milestone" and suggests `/assay:plan`
 
-### 6. `/assay:next-chunk` skill — active chunk with gate history
+### 4. /assay:next-chunk shows active chunk context
 
-1. Ensure a milestone is `in_progress` with an active chunk that has gate run history
-2. In Claude Code, invoke `/assay:next-chunk`
-3. **Expected:** Claude calls `cycle_status`, then `chunk_status`, then `spec_get`; presents the active chunk slug, criteria list with ✓/✗ indicators, and a suggested next action
+1. Ensure an active milestone with an incomplete chunk
+2. Invoke `/assay:next-chunk`
+3. **Expected:** Claude Code displays the active chunk's slug, its criteria from `spec_get`, and gate pass/fail status from `chunk_status`
 
-### 7. `/assay:next-chunk` skill — all chunks complete
+### 5. /assay:next-chunk on Verify phase (all chunks done)
 
-1. Ensure a milestone is `in_progress` with `completed_count == total_count` (or `active_chunk_slug` is null)
-2. In Claude Code, invoke `/assay:next-chunk`
-3. **Expected:** Claude reports "All chunks complete — run `assay milestone advance` or `assay pr create`"
+1. Mark all chunks complete so the milestone is in Verify phase (`active_chunk_slug` is null)
+2. Invoke `/assay:next-chunk`
+3. **Expected:** Claude Code displays a message saying all chunks are complete and instructs the user to run `assay pr create`; does NOT crash or show an error
 
-### 8. Stop hook — no active milestone (warn mode)
+### 6. Stop hook blocks when active chunk has failing gates
 
-1. Ensure no active milestone; ensure `~/.config/assay/stop-hook-mode` does not contain `enforce`
-2. End a Claude Code conversation (trigger Stop hook)
-3. **Expected:** Hook runs `assay gate run --all --json` (fallback); outputs `{ systemMessage: "..." }` if gates fail or passes silently; exit 0
+1. Ensure an active milestone with an incomplete chunk that has failing required gates
+2. Attempt to end the Claude Code session (Stop)
+3. **Expected:** Stop hook fires; output contains `decision: "block"` with the failing chunk slug named in the reason field; session is blocked from ending
 
-### 9. Stop hook — active milestone, active chunk (enforce mode)
+### 7. Stop hook falls back to --all when no active milestone
 
-1. Ensure a milestone is `in_progress` with a failing gate on the active chunk
-2. Set `~/.config/assay/stop-hook-mode` to `enforce`
-3. End a Claude Code conversation
-4. **Expected:** Hook outputs `{ decision: "block", reason: "Quality gates failing for chunk '<slug>' (N criteria). Run /assay:gate-check <slug> for details." }`; Claude Code blocks the stop
-
-### 10. PostToolUse — active chunk shown in reminder
-
-1. Ensure a milestone is `in_progress` with an `active_chunk_slug`
-2. Make a file edit in Claude Code
-3. **Expected:** The PostToolUse hook fires and the reminder message includes "Active chunk: <slug>." appended to the additionalContext
+1. Ensure no active milestone exists
+2. Attempt to end the Claude Code session
+3. **Expected:** Stop hook fires `assay gate run --all --json`; if all gates pass, session ends normally; if gates fail, session is blocked
 
 ## Edge Cases
 
-### Missing `assay` binary (hook degradation)
+### /assay:plan abandonment mid-interview
 
-1. Temporarily rename or remove `assay` from PATH
-2. End a Claude Code conversation
-3. **Expected:** `cycle-stop-check.sh` guard 5 triggers, exits 0 silently — conversation ends normally
+1. Invoke `/assay:plan` but provide only the goal and then stop responding
+2. **Expected:** No milestone or spec files are created (interview-first — tool calls happen only after full input collection and confirmation)
 
-### `--json` flag with I/O error
+### Stop hook in warn mode
 
-1. Create `.assay/milestones/bad.toml` with invalid TOML content
-2. Run `assay milestone status --json`
-3. **Expected:** stderr shows error message; exit code 1; stdout is empty (no partial JSON)
-
-### PostToolUse when `assay` is not on PATH
-
-1. Remove `assay` from PATH
-2. Make a file edit in Claude Code
-3. **Expected:** `post-tool-use.sh` completes without error (2>/dev/null suppresses assay error); reminder message uses the fallback text without chunk name; exit 0
+1. Set `ASSAY_STOP_HOOK_MODE=warn`
+2. Ensure failing gates exist
+3. End the session
+4. **Expected:** Session ends normally; Claude Code shows a system message warning about failing gates and naming the blocking chunk slug; `decision` is not `"block"`
 
 ## Failure Signals
 
-- `/assay:plan` calls `milestone_create` immediately on invocation without interviewing the user → interview-first pattern broken
-- `/assay:status` shows an error instead of "No active milestone" when no milestone exists
-- `/assay:next-chunk` fails when `active_chunk_slug` is null instead of showing the "all chunks complete" message
-- Stop hook exits non-zero when `assay` is not on PATH → conversation incorrectly blocked
-- `post-tool-use.sh` exits non-zero (not 0) → PostToolUse hook breaks conversation flow
-- `just ready` fails → regression introduced
-- `grep "cycle-stop-check.sh" hooks.json` fails → old hook still wired
+- `/assay:plan` calls `milestone_create` before the interview completes — skill is not interview-first (check SKILL.md step ordering)
+- `/assay:next-chunk` returns an error instead of the "run assay pr create" message when `active_chunk_slug` is null — null guard is missing
+- Stop hook fires but names no chunk slug — BLOCKING_CHUNKS was not populated or not included in the reason field
+- `bash -n` fails on any script — syntax error in hook script
+- `hooks.json` references `stop-gate-check.sh` — hooks.json was not updated
 
 ## Requirements Proved By This UAT
 
-- R047 (Claude Code plugin upgrade) — UAT proves: (1) `--json` flag delivers machine-readable CycleStatus to hooks; (2) three new skills invoke the correct MCP tools with correct parameter shapes; (3) Stop hook correctly scopes gate evaluation to the active chunk; (4) PostToolUse reminder names the active chunk; (5) hooks.json wired to cycle-stop-check.sh; (6) plugin version 0.5.0
+- R047 (Claude Code plugin upgrade) — live Claude Code session proves skill rendering, hook blocking, and MCP round-trips end-to-end; all 5 skills accessible; Stop hook names failing chunks; plugin.json at 0.5.0
 
 ## Not Proven By This UAT
 
-- Real `milestone_create` and `spec_create` MCP round-trips from within Claude Code skill execution (those MCP tools are tested independently in S03; skill invocation path requires human session)
-- Stop hook behavior in a real git worktree with real failing gates (integration path requires live environment; hook logic is proven by bash syntax check + reading against guard semantics)
-- Full end-to-end cycle from `/assay:plan` → work → `/assay:next-chunk` → gates pass → `/assay:status` → `assay pr create` — this is the M005 milestone-level UAT, not S05-specific
-- `milestone-checkpoint.sh` PreCompact hook — not implemented in S05 (deferred)
+- MCP server correctness for `milestone_create`, `cycle_status`, etc. — proven in S01–S04 integration tests
+- Gate evaluation logic — proven in prior milestone gate tests
+- Milestone file persistence — proven in S01 integration tests
+- Actual PR creation — proven in S04 integration tests with mock `gh` binary
+- S06 (Codex plugin) parity — separate UAT in S06-UAT.md
 
 ## Notes for Tester
 
-- The three skill files (`plan/SKILL.md`, `status/SKILL.md`, `next-chunk/SKILL.md`) must exist under `plugins/claude-code/skills/<name>/SKILL.md` — the directory name must match the frontmatter `name:` field exactly for Claude Code to register the skill command
-- The `cycle-stop-check.sh` Stop hook replaces `stop-gate-check.sh` — the old script is still present but no longer wired in `hooks.json`. This is intentional.
-- `assay milestone status --json` exits 0 in all non-I/O-error cases — this is by design (D081). A no-active-milestone response is not an error.
-- Plugin version 0.5.0 requires workspace Cargo.toml version 0.5.0 — both files have been bumped; `just ready` confirms the match via `check-plugin-version`.
+- The Stop hook can be tested outside Claude Code: `echo '{}' | bash plugins/claude-code/scripts/cycle-stop-check.sh` (with stdin pipe simulating the Claude Code hook input format)
+- ASSAY_STOP_HOOK_MODE=warn is useful for testing without blocking the session
+- The interview-first constraint in `/assay:plan` is structural — look for whether `milestone_create` appears before or after the criteria collection steps in the skill output
+- Plugin version 0.5.0 should appear in Claude Code plugin settings for the Assay plugin

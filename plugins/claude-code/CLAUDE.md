@@ -33,7 +33,7 @@ This project uses Assay for milestone-driven spec development. Use the skills an
 | `spec_get` | Get a spec's full definition |
 | `spec_create` | Create a spec with criteria |
 | `cycle_status` | Get active milestone and chunk state |
-| `cycle_advance` | Advance the cycle to the next chunk |
+| `cycle_advance` | Advance the cycle to the next chunk (confirm gates first with `chunk_status`) |
 | `chunk_status` | Get gate pass/fail summary for a chunk |
 | `pr_create` | Create a gate-gated PR |
 | `gate_run` | Run quality gates for a spec |

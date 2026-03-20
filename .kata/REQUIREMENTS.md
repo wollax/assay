@@ -469,13 +469,13 @@
 ### R047 — Claude Code plugin upgrade
 - Class: differentiator
 - Status: validated
-- Description: The Claude Code plugin gains new skills (`/assay:plan`, `/assay:status`, `/assay:next-chunk`) and updated CLAUDE.md that describes the full guided workflow cycle. New hooks: Stop hook checks cycle status and reports incomplete chunks. PostToolUse reminder names the active chunk.
+- Description: The Claude Code plugin gains new skills (`/assay:plan`, `/assay:status`, `/assay:next-chunk`) and updated CLAUDE.md that describes the full guided workflow cycle. New hooks: Stop hook checks cycle status and reports incomplete chunks; PostToolUse reminder names active chunk. Plugin version bumped to 0.5.0.
 - Why it matters: The plugin is the integration surface for Claude Code users — without upgraded skills the guided workflow is invisible inside Claude Code
 - Source: user
 - Primary owning slice: M005/S05
 - Supporting slices: M005/S01, M005/S02, M005/S03, M005/S04
-- Validation: S05 — three new skills invoke milestone_create/spec_create/cycle_status/chunk_status/spec_get MCP tools; cycle-stop-check.sh passes bash -n; hooks.json wired to cycle-stop-check.sh; CLAUDE.md updated; plugin.json 0.5.0; --json flag on assay milestone status passes 1 new test; just ready green (1331+ tests)
-- Notes: `milestone-checkpoint.sh` PreCompact hook was specified in the vision but not required by Must-Haves — not implemented; deferred to a future milestone. New skills consume `cycle_status`, `chunk_status`, `spec_get`, `milestone_create`, `spec_create`, `pr_create` MCP tools.
+- Validation: S05 — 3 skill files with YAML frontmatter; CLAUDE.md ≤50 lines with skill/MCP tables; cycle-stop-check.sh passes bash -n with ≥11 exit-0 guards; hooks.json wired to cycle-stop-check.sh (stop-gate-check.sh removed); plugin.json 0.5.0; just ready green (1331+ tests). Decisions D084–D087 capture key patterns.
+- Notes: PreCompact hook (milestone-checkpoint.sh) not implemented — Stop hook and PostToolUse provide sufficient cycle awareness. Interview-first pattern (D084) prevents orphan milestones. BLOCKING_CHUNKS in Stop hook reason (D087) enables immediate chunk targeting.
 
 ### R048 — Codex plugin (basic)
 - Class: differentiator

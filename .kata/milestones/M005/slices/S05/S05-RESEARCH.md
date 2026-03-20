@@ -1,125 +1,148 @@
 # S05: Claude Code Plugin Upgrade — Research
 
 **Date:** 2026-03-20
+**Domain:** Claude Code plugin authoring (markdown skills, bash hooks)
+**Confidence:** HIGH
 
 ## Summary
 
-S05 upgrades the Claude Code plugin from a gate-runner integration to a full milestone-aware development cycle surface. All 8 new MCP tools from S01–S04 are already registered and tested — no MCP changes are needed. The deliverables are entirely in the `plugins/claude-code/` directory plus one small Rust CLI addition: a `--json` flag on `assay milestone status` to give the new bash hooks a machine-readable way to detect the active chunk.
+S05 is a pure-markdown and bash slice — no Rust changes. All 8 new MCP tools (milestone_list, milestone_get, milestone_create, spec_create, cycle_status, cycle_advance, chunk_status, pr_create) are already registered and tested. The plugin needs 3 new skills, an updated CLAUDE.md, a replacement Stop hook (`cycle-stop-check.sh`), and a cycle-aware PostToolUse nudge.
 
-The skill files (`plan.md`, `status.md`, `next-chunk.md`) follow the existing subdirectory pattern (`skills/<name>/SKILL.md`). The cycle-stop-check script replaces `stop-gate-check.sh` and delegates to `assay gate run <active-chunk-slug> --json` when a milestone is active, falling back to `--all` when not. The `post-tool-use.sh` is updated to mention the active chunk name in its reminder.
+The existing plugin structure is clean and well-precedented. The key implementation challenge is the `cycle-stop-check.sh`: it must detect the active chunk without a JSON-outputting CLI command, then run targeted gate checks. The recommended approach is to parse `assay milestone status` human-readable output (which is stable and already tested) to find incomplete chunks.
 
-The only Rust work is adding `--json` to `assay milestone status` — the hook needs the active chunk slug, and parsing the text output of `assay milestone status` in bash is fragile. Adding `--json` outputs `CycleStatus` JSON (already derived `Serialize`) when a milestone is active, or `{"active": false}` when not — matching the MCP `cycle_status` response shape exactly.
+The `/assay:plan` skill must follow the interview-first pattern (collect goal → chunks → criteria conversationally before calling `milestone_create`+`spec_create`) — it must never call MCP tools on invocation without first gathering user input. This is the most UX-sensitive part of the slice.
 
 ## Recommendation
 
-Implement S05 in three tasks:
-1. **T01 — Rust: add `--json` to `assay milestone status`** — small CLI change, enables all hooks.
-2. **T02 — Skill files + CLAUDE.md** — pure markdown, no tests needed (content verification only).
-3. **T03 — Hook scripts + hooks.json** — bash scripts and JSON wiring; test via `just ready` (no new Rust tests since hooks are not Rust).
-
-All three are independent of each other after T01 completes (T02/T03 can be parallelised if desired).
+Implement skills and hooks in this order: (1) `plan.md` and `status.md` (simplest contracts), (2) `next-chunk.md` (most complex — three MCP calls), (3) updated CLAUDE.md, (4) `cycle-stop-check.sh`, (5) updated `post-tool-use.sh`, (6) updated `hooks.json`. Test the stop hook locally — the bash parsing of `assay milestone status` output is the most fragile piece.
 
 ## Don't Hand-Roll
 
 | Problem | Existing Solution | Why Use It |
 |---------|------------------|------------|
-| Detect active milestone/chunk in bash | `assay milestone status --json` (add this flag in T01) | Avoids fragile TOML parsing in bash; outputs CycleStatus JSON already used by `cycle_status` MCP tool |
-| Run gates for a specific chunk | `assay gate run <slug> --json` (already exists) | Clean JSON output; exactly what the stop hook needs to scope to active chunk |
-| Run gates for all specs (fallback) | `assay gate run --all --json` (already exists) | Current stop-gate-check.sh already uses this; keep as fallback |
-| Hook infinite-loop prevention | `stop_hook_active` field in hook input JSON | Existing pattern in `stop-gate-check.sh` — copy exactly |
+| Detecting active chunk in bash | `assay milestone status \| grep '\[ \]' \| awk '{print $2}'` | milestone status prints `[ ] chunk-slug  (active)` lines — parseable without JSON flag or new Rust code |
+| Gate enforcement in Stop hook | Reuse the 7-guard pattern from existing `stop-gate-check.sh` | jq check, infinite-loop guard, mode env var, `.assay/` guard, binary guard, debounce — all proven patterns |
+| Checkpoint on PreCompact/Stop | Existing `checkpoint-hook.sh` unchanged | The milestone TOML is already atomically persisted by every `cycle_advance` call — no extra checkpoint needed |
+| Hook output format | `jq -n '{decision: "block", reason: "..."}'` | Claude Code hook protocol: output `decision`/`reason` JSON to block; `systemMessage` JSON to warn |
 
 ## Existing Code and Patterns
 
-- `plugins/claude-code/scripts/stop-gate-check.sh` — the cycle-stop-check.sh replaces this; copy all 5 safety guards verbatim (jq, stop_hook_active, MODE, `.assay/`, binary check); add cycle-aware logic between guard 4 and guard 5
-- `plugins/claude-code/scripts/checkpoint-hook.sh` — PreCompact/Stop checkpoint hook; **do not change**, leave as-is per S05-CONTEXT.md (the milestone TOML is already persisted)
-- `plugins/claude-code/scripts/post-tool-use.sh` — update to call `assay milestone status --json` and include active chunk name when available; must exit 0 and never block
-- `plugins/claude-code/hooks/hooks.json` — update `Stop[0]` command from `stop-gate-check.sh` to `cycle-stop-check.sh`; all other hooks stay unchanged
-- `plugins/claude-code/skills/gate-check/SKILL.md` — reference for skill markdown format: frontmatter + `## Steps` + `## Output Format`; new skills follow the same pattern
-- `plugins/claude-code/skills/spec-show/SKILL.md` — second reference; note the `$ARGUMENTS` convention for skill invocation
-- `crates/assay-cli/src/commands/milestone.rs` — `milestone_status_cmd()` at line 59; add `#[arg(long)] json: bool` to `MilestoneCommand::Status` variant; in handler: if json → call `assay_core::milestone::cycle_status(&dir)` and serialize to JSON
-- `crates/assay-core/src/milestone/mod.rs` — re-exports `CycleStatus` and `cycle_status` (line 3-5); accessible as `assay_core::milestone::cycle_status` and `assay_core::milestone::CycleStatus` from assay-cli
-- `crates/assay-mcp/src/server.rs` — `cycle_status` at line 3402 returns `{"active":false}` on no active milestone; **match this shape** in `milestone status --json` for consistency
+- `plugins/claude-code/skills/gate-check/SKILL.md` — template for skill file structure: YAML frontmatter + `description` + `## Steps` (numbered) + `## Output Format` (concise rules); reuse exactly
+- `plugins/claude-code/skills/spec-show/SKILL.md` — same template; note `$ARGUMENTS` placeholder for skill invocation arguments
+- `plugins/claude-code/scripts/stop-gate-check.sh` — 7-guard pattern (jq, stop_hook_active, MODE env, .assay/ dir, binary, JSON parse, mode dispatch); the new `cycle-stop-check.sh` must implement all 7 guards
+- `plugins/claude-code/scripts/checkpoint-hook.sh` — 5-guard pattern + 5-second debounce via `.assay/checkpoints/.last-checkpoint-ts`; do NOT modify — already wired to Stop and PreCompact
+- `plugins/claude-code/scripts/post-tool-use.sh` — outputs `hookSpecificOutput.additionalContext` JSON; minimal change needed (add cycle context when active)
+- `plugins/claude-code/hooks/hooks.json` — hook event keys: `PostToolUse` (matcher required), `PreCompact`, `Stop`; `type: "command"`, `timeout` in seconds; `bash ${CLAUDE_PLUGIN_ROOT}/scripts/<name>.sh`
+- `plugins/claude-code/.claude-plugin/plugin.json` — plugin metadata; `version` should be bumped to `0.5.0` for the M005 upgrade
+- `plugins/claude-code/.mcp.json` — no changes needed; `assay mcp serve` already exposes all 30 tools
+
+## MCP Tool Contracts (what skills call)
+
+### `cycle_status` (no params)
+Returns one of:
+- `{"active":false}` — no InProgress milestone
+- `{"milestone_slug":"...", "milestone_name":"...", "phase":"in_progress"|"verify"|"draft"|"complete", "active_chunk_slug":"..."|null, "completed_count":N, "total_count":N}`
+
+### `chunk_status` (params: `chunk_slug: String`)
+Returns one of:
+- `{"chunk_slug":"...", "has_history":false}` — no gate history yet
+- `{"chunk_slug":"...", "has_history":true, "latest_run_id":"...", "passed":N, "failed":N, "required_failed":N}`
+
+### `milestone_create` (params: `slug, name, description?, chunks: [{slug, name, criteria: [strings]}]`)
+Returns: JSON-encoded slug string on success; `isError:true` with collision message on duplicate.
+
+### `spec_create` (params: `slug, name, description?, milestone_slug?, criteria: [strings]`)
+Returns: absolute path to created `gates.toml` on success; `isError:true` on duplicate or missing milestone.
+
+### `pr_create` (params: `milestone_slug, title, body?`)
+Returns: `{"pr_number":N, "pr_url":"..."}` on success; `isError:true` with failing chunk list on gate failure.
+
+### `spec_get` (params: `name`)
+Returns: full spec definition including all criteria — used by `next-chunk.md` to show criteria.
+
+## Skill Directory Structure
+
+Skills for Claude Code live in **subdirectories** (not flat files):
+```
+plugins/claude-code/skills/
+  gate-check/SKILL.md    ← existing
+  spec-show/SKILL.md     ← existing
+  plan/SKILL.md          ← new
+  status/SKILL.md        ← new
+  next-chunk/SKILL.md    ← new
+```
+
+(Codex skills in S06 are flat `.md` files — the convention differs by platform.)
+
+## Cycle-Stop-Check Implementation Strategy
+
+The `cycle-stop-check.sh` replaces `stop-gate-check.sh` in `hooks.json`. The approach:
+
+1. All 7 guards from `stop-gate-check.sh` are preserved.
+2. Detect active chunk via:
+   ```bash
+   ACTIVE_CHUNKS=$(assay milestone status 2>/dev/null | grep '\[ \]' | awk '{print $2}')
+   ```
+   The `assay milestone status` output format is stable: `  [ ] chunk-slug  (active)`.
+3. If `ACTIVE_CHUNKS` is non-empty: run `assay gate run "$chunk" --json` for each incomplete chunk, aggregate results.
+4. If no active milestone (empty output): fall back to `assay gate run --all --json` — preserves backward compat for non-milestone projects.
+5. Block/warn/allow based on `ASSAY_STOP_HOOK_MODE` env var (same as existing).
+
+**Key risk**: `assay milestone status` makes a subprocess call (disk I/O). This is fine for a Stop hook (user-facing, blocking is acceptable) but not for PostToolUse (fires on every Write/Edit). PostToolUse should use a cheaper detection.
+
+## PostToolUse Cycle-Aware Update
+
+The updated `post-tool-use.sh` adds cycle awareness to the reminder message:
+
+```bash
+ACTIVE_CHUNK=$(assay milestone status 2>/dev/null | grep '\[ \]' | awk 'NR==1{print $2}')
+if [ -n "$ACTIVE_CHUNK" ]; then
+  MESSAGE="File modified. Active chunk: ${ACTIVE_CHUNK}. Run /assay:next-chunk to see active chunk context and gates."
+else
+  MESSAGE="File modified. When you're done making changes, run /assay:gate-check to verify all quality gates pass."
+fi
+```
+
+This call is cheap (disk read, no gate evaluation). The existing 5-guard structure is preserved.
 
 ## Constraints
 
-- **No MCP changes** — all 8 new tools (`milestone_list`, `milestone_get`, `cycle_status`, `cycle_advance`, `chunk_status`, `milestone_create`, `spec_create`, `pr_create`) are already registered; S05 only adds consumers (skills, hooks)
-- **CLAUDE.md must stay concise** — injected into every conversation; a command/skill table plus a short workflow paragraph maximum; detailed instructions go in skill files, not CLAUDE.md
-- **Hooks must never block** — all hooks except the Stop hook must always exit 0; the Stop hook may output `{ decision: "block", reason: "..." }` JSON only when in enforce mode and gates fail
-- **Stop hook fallback** — when no milestone is in_progress, fall back to `assay gate run --all --json` (exact current behavior); backward-compatible with non-milestone projects
-- **Skill subdirectory pattern** — new skills go in `plugins/claude-code/skills/<name>/SKILL.md` (not flat `.md` files); matches existing `gate-check/` and `spec-show/` structure
-- **GatesSpec struct literals** — when adding `--json` CLI flag, there are no new struct literal changes; the flag is on a CLI enum variant, not a type shared across the workspace
-- **Just ready must stay green** — 1332 existing tests; `--json` flag addition requires a test in `assay-cli` following the existing `assert!(result.is_ok()` pattern; one test for `milestone_status_json_no_active` (exits 0, outputs `{"active":false}`)
-
-## MCP Tool Reference for Skills
-
-All tools called by S05 skills; every tool is already registered and tested:
-
-| Tool | Params | Used by |
-|------|--------|---------|
-| `milestone_create` | `{slug, name, description?, chunks: [{slug, name}]}` | `/assay:plan` |
-| `spec_create` | `{slug, name, description?, milestone_slug?, criteria: [strings]}` | `/assay:plan` |
-| `cycle_status` | `{}` | `/assay:status`, `/assay:next-chunk` |
-| `chunk_status` | `{chunk_slug}` | `/assay:next-chunk` |
-| `spec_get` | `{name}` | `/assay:next-chunk` (load active chunk spec) |
-| `cycle_advance` | `{milestone_slug?}` | Referenced in CLAUDE.md |
-| `pr_create` | `{milestone_slug, title, body?}` | Referenced in CLAUDE.md |
-
-`cycle_status` returns `{"active": false}` when no milestone is in_progress, otherwise returns `CycleStatus`:
-```json
-{
-  "milestone_slug": "my-feature",
-  "milestone_name": "My Feature",
-  "phase": "InProgress",
-  "active_chunk_slug": "chunk-2",
-  "completed_count": 1,
-  "total_count": 3
-}
-```
-
-## CLI Commands for CLAUDE.md
-
-Full skill/command surface to document:
-
-| Surface | What it does |
-|---------|-------------|
-| `/assay:plan` | Interview user → call `milestone_create` + `spec_create` per chunk |
-| `/assay:status` | Call `cycle_status` → show milestone/chunk/phase progress |
-| `/assay:next-chunk` | Call `cycle_status` + `chunk_status` + `spec_get` → show active chunk context |
-| `/assay:spec-show [name]` | Show spec criteria (existing) |
-| `/assay:gate-check [name]` | Run gates (existing) |
-| `assay plan` | Interactive CLI wizard (non-TTY guard) |
-| `assay milestone list` | List all milestones |
-| `assay milestone status` | Show in_progress milestone progress |
-| `assay milestone advance` | Evaluate gates + mark active chunk complete |
-| `assay pr create <slug>` | Gate-gated PR creation via `gh` |
+- **No Rust changes** — all MCP tools already exist; `assay milestone status` output parsing is the entire implementation surface for hook intelligence
+- **No `.mcp.json` changes** — `assay mcp serve` exposes all 30 tools; no new server configuration
+- **Plan skill is interview-first** — never call `milestone_create` without collecting `goal`, `chunk breakdown`, and `criteria` from the user first; the MCP tools accept user-provided slugs, not auto-derived ones
+- **CLAUDE.md stays ≤50 lines** — it's injected into every conversation; keep to a skills table + CLI table + MCP tools table + 1-paragraph workflow; detailed instructions live in the skills themselves
+- **`next-chunk.md` calls three tools** — `cycle_status` → `chunk_status` → `spec_get` in sequence; if `cycle_status` returns `{"active":false}` the skill stops and tells the user no active chunk
+- **Hook timeout budget** — Stop hook has `timeout: 120s` (from existing config); `cycle-stop-check.sh` may run `assay gate run` per-chunk, which can be slow; consider keeping the `--all` fallback but adding the cycle-aware block message
+- **`checkpoint-hook.sh` is unchanged** — it fires on `Stop` after `cycle-stop-check.sh` in the hooks.json array; checkpoint saves session state regardless of gate outcome
 
 ## Common Pitfalls
 
-- **`cycle_status` returns `{"active": false}` not `null`** — the MCP tool was designed to return this sentinel; the bash hook must check `.active == false` (via `jq .active`) not check for null. The `assay milestone status --json` implementation should match: output `{"active":false}` when no milestone is in_progress.
-- **`active_chunk_slug` can be null in CycleStatus** — when all chunks are complete but milestone hasn't transitioned to Verify yet; the stop hook must handle `active_chunk_slug == null` by falling back to `--all`.
-- **Skill file naming** — new skills must be at `skills/<name>/SKILL.md` where `<name>` is the slug used in `/assay:<name>` invocation. Plan/status/next-chunk → `skills/plan/SKILL.md`, `skills/status/SKILL.md`, `skills/next-chunk/SKILL.md`.
-- **`MilestoneStatus` serializes as a Rust enum variant name** — values are `"Draft"`, `"InProgress"`, `"Verify"`, `"Complete"` (PascalCase) not lowercase. Bash comparison: `jq -r '.phase == "InProgress"'`.
-- **T01 test must handle `--features assay-types/orchestrate` workaround** — existing CLI tests run fine; add the new test to `crates/assay-cli/src/commands/milestone.rs` following the existing `assert!(result.is_ok()` pattern; the feature workaround is only needed for `-p assay-core` standalone tests, not `-p assay-cli`.
-- **Plugin version** — bump `plugins/claude-code/.claude-plugin/plugin.json` version from `0.4.0` to `0.5.0` to signal the upgrade.
+- **skills/plan/SKILL.md calling MCP tools immediately** — plan skill must open with a conversational interview ("Tell me about the feature you want to build...") before calling `milestone_create`; if it calls the MCP tool immediately, users lose the wizard UX that makes Assay accessible
+- **stop hook calling itself** — always keep Guard 2 (`stop_hook_active` check) as the first guard after jq-check; infinite loops cause Claude Code to hang
+- **chunk slug extraction from milestone status** — `awk '{print $2}'` works when status output is `  [ ] chunk-slug  (active)`; test that the chunk slug contains no spaces (slugs are path components so this is guaranteed)
+- **next-chunk.md handling null active_chunk_slug** — `cycle_status` returns `active_chunk_slug: null` when all chunks are done (milestone in Verify phase); the skill must handle this case gracefully (tell user to run `assay pr create`)
+- **CLAUDE.md referencing old hook script name** — if CLAUDE.md mentions `stop-gate-check.sh`, update it to reference the new script or remove the implementation detail
 
 ## Open Risks
 
-- **`assay milestone status --json` shape** — must exactly match the `{"active": false}` sentinel from the MCP `cycle_status` tool. If the CLI uses a different sentinel (e.g., empty string or exit code), the stop hook bash logic becomes more complex. Recommendation: use identical JSON shape.
-- **Slow stop hook** — if the active chunk has many long-running gate criteria, the Stop hook can timeout (current `timeout: 120`). The cycle-stop-check scoping to `active-chunk-slug` (instead of `--all`) mitigates this. Document in README that `ASSAY_STOP_HOOK_MODE=warn` is recommended for large gate suites.
-- **`/assay:plan` skill scope** — the plan skill must interview the user before calling MCP tools (D066 wizard UX intent). If the skill is invoked without context, it should ask questions, not call `milestone_create` immediately. Skill instructions must be explicit about the interview step.
+- `assay milestone status` output format — the `[ ] chunk-slug  (active)` format is produced by `milestone_status_cmd()` in `assay-cli/src/commands/milestone.rs`; if this format changes in a future slice, the bash parsing breaks. Acceptable risk for a low-risk slice (risk:low per roadmap).
+- Multiple InProgress milestones — `assay milestone status` prints all InProgress milestones; `grep '\[ \]' | awk '{print $2}'` will return chunks from all of them. The cycle-stop-check would then run gates for all active chunks across all active milestones — likely the desired behavior.
+- Skills calling `cycle_advance` — the current scope says skills *reference* `cycle_advance` in CLAUDE.md but don't call it directly; agents call it themselves when ready. This is a scope boundary, not an implementation risk.
 
 ## Skills Discovered
 
 | Technology | Skill | Status |
 |------------|-------|--------|
-| Bash scripting | — | none found (not needed — patterns already established in existing scripts) |
-| Claude Code hooks | — | none found (documented inline in existing scripts) |
+| Claude Code plugin authoring | N/A — markdown + bash, no external skill needed | N/A |
+| Bash hooks | N/A — patterns fully covered by existing `stop-gate-check.sh` | N/A |
+
+No external skills are relevant — this slice is pure plugin authoring using established patterns.
 
 ## Sources
 
-- S05-CONTEXT.md: scope, constraints, integration points, open questions — authoritative
-- `plugins/claude-code/scripts/stop-gate-check.sh` — complete hook contract (guards, JSON output protocol)
-- `crates/assay-cli/src/commands/milestone.rs` — `milestone_status_cmd` implementation for T01
-- `crates/assay-core/src/milestone/cycle.rs` — `CycleStatus` struct (Serialize, fields); `cycle_status()` function signature
-- `crates/assay-mcp/src/server.rs` lines 3396–3520 — `cycle_status` MCP tool (sentinel shape), `chunk_status`, `cycle_advance`, `pr_create`, `milestone_create`, `spec_create` param structs and tool descriptions
-- S01–S04 SUMMARY files — confirmed all 8 MCP tools registered and working; 1332 workspace tests passing after S04
+- `plugins/claude-code/` — full existing plugin structure inspected (hooks.json, all scripts, SKILL.md files, CLAUDE.md, plugin.json)
+- `crates/assay-mcp/src/server.rs` — MCP tool param structs and async handlers; confirmed all 8 new tools registered (30 tools total: lines 1105–3646)
+- `crates/assay-cli/src/commands/milestone.rs` — `milestone_status_cmd()` output format; confirmed `[ ] chunk-slug  (active)` format used by stop hook strategy
+- `crates/assay-core/src/milestone/cycle.rs` — `CycleStatus` struct; confirmed `active_chunk_slug: Option<String>` and `{"active":false}` null-path return
+- `.kata/milestones/M005/slices/S05/S05-CONTEXT.md` — scope decisions, confirmed `milestone-checkpoint.sh` dropped, PostToolUse subprocess approach approved
+- S01–S04 summaries — confirmed all MCP tools exist, param shapes, and forward intelligence for consumers

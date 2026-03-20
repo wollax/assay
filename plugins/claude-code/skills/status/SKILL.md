@@ -1,43 +1,33 @@
 ---
 name: status
 description: >
-  Show current milestone cycle progress: active milestone, phase, active chunk,
-  and completion count. Use when the user wants to know where they are in the
-  development cycle or what to work on next.
+  Show the current development cycle status — active milestone, phase, chunk, and progress.
+  Use when the user asks "what am I working on?", "where are we?", or wants a progress overview.
 ---
 
 # Status
 
-Show current milestone cycle progress.
+Show active milestone and chunk state from the development cycle.
 
 ## Steps
 
-1. **Fetch cycle state:**
-   - Call the `cycle_status` MCP tool (no parameters)
+1. **Call `cycle_status`** (no parameters required)
 
-2. **Handle inactive state:**
-   - If the response contains `"active": false`, report:
-     > No active milestone. Run `/assay:plan` to create one, or `assay milestone list` to see existing milestones.
-
-3. **Display active cycle:**
-   - Show the following fields from the response:
-     - **Milestone:** `milestone_slug` — `milestone_name`
-     - **Phase:** `phase` (e.g. `InProgress`, `Verify`)
-     - **Active chunk:** `active_chunk_slug` (if null or missing, show "all chunks complete")
-     - **Progress:** visual bar using `[x]` for each completed chunk and `[ ]` for each remaining, e.g. `[x][x][ ]` — derived from `completed_count` and `total_count`
-   - Suggest next action:
-     - If `active_chunk_slug` is set: "Use `/assay:next-chunk` to load the active chunk context"
-     - If all chunks complete: "Run `assay milestone advance` to evaluate gates and complete the milestone"
+2. **Handle the response:**
+   - If `{ "active": false }`: tell the user no milestone is currently in progress.
+     Suggest: *"Start a new milestone with `/assay:plan`, or list existing ones with `assay milestone list`."*
+   - If an active milestone exists, display:
+     - Milestone name and slug
+     - Current phase
+     - Active chunk slug (the chunk currently being worked on)
+     - Progress: `completed_count / total_count` chunks done
 
 ## Output Format
 
-Keep output concise:
+Keep output concise — one short block is enough. Example:
 
 ```
-Milestone: my-feature — My Feature
-Phase:     InProgress
-Chunk:     chunk-2  (2 of 3)
-Progress:  [x][ ][ ]
-
-Next: /assay:next-chunk to load chunk context
+Milestone: my-feature (my-feature)
+Phase:     in_progress
+Chunk:     auth-layer  (1 of 3 complete)
 ```
