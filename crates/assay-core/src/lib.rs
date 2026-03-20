@@ -54,6 +54,9 @@ pub mod pipeline;
 /// Milestone I/O: scan, load, and save milestones under `.assay/milestones/`.
 pub mod milestone;
 
+/// Gate-gated PR creation workflow.
+pub mod pr;
+
 /// Guided authoring wizard: pure functions for creating milestones and specs.
 pub mod wizard;
 

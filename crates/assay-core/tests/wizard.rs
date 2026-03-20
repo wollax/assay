@@ -24,6 +24,8 @@ fn make_milestone(slug: &str) -> Milestone {
         depends_on: vec![],
         pr_branch: None,
         pr_base: None,
+        pr_number: None,
+        pr_url: None,
         created_at: now,
         updated_at: now,
     }
