@@ -2,8 +2,8 @@
 
 **Active Milestone:** M006 — TUI as Primary Surface
 **Active Slice:** S01 — App Scaffold, Dashboard, and Binary Fix
-**Active Task:** T02 — Dashboard rendering, event loop, and gate data — all tests pass
-**Phase:** Executing S01
+**Active Task:** S01 complete — next: S02 (In-TUI Authoring Wizard)
+**Phase:** S01 done, advancing to S02
 **Last Updated:** 2026-03-20
 **Requirements Status:** 10 active (R049–R059) · 43 validated (R001–R048) · 2 deferred · 4 out of scope
 **Test Count:** 1333 (all passing)
@@ -18,7 +18,7 @@
 
 ## M006 Roadmap
 
-- [ ] S01: App Scaffold, Dashboard, and Binary Fix `risk:high` — binary name fix (`assay-tui`), App+Screen enum, dashboard with real milestone data, no-project guard. R049.
+- [x] S01: App Scaffold, Dashboard, and Binary Fix `risk:high` — binary name fix (`assay-tui`), App+Screen enum, dashboard with real milestone data, no-project guard. R049.
 - [ ] S02: In-TUI Authoring Wizard `risk:high` `depends:[S01]` — WizardState multi-step form, create_from_inputs round-trip, new milestone appears in dashboard. R050.
 - [ ] S03: Chunk Detail View and Spec Browser `risk:medium` `depends:[S01]` — milestone → chunk list → chunk detail with criteria and gate results. R051.
 - [ ] S04: Provider Configuration Screen `risk:medium` `depends:[S01]` — ProviderConfig type in assay-types (D056 pattern), settings screen, config_save, backward-compat. R052.
@@ -39,4 +39,4 @@ None.
 
 ## Next Action
 
-Execute T02: implement dashboard rendering, gate data loading via `history::list`/`history::load`, full event loop with `event::poll`, draw_dashboard with milestone name/status/chunk-fraction/gate columns, draw_no_project/draw_no_milestones, until `cargo test -p assay-tui` and `just ready` both pass.
+S01 is complete (T01 + T02 both done, binary present, 5 tests pass, fmt/clippy clean). Begin S02: In-TUI Authoring Wizard. Create branch if needed, plan S02 tasks, implement WizardState multi-step form and create_from_inputs round-trip.
