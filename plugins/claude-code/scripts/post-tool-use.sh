@@ -5,36 +5,29 @@
 #
 # When an active milestone exists, names the current incomplete chunk in
 # the reminder so the agent knows which context to check next.
-# Gracefully degrades: if assay is missing, jq is missing, or no .assay/
-# directory exists, falls back to the generic reminder — no explicit guard
-# needed for those cases since the detection call is wrapped in a conditional.
+# Gracefully degrades when assay is absent, jq is absent, or no .assay/ dir.
 
 # Read stdin (tool input JSON) but we only need to output the reminder
 cat > /dev/null
 
-# Cycle detection: find first incomplete chunk slug.
-# Format: "  [ ] chunk-slug  (active)" — extract third field (the slug).
-# Field mapping: $1='[', $2=']', $3=chunk-slug, $4='(active)' — use $3, not $2.
-# Only probed when this looks like an Assay project with the binary available.
-ACTIVE_CHUNK=""
+ACTIVE_CHUNK_MSG=""
 if [ -d "$PWD/.assay" ] && command -v assay &>/dev/null; then
-  ACTIVE_CHUNK=$(assay milestone status 2>/dev/null | grep '\[ \]' | awk 'NR==1{print $3}')
-fi
-
-if [ -n "$ACTIVE_CHUNK" ]; then
-  MESSAGE="File modified. Active chunk: ${ACTIVE_CHUNK}. Run /assay:next-chunk to see active chunk context and gates."
-else
-  MESSAGE="File modified. When you're done making changes, run /assay:gate-check to verify all quality gates pass."
+  CYCLE_JSON=$(assay milestone status --json 2>/dev/null)
+  if [ $? -eq 0 ] && echo "$CYCLE_JSON" | jq -e 'has("milestone_slug")' &>/dev/null; then
+    CHUNK=$(echo "$CYCLE_JSON" | jq -r '.active_chunk_slug // empty' 2>/dev/null)
+    if [ -n "$CHUNK" ]; then
+      ACTIVE_CHUNK_MSG=" Active chunk: $CHUNK."
+    fi
+  fi
 fi
 
 # Guard: jq required to format the hook output JSON
 if ! command -v jq &>/dev/null; then
-  # Use a static string — printf with $MESSAGE is unsafe if the slug contains quotes or backslashes
   printf '{"hookSpecificOutput":{"hookEventName":"PostToolUse","additionalContext":"File modified. Run /assay:gate-check when ready."}}\n'
   exit 0
 fi
 
-jq -n --arg msg "$MESSAGE" '{
+jq -n --arg msg "File modified. When you're done making changes, run /assay:gate-check to verify all quality gates pass.${ACTIVE_CHUNK_MSG}" '{
   "hookSpecificOutput": {
     "hookEventName": "PostToolUse",
     "additionalContext": $msg

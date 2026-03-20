@@ -9,7 +9,11 @@ pub(crate) enum MilestoneCommand {
     /// List all milestones in the current project
     List,
     /// Show progress for active (in_progress) milestones
-    Status,
+    Status {
+        /// Output current cycle state as JSON to stdout
+        #[arg(long)]
+        json: bool,
+    },
     /// Advance the development cycle: evaluate gates for the active chunk and mark it complete
     Advance {
         /// Slug of the milestone to advance. Defaults to the first in_progress milestone.
@@ -22,7 +26,7 @@ pub(crate) enum MilestoneCommand {
 pub(crate) fn handle(command: MilestoneCommand) -> anyhow::Result<i32> {
     match command {
         MilestoneCommand::List => milestone_list_cmd(),
-        MilestoneCommand::Status => milestone_status_cmd(),
+        MilestoneCommand::Status { json } => milestone_status_cmd(json),
         MilestoneCommand::Advance { milestone } => milestone_advance_cmd(milestone),
     }
 }
@@ -56,9 +60,27 @@ fn milestone_list_cmd() -> anyhow::Result<i32> {
 }
 
 /// Handle `assay milestone status`.
-fn milestone_status_cmd() -> anyhow::Result<i32> {
+fn milestone_status_cmd(json: bool) -> anyhow::Result<i32> {
     let root = project_root()?;
     let dir = assay_dir(&root);
+
+    if json {
+        match assay_core::milestone::cycle_status(&dir) {
+            Ok(Some(status)) => match serde_json::to_string(&status) {
+                Ok(s) => println!("{s}"),
+                Err(e) => {
+                    eprintln!("Error serializing cycle status: {e}");
+                    return Ok(1);
+                }
+            },
+            Ok(None) => println!(r#"{{"active":false}}"#),
+            Err(e) => {
+                eprintln!("Error: {e}");
+                return Ok(1);
+            }
+        }
+        return Ok(0);
+    }
 
     let milestones = assay_core::milestone::milestone_scan(&dir)?;
 
@@ -151,9 +173,22 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(dir.path().join(".assay")).unwrap();
         std::env::set_current_dir(dir.path()).unwrap();
-        let result = handle(MilestoneCommand::Status);
+        let result = handle(MilestoneCommand::Status { json: false });
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 0);
+    }
+
+    #[test]
+    fn milestone_status_json_no_active() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join(".assay")).unwrap();
+        std::env::set_current_dir(dir.path()).unwrap();
+        let result = handle(MilestoneCommand::Status { json: true });
+        assert!(
+            result.is_ok(),
+            "milestone status --json should succeed: {result:?}"
+        );
+        assert_eq!(result.unwrap(), 0, "exit code should be 0");
     }
 
     #[test]

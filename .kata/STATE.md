@@ -1,11 +1,11 @@
 # Kata State
 
 **Active Milestone:** M005 — Spec-Driven Development Core
-**Active Slice:** S06 — Codex Plugin (next)
-**Active Task:** T01 — (first task in S06)
-**Phase:** Planning
+**Active Slice:** M005 COMPLETE — all 6 slices done
+**Active Task:** none
+**Phase:** M005 Complete
 **Last Updated:** 2026-03-20
-**Requirements Status:** 11 active (R048–R059) · 47 validated (R001–R029, R034–R047) · 2 deferred · 4 out of scope
+**Requirements Status:** 10 active (R049–R059) · 43 validated (R039–R048 all validated) · 2 deferred · 4 out of scope
 **Test Count:** 1331 (all passing)
 
 ## Completed Milestones
@@ -14,23 +14,26 @@
 - [x] M002: Multi-Agent Orchestration & Harness Platform (6/6 slices, 5 new requirements validated, ~1183 tests)
 - [x] M003: Conflict Resolution & Polish (2/2 slices, 3 new requirements validated [R026, R028, R029], 1222 tests)
 - [x] M004: Coordination Modes — Mesh & Gossip (4/4 slices, 6 new requirements validated [R034–R038], 1271 tests)
+- [x] M005: Spec-Driven Development Core (6/6 slices, 10 requirements validated [R039–R048], 1331 tests)
 
 ## M005 Roadmap
 
 - [x] S01: Milestone & Chunk Type Foundation `risk:high` — COMPLETE. Milestone/ChunkRef/MilestoneStatus types, atomic I/O, milestone_list/milestone_get MCP tools, assay milestone list CLI. R039, R040, R041 validated. 1293 tests green.
 - [x] S02: Development Cycle State Machine `risk:high` — COMPLETE. cycle_status/cycle_advance/chunk_status MCP tools, milestone phase transitions (Draft→InProgress→Verify→Complete), CLI milestone status/advance subcommands. R043, R044 validated. 1308 tests green.
-- [x] S03: Guided Authoring Wizard `risk:medium` — COMPLETE. T01✓ T02✓ T03✓ T04✓ wizard core, assay plan CLI with TTY guard, milestone_create/spec_create MCP tools. R042 validated. 1320+ tests green.
+- [x] S03: Guided Authoring Wizard `risk:medium` — COMPLETE. wizard core (create_from_inputs, create_milestone_from_params, create_spec_from_params), assay plan CLI with TTY guard, milestone_create/spec_create MCP tools. R042 validated. 1320+ tests green.
 - [x] S04: Gate-Gated PR Workflow `risk:medium` — COMPLETE. pr_check_milestone_gates + pr_create_if_gates_pass, assay pr create CLI, pr_create MCP tool. R045, R046 validated. 1331 tests green.
-- [x] S05: Claude Code Plugin Upgrade `risk:low` — COMPLETE. 3 new skills (/assay:plan interview-first, /assay:status, /assay:next-chunk with Verify-phase null guard), rewritten CLAUDE.md (33 lines, 5-skill table, 11-tool table), cycle-stop-check.sh (7 guards + BLOCKING_CHUNKS in reason), updated post-tool-use.sh, hooks.json wired, plugin.json v0.5.0. R047 validated. D080–D083.
-- [ ] S06: Codex Plugin `risk:low` — AGENTS.md workflow guide, 4 skills (gate-check, spec-show, cycle-status, plan) (R048)
+- [x] S05: Claude Code Plugin Upgrade `risk:low` — COMPLETE. 3 new skills (/assay:plan, /assay:status, /assay:next-chunk), updated CLAUDE.md, cycle-stop-check.sh Stop hook, updated post-tool-use.sh, hooks.json wired, plugin 0.5.0, workspace 0.5.0. R047 validated. 1331 tests green.
+- [x] S06: Codex Plugin `risk:low` — COMPLETE. AGENTS.md (36 lines), 5 skills (gate-check, spec-show, cycle-status, next-chunk, plan). R048 validated.
 
 ## Recent Decisions
 
-- D083: BLOCKING_CHUNKS named verbatim in Stop hook block reason for immediate agent actionability
-- D082: guard-order pattern in cycle-stop-check.sh: jq → stop_hook_active → MODE → dir → binary → work
-- D081: next-chunk skill handles active_chunk_slug=null (Verify phase) with "run assay pr create" hint
-- D080: skill interview-first pattern — all input collection before any MCP tool call
-- D079: S04 test-first — tests/pr.rs written before assay-core::pr exists
+- D083: cycle-status and next-chunk are separate Codex skills (overview vs chunk-detail intent separation)
+- D082: All 6 Codex plugin files authored in single T01 pass (pure markdown, no split needed)
+- D081: `assay milestone status --json` exits 0 always; callers check exit 0 = JSON valid
+- D080: `{"active":false}` bash detection via `jq 'has("milestone_slug")'` (not `.active` key)
+- D079: S04 test-first — tests/pr.rs written in T01 (red) before assay-core::pr exists in T02
+- D078: ChunkGateFailure and PrCreateResult are local types in assay-core::pr (D073 pattern)
+- D077: pr_create_if_gates_pass uses `gh --json number,url` for stable structured output
 
 ## Blockers
 
@@ -38,4 +41,4 @@ None.
 
 ## Next Action
 
-S05 complete. Begin S06 (Codex Plugin). Read S06-PLAN.md (or create it if it doesn't exist). Ports gate-check and spec-show skills from claude-code plugin; adds cycle-status and plan skills; writes AGENTS.md workflow guide.
+M005 complete. Begin M006 planning: TUI as Primary Surface — real Ratatui TUI with project dashboard (R049), interactive wizard (R050), spec browser (R051), and provider config (R052).

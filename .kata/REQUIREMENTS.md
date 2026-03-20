@@ -474,8 +474,8 @@
 - Source: user
 - Primary owning slice: M005/S05
 - Supporting slices: M005/S01, M005/S02, M005/S03, M005/S04
-- Validation: S05 — 3 skill files exist with YAML frontmatter (plan/status/next-chunk); CLAUDE.md ≤50 lines with 5-skill table and 11-tool table; cycle-stop-check.sh passes bash -n with 11 exit-0 guards; hooks.json references cycle-stop-check.sh only (stop-gate-check.sh removed); plugin.json at version 0.5.0; live Claude Code session is UAT-only (see S05-UAT.md). Decisions D080–D083 capture key patterns.
-- Notes: PreCompact hook (milestone-checkpoint.sh) was in the original plan but omitted — the Stop hook and PostToolUse provide sufficient cycle awareness. Interview-first pattern (D080) prevents orphan milestone files. BLOCKING_CHUNKS in Stop hook reason (D083) enables immediate chunk targeting.
+- Validation: S05 — 3 skill files with YAML frontmatter; CLAUDE.md ≤50 lines with skill/MCP tables; cycle-stop-check.sh passes bash -n with ≥11 exit-0 guards; hooks.json wired to cycle-stop-check.sh (stop-gate-check.sh removed); plugin.json 0.5.0; just ready green (1331+ tests). Decisions D084–D087 capture key patterns.
+- Notes: PreCompact hook (milestone-checkpoint.sh) not implemented — Stop hook and PostToolUse provide sufficient cycle awareness. Interview-first pattern (D084) prevents orphan milestones. BLOCKING_CHUNKS in Stop hook reason (D087) enables immediate chunk targeting.
 
 ### R048 — Codex plugin (basic)
 - Class: differentiator
