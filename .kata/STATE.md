@@ -2,11 +2,11 @@
 
 **Active Milestone:** M005 — Spec-Driven Development Core
 **Active Slice:** S03 — Guided Authoring Wizard
-**Active Task:** T03 — Add `assay plan` CLI command with dialoguer
+**Active Task:** T04 — Implement `milestone_create` and `spec_create` MCP tools
 **Phase:** Executing
 **Last Updated:** 2026-03-20
 **Requirements Status:** 16 active (R042, R045–R059) · 37 validated (R039–R041, R043, R044 newly validated) · 2 deferred · 4 out of scope
-**Test Count:** 1308+ (all passing; wizard module adds 5 core tests)
+**Test Count:** 1308+ (all passing; wizard core 5 tests + plan non-TTY test green)
 
 ## Completed Milestones
 
@@ -19,7 +19,7 @@
 
 - [x] S01: Milestone & Chunk Type Foundation `risk:high` — COMPLETE. Milestone/ChunkRef/MilestoneStatus types, atomic I/O, milestone_list/milestone_get MCP tools, assay milestone list CLI. R039, R040, R041 validated. 1293 tests green.
 - [x] S02: Development Cycle State Machine `risk:high` — COMPLETE. cycle_status/cycle_advance/chunk_status MCP tools, milestone phase transitions (Draft→InProgress→Verify→Complete), CLI milestone status/advance subcommands. R043, R044 validated. 1308 tests green.
-- [ ] S03: Guided Authoring Wizard `risk:medium` — T01✓ T02✓ wizard core done (5 tests passing); T03 adds assay plan CLI next. assay plan CLI wizard, milestone_create/spec_create MCP tools, generates milestone TOML + gates.toml (R042)
+- [ ] S03: Guided Authoring Wizard `risk:medium` — T01✓ T02✓ T03✓ wizard core + assay plan CLI done; T04 adds milestone_create/spec_create MCP tools next. (R042)
 - [ ] S04: Gate-Gated PR Workflow `risk:medium` — assay pr create CLI, pr_create MCP tool, branch-per-chunk naming, PR tracking in milestone (R045, R046)
 - [ ] S05: Claude Code Plugin Upgrade `risk:low` — 3 new skills, updated CLAUDE.md, Stop+PreCompact hooks (R047)
 - [ ] S06: Codex Plugin `risk:low` — AGENTS.md workflow guide, 4 skills (R048)
@@ -38,4 +38,4 @@ None.
 
 ## Next Action
 
-Execute S03 T03: Add `assay plan` CLI command with dialoguer. Add `dialoguer` workspace dep, create `plan.rs` command, wire into main.rs, non-TTY guard returns exit code 1 with helpful message.
+Execute S03 T04: Implement `milestone_create` and `spec_create` MCP tools. Add `MilestoneCreateParams`, `SpecCreateParams`, `ChunkParams`, `CriterionParams` structs, implement `milestone_create()` and `spec_create()` methods on `AssayServer`, make T01's 5 MCP contract tests pass.
