@@ -2,7 +2,7 @@
 
 **Active Milestone:** M005 — Spec-Driven Development Core
 **Active Slice:** S05 — Claude Code Plugin Upgrade
-**Active Task:** T03
+**Active Task:** T03 ✓ (complete; next: T04 or slice done if no T04)
 **Phase:** Executing
 **Last Updated:** 2026-03-20
 **Requirements Status:** 12 active (R047–R059) · 41 validated (R039–R046 all validated) · 2 deferred · 4 out of scope
@@ -40,4 +40,4 @@ None.
 
 ## Next Action
 
-Execute S05/T03: Write cycle-stop-check.sh, update post-tool-use.sh, hooks.json, and bump plugin.json to 0.5.0.
+S05 T03 complete. Check S05-PLAN.md for remaining tasks (T04 if present, or finalize S05).

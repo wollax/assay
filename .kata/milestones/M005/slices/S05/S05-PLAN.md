@@ -67,7 +67,7 @@
   - Verify: `grep -l "milestone_create" plugins/claude-code/skills/plan/SKILL.md`, `grep "cycle_status" plugins/claude-code/skills/status/SKILL.md`, `grep "chunk_status" plugins/claude-code/skills/next-chunk/SKILL.md`, `grep "assay:plan" plugins/claude-code/CLAUDE.md`
   - Done when: all four files exist with the required content; `bash -n` syntax check is not needed (markdown); grep checks pass
 
-- [ ] **T03: Write cycle-stop-check.sh, update post-tool-use.sh, hooks.json, and plugin version** `est:30m`
+- [x] **T03: Write cycle-stop-check.sh, update post-tool-use.sh, hooks.json, and plugin version** `est:30m`
   - Why: The hook infrastructure is what makes the plugin actively enforce cycle discipline — the cycle-stop-check closes the loop between skills and gate enforcement at conversation end.
   - Files: `plugins/claude-code/scripts/cycle-stop-check.sh`, `plugins/claude-code/scripts/post-tool-use.sh`, `plugins/claude-code/hooks/hooks.json`, `plugins/claude-code/.claude-plugin/plugin.json`
   - Do:
