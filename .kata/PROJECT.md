@@ -10,7 +10,7 @@ A beginning developer installs Assay, describes a feature, and gets a structured
 
 ## Current State
 
-v0.4.0 on main. ~20K lines of Rust across 6 crates. M001–M004 complete. 1271 tests passing.
+v0.5.0 on main. ~20K lines of Rust across 6 crates. M001–M004 complete, M005 S01–S05 complete. 1331+ tests passing.
 
 **M001 (complete):** Single-agent harness end-to-end — manifest → worktree → agent launch → gate evaluation → merge proposal. 19 requirements validated.
 
@@ -20,7 +20,7 @@ v0.4.0 on main. ~20K lines of Rust across 6 crates. M001–M004 complete. 1271 t
 
 **M004 (complete):** Coordination modes — OrchestratorMode enum, Mesh executor (parallel + roster + file-based peer messaging + SWIM membership), Gossip executor (coordinator + knowledge manifest + PromptLayer injection). 32 requirements validated, 1271 tests.
 
-**M005 (in progress, S01–S03 complete):** Spec-driven development core — S01 delivered Milestone/ChunkRef/MilestoneStatus types, atomic I/O, milestone_list/milestone_get MCP tools. S02 delivered the full development cycle state machine: `cycle_status`/`cycle_advance`/`chunk_status` MCP tools, guarded phase transitions (Draft→InProgress→Verify→Complete), `assay milestone status`/`advance` CLI subcommands. S03 delivered the guided authoring wizard: `assay_core::wizard` module (create_from_inputs, create_milestone_from_params, create_spec_from_params), `assay plan` CLI with dialoguer TTY guard, `milestone_create`/`spec_create` MCP tools. 39 requirements validated. 1320+ tests.
+**M005 (in progress, S01–S05 complete):** Spec-driven development core — S01 delivered Milestone/ChunkRef/MilestoneStatus types, atomic I/O, milestone_list/milestone_get MCP tools. S02 delivered the full development cycle state machine: `cycle_status`/`cycle_advance`/`chunk_status` MCP tools, guarded phase transitions (Draft→InProgress→Verify→Complete), `assay milestone status`/`advance` CLI subcommands. S03 delivered the guided authoring wizard: `assay_core::wizard` module (create_from_inputs, create_milestone_from_params, create_spec_from_params), `assay plan` CLI with dialoguer TTY guard, `milestone_create`/`spec_create` MCP tools. S04 delivered gate-gated PR creation: `pr_check_milestone_gates`/`pr_create_if_gates_pass`, `assay pr create` CLI, `pr_create` MCP tool. S05 delivered the Claude Code plugin upgrade: three new skills (`/assay:plan`, `/assay:status`, `/assay:next-chunk`), updated CLAUDE.md, cycle-aware `cycle-stop-check.sh` Stop hook, updated PostToolUse reminder with active chunk name, plugin version 0.5.0. 40 requirements validated. 1331+ tests.
 
 Crates:
 
