@@ -1,10 +1,10 @@
 # Kata State
 
 **Active Milestone:** M005 — Spec-Driven Development Core
-**Active Slice:** S03 — Guided Authoring Wizard (next)
-**Active Task:** None — S02 just completed
-**Phase:** Planning (S03 next)
-**Last Updated:** 2026-03-19
+**Active Slice:** S03 — Guided Authoring Wizard
+**Active Task:** T01 — Write failing wizard core + MCP integration tests
+**Phase:** Planning complete → Executing
+**Last Updated:** 2026-03-20
 **Requirements Status:** 16 active (R042, R045–R059) · 37 validated (R039–R041, R043, R044 newly validated) · 2 deferred · 4 out of scope
 **Test Count:** 1308 (all passing)
 
@@ -38,7 +38,4 @@ None.
 
 ## Next Action
 
-Begin S03: Guided Authoring Wizard. Read S03 plan (once written), then implement:
-1. `dialoguer`-based interactive wizard (`assay plan` CLI command)
-2. `milestone_create` and `spec_create` MCP tools
-3. Generates valid milestone TOML + chunk gates.toml files
+Execute S03 T01: Write failing integration tests for `assay-core::wizard` and MCP `milestone_create`/`spec_create` tools. Tests define the API contract; they should fail to compile after T01 (no wizard module yet). Then T02 implements the wizard core, T03 adds the dialoguer CLI, T04 wires MCP tools.
