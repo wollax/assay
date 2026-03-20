@@ -199,9 +199,12 @@ name = "assay-tui"
 version = "0.5.0"
 dependencies = [
  "assay-core",
+ "assay-types",
+ "chrono",
  "color-eyre",
  "crossterm 0.28.1",
  "ratatui",
+ "tempfile",
 ]
 
 [[package]]
