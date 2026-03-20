@@ -18,7 +18,7 @@ Run quality gates and report structured results.
 
 2. **Run gates:**
    - Call the `gate_run` tool with the spec name
-   - Set `include_evidence` to `false` for the initial summary
+   - Omit `include_evidence` for the initial summary (defaults to false)
 
 3. **Report results:**
    - **All passed:** Report concisely: "3/3 criteria passed for [spec-name]" with duration

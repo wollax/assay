@@ -40,7 +40,7 @@ This milestone is complete only when all are true:
 - `assay plan` wizard generates valid milestone + chunk spec files
 - `assay pr create` creates a real PR when gates pass; errors with chunk failure list when they don't
 - Claude Code plugin has 3 new skills + updated CLAUDE.md + 2 new hooks
-- Codex plugin has AGENTS.md + 4 skills
+- Codex plugin has AGENTS.md + 5 skills
 - `just ready` green, no regressions
 
 ## Requirement Coverage
@@ -68,7 +68,7 @@ This milestone is complete only when all are true:
   > After this: Claude Code users can `/assay:plan` to start the wizard, `/assay:status` to see cycle progress, and `/assay:next-chunk` to get the active chunk context; Stop hook reports incomplete chunks.
 
 - [x] **S06: Codex Plugin** `risk:low` `depends:[S01,S02]`
-  > After this: Codex users have AGENTS.md with the full workflow guide and 4 skills (gate-check, spec-show, cycle-status, plan) that make Assay's development cycle usable inside Codex.
+  > After this: Codex users have AGENTS.md with the full workflow guide and 5 skills (gate-check, spec-show, cycle-status, next-chunk, plan) that make Assay's development cycle usable inside Codex.
 
 ## Boundary Map
 

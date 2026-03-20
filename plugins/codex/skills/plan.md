@@ -43,7 +43,7 @@ Do not call any MCP tools yet.
 ### Step 4 — Check for slug collision
 
 Now call `milestone_list` to retrieve existing milestones.
-If the proposed milestone slug already exists, warn the user and ask them to choose a different slug before proceeding.
+If the proposed milestone slug already exists, warn the user and ask them to choose a different slug. If they provide a replacement, repeat this step to confirm the new slug is also clean before proceeding.
 
 ### Step 5 — Create the milestone
 
@@ -51,7 +51,7 @@ Call `milestone_create` with:
 - `slug` — confirmed milestone slug
 - `name` — milestone name
 - `description` — the goal from Step 1
-- `chunks` — array of `{ slug, name }` for every chunk (criteria are provided separately via `spec_create` in Step 6)
+- `chunks` — array of `{ slug, name, criteria: [String] }` for every chunk
 
 ### Step 6 — Create specs for each chunk
 
