@@ -1,9 +1,9 @@
 # Kata State
 
 **Active Milestone:** M005 — Spec-Driven Development Core
-**Active Slice:** S06 — Codex Plugin
-**Active Task:** T01 — Write AGENTS.md and all 5 skill files
-**Phase:** Planning → Executing
+**Active Slice:** S06 — Codex Plugin (COMPLETE)
+**Active Task:** T01 — DONE
+**Phase:** S06 Complete — Milestone M005 complete pending S05
 **Last Updated:** 2026-03-20
 **Requirements Status:** 12 active (R047–R059) · 41 validated (R039–R046 all validated) · 2 deferred · 4 out of scope
 **Test Count:** 1331 (all passing)
@@ -22,7 +22,7 @@
 - [x] S03: Guided Authoring Wizard `risk:medium` — COMPLETE. T01✓ T02✓ T03✓ T04✓ wizard core (create_from_inputs, create_milestone_from_params, create_spec_from_params), assay plan CLI with TTY guard, milestone_create/spec_create MCP tools. R042 validated. 1320+ tests green.
 - [x] S04: Gate-Gated PR Workflow `risk:medium` — COMPLETE. pr_check_milestone_gates + pr_create_if_gates_pass (pre-flight gh check, idempotency, Verify→Complete transition), assay pr create CLI, pr_create MCP tool. R045, R046 validated. 1331 tests green.
 - [ ] S05: Claude Code Plugin Upgrade `risk:low` — 3 new skills (/assay:plan, /assay:status, /assay:next-chunk), updated CLAUDE.md, Stop+PreCompact hooks (R047)
-- [ ] S06: Codex Plugin `risk:low` — AGENTS.md workflow guide, 4 skills (gate-check, spec-show, cycle-status, plan) (R048)
+- [x] S06: Codex Plugin `risk:low` — AGENTS.md (34 lines), 5 skills (gate-check, spec-show, cycle-status, next-chunk, plan) (R048)
 
 ## Recent Decisions
 
@@ -38,4 +38,4 @@ None.
 
 ## Next Action
 
-S06 (Codex Plugin) is planned. Execute T01: write AGENTS.md and all 5 skill files (pure markdown, no Rust). Verify with grep assertions in S06-PLAN.md, then commit.
+S06 complete — all verification checks pass (27/27). Only S05 (Claude Code Plugin Upgrade) remains before M005 is done. Start S05: plan the 3 new skills and CLAUDE.md update, then execute.
