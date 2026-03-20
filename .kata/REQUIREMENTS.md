@@ -479,14 +479,14 @@
 
 ### R048 — Codex plugin (basic)
 - Class: differentiator
-- Status: active
+- Status: validated
 - Description: The Codex plugin gains a complete AGENTS.md workflow guide and four skills: gate-check, spec-show, cycle-status, and plan. These give Codex users the same spec-driven workflow experience as Claude Code users.
 - Why it matters: Plugin parity at launch — both major agent platforms get a working plugin in M005
 - Source: user
 - Primary owning slice: M005/S06
 - Supporting slices: M005/S01, M005/S02
-- Validation: unmapped
-- Notes: Ports gate-check and spec-show skills from Claude Code plugin; adds cycle-status and plan as new skills mirroring M005/S05.
+- Validation: S06 — AGENTS.md (34 lines, ≤60 cap); 5 skill files (gate-check, spec-show, cycle-status, next-chunk, plan); all tool names correct; active:false handling confirmed in cycle-status and next-chunk; interview-first ordering confirmed in plan; cmd-editing note present; .gitkeep removed; 18/18 structural checks pass
+- Notes: Delivered 5 skills (not 4 as originally planned — next-chunk was in must-haves and completed alongside plan). Flat .md file convention, not subdirectory SKILL.md.
 
 ### R049 — TUI project dashboard
 - Class: primary-user-loop
@@ -706,7 +706,7 @@
 | R045 | primary-user-loop | validated | M005/S04 | M005/S01, M005/S02 | S04 |
 | R046 | convention | validated | M005/S04 | M005/S01 | S04 |
 | R047 | differentiator | validated | M005/S05 | M005/S01–S04 | S05 |
-| R048 | differentiator | active | M005/S06 | M005/S01, M005/S02 | mapped |
+| R048 | differentiator | validated | M005/S06 | M005/S01, M005/S02 | S06 |
 | R049 | primary-user-loop | active | M006/S01 | none | mapped |
 | R050 | primary-user-loop | active | M006/S02 | M006/S01 | mapped |
 | R051 | primary-user-loop | active | M006/S02 | M006/S01 | mapped |
