@@ -327,8 +327,9 @@ fn test_pr_create_gh_not_found() {
     let specs_dir = assay_dir.join("specs");
     let working_dir = tmp.path().to_path_buf();
 
+    // PATH must be replaced (not prepended) to ensure `gh` is truly absent —
+    // `with_mock_gh_path` prepends and would leave the real `gh` reachable.
     let original_path = std::env::var("PATH").unwrap_or_default();
-    // Set PATH to an empty dir so gh cannot be found.
     // SAFETY: guarded by #[serial]; no concurrent thread modifies PATH.
     unsafe { std::env::set_var("PATH", empty_bin_dir.display().to_string()) };
 

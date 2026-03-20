@@ -133,10 +133,10 @@ pub fn pr_create_if_gates_pass(
     body: Option<&str>,
 ) -> Result<PrCreateResult> {
     // ── Step 1: Load milestone + idempotency guard ────────────────────────
-    let milestone_check = milestone_load(assay_dir, milestone_slug)?;
+    let initial_milestone = milestone_load(assay_dir, milestone_slug)?;
 
-    if let Some(pr_number) = milestone_check.pr_number {
-        let pr_url = milestone_check
+    if let Some(pr_number) = initial_milestone.pr_number {
+        let pr_url = initial_milestone
             .pr_url
             .as_deref()
             .unwrap_or("<no url recorded>");
@@ -208,7 +208,7 @@ pub fn pr_create_if_gates_pass(
     }
 
     // ── Step 4: Determine base branch ─────────────────────────────────────
-    let base_branch = milestone_check
+    let base_branch = initial_milestone
         .pr_base
         .as_deref()
         .unwrap_or("main")
