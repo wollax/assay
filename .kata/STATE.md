@@ -2,7 +2,7 @@
 
 **Active Milestone:** M005 — Spec-Driven Development Core
 **Active Slice:** S04 — Gate-Gated PR Workflow
-**Active Task:** T03 — Wire CLI `assay pr create` and MCP `pr_create` tool
+**Active Task:** T03 — Wire CLI `assay pr create` and MCP `pr_create` tool (DONE)
 **Phase:** Executing
 **Last Updated:** 2026-03-20
 **Requirements Status:** 14 active (R045–R059 minus R042) · 39 validated (R039–R044 all validated) · 2 deferred · 4 out of scope
@@ -38,4 +38,4 @@ None.
 
 ## Next Action
 
-Execute T03: Wire CLI `assay pr create` and MCP `pr_create` tool — create `crates/assay-cli/src/commands/pr.rs` with `PrCommand::Create`, add `Pr` variant to `main.rs`, add `pr_create` tool to `assay-mcp/src/server.rs`. All CLI unit tests and MCP presence test must pass.
+S04 is complete — all 3 tasks done. Write S04 slice summary, UAT, mark S04 done in M005-ROADMAP.md, update milestone summary.
