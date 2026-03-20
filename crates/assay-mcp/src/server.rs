@@ -7691,4 +7691,150 @@ spec = "auth"
             "chunk_status should be in tool list, got: {tool_names:?}"
         );
     }
+
+    // ── wizard tool tests ─────────────────────────────────────────────
+
+    #[tokio::test]
+    #[serial]
+    async fn milestone_create_tool_in_router() {
+        let server = AssayServer::new();
+        let tools = server.tool_router.list_all();
+        let tool_names: Vec<&str> = tools.iter().map(|t| t.name.as_ref()).collect();
+        assert!(
+            tool_names.contains(&"milestone_create"),
+            "milestone_create should be in tool list, got: {tool_names:?}"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn spec_create_tool_in_router() {
+        let server = AssayServer::new();
+        let tools = server.tool_router.list_all();
+        let tool_names: Vec<&str> = tools.iter().map(|t| t.name.as_ref()).collect();
+        assert!(
+            tool_names.contains(&"spec_create"),
+            "spec_create should be in tool list, got: {tool_names:?}"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn milestone_create_writes_milestone_toml() {
+        let dir = create_project(r#"project_name = "wizard-test""#);
+        std::env::set_current_dir(dir.path()).unwrap();
+
+        let server = AssayServer::new();
+        let result = server
+            .milestone_create(Parameters(MilestoneCreateParams {
+                slug: "test-ms".to_string(),
+                name: "Test MS".to_string(),
+                description: None,
+                chunks: vec![MilestoneChunkInput {
+                    slug: "chunk-1".to_string(),
+                    name: "Chunk 1".to_string(),
+                    criteria: vec!["criterion-1".to_string()],
+                }],
+            }))
+            .await
+            .unwrap();
+
+        assert!(
+            !result.is_error.unwrap_or(false),
+            "milestone_create should succeed, got: {:?}",
+            extract_text(&result)
+        );
+
+        let text = extract_text(&result);
+        assert!(
+            text.contains("test-ms"),
+            "response should mention the new milestone slug, got: {text}"
+        );
+
+        // The milestone TOML must exist on disk.
+        let milestone_path = dir
+            .path()
+            .join(".assay")
+            .join("milestones")
+            .join("test-ms.toml");
+        assert!(
+            milestone_path.exists(),
+            ".assay/milestones/test-ms.toml should exist on disk"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn spec_create_writes_gates_toml() {
+        let dir = create_project(r#"project_name = "wizard-test""#);
+        std::env::set_current_dir(dir.path()).unwrap();
+
+        let server = AssayServer::new();
+        let result = server
+            .spec_create(Parameters(SpecCreateParams {
+                slug: "chunk-1".to_string(),
+                name: "Chunk 1".to_string(),
+                description: None,
+                milestone_slug: None,
+                criteria: vec!["criterion-1".to_string()],
+            }))
+            .await
+            .unwrap();
+
+        assert!(
+            !result.is_error.unwrap_or(false),
+            "spec_create should succeed, got: {:?}",
+            extract_text(&result)
+        );
+
+        // gates.toml must exist on disk.
+        let gates_path = dir
+            .path()
+            .join(".assay")
+            .join("specs")
+            .join("chunk-1")
+            .join("gates.toml");
+        assert!(
+            gates_path.exists(),
+            ".assay/specs/chunk-1/gates.toml should exist on disk"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn spec_create_rejects_duplicate() {
+        let dir = create_project(r#"project_name = "wizard-test""#);
+        std::env::set_current_dir(dir.path()).unwrap();
+
+        let server = AssayServer::new();
+
+        // First call: must succeed.
+        server
+            .spec_create(Parameters(SpecCreateParams {
+                slug: "dup-chunk".to_string(),
+                name: "Dup Chunk".to_string(),
+                description: None,
+                milestone_slug: None,
+                criteria: vec!["criterion-1".to_string()],
+            }))
+            .await
+            .unwrap();
+
+        // Second call with same slug: must return isError: true.
+        let result = server
+            .spec_create(Parameters(SpecCreateParams {
+                slug: "dup-chunk".to_string(),
+                name: "Dup Chunk Again".to_string(),
+                description: None,
+                milestone_slug: None,
+                criteria: vec!["criterion-1".to_string()],
+            }))
+            .await
+            .unwrap();
+
+        assert!(
+            result.is_error.unwrap_or(false),
+            "duplicate spec_create should return isError: true"
+        );
+    }
 }

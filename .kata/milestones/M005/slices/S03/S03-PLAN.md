@@ -57,7 +57,7 @@ just ready
 
 ## Tasks
 
-- [ ] **T01: Write failing wizard core + MCP integration tests** `est:45m`
+- [x] **T01: Write failing wizard core + MCP integration tests** `est:45m`
   - Why: Defines the wizard API contract before implementation; test-first ensures the implementation covers all required behaviors; failing tests are the objective stopping condition
   - Files: `crates/assay-core/tests/wizard.rs`, `crates/assay-mcp/src/server.rs` (test section only)
   - Do: Write `crates/assay-core/tests/wizard.rs` with 5 tests: `wizard_create_from_inputs_writes_files`, `wizard_create_from_inputs_sets_milestone_and_order_on_specs`, `wizard_slug_collision_returns_error`, `wizard_create_spec_patches_milestone`, `wizard_create_spec_rejects_nonexistent_milestone`. Use `tempfile::TempDir` for isolation. Import `assay_core::wizard::{create_from_inputs, create_spec_from_params, WizardInputs, ChunkInput, CriterionInput}` (these don't exist yet — tests will fail to compile). In `server.rs` test section, add 5 tests: `milestone_create_tool_in_router`, `spec_create_tool_in_router`, `milestone_create_writes_milestone_toml`, `spec_create_writes_gates_toml`, `spec_create_rejects_duplicate`. All tests must fail (compile errors or test failures) after this task — the module doesn't exist yet.
