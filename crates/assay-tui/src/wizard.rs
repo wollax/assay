@@ -88,7 +88,7 @@ pub fn handle_wizard_event(
             match kind {
                 StepKind::ChunkCount => {
                     // Only accept digits 1–7; replace the entire field
-                    if c.is_ascii_digit() && c >= '1' && c <= '7' {
+                    if ('1'..='7').contains(&c) {
                         state.fields[2] = vec![c.to_string()];
                         state.cursor = 1;
                     }
@@ -195,7 +195,7 @@ pub fn handle_wizard_event(
                         && buf
                             .chars()
                             .next()
-                            .map(|c| c.is_ascii_digit() && c >= '1' && c <= '7')
+                            .map(|c| ('1'..='7').contains(&c))
                             .unwrap_or(false);
                     if !valid {
                         state.error = Some("Enter a number from 1 to 7".to_string());

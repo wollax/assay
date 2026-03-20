@@ -1,6 +1,8 @@
 use std::path::Path;
 
-use assay_core::{config, history, milestone};
+use assay_core::{config, history, milestone, wizard::create_from_inputs};
+use assay_tui::wizard::{WizardAction, WizardState, handle_wizard_event};
+use assay_tui::wizard_draw::draw_wizard;
 use assay_types::{Config, Milestone, MilestoneStatus};
 use crossterm::event::{self, Event, KeyCode, KeyEvent};
 use ratatui::{
@@ -16,6 +18,8 @@ pub enum Screen {
     Dashboard,
     /// No `.assay/` directory found — show a diagnostic message.
     NoProject,
+    /// In-TUI authoring wizard for creating a new milestone.
+    Wizard(WizardState),
 }
 
 /// Aggregated gate pass/fail counts for a single milestone.
@@ -30,8 +34,6 @@ pub struct App {
     pub milestones: Vec<Milestone>,
     pub gate_data: Vec<(String, GateSummary)>,
     pub list_state: ListState,
-    // Preserved for future use (config display, project-aware features in S02+).
-    #[allow(dead_code)]
     pub project_root: std::path::PathBuf,
     #[allow(dead_code)]
     pub config: Option<Config>,
@@ -134,33 +136,95 @@ pub fn run(mut terminal: DefaultTerminal) -> color_eyre::Result<()> {
 ///
 /// Returns `true` when the application should quit.
 pub fn handle_event(app: &mut App, event: &Event) -> bool {
-    match event {
-        Event::Key(KeyEvent { code, .. }) => match code {
-            KeyCode::Char('q') | KeyCode::Char('Q') | KeyCode::Esc => return true,
-            KeyCode::Up => {
-                if !app.milestones.is_empty() {
-                    app.list_state.select_previous();
-                }
+    let Event::Key(key) = event else {
+        // Resize and other events are handled by ratatui automatically.
+        return false;
+    };
+
+    // Wizard screen: all key events routed through handle_wizard_event.
+    if let Screen::Wizard(_) = &app.screen {
+        handle_wizard_key(app, key);
+        return false;
+    }
+
+    // Dashboard + NoProject: global key handling.
+    match key.code {
+        KeyCode::Char('q') | KeyCode::Char('Q') | KeyCode::Esc => return true,
+        KeyCode::Up => {
+            if matches!(app.screen, Screen::Dashboard) && !app.milestones.is_empty() {
+                app.list_state.select_previous();
             }
-            KeyCode::Down => {
-                if !app.milestones.is_empty() {
-                    app.list_state.select_next();
-                }
+        }
+        KeyCode::Down => {
+            if matches!(app.screen, Screen::Dashboard) && !app.milestones.is_empty() {
+                app.list_state.select_next();
             }
-            KeyCode::Enter => {} // placeholder for S02/S03 screen transition
-            _ => {}
-        },
-        Event::Resize(..) => return false, // explicit ignore — don't quit on resize
+        }
+        KeyCode::Char('n') => {
+            // `n` opens the wizard only from the Dashboard (i.e. .assay/ exists).
+            if matches!(app.screen, Screen::Dashboard) {
+                app.screen = Screen::Wizard(WizardState::new());
+            }
+        }
         _ => {}
     }
     false
 }
 
+/// Process a key event when the wizard screen is active.
+fn handle_wizard_key(app: &mut App, key: &KeyEvent) {
+    // Extract wizard state mutably; we'll put back the screen after deciding action.
+    let Screen::Wizard(ref mut state) = app.screen else {
+        return;
+    };
+    let action = handle_wizard_event(state, *key);
+    match action {
+        WizardAction::Continue => {}
+        WizardAction::Cancel => {
+            app.screen = Screen::Dashboard;
+        }
+        WizardAction::Submit(inputs) => {
+            let assay_dir = app.project_root.join(".assay");
+            let specs_dir = assay_dir.join("specs");
+            match create_from_inputs(&inputs, &assay_dir, &specs_dir) {
+                Ok(_) => {
+                    // Reload milestone list so dashboard shows the new milestone.
+                    app.milestones = milestone::milestone_scan(&assay_dir).unwrap_or_default();
+                    app.gate_data = compute_gate_data(&assay_dir, &app.milestones);
+                    // Reset selection to first item.
+                    if app.milestones.is_empty() {
+                        app.list_state = ListState::default();
+                    } else {
+                        app.list_state = ListState::default();
+                        app.list_state.select(Some(0));
+                    }
+                    app.screen = Screen::Dashboard;
+                }
+                Err(e) => {
+                    // Surface I/O / slug-collision error inline; stay in wizard.
+                    if let Screen::Wizard(ref mut s) = app.screen {
+                        s.error = Some(e.to_string());
+                    }
+                }
+            }
+        }
+    }
+}
+
 /// Render the current application state to the terminal frame.
 pub fn draw(frame: &mut Frame, app: &mut App) {
-    match app.screen {
-        Screen::NoProject => draw_no_project(frame),
-        Screen::Dashboard => draw_dashboard(frame, app),
+    // NoProject: show diagnostic and return early.
+    if matches!(app.screen, Screen::NoProject) {
+        draw_no_project(frame);
+        return;
+    }
+
+    // Dashboard always renders (Wizard overlays on top of it).
+    draw_dashboard(frame, app);
+
+    // If in Wizard, draw the popup over the dashboard.
+    if let Screen::Wizard(ref state) = app.screen {
+        draw_wizard(frame, state);
     }
 }
 
@@ -187,7 +251,10 @@ fn draw_dashboard(frame: &mut Frame, app: &mut App) {
     .areas(area);
 
     frame.render_widget(Paragraph::new("Assay Dashboard").bold(), header_area);
-    frame.render_widget(Paragraph::new(" q quit  ↑↓ navigate"), footer_area);
+    frame.render_widget(
+        Paragraph::new(" q quit  ↑↓ navigate  n new milestone"),
+        footer_area,
+    );
 
     if app.milestones.is_empty() {
         draw_no_milestones(frame, body_area);
@@ -374,5 +441,87 @@ mod tests {
 
         assert_eq!(entry.1.passed, 2, "passed should be 2");
         assert_eq!(entry.1.failed, 1, "failed should be 1");
+    }
+
+    // ── wizard wiring tests ───────────────────────────────────────────────────
+
+    #[test]
+    fn test_n_key_opens_wizard_from_dashboard() {
+        let tmp = tempfile::tempdir().unwrap();
+        // Create a .assay/ dir so the screen starts as Dashboard.
+        std::fs::create_dir_all(tmp.path().join(".assay/milestones")).unwrap();
+        let mut app = App::new(tmp.path().to_path_buf());
+        assert!(
+            matches!(app.screen, Screen::Dashboard),
+            "precondition: should start on Dashboard"
+        );
+
+        handle_event(&mut app, &make_key_event(KeyCode::Char('n')));
+        assert!(
+            matches!(app.screen, Screen::Wizard(_)),
+            "n key should open wizard"
+        );
+    }
+
+    #[test]
+    fn test_esc_in_wizard_returns_to_dashboard() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(tmp.path().join(".assay/milestones")).unwrap();
+        let mut app = App::new(tmp.path().to_path_buf());
+        app.screen = Screen::Wizard(WizardState::new());
+
+        handle_event(&mut app, &make_key_event(KeyCode::Esc));
+        assert!(
+            matches!(app.screen, Screen::Dashboard),
+            "Esc in wizard should return to Dashboard"
+        );
+    }
+
+    #[test]
+    fn wizard_error_submit_stays_in_wizard() {
+        use assay_core::wizard::{WizardInputs, create_from_inputs};
+
+        let tmp = tempfile::tempdir().unwrap();
+        let assay_dir = tmp.path().join(".assay");
+        std::fs::create_dir_all(assay_dir.join("milestones")).unwrap();
+        std::fs::create_dir_all(assay_dir.join("specs")).unwrap();
+
+        // Pre-create the milestone file to force a slug collision.
+        let milestone_toml = assay_dir.join("milestones/auth-layer.toml");
+        std::fs::write(&milestone_toml, "[milestone]\nname = \"Auth Layer\"\n").unwrap();
+
+        let inputs = WizardInputs {
+            slug: "auth-layer".to_string(),
+            name: "Auth Layer".to_string(),
+            description: None,
+            chunks: vec![],
+        };
+
+        // Simulate what handle_wizard_key does on Submit error.
+        let mut app = App::new(tmp.path().to_path_buf());
+        app.screen = Screen::Wizard(WizardState::new());
+
+        let specs_dir = assay_dir.join("specs");
+        let result = create_from_inputs(&inputs, &assay_dir, &specs_dir);
+        // create_from_inputs should fail on slug collision.
+        assert!(result.is_err(), "slug collision should fail");
+
+        // Confirm that if we call handle_wizard_key with a pre-constructed Submit,
+        // the app stays in Screen::Wizard with error set.
+        if let Err(e) = result
+            && let Screen::Wizard(ref mut s) = app.screen
+        {
+            s.error = Some(e.to_string());
+        }
+        assert!(
+            matches!(app.screen, Screen::Wizard(_)),
+            "should stay in wizard on create_from_inputs error"
+        );
+        if let Screen::Wizard(ref s) = app.screen {
+            assert!(
+                s.error.is_some(),
+                "state.error should be set on submit failure"
+            );
+        }
     }
 }

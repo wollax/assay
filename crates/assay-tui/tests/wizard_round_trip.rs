@@ -1,4 +1,4 @@
-use assay_core::wizard::{WizardInputs, create_from_inputs};
+use assay_core::wizard::create_from_inputs;
 use assay_tui::wizard::{WizardAction, WizardState, handle_wizard_event};
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use tempfile::TempDir;
