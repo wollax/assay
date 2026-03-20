@@ -3341,7 +3341,9 @@ impl AssayServer {
     /// Return the active development cycle status.
     #[tool(
         description = "Return the active development cycle status: the first in_progress milestone, \
-            its active chunk, and progress counts. Returns null if no milestone is in_progress."
+            its active chunk, and progress counts. Returns {\"active\": false} when no milestone is \
+            in_progress. When multiple milestones are in_progress, the first alphabetically by slug \
+            is returned."
     )]
     pub async fn cycle_status(
         &self,
@@ -3356,7 +3358,9 @@ impl AssayServer {
                 })?;
                 Ok(CallToolResult::success(vec![Content::text(json)]))
             }
-            Ok(None) => Ok(CallToolResult::success(vec![Content::text("null")])),
+            Ok(None) => Ok(CallToolResult::success(vec![Content::text(
+                r#"{"active":false}"#,
+            )])),
             Err(e) => Ok(domain_error(&e)),
         }
     }
