@@ -11,7 +11,9 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::harness::{HookContract, PromptLayer, SettingsOverride};
+#[cfg(feature = "orchestrate")]
 use crate::orchestrate::{GossipConfig, MeshConfig, OrchestratorMode};
+
 
 /// Top-level run manifest declaring one or more agent sessions.
 ///
@@ -39,14 +41,17 @@ pub struct RunManifest {
     pub sessions: Vec<ManifestSession>,
 
     /// Coordination mode for this run. Defaults to `dag` (existing behavior).
+    #[cfg(feature = "orchestrate")]
     #[serde(default)]
     pub mode: OrchestratorMode,
 
     /// Mesh mode configuration. Ignored unless `mode = "mesh"`.
+    #[cfg(feature = "orchestrate")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mesh_config: Option<MeshConfig>,
 
     /// Gossip mode configuration. Ignored unless `mode = "gossip"`.
+    #[cfg(feature = "orchestrate")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub gossip_config: Option<GossipConfig>,
 }
@@ -62,8 +67,11 @@ impl Default for RunManifest {
     fn default() -> Self {
         Self {
             sessions: vec![],
+            #[cfg(feature = "orchestrate")]
             mode: OrchestratorMode::Dag,
+            #[cfg(feature = "orchestrate")]
             mesh_config: None,
+            #[cfg(feature = "orchestrate")]
             gossip_config: None,
         }
     }
@@ -174,15 +182,14 @@ mod tests {
         };
         let manifest = RunManifest {
             sessions: vec![session],
-            mode: OrchestratorMode::Dag,
-            mesh_config: None,
-            gossip_config: None,
+            ..Default::default()
         };
         let toml_out = toml::to_string(&manifest).unwrap();
         assert!(!toml_out.contains("file_scope"));
         assert!(!toml_out.contains("shared_files"));
     }
 
+    #[cfg(feature = "orchestrate")]
     #[test]
     fn manifest_without_mode_defaults_to_dag() {
         let toml_str = "[[sessions]]\nspec = \"auth\"\n";
@@ -192,6 +199,7 @@ mod tests {
         assert!(manifest.gossip_config.is_none());
     }
 
+    #[cfg(feature = "orchestrate")]
     #[test]
     fn manifest_with_mode_mesh_parses() {
         let toml_str = "mode = \"mesh\"\n[[sessions]]\nspec = \"auth\"\n";
@@ -199,6 +207,7 @@ mod tests {
         assert_eq!(manifest.mode, OrchestratorMode::Mesh);
     }
 
+    #[cfg(feature = "orchestrate")]
     #[test]
     fn manifest_with_mode_gossip_parses() {
         let toml_str = "mode = \"gossip\"\n[[sessions]]\nspec = \"auth\"\n";
@@ -206,6 +215,7 @@ mod tests {
         assert_eq!(manifest.mode, OrchestratorMode::Gossip);
     }
 
+    #[cfg(feature = "orchestrate")]
     #[test]
     fn manifest_mode_round_trip() {
         let manifest = RunManifest {
@@ -228,6 +238,7 @@ mod tests {
         assert_eq!(back.mode, OrchestratorMode::Dag);
     }
 
+    #[cfg(feature = "orchestrate")]
     #[test]
     fn manifest_mesh_config_omitted_when_none() {
         let manifest = RunManifest {

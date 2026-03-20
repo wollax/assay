@@ -1,8 +1,7 @@
 //! Integration tests for `assay_core::pr` — gate-gated PR creation workflow.
 //!
-//! These tests drive T02 implementation. They are expected to fail to compile
-//! until `assay_core::pr` is created in T02. All other workspace tests must
-//! continue to pass.
+//! Covers: gate-check pass/fail, missing spec, idempotency guard, gh-not-found,
+//! mock-gh success, and Verify→Complete auto-transition.
 
 use chrono::Utc;
 use serial_test::serial;
@@ -428,7 +427,66 @@ fn test_pr_create_success_mock_gh() {
     );
 }
 
-// ── Test 8: Verify status + all gates pass + mock gh → milestone becomes Complete
+// ── Test 8: Missing JSON fields → Err (no silent defaults) ───────────────────
+
+#[test]
+#[serial]
+fn test_pr_create_parse_gh_missing_fields() {
+    let tmp = TempDir::new().expect("create temp dir");
+    let assay_dir = make_assay_dir(&tmp);
+    let bin_dir = tmp.path().join("mock-bin-missing-fields");
+    fs::create_dir_all(&bin_dir).expect("create mock bin dir");
+
+    create_passing_spec(&assay_dir, "chunk-a");
+
+    let milestone = make_milestone_with_status(
+        "missing-fields",
+        MilestoneStatus::Verify,
+        vec![ChunkRef {
+            slug: "chunk-a".to_string(),
+            order: 1,
+        }],
+    );
+    milestone_save(&assay_dir, &milestone).expect("save milestone");
+
+    // Fake gh returns valid JSON but without the required `number` field.
+    write_fake_gh(&bin_dir, 0, r#"{"other":"data"}"#);
+
+    let specs_dir = assay_dir.join("specs");
+    let working_dir = tmp.path().to_path_buf();
+
+    let result = with_mock_gh_path(&bin_dir, |_| {
+        pr_create_if_gates_pass(
+            &assay_dir,
+            &specs_dir,
+            &working_dir,
+            "missing-fields",
+            "feat: missing-fields",
+            None,
+        )
+    });
+
+    assert!(
+        result.is_err(),
+        "expected Err when gh JSON response is missing 'number' field, got Ok"
+    );
+    let msg = result.unwrap_err().to_string();
+    assert!(
+        msg.contains("number") || msg.contains("missing") || msg.contains("invalid"),
+        "error message should describe the missing field, got: {msg}"
+    );
+
+    // Milestone TOML must not be modified — pr_number still None
+    let reloaded = milestone_load(&assay_dir, "missing-fields")
+        .expect("load milestone after failed parse");
+    assert!(
+        reloaded.pr_number.is_none(),
+        "pr_number must remain None when JSON parse fails, got: {:?}",
+        reloaded.pr_number
+    );
+}
+
+// ── Test 9: Verify status + all gates pass + mock gh → milestone becomes Complete
 
 #[test]
 #[serial]
