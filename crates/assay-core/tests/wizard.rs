@@ -3,8 +3,10 @@
 //! These tests define the expected API contract for the wizard module.
 //! They will fail to compile until T02 implements `assay_core::wizard`.
 
-use assay_core::wizard::{WizardChunkInput, WizardInputs, create_from_inputs, create_spec_from_params};
 use assay_core::milestone::{milestone_load, milestone_save};
+use assay_core::wizard::{
+    WizardChunkInput, WizardInputs, create_from_inputs, create_spec_from_params,
+};
 use assay_types::{GatesSpec, Milestone, MilestoneStatus};
 use chrono::Utc;
 use tempfile::TempDir;
@@ -63,7 +65,11 @@ fn wizard_create_from_inputs_writes_files() {
     );
 
     let result = create_from_inputs(&inputs, &assay_dir, &specs_dir);
-    assert!(result.is_ok(), "create_from_inputs should succeed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "create_from_inputs should succeed: {:?}",
+        result.err()
+    );
 
     // Milestone file must exist and load successfully.
     let ms = milestone_load(&assay_dir, "my-feature");
@@ -111,11 +117,7 @@ fn wizard_create_from_inputs_sets_milestone_and_order_on_specs() {
         Some("my-feature".to_string()),
         "chunk-1 gates.milestone should be 'my-feature'"
     );
-    assert_eq!(
-        spec1.order,
-        Some(0),
-        "chunk-1 gates.order should be 0"
-    );
+    assert_eq!(spec1.order, Some(0), "chunk-1 gates.order should be 0");
 
     // Second chunk: order 1
     let path2 = specs_dir.join("my-feature-chunk-2").join("gates.toml");
@@ -126,11 +128,7 @@ fn wizard_create_from_inputs_sets_milestone_and_order_on_specs() {
         Some("my-feature".to_string()),
         "chunk-2 gates.milestone should be 'my-feature'"
     );
-    assert_eq!(
-        spec2.order,
-        Some(1),
-        "chunk-2 gates.order should be 1"
-    );
+    assert_eq!(spec2.order, Some(1), "chunk-2 gates.order should be 1");
 }
 
 #[test]
@@ -173,6 +171,7 @@ fn wizard_create_spec_patches_milestone() {
         Some("my-feature"),
         &assay_dir,
         &specs_dir,
+        vec![],
     );
     assert!(
         result.is_ok(),
@@ -202,6 +201,7 @@ fn wizard_create_spec_rejects_nonexistent_milestone() {
         Some("ghost"),
         &assay_dir,
         &specs_dir,
+        vec![],
     );
     assert!(
         result.is_err(),

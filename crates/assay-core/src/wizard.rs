@@ -186,8 +186,13 @@ pub fn create_from_inputs(
     // Write each chunk spec.
     let mut spec_paths = Vec::with_capacity(inputs.chunks.len());
     for (i, chunk) in inputs.chunks.iter().enumerate() {
-        let gates_path =
-            write_gates_toml(&chunk.slug, &inputs.slug, Some(i as u32), &chunk.criteria, specs_dir)?;
+        let gates_path = write_gates_toml(
+            &chunk.slug,
+            &inputs.slug,
+            Some(i as u32),
+            &chunk.criteria,
+            specs_dir,
+        )?;
         spec_paths.push(gates_path);
     }
 
@@ -215,9 +220,7 @@ pub fn create_milestone_from_params(
 ) -> Result<Milestone> {
     validate_path_component(slug, "milestone slug")?;
 
-    let milestone_file = assay_dir
-        .join("milestones")
-        .join(format!("{slug}.toml"));
+    let milestone_file = assay_dir.join("milestones").join(format!("{slug}.toml"));
     if milestone_file.exists() {
         return Err(AssayError::Io {
             operation: format!("milestone '{slug}' already exists"),
@@ -260,6 +263,9 @@ pub fn create_milestone_from_params(
 /// Writes `<specs_dir>/<slug>/gates.toml` atomically. If `milestone_slug` is provided,
 /// the spec is linked to the milestone and the milestone's `chunks` list is updated.
 ///
+/// `criteria` is a list of criterion name strings; each becomes a [`Criterion`] with
+/// `name = string` and `description = ""`. Pass an empty `Vec` when no criteria are needed.
+///
 /// # Errors
 ///
 /// - [`AssayError::Io`] if the spec directory already exists.
@@ -270,6 +276,7 @@ pub fn create_spec_from_params(
     milestone_slug: Option<&str>,
     assay_dir: &Path,
     specs_dir: &Path,
+    criteria: Vec<String>,
 ) -> Result<PathBuf> {
     validate_path_component(slug, "spec slug")?;
 
@@ -292,13 +299,14 @@ pub fn create_spec_from_params(
     }
 
     // Write the gates.toml.
-    let ms_slug = milestone_slug.unwrap_or("").to_string();
-    let ms_opt = if milestone_slug.is_some() {
-        Some(ms_slug.as_str())
-    } else {
-        None
-    };
-    let gates_path = write_gates_toml(slug, ms_opt.unwrap_or(""), milestone_slug.map(|_| 0u32), &[], specs_dir)?;
+    let ms_slug_str = milestone_slug.unwrap_or("").to_string();
+    let gates_path = write_gates_toml(
+        slug,
+        &ms_slug_str,
+        milestone_slug.map(|_| 0u32),
+        &criteria,
+        specs_dir,
+    )?;
 
     // Patch milestone's chunks if linked.
     if let Some(ms) = milestone_slug {
