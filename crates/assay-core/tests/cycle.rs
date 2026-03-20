@@ -37,6 +37,8 @@ fn make_milestone_with_status(
         depends_on: vec![],
         pr_branch: None,
         pr_base: None,
+        pr_number: None,
+        pr_url: None,
         created_at: now,
         updated_at: now,
     }
@@ -348,6 +350,8 @@ fn test_milestone_phase_transition_valid() {
         depends_on: vec![],
         pr_branch: None,
         pr_base: None,
+        pr_number: None,
+        pr_url: None,
         created_at: now,
         updated_at: now,
     };
@@ -385,6 +389,8 @@ fn test_milestone_phase_transition_invalid() {
             depends_on: vec![],
             pr_branch: None,
             pr_base: None,
+            pr_number: None,
+            pr_url: None,
             created_at: now,
             updated_at: now,
         }

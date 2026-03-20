@@ -100,6 +100,14 @@ pub struct Milestone {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pr_base: Option<String>,
 
+    /// GitHub pull request number, set after successful PR creation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pr_number: Option<u64>,
+
+    /// GitHub pull request URL, set after successful PR creation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pr_url: Option<String>,
+
     /// When this milestone record was first created.
     pub created_at: DateTime<Utc>,
 
@@ -145,6 +153,8 @@ mod tests {
             depends_on: vec!["auth-foundation".to_string()],
             pr_branch: Some("feat/my-feature".to_string()),
             pr_base: Some("main".to_string()),
+            pr_number: None,
+            pr_url: None,
             created_at: now,
             updated_at: now,
         };
@@ -178,6 +188,8 @@ mod tests {
             depends_on: vec![],
             pr_branch: None,
             pr_base: None,
+            pr_number: None,
+            pr_url: None,
             created_at: now,
             updated_at: now,
         };
@@ -190,6 +202,8 @@ mod tests {
         assert!(roundtripped.description.is_none());
         assert!(roundtripped.pr_branch.is_none());
         assert!(roundtripped.pr_base.is_none());
+        assert!(roundtripped.pr_number.is_none());
+        assert!(roundtripped.pr_url.is_none());
         assert!(roundtripped.chunks.is_empty());
         assert!(roundtripped.completed_chunks.is_empty());
         assert!(roundtripped.depends_on.is_empty());

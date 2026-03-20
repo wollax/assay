@@ -178,6 +178,8 @@ pub fn create_from_inputs(
         depends_on: vec![],
         pr_branch: None,
         pr_base: None,
+        pr_number: None,
+        pr_url: None,
         created_at: now,
         updated_at: now,
     };
@@ -248,6 +250,8 @@ pub fn create_milestone_from_params(
         depends_on: vec![],
         pr_branch: None,
         pr_base: None,
+        pr_number: None,
+        pr_url: None,
         created_at: now,
         updated_at: now,
     };

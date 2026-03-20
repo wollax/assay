@@ -2,7 +2,7 @@
 
 **Active Milestone:** M005 — Spec-Driven Development Core
 **Active Slice:** S04 — Gate-Gated PR Workflow
-**Active Task:** T01 — Extend Milestone type, update literals, write failing integration tests
+**Active Task:** T02 — Implement `assay-core::pr` module
 **Phase:** Executing
 **Last Updated:** 2026-03-20
 **Requirements Status:** 14 active (R045–R059 minus R042) · 39 validated (R039–R044 all validated) · 2 deferred · 4 out of scope
@@ -38,4 +38,4 @@ None.
 
 ## Next Action
 
-Execute T01: Extend Milestone type with pr_number/pr_url fields, update all struct literals (milestone_io.rs, cycle.rs, milestone.rs tests), regenerate milestone schema snapshot, write tests/pr.rs with 8 integration tests (red state expected — assay_core::pr doesn't exist yet).
+Execute T02: Implement `assay-core::pr` module — define `ChunkGateFailure`, `PrCreateResult`, `pr_check_milestone_gates`, and `pr_create_if_gates_pass` in `crates/assay-core/src/pr.rs`; add `pub mod pr;` to `lib.rs`. All 8 tests in `tests/pr.rs` must pass after T02.
