@@ -21,11 +21,13 @@ Collect all inputs from the user before creating anything, then create the miles
    - Show a summary of what will be created and ask the user to confirm before proceeding
 
 2. **Create the milestone:**
-   - Call `milestone_create` with `{ slug, name, description, chunks: [{ slug, name }, ...] }`
+   - Call `milestone_create` with `{ slug, name, description, chunks: [{ slug, name, criteria: [] }, ...] }`
+   - Pass `criteria: []` for each chunk here — specs are created per-chunk in Step 3
 
 3. **Create a spec for each chunk:**
-   - For each chunk, call `spec_create` with `{ slug: <chunk-slug>, name: <chunk-name>, milestone_slug: <milestone-slug>, criteria: [{ name, description }, ...] }`
-   - Use the criteria collected in the interview
+   - For each chunk, call `spec_create` with `{ slug: <chunk-slug>, name: <chunk-name>, milestone_slug: <milestone-slug>, criteria: ["<criterion 1>", "<criterion 2>", ...] }`
+   - Pass each criterion exactly as the user entered it — one plain string per criterion
+   - If `spec_create` returns `isError: true` (e.g. duplicate slug): tell the user which chunk failed and suggest a different slug. Do NOT silently continue to the next chunk.
 
 4. **Confirm results:**
    - Report the created milestone slug and name

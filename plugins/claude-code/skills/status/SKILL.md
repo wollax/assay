@@ -28,6 +28,6 @@ Keep output concise — one short block is enough. Example:
 
 ```
 Milestone: my-feature (my-feature)
-Phase:     Execute
+Phase:     in_progress
 Chunk:     auth-layer  (1 of 3 complete)
 ```

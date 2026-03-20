@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Stop hook: cycle-aware gate check — replaces stop-gate-check.sh.
 #
-# Extends the original 7-guard pattern with cycle-aware gate evaluation:
+# Extends the original 5-guard pattern with cycle-aware gate evaluation:
 # instead of always running `gate run --all`, it discovers incomplete chunk
 # slugs from `assay milestone status` and runs per-chunk gate checks.
 # Falls back to `gate run --all` when no active milestone exists.
@@ -49,12 +49,27 @@ fi
 
 cd "$CWD" || exit 0
 
-# Cycle detection: find incomplete chunk slugs from active milestone
-# Format: "  [ ] chunk-slug  (active)" — extract second field (the slug)
-ACTIVE_CHUNKS=$(assay milestone status 2>/dev/null | grep '\[ \]' | awk '{print $2}')
+# Cycle detection: find incomplete chunk slugs from active milestone.
+# Format: "  [ ] chunk-slug  (active)" — extract third field (the slug).
+# Capture stderr to surface errors rather than silently falling back.
+MILESTONE_STATUS_ERR=$(mktemp)
+MILESTONE_STATUS_OUT=$(assay milestone status 2>"$MILESTONE_STATUS_ERR")
+MILESTONE_STATUS_EXIT=$?
+if [ "$MILESTONE_STATUS_EXIT" -ne 0 ]; then
+  STDERR_CONTENT=$(cat "$MILESTONE_STATUS_ERR" | head -c 300)
+  rm -f "$MILESTONE_STATUS_ERR"
+  jq -n --arg err "$STDERR_CONTENT" '{
+    decision: "block",
+    reason: ("Could not determine active milestone (assay milestone status failed): " + $err + " Run `assay milestone status` manually to diagnose.")
+  }'
+  exit 0
+fi
+rm -f "$MILESTONE_STATUS_ERR"
+ACTIVE_CHUNKS=$(echo "$MILESTONE_STATUS_OUT" | grep '\[ \]' | awk '{print $3}')
 
 FAILED_COUNT=0
 BLOCKING_CHUNKS=""
+FALLBACK_MODE=false
 
 if [ -n "$ACTIVE_CHUNKS" ]; then
   # Cycle-aware: run gate check per incomplete chunk
@@ -67,7 +82,7 @@ if [ -n "$ACTIVE_CHUNKS" ]; then
     if [ "$GATE_EXIT" -ne 0 ]; then
       CHUNK_FAILED=$(echo "$GATE_OUTPUT" | jq '[.[] | .failed] | add // 0' 2>/dev/null)
       if ! [[ "$CHUNK_FAILED" =~ ^[0-9]+$ ]]; then
-        # JSON parse failed for this chunk
+        # JSON parse failed — gate runner crashed or produced non-JSON output
         STDERR_CONTENT=$(cat "$GATE_STDERR" 2>/dev/null | head -c 300)
         rm -f "$GATE_STDERR"
         if [ -n "$STDERR_CONTENT" ]; then
@@ -81,7 +96,15 @@ if [ -n "$ACTIVE_CHUNKS" ]; then
             reason: ("Gate check for chunk \($chunk) failed unexpectedly. Run `assay gate run \($chunk)` manually to diagnose.")
           }'
         fi
+        exit 0
+      fi
+      if [ "$CHUNK_FAILED" -eq 0 ]; then
+        # Gate runner exited non-zero but reported 0 failures — tool error, not gate failure
         rm -f "$GATE_STDERR"
+        jq -n --arg chunk "$chunk" '{
+          decision: "block",
+          reason: ("Gate check for chunk \($chunk) exited with an error but reported 0 failures. Run `assay gate run \($chunk)` manually to diagnose.")
+        }'
         exit 0
       fi
       FAILED_COUNT=$((FAILED_COUNT + CHUNK_FAILED))
@@ -95,6 +118,7 @@ if [ -n "$ACTIVE_CHUNKS" ]; then
   done <<< "$ACTIVE_CHUNKS"
 else
   # No active milestone — fall back to gate run --all
+  FALLBACK_MODE=true
   GATE_STDERR=$(mktemp)
   GATE_OUTPUT=$(assay gate run --all --json 2>"$GATE_STDERR")
   GATE_EXIT=$?
@@ -117,7 +141,6 @@ else
       fi
       exit 0
     fi
-    BLOCKING_CHUNKS="(all)"
   fi
   rm -f "$GATE_STDERR"
 fi
@@ -127,18 +150,28 @@ if [ "$FAILED_COUNT" -eq 0 ]; then
   exit 0
 fi
 
+# Build failure detail message — different for cycle-aware vs fallback paths
+if [ "$FALLBACK_MODE" = "true" ]; then
+  BLOCK_DETAIL="across all specs (no active milestone). Run \`assay gate run --all\` to review."
+  WARN_DETAIL="across all specs (no active milestone)"
+else
+  FIRST_CHUNK=$(echo "$BLOCKING_CHUNKS" | cut -d',' -f1 | tr -d ' ')
+  BLOCK_DETAIL="in chunks: ${BLOCKING_CHUNKS}. Run \`/assay:gate-check ${FIRST_CHUNK}\` to diagnose the first failing chunk, or \`/assay:next-chunk\` for active chunk context."
+  WARN_DETAIL="in chunks: ${BLOCKING_CHUNKS}"
+fi
+
 # Gates failed — action depends on mode
 if [ "$MODE" = "warn" ]; then
-  jq -n --arg count "$FAILED_COUNT" --arg chunks "$BLOCKING_CHUNKS" '{
-    systemMessage: "Warning: quality gates are failing (\($count) criteria) in chunks: \($chunks). Run /assay:gate-check to review."
+  jq -n --arg count "$FAILED_COUNT" --arg detail "$WARN_DETAIL" '{
+    systemMessage: "Warning: quality gates are failing (\($count) criteria) \($detail). Fix before completing."
   }'
   exit 0
 fi
 
 # Enforce mode (default): block the stop, naming the blocking chunks
-jq -n --arg count "$FAILED_COUNT" --arg chunks "$BLOCKING_CHUNKS" '{
+jq -n --arg count "$FAILED_COUNT" --arg detail "$BLOCK_DETAIL" '{
   decision: "block",
-  reason: "Quality gates are failing (\($count) criteria) in chunks: \($chunks). Run /assay:gate-check \($chunks) or /assay:next-chunk for details and fix the failing criteria before completing."
+  reason: "Quality gates are failing (\($count) criteria) \($detail)"
 }'
 
 exit 0
