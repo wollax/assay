@@ -4,31 +4,30 @@ This project uses Assay for spec-driven development with quality gates.
 
 ## Workflow
 
-1. **Read the spec first.** Before writing code, always read the relevant spec:
-   - Use `/assay:spec-show <spec-name>` to see all criteria
-   - Understand what "done" means before starting
+Plan a milestone with `/assay:plan` (guides you through goal, chunks, and criteria). Work through chunks using `/assay:next-chunk` to see the active chunk's criteria and gate status. Run `/assay:gate-check` after implementing to verify criteria. When all chunk gates pass, call `cycle_advance` to move to the next chunk. When all chunks are complete, open a PR with `assay pr create <milestone-slug>`.
 
-2. **Implement against criteria.** Each criterion in the spec defines a verifiable requirement. Write code that satisfies each one.
+## Skills
 
-3. **Verify with gates.** After making changes, run the quality gates:
-   - Use `/assay:gate-check <spec-name>` to run all executable criteria
-   - Fix any failures before moving on
-
-4. **Iterate until all gates pass.** Do not consider work complete until all quality gates pass.
-
-## Commands
-
-| Command | Description |
+| Skill | Description |
 | --- | --- |
 | `/assay:spec-show [name]` | Display a spec's criteria and details |
 | `/assay:gate-check [name]` | Run quality gates and report results |
+| `/assay:plan` | Interview-first milestone creation (chunks + criteria) |
+| `/assay:status` | Show active milestone, phase, chunk, and progress |
+| `/assay:next-chunk` | Show active chunk's criteria and gate status |
 
 ## MCP Tools
 
-The Assay MCP server provides these tools directly:
-
 | Tool | Description |
 | --- | --- |
-| `spec_list` | Discover available specs in the project |
-| `spec_get` | Get a spec's full definition with all criteria |
-| `gate_run` | Run quality gates for a spec and get pass/fail results |
+| `spec_list` | List all specs in the project |
+| `spec_get` | Get a spec's full definition with criteria |
+| `gate_run` | Run quality gates for a spec |
+| `milestone_list` | List all milestones |
+| `milestone_get` | Get milestone details |
+| `milestone_create` | Create a new milestone with chunks |
+| `spec_create` | Create a spec with criteria for a chunk |
+| `cycle_status` | Get active milestone, phase, and chunk |
+| `cycle_advance` | Advance to the next chunk when gates pass |
+| `chunk_status` | Get gate pass/fail summary for a chunk |
+| `pr_create` | Create a PR for a completed milestone |
