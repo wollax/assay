@@ -89,7 +89,7 @@ This slice is pure plugin content — it surfaces the observability already buil
 
 ## Tasks
 
-- [ ] **T01: Write plan/status/next-chunk skill files and update CLAUDE.md** `est:45m`
+- [x] **T01: Write plan/status/next-chunk skill files and update CLAUDE.md** `est:45m`
   - Why: Creates the three new skills and updates the workflow guide — the visible user-facing surface of the entire M005 upgrade for Claude Code users
   - Files: `plugins/claude-code/skills/plan/SKILL.md`, `plugins/claude-code/skills/status/SKILL.md`, `plugins/claude-code/skills/next-chunk/SKILL.md`, `plugins/claude-code/CLAUDE.md`
   - Do: Create `plan/` subdirectory under skills; write `plan/SKILL.md` with interview-first steps (Step 1: collect goal, Step 2: collect chunks+criteria, Step 3: call `milestone_create` + `spec_create` per chunk, Step 4: confirm and advance); create `status/SKILL.md` calling `cycle_status` with both active and `{"active":false}` handling; create `next-chunk/SKILL.md` calling `cycle_status` → `chunk_status` → `spec_get` chain with null `active_chunk_slug` guard (tell user to run `assay pr create`); rewrite `CLAUDE.md` to include 5-skill command table + all 11 MCP tools table + 1-paragraph workflow summary; keep ≤50 lines

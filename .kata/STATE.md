@@ -2,7 +2,7 @@
 
 **Active Milestone:** M005 — Spec-Driven Development Core
 **Active Slice:** S05 — Claude Code Plugin Upgrade
-**Active Task:** T01 — Write plan/status/next-chunk skill files and update CLAUDE.md
+**Active Task:** T02 — Write cycle-stop-check.sh, post-tool-use.sh, update hooks.json and plugin.json
 **Phase:** Executing
 **Last Updated:** 2026-03-20
 **Requirements Status:** 12 active (R047–R059) · 41 validated (R039–R046 all validated) · 2 deferred · 4 out of scope
@@ -38,4 +38,4 @@ None.
 
 ## Next Action
 
-Execute T01: Write `plugins/claude-code/skills/plan/SKILL.md`, `status/SKILL.md`, `next-chunk/SKILL.md`, and rewrite `CLAUDE.md`. See S05-PLAN.md for full task contract.
+Execute T02: Write `plugins/claude-code/scripts/cycle-stop-check.sh` (cycle-aware Stop hook with 7 safety guards), `plugins/claude-code/scripts/post-tool-use.sh` (active-chunk reminder), update `hooks/hooks.json` to reference cycle-stop-check.sh, bump plugin.json to 0.5.0. See S05-PLAN.md T02 task plan.
