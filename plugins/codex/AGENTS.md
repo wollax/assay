@@ -20,6 +20,7 @@ This project uses Assay for spec-driven development with quality gates. Each fea
 | `spec_get` | Get a spec's full definition and criteria |
 | `gate_run` | Run quality gates for a spec |
 | `cycle_status` | Get active milestone progress (`{"active":false}` if none) |
+| `cycle_advance` | Advance the active chunk and move to the next |
 | `chunk_status` | Get gate results for a specific chunk |
 | `milestone_list` | List all milestones |
 | `milestone_create` | Create a new milestone with chunks |
@@ -31,4 +32,5 @@ This project uses Assay for spec-driven development with quality gates. Each fea
 2. **Read:** Run `/assay:next-chunk` to see the active chunk and its criteria
 3. **Implement:** Write code that satisfies each criterion
 4. **Gate-check:** Run `/assay:gate-check <chunk-slug>` — fix any failures
-5. **Advance:** When all gates pass, commit and open a PR; repeat from step 2
+5. **Advance:** When all gates pass, call `cycle_advance` to mark the chunk complete; repeat from step 2
+6. **PR:** When all chunks are done, commit and open a PR

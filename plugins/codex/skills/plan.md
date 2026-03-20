@@ -51,7 +51,7 @@ Call `milestone_create` with:
 - `slug` — confirmed milestone slug
 - `name` — milestone name
 - `description` — the goal from Step 1
-- `chunks` — array of `{ slug, name, criteria: [String] }` for every chunk
+- `chunks` — array of `{ slug, name }` for every chunk (criteria are provided separately via `spec_create` in Step 6)
 
 ### Step 6 — Create specs for each chunk
 

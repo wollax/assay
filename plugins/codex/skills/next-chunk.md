@@ -18,6 +18,9 @@ Load the active chunk and display its complete criteria so implementation can be
      Then stop.
 
 2. **Call `chunk_status` with the `active_chunk_slug`:**
+   - If `active_chunk_slug` is `null`, all chunks are complete — print:
+     "All chunks complete. Call `cycle_advance` to advance the milestone to Verify."
+     Then stop.
    - If `has_history` is `false`, note: "No gate runs yet for this chunk."
    - If `has_history` is `true`, show the latest pass/fail/required_failed counts.
 

@@ -20,6 +20,9 @@ Display a concise overview of the active milestone, chunk completion, and latest
 
 2. **Call `chunk_status` for the active chunk:**
    - Use the `active_chunk_slug` field from the `cycle_status` response
+   - If `active_chunk_slug` is `null`, all chunks are complete — print:
+     "All chunks complete — call `cycle_advance` to transition to Verify phase."
+     Then stop.
    - If `has_history` is `false`, note: "No gate runs yet — implement the chunk then run `/assay:gate-check <chunk-slug>`"
 
 3. **Display the overview:**
@@ -33,7 +36,7 @@ Display a concise overview of the active milestone, chunk completion, and latest
 Use a concise table or short bulleted list. Example:
 
 ```
-Milestone:     auth-layer (InProgress)
+Milestone:     Auth Layer (InProgress)
 Progress:      2 / 5 chunks complete
 Active chunk:  login
 Gate status:   3 passed, 1 failed (1 required)
