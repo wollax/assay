@@ -72,7 +72,7 @@ done
 
 ## Tasks
 
-- [ ] **T01: Write AGENTS.md and all 5 skill files** `est:45m`
+- [x] **T01: Write AGENTS.md and all 5 skill files** `est:45m`
   - Why: S06 is a pure content slice — all 6 files are independent markdown artifacts designed in a single authoring pass using the confirmed MCP tool signatures from S01–S03
   - Files: `plugins/codex/AGENTS.md`, `plugins/codex/skills/gate-check.md`, `plugins/codex/skills/spec-show.md`, `plugins/codex/skills/cycle-status.md`, `plugins/codex/skills/next-chunk.md`, `plugins/codex/skills/plan.md`
   - Do: (1) Remove `.gitkeep`; (2) Write `AGENTS.md` first — ≤60 lines, three tables (skills, MCP tools, workflow steps), modeled on `plugins/claude-code/CLAUDE.md`; (3) Write `gate-check.md` — port from `plugins/claude-code/skills/gate-check/SKILL.md`, add frontmatter, preserve `spec_list`+`gate_run` logic; (4) Write `spec-show.md` — port from `plugins/claude-code/skills/spec-show/SKILL.md`, add frontmatter, preserve `spec_list`+`spec_get` logic; (5) Write `cycle-status.md` — calls `cycle_status` (overview), then `chunk_status` for active chunk, handles `{"active":false}` by suggesting `/assay:plan`; (6) Write `next-chunk.md` — calls `cycle_status` first, then `chunk_status` for gate detail, then `spec_get` for criteria; handles `has_history:false` gracefully; (7) Write `plan.md` — strict interview-first: collect (a) milestone goal/name/slug, (b) chunk list with slugs+names, (c) criteria per chunk — only THEN call `milestone_create` followed by `spec_create` per chunk; mention that generated specs need manual `cmd` editing before gates run

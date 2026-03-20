@@ -1,5 +1,34 @@
 # Assay — Codex Agent Instructions
 
-You are working within the Assay development kit. Assay provides spec-driven workflows with gated quality checks and reviews.
+This project uses Assay for spec-driven development with quality gates. Each feature is defined as a spec with verifiable criteria; gates run commands to confirm the criteria are met. During an active milestone, work advances one chunk at a time through a structured cycle.
 
-Follow the project's spec-driven workflow: read the spec, implement against it, and ensure all quality gates pass before marking work complete.
+## Skills
+
+| Command | Description |
+| --- | --- |
+| `/assay:gate-check [spec]` | Run quality gates and report pass/fail results |
+| `/assay:spec-show [spec]` | Display a spec's criteria before implementing |
+| `/assay:cycle-status` | Overview of the active milestone and chunk progress |
+| `/assay:next-chunk` | Detail view of the active chunk with full criteria list |
+| `/assay:plan` | Interview-guided creation of a new milestone and specs |
+
+## MCP Tools
+
+| Tool | Description |
+| --- | --- |
+| `spec_list` | List all specs in the project |
+| `spec_get` | Get a spec's full definition and criteria |
+| `gate_run` | Run quality gates for a spec |
+| `cycle_status` | Get active milestone progress (`{"active":false}` if none) |
+| `chunk_status` | Get gate results for a specific chunk |
+| `milestone_list` | List all milestones |
+| `milestone_create` | Create a new milestone with chunks |
+| `spec_create` | Create a spec for a chunk with criteria |
+
+## Workflow
+
+1. **Plan:** Run `/assay:plan` to define a milestone and its chunks
+2. **Read:** Run `/assay:next-chunk` to see the active chunk and its criteria
+3. **Implement:** Write code that satisfies each criterion
+4. **Gate-check:** Run `/assay:gate-check <chunk-slug>` — fix any failures
+5. **Advance:** When all gates pass, commit and open a PR; repeat from step 2
