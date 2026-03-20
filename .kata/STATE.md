@@ -2,8 +2,8 @@
 
 **Active Milestone:** M005 — Spec-Driven Development Core
 **Active Slice:** S04 — Gate-Gated PR Workflow
-**Active Task:** — (S04 not yet started)
-**Phase:** Planning
+**Active Task:** T01 — Extend Milestone type, update literals, write failing integration tests
+**Phase:** Executing
 **Last Updated:** 2026-03-20
 **Requirements Status:** 14 active (R045–R059 minus R042) · 39 validated (R039–R044 all validated) · 2 deferred · 4 out of scope
 **Test Count:** 1320+ (all passing)
@@ -26,11 +26,11 @@
 
 ## Recent Decisions
 
+- D079: S04 test-first — tests/pr.rs written in T01 (red) before assay-core::pr exists in T02
+- D078: ChunkGateFailure and PrCreateResult are local types in assay-core::pr (D073 pattern)
+- D077: pr_create_if_gates_pass uses `gh --json number,url` for stable structured output
 - D076: create_spec_from_params criteria as Vec<String> (descriptions only, no cmd; known limitation)
 - D075: WizardChunkInput slug is caller-provided, not auto-derived
-- D074: Test-first contract overrides plan API shapes for wizard
-- D073: ChunkStatusResponse is a local struct in server.rs (D051 pattern)
-- D072: cycle_advance CLI error exits code 1 via eprintln, not anyhow propagation
 
 ## Blockers
 
@@ -38,4 +38,4 @@ None.
 
 ## Next Action
 
-Begin S04: Gate-Gated PR Workflow. Implement `assay pr create <milestone-slug>` CLI command that checks all chunk gates pass, then calls `gh pr create`. Implement `pr_create` MCP tool. Store PR number/URL in milestone TOML. (R045, R046)
+Execute T01: Extend Milestone type with pr_number/pr_url fields, update all struct literals (milestone_io.rs, cycle.rs, milestone.rs tests), regenerate milestone schema snapshot, write tests/pr.rs with 8 integration tests (red state expected — assay_core::pr doesn't exist yet).
