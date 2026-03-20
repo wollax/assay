@@ -2,7 +2,7 @@
 
 **Active Milestone:** M006 — TUI as Primary Surface
 **Active Slice:** S02 — In-TUI Authoring Wizard
-**Active Task:** T02 — Implement WizardState state machine and make integration test green
+**Active Task:** T03 — Implement draw_wizard rendering function
 **Phase:** Executing
 **Last Updated:** 2026-03-20
 **Requirements Status:** 10 active (R049–R059) · 43 validated (R001–R048) · 2 deferred · 4 out of scope
@@ -39,4 +39,4 @@ None.
 
 ## Next Action
 
-Execute M006/S02/T02: Implement full WizardState state machine (step routing, Enter/Backspace/Esc/Char handling, dynamic field allocation, Submit assembly) in `crates/assay-tui/src/wizard.rs` to make `wizard_round_trip` integration test green.
+Execute M006/S02/T03: Implement `draw_wizard` rendering function (ratatui popup via Clear + Flex::Center, slug preview, inline error, cursor positioning).
