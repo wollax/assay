@@ -1,9 +1,9 @@
 # Kata State
 
 **Active Milestone:** M005 — Spec-Driven Development Core
-**Active Slice:** S05 — Claude Code Plugin Upgrade
-**Active Task:** (not started)
-**Phase:** Planning
+**Active Slice:** S06 — Codex Plugin
+**Active Task:** T01 — Write AGENTS.md and all 5 skill files
+**Phase:** Planning → Executing
 **Last Updated:** 2026-03-20
 **Requirements Status:** 12 active (R047–R059) · 41 validated (R039–R046 all validated) · 2 deferred · 4 out of scope
 **Test Count:** 1331 (all passing)
@@ -38,4 +38,4 @@ None.
 
 ## Next Action
 
-Start S05: Claude Code Plugin Upgrade. Depends on S01–S04. Read S04-SUMMARY.md and S03-SUMMARY.md for context on new MCP tools before planning.
+S06 (Codex Plugin) is planned. Execute T01: write AGENTS.md and all 5 skill files (pure markdown, no Rust). Verify with grep assertions in S06-PLAN.md, then commit.
