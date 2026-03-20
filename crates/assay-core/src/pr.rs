@@ -231,7 +231,7 @@ pub fn pr_create_if_gates_pass(
         args.push(b.to_string());
     }
 
-    // ── Step 7: Run gh ────────────────────────────────────────────────────
+    // ── Step 6: Run gh ────────────────────────────────────────────────────
     let output = Command::new("gh")
         .args(&args)
         .current_dir(working_dir)
@@ -242,32 +242,56 @@ pub fn pr_create_if_gates_pass(
             source: io::Error::new(e.kind(), format!("failed to spawn gh: {e}")),
         })?;
 
-    // ── Step 8: Check exit status ─────────────────────────────────────────
+    // ── Step 7: Check exit status ─────────────────────────────────────────
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let stdout_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let detail = if !stderr.is_empty() {
+            stderr
+        } else if !stdout_str.is_empty() {
+            format!("(stderr empty; stdout: {stdout_str})")
+        } else {
+            format!("gh exited with status {}", output.status)
+        };
         return Err(AssayError::Io {
             operation: "gh pr create".to_string(),
             path: std::path::PathBuf::from(milestone_slug),
-            source: io::Error::other(stderr),
+            source: io::Error::other(format!("exit status {}: {detail}", output.status)),
         });
     }
 
     // ── Step 8: Parse JSON response ───────────────────────────────────────
     let (pr_number, pr_url) = parse_gh_output(&output.stdout, milestone_slug)?;
 
-    // ── Step 9: Reload and mutate milestone ───────────────────────────────
-    let mut milestone = milestone_load(assay_dir, milestone_slug)?;
-    milestone.pr_number = Some(pr_number);
-    milestone.pr_url = Some(pr_url.clone());
-    milestone.updated_at = Utc::now();
+    // ── Steps 9-11: Reload, mutate, and save milestone ───────────────────
+    // If any step fails after the PR is created, include the PR details so
+    // the user can recover by manually updating the milestone TOML.
+    let save_result = (|| -> Result<()> {
+        // ── Step 9: Reload and mutate milestone ───────────────────────────
+        let mut milestone = milestone_load(assay_dir, milestone_slug)?;
+        milestone.pr_number = Some(pr_number);
+        milestone.pr_url = Some(pr_url.clone());
+        milestone.updated_at = Utc::now();
 
-    // ── Step 10: Transition Verify → Complete if applicable ───────────────
-    if milestone.status == MilestoneStatus::Verify {
-        milestone_phase_transition(&mut milestone, MilestoneStatus::Complete)?;
+        // ── Step 10: Transition Verify → Complete if applicable ───────────
+        if milestone.status == MilestoneStatus::Verify {
+            milestone_phase_transition(&mut milestone, MilestoneStatus::Complete)?;
+        }
+
+        // ── Step 11: Save ─────────────────────────────────────────────────
+        milestone_save(assay_dir, &milestone)
+    })();
+
+    if let Err(e) = save_result {
+        return Err(AssayError::Io {
+            operation: "pr_create_if_gates_pass".to_string(),
+            path: std::path::PathBuf::from(milestone_slug),
+            source: io::Error::other(format!(
+                "PR #{pr_number} was created at {pr_url} but milestone TOML update failed: {e}. \
+                 Add pr_number = {pr_number} and pr_url = \"{pr_url}\" to the milestone TOML manually."
+            )),
+        });
     }
-
-    // ── Step 11: Save ─────────────────────────────────────────────────────
-    milestone_save(assay_dir, &milestone)?;
 
     Ok(PrCreateResult { pr_number, pr_url })
 }
@@ -276,8 +300,10 @@ pub fn pr_create_if_gates_pass(
 
 /// Parse the JSON output from `gh pr create --json number,url`.
 ///
-/// On parse failure, falls back to a defensive default: `pr_number = 0` and
-/// `pr_url = raw_stdout_trimmed`.
+/// Returns `Err(AssayError::Io)` for all missing or invalid fields — no
+/// silent defaults.  Both `number` (must be present and > 0) and `url`
+/// (must be a non-empty string) are required; absence of either is a hard
+/// error.
 fn parse_gh_output(stdout: &[u8], milestone_slug: &str) -> Result<(u64, String)> {
     let parsed: serde_json::Value = serde_json::from_slice(stdout).map_err(|e| AssayError::Io {
         operation: "pr_create_if_gates_pass".to_string(),
@@ -288,11 +314,29 @@ fn parse_gh_output(stdout: &[u8], milestone_slug: &str) -> Result<(u64, String)>
         ),
     })?;
 
-    let pr_number = parsed["number"].as_u64().unwrap_or(0);
+    let pr_number = parsed["number"]
+        .as_u64()
+        .filter(|&n| n > 0)
+        .ok_or_else(|| AssayError::Io {
+            operation: "pr_create_if_gates_pass".to_string(),
+            path: std::path::PathBuf::from(milestone_slug),
+            source: io::Error::new(
+                io::ErrorKind::InvalidData,
+                "gh JSON response missing or invalid 'number' field",
+            ),
+        })?;
+
     let pr_url = parsed["url"]
         .as_str()
         .map(|s| s.to_string())
-        .unwrap_or_else(|| String::from_utf8_lossy(stdout).trim().to_string());
+        .ok_or_else(|| AssayError::Io {
+            operation: "pr_create_if_gates_pass".to_string(),
+            path: std::path::PathBuf::from(milestone_slug),
+            source: io::Error::new(
+                io::ErrorKind::InvalidData,
+                "gh JSON response missing or invalid 'url' field",
+            ),
+        })?;
 
     Ok((pr_number, pr_url))
 }
