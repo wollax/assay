@@ -67,7 +67,7 @@ This milestone is complete only when all are true:
 - [x] **S05: Claude Code Plugin Upgrade** `risk:low` `depends:[S01,S02,S03,S04]`
   > After this: Claude Code users can `/assay:plan` to start the wizard, `/assay:status` to see cycle progress, and `/assay:next-chunk` to get the active chunk context; Stop hook reports incomplete chunks.
 
-- [ ] **S06: Codex Plugin** `risk:low` `depends:[S01,S02]`
+- [x] **S06: Codex Plugin** `risk:low` `depends:[S01,S02]`
   > After this: Codex users have AGENTS.md with the full workflow guide and 4 skills (gate-check, spec-show, cycle-status, plan) that make Assay's development cycle usable inside Codex.
 
 ## Boundary Map
