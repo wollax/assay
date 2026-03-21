@@ -21,7 +21,7 @@
 - [x] S01: App Scaffold, Dashboard, and Binary Fix `risk:high` — binary name fix (`assay-tui`), App+Screen enum, dashboard with real milestone data, no-project guard. R049. DONE.
 - [x] S02: In-TUI Authoring Wizard `risk:high` `depends:[S01]` — WizardState multi-step form, draw_wizard popup, App wiring (n/Cancel/Submit); 23 assay-tui tests + 1356 workspace tests green. R050. DONE.
 - [x] S03: Chunk Detail View and Spec Browser `risk:medium` `depends:[S01]` — MilestoneDetail + ChunkDetail screens with real data from assay-core; join_results criterion join; 6 spec_browser integration tests; R051 validated. DONE.
-- [ ] S04: Provider Configuration Screen `risk:medium` `depends:[S01]` — ProviderConfig type in assay-types (D056 pattern), settings screen, config_save, backward-compat. R052.
+- [ ] S04: Provider Configuration Screen `risk:medium` `depends:[S01]` — ProviderConfig type in assay-types (D056 pattern), settings screen, config_save, backward-compat. R052. **PLANNED** (T01–T03)
 - [ ] S05: Help Overlay, Status Bar, and Integration Polish `risk:low` `depends:[S01,S02,S03,S04]` — help overlay, status bar, just ready passes, full flow integration.
 
 ## Key Decisions Made During M006
@@ -38,6 +38,9 @@
 - D098: `..` pattern in draw() match arms avoids Screen-variant borrow-split; clone-then-mutate in handle_event() for slug reads before screen transition
 - D099: App-level detail_* fields for loaded data; preserves detail_list_state across Esc transitions
 - D100: Criterion join by exact name match; unmatched → None (Pending); linear scan acceptable at ≤15 criteria
+- D101: Settings screen uses `w` key to write/save (vim mnemonic); `Esc`/`q` cancel
+- D102: Settings screen is full-screen bordered block (not a popup like wizard)
+- D103: Save with no loaded config shows inline error; does not create a minimal config.toml
 
 ## Known Issues
 
