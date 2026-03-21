@@ -57,6 +57,7 @@ order = 1
     .unwrap();
 
     // Minimal GatesSpec with two criteria.
+    // Validation requires at least one criterion with a `cmd` or `path` field.
     std::fs::write(
         assay_dir.join("specs").join("c1").join("gates.toml"),
         r#"name = "c1"
@@ -64,6 +65,7 @@ order = 1
 [[criteria]]
 name = "first-criterion"
 description = "The first gate criterion"
+cmd = "true"
 
 [[criteria]]
 name = "second-criterion"
@@ -110,17 +112,11 @@ fn up_down_in_milestone_detail() {
     let root = setup_project(&tmp);
 
     // Add a second chunk to the milestone so there is something to move between.
-    let milestone_path = root
-        .join(".assay")
-        .join("milestones")
-        .join("alpha.toml");
+    let milestone_path = root.join(".assay").join("milestones").join("alpha.toml");
     let content = std::fs::read_to_string(&milestone_path).unwrap();
     std::fs::write(
         &milestone_path,
-        format!(
-            "{}\n[[chunks]]\nslug = \"c2\"\norder = 2\n",
-            content
-        ),
+        format!("{}\n[[chunks]]\nslug = \"c2\"\norder = 2\n", content),
     )
     .unwrap();
 

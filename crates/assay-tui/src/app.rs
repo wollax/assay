@@ -6,14 +6,16 @@
 
 use std::path::PathBuf;
 
+use assay_core::history;
 use assay_core::milestone::{milestone_load, milestone_scan};
+use assay_core::spec::{SpecEntry, load_spec_entry_with_diagnostics};
 use assay_core::wizard::create_from_inputs;
-use assay_types::{GateRunRecord, GatesSpec, Milestone, MilestoneStatus};
+use assay_types::{Criterion, GateRunRecord, GatesSpec, Milestone, MilestoneStatus};
 use crossterm::event::KeyCode;
 use ratatui::layout::{Constraint, Layout};
-use ratatui::style::{Style, Stylize};
+use ratatui::style::{Color, Style, Stylize};
 use ratatui::text::Line;
-use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph};
+use ratatui::widgets::{Block, Borders, Cell, List, ListItem, ListState, Paragraph, Row, Table};
 
 use crate::wizard::{WizardAction, WizardState, draw_wizard, handle_wizard_event};
 
@@ -33,7 +35,10 @@ pub enum Screen {
     /// Chunk list for a single milestone. `slug` identifies the milestone.
     MilestoneDetail { slug: String },
     /// Detail view for a single chunk within a milestone.
-    ChunkDetail { milestone_slug: String, chunk_slug: String },
+    ChunkDetail {
+        milestone_slug: String,
+        chunk_slug: String,
+    },
 }
 
 // ── App ───────────────────────────────────────────────────────────────────────
@@ -114,13 +119,20 @@ impl App {
             Screen::Wizard(state) => draw_wizard(frame, state),
             Screen::LoadError(msg) => draw_load_error(frame, msg),
             Screen::MilestoneDetail { .. } => {
-                draw_milestone_detail(frame, self.detail_milestone.as_ref(), &mut self.detail_list_state);
+                draw_milestone_detail(
+                    frame,
+                    self.detail_milestone.as_ref(),
+                    &mut self.detail_list_state,
+                );
             }
-            Screen::ChunkDetail { .. } => {
-                let area = frame.area();
-                frame.render_widget(
-                    Paragraph::new(Line::from("ChunkDetail (T03)").dim()),
-                    area,
+            Screen::ChunkDetail { chunk_slug, .. } => {
+                let slug = chunk_slug.clone();
+                draw_chunk_detail(
+                    frame,
+                    &slug,
+                    self.detail_spec.as_ref(),
+                    self.detail_spec_note.as_deref(),
+                    self.detail_run.as_ref(),
                 );
             }
         }
@@ -162,26 +174,28 @@ impl App {
                         }
                     }
                     KeyCode::Enter => {
-                        if let Some(idx) = self.list_state.selected() {
-                            if let Some(ms) = self.milestones.get(idx) {
-                                let slug = ms.slug.clone();
-                                let assay_dir = match &self.project_root {
-                                    Some(root) => root.join(".assay"),
-                                    None => return false,
-                                };
-                                match milestone_load(&assay_dir, &slug) {
-                                    Ok(loaded) => {
-                                        self.detail_list_state.select(
-                                            if loaded.chunks.is_empty() { None } else { Some(0) },
-                                        );
-                                        self.detail_milestone = Some(loaded);
-                                        self.screen = Screen::MilestoneDetail { slug };
-                                    }
-                                    Err(e) => {
-                                        self.screen = Screen::LoadError(format!(
-                                            "Failed to load milestone '{slug}': {e}"
-                                        ));
-                                    }
+                        if let Some(idx) = self.list_state.selected()
+                            && let Some(ms) = self.milestones.get(idx)
+                        {
+                            let slug = ms.slug.clone();
+                            let assay_dir = match &self.project_root {
+                                Some(root) => root.join(".assay"),
+                                None => return false,
+                            };
+                            match milestone_load(&assay_dir, &slug) {
+                                Ok(loaded) => {
+                                    self.detail_list_state.select(if loaded.chunks.is_empty() {
+                                        None
+                                    } else {
+                                        Some(0)
+                                    });
+                                    self.detail_milestone = Some(loaded);
+                                    self.screen = Screen::MilestoneDetail { slug };
+                                }
+                                Err(e) => {
+                                    self.screen = Screen::LoadError(format!(
+                                        "Failed to load milestone '{slug}': {e}"
+                                    ));
                                 }
                             }
                         }
@@ -192,7 +206,11 @@ impl App {
             }
 
             Screen::MilestoneDetail { .. } => {
-                let chunk_count = self.detail_milestone.as_ref().map(|m| m.chunks.len()).unwrap_or(0);
+                let chunk_count = self
+                    .detail_milestone
+                    .as_ref()
+                    .map(|m| m.chunks.len())
+                    .unwrap_or(0);
                 match key.code {
                     KeyCode::Esc => {
                         self.screen = Screen::Dashboard;
@@ -227,7 +245,43 @@ impl App {
                                 if let Some(chunk) = sorted_chunks.get(idx) {
                                     let milestone_slug = milestone.slug.clone();
                                     let chunk_slug = chunk.slug.clone();
-                                    self.screen = Screen::ChunkDetail { milestone_slug, chunk_slug };
+                                    let assay_dir = match &self.project_root {
+                                        Some(root) => root.join(".assay"),
+                                        None => return false,
+                                    };
+                                    let specs_dir = assay_dir.join("specs");
+                                    // Load spec entry.
+                                    match load_spec_entry_with_diagnostics(&chunk_slug, &specs_dir)
+                                    {
+                                        Ok(SpecEntry::Directory { gates, .. }) => {
+                                            self.detail_spec = Some(gates);
+                                            self.detail_spec_note = None;
+                                        }
+                                        Ok(SpecEntry::Legacy { .. }) => {
+                                            self.detail_spec = None;
+                                            self.detail_spec_note = Some(
+                                                "Legacy flat spec — criteria not available in this view"
+                                                    .to_string(),
+                                            );
+                                        }
+                                        Err(e) => {
+                                            self.detail_spec = None;
+                                            self.detail_spec_note =
+                                                Some(format!("Failed to load spec: {e}"));
+                                        }
+                                    }
+                                    // Load latest gate run (empty history is not an error).
+                                    self.detail_run = match history::list(&assay_dir, &chunk_slug) {
+                                        Ok(ids) if !ids.is_empty() => {
+                                            let run_id = ids.last().unwrap().clone();
+                                            history::load(&assay_dir, &chunk_slug, &run_id).ok()
+                                        }
+                                        _ => None,
+                                    };
+                                    self.screen = Screen::ChunkDetail {
+                                        milestone_slug,
+                                        chunk_slug,
+                                    };
                                 }
                             }
                         }
@@ -237,7 +291,9 @@ impl App {
                 false
             }
 
-            Screen::ChunkDetail { ref milestone_slug, .. } => {
+            Screen::ChunkDetail {
+                ref milestone_slug, ..
+            } => {
                 if key.code == KeyCode::Esc {
                     let slug = milestone_slug.clone();
                     self.screen = Screen::MilestoneDetail { slug };
@@ -437,7 +493,11 @@ fn draw_milestone_detail(
             let items: Vec<ListItem> = sorted_chunks
                 .iter()
                 .map(|chunk| {
-                    let icon = if ms.completed_chunks.contains(&chunk.slug) { "✓" } else { "·" };
+                    let icon = if ms.completed_chunks.contains(&chunk.slug) {
+                        "✓"
+                    } else {
+                        "·"
+                    };
                     ListItem::new(Line::from(format!("  {icon}  {}", chunk.slug)))
                 })
                 .collect();
@@ -453,8 +513,97 @@ fn draw_milestone_detail(
     }
 
     // Hint bar.
-    let hint =
-        Paragraph::new(Line::from("↑↓ navigate · Enter open chunk · Esc back").dim());
+    let hint = Paragraph::new(Line::from("↑↓ navigate · Enter open chunk · Esc back").dim());
+    frame.render_widget(hint, hint_area);
+}
+
+/// Join criteria from a spec with results from the latest gate run.
+///
+/// For each criterion: look it up by name in `run.summary.results`.
+/// - Not found → `(criterion, None)` (Pending)
+/// - Found with `result = Some(gate_result)` → `(criterion, Some(gate_result.passed))`
+/// - Found with `result = None` (skipped) → `(criterion, None)` (Pending/skipped)
+fn join_results<'a>(
+    criteria: &'a [Criterion],
+    run: Option<&'a GateRunRecord>,
+) -> Vec<(&'a Criterion, Option<bool>)> {
+    criteria
+        .iter()
+        .map(|criterion| {
+            let result = run
+                .and_then(|r| {
+                    r.summary
+                        .results
+                        .iter()
+                        .find(|cr| cr.criterion_name == criterion.name)
+                })
+                .and_then(|cr| cr.result.as_ref())
+                .map(|gate_result| gate_result.passed);
+            (criterion, result)
+        })
+        .collect()
+}
+
+/// Render the chunk detail screen with a table of criteria and their results.
+fn draw_chunk_detail(
+    frame: &mut ratatui::Frame,
+    chunk_slug: &str,
+    spec: Option<&GatesSpec>,
+    spec_note: Option<&str>,
+    run: Option<&GateRunRecord>,
+) {
+    let area = frame.area();
+
+    let [title_area, table_area, hint_area] = Layout::vertical([
+        Constraint::Length(1),
+        Constraint::Fill(1),
+        Constraint::Length(1),
+    ])
+    .areas(area);
+
+    // Title bar.
+    let title = Paragraph::new(Line::from(format!("  {chunk_slug}  — Criteria")).bold());
+    frame.render_widget(title, title_area);
+
+    // Table or message.
+    if let Some(gs) = spec {
+        let joined = join_results(&gs.criteria, run);
+        let rows: Vec<Row> = joined
+            .iter()
+            .map(|(criterion, result_opt)| {
+                let (icon, icon_style) = match result_opt {
+                    Some(true) => ("✓", Style::default().fg(Color::Green)),
+                    Some(false) => ("✗", Style::default().fg(Color::Red)),
+                    None => ("?", Style::default().dim()),
+                };
+                Row::new(vec![
+                    Cell::from(icon).style(icon_style),
+                    Cell::from(criterion.name.as_str()),
+                    Cell::from(criterion.description.as_str()),
+                ])
+            })
+            .collect();
+
+        let widths = [
+            Constraint::Length(3),
+            Constraint::Length(24),
+            Constraint::Fill(1),
+        ];
+        let table = Table::new(rows, widths).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(format!(" {} criteria ", gs.name)),
+        );
+        frame.render_widget(table, table_area);
+    } else {
+        let msg = spec_note.unwrap_or("No spec data");
+        let paragraph =
+            Paragraph::new(Line::from(msg).dim()).block(Block::default().borders(Borders::ALL));
+        frame.render_widget(paragraph, table_area);
+    }
+
+    // Hint bar.
+    let hint = Paragraph::new(Line::from("Esc back").dim());
     frame.render_widget(hint, hint_area);
 }
 
