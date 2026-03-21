@@ -7,7 +7,7 @@
 use std::path::PathBuf;
 
 use assay_core::history;
-use assay_core::milestone::{milestone_load, milestone_scan};
+use assay_core::milestone::{cycle_status, milestone_load, milestone_scan};
 use assay_core::spec::{SpecEntry, load_spec_entry_with_diagnostics};
 use assay_core::wizard::create_from_inputs;
 use assay_types::{Criterion, GateRunRecord, GatesSpec, Milestone, MilestoneStatus};
@@ -63,6 +63,11 @@ pub struct App {
     pub detail_spec_note: Option<String>,
     /// Latest gate run record (`None` if no history exists).
     pub detail_run: Option<GateRunRecord>,
+    /// Whether the help overlay is currently visible.
+    pub show_help: bool,
+    /// Slug of the currently active (InProgress) milestone, or `None` when no
+    /// milestone is in progress.  Used by the status bar renderer.
+    pub cycle_slug: Option<String>,
 }
 
 impl App {
@@ -76,21 +81,27 @@ impl App {
     /// Pass `Some(root)` to point at a specific directory (useful for tests).
     /// Pass `None` to start on the `NoProject` screen.
     pub fn with_project_root(project_root: Option<PathBuf>) -> color_eyre::Result<Self> {
-        let (screen, milestones) = if let Some(ref root) = project_root {
+        let (screen, milestones, cycle_slug) = if let Some(ref root) = project_root {
             let assay_dir = root.join(".assay");
             match milestone_scan(&assay_dir) {
-                Ok(milestones) => (Screen::Dashboard, milestones),
+                Ok(milestones) => {
+                    let slug = cycle_status(&assay_dir)
+                        .ok()
+                        .flatten()
+                        .map(|cs| cs.milestone_slug);
+                    (Screen::Dashboard, milestones, slug)
+                }
                 Err(e) => {
                     let msg = format!(
                         "Could not read milestones from {}: {e}\n\
                          Check file permissions and TOML syntax in .assay/milestones/",
                         assay_dir.display()
                     );
-                    (Screen::LoadError(msg), vec![])
+                    (Screen::LoadError(msg), vec![], None)
                 }
             }
         } else {
-            (Screen::NoProject, vec![])
+            (Screen::NoProject, vec![], None)
         };
 
         let mut list_state = ListState::default();
@@ -108,6 +119,8 @@ impl App {
             detail_spec: None,
             detail_spec_note: None,
             detail_run: None,
+            show_help: false,
+            cycle_slug,
         })
     }
 
@@ -339,6 +352,10 @@ impl App {
                                 match milestone_scan(&assay_dir) {
                                     Ok(loaded) => {
                                         self.milestones = loaded;
+                                        self.cycle_slug = cycle_status(&assay_dir)
+                                            .ok()
+                                            .flatten()
+                                            .map(|cs| cs.milestone_slug);
                                         let idx = self
                                             .milestones
                                             .iter()
