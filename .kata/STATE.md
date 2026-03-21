@@ -1,12 +1,12 @@
 # Kata State
 
 **Active Milestone:** M006 — TUI as Primary Surface
-**Active Slice:** S04 — Provider Configuration Screen
+**Active Slice:** S05 — Help Overlay, Status Bar, and Integration Polish
 **Active Task:** T01 (not yet started)
 **Phase:** Planning
 **Last Updated:** 2026-03-21
 **Requirements Status:** 8 active (R052–R059) · 45 validated (R001–R051) · 2 deferred · 4 out of scope
-**Test Count:** 1371 (15 assay-tui + all prior; all passing)
+**Test Count:** 1371 (16 assay-tui + all prior; all passing)
 
 ## Completed Milestones
 
@@ -22,7 +22,7 @@
 - [x] S02: In-TUI Authoring Wizard `risk:high` `depends:[S01]` — WizardState multi-step form, draw_wizard popup, App wiring (n/Cancel/Submit); 23 assay-tui tests + 1356 workspace tests green. R050. DONE.
 - [x] S03: Chunk Detail View and Spec Browser `risk:medium` `depends:[S01]` — MilestoneDetail + ChunkDetail screens with real data from assay-core; join_results criterion join; 6 spec_browser integration tests; R051 validated. DONE.
 - [ ] S04: Provider Configuration Screen `risk:medium` `depends:[S01]` — ProviderConfig type in assay-types (D056 pattern), settings screen, config_save, backward-compat. R052. **PLANNED** (T01–T03)
-- [ ] S05: Help Overlay, Status Bar, and Integration Polish `risk:low` `depends:[S01,S02,S03,S04]` — help overlay, status bar, just ready passes, full flow integration.
+- [ ] S05: Help Overlay, Status Bar, and Integration Polish `risk:low` `depends:[S01,S02,S03,S04]` — help overlay, status bar, just ready passes, full flow integration. **PLANNED** (T01–T02)
 
 ## Key Decisions Made During M006
 
@@ -50,6 +50,12 @@
 
 None.
 
+## Key Decisions Made During M006 (continued)
+
+- D104: Help overlay event guard — all keys are no-ops when show_help=true except `?`/Esc to dismiss
+- D105: All draw_* accept explicit area: Rect; draw() splits frame.area() once into [content_area, status_area]
+- D106: App.cycle_slug cached on App; refreshed only at lifecycle transitions (wizard submit, settings save)
+
 ## Next Action
 
-S03 complete. Begin S04: Provider Configuration Screen. First task: add ProviderKind enum and ProviderConfig struct to assay-types following D056 pattern (serde default + skip_serializing_if + schema snapshot), extend Config.provider field, write backward-compat round-trip test, then scaffold Screen::Settings and draw_settings.
+S05 planned (T01–T02). S04 must complete before S05 can execute (S04 adds App.config, Screen::Settings, draw_settings — all consumed by S05). Begin S04 T01: ProviderKind/ProviderConfig types in assay-types + backward-compat tests + schema snapshot. Then S04 T02: config_save in assay-core. Then S04 T03: SettingsState, Screen::Settings, draw_settings, s/w/Esc wiring, settings_screen tests.
