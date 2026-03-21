@@ -57,7 +57,7 @@ This milestone is complete only when all are true:
 - [x] **S02: In-TUI Authoring Wizard** `risk:high` `depends:[S01]`
   > After this: pressing `n` from the dashboard opens a multi-step form (milestone name → chunk slugs/names → criteria per chunk); completing it calls `create_from_inputs` and the new milestone appears in the dashboard list immediately; proven by an integration test that writes real files to a tempdir
 
-- [ ] **S03: Chunk Detail View and Spec Browser** `risk:medium` `depends:[S01]`
+- [x] **S03: Chunk Detail View and Spec Browser** `risk:medium` `depends:[S01]`
   > After this: pressing Enter on a milestone shows its chunk list; pressing Enter on a chunk shows a detail pane with criteria descriptions and latest gate run result (pass/fail/pending) per criterion loaded from `assay-core::history`; breadcrumb nav and Esc return to parent screens
 
 - [ ] **S04: Provider Configuration Screen** `risk:medium` `depends:[S01]`

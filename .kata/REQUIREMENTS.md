@@ -512,14 +512,14 @@
 
 ### R051 — TUI spec browser
 - Class: primary-user-loop
-- Status: active
+- Status: validated
 - Description: The TUI allows navigation into any spec, displaying criteria, their descriptions, and the latest gate run result (pass/fail/pending) with evidence on demand.
 - Why it matters: Developers need to inspect what's being verified — the spec browser gives visibility into the gate criteria without reading raw TOML
 - Source: user
-- Primary owning slice: M006/S02
+- Primary owning slice: M006/S03
 - Supporting slices: M006/S01
-- Validation: unmapped
-- Notes: Reads from assay-core spec scan + gate history.
+- Validation: S03 — Dashboard→MilestoneDetail→ChunkDetail navigation with Esc chains; criteria table with ✓/✗/? icons joined from latest gate run via join_results; empty history renders as all Pending (not error); Legacy spec shows fallback message; 6 spec_browser integration tests all pass; just ready green
+- Notes: Evidence drill-down (raw gate output per criterion) deferred to M007. Live refresh deferred to M007.
 
 ### R052 — TUI provider configuration
 - Class: operability
@@ -709,7 +709,7 @@
 | R048 | differentiator | validated | M005/S06 | M005/S01, M005/S02 | S06 |
 | R049 | primary-user-loop | validated | M006/S01 | none | S01 |
 | R050 | primary-user-loop | validated | M006/S02 | M006/S01 | S02 |
-| R051 | primary-user-loop | active | M006/S02 | M006/S01 | mapped |
+| R051 | primary-user-loop | validated | M006/S03 | M006/S01 | S03 |
 | R052 | operability | active | M006/S03 | none | mapped |
 | R053 | core-capability | active | M007/S01 | M006/S01 | mapped |
 | R054 | core-capability | active | M007/S01 | M007/S02 | mapped |

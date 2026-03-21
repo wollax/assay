@@ -5,8 +5,8 @@
 **Active Task:** T01 (not yet started)
 **Phase:** Planning
 **Last Updated:** 2026-03-21
-**Requirements Status:** 9 active (R051–R059) · 44 validated (R001–R050) · 2 deferred · 4 out of scope
-**Test Count:** 1356 (all passing)
+**Requirements Status:** 8 active (R052–R059) · 45 validated (R001–R051) · 2 deferred · 4 out of scope
+**Test Count:** 1371 (15 assay-tui + all prior; all passing)
 
 ## Completed Milestones
 
@@ -20,7 +20,7 @@
 
 - [x] S01: App Scaffold, Dashboard, and Binary Fix `risk:high` — binary name fix (`assay-tui`), App+Screen enum, dashboard with real milestone data, no-project guard. R049. DONE.
 - [x] S02: In-TUI Authoring Wizard `risk:high` `depends:[S01]` — WizardState multi-step form, draw_wizard popup, App wiring (n/Cancel/Submit); 23 assay-tui tests + 1356 workspace tests green. R050. DONE.
-- [x] S03: Chunk Detail View and Spec Browser `risk:medium` `depends:[S01]` — milestone → chunk list → chunk detail with criteria and gate results. R051. DONE.
+- [x] S03: Chunk Detail View and Spec Browser `risk:medium` `depends:[S01]` — MilestoneDetail + ChunkDetail screens with real data from assay-core; join_results criterion join; 6 spec_browser integration tests; R051 validated. DONE.
 - [ ] S04: Provider Configuration Screen `risk:medium` `depends:[S01]` — ProviderConfig type in assay-types (D056 pattern), settings screen, config_save, backward-compat. R052.
 - [ ] S05: Help Overlay, Status Bar, and Integration Polish `risk:low` `depends:[S01,S02,S03,S04]` — help overlay, status bar, just ready passes, full flow integration.
 
@@ -34,7 +34,10 @@
 - D093: `config_save` free function in assay-core::config using NamedTempFile pattern
 - D094: ChunkCount digit validation uses replace-semantics; only '1'–'7' accepted, others silently ignored
 - D095: Combined bin+lib: app.rs in binary tree, wizard types accessed via `assay_tui::` lib path
-- D096: draw() renders Dashboard unconditionally first, overlays Wizard popup if Screen::Wizard (refactor needed in S03 for full-screen views)
+- D096: draw() renders Dashboard unconditionally first, overlays Wizard popup if Screen::Wizard (refactored in S03 to full match)
+- D098: `..` pattern in draw() match arms avoids Screen-variant borrow-split; clone-then-mutate in handle_event() for slug reads before screen transition
+- D099: App-level detail_* fields for loaded data; preserves detail_list_state across Esc transitions
+- D100: Criterion join by exact name match; unmatched → None (Pending); linear scan acceptable at ≤15 criteria
 
 ## Known Issues
 
@@ -46,4 +49,4 @@ None.
 
 ## Next Action
 
-S03 complete. Begin S04: Provider Configuration Screen. Read S04-PLAN.md (if it exists) or plan from M006-ROADMAP.md entry. First task: ProviderConfig type in assay-types (D056 pattern) + settings screen scaffold.
+S03 complete. Begin S04: Provider Configuration Screen. First task: add ProviderKind enum and ProviderConfig struct to assay-types following D056 pattern (serde default + skip_serializing_if + schema snapshot), extend Config.provider field, write backward-compat round-trip test, then scaffold Screen::Settings and draw_settings.
