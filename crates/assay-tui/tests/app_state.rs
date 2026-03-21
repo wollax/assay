@@ -49,6 +49,8 @@ fn make_app(milestones: Vec<Milestone>, selected: Option<usize>) -> App {
         project_root: None,
         config: None,
         show_help: false,
+        scan_error: None,
+        config_error: None,
     }
 }
 
@@ -82,6 +84,18 @@ fn navigate_down_wraps_to_first() {
 }
 
 #[test]
+fn navigate_down_from_no_selection_goes_to_first() {
+    let milestones = vec![fake_milestone("a", "Alpha"), fake_milestone("b", "Beta")];
+    let mut app = make_app(milestones, None);
+    handle_event(&mut app, key(KeyCode::Down));
+    assert_eq!(
+        app.list_state.selected(),
+        Some(0),
+        "Down from None should select index 0"
+    );
+}
+
+#[test]
 fn navigate_up_wraps_to_last() {
     let milestones = vec![
         fake_milestone("a", "Alpha"),
@@ -94,8 +108,24 @@ fn navigate_up_wraps_to_last() {
     assert_eq!(app.list_state.selected(), Some(last));
 }
 
+#[test]
+fn navigate_up_decrements_selection() {
+    let milestones = vec![
+        fake_milestone("a", "Alpha"),
+        fake_milestone("b", "Beta"),
+        fake_milestone("c", "Gamma"),
+    ];
+    let mut app = make_app(milestones, Some(2));
+    handle_event(&mut app, key(KeyCode::Up));
+    assert_eq!(
+        app.list_state.selected(),
+        Some(1),
+        "Up from index 2 should select index 1"
+    );
+}
+
 // ---------------------------------------------------------------------------
-// Quit test
+// Quit tests
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -103,6 +133,26 @@ fn quit_returns_false_from_dashboard() {
     let mut app = make_app(vec![], None);
     let result = handle_event(&mut app, key(KeyCode::Char('q')));
     assert!(!result, "handle_event should return false on 'q'");
+}
+
+#[test]
+fn quit_returns_false_from_no_project_screen() {
+    let mut app = make_app(vec![], None);
+    app.screen = Screen::NoProject;
+    assert!(
+        !handle_event(&mut app, key(KeyCode::Char('q'))),
+        "'q' should quit from NoProject screen"
+    );
+}
+
+#[test]
+fn quit_returns_false_from_milestone_detail() {
+    let mut app = make_app(vec![fake_milestone("m", "M")], Some(0));
+    app.screen = Screen::MilestoneDetail;
+    assert!(
+        !handle_event(&mut app, key(KeyCode::Char('q'))),
+        "'q' should quit from MilestoneDetail"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -121,6 +171,27 @@ fn enter_on_dashboard_transitions_to_milestone_detail() {
 }
 
 #[test]
+fn enter_on_dashboard_with_no_selection_does_not_transition() {
+    let milestones = vec![fake_milestone("m", "My Milestone")];
+    let mut app = make_app(milestones, None); // selection is None
+    handle_event(&mut app, key(KeyCode::Enter));
+    assert!(
+        matches!(app.screen, Screen::Dashboard),
+        "Enter without a selection should not leave Dashboard"
+    );
+}
+
+#[test]
+fn enter_on_dashboard_with_empty_milestones_does_not_transition() {
+    let mut app = make_app(vec![], None);
+    handle_event(&mut app, key(KeyCode::Enter));
+    assert!(
+        matches!(app.screen, Screen::Dashboard),
+        "Enter on an empty milestone list should not leave Dashboard"
+    );
+}
+
+#[test]
 fn esc_returns_to_dashboard_from_milestone_detail() {
     let milestones = vec![fake_milestone("m", "My Milestone")];
     let mut app = make_app(milestones, Some(0));
@@ -132,8 +203,19 @@ fn esc_returns_to_dashboard_from_milestone_detail() {
     );
 }
 
+#[test]
+fn esc_is_noop_on_dashboard() {
+    let mut app = make_app(vec![fake_milestone("m", "M")], Some(0));
+    let result = handle_event(&mut app, key(KeyCode::Esc));
+    assert!(result, "Esc on Dashboard should not quit (returns true)");
+    assert!(
+        matches!(app.screen, Screen::Dashboard),
+        "screen should remain Dashboard after Esc on Dashboard"
+    );
+}
+
 // ---------------------------------------------------------------------------
-// Empty-list guard test
+// Empty-list guard tests
 // ---------------------------------------------------------------------------
 
 #[test]

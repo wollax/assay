@@ -9,13 +9,12 @@ use ratatui::{
 };
 use std::path::PathBuf;
 
-/// Placeholder wizard state — real implementation comes in S02.
+/// Form state for the multi-step in-TUI milestone creation wizard.
 #[derive(Default)]
-pub struct WizardState {
-    // placeholder — real impl in S02
-}
+pub struct WizardState {}
 
 /// The active screen in the TUI.
+// stub variants (ChunkDetail, Settings, Wizard) are unused until S02–S04
 #[allow(dead_code)]
 pub enum Screen {
     Dashboard,
@@ -27,6 +26,14 @@ pub enum Screen {
 }
 
 /// Top-level application state.
+///
+/// `project_root` is the **parent of `.assay/`** (not the `.assay/` dir itself).
+/// Pass `project_root` to `config::load`; pass `project_root.join(".assay")` to
+/// `milestone_scan` — the two functions have different path contracts.
+///
+/// `config: None` means either no `.assay/config.toml` exists yet (normal on a
+/// fresh project) or the file was found but failed to parse. Distinguish the two
+/// via `config_error: Some(_)` (parse failure) vs `config_error: None` (not present).
 pub struct App {
     pub screen: Screen,
     pub milestones: Vec<Milestone>,
@@ -34,10 +41,26 @@ pub struct App {
     pub project_root: Option<PathBuf>,
     pub config: Option<Config>,
     pub show_help: bool,
+    /// Set when `milestone_scan` returns an error. Rendered in the dashboard so
+    /// the user knows their milestone data failed to load (not just "no milestones").
+    pub scan_error: Option<String>,
+    /// Set when `config.toml` exists but failed to parse (e.g. unknown field,
+    /// malformed TOML). `None` means the file doesn't exist yet, not that config is OK.
+    pub config_error: Option<String>,
 }
 
 /// Render the dashboard screen: bordered list of milestones with name, status badge, progress.
-fn draw_dashboard(frame: &mut Frame, milestones: &[Milestone], list_state: &mut ListState) {
+///
+/// Takes `milestones` and `list_state` as separate parameters rather than `&mut App`
+/// because matching on `app.screen` while simultaneously needing `&mut app.list_state`
+/// for `render_stateful_widget` violates the borrow checker; callers borrow the fields
+/// independently before passing them (D095).
+fn draw_dashboard(
+    frame: &mut Frame,
+    milestones: &[Milestone],
+    list_state: &mut ListState,
+    scan_error: Option<&str>,
+) {
     let area = frame.area();
     let [content_area] = Layout::vertical([Constraint::Fill(1)]).areas(area);
 
@@ -45,9 +68,22 @@ fn draw_dashboard(frame: &mut Frame, milestones: &[Milestone], list_state: &mut 
     let inner_area = block.inner(content_area);
     frame.render_widget(block, content_area);
 
-    // Empty-list guard: render placeholder paragraph instead of an empty List.
-    // Calling render_stateful_widget with an empty list can cause a ListState panic.
+    // Scan error takes precedence: if milestone_scan returned an Err, show the
+    // message so the user knows their data failed to load rather than silently
+    // appearing as an empty project.
+    if let Some(err) = scan_error {
+        let paragraph = Paragraph::new(format!("Error loading milestones: {err}"))
+            .style(Style::default().bold().red())
+            .alignment(Alignment::Center);
+        frame.render_widget(paragraph, inner_area);
+        return;
+    }
+
+    // Guard: if milestones were reloaded and the list is now empty, a stale
+    // selected index in ListState would be out of bounds when passed to
+    // render_stateful_widget. Reset selection and render a placeholder instead.
     if milestones.is_empty() {
+        list_state.select(None);
         let placeholder =
             Paragraph::new("No milestones — press n to create one").alignment(Alignment::Center);
         frame.render_widget(placeholder, inner_area);
@@ -87,11 +123,19 @@ fn draw_no_project(frame: &mut Frame) {
 }
 
 /// Render the current frame based on `app.screen`.
+///
+/// Takes `&mut App` because `draw_dashboard` requires `&mut app.list_state` for
+/// stateful widget rendering; no other `App` fields are mutated during draw.
 pub fn draw(frame: &mut Frame, app: &mut App) {
     // Use matches! to check the discriminant first so we can borrow individual
     // fields without conflicting with a pattern match on app.screen itself.
     if matches!(app.screen, Screen::Dashboard) {
-        draw_dashboard(frame, &app.milestones, &mut app.list_state);
+        draw_dashboard(
+            frame,
+            &app.milestones,
+            &mut app.list_state,
+            app.scan_error.as_deref(),
+        );
         return;
     }
     if matches!(app.screen, Screen::NoProject) {
@@ -99,19 +143,20 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
         return;
     }
 
-    // Remaining screens are placeholder stubs for later slices.
+    // Placeholder stubs — real implementations replace these in S02–S04.
     let area = frame.area();
     let [content_area] = Layout::vertical([Constraint::Fill(1)]).areas(area);
     let text = match &app.screen {
         Screen::MilestoneDetail => "Milestone detail — coming in S03",
-        Screen::ChunkDetail => "Chunk Detail",
-        Screen::Wizard(_) => "Wizard",
-        Screen::Settings => "Settings",
-        Screen::Dashboard | Screen::NoProject => unreachable!(),
+        Screen::ChunkDetail => "Chunk detail — coming in S03",
+        Screen::Wizard(_) => "Wizard — coming in S02",
+        Screen::Settings => "Settings — coming in S04",
+        // Dashboard and NoProject are handled above; this arm is unreachable in
+        // correct operation. If reached, render a diagnostic message rather than
+        // panicking inside the draw closure.
+        Screen::Dashboard | Screen::NoProject => "[internal error: unexpected screen state]",
     };
-    let paragraph = Paragraph::new(text)
-        .block(Block::default())
-        .alignment(Alignment::Center);
+    let paragraph = Paragraph::new(text).alignment(Alignment::Center);
     frame.render_widget(paragraph, content_area);
 }
 
