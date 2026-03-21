@@ -8,7 +8,7 @@
 use assay_core::wizard::{WizardChunkInput, WizardInputs, slugify};
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::Frame;
-use ratatui::layout::{Constraint, Layout};
+use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Style, Stylize};
 use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Block, Borders, Paragraph};
@@ -300,9 +300,7 @@ const KEY_HINT: &str = "Enter to confirm · Backspace to go back · Esc to cance
 ///
 /// Shows the current step prompt, active field buffer, a dim slug-preview hint
 /// below name fields, and any inline error from the last failed submission.
-pub fn draw_wizard(frame: &mut Frame, state: &WizardState) {
-    let area = frame.area();
-
+pub fn draw_wizard(frame: &mut Frame, area: Rect, state: &WizardState) {
     // Vertical split: header (3), main input (fill), hint/error (3).
     let [header_area, input_area, hint_area] = Layout::vertical([
         Constraint::Length(3),
