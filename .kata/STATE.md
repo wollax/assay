@@ -1,10 +1,10 @@
 # Kata State
 
 **Active Milestone:** M006 — TUI as Primary Surface
-**Active Slice:** S03 — Chunk Detail View and Spec Browser
-**Active Task:** T03 — ChunkDetail screen — navigation, spec load, and render
-**Phase:** Executing
-**Last Updated:** 2026-03-20
+**Active Slice:** S04 — Provider Configuration Screen
+**Active Task:** T01 (not yet started)
+**Phase:** Planning
+**Last Updated:** 2026-03-21
 **Requirements Status:** 9 active (R051–R059) · 44 validated (R001–R050) · 2 deferred · 4 out of scope
 **Test Count:** 1356 (all passing)
 
@@ -20,7 +20,7 @@
 
 - [x] S01: App Scaffold, Dashboard, and Binary Fix `risk:high` — binary name fix (`assay-tui`), App+Screen enum, dashboard with real milestone data, no-project guard. R049. DONE.
 - [x] S02: In-TUI Authoring Wizard `risk:high` `depends:[S01]` — WizardState multi-step form, draw_wizard popup, App wiring (n/Cancel/Submit); 23 assay-tui tests + 1356 workspace tests green. R050. DONE.
-- [ ] S03: Chunk Detail View and Spec Browser `risk:medium` `depends:[S01]` — milestone → chunk list → chunk detail with criteria and gate results. R051.
+- [x] S03: Chunk Detail View and Spec Browser `risk:medium` `depends:[S01]` — milestone → chunk list → chunk detail with criteria and gate results. R051. DONE.
 - [ ] S04: Provider Configuration Screen `risk:medium` `depends:[S01]` — ProviderConfig type in assay-types (D056 pattern), settings screen, config_save, backward-compat. R052.
 - [ ] S05: Help Overlay, Status Bar, and Integration Polish `risk:low` `depends:[S01,S02,S03,S04]` — help overlay, status bar, just ready passes, full flow integration.
 
@@ -46,4 +46,4 @@ None.
 
 ## Next Action
 
-Execute S03/T03: Wire Enter in MilestoneDetail to load detail_spec (via load_spec_entry_with_diagnostics) and detail_run (via history::list + history::load), navigate to ChunkDetail; implement draw_chunk_detail with a Table of criteria and ✓/✗/? icons; Esc from ChunkDetail → MilestoneDetail. End state: all 6 spec_browser tests pass.
+S03 complete. Begin S04: Provider Configuration Screen. Read S04-PLAN.md (if it exists) or plan from M006-ROADMAP.md entry. First task: ProviderConfig type in assay-types (D056 pattern) + settings screen scaffold.
