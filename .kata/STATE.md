@@ -1,9 +1,9 @@
 # Kata State
 
-**Active Milestone:** M007 — TUI Agent Harness (not started)
-**Active Slice:** None — M006 complete
+**Active Milestone:** M007 — TUI Agent Harness
+**Active Slice:** S01 — Channel Event Loop and Agent Run Panel
 **Active Task:** None
-**Phase:** Planning
+**Phase:** Executing
 **Last Updated:** 2026-03-21
 **Requirements Status:** 7 active (R053–R059) · 46 validated (R001–R052) · 2 deferred · 4 out of scope
 **Test Count:** 1367 (27 assay-tui; all workspace tests pass; just ready green)
@@ -36,6 +36,21 @@ Key patterns:
 - ProviderConfig follows D056 pattern exactly for backward-compat Config extension (D092)
 - config_save uses NamedTempFile+sync_all+persist consistent with milestone_save (D093)
 
+## M007 Roadmap
+
+- [ ] S01: Channel Event Loop and Agent Run Panel `risk:high` — refactor blocking run() to TuiEvent channel loop; add Screen::AgentRun with live streaming; launch_agent_streaming in assay-core::pipeline; r key from Dashboard. R053+R054 (Anthropic path).
+- [ ] S02: Provider Dispatch and Harness Wiring `risk:medium` — provider_harness_writer dispatches per ProviderKind; Ollama + OpenAI adapters; Settings model input fields. R054 (all providers).
+- [ ] S03: Slash Command Overlay `risk:low` — / key opens SlashState overlay; /gate-check, /status, /next-chunk, /pr-create commands; sync dispatch to assay-core. R056.
+- [ ] S04: MCP Server Configuration Panel `risk:medium` — Screen::McpPanel reads/writes .assay/mcp.json; add/delete/save servers; no live connection. R055.
+
+## Key Decisions
+
+- D107: Unified TuiEvent channel loop (Key/Resize/AgentLine/AgentDone)
+- D108: launch_agent_streaming — new free fn, existing launch_agent unchanged
+- D109: provider_harness_writer — free fn dispatching to per-provider closures (D001)
+- D110: MCP panel = static config management, no live async MCP client
+- D111: Slash command dispatch synchronous in-process
+
 ## Known Issues
 
 None. `just ready` passes clean (fmt, lint, test, deny). RUSTSEC-2026-0044 to -0049 are listed as ignore entries in deny.toml (pre-existing, not introduced by M006).
@@ -46,4 +61,4 @@ None.
 
 ## Next Action
 
-M006 complete. Begin M007 planning: TUI agent spawning (R053), provider abstraction (R054), MCP server management panel (R055), slash commands (R056).
+M007 planned. Begin S01: refactor event loop + launch_agent_streaming + Screen::AgentRun.
