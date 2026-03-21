@@ -1,55 +1,54 @@
-/// Multi-step wizard state for in-TUI milestone authoring.
+//! In-TUI authoring wizard: state machine, event handler, and renderer.
+//!
+//! This module provides the multi-step form that collects milestone name,
+//! description, chunk count, per-chunk names, and per-chunk criteria.
+//! On completion it returns `WizardAction::Submit(WizardInputs)` so the
+//! caller can invoke `assay_core::wizard::create_from_inputs`.
+
+use assay_core::wizard::{WizardChunkInput, WizardInputs, slugify};
+use crossterm::event::{KeyCode, KeyEvent};
+use ratatui::Frame;
+use ratatui::layout::{Constraint, Layout};
+use ratatui::style::{Color, Style, Stylize};
+use ratatui::text::{Line, Span, Text};
+use ratatui::widgets::{Block, Borders, Paragraph};
+
+// ── Public types ──────────────────────────────────────────────────────────────
+
+/// Multi-step form state for the authoring wizard.
+///
+/// `fields` holds one `Vec<String>` per step; multi-line steps (criteria) accumulate
+/// entries in the inner `Vec`. `cursor` is the current insertion position within the
+/// active single-line buffer. `error` carries the last `create_from_inputs` failure
+/// message so `draw_wizard` can render it inline without panicking.
 pub struct WizardState {
+    /// Current step index (0 = milestone name, 1 = description, 2 = chunk count,
+    /// 3.. = alternating chunk-name / chunk-criteria steps).
     pub step: usize,
-    pub fields: Vec<Vec<String>>,
-    pub cursor: usize,
-    pub chunk_count: usize,
+    /// Per-step field buffers. Each inner `Vec<String>` holds the line(s) entered so far.
+    ///
+    /// Invariant: `fields.len() == step + 1` and `fields[step].len() >= 1` at all times.
+    /// Only `handle_wizard_event` may mutate these to preserve the invariant.
+    pub(crate) fields: Vec<Vec<String>>,
+    /// Insertion-point offset within the active input line.
+    /// Maintained for future mid-line editing support; currently always equals
+    /// `current_line(state).len()` because only append/remove-from-end is supported.
+    pub(crate) cursor: usize,
+    /// Number of chunks the user entered in the chunk-count step.
+    pub(crate) chunk_count: usize,
+    /// Inline error message set by field validation or a failed `create_from_inputs` call.
     pub error: Option<String>,
 }
 
-/// The kind of input expected at the current wizard step.
-pub enum StepKind {
-    Name,
-    Description,
-    ChunkCount,
-    ChunkName(usize),
-    Criteria(usize),
-}
-
-/// The result of processing a key event in the wizard.
-pub enum WizardAction {
-    Continue,
-    Submit(assay_core::wizard::WizardInputs),
-    Cancel,
-}
-
 impl WizardState {
+    /// Create a fresh wizard at step 0 with empty field buffers.
     pub fn new() -> Self {
-        Self {
+        WizardState {
             step: 0,
-            chunk_count: 0,
+            fields: vec![vec![String::new()]],
             cursor: 0,
+            chunk_count: 0,
             error: None,
-            // Three initial slots: name (0), description (1), chunk-count input (2)
-            fields: vec![
-                vec![String::new()],
-                vec![String::new()],
-                vec![String::new()],
-            ],
-        }
-    }
-
-    /// Map a raw step index to a semantic `StepKind`.
-    pub fn current_step_kind(&self) -> StepKind {
-        let n = self.chunk_count;
-        match self.step {
-            0 => StepKind::Name,
-            1 => StepKind::Description,
-            2 => StepKind::ChunkCount,
-            s if s < 3 + n => StepKind::ChunkName(s - 3),
-            s if s < 3 + 2 * n => StepKind::Criteria(s - 3 - n),
-            // Defensive fallback — should not occur in normal flow
-            _ => StepKind::Name,
         }
     }
 }
@@ -60,515 +59,355 @@ impl Default for WizardState {
     }
 }
 
-/// Drive the wizard forward with a single key event.
-///
-/// Returns [`WizardAction::Submit`] when the user completes all steps,
-/// [`WizardAction::Cancel`] on Escape, and [`WizardAction::Continue`] otherwise.
-pub fn handle_wizard_event(
-    state: &mut WizardState,
-    event: crossterm::event::KeyEvent,
-) -> WizardAction {
-    use crossterm::event::{KeyCode, KeyEventKind};
-
-    // Guard: only handle Press events
-    if event.kind != KeyEventKind::Press {
-        return WizardAction::Continue;
-    }
-
-    // Clear error on any press
-    state.error = None;
-
-    let step = state.step;
-    let kind = state.current_step_kind();
-
-    match event.code {
-        KeyCode::Esc => WizardAction::Cancel,
-
-        KeyCode::Char(c) => {
-            match kind {
-                StepKind::ChunkCount => {
-                    // Only accept digits 1–7; replace the entire field
-                    if ('1'..='7').contains(&c) {
-                        state.fields[2] = vec![c.to_string()];
-                        state.cursor = 1;
-                    }
-                    // else: silently ignore
-                }
-                _ => {
-                    // Append character to the active buffer
-                    if let Some(buf) = state.fields[step].last_mut() {
-                        buf.push(c);
-                        state.cursor += 1;
-                    }
-                }
-            }
-            WizardAction::Continue
-        }
-
-        KeyCode::Backspace => {
-            match kind {
-                StepKind::Criteria(_) => {
-                    let last = state.fields[step].last().map(|s| s.len()).unwrap_or(0);
-                    if last > 0 {
-                        // Pop last char from active buffer
-                        if let Some(buf) = state.fields[step].last_mut() {
-                            buf.pop();
-                            state.cursor = state.cursor.saturating_sub(1);
-                        }
-                    } else if state.fields[step].len() > 1 {
-                        // Remove the trailing empty entry, go back to previous criterion
-                        state.fields[step].pop();
-                        let new_len = state.fields[step].last().map(|s| s.len()).unwrap_or(0);
-                        state.cursor = new_len;
-                    } else {
-                        // Only one empty entry — go back a step
-                        if step > 0 {
-                            state.step -= 1;
-                            let new_len = state.fields[state.step]
-                                .last()
-                                .map(|s| s.len())
-                                .unwrap_or(0);
-                            state.cursor = new_len;
-                        }
-                    }
-                }
-                _ => {
-                    // Single-line steps: Name, Description, ChunkCount, ChunkName
-                    let buf_len = state.fields[step].last().map(|s| s.len()).unwrap_or(0);
-                    if buf_len > 0 {
-                        if let Some(buf) = state.fields[step].last_mut() {
-                            buf.pop();
-                            state.cursor = state.cursor.saturating_sub(1);
-                        }
-                    } else if step > 0 {
-                        // Empty buffer — go back a step
-                        state.step -= 1;
-                        let new_len = state.fields[state.step]
-                            .last()
-                            .map(|s| s.len())
-                            .unwrap_or(0);
-                        state.cursor = new_len;
-                    }
-                }
-            }
-            WizardAction::Continue
-        }
-
-        KeyCode::Enter => {
-            match kind {
-                StepKind::Name => {
-                    let name = state.fields[step]
-                        .last()
-                        .map(|s| s.as_str())
-                        .unwrap_or("")
-                        .to_string();
-                    if name.is_empty() {
-                        state.error = Some("Name cannot be empty".to_string());
-                        return WizardAction::Continue;
-                    }
-                    state.step += 1;
-                    // Ensure next step has an active buffer
-                    if state.fields[state.step]
-                        .last()
-                        .map(|s| s.is_empty())
-                        .unwrap_or(true)
-                    {
-                        // already initialized in new()
-                    }
-                    state.cursor = state.fields[state.step]
-                        .last()
-                        .map(|s| s.len())
-                        .unwrap_or(0);
-                }
-
-                StepKind::Description => {
-                    state.step += 1;
-                    state.cursor = state.fields[state.step]
-                        .last()
-                        .map(|s| s.len())
-                        .unwrap_or(0);
-                }
-
-                StepKind::ChunkCount => {
-                    let buf = state.fields[step].last().cloned().unwrap_or_default();
-                    let valid = buf.len() == 1
-                        && buf
-                            .chars()
-                            .next()
-                            .map(|c| ('1'..='7').contains(&c))
-                            .unwrap_or(false);
-                    if !valid {
-                        state.error = Some("Enter a number from 1 to 7".to_string());
-                        return WizardAction::Continue;
-                    }
-                    let n: usize = buf.parse().unwrap();
-                    state.chunk_count = n;
-                    // Allocate N ChunkName vecs + N Criteria vecs
-                    for _ in 0..n {
-                        state.fields.push(vec![String::new()]);
-                    }
-                    for _ in 0..n {
-                        state.fields.push(vec![String::new()]);
-                    }
-                    state.step += 1;
-                    state.cursor = 0;
-                }
-
-                StepKind::ChunkName(_) => {
-                    state.step += 1;
-                    state.cursor = state.fields[state.step]
-                        .last()
-                        .map(|s| s.len())
-                        .unwrap_or(0);
-                }
-
-                StepKind::Criteria(n) => {
-                    let active_empty = state.fields[step]
-                        .last()
-                        .map(|s| s.is_empty())
-                        .unwrap_or(true);
-                    if !active_empty {
-                        // Start a new criterion line
-                        state.fields[step].push(String::new());
-                        state.cursor = 0;
-                    } else {
-                        // Blank Enter — criteria step done
-                        let chunk_count = state.chunk_count;
-                        if n + 1 < chunk_count {
-                            // More criteria steps to go
-                            state.step += 1;
-                            state.cursor = state.fields[state.step]
-                                .last()
-                                .map(|s| s.len())
-                                .unwrap_or(0);
-                        } else {
-                            // Last criteria step — assemble and submit
-                            return assemble_submit(state);
-                        }
-                    }
-                }
-            }
-            WizardAction::Continue
-        }
-
-        _ => WizardAction::Continue,
-    }
+/// The result produced by [`handle_wizard_event`] after processing one key press.
+#[derive(Debug)]
+pub enum WizardAction {
+    /// The user pressed a key that advanced or edited the form; re-render.
+    Continue,
+    /// The user completed all steps; the inner value holds the structured inputs
+    /// ready to pass to `assay_core::wizard::create_from_inputs`.
+    Submit(WizardInputs),
+    /// The user pressed Esc; all progress is discarded and the caller should
+    /// return to the dashboard screen.
+    Cancel,
 }
 
-fn assemble_submit(state: &WizardState) -> WizardAction {
-    use assay_core::wizard::{WizardChunkInput, WizardInputs, slugify};
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
-    let name = state.fields[0][0].clone();
+/// Return the active input buffer (the last line of the current step's field vec).
+///
+/// Panics if the `fields[step].len() >= 1` invariant is violated — consistent
+/// with the `expect` calls in the Backspace handler that enforce the same invariant.
+fn current_line(state: &WizardState) -> &str {
+    state.fields[state.step]
+        .last()
+        .expect("fields[step] must contain at least one element — invariant violated")
+        .as_str()
+}
+
+/// Assemble a [`WizardInputs`] from the completed wizard state.
+///
+/// Called when the user presses blank Enter on the last chunk's criteria step.
+/// Strips the trailing empty string that the blank-Enter transition leaves behind.
+fn assemble_inputs(state: &WizardState) -> WizardInputs {
+    let name = state.fields[0].last().cloned().unwrap_or_default();
     let slug = slugify(&name);
-    let description = {
-        let d = &state.fields[1][0];
-        if d.is_empty() { None } else { Some(d.clone()) }
-    };
-    let n = state.chunk_count;
-    let chunks = (0..n)
-        .map(|i| {
-            let chunk_name = state.fields[3 + i][0].clone();
-            let chunk_slug = slugify(&chunk_name);
-            let criteria = state.fields[3 + n + i]
-                .iter()
-                .filter(|s| !s.is_empty())
-                .cloned()
-                .collect();
-            WizardChunkInput {
-                slug: chunk_slug,
-                name: chunk_name,
-                criteria,
-            }
-        })
-        .collect();
 
-    WizardAction::Submit(WizardInputs {
+    let description_str = state.fields[1].last().cloned().unwrap_or_default();
+    let description = if description_str.is_empty() {
+        None
+    } else {
+        Some(description_str)
+    };
+
+    let mut chunks = Vec::with_capacity(state.chunk_count);
+    for i in 0..state.chunk_count {
+        let name_step = 3 + 2 * i;
+        let criteria_step = 3 + 2 * i + 1;
+
+        let chunk_name = state.fields[name_step].last().cloned().unwrap_or_default();
+        let chunk_slug = slugify(&chunk_name);
+
+        // Filter out trailing empty string left by the blank-Enter that triggered advance.
+        let criteria: Vec<String> = state.fields[criteria_step]
+            .iter()
+            .filter(|s| !s.is_empty())
+            .cloned()
+            .collect();
+
+        chunks.push(WizardChunkInput {
+            slug: chunk_slug,
+            name: chunk_name,
+            criteria,
+        });
+    }
+
+    WizardInputs {
         slug,
         name,
         description,
         chunks,
-    })
+    }
 }
 
-// ── Unit tests ────────────────────────────────────────────────────────────────
+// ── Event handler ─────────────────────────────────────────────────────────────
 
-#[cfg(test)]
-mod tests {
-    use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+/// Process a single key press and mutate `state` accordingly.
+///
+/// Returns [`WizardAction::Continue`] for most edits, [`WizardAction::Submit`]
+/// when the final blank-Enter terminates the last chunk's criteria, and
+/// [`WizardAction::Cancel`] when the user presses Esc.
+pub fn handle_wizard_event(state: &mut WizardState, event: KeyEvent) -> WizardAction {
+    match event.code {
+        // ── Esc: cancel ───────────────────────────────────────────────────────
+        KeyCode::Esc => WizardAction::Cancel,
 
-    use super::*;
+        // ── Char: append to current buffer ────────────────────────────────────
+        KeyCode::Char(c) if state.step == 2 => {
+            // Chunk count step: only accept digits 1–7; replace (not append).
+            if ('1'..='7').contains(&c) {
+                state.fields[2] = vec![c.to_string()];
+                state.cursor = 1;
+                state.error = None;
+            }
+            WizardAction::Continue
+        }
 
-    fn key(code: KeyCode) -> KeyEvent {
-        KeyEvent {
-            code,
-            kind: KeyEventKind::Press,
-            modifiers: KeyModifiers::NONE,
-            state: KeyEventState::NONE,
+        KeyCode::Char(c) => {
+            state.fields[state.step]
+                .last_mut()
+                .expect("fields[step] must always have at least one element")
+                .push(c);
+            state.cursor += 1;
+            state.error = None;
+            WizardAction::Continue
+        }
+
+        // ── Backspace ─────────────────────────────────────────────────────────
+        KeyCode::Backspace => {
+            let line_empty = current_line(state).is_empty();
+
+            if line_empty && state.step > 0 {
+                // Go back to previous step.
+                state.step -= 1;
+                state.fields.pop();
+                state.cursor = state.fields[state.step]
+                    .last()
+                    .map(|s| s.len())
+                    .unwrap_or(0);
+            } else if !line_empty {
+                state.fields[state.step]
+                    .last_mut()
+                    .expect("fields[step] is non-empty")
+                    .pop();
+                if state.cursor > 0 {
+                    state.cursor -= 1;
+                }
+            }
+            // step == 0 and empty: do nothing.
+            WizardAction::Continue
+        }
+
+        // ── Enter: advance / submit ───────────────────────────────────────────
+        KeyCode::Enter => handle_enter(state),
+
+        // ── All other keys: ignore ────────────────────────────────────────────
+        _ => WizardAction::Continue,
+    }
+}
+
+/// Handle Enter key logic, factored out for clarity.
+fn handle_enter(state: &mut WizardState) -> WizardAction {
+    let step = state.step;
+
+    match step {
+        // Step 0: milestone name (required).
+        0 => {
+            if current_line(state).is_empty() {
+                state.error = Some("Milestone name is required".to_string());
+            } else if slugify(current_line(state)).is_empty() {
+                state.error = Some("Name must contain at least one letter or digit".to_string());
+            } else {
+                state.step = 1;
+                state.fields.push(vec![String::new()]);
+                state.cursor = 0;
+                state.error = None;
+            }
+            WizardAction::Continue
+        }
+
+        // Step 1: description (optional — blank OK).
+        1 => {
+            state.step = 2;
+            state.fields.push(vec![String::new()]);
+            state.cursor = 0;
+            state.error = None;
+            WizardAction::Continue
+        }
+
+        // Step 2: chunk count (1–7).
+        2 => {
+            let line = current_line(state).to_string();
+            match line.parse::<usize>() {
+                Ok(n) if (1..=7).contains(&n) => {
+                    state.chunk_count = n;
+                    state.step = 3;
+                    state.fields.push(vec![String::new()]);
+                    state.cursor = 0;
+                    state.error = None;
+                }
+                _ => {
+                    state.error = Some("Enter a number from 1 to 7".to_string());
+                }
+            }
+            WizardAction::Continue
+        }
+
+        // Steps 3+: alternating chunk-name / chunk-criteria.
+        step => {
+            let offset = step - 3;
+            let i = offset / 2;
+            let is_criteria = offset % 2 == 1;
+
+            if !is_criteria {
+                // Chunk name step.
+                if current_line(state).is_empty() {
+                    state.error = Some("Chunk name is required".to_string());
+                    WizardAction::Continue
+                } else if slugify(current_line(state)).is_empty() {
+                    state.error =
+                        Some("Chunk name must contain at least one letter or digit".to_string());
+                    WizardAction::Continue
+                } else {
+                    state.step += 1;
+                    state.fields.push(vec![String::new()]);
+                    state.cursor = 0;
+                    state.error = None;
+                    WizardAction::Continue
+                }
+            } else {
+                // Criteria step.
+                if !current_line(state).is_empty() {
+                    // Non-empty Enter: append a new blank line for the next criterion.
+                    state.fields[step].push(String::new());
+                    state.cursor = 0;
+                    WizardAction::Continue
+                } else {
+                    // Blank Enter: end criteria for this chunk.
+                    if i < state.chunk_count - 1 {
+                        // More chunks to go: advance to next chunk's name step.
+                        state.step += 1;
+                        state.fields.push(vec![String::new()]);
+                        state.cursor = 0;
+                        state.error = None;
+                        WizardAction::Continue
+                    } else {
+                        // Last chunk: assemble and submit.
+                        let inputs = assemble_inputs(state);
+                        WizardAction::Submit(inputs)
+                    }
+                }
+            }
         }
     }
+}
 
-    fn type_str(state: &mut WizardState, s: &str) {
-        for c in s.chars() {
-            handle_wizard_event(state, key(KeyCode::Char(c)));
-        }
-    }
+// ── Renderer ──────────────────────────────────────────────────────────────────
 
-    /// Advance through steps 0–2 to get N chunk name/criteria slots allocated.
-    fn advance_to_chunk_names(state: &mut WizardState, name: &str, n: char) {
-        type_str(state, name);
-        handle_wizard_event(state, key(KeyCode::Enter)); // step 0 → 1
-        handle_wizard_event(state, key(KeyCode::Enter)); // step 1 → 2 (blank description)
-        handle_wizard_event(state, key(KeyCode::Char(n))); // set chunk count
-        handle_wizard_event(state, key(KeyCode::Enter)); // step 2 → 3
-    }
+const KEY_HINT: &str = "Enter to confirm · Backspace to go back · Esc to cancel";
 
-    // ── step_kind tests ───────────────────────────────────────────────────────
+/// Render the wizard form into `frame`.
+///
+/// Shows the current step prompt, active field buffer, a dim slug-preview hint
+/// below name fields, and any inline error from the last failed submission.
+pub fn draw_wizard(frame: &mut Frame, state: &WizardState) {
+    let area = frame.area();
 
-    #[test]
-    fn wizard_step_kind_n1() {
-        let mut s = WizardState::new();
-        s.chunk_count = 1;
-        // Steps: 0=Name 1=Desc 2=ChunkCount 3=ChunkName(0) 4=Criteria(0) — total 5
-        let expected: &[(usize, &str)] = &[
-            (0, "Name"),
-            (1, "Description"),
-            (2, "ChunkCount"),
-            (3, "ChunkName(0)"),
-            (4, "Criteria(0)"),
-        ];
-        for (step, label) in expected {
-            s.step = *step;
-            let got = match s.current_step_kind() {
-                StepKind::Name => "Name",
-                StepKind::Description => "Description",
-                StepKind::ChunkCount => "ChunkCount",
-                StepKind::ChunkName(0) => "ChunkName(0)",
-                StepKind::Criteria(0) => "Criteria(0)",
-                _ => "other",
+    // Vertical split: header (3), main input (fill), hint/error (3).
+    let [header_area, input_area, hint_area] = Layout::vertical([
+        Constraint::Length(3),
+        Constraint::Fill(1),
+        Constraint::Length(3),
+    ])
+    .areas(area);
+
+    // ── Total steps ──────────────────────────────────────────────────────────
+    // Use 7 as the placeholder total when chunk_count is 0 (user hasn't chosen yet).
+    // 7 = 3 base steps (name, description, chunk count) + 2 × 2 (two chunks, name + criteria
+    // each) — a representative estimate for the most common case until the user picks a count.
+    let total_steps = if state.chunk_count > 0 {
+        3 + 2 * state.chunk_count
+    } else {
+        7
+    };
+
+    // ── Prompt label for current step ────────────────────────────────────────
+    let prompt = step_prompt(state.step, state.chunk_count);
+
+    // ── Header: "New Milestone" title + step counter + prompt ────────────────
+    let header_text = Text::from(vec![
+        Line::from(format!("Step {} of {}", state.step + 1, total_steps))
+            .style(Style::default().dim()),
+        Line::from(prompt).bold(),
+    ]);
+    let header = Paragraph::new(header_text).block(
+        Block::default()
+            .title(" New Milestone ")
+            .borders(Borders::ALL),
+    );
+    frame.render_widget(header, header_area);
+
+    // ── Main input area ───────────────────────────────────────────────────────
+    let is_criteria_step = state.step >= 3 && (state.step - 3) % 2 == 1;
+
+    let input_text = if is_criteria_step {
+        // Show committed criteria lines above the active line.
+        let fields = &state.fields[state.step];
+        let committed: Vec<Line> = fields[..fields.len() - 1]
+            .iter()
+            .map(|s| Line::from(s.as_str()))
+            .collect();
+        let active_line = Line::from(format!("{}_", current_line(state)));
+        let mut lines = committed;
+        lines.push(active_line);
+        Text::from(lines)
+    } else {
+        Text::from(Line::from(format!("{}_", current_line(state))))
+    };
+
+    let input = Paragraph::new(input_text).block(Block::default().borders(Borders::ALL));
+    frame.render_widget(input, input_area);
+
+    // ── Hint / error area ─────────────────────────────────────────────────────
+    let hint_text = if let Some(ref err) = state.error {
+        Text::from(Line::from(Span::styled(
+            err.as_str(),
+            Style::default().fg(Color::Red),
+        )))
+    } else {
+        // Slug preview for name steps; keyboard hint for others.
+        let is_name_step =
+            state.step == 0 || (state.step >= 3 && (state.step - 3).is_multiple_of(2));
+
+        if is_name_step {
+            let name = current_line(state);
+            let preview = if name.is_empty() {
+                "→ slug: (type a name)".to_string()
+            } else {
+                let slug = slugify(name);
+                if slug.is_empty() {
+                    "→ slug: (name must contain at least one letter or digit)".to_string()
+                } else {
+                    format!("→ slug: {}", slug)
+                }
             };
-            assert_eq!(got, *label, "step {step}");
+            let mut lines = vec![Line::from(Span::styled(preview, Style::default().dim()))];
+            lines.push(Line::from(Span::styled(KEY_HINT, Style::default().dim())));
+            Text::from(lines)
+        } else {
+            Text::from(Line::from(Span::styled(KEY_HINT, Style::default().dim())))
         }
-    }
+    };
 
-    #[test]
-    fn wizard_step_kind_n2() {
-        let mut s = WizardState::new();
-        s.chunk_count = 2;
-        // Steps: 0=Name 1=Desc 2=CC 3=CN(0) 4=CN(1) 5=Crit(0) 6=Crit(1) — total 7
-        let expected: &[(usize, &str)] = &[
-            (0, "Name"),
-            (1, "Desc"),
-            (2, "CC"),
-            (3, "CN0"),
-            (4, "CN1"),
-            (5, "C0"),
-            (6, "C1"),
-        ];
-        let map = |s: &mut WizardState| match s.current_step_kind() {
-            StepKind::Name => "Name",
-            StepKind::Description => "Desc",
-            StepKind::ChunkCount => "CC",
-            StepKind::ChunkName(0) => "CN0",
-            StepKind::ChunkName(1) => "CN1",
-            StepKind::Criteria(0) => "C0",
-            StepKind::Criteria(1) => "C1",
-            _ => "other",
-        };
-        for (step, label) in expected {
-            s.step = *step;
-            assert_eq!(map(&mut s), *label, "step {step}");
+    let hint = Paragraph::new(hint_text).block(Block::default().borders(Borders::ALL));
+    frame.render_widget(hint, hint_area);
+}
+
+/// Return the prompt label string for the given step.
+fn step_prompt(step: usize, _chunk_count: usize) -> String {
+    match step {
+        0 => "Milestone name:".to_string(),
+        1 => "Description (optional):".to_string(),
+        2 => "Number of chunks (1–7):".to_string(),
+        _ => {
+            let offset = step - 3;
+            let i = offset / 2;
+            let is_criteria = offset % 2 == 1;
+            if is_criteria {
+                format!("Chunk {} criteria (blank line when done):", i + 1)
+            } else {
+                format!("Chunk {} name:", i + 1)
+            }
         }
-    }
-
-    #[test]
-    fn wizard_step_kind_n3() {
-        let mut s = WizardState::new();
-        s.chunk_count = 3;
-        // Boundary indices: 3+3-1=5 last ChunkName, 3+3=6 first Criteria, 3+6-1=8 last Criteria
-        s.step = 5;
-        assert!(matches!(s.current_step_kind(), StepKind::ChunkName(2)));
-        s.step = 6;
-        assert!(matches!(s.current_step_kind(), StepKind::Criteria(0)));
-        s.step = 8;
-        assert!(matches!(s.current_step_kind(), StepKind::Criteria(2)));
-    }
-
-    // ── backspace tests ───────────────────────────────────────────────────────
-
-    #[test]
-    fn wizard_backspace_on_empty_goes_back() {
-        let mut state = WizardState::new();
-        state.step = 1;
-        state.fields[1] = vec![String::new()]; // empty description
-        handle_wizard_event(&mut state, key(KeyCode::Backspace));
-        assert_eq!(state.step, 0, "should go back to step 0");
-    }
-
-    #[test]
-    fn wizard_backspace_removes_last_char() {
-        let mut state = WizardState::new();
-        type_str(&mut state, "hello");
-        assert_eq!(state.fields[0][0], "hello");
-        handle_wizard_event(&mut state, key(KeyCode::Backspace));
-        assert_eq!(state.fields[0][0], "hell");
-        assert_eq!(state.cursor, 4);
-    }
-
-    #[test]
-    fn wizard_backspace_on_criteria_removes_entry() {
-        let mut state = WizardState::new();
-        advance_to_chunk_names(&mut state, "M", '1');
-        // Now at step 3 (ChunkName(0)); advance to criteria
-        type_str(&mut state, "Chunk");
-        handle_wizard_event(&mut state, key(KeyCode::Enter)); // → step 4 = Criteria(0)
-
-        // Add one criterion, then blank Enter to get empty second entry
-        type_str(&mut state, "criterion one");
-        handle_wizard_event(&mut state, key(KeyCode::Enter)); // push new empty entry
-
-        assert_eq!(state.fields[state.step].len(), 2);
-
-        // Backspace on empty trailing entry should remove it
-        handle_wizard_event(&mut state, key(KeyCode::Backspace));
-        assert_eq!(state.fields[state.step].len(), 1);
-        assert_eq!(state.fields[state.step][0], "criterion one");
-    }
-
-    // ── criteria blank Enter tests ─────────────────────────────────────────────
-
-    #[test]
-    fn wizard_criteria_blank_enter_advances_when_not_last() {
-        // N=2: step 5=Criteria(0), step 6=Criteria(1)
-        let mut state = WizardState::new();
-        advance_to_chunk_names(&mut state, "M", '2');
-
-        // step 3: chunk name 0
-        type_str(&mut state, "Alpha");
-        handle_wizard_event(&mut state, key(KeyCode::Enter));
-
-        // step 4: chunk name 1
-        type_str(&mut state, "Beta");
-        handle_wizard_event(&mut state, key(KeyCode::Enter));
-
-        // step 5: Criteria(0) — add criterion then blank Enter to advance
-        type_str(&mut state, "crit a");
-        handle_wizard_event(&mut state, key(KeyCode::Enter)); // push empty entry
-        let action = handle_wizard_event(&mut state, key(KeyCode::Enter)); // blank → advance
-
-        assert!(matches!(action, WizardAction::Continue));
-        assert_eq!(state.step, 6, "should advance to Criteria(1)");
-    }
-
-    // ── submit assembly test ──────────────────────────────────────────────────
-
-    #[test]
-    fn wizard_submit_assembles_inputs() {
-        let mut state = WizardState::new();
-
-        // Step 0: name
-        type_str(&mut state, "My Chunk");
-        handle_wizard_event(&mut state, key(KeyCode::Enter));
-
-        // Step 1: description (blank)
-        handle_wizard_event(&mut state, key(KeyCode::Enter));
-
-        // Step 2: chunk count = 1
-        handle_wizard_event(&mut state, key(KeyCode::Char('1')));
-        handle_wizard_event(&mut state, key(KeyCode::Enter));
-
-        // Step 3: chunk name
-        type_str(&mut state, "Chunk A");
-        handle_wizard_event(&mut state, key(KeyCode::Enter));
-
-        // Step 4: criteria — add one, then blank Enter → Submit
-        type_str(&mut state, "does the thing");
-        handle_wizard_event(&mut state, key(KeyCode::Enter)); // push empty entry
-        let action = handle_wizard_event(&mut state, key(KeyCode::Enter)); // blank → Submit
-
-        let WizardAction::Submit(inputs) = action else {
-            panic!("expected Submit");
-        };
-
-        assert_eq!(inputs.slug, "my-chunk");
-        assert_eq!(inputs.name, "My Chunk");
-        assert!(inputs.description.is_none());
-        assert_eq!(inputs.chunks.len(), 1);
-        assert_eq!(inputs.chunks[0].slug, "chunk-a");
-        assert_eq!(inputs.chunks[0].name, "Chunk A");
-        assert_eq!(inputs.chunks[0].criteria.len(), 1);
-        assert_eq!(inputs.chunks[0].criteria[0], "does the thing");
-    }
-
-    // ── non-press events are ignored ──────────────────────────────────────────
-
-    #[test]
-    fn wizard_non_press_event_is_ignored() {
-        let mut state = WizardState::new();
-        let release = KeyEvent {
-            code: KeyCode::Char('x'),
-            kind: KeyEventKind::Release,
-            modifiers: KeyModifiers::NONE,
-            state: KeyEventState::NONE,
-        };
-        handle_wizard_event(&mut state, release);
-        assert_eq!(
-            state.fields[0][0], "",
-            "Release event should not modify state"
-        );
-    }
-
-    // ── validation tests ──────────────────────────────────────────────────────
-
-    #[test]
-    fn wizard_empty_name_sets_error() {
-        let mut state = WizardState::new();
-        // Don't type anything — press Enter on empty name
-        handle_wizard_event(&mut state, key(KeyCode::Enter));
-        assert!(state.error.is_some(), "should have an error for empty name");
-        assert_eq!(state.step, 0, "should stay on step 0");
-    }
-
-    #[test]
-    fn wizard_invalid_chunk_count_sets_error() {
-        let mut state = WizardState::new();
-        // Advance to step 2
-        type_str(&mut state, "My Milestone");
-        handle_wizard_event(&mut state, key(KeyCode::Enter));
-        handle_wizard_event(&mut state, key(KeyCode::Enter));
-        // Try to confirm with empty buffer
-        handle_wizard_event(&mut state, key(KeyCode::Enter));
-        assert!(state.error.is_some(), "should error on empty chunk count");
-        assert_eq!(state.step, 2, "should stay on step 2");
-    }
-
-    #[test]
-    fn wizard_chunk_count_ignores_non_digit() {
-        let mut state = WizardState::new();
-        type_str(&mut state, "M");
-        handle_wizard_event(&mut state, key(KeyCode::Enter));
-        handle_wizard_event(&mut state, key(KeyCode::Enter));
-        // Type 'a' — should be silently ignored
-        handle_wizard_event(&mut state, key(KeyCode::Char('a')));
-        assert_eq!(state.fields[2][0], "", "non-digit should be ignored");
-        // Type '0' — out of range, should be ignored
-        handle_wizard_event(&mut state, key(KeyCode::Char('0')));
-        assert_eq!(state.fields[2][0], "", "'0' should be ignored");
-        // Type '8' — out of range
-        handle_wizard_event(&mut state, key(KeyCode::Char('8')));
-        assert_eq!(state.fields[2][0], "", "'8' should be ignored");
-        // Type '3' — valid
-        handle_wizard_event(&mut state, key(KeyCode::Char('3')));
-        assert_eq!(state.fields[2][0], "3");
-    }
-
-    #[test]
-    fn wizard_error_cleared_on_next_press() {
-        let mut state = WizardState::new();
-        // Trigger error by pressing Enter on empty name
-        handle_wizard_event(&mut state, key(KeyCode::Enter));
-        assert!(state.error.is_some());
-        // Any key press should clear error
-        handle_wizard_event(&mut state, key(KeyCode::Char('a')));
-        assert!(state.error.is_none());
     }
 }

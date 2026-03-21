@@ -39,6 +39,7 @@ pub struct CriterionInput {
 ///
 /// The `slug` is used directly as the spec directory name and the `GatesSpec.name`
 /// field. `criteria` are plain strings used as criterion names.
+#[derive(Debug)]
 pub struct WizardChunkInput {
     /// Slug for this chunk (used as the spec directory name).
     pub slug: String,
@@ -53,6 +54,7 @@ pub struct WizardChunkInput {
 ///
 /// The `slug` is used directly as the milestone slug; `name` is the display name.
 /// All chunk slugs must be pre-validated by the caller (or derived by [`slugify`]).
+#[derive(Debug)]
 pub struct WizardInputs {
     /// Slug for the milestone (used as the TOML filename without extension).
     pub slug: String,
