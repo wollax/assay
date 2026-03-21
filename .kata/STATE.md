@@ -2,11 +2,11 @@
 
 **Active Milestone:** M006 — TUI as Primary Surface
 **Active Slice:** S05 — Help Overlay, Status Bar, and Integration Polish
-**Active Task:** T01 (not yet started)
-**Phase:** Planning
+**Active Task:** T02 (T01 done)
+**Phase:** Executing
 **Last Updated:** 2026-03-21
 **Requirements Status:** 8 active (R052–R059) · 45 validated (R001–R051) · 2 deferred · 4 out of scope
-**Test Count:** 1371 (16 assay-tui + all prior; all passing)
+**Test Count:** 1371 baseline (16 assay-tui + all prior; 2 new help_status tests failing by design — awaiting T02)
 
 ## Completed Milestones
 
