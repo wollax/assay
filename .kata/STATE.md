@@ -2,7 +2,7 @@
 
 **Active Milestone:** M006 — TUI as Primary Surface
 **Active Slice:** S03 — Chunk Detail View and Spec Browser
-**Active Task:** T02 — MilestoneDetail screen — navigation and render
+**Active Task:** T03 — ChunkDetail screen — navigation, spec load, and render
 **Phase:** Executing
 **Last Updated:** 2026-03-20
 **Requirements Status:** 9 active (R051–R059) · 44 validated (R001–R050) · 2 deferred · 4 out of scope
@@ -46,4 +46,4 @@ None.
 
 ## Next Action
 
-Execute S03/T02: Wire Enter key on Dashboard to load milestone via `milestone_load` and navigate to MilestoneDetail; implement Up/Down navigation in MilestoneDetail; implement `draw_milestone_detail` with bordered chunk List; Esc from MilestoneDetail → Dashboard. Files: `crates/assay-tui/src/app.rs`. End state: 3 of 6 spec_browser tests pass (enter_on_dashboard_navigates_to_milestone_detail, up_down_in_milestone_detail, esc_from_milestone_detail).
+Execute S03/T03: Wire Enter in MilestoneDetail to load detail_spec (via load_spec_entry_with_diagnostics) and detail_run (via history::list + history::load), navigate to ChunkDetail; implement draw_chunk_detail with a Table of criteria and ✓/✗/? icons; Esc from ChunkDetail → MilestoneDetail. End state: all 6 spec_browser tests pass.
