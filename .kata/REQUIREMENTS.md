@@ -527,7 +527,7 @@
 - Description: The TUI has a configuration screen for AI provider selection (Anthropic, OpenAI, Ollama) and model selection per phase (planning, execution, review). Settings persist to `.assay/config.toml`.
 - Why it matters: Different providers and models have different cost/quality tradeoffs — users need to configure without editing TOML files
 - Source: user
-- Primary owning slice: M006/S03
+- Primary owning slice: M006/S04
 - Supporting slices: none
 - Validation: unmapped
 - Notes: Extends the existing Config type in assay-types.
@@ -710,7 +710,7 @@
 | R049 | primary-user-loop | validated | M006/S01 | none | S01 |
 | R050 | primary-user-loop | validated | M006/S02 | M006/S01 | S02 |
 | R051 | primary-user-loop | validated | M006/S03 | M006/S01 | S03 |
-| R052 | operability | active | M006/S03 | none | mapped |
+| R052 | operability | active | M006/S04 | none | mapped |
 | R053 | core-capability | active | M007/S01 | M006/S01 | mapped |
 | R054 | core-capability | active | M007/S01 | M007/S02 | mapped |
 | R055 | operability | active | M007/S02 | none | mapped |

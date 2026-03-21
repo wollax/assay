@@ -1,71 +1,85 @@
 # S03: Chunk Detail View and Spec Browser — Research
 
 **Researched:** 2026-03-20
+**Updated:** 2026-03-21 (post-implementation validation)
 **Domain:** Ratatui TUI, assay-core data APIs, Rust borrow checker patterns
 **Confidence:** HIGH
+**Status:** COMPLETE — all 6 spec_browser tests pass; `just ready` green
 
 ## Summary
 
-S03 adds two new screens — MilestoneDetail (chunk list) and ChunkDetail (criteria + gate results) — by extending the existing `Screen` enum and `App` struct in `app.rs`. The existing S01/S02 architecture is the right foundation: the same borrow-split pattern that makes the Dashboard arm work (`match &self.screen` + independent `&mut self.list_state` field) applies directly to the new screens.
+**S03 is implemented and verified.** Two new full-screen TUI views — `MilestoneDetail` (chunk list) and `ChunkDetail` (criteria + gate results table) — were added to `app.rs` following the architecture established in S01/S02. All research predictions proved correct.
 
-The `assay-core` APIs are all synchronous and fully tested: `milestone_load` for fresh milestone data, `spec::load_spec_entry_with_diagnostics` for GatesSpec criteria, `history::list` + `history::load` for the latest gate run. Data is loaded in `handle_event` on navigation transitions — not inside `terminal.draw()` — per D091. No new dependencies are needed; `assay-core` and `assay-types` are already in `assay-tui/Cargo.toml`.
+The `assay-core` data APIs (`milestone_load`, `load_spec_entry_with_diagnostics`, `history::list`+`load`) are synchronous and load correctly in `handle_event` on navigation transitions per D091. The borrow-split pattern from D097 (pass individual `App` fields to render fns rather than `&mut App`) was applied cleanly for both `draw_milestone_detail` and `draw_chunk_detail`. The `join_results` free function joins `GatesSpec.criteria` against `GateRunRecord.summary.results` by criterion name, returning `Option<bool>` per criterion — unmatched criteria render as `?` Pending.
 
-The riskiest part is the criteria-to-run-result join: `GatesSpec.criteria` (from the spec file) and `GateRunRecord.summary.results` (from the history file) must be matched by `criterion_name` / `name` field. A criterion with no matching result entry is **Pending** (`result: None`). A `CriterionResult` with `result: None` (the `skip_serializing_if` field) is also Pending. The gate run record has a `results` vec that may be shorter than the spec's criteria vec (e.g. if the run was interrupted or a subset was evaluated), so the join must tolerate missing entries in either direction.
+The only deviation from the pre-implementation research: `GatesSpec` validation requires at least one executable criterion (`cmd`/`path`/`kind=AgentReport`). Test fixtures in `spec_browser.rs` needed a `cmd = "true"` field on one criterion. This was not documented as a constraint in the original research.
 
 ## Recommendation
 
-**Architecture: thin Screen variants + App-level detail fields.** Store only navigation keys (`slug`, `milestone_slug`, `chunk_slug`) inside the Screen variants; store loaded data in new App fields (`detail_milestone`, `detail_list_state`, `detail_spec`, `detail_run`). This preserves the existing `match &self.screen` pattern in `draw()` and the `match self.screen` pattern in `handle_event()`, consistent with D097 and the established S01 borrow-split idiom. Putting list_state inside the Screen variant would force `match &mut self.screen` in `draw()`, which is a larger refactor than necessary.
+S03 is complete. The implementation matches the research recommendations exactly. For S04 (Provider Configuration Screen), the following apply:
 
-Use a `List` widget (same as Dashboard) for MilestoneDetail's chunk list. Use a `Table` widget for ChunkDetail's criteria pane: three columns — result icon (✓/✗/?), criterion name, description. This renders cleanly within terminal width without needing scroll state for typical spec sizes (≤10 criteria).
+- `Config` struct lives in `assay_types::Config` — the D056 pattern (serde default + skip_serializing_if + schema snapshot update) applies for adding `provider: Option<ProviderConfig>`
+- `config_save` does NOT yet exist in `assay-core::config` — it must be added as a new free function using the `NamedTempFile` atomic-write pattern (D093)
+- `Screen::Settings` variant and its draw/event dispatch are stubs in `app.rs` — S04 replaces the stub with `draw_settings` (full-screen, not popup per D099)
+- The `draw()` method now uses a proper `match &self.screen` with arms for all 7 variants (Dashboard, MilestoneDetail, ChunkDetail, Wizard, Settings, NoProject, LoadError) — S04 replaces the Settings stub arm
 
 ## Don't Hand-Roll
 
 | Problem | Existing Solution | Why Use It |
 |---------|------------------|------------|
-| Loading milestone from disk | `assay_core::milestone::milestone_load(assay_dir, slug)` | Same atomic-read, validates TOML, sorts chunks; already used by S01 |
-| Loading spec/gates criteria | `assay_core::spec::load_spec_entry_with_diagnostics(slug, specs_dir)` | Returns `SpecEntry` with `GatesSpec` including criteria; enriches not-found errors |
-| Listing gate run history | `assay_core::history::list(assay_dir, spec_name)` | Returns sorted run IDs (oldest first); empty if no history — not an error |
-| Loading a gate run record | `assay_core::history::load(assay_dir, spec_name, run_id)` | Returns full `GateRunRecord` with `CriterionResult` per criterion |
-| Chunk list with selection | `ratatui::widgets::{List, ListItem, ListState}` + `render_stateful_widget` | Already imported; same stateful widget used for Dashboard milestone list |
-| Criteria table | `ratatui::widgets::{Table, Row, Cell}` | Built into `ratatui` 0.30; `use ratatui::widgets::{Cell, Row, Table}` |
-| Path safety | `assay_core::history::validate_path_component` (pub(crate)) | Not public, but `milestone_load` and `history::list` already call it; pass slug strings that came from parsed TOML — they're already validated |
+| Loading milestone from disk | `assay_core::milestone::milestone_load(assay_dir, slug)` | Same atomic-read, validates TOML; used in S03 Dashboard Enter |
+| Loading spec/gates criteria | `assay_core::spec::load_spec_entry_with_diagnostics(slug, specs_dir)` | Returns `SpecEntry` with `GatesSpec.criteria`; handles Legacy gracefully |
+| Listing gate run history | `assay_core::history::list(assay_dir, spec_name)` | Returns sorted run IDs; empty is Ok not error |
+| Loading a gate run record | `assay_core::history::load(assay_dir, spec_name, run_id)` | Returns `GateRunRecord` with `CriterionResult` per criterion |
+| Chunk list with selection | `ratatui::widgets::{List, ListItem, ListState}` + `render_stateful_widget` | Used in both Dashboard and MilestoneDetail; already imported |
+| Criteria table | `ratatui::widgets::{Table, Row, Cell}` | Used in `draw_chunk_detail`; already imported in `app.rs` |
+| Config load | `assay_core::config::load(root)` | Already called in `App::with_project_root`; returns `Config` from `assay_types` |
+| Atomic config write (S04) | `NamedTempFile + sync_all + persist` pattern from `milestone_save` | Pattern from D093; `config_save` must be added to `assay-core::config` |
 
-## Existing Code and Patterns
+## Existing Code and Patterns (as-built)
 
-- `crates/assay-tui/src/app.rs` — All new code goes here. Screen enum, App struct, draw(), handle_event() are the extension points. Screen variants are `pub enum Screen` (no derive Copy/Clone). handle_event() matches `self.screen` with destructuring patterns. draw() matches `&self.screen` with immutable borrows.
-- `crates/assay-tui/src/wizard.rs` — Pattern reference for a self-contained screen module. MilestoneDetail/ChunkDetail don't need separate module files — they can live directly in `app.rs` as free functions.
-- `crates/assay-tui/tests/app_wizard.rs` — Integration test pattern: construct `App::with_project_root(Some(tmp_root))`, drive via `handle_event(key(...))`, assert on `app.screen`. S03 tests follow the same pattern.
-- `crates/assay-core/src/milestone/mod.rs` — `milestone_load(assay_dir, slug)`. Takes `.assay/` directory (NOT project root). Returns `Milestone` with `chunks: Vec<ChunkRef>` sorted by slug, `completed_chunks: Vec<String>`, `status: MilestoneStatus`.
-- `crates/assay-core/src/spec/mod.rs` — `load_spec_entry_with_diagnostics(slug, specs_dir)` where `specs_dir = assay_dir.join("specs")`. Returns `Result<SpecEntry>`. To extract GatesSpec: `match entry { SpecEntry::Directory { gates, .. } => gates, SpecEntry::Legacy { spec, .. } => /* convert or show error */ }`. Wizard-created specs are always `Directory` variant.
-- `crates/assay-core/src/history/mod.rs` — `list(assay_dir, spec_name)` returns `Vec<String>` sorted chronologically. `load(assay_dir, spec_name, run_id)` returns `GateRunRecord`. Latest run: `list(...).last()` then `load(...)`. If `list` returns empty, no history → all criteria are Pending.
-- `crates/assay-types/src/gates_spec.rs` — `GatesSpec { name, criteria: Vec<GateCriterion> }` where `GateCriterion = Criterion { name, description, cmd, enforcement, .. }`.
-- `crates/assay-types/src/gate_run.rs` — `GateRunRecord { summary: GateRunSummary }`, `GateRunSummary { results: Vec<CriterionResult> }`, `CriterionResult { criterion_name, result: Option<GateResult>, enforcement }`, `GateResult { passed: bool, .. }`. The `results` vec may be shorter than spec criteria count.
-- `crates/assay-types/src/milestone.rs` — `Milestone { chunks: Vec<ChunkRef>, completed_chunks: Vec<String>, status }`. `ChunkRef { slug, order }`. Chunk is complete if `slug in milestone.completed_chunks`. Active chunk is `min-order ChunkRef` not in `completed_chunks`.
+- `crates/assay-tui/src/app.rs` — All S03 code lives here. Adds `Screen::MilestoneDetail { slug }`, `Screen::ChunkDetail { milestone_slug, chunk_slug }`, five `App` fields (`detail_list_state`, `detail_milestone`, `detail_spec`, `detail_spec_note`, `detail_run`), `draw_milestone_detail`, `draw_chunk_detail`, `join_results`, and full navigation wiring.
+- `crates/assay-tui/src/lib.rs` — `pub mod app; pub mod wizard;` — two modules; S04 does not need a new module file.
+- `crates/assay-tui/tests/spec_browser.rs` — `setup_project` test helper + 6 integration tests. Pattern: `App::with_project_root(Some(tmp))`, drive via `handle_event(key(...))`, assert on `app.screen` discriminant and `app.detail_*` fields.
+- `crates/assay-tui/tests/app_wizard.rs` — 1 integration test for wizard slug-collision error; reference for App-level test pattern.
+- `crates/assay-tui/tests/wizard_round_trip.rs` — 9 unit + integration tests for `WizardState` and file I/O round-trip.
+- `crates/assay-core/src/config/mod.rs` — Has `load(root: &Path) -> Result<Config>`. Does NOT have `config_save` yet — S04 must add it.
+- `crates/assay-types/src/lib.rs` — `Config` struct: `project_name`, `specs_dir`, `gates?`, `guard?`, `worktree?`, `sessions?`. No `provider` field yet — S04 adds it. Has `#[serde(deny_unknown_fields)]`.
 
 ## Constraints
 
-- **Borrow checker (D097):** Preserve `match &self.screen` in `draw()`. Extend App with `detail_list_state: ListState`, `detail_milestone: Option<Milestone>`, `detail_spec: Option<GatesSpec>`, `detail_run: Option<GateRunRecord>`. Pass these as individual arguments to render fns — do NOT pass `&mut self` to render fns.
-- **Sync-only data loading (D091):** Load everything in `handle_event` on navigation, before the next `draw()` call. No background threads needed for typical spec sizes.
-- **assay_dir vs project_root:** `milestone_load` and `history::list` take `assay_dir` (`project_root.join(".assay")`). `spec::load_spec_entry_with_diagnostics` takes `specs_dir` (`assay_dir.join("specs")`). Do not confuse these.
-- **Zero traits (D001):** New render functions are free functions (`draw_milestone_detail`, `draw_chunk_detail`), not Widget trait impls.
-- **SpecEntry variants:** Wizard-created specs are `Directory` (have `GatesSpec`). Legacy flat `.toml` specs are `Legacy` (have `Spec`, which has criteria as `Vec<Criterion>`). Both should be renderable — either extract `gates` from Directory or show a fallback "Legacy spec" message for Legacy entries.
-- **No new dependencies:** `ratatui::widgets::{Table, Row, Cell}` are already in the workspace dep `ratatui = "0.30"`.
+- **Borrow checker (D097):** `draw()` uses `match &self.screen`; individual fields passed as args to render fns. New Settings render fn must follow this — `draw_settings(frame, config: Option<&Config>, list_state: &mut ListState)`.
+- **Sync-only data loading (D091):** Load in `handle_event` on nav transitions. No background threads for S04 either.
+- **assay_dir vs project_root:** `milestone_load` and `history::list` take `.assay/` dir; `spec::load_spec_entry_with_diagnostics` takes `specs_dir` = `assay_dir.join("specs")`; `config::load` takes project root.
+- **Zero traits (D001):** All render functions are free functions, not Widget trait impls.
+- **Config extension (D056/D092):** Adding `provider: Option<ProviderConfig>` to `Config` requires `#[serde(default, skip_serializing_if = "Option::is_none")]` on the field, a schema snapshot update, and a backward-compat test proving existing `config.toml` without the field still loads.
+- **GatesSpec validation:** At least one criterion must have `cmd`, `path`, or `kind = "agent_report"` to pass validation. Test fixtures must include a valid `cmd = "true"` line.
 
 ## Common Pitfalls
 
-- **Criterion name join mismatch:** `GatesSpec.criteria[i].name` is the spec's criterion name. `CriterionResult.criterion_name` is what the run recorded. These must match exactly for the join. If the spec was updated (criterion renamed) after a run, the join produces "orphan" run results and "new" unrun criteria. The render function must handle both: criteria not in the run show as Pending; run results with no matching spec criterion can be safely ignored.
-- **Empty history is not an error:** `history::list()` returns `Ok(vec![])` when `.assay/results/<slug>/` doesn't exist. This is correct — chunk has never been gate-checked. Render all criteria as `?` Pending. Do NOT treat this as a render error.
-- **SpecEntry::Legacy cannot provide GatesSpec:** The `load_spec_entry_with_diagnostics` function may return a `Legacy` entry if the spec file is a flat `.toml`. In that case there is no `GatesSpec` — render a one-line "Legacy flat spec — criteria not available in this view" placeholder rather than panicking.
-- **completed_chunks vs gate results:** `milestone.completed_chunks` tracks cycle-advance completion (the user ran `cycle_advance`), which is separate from gate run history. A chunk can appear in `completed_chunks` without having gate run records (if the user advanced manually). Show gate history from `history::list/load`, not from `completed_chunks`.
-- **ListState stale selection on re-entry:** When transitioning back from ChunkDetail to MilestoneDetail via Esc, `detail_list_state` retains its previous selection — this is correct and expected behavior (user's position is preserved). When transitioning INTO MilestoneDetail fresh from Dashboard, reset `detail_list_state.select(Some(0))` if chunks are non-empty.
-- **milestone_load vs App.milestones lookup:** `App.milestones` (from `milestone_scan`) already contains milestone data. For MilestoneDetail we can use `milestone_load` to get fresh data OR look up from `App.milestones`. Prefer `milestone_load` on navigation — it ensures we have the most current `completed_chunks` state. The scan result may be stale if the user ran `cycle_advance` in another terminal while the TUI is open.
-- **handle_event Screen::MilestoneDetail | Screen::ChunkDetail without ref bindings:** The existing `handle_event` matches `self.screen` (by value). New arms must not move fields out of the screen variants. Use `ref slug` or `ref milestone_slug` bindings, or match via `matches!` guard then access via `if let`. Alternatively, restructure to `match &mut self.screen` in handle_event (this is a larger but cleaner change — evaluate in planning).
+- **Criterion name join mismatch:** `GatesSpec.criteria[i].name` vs `CriterionResult.criterion_name` must match exactly. Criteria added after a run appear as Pending; run results for removed criteria are silently ignored.
+- **Empty history is not an error:** `history::list()` returns `Ok(vec![])` when no runs exist — render all criteria as `?` Pending.
+- **SpecEntry::Legacy has no GatesSpec:** Show a one-line "Legacy flat spec — criteria not available in this view" fallback. Implemented via `detail_spec_note: Option<String>` in `App`.
+- **GatesSpec validation requires executable criterion:** Test TOML fixtures must include at least one criterion with `cmd = "true"` (or `path`, or `kind = "agent_report"`). Missing this causes `load_spec_entry_with_diagnostics` to return an error → `ChunkDetail` shows error note, not criteria table.
+- **config_save does not exist yet (S04):** `assay-core::config` exposes only `load`. S04 must add `pub fn config_save(root: &Path, config: &Config) -> Result<()>` using `NamedTempFile + sync_all + persist` — not write directly to `config.toml`.
+- **deny_unknown_fields on Config (S04):** Adding `ProviderConfig` without `serde(default)` breaks existing `config.toml` files that lack a `[provider]` section. Must follow D056/D092 pattern exactly.
+- **Settings `w` key conflict (D098):** `s` opens Settings from Dashboard; `w` saves and returns to Dashboard from Settings; `Esc`/`q` cancel without saving. `Enter` does NOT save (avoids conflict with future list-item activation semantics).
 
-## Open Risks
+## Open Risks (S04 forward)
 
-- **Borrow checker in handle_event:** The current `match self.screen` pattern works for unit variants (`Dashboard`) and variants that contain state that is immediately re-assigned (`Wizard(ref mut state)`). Adding MilestoneDetail navigation requires: (a) reading the current list selection from `self.detail_list_state`, (b) reading chunk slug from `self.detail_milestone`, (c) setting `self.screen` to ChunkDetail. Step (c) requires mutating `self.screen` while we've already started a match on it. This is the same pattern as the Wizard Submit arm — which does `self.screen = Screen::Dashboard` inside the Wizard arm. That works. The new arms follow the same pattern: read needed data into local variables first, then mutate `self.screen` last.
-- **Table widget StatefulWidget vs plain Widget:** `Table` can be rendered as a plain widget (no selection highlighting needed for ChunkDetail read-only view) or as a stateful widget (with `TableState` for row selection). For S03, plain `render_widget` is sufficient — criteria list is read-only. If S05 adds criterion selection for drill-down, `TableState` can be added then.
-- **Large criteria lists:** Specs with many criteria (>30) will overflow a standard terminal without scroll. For S03, this is acceptable — typical specs have 5–15 criteria. If vertical overflow is observed during integration testing, add a basic scroll offset or truncate with "... and N more" indicator.
+- **schema snapshot for Config:** Adding `ProviderConfig` to `Config` requires `cargo insta review` to update the locked schema snapshot. Missing this step causes `cargo test` to fail on schema divergence.
+- **backward-compat test:** A `config_toml_roundtrip_without_provider` test must prove existing config files without a `[provider]` section still load without error. This is a D056 requirement, not optional.
+- **Settings screen terminal size:** Full-screen (not popup per D099) means Settings renders at full terminal height. Provider selection list + model fields + error line must fit in ≥24 rows. No minimum terminal size check exists anywhere in the TUI.
+
+## Post-Implementation Validation
+
+The pre-implementation research was accurate. All predictions held:
+- `App`-level detail fields (not Screen-variant-embedded) was the right call — preserved `detail_list_state` across Esc transitions without extra state management
+- `match &self.screen` in `draw()` + clone-before-mutate in `handle_event()` resolved borrow-split cleanly (D097/D098 patterns)
+- `Table` widget (not `List`) for criteria pane rendered correctly with 3 columns: icon/name/description
+- `history::list()` returning `Ok(vec![])` for missing history dir was confirmed correct — all 6 spec_browser tests pass
+
+One discovery not in the original research: `GatesSpec` validation requires at least one executable criterion. The test fixture's `cmd = "true"` field was added in T03 to satisfy this constraint. This is now documented as a pitfall above.
 
 ## Skills Discovered
 
@@ -75,12 +89,11 @@ Use a `List` widget (same as Dashboard) for MilestoneDetail's chunk list. Use a 
 
 ## Sources
 
-- Codebase: `crates/assay-tui/src/app.rs` — Screen enum, App struct, draw() + handle_event() patterns; established borrow-split idiom (D097) (HIGH confidence)
-- Codebase: `crates/assay-core/src/milestone/mod.rs` — milestone_load/scan public API, path contracts (HIGH confidence)
-- Codebase: `crates/assay-core/src/spec/mod.rs` — load_spec_entry_with_diagnostics, SpecEntry variants, specs_dir path convention (HIGH confidence)
-- Codebase: `crates/assay-core/src/history/mod.rs` — list/load API, empty-dir returns Ok(vec![]), path safety (HIGH confidence)
-- Codebase: `crates/assay-types/src/gates_spec.rs` — GatesSpec.criteria field, GateCriterion = Criterion type alias (HIGH confidence)
-- Codebase: `crates/assay-types/src/gate_run.rs` — GateRunRecord, CriterionResult, GateResult.passed (HIGH confidence)
-- Codebase: `crates/assay-types/src/milestone.rs` — Milestone.chunks, Milestone.completed_chunks, ChunkRef.slug/order (HIGH confidence)
-- Ratatui 0.30 source: `~/.cargo/registry/src/.../ratatui-0.30.0/src/widgets.rs` — Table/Row/Cell exported from ratatui::widgets (HIGH confidence)
-- Ratatui 0.30 source: `~/.cargo/registry/src/.../ratatui-widgets-0.3.0/src/table/row.rs` — Row::new() API, Cell::from() construction (HIGH confidence)
+- Codebase: `crates/assay-tui/src/app.rs` — Screen enum, App struct, draw() + handle_event() as-built; draw_milestone_detail, draw_chunk_detail, join_results implementations (HIGH confidence)
+- Codebase: `crates/assay-tui/tests/spec_browser.rs` — 6 passing integration tests; setup_project fixture pattern (HIGH confidence)
+- Codebase: `crates/assay-core/src/milestone/mod.rs` — milestone_load public API, path contracts (HIGH confidence)
+- Codebase: `crates/assay-core/src/spec/mod.rs` — load_spec_entry_with_diagnostics, SpecEntry variants, GatesSpec validation requirement (HIGH confidence)
+- Codebase: `crates/assay-core/src/history/mod.rs` — list/load API, empty-dir returns Ok(vec![]) (HIGH confidence)
+- Codebase: `crates/assay-types/src/lib.rs` — Config struct, no provider field yet, deny_unknown_fields (HIGH confidence)
+- Codebase: `crates/assay-core/src/config/mod.rs` — load() exists; config_save does NOT exist (HIGH confidence)
+- S03-SUMMARY.md — as-built deviations, GatesSpec validation discovery, forward intelligence for S04 (HIGH confidence)
