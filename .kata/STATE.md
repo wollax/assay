@@ -2,9 +2,9 @@
 
 **Active Milestone:** M006 — TUI as Primary Surface
 **Active Slice:** S03 — Chunk Detail View and Spec Browser
-**Active Task:** — (S02 complete; S03 not yet started)
-**Phase:** Planning
-**Last Updated:** 2026-03-20
+**Active Task:** T01 — Extend Screen/App types and write spec_browser contract tests
+**Phase:** Executing
+**Last Updated:** 2026-03-21
 **Requirements Status:** 9 active (R051–R059) · 44 validated (R001–R050) · 2 deferred · 4 out of scope
 **Test Count:** 1356 (all passing)
 
@@ -46,4 +46,4 @@ None.
 
 ## Next Action
 
-Start S03: Chunk Detail View and Spec Browser. Before implementing, read actual `app.rs` to confirm Screen enum variants and App struct as they exist (project_root is PathBuf not Option<PathBuf>; draw() needs to be refactored from unconditional Dashboard-first to proper match for full-screen detail views). Add Screen::MilestoneDetail and Screen::ChunkDetail variants; implement draw_milestone_detail and draw_chunk_detail; wire Enter navigation and Esc back.
+Execute S03/T01: Extend Screen enum with MilestoneDetail/ChunkDetail variants, extend App struct with 5 detail_* fields, add stub draw()/handle_event() arms, and write `tests/spec_browser.rs` with 6 failing tests. Files: `crates/assay-tui/src/app.rs`, `crates/assay-tui/tests/spec_browser.rs`. End state: `cargo build -p assay-tui` succeeds, 6 spec_browser tests compile and fail at assertions. Note: D096 "unconditional Dashboard first" was a past plan description that differs from the actual S02 code — `draw()` in the real code already uses proper match on Screen variant, so no refactor is needed to support full-screen views.
