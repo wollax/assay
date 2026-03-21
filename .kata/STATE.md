@@ -2,9 +2,9 @@
 
 **Active Milestone:** M007 — TUI Agent Harness
 **Active Slice:** S01 — Channel Event Loop and Agent Run Panel
-**Active Task:** T02
+**Active Task:** T03
 **Phase:** Executing
-**Last Updated:** 2026-03-21 (T01 complete: TuiEvent, AgentRunStatus, Screen::AgentRun, launch_agent_streaming added; 8-test scaffold written, 4 green / 4 red)
+**Last Updated:** 2026-03-21 (T02 complete: handle_agent_line, handle_agent_done, draw_agent_run implemented; all 8 agent_run tests + 35 total TUI tests pass)
 **Requirements Status:** 7 active (R053–R059) · 46 validated (R001–R052) · 2 deferred · 4 out of scope
 **Test Count:** 1367 (27 assay-tui; all workspace tests pass; just ready green)
 
@@ -61,4 +61,4 @@ None.
 
 ## Next Action
 
-S01 planned (T01–T04). Begin T01: define TuiEvent/AgentRunStatus/Screen::AgentRun types, launch_agent_streaming, and write failing agent_run tests.
+S01/T03: Refactor `run()` to channel-based event loop + wire `r` key handler in Dashboard.
