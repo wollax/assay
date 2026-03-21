@@ -2,9 +2,9 @@
 
 **Active Milestone:** M006 — TUI as Primary Surface
 **Active Slice:** S03 — Chunk Detail View and Spec Browser
-**Active Task:** T01 — Extend Screen/App types and write spec_browser contract tests
+**Active Task:** T02 — MilestoneDetail screen — navigation and render
 **Phase:** Executing
-**Last Updated:** 2026-03-21
+**Last Updated:** 2026-03-20
 **Requirements Status:** 9 active (R051–R059) · 44 validated (R001–R050) · 2 deferred · 4 out of scope
 **Test Count:** 1356 (all passing)
 
@@ -46,4 +46,4 @@ None.
 
 ## Next Action
 
-Execute S03/T01: Extend Screen enum with MilestoneDetail/ChunkDetail variants, extend App struct with 5 detail_* fields, add stub draw()/handle_event() arms, and write `tests/spec_browser.rs` with 6 failing tests. Files: `crates/assay-tui/src/app.rs`, `crates/assay-tui/tests/spec_browser.rs`. End state: `cargo build -p assay-tui` succeeds, 6 spec_browser tests compile and fail at assertions. Note: D096 "unconditional Dashboard first" was a past plan description that differs from the actual S02 code — `draw()` in the real code already uses proper match on Screen variant, so no refactor is needed to support full-screen views.
+Execute S03/T02: Wire Enter key on Dashboard to load milestone via `milestone_load` and navigate to MilestoneDetail; implement Up/Down navigation in MilestoneDetail; implement `draw_milestone_detail` with bordered chunk List; Esc from MilestoneDetail → Dashboard. Files: `crates/assay-tui/src/app.rs`. End state: 3 of 6 spec_browser tests pass (enter_on_dashboard_navigates_to_milestone_detail, up_down_in_milestone_detail, esc_from_milestone_detail).

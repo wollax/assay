@@ -45,7 +45,7 @@
 
 ## Tasks
 
-- [ ] **T01: Extend Screen/App types and write spec_browser contract tests** `est:45m`
+- [x] **T01: Extend Screen/App types and write spec_browser contract tests** `est:45m`
   - Why: Establishes the type contract that T02 and T03 implement against; tests drive TDD discipline and prevent regressions.
   - Files: `crates/assay-tui/src/app.rs`, `crates/assay-tui/tests/spec_browser.rs`
   - Do: Add `Screen::MilestoneDetail { slug: String }` and `Screen::ChunkDetail { milestone_slug: String, chunk_slug: String }` variants to the `Screen` enum. Add `detail_list_state: ListState`, `detail_milestone: Option<Milestone>`, `detail_spec: Option<GatesSpec>`, `detail_spec_note: Option<String>`, `detail_run: Option<GateRunRecord>` fields to `App`; initialize all to defaults in `with_project_root`. Add stub match arms in `draw()` (render a placeholder Paragraph) and `handle_event()` (MilestoneDetail: Esc → Dashboard; ChunkDetail: Esc → MilestoneDetail stub). Import `assay_types::{GatesSpec, GateRunRecord}` in `app.rs`. Write `tests/spec_browser.rs` with a `setup_project` helper (tempdir + writes minimal milestone TOML with one chunk ref + writes gates.toml under specs/) and 6 test functions using `App::with_project_root`; test assertions will fail because stubs don't implement real behavior yet.
