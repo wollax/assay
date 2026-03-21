@@ -197,13 +197,40 @@ impl App {
     ///
     /// No-op if the current screen is not `Screen::AgentRun`.
     /// Lines are capped at 10 000 to prevent unbounded memory growth.
-    pub fn handle_agent_line(&mut self, _line: String) {}
+    pub fn handle_agent_line(&mut self, line: String) {
+        if let Screen::AgentRun { ref mut lines, .. } = self.screen {
+            lines.push(line);
+            if lines.len() > 10_000 {
+                lines.remove(0);
+            }
+        }
+    }
 
     /// Handle agent subprocess exit.
     ///
-    /// Transitions `Screen::AgentRun.status` to `Done` or `Failed`.
-    /// No-op until T02 implements the real state machine.
-    pub fn handle_agent_done(&mut self, _exit_code: i32) {}
+    /// Transitions `Screen::AgentRun.status` to `Done` (exit 0) or `Failed`
+    /// (non-zero exit). Then refreshes milestones and cycle_slug from disk so
+    /// the dashboard reflects any state changes caused by the agent run.
+    pub fn handle_agent_done(&mut self, exit_code: i32) {
+        if let Screen::AgentRun { ref mut status, .. } = self.screen {
+            *status = if exit_code == 0 {
+                AgentRunStatus::Done { exit_code }
+            } else {
+                AgentRunStatus::Failed { exit_code }
+            };
+        }
+        // Refresh disk state (graceful degradation on I/O error).
+        if let Some(ref root) = self.project_root {
+            let assay_dir = root.join(".assay");
+            if let Ok(ms) = milestone_scan(&assay_dir) {
+                self.milestones = ms;
+            }
+            self.cycle_slug = cycle_status(&assay_dir)
+                .ok()
+                .flatten()
+                .map(|cs| cs.milestone_slug);
+        }
+    }
 
     /// Draw the current screen into `frame`.
     pub fn draw(&mut self, frame: &mut ratatui::Frame) {
@@ -251,15 +278,7 @@ impl App {
                 scroll_offset,
                 status,
             } => {
-                let cs = chunk_slug.clone();
-                let ls = lines.clone();
-                let so = *scroll_offset;
-                let st = match status {
-                    AgentRunStatus::Running => "Running",
-                    AgentRunStatus::Done { .. } => "Done",
-                    AgentRunStatus::Failed { .. } => "Failed",
-                };
-                draw_agent_run_stub(frame, content_area, &cs, &ls, so, st);
+                draw_agent_run(frame, content_area, chunk_slug, lines, *scroll_offset, status);
             }
         }
 
@@ -550,7 +569,24 @@ impl App {
                 false
             }
 
-            Screen::AgentRun { .. } => false,
+            Screen::AgentRun {
+                ref mut scroll_offset,
+                ..
+            } => {
+                match key.code {
+                    KeyCode::Esc => {
+                        self.screen = Screen::Dashboard;
+                    }
+                    KeyCode::Down | KeyCode::Char('j') => {
+                        *scroll_offset = scroll_offset.saturating_add(1);
+                    }
+                    KeyCode::Up | KeyCode::Char('k') => {
+                        *scroll_offset = scroll_offset.saturating_sub(1);
+                    }
+                    _ => {}
+                }
+                false
+            }
 
             Screen::Settings { .. } => {
                 match key.code {
@@ -650,25 +686,60 @@ impl App {
 
 // ── Screen renderers ──────────────────────────────────────────────────────────
 
-/// Stub renderer for the agent run screen.
+/// Render the live agent run screen.
 ///
-/// Shows a bordered block with the chunk slug, status, and a line count.
-/// The full implementation (scrollable line list, etc.) is added in T02.
-fn draw_agent_run_stub(
+/// Layout: bordered block with title at top; inside → scrollable line list
+/// (fills available height) + 1-row status line at the bottom.
+fn draw_agent_run(
     frame: &mut ratatui::Frame,
     area: Rect,
     chunk_slug: &str,
     lines: &[String],
-    _scroll_offset: usize,
-    status: &str,
+    scroll_offset: usize,
+    status: &AgentRunStatus,
 ) {
-    let text = Paragraph::new(vec![
-        Line::from(format!("AgentRun: {chunk_slug}")).bold().centered(),
-        Line::from(format!("Status: {status}")).centered(),
-        Line::from(format!("Lines: {}", lines.len())).centered().dim(),
-    ])
-    .block(Block::default().borders(Borders::ALL).title(" Agent Run "));
-    frame.render_widget(text, area);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(format!(" Agent Run: {chunk_slug} "));
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    let [content_area, status_area] =
+        Layout::vertical([Constraint::Fill(1), Constraint::Length(1)]).areas(inner);
+
+    // Line list.
+    let visible_rows = content_area.height as usize;
+    if lines.is_empty() {
+        let placeholder = List::new(vec![ListItem::new("Starting…").style(Style::default().dim())]);
+        frame.render_widget(placeholder, content_area);
+    } else {
+        let safe_start = scroll_offset.min(lines.len().saturating_sub(1));
+        let safe_end = (safe_start + visible_rows).min(lines.len());
+        let items: Vec<ListItem> = lines[safe_start..safe_end]
+            .iter()
+            .map(|l| ListItem::new(l.as_str()))
+            .collect();
+        let list = List::new(items);
+        frame.render_widget(list, content_area);
+    }
+
+    // Status line.
+    let (status_text, status_style) = match status {
+        AgentRunStatus::Running => (
+            "● Running…  Esc: back".to_string(),
+            Style::default().fg(Color::Yellow),
+        ),
+        AgentRunStatus::Done { exit_code } => (
+            format!("✓ Done (exit {exit_code})  Esc: back"),
+            Style::default().fg(Color::Green),
+        ),
+        AgentRunStatus::Failed { exit_code } => (
+            format!("✗ Failed (exit {exit_code})  Esc: back"),
+            Style::default().fg(Color::Red),
+        ),
+    };
+    let status_line = Paragraph::new(Line::from(Span::styled(status_text, status_style)));
+    frame.render_widget(status_line, status_area);
 }
 
 /// Render a load-error screen when milestone data could not be read.
