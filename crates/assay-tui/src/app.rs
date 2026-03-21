@@ -6,11 +6,14 @@
 
 use std::path::PathBuf;
 
+use assay_core::config::save as config_save;
 use assay_core::history;
 use assay_core::milestone::{cycle_status, milestone_load, milestone_scan};
 use assay_core::spec::{SpecEntry, load_spec_entry_with_diagnostics};
 use assay_core::wizard::create_from_inputs;
-use assay_types::{Criterion, GateRunRecord, GatesSpec, Milestone, MilestoneStatus};
+use assay_types::{
+    Criterion, GateRunRecord, GatesSpec, Milestone, MilestoneStatus, ProviderConfig, ProviderKind,
+};
 use crossterm::event::KeyCode;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Style, Stylize};
@@ -41,6 +44,13 @@ pub enum Screen {
         milestone_slug: String,
         chunk_slug: String,
     },
+    /// Provider / model configuration screen.
+    Settings {
+        /// Currently selected provider in the list.
+        selected: usize,
+        /// Inline error message from a failed save attempt.
+        error: Option<String>,
+    },
 }
 
 // ── App ───────────────────────────────────────────────────────────────────────
@@ -70,13 +80,8 @@ pub struct App {
     /// Slug of the currently active (InProgress) milestone, or `None` when no
     /// milestone is in progress.  Used by the status bar renderer.
     pub cycle_slug: Option<String>,
-    /// Project display name from config, used by the status bar.
-    pub config: Option<AppConfig>,
-}
-
-/// Minimal project config surfaced to the status bar.
-pub struct AppConfig {
-    pub project_name: String,
+    /// Loaded project config (used by status bar and settings screen).
+    pub config: Option<assay_types::Config>,
 }
 
 impl App {
@@ -118,6 +123,10 @@ impl App {
             list_state.select(Some(0));
         }
 
+        let config = project_root
+            .as_deref()
+            .and_then(|root| assay_core::config::load(root).ok());
+
         Ok(App {
             screen,
             milestones,
@@ -130,7 +139,7 @@ impl App {
             detail_run: None,
             show_help: false,
             cycle_slug,
-            config: None,
+            config,
         })
     }
 
@@ -163,6 +172,15 @@ impl App {
                     self.detail_spec.as_ref(),
                     self.detail_spec_note.as_deref(),
                     self.detail_run.as_ref(),
+                );
+            }
+            Screen::Settings { selected, error } => {
+                draw_settings(
+                    frame,
+                    content_area,
+                    self.config.as_ref(),
+                    *selected,
+                    error.as_deref(),
                 );
             }
         }
@@ -227,6 +245,24 @@ impl App {
                         if self.project_root.is_some() {
                             self.screen = Screen::Wizard(WizardState::new());
                         }
+                    }
+                    KeyCode::Char('s') => {
+                        // Open settings screen.  Pre-select the current provider if
+                        // config is loaded; default to Anthropic (index 0) otherwise.
+                        let selected = self
+                            .config
+                            .as_ref()
+                            .and_then(|c| c.provider.as_ref())
+                            .map(|p| match p.provider {
+                                ProviderKind::Anthropic => 0,
+                                ProviderKind::OpenAi => 1,
+                                ProviderKind::Ollama => 2,
+                            })
+                            .unwrap_or(0);
+                        self.screen = Screen::Settings {
+                            selected,
+                            error: None,
+                        };
                     }
                     KeyCode::Enter => {
                         if let Some(idx) = self.list_state.selected()
@@ -432,6 +468,99 @@ impl App {
                             }
                         }
                     }
+                }
+                false
+            }
+
+            Screen::Settings { .. } => {
+                match key.code {
+                    KeyCode::Esc | KeyCode::Char('q') => {
+                        self.screen = Screen::Dashboard;
+                    }
+                    KeyCode::Down => {
+                        if let Screen::Settings { selected, .. } = &mut self.screen {
+                            *selected = (*selected + 1) % 3;
+                        }
+                    }
+                    KeyCode::Up => {
+                        if let Screen::Settings { selected, .. } = &mut self.screen {
+                            *selected = selected.checked_sub(1).unwrap_or(2);
+                        }
+                    }
+                    KeyCode::Char('w') => {
+                        // Save provider selection to config.toml.
+                        let (selected, _error_slot) = if let Screen::Settings {
+                            selected,
+                            ref mut error,
+                        } = self.screen
+                        {
+                            (selected, error)
+                        } else {
+                            unreachable!("must be in Settings screen");
+                        };
+                        let kind = match selected {
+                            1 => ProviderKind::OpenAi,
+                            2 => ProviderKind::Ollama,
+                            _ => ProviderKind::Anthropic,
+                        };
+                        match &self.project_root {
+                            None => {
+                                if let Screen::Settings { ref mut error, .. } = self.screen {
+                                    *error = Some(
+                                        "Cannot save: no project root. Run `assay init` first."
+                                            .to_string(),
+                                    );
+                                }
+                            }
+                            Some(root) => {
+                                // Build or mutate config.
+                                let mut cfg =
+                                    self.config.clone().unwrap_or_else(|| assay_types::Config {
+                                        project_name: String::new(),
+                                        specs_dir: "specs/".to_string(),
+                                        gates: None,
+                                        guard: None,
+                                        worktree: None,
+                                        sessions: None,
+                                        provider: None,
+                                    });
+                                cfg.provider = Some(ProviderConfig {
+                                    provider: kind,
+                                    planning_model: cfg
+                                        .provider
+                                        .as_ref()
+                                        .and_then(|p| p.planning_model.clone()),
+                                    execution_model: cfg
+                                        .provider
+                                        .as_ref()
+                                        .and_then(|p| p.execution_model.clone()),
+                                    review_model: cfg
+                                        .provider
+                                        .as_ref()
+                                        .and_then(|p| p.review_model.clone()),
+                                });
+                                match config_save(root, &cfg) {
+                                    Ok(()) => {
+                                        self.config = Some(cfg);
+                                        // Refresh cycle_slug after settings save.
+                                        let assay_dir = root.join(".assay");
+                                        self.cycle_slug = cycle_status(&assay_dir)
+                                            .ok()
+                                            .flatten()
+                                            .map(|cs| cs.milestone_slug);
+                                        self.screen = Screen::Dashboard;
+                                    }
+                                    Err(e) => {
+                                        if let Screen::Settings { ref mut error, .. } = self.screen
+                                        {
+                                            *error = Some(format!("Save failed: {e}"));
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
                 }
                 false
             }
@@ -662,6 +791,79 @@ fn draw_chunk_detail(
 }
 
 /// Render the persistent one-line status bar showing project context.
+/// Render the provider configuration screen.
+///
+/// Full-screen bordered block listing three provider options (Anthropic,
+/// OpenAI, Ollama) with the currently selected one highlighted and a brief
+/// legend of key hints at the bottom.
+fn draw_settings(
+    frame: &mut ratatui::Frame,
+    area: Rect,
+    config: Option<&assay_types::Config>,
+    selected: usize,
+    error: Option<&str>,
+) {
+    let block = Block::default()
+        .title(" Provider Configuration ")
+        .borders(Borders::ALL);
+    frame.render_widget(block.clone(), area);
+
+    let inner = block.inner(area);
+
+    // Layout: list of providers + optional error + key hints at bottom.
+    let [list_area, hint_area] = Layout::vertical([
+        Constraint::Fill(1),
+        Constraint::Length(if error.is_some() { 3 } else { 2 }),
+    ])
+    .areas(inner);
+
+    let providers = ["Anthropic (Claude)", "OpenAI (GPT)", "Ollama (local)"];
+    let current_kind = config
+        .and_then(|c| c.provider.as_ref())
+        .map(|p| p.provider)
+        .unwrap_or(ProviderKind::Anthropic);
+    let saved_idx = match current_kind {
+        ProviderKind::Anthropic => 0,
+        ProviderKind::OpenAi => 1,
+        ProviderKind::Ollama => 2,
+    };
+
+    let items: Vec<ListItem> = providers
+        .iter()
+        .enumerate()
+        .map(|(i, name)| {
+            let prefix = if i == selected { "▶ " } else { "  " };
+            let suffix = if i == saved_idx { "  [saved]" } else { "" };
+            let label = format!("{prefix}{name}{suffix}");
+            let style = if i == selected {
+                Style::default().bold().fg(Color::Cyan)
+            } else {
+                Style::default()
+            };
+            ListItem::new(label).style(style)
+        })
+        .collect();
+
+    let list = List::new(items);
+    frame.render_widget(list, list_area);
+
+    // Key hints (and optional error above them).
+    let mut hint_lines: Vec<Line> = Vec::new();
+    if let Some(msg) = error {
+        hint_lines.push(Line::from(Span::styled(
+            format!("Error: {msg}"),
+            Style::default().fg(Color::Red),
+        )));
+    }
+    hint_lines.push(Line::from(Span::styled(
+        "↑↓ select  w save  Esc cancel",
+        Style::default().dim(),
+    )));
+
+    let hint = Paragraph::new(hint_lines);
+    frame.render_widget(hint, hint_area);
+}
+
 ///
 /// Shows: `<project_name>  ·  <cycle_slug>  ·  ? help  q quit` (dim hints).
 /// When `project_name` is empty and `cycle_slug` is `None`, only the key hints

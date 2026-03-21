@@ -1,0 +1,61 @@
+---
+source: crates/assay-types/tests/schema_snapshots.rs
+expression: schema.to_value()
+---
+{
+  "$defs": {
+    "ProviderKind": {
+      "description": "AI provider selection.",
+      "oneOf": [
+        {
+          "const": "anthropic",
+          "description": "Anthropic (Claude).",
+          "type": "string"
+        },
+        {
+          "const": "open_ai",
+          "description": "OpenAI (GPT).",
+          "type": "string"
+        },
+        {
+          "const": "ollama",
+          "description": "Ollama (local models).",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "AI provider and model configuration.\n\nAll fields are optional and omitted from serialized output when absent.",
+  "properties": {
+    "execution_model": {
+      "description": "Model to use for execution tasks.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "planning_model": {
+      "description": "Model to use for planning tasks (e.g. \"claude-opus-4-5\").",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "provider": {
+      "$ref": "#/$defs/ProviderKind",
+      "default": "anthropic",
+      "description": "Which AI provider to use. Defaults to Anthropic."
+    },
+    "review_model": {
+      "description": "Model to use for review tasks.",
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "title": "ProviderConfig",
+  "type": "object"
+}
