@@ -10,10 +10,12 @@ use std::sync::mpsc;
 use assay_core::config::save as config_save;
 use assay_core::history;
 use assay_core::milestone::{cycle_status, milestone_load, milestone_scan};
+use assay_core::pipeline::launch_agent_streaming;
 use assay_core::spec::{SpecEntry, load_spec_entry_with_diagnostics};
 use assay_core::wizard::create_from_inputs;
 use assay_types::{
-    Criterion, GateRunRecord, GatesSpec, Milestone, MilestoneStatus, ProviderConfig, ProviderKind,
+    Criterion, GateRunRecord, GatesSpec, HarnessProfile, Milestone, MilestoneStatus, ProviderConfig,
+    ProviderKind, SettingsOverride,
 };
 use crossterm::event::KeyCode;
 use ratatui::layout::{Constraint, Layout, Rect};
@@ -342,6 +344,75 @@ impl App {
                         if self.project_root.is_some() {
                             self.screen = Screen::Wizard(WizardState::new());
                         }
+                    }
+                    KeyCode::Char('r') => {
+                        // Guard: no-op when event_tx is None (test environments).
+                        let tx = match self.event_tx.clone() {
+                            Some(tx) => tx,
+                            None => return false,
+                        };
+                        let assay_dir = match &self.project_root {
+                            Some(root) => root.join(".assay"),
+                            None => return false,
+                        };
+                        // Get the active chunk slug from cycle_status.
+                        let chunk_slug = match cycle_status(&assay_dir) {
+                            Ok(Some(cs)) => cs
+                                .active_chunk_slug
+                                .unwrap_or_else(|| cs.milestone_slug.clone()),
+                            _ => return false,
+                        };
+                        // Build a minimal HarnessProfile for S01.
+                        // S02 replaces this with real provider dispatch from app.config.
+                        let profile = HarnessProfile {
+                            name: chunk_slug.clone(),
+                            prompt_layers: vec![],
+                            settings: SettingsOverride {
+                                model: None,
+                                permissions: vec![],
+                                tools: vec![],
+                                max_turns: None,
+                            },
+                            hooks: vec![],
+                            working_dir: None,
+                        };
+                        // Write harness config to a temp dir to avoid polluting worktree.
+                        let run_dir =
+                            std::env::temp_dir().join(format!("assay-agent-{}", chunk_slug));
+                        if std::fs::create_dir_all(&run_dir).is_err() {
+                            return false;
+                        }
+                        let claude_config = assay_harness::claude::generate_config(&profile);
+                        if assay_harness::claude::write_config(&claude_config, &run_dir).is_err() {
+                            return false;
+                        }
+                        let cli_args = assay_harness::claude::build_cli_args(&claude_config);
+                        let working_dir = run_dir.clone();
+                        // Transition to AgentRun screen.
+                        self.screen = Screen::AgentRun {
+                            chunk_slug: chunk_slug.clone(),
+                            lines: vec![],
+                            scroll_offset: 0,
+                            status: AgentRunStatus::Running,
+                        };
+                        // Spawn relay-wrapper thread: inner launch_agent_streaming +
+                        // outer drain loop. Serializes AgentLine before AgentDone to
+                        // prevent line loss.
+                        let tui_tx = tx.clone();
+                        let handle = std::thread::spawn(move || {
+                            let (str_tx, str_rx) = std::sync::mpsc::channel::<String>();
+                            let inner =
+                                launch_agent_streaming(&cli_args, &working_dir, str_tx);
+                            // Drain lines → TuiEvent::AgentLine.
+                            for line in str_rx {
+                                let _ = tui_tx.send(TuiEvent::AgentLine(line));
+                            }
+                            // All lines sent; get exit code from inner thread.
+                            let exit_code = inner.join().unwrap_or(-1);
+                            let _ = tui_tx.send(TuiEvent::AgentDone { exit_code });
+                            exit_code
+                        });
+                        self.agent_thread = Some(handle);
                     }
                     KeyCode::Char('s') => {
                         // Open settings screen.  Pre-select the current provider if
