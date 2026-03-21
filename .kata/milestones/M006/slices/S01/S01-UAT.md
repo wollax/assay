@@ -5,112 +5,116 @@
 
 ## UAT Type
 
-- UAT mode: live-runtime
-- Why this mode is sufficient: The critical must-haves (binary produced, no-project guard, navigation) are fully covered by unit and integration tests. Visual inspection confirms that the rendering actually produces a readable dashboard — this cannot be verified programmatically without a headless terminal harness. The UAT is optional confirmation, not a gate.
+- UAT mode: mixed (artifact-driven + live-runtime)
+- Why this mode is sufficient: Binary collision, navigation correctness, and empty-list guard are proven by `cargo build` output and `cargo test` (7 automated tests). Live-runtime checks cover the human-experience cases that cannot be asserted programmatically: visual dashboard rendering, no-project guard clean exit, and keyboard responsiveness.
 
 ## Preconditions
 
-1. `cargo build -p assay-tui` has been run (binary present at `target/debug/assay-tui`)
-2. A project with `.assay/milestones/` exists (e.g. the assay repo itself, or a fixture directory)
-3. For the gate counts test: at least one milestone has gate history in `.assay/results/`
+- `cargo build -p assay-tui` and `cargo build -p assay-cli` both succeed
+- `cargo test -p assay-tui` → 7 passed, 0 failed
+- `just ready` → All checks passed
+- A terminal with at least 80×24 columns available
+- The assay project root (`/Users/wollax/Git/personal/assay`) is available as a test fixture — it has a `.assay/` directory; milestone files may or may not exist depending on current dev state
 
 ## Smoke Test
 
-Run `cargo run -p assay-tui` in the assay repo root. The TUI should launch, show a dashboard with at least one milestone, and quit cleanly on `q`.
+```sh
+cd /Users/wollax/Git/personal/assay && cargo run -p assay-tui
+```
+
+Expected: TUI launches, shows a "Dashboard" titled bordered panel (possibly empty milestone list or a list of milestones), no panic, exits cleanly on `q`.
 
 ## Test Cases
 
-### 1. Binary produced, no collision
+### 1. Binary naming — no collision
 
-```bash
-cargo build -p assay-tui && ls -la target/debug/assay-tui
-cargo build -p assay-cli && ls -la target/debug/assay
+```sh
+ls -la target/debug/assay target/debug/assay-tui
 ```
 
-**Expected:** Both files exist; no build error; sizes are distinct.
+1. Confirm `target/debug/assay` exists (assay-cli binary)
+2. Confirm `target/debug/assay-tui` exists (assay-tui binary)
+3. **Expected:** Both files present; different sizes; `assay-tui` is approximately 10–15 MB
 
-### 2. Dashboard launches on a project with milestones
+### 2. Dashboard with real milestone data
 
-```bash
-cd /path/to/project/with/.assay/
-cargo run -p assay-tui
-```
+1. `cd /Users/wollax/Git/personal/assay`
+2. `cargo run -p assay-tui`
+3. **Expected:** Dashboard panel titled "Dashboard" renders; if `.assay/milestones/` contains TOML files, each milestone appears as a line showing `name  [StatusBadge]  done/total`; badges are one of `Draft`, `Active`, `Verify`, `Done`
 
-**Expected:** TUI launches; shows milestone list with name, `[Status]` badge, `done/total` chunk fraction, and `✓N ✗N` gate counts; selection highlight is visible on the first item.
+### 3. Keyboard navigation — ↑↓ arrow keys
 
-### 3. Arrow-key navigation
+1. Launch `cargo run -p assay-tui` in a project with 2+ milestones (or create fixtures first)
+2. Press `↓` repeatedly
+3. **Expected:** Selection highlight moves down; wraps from last item back to first
+4. Press `↑` repeatedly
+5. **Expected:** Selection moves up; wraps from first item to last
 
-While dashboard is showing:
-1. Press `↓` several times
-2. Press `↑` several times
-3. Press `↓` past the last item
+### 4. Enter key — transitions to MilestoneDetail stub
 
-**Expected:** Selection highlight moves down and up; wraps from last item back to first on `↓`; wraps from first to last on `↑`.
+1. Launch TUI; navigate to any milestone with `↓`
+2. Press `Enter`
+3. **Expected:** Screen changes to show "Milestone detail — coming in S03" (placeholder text); no crash
 
-### 4. Quit with `q`, `Q`, and `Esc`
+### 5. Esc key — returns to Dashboard
 
-1. Press `q` from dashboard
-2. Relaunch; press `Q`
-3. Relaunch; press `Esc`
+1. Press `Enter` to enter MilestoneDetail
+2. Press `Esc`
+3. **Expected:** Returns to Dashboard screen with "Dashboard" title visible
 
-**Expected:** All three quit cleanly, terminal is restored (no raw-mode artifacts).
+### 6. q key — quits from any screen
 
-### 5. No-project guard
-
-```bash
-cd /tmp && cargo run -p assay-tui
-```
-
-**Expected:** Screen shows "Not an Assay project — run `assay init` first" (or similar actionable message); pressing `q` exits cleanly; no panic.
-
-### 6. Empty milestone list
-
-Launch on a project where `.assay/` exists but `.assay/milestones/` is empty or missing.
-
-**Expected:** Screen shows "No milestones — run `assay plan`" message; pressing `q` exits cleanly.
+1. Press `Enter` to enter MilestoneDetail
+2. Press `q`
+3. **Expected:** TUI exits cleanly; terminal restored to normal state; no garbage characters left
 
 ## Edge Cases
 
-### Missing gate history
+### No .assay/ directory — clean exit message
 
-Launch on a project with milestones but no `.assay/results/` directory (fresh project, no gate runs yet).
+```sh
+mkdir /tmp/test-no-assay-tui && cd /tmp/test-no-assay-tui && cargo run --manifest-path /Users/wollax/Git/personal/assay/Cargo.toml -p assay-tui
+```
 
-**Expected:** Dashboard shows `✓0 ✗0` for all milestones; no panic; no error message.
+1. Run from a directory with no `.assay/` subdirectory
+2. **Expected:** TUI shows "Not an Assay project — run `assay init` first" (centered text); no panic; `q` exits cleanly
 
-### Malformed config.toml
+### Empty milestones list — no panic
 
-Introduce a syntax error in `.assay/config.toml` before launching.
+1. `cd /Users/wollax/Git/personal/assay` (has `.assay/` but possibly zero milestone TOML files)
+2. `cargo run -p assay-tui`
+3. **Expected:** Dashboard renders with "No milestones — press n to create one" placeholder; no panic; navigation keys are no-ops; `q` exits cleanly
 
-**Expected:** TUI launches with empty config (silently degrades); dashboard still shows milestones; no panic.
+### Terminal restore after launch
 
-### Terminal resize
-
-Resize the terminal window while the dashboard is visible.
-
-**Expected:** Dashboard reflows to fit new dimensions; no panic; no display corruption lasting more than one frame.
+1. Run `cargo run -p assay-tui` and then press `q`
+2. Type `echo hello` in the terminal
+3. **Expected:** Terminal is fully restored — `echo hello` prints normally; no raw-mode artifact
 
 ## Failure Signals
 
-- Panic on launch (any screen) — indicates unguarded unwrap on missing files or bad data
-- Blank screen (no content rendered) — indicates draw dispatch is broken
-- Terminal raw mode not restored after quit — indicates `ratatui::restore()` is not being called on all exit paths
-- `target/debug/assay-tui` absent after `cargo build -p assay-tui` — `[[bin]]` declaration missing or broken
-- `target/debug/assay` absent or renamed — collision regression in assay-cli's Cargo.toml
+- Panic or `unwrap` output in terminal → `Screen::NoProject` guard or empty-list guard is missing
+- Both `target/debug/assay` and the binary being named `assay` for the TUI → `[[bin]]` section missing from Cargo.toml
+- Dashboard shows hardcoded text instead of milestone names → `milestone_scan` is not being called or its output is ignored
+- Status badge shows a raw number or `?` → `MilestoneStatus` match arm missing
+- Terminal not restored after `q` → `ratatui::restore()` not called in error path
 
 ## Requirements Proved By This UAT
 
-- R049 (TUI project dashboard) — live visual confirmation that milestones, status badges, chunk fractions, and gate counts render correctly from real `.assay/` data; keyboard navigation works; no-project guard works; quit is clean
+- R049 (TUI project dashboard) — live dashboard loading real milestone data from `milestone_scan`; keyboard navigation; no-project guard; empty-state handled without panic. *Partially proves R049* — chunk detail view (S03) and agent spawning (M007/S01) remain before R049 is fully validated.
 
 ## Not Proven By This UAT
 
-- Wizard form interaction (R050) — S02
-- Chunk/criteria detail navigation (R051) — S03
-- Provider configuration persistence (R052) — S04
-- Help overlay and status bar (S05)
-- Correctness of gate counts beyond zero values — unit test `test_gate_data_loaded_from_history` proves the data path; visual UAT only confirms rendering
+- `Screen::MilestoneDetail` content — renders placeholder text; real chunk list navigation deferred to S03
+- `Screen::Wizard` — renders placeholder; multi-step form deferred to S02
+- `Screen::Settings` — renders placeholder; provider config deferred to S04
+- Help overlay (?) keybinding — `App.show_help` field exists but overlay deferred to S05
+- Status bar — deferred to S05
+- Terminal resize handling — implicit via ratatui automatic redraw; explicit clear-on-resize deferred to S05 if artifacts observed
+- R050 (TUI wizard), R051 (TUI spec browser), R052 (TUI provider config) — entirely out of S01 scope
 
 ## Notes for Tester
 
-The `cargo deny check` step in `just ready` currently fails on pre-existing `aws-lc-sys` RUSTSEC-2026-0044..0048 advisories (pulled by `jsonschema` dev-dep of `assay-types`). This is pre-existing and unrelated to S01. All other checks (`fmt`, `clippy`, `test`) pass.
-
-For a quick fixture, the assay repo itself has milestones under `.assay/milestones/` — launch from the repo root for a real dashboard view.
+- The assay project root has `.assay/` but milestone files may not exist depending on whether M005 fixtures were set up. If the dashboard appears empty, use the "Empty milestones list" edge case test — that is the expected behavior.
+- The no-project test requires running from an arbitrary directory, not the assay repo root. The `--manifest-path` flag in the edge case command allows running the binary from `/tmp/test-no-assay-tui/` while still using the compiled binary from the assay workspace.
+- If you see RUSTSEC advisory warnings from `cargo deny` in `just ready`, run `cargo update` to pull latest patch versions — these are transitive dep advisories unrelated to assay code.

@@ -37,6 +37,14 @@ pub struct App {
     pub project_root: std::path::PathBuf,
     #[allow(dead_code)]
     pub config: Option<Config>,
+    /// Set when `milestone_scan` returns an error (corrupt TOML, permissions, I/O).
+    /// Rendered in the dashboard so the user knows data failed to load, not just
+    /// "no milestones". `None` means scan succeeded (even if it returned zero items).
+    pub scan_error: Option<String>,
+    /// Set when `.assay/config.toml` exists but failed to parse (e.g. unknown field,
+    /// malformed TOML). `None` means either the file doesn't exist yet (normal) or
+    /// it loaded successfully. Surfaced via `eprintln!` before ratatui::init().
+    pub config_error: Option<String>,
 }
 
 impl App {
@@ -56,14 +64,32 @@ impl App {
                 list_state: ListState::default(),
                 project_root,
                 config: None,
+                scan_error: None,
+                config_error: None,
             };
         }
 
-        // Load config — silently degrade on failure.
-        let cfg = config::load(&project_root).ok();
+        // Distinguish "config.toml doesn't exist yet" (normal, no warning) from
+        // "config.toml exists but failed to parse" (user needs to know — e.g.
+        // deny_unknown_fields rejecting an old key). Stored in config_error so the
+        // Settings screen (S04) can surface it; callers also print to stderr before
+        // ratatui::init() so the message is visible while the terminal is still normal.
+        let config_path = project_root.join(".assay").join("config.toml");
+        let (cfg, config_error) = if config_path.exists() {
+            match config::load(&project_root) {
+                Ok(c) => (Some(c), None),
+                Err(e) => (None, Some(format!("config.toml failed to load: {e}"))),
+            }
+        } else {
+            (None, None)
+        };
 
-        // Load milestones — silently degrade on failure.
-        let milestones = milestone::milestone_scan(&assay_dir).unwrap_or_default();
+        // Capture milestone_scan errors — a corrupt TOML or permission failure should
+        // render as an explicit error message, not silently as "no milestones".
+        let (milestones, scan_error) = match milestone::milestone_scan(&assay_dir) {
+            Ok(m) => (m, None),
+            Err(e) => (vec![], Some(format!("Failed to load milestones: {e}"))),
+        };
 
         // Load gate data for all milestones — silently degrade on failure.
         let gate_data = compute_gate_data(&assay_dir, &milestones);
@@ -80,6 +106,8 @@ impl App {
             list_state,
             project_root,
             config: cfg,
+            scan_error,
+            config_error,
         }
     }
 }
@@ -118,6 +146,12 @@ pub fn compute_gate_data(assay_dir: &Path, milestones: &[Milestone]) -> Vec<(Str
 pub fn run(mut terminal: DefaultTerminal) -> color_eyre::Result<()> {
     let project_root = std::env::current_dir()?;
     let mut app = App::new(project_root);
+
+    // Print config parse errors to stderr before the event loop so the message
+    // is visible while the terminal is still in normal (non-raw) mode.
+    if let Some(ref err) = app.config_error {
+        eprintln!("assay-tui warning: {err}");
+    }
 
     loop {
         terminal.draw(|frame| draw(frame, &mut app))?;
@@ -255,6 +289,17 @@ fn draw_dashboard(frame: &mut Frame, app: &mut App) {
         Paragraph::new(" q quit  ↑↓ navigate  n new milestone"),
         footer_area,
     );
+
+    // Scan error takes precedence over the empty-list state: if milestone_scan
+    // returned an Err, show the message so the user knows data failed to load
+    // rather than silently appearing as an empty project (indistinguishable from
+    // a project with no milestones yet).
+    if let Some(ref err) = app.scan_error {
+        let msg = Paragraph::new(format!("Error loading milestones: {err}"))
+            .style(ratatui::style::Style::default().bold().red());
+        frame.render_widget(msg, body_area);
+        return;
+    }
 
     if app.milestones.is_empty() {
         draw_no_milestones(frame, body_area);
@@ -474,6 +519,84 @@ mod tests {
         assert!(
             matches!(app.screen, Screen::Dashboard),
             "Esc in wizard should return to Dashboard"
+        );
+    }
+
+    // ── navigation coverage tests (added during PR review) ───────────────────
+
+    #[test]
+    fn test_quit_from_no_project_screen() {
+        let tmp = tempfile::tempdir().unwrap();
+        // No .assay/ directory — starts as NoProject.
+        let mut app = App::new(tmp.path().to_path_buf());
+        assert!(matches!(app.screen, Screen::NoProject));
+        let quit = handle_event(&mut app, &make_key_event(KeyCode::Char('q')));
+        assert!(quit, "'q' should quit from NoProject screen");
+    }
+
+    #[test]
+    fn test_navigate_up_decrements_selection() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(tmp.path().join(".assay/milestones")).unwrap();
+        let mut app = App::new(tmp.path().to_path_buf());
+        app.milestones = vec![
+            make_milestone("alpha"),
+            make_milestone("beta"),
+            make_milestone("gamma"),
+        ];
+        app.gate_data = app
+            .milestones
+            .iter()
+            .map(|m| {
+                (
+                    m.slug.clone(),
+                    GateSummary {
+                        passed: 0,
+                        failed: 0,
+                    },
+                )
+            })
+            .collect();
+        app.screen = Screen::Dashboard;
+        app.list_state.select(Some(2)); // start at last item
+
+        handle_event(&mut app, &make_key_event(KeyCode::Up));
+        // select_previous() moves from 2 to 1
+        assert_eq!(
+            app.list_state.selected(),
+            Some(1),
+            "Up from index 2 should move to index 1"
+        );
+    }
+
+    #[test]
+    fn test_navigate_down_from_no_selection_goes_to_first() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(tmp.path().join(".assay/milestones")).unwrap();
+        let mut app = App::new(tmp.path().to_path_buf());
+        app.milestones = vec![make_milestone("alpha"), make_milestone("beta")];
+        app.gate_data = app
+            .milestones
+            .iter()
+            .map(|m| {
+                (
+                    m.slug.clone(),
+                    GateSummary {
+                        passed: 0,
+                        failed: 0,
+                    },
+                )
+            })
+            .collect();
+        app.screen = Screen::Dashboard;
+        app.list_state = ListState::default(); // no selection
+
+        handle_event(&mut app, &make_key_event(KeyCode::Down));
+        // select_next() on an unset ListState should move to index 0
+        assert_eq!(
+            app.list_state.selected(),
+            Some(0),
+            "Down from no selection should select index 0"
         );
     }
 
