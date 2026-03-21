@@ -2,7 +2,7 @@
 
 **Active Milestone:** M006 — TUI as Primary Surface
 **Active Slice:** S01 — App Scaffold, Dashboard, and Binary Fix
-**Active Task:** T02 — Dashboard rendering with real milestone data
+**Active Task:** T03 — Navigation, empty-state guard, and unit tests
 **Phase:** Executing
 **Last Updated:** 2026-03-20
 **Requirements Status:** 10 active (R049–R059) · 43 validated (R001–R048) · 2 deferred · 4 out of scope
@@ -39,4 +39,4 @@ None.
 
 ## Next Action
 
-Execute T02: implement `draw_dashboard` with live milestone data from `milestone_scan`; implement `draw_no_project`; load `.assay/` detection and data in `main()`; wire into `draw`. See `.kata/milestones/M006/slices/S01/tasks/T02-PLAN.md`.
+Execute T03: implement ↑↓ wrap navigation, Enter→MilestoneDetail, Esc→Dashboard transitions, empty-milestones guard in draw_dashboard, and 6 unit tests in `crates/assay-tui/tests/app_state.rs`. See `.kata/milestones/M006/slices/S01/tasks/T03-PLAN.md`.
