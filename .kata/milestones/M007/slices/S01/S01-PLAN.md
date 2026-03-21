@@ -97,7 +97,7 @@ Tests in scope:
   - Verify: `cargo build -p assay-tui` succeeds; `cargo test -p assay-tui` — all tests pass (tests bypass `run()` and still work since `event_tx = None` is safe); `cargo clippy -p assay-tui` clean.
   - Done when: `cargo build -p assay-tui` produces binary without error; all existing 27 tests + 8 new agent_run tests pass.
 
-- [ ] **T04: Final cleanup and `just ready` green** `est:30m`
+- [x] **T04: Final cleanup and `just ready` green** `est:30m`
   - Why: Ensures the slice meets milestone quality gates (fmt, clippy, cargo-deny, all tests) before moving to S02 which depends on S01's channel loop being stable.
   - Files: `crates/assay-tui/src/app.rs`, `crates/assay-tui/src/main.rs`, `crates/assay-core/src/pipeline.rs` (minor fixups only)
   - Do: (1) Run `cargo fmt --all` and fix any formatting issues introduced in T01–T03; (2) run `cargo clippy --workspace --all-targets` and fix any lints (unused imports, dead_code, missing pub, etc.); (3) run `cargo test --workspace` and confirm all tests pass; (4) run `cargo deny check` and confirm no new advisories; (5) verify `crates/assay-tui/Cargo.toml` has the `[[bin]] name = "assay-tui"` section (added in M006/D088 — confirm it's present, add if missing); (6) add `#[allow(dead_code)]` or fix any unused items flagged by clippy in the new code.

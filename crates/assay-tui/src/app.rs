@@ -14,8 +14,8 @@ use assay_core::pipeline::launch_agent_streaming;
 use assay_core::spec::{SpecEntry, load_spec_entry_with_diagnostics};
 use assay_core::wizard::create_from_inputs;
 use assay_types::{
-    Criterion, GateRunRecord, GatesSpec, HarnessProfile, Milestone, MilestoneStatus, ProviderConfig,
-    ProviderKind, SettingsOverride,
+    Criterion, GateRunRecord, GatesSpec, HarnessProfile, Milestone, MilestoneStatus,
+    ProviderConfig, ProviderKind, SettingsOverride,
 };
 use crossterm::event::KeyCode;
 use ratatui::layout::{Constraint, Layout, Rect};
@@ -280,7 +280,14 @@ impl App {
                 scroll_offset,
                 status,
             } => {
-                draw_agent_run(frame, content_area, chunk_slug, lines, *scroll_offset, status);
+                draw_agent_run(
+                    frame,
+                    content_area,
+                    chunk_slug,
+                    lines,
+                    *scroll_offset,
+                    status,
+                );
             }
         }
 
@@ -401,8 +408,7 @@ impl App {
                         let tui_tx = tx.clone();
                         let handle = std::thread::spawn(move || {
                             let (str_tx, str_rx) = std::sync::mpsc::channel::<String>();
-                            let inner =
-                                launch_agent_streaming(&cli_args, &working_dir, str_tx);
+                            let inner = launch_agent_streaming(&cli_args, &working_dir, str_tx);
                             // Drain lines → TuiEvent::AgentLine.
                             for line in str_rx {
                                 let _ = tui_tx.send(TuiEvent::AgentLine(line));
@@ -781,7 +787,9 @@ fn draw_agent_run(
     // Line list.
     let visible_rows = content_area.height as usize;
     if lines.is_empty() {
-        let placeholder = List::new(vec![ListItem::new("Starting…").style(Style::default().dim())]);
+        let placeholder = List::new(vec![
+            ListItem::new("Starting…").style(Style::default().dim()),
+        ]);
         frame.render_widget(placeholder, content_area);
     } else {
         let safe_start = scroll_offset.min(lines.len().saturating_sub(1));

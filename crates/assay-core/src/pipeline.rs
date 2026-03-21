@@ -382,10 +382,7 @@ pub fn launch_agent_streaming(
         drop(line_tx);
 
         // Wait for subprocess exit and return the exit code.
-        child
-            .wait()
-            .map(|s| s.code().unwrap_or(-1))
-            .unwrap_or(-1)
+        child.wait().map(|s| s.code().unwrap_or(-1)).unwrap_or(-1)
     })
 }
 
@@ -1023,10 +1020,7 @@ mod tests {
         let lines: Vec<String> = line_rx.iter().collect();
         let exit_code = handle.join().expect("thread panicked");
         assert_eq!(exit_code, 0);
-        assert_eq!(
-            lines,
-            vec!["line1", "line2", "line3", "line4", "line5"]
-        );
+        assert_eq!(lines, vec!["line1", "line2", "line3", "line4", "line5"]);
     }
 
     #[test]

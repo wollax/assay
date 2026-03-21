@@ -115,8 +115,12 @@ fn handle_agent_done_zero_exit_transitions_to_done() {
             AgentRunStatus::Done { exit_code } => {
                 assert_eq!(*exit_code, 0, "expected Done with exit_code 0");
             }
-            AgentRunStatus::Running => panic!("status should not be Running after handle_agent_done(0)"),
-            AgentRunStatus::Failed { .. } => panic!("zero exit should transition to Done, not Failed"),
+            AgentRunStatus::Running => {
+                panic!("status should not be Running after handle_agent_done(0)")
+            }
+            AgentRunStatus::Failed { .. } => {
+                panic!("zero exit should transition to Done, not Failed")
+            }
         },
         _ => panic!("expected Screen::AgentRun after handle_agent_done"),
     }
@@ -135,8 +139,12 @@ fn handle_agent_done_nonzero_exit_transitions_to_failed() {
             AgentRunStatus::Failed { exit_code } => {
                 assert_eq!(*exit_code, 1, "expected Failed with exit_code 1");
             }
-            AgentRunStatus::Running => panic!("status should not be Running after handle_agent_done(1)"),
-            AgentRunStatus::Done { .. } => panic!("nonzero exit should transition to Failed, not Done"),
+            AgentRunStatus::Running => {
+                panic!("status should not be Running after handle_agent_done(1)")
+            }
+            AgentRunStatus::Done { .. } => {
+                panic!("nonzero exit should transition to Failed, not Done")
+            }
         },
         _ => panic!("expected Screen::AgentRun after handle_agent_done"),
     }
