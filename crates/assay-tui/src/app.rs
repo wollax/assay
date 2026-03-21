@@ -8,7 +8,7 @@ use std::path::PathBuf;
 
 use assay_core::milestone::milestone_scan;
 use assay_core::wizard::create_from_inputs;
-use assay_types::{Milestone, MilestoneStatus};
+use assay_types::{GateRunRecord, GatesSpec, Milestone, MilestoneStatus};
 use crossterm::event::KeyCode;
 use ratatui::layout::{Constraint, Layout};
 use ratatui::style::{Style, Stylize};
@@ -30,6 +30,10 @@ pub enum Screen {
     /// Milestone data failed to load at startup or after a wizard submit reload.
     /// Displays the error message; exits on `q` / `Esc`.
     LoadError(String),
+    /// Chunk list for a single milestone. `slug` identifies the milestone.
+    MilestoneDetail { slug: String },
+    /// Detail view for a single chunk within a milestone.
+    ChunkDetail { milestone_slug: String, chunk_slug: String },
 }
 
 // ── App ───────────────────────────────────────────────────────────────────────
@@ -44,6 +48,16 @@ pub struct App {
     pub list_state: ListState,
     /// Path to the project root (parent of `.assay/`). `None` when no project found.
     pub project_root: Option<PathBuf>,
+    /// List widget selection state for the chunk list in MilestoneDetail.
+    pub detail_list_state: ListState,
+    /// Loaded milestone data for MilestoneDetail and ChunkDetail.
+    pub detail_milestone: Option<Milestone>,
+    /// Loaded GatesSpec for ChunkDetail (`None` for legacy specs or on error).
+    pub detail_spec: Option<GatesSpec>,
+    /// Diagnostic reason when `detail_spec` is `None`.
+    pub detail_spec_note: Option<String>,
+    /// Latest gate run record (`None` if no history exists).
+    pub detail_run: Option<GateRunRecord>,
 }
 
 impl App {
@@ -84,6 +98,11 @@ impl App {
             milestones,
             list_state,
             project_root,
+            detail_list_state: ListState::default(),
+            detail_milestone: None,
+            detail_spec: None,
+            detail_spec_note: None,
+            detail_run: None,
         })
     }
 
@@ -94,6 +113,20 @@ impl App {
             Screen::Dashboard => draw_dashboard(frame, &self.milestones, &mut self.list_state),
             Screen::Wizard(state) => draw_wizard(frame, state),
             Screen::LoadError(msg) => draw_load_error(frame, msg),
+            Screen::MilestoneDetail { .. } => {
+                let area = frame.area();
+                frame.render_widget(
+                    Paragraph::new(Line::from("MilestoneDetail (T02)").dim()),
+                    area,
+                );
+            }
+            Screen::ChunkDetail { .. } => {
+                let area = frame.area();
+                frame.render_widget(
+                    Paragraph::new(Line::from("ChunkDetail (T03)").dim()),
+                    area,
+                );
+            }
         }
     }
 
@@ -133,6 +166,23 @@ impl App {
                         }
                     }
                     _ => {}
+                }
+                false
+            }
+
+            Screen::MilestoneDetail { .. } => {
+                if matches!(key.code, KeyCode::Esc | KeyCode::Char('q')) {
+                    self.screen = Screen::Dashboard;
+                }
+                false
+            }
+
+            Screen::ChunkDetail { ref milestone_slug, .. } => {
+                if key.code == KeyCode::Esc {
+                    let slug = milestone_slug.clone();
+                    self.screen = Screen::MilestoneDetail { slug };
+                } else if key.code == KeyCode::Char('q') {
+                    return true;
                 }
                 false
             }
