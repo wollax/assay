@@ -6,14 +6,6 @@ license.workspace = true
 repository.workspace = true
 description = "Assay terminal user interface"
 
-[lib]
-name = "assay_tui"
-path = "src/lib.rs"
-
-[[bin]]
-name = "assay-tui"
-path = "src/main.rs"
-
 [dependencies]
 assay-core.workspace = true
 assay-types.workspace = true
@@ -23,7 +15,6 @@ color-eyre.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
-chrono.workspace = true
 
 [lints]
 workspace = true
