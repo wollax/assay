@@ -28,10 +28,16 @@ fn run(mut terminal: DefaultTerminal) -> color_eyre::Result<()> {
     loop {
         terminal.draw(|frame| app.draw(frame))?;
 
-        if let Event::Key(key) = event::read()?
-            && app.handle_event(key)
-        {
-            break;
+        match event::read()? {
+            Event::Key(key) => {
+                if app.handle_event(key) {
+                    break;
+                }
+            }
+            Event::Resize(..) => {
+                terminal.clear()?;
+            }
+            _ => {}
         }
     }
     Ok(())

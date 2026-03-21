@@ -523,14 +523,14 @@
 
 ### R052 — TUI provider configuration
 - Class: operability
-- Status: active
+- Status: validated
 - Description: The TUI has a configuration screen for AI provider selection (Anthropic, OpenAI, Ollama) and model selection per phase (planning, execution, review). Settings persist to `.assay/config.toml`.
 - Why it matters: Different providers and models have different cost/quality tradeoffs — users need to configure without editing TOML files
 - Source: user
 - Primary owning slice: M006/S04
-- Supporting slices: none
-- Validation: unmapped
-- Notes: Extends the existing Config type in assay-types.
+- Supporting slices: M006/S05
+- Validation: S04 — ProviderConfig + ProviderKind in assay-types with serde(default, skip_serializing_if) backward-compat; config_save atomic write; Screen::Settings full-screen view with provider list and model fields; w key saves to .assay/config.toml; round-trip TOML tests and schema snapshot locked. S05 — App.config integration complete (status bar shows project name); just ready green (22 assay-tui tests, workspace clean).
+- Notes: Config.provider field uses Option<ProviderConfig> with serde(default) so existing config.toml files without provider section load without error (D092).
 
 ### R053 — TUI agent spawning
 - Class: core-capability
@@ -710,7 +710,7 @@
 | R049 | primary-user-loop | validated | M006/S01 | none | S01 |
 | R050 | primary-user-loop | validated | M006/S02 | M006/S01 | S02 |
 | R051 | primary-user-loop | validated | M006/S03 | M006/S01 | S03 |
-| R052 | operability | active | M006/S04 | none | mapped |
+| R052 | operability | validated | M006/S04 | M006/S05 | S04, S05 |
 | R053 | core-capability | active | M007/S01 | M006/S01 | mapped |
 | R054 | core-capability | active | M007/S01 | M007/S02 | mapped |
 | R055 | operability | active | M007/S02 | none | mapped |
