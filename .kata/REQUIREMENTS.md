@@ -501,14 +501,14 @@
 
 ### R050 — TUI interactive wizard
 - Class: primary-user-loop
-- Status: active
+- Status: validated
 - Description: The guided authoring wizard (R042) runs inside the TUI as an interactive form, allowing spec creation without dropping to the CLI.
 - Why it matters: The TUI should be self-sufficient — requiring CLI for wizard defeats the purpose of a primary-surface TUI
 - Source: user
 - Primary owning slice: M006/S02
 - Supporting slices: M006/S01
-- Validation: unmapped
-- Notes: Reuses the wizard logic from assay-core; the TUI provides the interactive rendering.
+- Validation: S02 — WizardState state machine + draw_wizard popup + App wiring (n→wizard→Dashboard) implemented; wizard_round_trip integration test drives synthetic KeyEvents through N=2 chunk flow → create_from_inputs → asserts milestone TOML + two gates.toml files written to tempdir; App tests prove n-key opens wizard, Esc returns to dashboard without writing, error on slug collision stays in wizard; 23 assay-tui tests + 1356 workspace tests all pass
+- Notes: Pure WizardState in assay-tui (TUI concern); create_from_inputs from assay-core does the file I/O. Criteria are text-only (no cmd field, per D076).
 
 ### R051 — TUI spec browser
 - Class: primary-user-loop
@@ -708,7 +708,7 @@
 | R047 | differentiator | validated | M005/S05 | M005/S01–S04 | S05 |
 | R048 | differentiator | validated | M005/S06 | M005/S01, M005/S02 | S06 |
 | R049 | primary-user-loop | validated | M006/S01 | none | S01 |
-| R050 | primary-user-loop | active | M006/S02 | M006/S01 | mapped |
+| R050 | primary-user-loop | validated | M006/S02 | M006/S01 | S02 |
 | R051 | primary-user-loop | active | M006/S02 | M006/S01 | mapped |
 | R052 | operability | active | M006/S03 | none | mapped |
 | R053 | core-capability | active | M007/S01 | M006/S01 | mapped |

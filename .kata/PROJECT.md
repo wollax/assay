@@ -10,7 +10,7 @@ A beginning developer installs Assay, describes a feature, and gets a structured
 
 ## Current State
 
-v0.5.0 on main. ~20K lines of Rust across 6 crates. M001–M005 complete. 1333 tests passing.
+v0.6.0-dev on M006/S02 branch. ~20K lines of Rust across 6 crates. M001–M005 complete; M006 S01+S02 done. 1356 tests passing. `assay-tui` is now a real Ratatui app with a working dashboard (S01) and in-TUI authoring wizard (S02). S03 (chunk detail browser), S04 (provider config), S05 (polish) remain.
 
 **M001 (complete):** Single-agent harness end-to-end — manifest → worktree → agent launch → gate evaluation → merge proposal. 19 requirements validated.
 
