@@ -60,7 +60,7 @@ This milestone is complete only when all are true:
 - [x] **S03: Chunk Detail View and Spec Browser** `risk:medium` `depends:[S01]`
   > After this: pressing Enter on a milestone shows its chunk list; pressing Enter on a chunk shows a detail pane with criteria descriptions and latest gate run result (pass/fail/pending) per criterion loaded from `assay-core::history`; breadcrumb nav and Esc return to parent screens
 
-- [ ] **S04: Provider Configuration Screen** `risk:medium` `depends:[S01]`
+- [x] **S04: Provider Configuration Screen** `risk:medium` `depends:[S01]`
   > After this: pressing `s` opens a settings screen listing AI providers (Anthropic, OpenAI, Ollama) and model-per-phase fields; selecting and saving persists to `.assay/config.toml` via atomic write; existing configs without provider section load without error; schema snapshot locked
 
 - [ ] **S05: Help Overlay, Status Bar, and Integration Polish** `risk:low` `depends:[S01,S02,S03,S04]`
