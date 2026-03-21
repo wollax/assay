@@ -1,90 +1,86 @@
 # S01: App Scaffold, Dashboard, and Binary Fix — Research
 
 **Researched:** 2026-03-20
-**Domain:** Ratatui 0.30, assay-core milestone/config APIs, Cargo binary naming
+**Domain:** Ratatui 0.30, Rust TUI architecture, assay-core data APIs
 **Confidence:** HIGH
 
 ## Summary
 
-The current `assay-tui` stub (42 lines, `crates/assay-tui/src/main.rs`) already uses correct Ratatui 0.30 patterns: `ratatui::init()`, `ratatui::restore()`, `DefaultTerminal`, `Layout`/`Constraint`, `Paragraph`, and crossterm event polling. The stub compiles and runs today. **The binary name issue is already resolved by default**: Cargo uses the package name (`assay-tui`) as the default binary name when no `[[bin]]` section is declared, so `cargo build -p assay-tui` already produces `target/debug/assay-tui`. Adding an explicit `[[bin]] name = "assay-tui" path = "src/main.rs"` entry to `Cargo.toml` is still the right call per D088 — it makes the intent unambiguous and mirrors `assay-cli`'s explicit pattern — but it is not blocking anything.
+S01 has two distinct sub-problems: (1) a one-line fix (`[[bin]]` declaration in `assay-tui/Cargo.toml`) that unblocks all subsequent TUI work, and (2) replacing the 42-line stub with a real `App` struct / `Screen` enum / dashboard rendering stack. Both are well-bounded and straightforward. The primary risk is getting the no-project guard right — `config::load(root)` returns `AssayError::Io` when `config.toml` is missing; the TUI must detect the absence of `.assay/` before any data read and show a clean splash, not propagate an error.
 
-The `assay-core` data APIs needed for the dashboard are stable, tested, and require no new abstractions. `milestone_scan(assay_dir)` returns `Ok(vec![])` for a missing milestones directory (no panic, no error). `config::load(root)` returns `Err(AssayError::Io)` when `config.toml` is missing — the TUI must handle this by detecting the absence of `.assay/` before calling `load`. The path argument contract is a common confusion point: `milestone_scan` takes the `.assay/` directory directly, while `config::load` takes the project root (parent of `.assay/`).
+The existing stub already uses the correct Ratatui 0.30 primitives (`ratatui::init()`, `ratatui::restore()`, `DefaultTerminal`, panic hook pattern). The replacement preserves all of this exactly. `milestone_scan(assay_dir)` returns `Ok(vec![])` when `milestones/` doesn't exist, so the empty-milestones empty-state is safe by default. The gate pass/fail column in the dashboard requires calling `history::list` + `history::load` per chunk — this is O(file count) and can be done synchronously on dashboard load for S01. If profiling shows lag, background loading can be added in S05 polish.
 
-The main S01 deliverable is replacing the 42-line stub with a real `App` struct, `Screen` enum, and `draw`/`handle_event` split, plus a working dashboard that renders a `List` of milestones loaded from `milestone_scan`. Three distinct areas require careful engineering: (1) the no-project guard that shows a clean "Not an Assay project" message and exits without panic when `.assay/` is absent; (2) the `ListState` empty-list guard that avoids a panic when `milestones` is empty; and (3) the panic hook — the stub installs a manual one, but `ratatui::init()` already installs its own hook internally (it calls `set_panic_hook()`), so the stub's manual hook is redundant and should be removed in the rewrite.
+The architecture is locked by D089 (App struct + Screen enum), D090 (WizardState in Screen::Wizard), D091 (sync data loading on navigation), and D088 (binary name is `assay-tui`). No architectural decisions remain open for S01.
 
 ## Recommendation
 
-Replace `main.rs` with an `App` struct + `Screen` enum. Keep data loading synchronous and on navigation transitions only (D091). Load milestones in `main()` after detecting `.assay/`, not inside `terminal.draw()`. Split into three modules if file length exceeds ~250 lines, otherwise keep everything in `main.rs` for simplicity. No new crate dependencies needed for S01.
-
-Task decomposition:
-- **T01**: Cargo.toml `[[bin]]` fix + `App`/`Screen` scaffold + run loop split (`draw` / `handle_event`)
-- **T02**: Dashboard render with real `milestone_scan` + `config::load` data + `List`/`ListState` layout
-- **T03**: No-project guard, empty-state rendering, ↑↓ navigation, `q` quit, `Enter`/`Esc` screen transition stubs, unit tests for state transitions
+Execute in this order: (1) Add `[[bin]] name = "assay-tui" path = "src/main.rs"` to `crates/assay-tui/Cargo.toml` and verify `cargo build -p assay-tui` produces `target/debug/assay-tui`. (2) Define `App`, `Screen`, and all types in a new `app.rs` module, using free render functions (`draw_dashboard`, `draw_no_project`, `draw_no_milestones`) per D001. (3) Implement the event loop with `event::poll(Duration::from_millis(250))` + `event::read()` for responsiveness — the blocking `event::read()` in the stub is fine for `q` only but a polling loop lets you load data on the first frame. (4) Load `milestone_scan` + `config::load` at startup (in `run()`, not inside `terminal.draw()`). (5) Render the dashboard list with `render_stateful_widget` + `ListState`. (6) Add unit tests for `App::new()`, `handle_event` state transitions (up/down/q), and the empty-state rendering paths.
 
 ## Don't Hand-Roll
 
 | Problem | Existing Solution | Why Use It |
 |---------|------------------|------------|
-| Terminal init / panic hook / raw mode | `ratatui::init()` | Already used in stub; installs panic hook, enables raw mode, enters alternate screen in one call — do NOT add a second manual panic hook |
-| Scrollable list with selection highlight | `ratatui::widgets::List` + `ListState` | `render_stateful_widget(list, area, &mut state)` — handles scroll offset and highlight automatically; stateful widget built in |
-| Block borders and titles | `ratatui::widgets::Block` | `Block::bordered().title("Milestones")` — wraps any widget in one chain |
-| Multi-area layout | `Layout::vertical/horizontal` with `Constraint` | Already imported in the stub; `Constraint::Fill(1)` / `Constraint::Length(n)` covers all S01 layout needs |
-| Milestone scan | `assay_core::milestone::milestone_scan(assay_dir)` | Tested, atomic-read, returns `Vec<Milestone>` sorted by slug; returns `Ok(vec![])` for missing dir |
-| Config load | `assay_core::config::load(root)` | Handles TOML parse + validation; returns structured `AssayError` on failure |
-| Chunk progress computation | `Milestone.completed_chunks.len()` / `Milestone.chunks.len()` | Both fields are plain `Vec<String>` and `Vec<ChunkRef>` — no helper needed; compute inline |
-| Status badge string | `MilestoneStatus` `#[serde(rename_all = "snake_case")]` | `format!("{:?}", status)` or match directly on the `MilestoneStatus` enum variants |
+| Terminal init + panic hook + raw mode | `ratatui::init()` + `std::panic::set_hook` wrapping `ratatui::restore()` | Already in the stub; handles alternate screen, raw mode, panic restore — preserve verbatim |
+| Scrollable list with keyboard selection | `ratatui::widgets::List` + `ListState::default()` + `render_stateful_widget` | `ListState` has `select_next()` / `select_previous()` / `with_selected(Some(0))`; auto-scrolls; do not hand-roll |
+| Block border + title | `ratatui::widgets::Block::bordered().title("...")` | One method chain; wraps any widget |
+| Horizontal/vertical layout | `Layout::vertical([Constraint::Length(3), Constraint::Fill(1), Constraint::Length(1)])` | Already imported in stub; handles fixed header + fill body + fixed status bar |
+| Milestone scan | `assay_core::milestone::milestone_scan(assay_dir)` | Returns `Vec<Milestone>` sorted by slug; returns `Ok(vec![])` if `milestones/` absent — safe to call always |
+| Config load | `assay_core::config::load(project_root)` | `project_root` = parent of `.assay/`. Returns `AssayError::Io` if `config.toml` missing — handle this as the "no project" signal |
+| Cycle status | `assay_core::milestone::cycle_status(assay_dir)` | Returns `Option<CycleStatus>` with active milestone slug, phase, and progress counts — use for header badge |
+| Gate history (for pass/fail column) | `assay_core::history::list(assay_dir, spec_name)` + `history::load(assay_dir, spec_name, run_id)` | `list()` returns chronologically sorted run IDs; last entry is most recent; `load()` returns `GateRunRecord` with `summary.passed` / `summary.failed` |
 
 ## Existing Code and Patterns
 
-- `crates/assay-tui/src/main.rs` — 42-line stub. Replace entirely. Preserve the `ratatui::init()` / `ratatui::restore()` pattern. Remove the manual `std::panic::set_hook` block — `ratatui::init()` already installs its own panic hook internally via `set_panic_hook()` in `ratatui::init` module.
-- `crates/assay-tui/Cargo.toml` — No `[[bin]]` section. Add `[[bin]] name = "assay-tui" path = "src/main.rs"` per D088. No other dependencies needed for S01 (all needed crates already present: `assay-core`, `ratatui`, `crossterm`, `color-eyre`).
-- `crates/assay-core/src/milestone/mod.rs` — `milestone_scan(assay_dir: &Path) -> Result<Vec<Milestone>>`. Takes `.assay/` dir. Returns sorted `Vec<Milestone>`. Returns `Ok(vec![])` when directory is absent. Use for dashboard data load.
-- `crates/assay-core/src/milestone/cycle.rs` — `cycle_status(assay_dir)` returns `Option<CycleStatus>` with active milestone slug + phase + chunk progress. Useful for a status bar or header badge in S05, not required for S01.
-- `crates/assay-core/src/config/mod.rs` — `load(root: &Path) -> Result<Config>`. Takes project root (parent of `.assay/`). Returns `Err(AssayError::Io)` if `config.toml` is missing. The TUI must guard: if `.assay/` does not exist, skip `load` entirely and go to `NoProject` screen.
-- `crates/assay-types/src/milestone.rs` — `Milestone { slug, name, status: MilestoneStatus, chunks: Vec<ChunkRef>, completed_chunks: Vec<String>, ... }`. `MilestoneStatus` is `Draft | InProgress | Verify | Complete` with `#[default] = Draft`.
-- `crates/assay-types/src/lib.rs` — `Config` struct. No `provider` field yet (added in S04). Fields: `project_name`, `specs_dir`, `gates: Option<GatesConfig>`, `guard`, `worktree`, `sessions`. Has `deny_unknown_fields` — do not pass unknown fields when constructing test configs.
-- `crates/assay-core/tests/milestone_io.rs` — Reference for how to create `Milestone` test fixtures. Use `TempDir` + `milestone_save` to create fixture data for TUI unit tests.
+- `crates/assay-tui/src/main.rs` — 42-line stub; replace entirely, preserve: `color_eyre::install()`, `std::panic::set_hook` calling `ratatui::restore()`, `ratatui::init()` / `ratatui::restore()` wrapping `run()`. The `run(mut terminal: DefaultTerminal) -> color_eyre::Result<()>` signature stays.
+- `crates/assay-tui/Cargo.toml` — Missing `[[bin]]` declaration. Add before any other work: `[[bin]]\nname = "assay-tui"\npath = "src/main.rs"`. No other dep changes needed for S01 — `ratatui`, `crossterm`, `assay-core`, `color-eyre` are already there.
+- `crates/assay-core/src/milestone/mod.rs` — `milestone_scan(assay_dir: &Path)` public function; reads `<assay_dir>/milestones/`; returns sorted `Vec<Milestone>`; safe on missing dir.
+- `crates/assay-core/src/milestone/cycle.rs` — `cycle_status(assay_dir: &Path) -> Result<Option<CycleStatus>>`. `CycleStatus { milestone_slug, milestone_name, phase: MilestoneStatus, active_chunk_slug: Option<String>, completed_count, total_count }`. Use for dashboard header active-milestone badge.
+- `crates/assay-core/src/config/mod.rs` — `load(root: &Path) -> Result<Config>` where `root` is project root (parent of `.assay/`). Returns `AssayError::Io` on missing file — this is the no-project detection signal.
+- `crates/assay-types/src/milestone.rs` — `Milestone { slug, name, status: MilestoneStatus, chunks: Vec<ChunkRef>, completed_chunks: Vec<String>, ... }`. `MilestoneStatus` is `Draft | InProgress | Verify | Complete` (snake_case in serde). `ChunkRef { slug, order }`.
+- `crates/assay-types/src/gate_run.rs` — `GateRunRecord { summary: GateRunSummary, ... }`. `GateRunSummary { passed, failed, skipped, enforcement: EnforcementSummary, ... }`. Use `summary.passed` / `summary.failed` for the gate column.
+- `crates/assay-core/tests/cycle.rs` — Pattern for test helpers: `make_assay_dir(tmp)`, `create_passing_spec(assay_dir, slug)`, `make_milestone_with_status(slug, status, chunks)`. Reuse in TUI unit tests.
+- `crates/assay-cli/Cargo.toml` — `[[bin]] name = "assay" path = "src/main.rs"`. Confirms the TUI must NOT use `name = "assay"`.
 
 ## Constraints
 
-- **D001 / D089**: Free functions only — `draw(frame, app)` is a free `fn`, not a `Widget` impl on `App`. No trait objects.
-- **D091**: Load data in `handle_event` on navigation transitions, not inside `terminal.draw()`. For S01, load all milestone data once at startup (in `main()` before the event loop) and reload on `Refresh`. No background thread.
-- **D007**: `assay-core` is sync. All data reads are `std::fs`. Do not introduce tokio in `assay-tui` for S01.
-- **Cargo.toml**: The `[[bin]]` section must come before `[dependencies]` in TOML. Current `assay-tui/Cargo.toml` has no `[[bin]]` — add it; the build already works because Cargo defaults the binary name to the package name (`assay-tui`).
-- **No `assay-tui` test infrastructure yet**: The `tests/` directory does not exist. Create `crates/assay-tui/tests/app_state.rs` as the first unit test file.
+- **Binary name**: `assay-cli` owns `name = "assay"`. TUI must use `name = "assay-tui"` (D088). This is the first line in the implementation task.
+- **Zero traits** (D001): `App` struct methods + free render functions. No `Widget` trait impls on app state. The exception is self-contained pure display types — not needed for S01.
+- **Sync data loading** (D007, D091): All `milestone_scan`, `config::load`, `cycle_status` calls are `std::fs` sync. Load on navigation transitions (inside `handle_event`), not inside `terminal.draw()`. Do not add tokio.
+- **`Config` has `deny_unknown_fields`**: Do not add any fields to `Config` in S01 — that's S04. Just load and display.
+- **No `.assay/` guard**: `config::load()` fails with `AssayError::Io` when config.toml missing. Detect `.assay/` directory existence in `run()` before any data calls. If absent, show `Screen::NoProject` and exit (or just display the message and wait for `q`).
+- **`ListState` bounds**: `ListState::selected()` can be `None` on empty lists. Guard all `if let Some(i) = list_state.selected()` blocks. On empty milestone list, show explicit "No milestones — run `assay plan`" placeholder paragraph.
 
 ## Common Pitfalls
 
-- **`config::load` panics on missing `.assay/`** — Actually returns `Err`, not panics, but calling it when `.assay/` doesn't exist produces a confusing "reading config" IO error. **Fix**: check `project_root.join(".assay").exists()` before calling `load`. If absent, render `Screen::NoProject` and exit cleanly. Do not call `milestone_scan` or `config::load` when `.assay/` is absent.
-
-- **Path contract confusion: `assay_dir` vs `root`** — `milestone_scan(assay_dir)` takes `.assay/` directly; `config::load(root)` takes the project root (parent of `.assay/`). Getting this wrong produces "file not found" errors with confusing paths. Canonical pattern: `let assay_dir = project_root.join(".assay"); let milestones = milestone_scan(&assay_dir)?; let config = config::load(&project_root)?;`
-
-- **`ListState` selection guard on empty lists** — `render_stateful_widget` with a `ListState` that has a stale selection index when the list is empty causes the widget to display nothing instead of an empty-state placeholder. **Fix**: guard with `if milestones.is_empty() { render_empty_placeholder(frame, area) }` before attempting to render the List widget. Reset `ListState` to `ListState::default()` (selection = `None`) when milestones reload.
-
-- **Redundant panic hook** — The existing stub calls `std::panic::take_hook()` + `std::panic::set_hook()` manually. `ratatui::init()` already does this internally. The new `main.rs` should call `ratatui::init()` and NOT install an additional manual hook — doing so would replace the one ratatui installed, which could prevent terminal restoration on panic.
-
-- **`project_root` detection** — The TUI should detect the project root from the current working directory using the canonical `.assay/` probe: walk up from `std::env::current_dir()` looking for `.assay/`. For S01, just use `current_dir()` directly — walking up is an S05 polish item.
-
-- **`MilestoneStatus` display** — `MilestoneStatus` implements `Debug` but not `Display`. Use a `match` arm to produce badge strings: `Draft → "Draft"`, `InProgress → "Active"`, etc. Do not call `format!("{:?}", status)` in rendered output — it produces `"Draft"` / `"InProgress"` which is fine for S01 but fragile.
+- **Blocking `event::read()` in a multi-screen app** — The stub uses `event::read()` which blocks indefinitely until a key. For S01 this is acceptable (data is loaded once at startup), but the recommended pattern is `event::poll(Duration::from_millis(250)); if event::poll(...)? { event::read()? }` so the loop can refresh data on navigation without blocking.
+- **Calling data reads inside `terminal.draw()`** — `terminal.draw()` holds a mutable terminal borrow. Any `milestone_scan` or `history::load` call inside it blocks the render thread. Load all data in `run()` or `handle_event()`, not in `draw()`.
+- **`ListState` with empty list panics** — `render_stateful_widget` with `ListState::selected() = Some(0)` on a zero-item list does not panic, but selection-dependent logic (Enter key handler) must guard `if items.is_empty()`. Reset selection to `None` when the data list changes.
+- **Missing `[[bin]]` declaration** — Without it, `cargo build -p assay-tui` produces no binary. The crate compiles as a library. This is the first change to make; verify with `cargo build -p assay-tui && ls target/debug/assay-tui`.
+- **`config::load` error on missing file is `AssayError::Io`, not a panic** — Pattern: `match config::load(project_root) { Ok(c) => Some(c), Err(_) => None }`. Then if `project_root.join(".assay").exists()` is false, show `Screen::NoProject`. If `.assay/` exists but `config.toml` is missing or invalid, show the dashboard anyway with `config: None` (graceful degradation).
+- **Gate history loading latency** — Calling `history::list` + `history::load` per chunk per milestone on dashboard load is O(milestones × chunks × history_files). For a typical project (2-5 milestones, 3-7 chunks each, 1-10 history records each) this is fast. But the implementation must guard against `history::list` returning `Err` (no history dir) gracefully — show `pending` badge, not an error.
 
 ## Open Risks
 
-- **No `.assay/` in the assay repo itself** (confirmed: `.assay/` exists but has no `milestones/` dir). The TUI integration test will need `TempDir`-based fixtures; it cannot rely on the project's own `.assay/` for milestone data.
-- **`color-eyre` error hook interacts with ratatui panic hook** — The stub calls `color_eyre::install()` before `ratatui::init()`. The correct order is: install color-eyre first, then call `ratatui::init()` (which installs its panic hook last, ensuring terminal restore happens before color-eyre's hook). The current stub has this in the correct order — preserve it.
-- **S02 assumes `Screen::Wizard(WizardState)` variant exists in S01** — The `WizardState` struct lives in `assay-tui`, so this variant cannot be added until S01 defines the `WizardState` type. S01 must define a stub `WizardState { /* placeholder */ }` and include the `Screen::Wizard(WizardState)` variant even if the wizard screen isn't rendered yet.
+- **Terminal resize during rendering** — Ratatui handles resize automatically on the next frame if the event loop continues. No special handling needed in S01; the next `terminal.draw()` call after a resize event gets the new dimensions. Add `Event::Resize` to the event match to explicitly ignore it (not return early as a quit signal).
+- **Gate history for dashboard** — The roadmap says "gate pass/fail counts per milestone" is required. Computing this synchronously at dashboard load requires iterating all chunk history. It is safe but adds latency proportional to history file count. If this proves slow in S01 integration testing, the gate column can be `N/A` on initial render and populated lazily. The risk is overestimating latency.
+- **`assay_dir` vs `project_root` in function signatures** — `milestone_scan` takes `assay_dir` (path to `.assay/`), while `config::load` takes `project_root` (parent of `.assay/`). `cycle_status` takes `assay_dir`. This asymmetry is already established in assay-core — `App` must store `project_root: PathBuf` and derive `assay_dir` as `project_root.join(".assay")`.
 
 ## Skills Discovered
 
 | Technology | Skill | Status |
 |------------|-------|--------|
-| Ratatui | (searched) | No relevant skill in `<available_skills>`; network search unavailable |
+| Ratatui | (searched via available_skills) | None found — inline research used instead |
 
 ## Sources
 
-- Codebase: `crates/assay-tui/src/main.rs` — current stub; init/restore/panic-hook pattern; crossterm event loop (HIGH confidence)
-- Ratatui 0.30 init module: `~/.cargo/registry/src/.../ratatui-0.30.0/src/init.rs` — `ratatui::init()` installs panic hook internally via `set_panic_hook()`; `DefaultTerminal` = `Terminal<CrosstermBackend<Stdout>>` (HIGH confidence)
-- Ratatui widgets: `~/.cargo/registry/src/.../ratatui-widgets-0.3.0/src/list.rs` — `List` + `ListState` stateful widget; `render_stateful_widget(list, area, &mut state)` API (HIGH confidence)
-- Codebase: `crates/assay-core/src/milestone/mod.rs` — `milestone_scan(assay_dir)` returns `Ok(vec![])` for missing dir (HIGH confidence)
-- Codebase: `crates/assay-core/src/config/mod.rs` — `load(root)` returns `Err(AssayError::Io)` for missing config.toml (HIGH confidence)
-- Codebase: `crates/assay-types/src/milestone.rs` — `Milestone`, `ChunkRef`, `MilestoneStatus` types (HIGH confidence)
-- Codebase: `crates/assay-tui/Cargo.toml` — no `[[bin]]` section; Cargo default produces `assay-tui` binary (confirmed by `ls target/debug/assay-tui`) (HIGH confidence)
+- `crates/assay-tui/src/main.rs` — Current stub; panic hook + init/restore pattern to preserve (HIGH confidence)
+- `crates/assay-tui/Cargo.toml` — Confirmed: no `[[bin]]` declaration; `assay-core`, `ratatui`, `crossterm` already in deps (HIGH confidence)
+- `crates/assay-cli/Cargo.toml` — Confirmed: `[[bin]] name = "assay"` — TUI must use a different name (HIGH confidence)
+- `~/.cargo/registry/src/.../ratatui-widgets-0.3.0/src/list/state.rs` — `ListState` API: `Default`, `with_selected()`, `select_next()`, `select_previous()`, `selected() -> Option<usize>` (HIGH confidence)
+- `~/.cargo/registry/src/.../ratatui-0.30.0/src/init.rs` — `init()`, `restore()`, `DefaultTerminal` type alias (HIGH confidence)
+- `crates/assay-core/src/milestone/mod.rs` — `milestone_scan(assay_dir)` public API surface (HIGH confidence)
+- `crates/assay-core/src/milestone/cycle.rs` — `cycle_status(assay_dir) -> Result<Option<CycleStatus>>`, `CycleStatus` fields (HIGH confidence)
+- `crates/assay-core/src/config/mod.rs` — `load(root)` takes project root; returns `AssayError::Io` on missing file (HIGH confidence)
+- `crates/assay-types/src/milestone.rs` — `Milestone`, `ChunkRef`, `MilestoneStatus` types and serde conventions (HIGH confidence)
+- `crates/assay-types/src/gate_run.rs` — `GateRunRecord`, `GateRunSummary.passed/failed` fields (HIGH confidence)
+- `crates/assay-core/tests/cycle.rs` — Test helper patterns for milestone fixtures reusable in TUI unit tests (HIGH confidence)

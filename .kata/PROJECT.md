@@ -10,7 +10,7 @@ A beginning developer installs Assay, describes a feature, and gets a structured
 
 ## Current State
 
-v0.5.0 on main. ~20K lines of Rust across 6 crates. M001–M005 complete. 1333 tests passing.
+v0.6.0-dev on M006/S02 branch. ~20K lines of Rust across 6 crates. M001–M005 complete; M006 S01+S02 done. 1356 tests passing. `assay-tui` is now a real Ratatui app with a working dashboard (S01) and in-TUI authoring wizard (S02). S03 (chunk detail browser), S04 (provider config), S05 (polish) remain.
 
 **M001 (complete):** Single-agent harness end-to-end — manifest → worktree → agent launch → gate evaluation → merge proposal. 19 requirements validated.
 
@@ -29,7 +29,7 @@ Crates:
 - **assay-harness**: Agent harness adapters — prompt builder, settings merger, Claude Code/Codex/OpenCode adapters, scope enforcement
 - **assay-cli**: CLI binary — init, spec, gate, worktree, context, checkpoint, guard, mcp, run, harness, milestone, plan, pr subcommands
 - **assay-mcp**: MCP server — 30 tools (spec, gate, worktree, session, merge, context, orchestrate, milestone, cycle, pr)
-- **assay-tui**: TUI binary — real Ratatui app (M006/S01): App/Screen/WizardState types, live dashboard from milestone_scan, wrapping keyboard navigation, no-project guard; S02–S05 add wizard/spec-browser/settings/polish
+- **assay-tui**: TUI binary — full Ratatui app (M006/S01): App+Screen state machine, live dashboard loading milestones + gate history from assay-core, keyboard navigation, no-project guard
 
 Key patterns: free functions (zero traits), sync core with async surfaces, atomic file writes, `deny_unknown_fields` on persisted types, schema registry via `inventory`, shell-out to git CLI, closure-based control inversion (D001).
 

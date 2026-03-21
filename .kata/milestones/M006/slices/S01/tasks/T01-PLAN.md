@@ -3,80 +3,81 @@ estimated_steps: 5
 estimated_files: 3
 ---
 
-# T01: Cargo.toml binary fix, App/Screen types, and run loop skeleton
+# T01: Binary fix, `App`/`Screen` scaffold, and failing tests
 
 **Slice:** S01 — App Scaffold, Dashboard, and Binary Fix
 **Milestone:** M006
 
 ## Description
 
-Replace the 42-line stub's ad-hoc structure with the real `App`/`Screen` type hierarchy that the rest of M006 builds on. Adds the `[[bin]] name = "assay-tui"` declaration to resolve the binary naming ambiguity (D088), removes the redundant manual panic hook, and splits the run loop into `draw(frame, &App)` + `handle_event(&mut App, Event) -> bool` free functions per D089 and D001. Defines the `WizardState` stub so `Screen::Wizard(WizardState)` compiles (required by S02). All screen arms render placeholder text at this stage — real content comes in T02 and T03.
+The `assay-tui` crate is currently missing a `[[bin]]` declaration, so `cargo build -p assay-tui` produces no binary. This is the highest-priority blocking defect (D088). This task fixes it, creates the foundational `App` + `Screen` types in a new `src/app.rs` module, updates `main.rs` to delegate to `app::run()`, and writes the test assertions that T02 must satisfy. Tests fail at the end of T01 (stubs return dummy values) — that is correct and expected.
 
 ## Steps
 
-1. Open `crates/assay-tui/Cargo.toml`. Add `[[bin]] name = "assay-tui" path = "src/main.rs"` before the `[dependencies]` section. This makes the binary name explicit per D088.
-
-2. Create `crates/assay-tui/src/lib.rs` with the public types and logic that integration tests (in `tests/`) need to import. Binary crates in Rust cannot export items from `main.rs` to `tests/` — the standard pattern is a thin `main.rs` + a `lib.rs` that holds all logic. Put the following in `lib.rs`:
-   - Imports: `assay_core::config::Config`, `assay_types::milestone::Milestone`, `crossterm::event::{Event, KeyCode}`, `ratatui::{DefaultTerminal, Frame, widgets::{Block, List, ListState, Paragraph}}`, `std::path::PathBuf`
-   - `#[derive(Default)] pub struct WizardState { /* placeholder — real impl in S02 */ }`
-   - `pub enum Screen { Dashboard, MilestoneDetail, ChunkDetail, Wizard(WizardState), Settings, NoProject }` — `#[allow(dead_code)]` on unused variants
-   - `pub struct App { pub screen: Screen, pub milestones: Vec<Milestone>, pub list_state: ListState, pub project_root: Option<PathBuf>, pub config: Option<Config>, pub show_help: bool }`
-   - `pub fn draw(frame: &mut Frame, app: &mut App)` — match on `app.screen`; all arms render a centered `Paragraph` with the screen name as placeholder text
-   - `pub fn handle_event(app: &mut App, event: Event) -> bool` — `q` (and `Esc` on Dashboard) returns `false`; all other events return `true`
-   - `pub fn run(app: &mut App, mut terminal: DefaultTerminal) -> color_eyre::Result<()>` — loop: `terminal.draw(|f| draw(f, app))?`; read event; if `!handle_event(app, event) { break }`
-
-3. Rewrite `crates/assay-tui/src/main.rs` as a thin entry point that delegates to `lib.rs`:
-   ```rust
-   fn main() -> color_eyre::Result<()> {
-       color_eyre::install()?;
-       let terminal = ratatui::init();
-       let mut app = assay_tui::App { screen: assay_tui::Screen::Dashboard, milestones: vec![], list_state: ratatui::widgets::ListState::default(), project_root: None, config: None, show_help: false };
-       let result = assay_tui::run(&mut app, terminal);
-       ratatui::restore();
-       result
-   }
+1. Open `crates/assay-tui/Cargo.toml` and add a `[[bin]]` section and `[dev-dependencies]` section:
+   ```toml
+   [dev-dependencies]
+   tempfile.workspace = true
    ```
-   Do NOT add a `std::panic::set_hook` block — `ratatui::init()` installs its own panic hook.
+   Then add the `[[bin]]` section immediately before `[dependencies]`:
+   ```toml
+   [[bin]]
+   name = "assay-tui"
+   path = "src/main.rs"
+   ```
+   Verify `cargo build -p assay-tui && ls target/debug/assay-tui` exits 0 and `cargo build -p assay-cli && ls target/debug/assay` still exits 0.
 
-4. `color_eyre::install()` must come before `ratatui::init()` per the existing stub's order.
+2. Create `crates/assay-tui/src/app.rs` with:
+   - Imports: `assay_core::config`, `assay_core::milestone`, `assay_types::{Config, Milestone}`, `ratatui::{DefaultTerminal, Frame, widgets::{Block, List, ListItem, ListState, Paragraph}, layout::{Constraint, Layout}}`, `crossterm::event::{self, Event, KeyCode, KeyEvent}`
+   - `pub enum Screen { Dashboard, NoProject }`
+   - `pub struct GateSummary { pub passed: u32, pub failed: u32 }` 
+   - `pub struct App { pub screen: Screen, pub milestones: Vec<Milestone>, pub gate_data: Vec<(String, GateSummary)>, pub list_state: ListState, pub project_root: std::path::PathBuf, pub config: Option<Config> }`
+   - Stub `impl App { pub fn new(project_root: std::path::PathBuf) -> Self { /* TODO */ App { screen: Screen::Dashboard, milestones: vec![], gate_data: vec![], list_state: ListState::default(), project_root, config: None } } }`
+   - Stub `pub fn run(mut terminal: DefaultTerminal) -> color_eyre::Result<()> { Ok(()) }`
+   - Stub `pub fn handle_event(app: &mut App, event: &Event) -> bool { false }`
+   - Stub `pub fn draw(frame: &mut Frame, app: &mut App) {}`
 
-5. Run `cargo check -p assay-tui` to verify the crate compiles cleanly; fix any type errors. Run `cargo build -p assay-tui && cargo build -p assay-cli` to confirm both binaries build without naming collision.
+3. Update `crates/assay-tui/src/main.rs` to replace the inline `run()` loop with a call to `app::run(terminal)`. Preserve the panic hook, `ratatui::init()`, and `ratatui::restore()` exactly. Add `mod app;` at the top.
+
+4. Add a `#[cfg(test)]` module at the bottom of `app.rs` with these tests:
+   - `test_no_assay_dir_sets_no_project_screen`: create a tempdir without `.assay/`; call `App::new(tmp.path().to_path_buf())`; assert `matches!(app.screen, Screen::NoProject)`
+   - `test_handle_event_q_returns_true`: create any `App`; call `handle_event(&mut app, &Event::Key(KeyEvent::from(KeyCode::Char('q'))))`; assert result is `true`
+   - `test_handle_event_up_down_no_panic_on_empty`: create an `App` with empty `milestones`; call `handle_event` with `Up` and `Down`; assert both return `false` and no panic
+   - `test_handle_event_down_moves_selection`: create an `App` with `milestones` containing 2 items and `list_state` selected at `Some(0)`; call `handle_event(Down)`; assert `list_state.selected() == Some(1)` (or wraps)
+
+5. Run `cargo test -p assay-tui`. Expect some tests to fail (stubs). Expect `test_handle_event_q_returns_true` and `test_handle_event_up_down_no_panic_on_empty` to fail. That is correct — T02 makes them pass.
 
 ## Must-Haves
 
-- [ ] `[[bin]] name = "assay-tui" path = "src/main.rs"` present in `crates/assay-tui/Cargo.toml` before `[dependencies]`
-- [ ] `WizardState` struct defined and `Screen::Wizard(WizardState)` variant compiles
-- [ ] All six `Screen` variants present: `Dashboard`, `MilestoneDetail`, `ChunkDetail`, `Wizard(WizardState)`, `Settings`, `NoProject`
-- [ ] `App` struct has all six fields from D089: `screen`, `milestones`, `list_state`, `project_root`, `config`, `show_help`
-- [ ] `draw` is a free `fn`, not a trait impl on `App`
-- [ ] `handle_event` is a free `fn` that returns `bool`
-- [ ] No `std::panic::set_hook` or `std::panic::take_hook` call in `main.rs`
-- [ ] `cargo build -p assay-tui` → `target/debug/assay-tui` exists
-- [ ] `cargo build -p assay-cli` → `target/debug/assay` exists; no binary name collision
+- [ ] `cargo build -p assay-tui && ls target/debug/assay-tui` exits 0
+- [ ] `cargo build -p assay-cli && ls target/debug/assay` exits 0 (no collision)
+- [ ] `App`, `Screen`, `GateSummary` types compile without errors
+- [ ] `main.rs` delegates to `app::run()` and preserves panic hook + init/restore
+- [ ] `#[cfg(test)]` module compiles and tests run (failures are expected at this stage)
+- [ ] No `[[bin]] name = "assay"` added to assay-tui (that would collide with assay-cli)
 
 ## Verification
 
-- `cargo build -p assay-tui && ls target/debug/assay-tui` → file exists
-- `cargo build -p assay-cli && ls target/debug/assay` → file exists; `target/debug/assay` ≠ `target/debug/assay-tui`
-- `cargo check -p assay-tui 2>&1 | grep -c error` → 0
-- `grep '\\[\\[bin\\]\\]' crates/assay-tui/Cargo.toml` → matches `[[bin]]`
-- `grep -c 'set_hook' crates/assay-tui/src/main.rs` → 0
+- `cargo build -p assay-tui && ls -la target/debug/assay-tui` — binary present
+- `cargo build -p assay-cli && ls -la target/debug/assay` — cli binary present
+- `cargo test -p assay-tui 2>&1 | grep -E "FAILED|error\[E"` — should show test failures but NOT compiler errors
+- `cargo check --workspace` — entire workspace compiles
 
 ## Observability Impact
 
-- Signals added/changed: `handle_event` returning `bool` is the explicit quit signal — false = terminate, true = continue; this is the primary control-flow observable
-- How a future agent inspects this: read `App.screen` to determine current screen; `App.milestones.len()` for data load status
-- Failure state exposed: if `cargo build` fails, the error is a compiler diagnostic — no hidden state
+- Signals added/changed: `Screen` enum is the sole state signal; `Screen::NoProject` will render a visible error message (implemented in T02)
+- How a future agent inspects this: `app.screen` variant tells you which render path was chosen; unit tests assert on `Screen::NoProject` transitions
+- Failure state exposed: If `App::new()` is called on a missing `.assay/` dir, `Screen::NoProject` is the expected result — inspectable in tests and visible to the user in T02's render implementation
 
 ## Inputs
 
-- `crates/assay-tui/src/main.rs` — existing 42-line stub; will be replaced with thin entry point
-- `crates/assay-tui/Cargo.toml` — missing `[[bin]]` section; needs addition
-- Research: `Screen` enum variants and `App` field list from S01-RESEARCH.md and D089
+- `crates/assay-tui/src/main.rs` — 42-line stub; preserve panic hook + `ratatui::init()` / `ratatui::restore()` wrapping
+- `crates/assay-tui/Cargo.toml` — add `[[bin]]`; add `tempfile.workspace = true` as dev-dependency
+- `crates/assay-cli/Cargo.toml` — confirm `[[bin]] name = "assay"` to avoid collision
 
 ## Expected Output
 
-- `crates/assay-tui/Cargo.toml` — `[[bin]] name = "assay-tui"` added
-- `crates/assay-tui/src/lib.rs` — new; contains `App`, `Screen`, `WizardState`, `draw`, `handle_event`, `run` as pub items
-- `crates/assay-tui/src/main.rs` — thin entry point; delegates to `assay_tui::run`
+- `crates/assay-tui/Cargo.toml` — has `[[bin]] name = "assay-tui"` and `tempfile` dev-dependency
+- `crates/assay-tui/src/main.rs` — delegates to `app::run()`; preserved panic hook
+- `crates/assay-tui/src/app.rs` — new file with `App`, `Screen`, `GateSummary` types, stubs, and failing `#[cfg(test)]` tests
 - `target/debug/assay-tui` binary produced by `cargo build -p assay-tui`

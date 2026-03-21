@@ -1,80 +1,64 @@
 # S01: App Scaffold, Dashboard, and Binary Fix
 
-**Goal:** Replace the 42-line `assay-tui` stub with a real Ratatui application: `App` + `Screen` type hierarchy, a working dashboard that loads live milestone data from `assay-core`, keyboard navigation, no-project guard, and an explicit `[[bin]]` declaration in `Cargo.toml`.
-**Demo:** `cargo build -p assay-tui` produces `target/debug/assay-tui`; launching it on any project with `.assay/milestones/` shows a live dashboard with milestones (name, status badge, chunk progress fraction) loaded from `milestone_scan`; ↑↓ navigates the list; `q` quits; launching on a directory with no `.assay/` shows a clean "Not an Assay project" message and exits without panic.
+**Goal:** Fix the missing `[[bin]]` declaration so `assay-tui` produces a real binary, then replace the 42-line stub with a full `App`/`Screen` Ratatui application that loads live milestone data from `assay-core` and renders a dashboard — list of milestones with status badges, chunk progress fractions, and gate pass/fail counts — with arrow-key navigation and `q` to quit.
+**Demo:** `cargo build -p assay-tui` produces `target/debug/assay-tui`; launching it on a project with `.assay/` shows a list of milestones with name, status badge, chunk fraction (e.g. `2/4`), and gate pass/fail column loaded from real files; `↑↓` moves the selection; `q` quits cleanly; launching on a directory without `.assay/` shows a clean "Not an Assay project" message and exits without panic.
 
 ## Must-Haves
 
-- `[[bin]] name = "assay-tui" path = "src/main.rs"` present in `crates/assay-tui/Cargo.toml`
-- `cargo build -p assay-tui` produces `target/debug/assay-tui`; `cargo build -p assay-cli` produces `target/debug/assay`; no binary name collision
-- `App` struct holds `screen: Screen`, `milestones: Vec<Milestone>`, `list_state: ListState`, `project_root: Option<PathBuf>`, `config: Option<Config>`, `show_help: bool`
-- `Screen` enum has all variants: `Dashboard`, `MilestoneDetail`, `ChunkDetail`, `Wizard(WizardState)`, `Settings`, `NoProject`; `WizardState` is a stub struct present in the codebase
-- Run loop split into `draw(frame, &App)` (free fn) and `handle_event(&mut App, Event) -> bool` (free fn); no logic inside `terminal.draw()` closure
-- Dashboard renders a `List` of milestones with name, status badge string, and chunk progress fraction (e.g. `2/4`) loaded from `milestone_scan`; data is real, not hardcoded
-- `config::load` result stored in `App.config`; load is guarded (only called when `.assay/` exists)
-- ↑↓ arrow keys move `ListState` selection; wrapping at both ends
-- `q` quits from any screen; `Esc` returns to Dashboard from any other screen
-- `Enter` on a dashboard item transitions to `Screen::MilestoneDetail` stub (renders placeholder text)
-- No `.assay/` → `Screen::NoProject` rendered with clear message; no panic; exits cleanly on `q`/`Esc`
-- Empty milestones list → empty-state placeholder rendered instead of panicking `ListState`
-- Manual panic hook removed; `ratatui::init()` internal hook is relied on (per research)
-- `crates/assay-tui/tests/app_state.rs` exists with tests covering: `navigate_up_down`, `quit_returns_false`, `enter_transitions_to_milestone_detail`, `esc_returns_to_dashboard`, `no_project_screen_set_when_assay_dir_absent`, `empty_milestones_does_not_panic_list_state`
-- `cargo test -p assay-tui` passes; `just ready` passes
+- `cargo build -p assay-tui` produces `target/debug/assay-tui`; `cargo build -p assay-cli` still produces `target/debug/assay` (no collision)
+- `App::new(project_root)` with no `.assay/` directory sets `screen: Screen::NoProject` — verified by unit test
+- `App::new(project_root)` with `.assay/` but zero milestones renders empty-state text — verified by unit test
+- `handle_event(Up)` and `handle_event(Down)` update `list_state` selection — verified by unit tests
+- `handle_event(Char('q'))` returns `true` (quit signal) — verified by unit test
+- Dashboard shows milestone name, `MilestoneStatus` badge, chunk progress fraction, and gate pass/fail column from real `history::list` + `history::load` data — verified by `#[cfg(test)]` test using `tempfile::TempDir` + public `assay_core::milestone::milestone_save` + `assay_core::history::save_run` to build fixture state
+- No panic when `.assay/` is absent or when milestone list is empty — verified by unit tests
+- `just ready` passes after S01 (`cargo fmt`, `cargo clippy`, `cargo test --workspace`, `cargo deny`)
 
 ## Proof Level
 
-- This slice proves: integration
-- Real runtime required: yes (manual launch against a project with `.assay/` to visually confirm dashboard data)
-- Human/UAT required: yes (visual check; keyboard navigation; no-project guard)
+- This slice proves: integration (real `milestone_scan` + `history` data; event-loop state transitions)
+- Real runtime required: yes — visual inspection via `cargo run -p assay-tui` on a project with fixtures
+- Human/UAT required: no — unit + integration tests cover all must-haves; visual verify is optional confirmation
 
 ## Verification
 
-- `cargo build -p assay-tui 2>&1 | grep -c 'Finished'` → 1; confirm `target/debug/assay-tui` exists
-- `cargo build -p assay-cli 2>&1 | grep -c 'Finished'` → 1; confirm `target/debug/assay` exists and `target/debug/assay-tui` still exists (no collision)
-- `cargo test -p assay-tui 2>&1 | grep -E 'test result'` → all 6 tests pass
-- `just ready` → green (fmt, lint, test, deny)
-- Manual: `cd /tmp/test-no-assay && cargo run -p assay-tui` → clean message, no panic, exits
-- Manual: `cd <project-with-assay> && cargo run -p assay-tui` → dashboard with real milestone data visible
+- `cargo test -p assay-tui` — all unit and integration tests in `crates/assay-tui/src/app.rs` pass
+- `cargo build -p assay-tui && ls -la target/debug/assay-tui` — binary present
+- `cargo build -p assay-cli && ls -la target/debug/assay` — CLI binary present, no collision
+- `just ready` — full workspace check passes
+- Manual: `cargo run -p assay-tui` in a project with `.assay/milestones/` shows live dashboard; `q` quits; `↑↓` navigates
 
 ## Observability / Diagnostics
 
-- Runtime signals: `Screen::NoProject` is the explicit failure mode for missing `.assay/`; renders a human-readable error string; exits on `q` — no hidden panic paths
-- Inspection surfaces: `handle_event` returns `bool` (false = quit); each screen transition is a single enum-variant assignment — inspectable by reading `App.screen`
-- Failure visibility: `milestone_scan` / `config::load` errors surfaced as `Screen::NoProject` with the error message rendered in the TUI; no silent failures
-- Redaction constraints: none — no secrets displayed
+- Runtime signals: Screen enum variant is the state machine; no additional logging needed for S01
+- Inspection surfaces: `App.screen`, `App.milestones`, `App.list_state` — inspectable in test context; `Screen::NoProject` renders explicit diagnostic text to terminal
+- Failure visibility: `draw_no_project()` renders a clear error message visible to the user; loading errors (bad config, malformed TOML) are silently degraded (config: None, milestones: vec![]) rather than panicking — the user sees an empty dashboard, not a crash
+- Redaction constraints: none — no secrets in milestone/config display
 
 ## Integration Closure
 
-- Upstream surfaces consumed: `assay_core::milestone::milestone_scan(assay_dir)`, `assay_core::config::load(root)`, `assay_types::{Milestone, MilestoneStatus, Config}`
-- New wiring introduced in this slice: `main()` detects `.assay/`, calls `milestone_scan` + `config::load`, constructs `App`, enters event loop; `draw` dispatches to screen-specific free render fns; `handle_event` mutates `App.screen` on navigation keys
-- What remains before the milestone is truly usable end-to-end: S02 (wizard rendering), S03 (chunk detail view), S04 (settings screen), S05 (help overlay + status bar + resize polish)
+- Upstream surfaces consumed: `assay_core::milestone::milestone_scan(assay_dir)`, `assay_core::milestone::cycle_status(assay_dir)`, `assay_core::config::load(project_root)`, `assay_core::history::list(assay_dir, spec_name)`, `assay_core::history::load(assay_dir, spec_name, run_id)`, `assay_types::{Milestone, MilestoneStatus, ChunkRef}`
+- New wiring introduced in this slice: `[[bin]]` declaration; `App` + `Screen` state machine; `run()` polling event loop; `draw()` dispatch; dashboard render with live data
+- What remains before the milestone is truly usable end-to-end: S02 (wizard), S03 (chunk detail), S04 (settings), S05 (help overlay + polish)
 
 ## Tasks
 
-- [x] **T01: Cargo.toml binary fix, App/Screen types, and run loop skeleton** `est:45m`
-  - Why: The `[[bin]]` declaration, `App` struct, `Screen` enum, and `draw`/`handle_event` split are the structural foundation everything else builds on; S02 depends on `Screen::Wizard(WizardState)` existing; this task makes the codebase compile with the new shape
-  - Files: `crates/assay-tui/Cargo.toml`, `crates/assay-tui/src/main.rs`
-  - Do: (1) Add `[[bin]] name = "assay-tui" path = "src/main.rs"` before `[dependencies]` in Cargo.toml. (2) Rewrite `main.rs` entirely: define `WizardState { /* placeholder */ }` stub struct; define `Screen` enum with all six variants; define `App` struct per D089; split run loop into `fn draw(frame: &mut Frame, app: &App)` (match on `app.screen`, render placeholder for all screens initially) and `fn handle_event(app: &mut App, event: Event) -> bool` (return false on `q`, `Esc` goes to Dashboard, `Enter` on Dashboard goes to `MilestoneDetail`). (3) In `main()`: call `color_eyre::install()`, then `ratatui::init()` — do NOT add a manual `std::panic::set_hook` block. (4) Verify the crate compiles: `cargo check -p assay-tui`
-  - Verify: `cargo check -p assay-tui` exits 0; `cargo build -p assay-tui` produces `target/debug/assay-tui`; `cargo build -p assay-cli` still produces `target/debug/assay`
-  - Done when: `cargo build -p assay-tui && cargo build -p assay-cli` both succeed; binary names do not collide; `Screen::Wizard(WizardState)` variant compiles
+- [x] **T01: Binary fix, `App`/`Screen` scaffold, and failing tests** `est:30m`
+  - Why: The `[[bin]]` declaration is the blocking prerequisite — without it `cargo build -p assay-tui` produces nothing. The scaffold defines the `App` and `Screen` types and writes the test assertions that will drive T02 implementation.
+  - Files: `crates/assay-tui/Cargo.toml`, `crates/assay-tui/src/main.rs`, `crates/assay-tui/src/app.rs`
+  - Do: (1) Add `[[bin]] name = "assay-tui" path = "src/main.rs"` to `Cargo.toml`. (2) Create `src/app.rs` with `App { screen, milestones, list_state, project_root, config }`, `Screen` enum (`Dashboard`, `NoProject`), stub `App::new()`, stub `run()`, stub `handle_event()`, stub `draw()`. (3) Update `main.rs` to call `app::run(terminal)` instead of the inline loop. (4) Add `#[cfg(test)]` module in `app.rs` with unit tests covering: `no_assay_dir → Screen::NoProject`, `handle_event(Up/Down)` list state changes, `handle_event('q') → true`, empty milestone list guard. (5) `cargo build -p assay-tui` — verify binary produced. Tests will fail at this stage (stubs return wrong values) — that is expected and correct.
+  - Verify: `cargo build -p assay-tui && ls target/debug/assay-tui` exits 0; `cargo build -p assay-cli && ls target/debug/assay` exits 0; `cargo test -p assay-tui` compiles but some tests fail (stubs not yet implemented)
+  - Done when: Binary produced; tests compile and run (some failing is fine); no binary name collision
 
-- [x] **T02: Dashboard rendering with real milestone data** `est:60m`
-  - Why: Populates the dashboard with live data from `milestone_scan` and `config::load`; makes the slice demo visible — a developer launching the TUI sees actual milestone names and progress
-  - Files: `crates/assay-tui/src/main.rs`
-  - Do: (1) In `main()` after `ratatui::init()`: detect `.assay/` with `std::env::current_dir()?.join(".assay")`; if absent, set `App.screen = Screen::NoProject`; if present, call `milestone_scan(&assay_dir)` (takes `.assay/` dir) and `config::load(&project_root)` (takes project root); store results in `App`. (2) Implement `draw_dashboard(frame, app)` free fn: render a `Block::bordered().title("Dashboard")` containing a `List` of milestone items. Each item: `"{name}  [{status_badge}]  {completed}/{total}"` where `status_badge` is a match on `MilestoneStatus` producing `"Draft"/"Active"/"Verify"/"Done"`, and `{completed}/{total}` comes from `milestone.completed_chunks.len()` / `milestone.chunks.len()`. Use `render_stateful_widget(list, area, &mut app.list_state)`. (3) Implement `draw_no_project(frame)`: centered `Paragraph` with message `"Not an Assay project — run `assay init` first"`. (4) Wire `draw_dashboard` and `draw_no_project` into the `draw` fn's `Screen::Dashboard` and `Screen::NoProject` arms. (5) Path contract is critical: `milestone_scan(&assay_dir)` takes `.assay/` dir; `config::load(&project_root)` takes the project root (parent of `.assay/`)
-  - Verify: `cargo build -p assay-tui` passes; manual: `cargo run -p assay-tui` from `assay` repo root (which has `.assay/` but no milestones) shows empty dashboard with "Dashboard" title; milestone names appear if any exist
-  - Done when: Dashboard renders milestone list from real `milestone_scan` output; config load result stored in `App.config`; `Screen::NoProject` renders the clean message
-
-- [x] **T03: Navigation, empty-state guard, and unit tests** `est:60m`
-  - Why: Completes the slice's interactive behavior (↑↓, `Enter`, `Esc`, `q`) and proves the state transitions are correct via automated tests; the empty-list guard prevents a latent panic
-  - Files: `crates/assay-tui/src/main.rs`, `crates/assay-tui/tests/app_state.rs`
-  - Do: (1) In `handle_event`, implement ↑↓ arrow key handlers: `KeyCode::Up` — decrement selection with wrap (if selection is 0 or None, wrap to last); `KeyCode::Down` — increment selection with wrap; guard `if milestones.is_empty()` and skip selection changes. (2) `Screen::MilestoneDetail` stub: render a `Paragraph` with `"Milestone detail — coming in S03"` and the selected milestone slug if derivable from `App.list_state`. (3) In `draw_dashboard`: guard `if app.milestones.is_empty()` → render a `Paragraph` with `"No milestones — press n to create one"` instead of rendering the `List` widget; this prevents the `ListState` panic. (4) `Esc` in `handle_event`: from any screen other than Dashboard, set `screen = Screen::Dashboard`. (5) Create `crates/assay-tui/tests/app_state.rs` with the following tests (use `TempDir` + `milestone_save` to create fixtures where needed): `navigate_down_increments_selection`, `navigate_up_wraps_to_last`, `navigate_down_wraps_to_first`, `quit_returns_false_from_dashboard`, `enter_on_dashboard_transitions_to_milestone_detail`, `esc_returns_to_dashboard_from_milestone_detail`, `empty_milestones_does_not_change_list_state`. Each test constructs `App` directly with known state and calls `handle_event` with a synthetic `Event::Key(KeyEvent)` — no terminal required. (6) Run `just ready` and fix any lint/fmt issues
-  - Verify: `cargo test -p assay-tui 2>&1 | grep 'test result'` shows 7+ tests pass, 0 failed; `just ready` exits 0
-  - Done when: All tests in `app_state.rs` pass; `just ready` green; ↑↓/Enter/Esc/q behavior verified by test; empty milestones produces no panic
+- [x] **T02: Dashboard rendering, event loop, and gate data — all tests pass** `est:1.5h`
+  - Why: Implements all the real behavior that makes the tests from T01 pass and delivers the slice demo: live milestone data, gate pass/fail column, polling event loop, arrow-key navigation, no-project guard.
+  - Files: `crates/assay-tui/src/app.rs`, `crates/assay-tui/src/main.rs`
+  - Do: (1) Implement `App::new(project_root)`: check `.assay/` dir existence; if absent set `screen: Screen::NoProject`; otherwise call `milestone_scan(assay_dir)` (handle `Err` → `vec![]`), call `config::load(project_root)` (handle `Err` → `None`), set `list_state` with `ListState::default().with_selected(Some(0))` if milestones non-empty else `None`. (2) Add `GateSummary { passed: u32, failed: u32 }` and compute it in `App::new()` via `history::list(assay_dir, chunk_slug)` → last entry → `history::load` → `record.summary.passed/failed`; store as `Vec<(String, GateSummary)>` keyed by milestone slug. (3) Implement `run(terminal)` with polling event loop: `event::poll(Duration::from_millis(250))`; if event → `event::read()` → `handle_event()`; `terminal.draw(|f| draw(f, &mut app))`; loop exits when `handle_event` returns `true`. (4) Implement `handle_event(event, app) -> bool`: `KeyCode::Char('q') → true`; `KeyCode::Up → app.list_state.select_previous()`; `KeyCode::Down → app.list_state.select_next()`; `Event::Resize → false`; default `false`. Guard `Up/Down` to no-op when `milestones.is_empty()`. (5) Implement `draw(frame, app)`: match on `app.screen` → call `draw_dashboard` or `draw_no_project`. (6) Implement `draw_dashboard(frame, milestones, list_state, gate_data)`: render `List` widget with `render_stateful_widget`; each item shows `"{name}  [{status}]  {completed}/{total}  ✓{passed} ✗{failed}"`; use `Layout::vertical([Length(1), Fill(1), Length(1)])` for title bar / body / hint bar. (7) Implement `draw_no_project(frame)`: render centered `Paragraph` with "Not an Assay project — run `assay init` first". (8) Implement `draw_no_milestones(frame)`: render centered `Paragraph` with "No milestones — run `assay plan`". (9) Run unit tests; fix until all pass. (10) `just ready`.
+  - Verify: `cargo test -p assay-tui` — all tests pass; `just ready` passes; `cargo run -p assay-tui` launches on a project with `.assay/` and shows milestones; `q` quits; `↑↓` moves selection; no panic on empty `.assay/`
+  - Done when: All unit tests in `app.rs` pass; `just ready` green; binary produces correct output on fixture data
 
 ## Files Likely Touched
 
-- `crates/assay-tui/Cargo.toml` — add `[[bin]]` section
-- `crates/assay-tui/src/lib.rs` — new; `App`, `Screen`, `WizardState`, `draw`, `handle_event`, `run` as pub items
-- `crates/assay-tui/src/main.rs` — thinned to entry point; data loading moves here
-- `crates/assay-tui/tests/app_state.rs` — new; unit tests for state transitions
+- `crates/assay-tui/Cargo.toml`
+- `crates/assay-tui/src/main.rs`
+- `crates/assay-tui/src/app.rs` (new)

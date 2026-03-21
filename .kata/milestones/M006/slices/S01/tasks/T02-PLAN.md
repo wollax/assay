@@ -1,84 +1,111 @@
 ---
-estimated_steps: 5
-estimated_files: 1
+estimated_steps: 11
+estimated_files: 2
 ---
 
-# T02: Dashboard rendering with real milestone data
+# T02: Dashboard rendering, event loop, and gate data — all tests pass
 
 **Slice:** S01 — App Scaffold, Dashboard, and Binary Fix
 **Milestone:** M006
 
 ## Description
 
-Replaces the placeholder dashboard with a real dashboard: loads milestones via `milestone_scan` and config via `config::load` in `main()`, then renders a `List` of milestone entries (name, status badge, chunk progress fraction) using `render_stateful_widget`. Implements the no-project guard — if `.assay/` is absent, sets `App.screen = Screen::NoProject` and renders a clean exit message. Path contract is a known footgun: `milestone_scan` takes the `.assay/` directory directly; `config::load` takes the project root (parent of `.assay/`).
+Implements all real behavior defined in the T01 scaffolding: `App::new()` loads live milestone data and gate history from `assay-core`; the polling event loop replaces the blocking `event::read()` stub; `handle_event()` handles `q`, arrow keys, and `Resize`; `draw()` dispatches to `draw_dashboard`, `draw_no_project`, and `draw_no_milestones`; the dashboard list shows each milestone's name, status badge, chunk fraction, and gate pass/fail column from real history files. All unit tests from T01 pass. `just ready` is green.
 
 ## Steps
 
-1. Add imports needed for data loading: `assay_core::milestone::milestone_scan`, `assay_core::config`, `std::env::current_dir`. Add `assay_core::milestone` to the existing `assay_core` import tree.
+1. Implement `App::new(project_root: PathBuf) -> Self`:
+   - `let assay_dir = project_root.join(".assay");`
+   - If `!assay_dir.exists()` → return `App { screen: Screen::NoProject, milestones: vec![], gate_data: vec![], list_state: ListState::default(), project_root, config: None }`
+   - `let milestones = assay_core::milestone::milestone_scan(&assay_dir).unwrap_or_default();`
+   - `let config = assay_core::config::load(&project_root).ok();`
+   - `let gate_data = compute_gate_data(&assay_dir, &milestones);` (free function, see step 2)
+   - `let list_state = if milestones.is_empty() { ListState::default() } else { ListState::default().with_selected(Some(0)) };`
+   - Return `App { screen: Screen::Dashboard, milestones, gate_data, list_state, project_root, config }`
 
-2. Update `main()` to perform data loading before entering the run loop:
-   ```
-   let project_root = current_dir()?;
-   let assay_dir = project_root.join(".assay");
-   let (milestones, config, initial_screen) = if assay_dir.exists() {
-       let milestones = milestone_scan(&assay_dir).unwrap_or_default();
-       let config = config::load(&project_root).ok();
-       (milestones, config, Screen::Dashboard)
-   } else {
-       (vec![], None, Screen::NoProject)
-   };
-   let mut app = App { screen: initial_screen, milestones, list_state: ListState::default(), project_root: Some(project_root), config, show_help: false };
-   ```
-   Note: `milestone_scan` returns `Ok(vec![])` for a missing milestones dir — no need to handle that case separately. If `milestone_scan` errors (e.g. corrupt file), use `unwrap_or_default()` to degrade gracefully.
+2. Implement `fn compute_gate_data(assay_dir: &Path, milestones: &[Milestone]) -> Vec<(String, GateSummary)>`:
+   - For each milestone, iterate `milestone.chunks`; for each chunk, call `assay_core::history::list(assay_dir, &chunk.slug).unwrap_or_default()`; if list is non-empty, take the last run_id and call `assay_core::history::load(assay_dir, &chunk.slug, &run_id).ok()`; accumulate `summary.passed` and `summary.failed` across all chunks in the milestone
+   - Return `vec![(milestone.slug.clone(), GateSummary { passed, failed })]` for each milestone
+   - All errors are silently degraded to zero counts — no panic, no early return
 
-3. Implement `fn draw_dashboard(frame: &mut Frame, app: &App)` as a free function:
-   - Outer layout: `Layout::vertical([Constraint::Fill(1)])` (single area for S01; status bar added in S05)
-   - Render `Block::bordered().title(" Assay Dashboard ")` around the list area
-   - Build `List` items: for each milestone in `app.milestones`, format a `ListItem` with text `"{name}  [{badge}]  {done}/{total}"` where:
-     - `badge` = `match status { MilestoneStatus::Draft => "Draft", MilestoneStatus::InProgress => "Active", MilestoneStatus::Verify => "Verify", MilestoneStatus::Complete => "Done" }`
-     - `done` = `milestone.completed_chunks.len()`
-     - `total` = `milestone.chunks.len()`
-   - Use `render_stateful_widget(list, inner_area, &mut app.list_state)` — note `&mut app.list_state` requires `app` to be `&mut App` in this function or the `list_state` to be passed separately; prefer signature `fn draw_dashboard(frame: &mut Frame, app: &App, list_state: &mut ListState)` to keep `draw` taking `&App`
-   - Highlight selected item with `List::new(items).highlight_style(Style::default().reversed())`
+3. Implement `pub fn run(mut terminal: DefaultTerminal) -> color_eyre::Result<()>`:
+   - Detect `project_root` as `std::env::current_dir()?`
+   - Construct `let mut app = App::new(project_root);`
+   - Event loop: `loop { terminal.draw(|f| draw(f, &mut app))?; if event::poll(std::time::Duration::from_millis(250))? { let ev = event::read()?; if handle_event(&mut app, &ev) { break; } } }`
+   - Return `Ok(())`
 
-4. Implement `fn draw_no_project(frame: &mut Frame)`:
-   - Render a centered `Paragraph` with text `"Not an Assay project — run \`assay init\` first"` styled `bold().red()`
-   - Add a sub-line: `"Press q to quit"`
+4. Implement `pub fn handle_event(app: &mut App, event: &Event) -> bool`:
+   - Match `Event::Key(key)`:
+     - `KeyCode::Char('q') | KeyCode::Char('Q') | KeyCode::Esc → return true` (when screen is NoProject, Esc/q still quits)
+     - `KeyCode::Up → if !app.milestones.is_empty() { app.list_state.select_previous(); }`
+     - `KeyCode::Down → if !app.milestones.is_empty() { app.list_state.select_next(); }`
+     - `KeyCode::Enter → {}` (screen transition placeholder for S02/S03)
+   - Match `Event::Resize(..) → return false` (explicit ignore — don't quit on resize)
+   - Default → `false`
 
-5. Wire both fns into the `draw` fn's `Screen::Dashboard` arm (passing `&mut app.list_state` explicitly) and `Screen::NoProject` arm. Update `draw`'s signature to take `&mut App` to allow passing `list_state` mutably if needed; alternatively, pull `list_state` from `App` before calling `draw_dashboard`. Either pattern is fine — pick the simpler one. Run `cargo build -p assay-tui` and fix errors.
+5. Implement `pub fn draw(frame: &mut Frame, app: &mut App)`:
+   - Match `app.screen`: `Screen::Dashboard → draw_dashboard(frame, app)`, `Screen::NoProject → draw_no_project(frame)`
+
+6. Implement `fn draw_no_project(frame: &mut Frame)`:
+   - Render a centered `Paragraph` with text `"Not an Assay project — run `assay init` first"` wrapped in a `Block::bordered().title("Assay")`
+   - Use `Layout::vertical([Constraint::Fill(1)])` to fill the full frame
+
+7. Implement `fn draw_no_milestones(frame: &mut Frame, area: ratatui::layout::Rect)`:
+   - Render a `Paragraph` with `"No milestones — run `assay plan`"` centered in `area`
+
+8. Implement `fn draw_dashboard(frame: &mut Frame, app: &mut App)`:
+   - Layout: `Layout::vertical([Constraint::Length(1), Constraint::Fill(1), Constraint::Length(1)])` → header / body / footer areas
+   - Header: `Paragraph::new("Assay Dashboard").bold()` in header area
+   - Footer: `Paragraph::new(" q quit  ↑↓ navigate")` in footer area
+   - Body: if `app.milestones.is_empty()` → call `draw_no_milestones(frame, body_area)` and return
+   - Build `Vec<ListItem>` from `app.milestones` + `app.gate_data`: each item text = `format!("{:30} {:10} {:5} ✓{} ✗{}", name, status_badge(status), chunk_fraction, passed, failed)` where `chunk_fraction = "{}/{}".format(completed_chunks.len(), chunks.len())`
+   - `status_badge(status)` returns `"[Draft]"` / `"[InProgress]"` / `"[Verify]"` / `"[Complete]"`
+   - Build `List::new(items).highlight_symbol("▶ ").block(Block::bordered().title("Milestones"))`
+   - `frame.render_stateful_widget(list, body_area, &mut app.list_state)`
+
+9. Add one more test: `test_gate_data_loaded_from_history`: create a `TempDir`; call `assay_core::init::init_project(tmp.path())` or manually create `.assay/milestones/` dir; use `assay_core::milestone::milestone_save` to write a milestone with one chunk; use `assay_core::history::save_run` to write a gate run record with `passed: 2, failed: 1`; call `App::new(tmp.path())`; assert `gate_data` contains an entry for that milestone slug with `passed == 2, failed == 1`. (If `init_project` adds complexity, just `std::fs::create_dir_all(tmp.path().join(".assay/milestones"))` and write fixture files directly.)
+
+10. Run `cargo test -p assay-tui`. All tests from T01 must now pass. Fix any failures before proceeding.
+
+11. Run `just ready`. Fix any fmt/clippy/deny issues. Commit is not required here — T01 and T02 will be committed together.
 
 ## Must-Haves
 
-- [ ] `main()` detects `.assay/` with `project_root.join(".assay").exists()` before calling any assay-core functions
-- [ ] `milestone_scan` called with `assay_dir` (the `.assay/` path), NOT `project_root` — path contract is critical
-- [ ] `config::load` called with `project_root` (parent of `.assay/`), NOT `assay_dir`
-- [ ] No `.assay/` → `App.screen = Screen::NoProject` set at startup; `draw_no_project` renders clean message
-- [ ] `draw_dashboard` renders a `List` with at least name, status badge, and progress fraction per milestone
-- [ ] `render_stateful_widget` used for the `List` (not `render_widget`) so `ListState` selection works
-- [ ] `status_badge` uses explicit `match` arms, not `format!("{:?}", status)` in rendered output
-- [ ] `cargo build -p assay-tui` passes
+- [ ] `cargo test -p assay-tui` — all tests pass (no failures)
+- [ ] `test_no_assay_dir_sets_no_project_screen` passes: `App::new()` on a dir without `.assay/` → `Screen::NoProject`
+- [ ] `test_handle_event_q_returns_true` passes: `handle_event(Char('q'))` → `true`
+- [ ] `test_handle_event_up_down_no_panic_on_empty` passes: Up/Down on empty list → `false`, no panic
+- [ ] `test_handle_event_down_moves_selection` passes: Down on 2-item list → selection advances
+- [ ] `compute_gate_data` handles `history::list` returning `Err` (no history dir) → `GateSummary { passed: 0, failed: 0 }` (no panic)
+- [ ] `draw_dashboard` renders with `render_stateful_widget` (not `render_widget`) so selection state is respected
+- [ ] `just ready` passes
 
 ## Verification
 
-- `cargo build -p assay-tui 2>&1 | grep -c '^error'` → 0
-- Manual: `cargo run -p assay-tui` from the `assay` repo root → dashboard renders with `Block` border and title; if `.assay/milestones/` has files they appear; no panic on empty milestones dir
-- Manual: `cd /tmp && mkdir no-assay && cd no-assay && cargo run --manifest-path /path/to/assay/Cargo.toml -p assay-tui` → clean "Not an Assay project" message displayed; TUI doesn't panic; exits on `q`
-- `grep -c 'milestone_scan' crates/assay-tui/src/main.rs` → ≥ 1 (confirms real data loading wired in)
+- `cargo test -p assay-tui` — all tests green
+- `cargo build -p assay-tui && ls -la target/debug/assay-tui` — binary present
+- `just ready` — fmt/lint/test/deny all pass
+- Manual: `cargo run -p assay-tui` in a project with `.assay/milestones/` (e.g. assay's own dev fixtures) shows list of milestones; `↑↓` moves selection highlight; `q` exits; `cargo run -p assay-tui` in a directory without `.assay/` shows "Not an Assay project" message; no panic in either case
 
 ## Observability Impact
 
-- Signals added/changed: `App.milestones.is_empty()` distinguishes "no project" from "project has no milestones" — these are different states with different rendering
-- How a future agent inspects this: `App.screen` holds `NoProject` when `.assay/` is absent; `App.milestones.len()` tells how many were loaded; `App.config.is_some()` tells whether config loaded successfully
-- Failure state exposed: `milestone_scan` errors degrade to empty vec (not a panic); `config::load` errors degrade to `None` — both visible via `App` field inspection
+- Signals added/changed: `Screen::NoProject` renders a human-readable "Not an Assay project" message to the terminal — the user immediately knows what went wrong without reading a log file
+- How a future agent inspects this: `app.screen` + `app.milestones.len()` + `app.gate_data` are all inspectable in unit tests; test helpers from `crates/assay-core/tests/cycle.rs` (`make_assay_dir`, `make_milestone_with_status`) can construct fixture state for TUI tests
+- Failure state exposed: Silent degradation on data load errors means TUI shows empty dashboard rather than crashing — a future agent sees the empty state and knows to check `.assay/` directory contents directly
 
 ## Inputs
 
-- `crates/assay-tui/src/lib.rs` — T01 output with `App`, `Screen`, `draw`, `handle_event` scaffolded; `main.rs` thin entry point
-- `assay_core::milestone::milestone_scan` — takes `&Path` (`.assay/` dir); returns `Result<Vec<Milestone>>`
-- `assay_core::config::load` — takes `&Path` (project root); returns `Result<Config>`
-- `assay_types::milestone::{Milestone, MilestoneStatus}` — `completed_chunks: Vec<String>`, `chunks: Vec<ChunkRef>`
+- `crates/assay-tui/src/app.rs` — stub types from T01; `#[cfg(test)]` tests to satisfy
+- `crates/assay-core/src/milestone/mod.rs` — `milestone_scan(assay_dir)` API
+- `crates/assay-core/src/milestone/cycle.rs` — `CycleStatus` fields (for potential header badge in S05)
+- `crates/assay-core/src/config/mod.rs` — `load(project_root)` returns `Err` when config.toml absent
+- `crates/assay-core/src/history/mod.rs` — `list(assay_dir, spec_name)` + `load(assay_dir, spec_name, run_id)` APIs
+- `crates/assay-types/src/milestone.rs` — `Milestone`, `ChunkRef`, `MilestoneStatus` types
+- `crates/assay-types/src/gate_run.rs` — `GateRunRecord.summary.passed / .failed` fields
 
 ## Expected Output
 
-- `crates/assay-tui/src/lib.rs` — `draw_dashboard` and `draw_no_project` implemented; `draw` dispatches to them
-- `crates/assay-tui/src/main.rs` — updated to perform real data loading in `main()` with path-contract-correct calls before constructing `App`
+- `crates/assay-tui/src/app.rs` — fully implemented `App::new()`, `run()`, `handle_event()`, `draw()`, `draw_dashboard()`, `draw_no_project()`, `draw_no_milestones()`, `compute_gate_data()`, and passing `#[cfg(test)]` module
+- `crates/assay-tui/src/main.rs` — unchanged from T01 (delegates to `app::run()`)
+- `cargo test -p assay-tui` green
+- `just ready` green
