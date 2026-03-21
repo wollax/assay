@@ -2,7 +2,7 @@
 
 **Active Milestone:** M006 — TUI as Primary Surface
 **Active Slice:** S01 — App Scaffold, Dashboard, and Binary Fix
-**Active Task:** T01 — Cargo.toml binary fix, App/Screen types, and run loop skeleton
+**Active Task:** T02 — Dashboard rendering with real milestone data
 **Phase:** Executing
 **Last Updated:** 2026-03-20
 **Requirements Status:** 10 active (R049–R059) · 43 validated (R001–R048) · 2 deferred · 4 out of scope
@@ -39,4 +39,4 @@ None.
 
 ## Next Action
 
-Execute T01: add `[[bin]] name = "assay-tui"` to `crates/assay-tui/Cargo.toml`, create `src/lib.rs` with `App`/`Screen`/`WizardState` types and `draw`/`handle_event`/`run` pub fns, thin out `src/main.rs` to entry point, verify `cargo build -p assay-tui && cargo build -p assay-cli` both succeed with correct binary names. See `.kata/milestones/M006/slices/S01/tasks/T01-PLAN.md`.
+Execute T02: implement `draw_dashboard` with live milestone data from `milestone_scan`; implement `draw_no_project`; load `.assay/` detection and data in `main()`; wire into `draw`. See `.kata/milestones/M006/slices/S01/tasks/T02-PLAN.md`.

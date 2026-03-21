@@ -51,7 +51,7 @@
 
 ## Tasks
 
-- [ ] **T01: Cargo.toml binary fix, App/Screen types, and run loop skeleton** `est:45m`
+- [x] **T01: Cargo.toml binary fix, App/Screen types, and run loop skeleton** `est:45m`
   - Why: The `[[bin]]` declaration, `App` struct, `Screen` enum, and `draw`/`handle_event` split are the structural foundation everything else builds on; S02 depends on `Screen::Wizard(WizardState)` existing; this task makes the codebase compile with the new shape
   - Files: `crates/assay-tui/Cargo.toml`, `crates/assay-tui/src/main.rs`
   - Do: (1) Add `[[bin]] name = "assay-tui" path = "src/main.rs"` before `[dependencies]` in Cargo.toml. (2) Rewrite `main.rs` entirely: define `WizardState { /* placeholder */ }` stub struct; define `Screen` enum with all six variants; define `App` struct per D089; split run loop into `fn draw(frame: &mut Frame, app: &App)` (match on `app.screen`, render placeholder for all screens initially) and `fn handle_event(app: &mut App, event: Event) -> bool` (return false on `q`, `Esc` goes to Dashboard, `Enter` on Dashboard goes to `MilestoneDetail`). (3) In `main()`: call `color_eyre::install()`, then `ratatui::init()` — do NOT add a manual `std::panic::set_hook` block. (4) Verify the crate compiles: `cargo check -p assay-tui`
