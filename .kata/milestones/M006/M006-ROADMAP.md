@@ -63,7 +63,7 @@ This milestone is complete only when all are true:
 - [x] **S04: Provider Configuration Screen** `risk:medium` `depends:[S01]`
   > After this: pressing `s` opens a settings screen listing AI providers (Anthropic, OpenAI, Ollama) and model-per-phase fields; selecting and saving persists to `.assay/config.toml` via atomic write; existing configs without provider section load without error; schema snapshot locked
 
-- [ ] **S05: Help Overlay, Status Bar, and Integration Polish** `risk:low` `depends:[S01,S02,S03,S04]`
+- [x] **S05: Help Overlay, Status Bar, and Integration Polish** `risk:low` `depends:[S01,S02,S03,S04]`
   > After this: `?` shows a full keybindings help overlay; a persistent bottom bar shows project name, active milestone slug, and key hints; `just ready` passes; TUI handles terminal resize without panic; the full flow (dashboard → chunk detail → wizard → provider config) works end-to-end on a real `.assay/` project
 
 ## Boundary Map
