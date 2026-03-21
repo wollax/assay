@@ -37,17 +37,22 @@ pub struct App {
 }
 
 /// Render the dashboard screen: bordered list of milestones with name, status badge, progress.
-fn draw_dashboard(
-    frame: &mut Frame,
-    milestones: &[Milestone],
-    list_state: &mut ListState,
-) {
+fn draw_dashboard(frame: &mut Frame, milestones: &[Milestone], list_state: &mut ListState) {
     let area = frame.area();
     let [content_area] = Layout::vertical([Constraint::Fill(1)]).areas(area);
 
     let block = Block::bordered().title(" Assay Dashboard ");
     let inner_area = block.inner(content_area);
     frame.render_widget(block, content_area);
+
+    // Empty-list guard: render placeholder paragraph instead of an empty List.
+    // Calling render_stateful_widget with an empty list can cause a ListState panic.
+    if milestones.is_empty() {
+        let placeholder =
+            Paragraph::new("No milestones — press n to create one").alignment(Alignment::Center);
+        frame.render_widget(placeholder, inner_area);
+        return;
+    }
 
     let items: Vec<ListItem> = milestones
         .iter()
@@ -98,7 +103,7 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     let area = frame.area();
     let [content_area] = Layout::vertical([Constraint::Fill(1)]).areas(area);
     let text = match &app.screen {
-        Screen::MilestoneDetail => "Milestone Detail",
+        Screen::MilestoneDetail => "Milestone detail — coming in S03",
         Screen::ChunkDetail => "Chunk Detail",
         Screen::Wizard(_) => "Wizard",
         Screen::Settings => "Settings",
@@ -116,29 +121,39 @@ pub fn handle_event(app: &mut App, event: Event) -> bool {
         match key.code {
             KeyCode::Char('q') => return false,
             KeyCode::Esc => {
-                if matches!(app.screen, Screen::Dashboard | Screen::NoProject) {
-                    return false;
+                // Esc returns to Dashboard from any non-Dashboard screen.
+                // From Dashboard/NoProject it is a no-op (use q to quit).
+                if !matches!(app.screen, Screen::Dashboard | Screen::NoProject) {
+                    app.screen = Screen::Dashboard;
                 }
             }
             KeyCode::Down => {
-                if matches!(app.screen, Screen::Dashboard) {
+                if matches!(app.screen, Screen::Dashboard) && !app.milestones.is_empty() {
                     let len = app.milestones.len();
-                    if len > 0 {
-                        let i = match app.list_state.selected() {
-                            Some(i) => (i + 1).min(len - 1),
-                            None => 0,
-                        };
-                        app.list_state.select(Some(i));
-                    }
+                    let new = match app.list_state.selected() {
+                        None => 0,
+                        Some(n) if n >= len - 1 => 0,
+                        Some(n) => n + 1,
+                    };
+                    app.list_state.select(Some(new));
                 }
             }
             KeyCode::Up => {
                 if matches!(app.screen, Screen::Dashboard) && !app.milestones.is_empty() {
-                    let i = match app.list_state.selected() {
-                        Some(i) => i.saturating_sub(1),
-                        None => 0,
+                    let len = app.milestones.len();
+                    let new = match app.list_state.selected() {
+                        None | Some(0) => len.saturating_sub(1),
+                        Some(n) => n - 1,
                     };
-                    app.list_state.select(Some(i));
+                    app.list_state.select(Some(new));
+                }
+            }
+            KeyCode::Enter => {
+                if matches!(app.screen, Screen::Dashboard)
+                    && !app.milestones.is_empty()
+                    && app.list_state.selected().is_some()
+                {
+                    app.screen = Screen::MilestoneDetail;
                 }
             }
             _ => {}

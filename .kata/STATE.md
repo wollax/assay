@@ -2,11 +2,11 @@
 
 **Active Milestone:** M006 — TUI as Primary Surface
 **Active Slice:** S01 — App Scaffold, Dashboard, and Binary Fix
-**Active Task:** T03 — Navigation, empty-state guard, and unit tests
-**Phase:** Executing
+**Active Task:** T03 — COMPLETE (all tasks done; slice S01 complete)
+**Phase:** Summarizing (S01 summary pending)
 **Last Updated:** 2026-03-20
 **Requirements Status:** 10 active (R049–R059) · 43 validated (R001–R048) · 2 deferred · 4 out of scope
-**Test Count:** 1333 (all passing)
+**Test Count:** 1340 (all passing; 7 new assay-tui tests)
 
 ## Completed Milestones
 
@@ -39,4 +39,4 @@ None.
 
 ## Next Action
 
-Execute T03: implement ↑↓ wrap navigation, Enter→MilestoneDetail, Esc→Dashboard transitions, empty-milestones guard in draw_dashboard, and 6 unit tests in `crates/assay-tui/tests/app_state.rs`. See `.kata/milestones/M006/slices/S01/tasks/T03-PLAN.md`.
+S01 is complete (T01+T02+T03 all done). Write S01-SUMMARY.md and S01-UAT.md, mark S01 done in M006-ROADMAP.md, then move to S02 (In-TUI Authoring Wizard).
