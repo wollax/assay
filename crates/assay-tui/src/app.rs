@@ -6,7 +6,7 @@
 
 use std::path::PathBuf;
 
-use assay_core::milestone::milestone_scan;
+use assay_core::milestone::{milestone_load, milestone_scan};
 use assay_core::wizard::create_from_inputs;
 use assay_types::{GateRunRecord, GatesSpec, Milestone, MilestoneStatus};
 use crossterm::event::KeyCode;
@@ -114,11 +114,7 @@ impl App {
             Screen::Wizard(state) => draw_wizard(frame, state),
             Screen::LoadError(msg) => draw_load_error(frame, msg),
             Screen::MilestoneDetail { .. } => {
-                let area = frame.area();
-                frame.render_widget(
-                    Paragraph::new(Line::from("MilestoneDetail (T02)").dim()),
-                    area,
-                );
+                draw_milestone_detail(frame, self.detail_milestone.as_ref(), &mut self.detail_list_state);
             }
             Screen::ChunkDetail { .. } => {
                 let area = frame.area();
@@ -165,14 +161,78 @@ impl App {
                             self.screen = Screen::Wizard(WizardState::new());
                         }
                     }
+                    KeyCode::Enter => {
+                        if let Some(idx) = self.list_state.selected() {
+                            if let Some(ms) = self.milestones.get(idx) {
+                                let slug = ms.slug.clone();
+                                let assay_dir = match &self.project_root {
+                                    Some(root) => root.join(".assay"),
+                                    None => return false,
+                                };
+                                match milestone_load(&assay_dir, &slug) {
+                                    Ok(loaded) => {
+                                        self.detail_list_state.select(
+                                            if loaded.chunks.is_empty() { None } else { Some(0) },
+                                        );
+                                        self.detail_milestone = Some(loaded);
+                                        self.screen = Screen::MilestoneDetail { slug };
+                                    }
+                                    Err(e) => {
+                                        self.screen = Screen::LoadError(format!(
+                                            "Failed to load milestone '{slug}': {e}"
+                                        ));
+                                    }
+                                }
+                            }
+                        }
+                    }
                     _ => {}
                 }
                 false
             }
 
             Screen::MilestoneDetail { .. } => {
-                if matches!(key.code, KeyCode::Esc | KeyCode::Char('q')) {
-                    self.screen = Screen::Dashboard;
+                let chunk_count = self.detail_milestone.as_ref().map(|m| m.chunks.len()).unwrap_or(0);
+                match key.code {
+                    KeyCode::Esc => {
+                        self.screen = Screen::Dashboard;
+                    }
+                    KeyCode::Char('q') => return true,
+                    KeyCode::Down => {
+                        if chunk_count > 0 {
+                            let i = self
+                                .detail_list_state
+                                .selected()
+                                .map(|s| (s + 1) % chunk_count)
+                                .unwrap_or(0);
+                            self.detail_list_state.select(Some(i));
+                        }
+                    }
+                    KeyCode::Up => {
+                        if chunk_count > 0 {
+                            let i = self
+                                .detail_list_state
+                                .selected()
+                                .map(|s| if s == 0 { chunk_count - 1 } else { s - 1 })
+                                .unwrap_or(0);
+                            self.detail_list_state.select(Some(i));
+                        }
+                    }
+                    KeyCode::Enter => {
+                        if let Some(idx) = self.detail_list_state.selected() {
+                            // Get the sorted chunk at this index (same sort as draw).
+                            if let Some(milestone) = &self.detail_milestone {
+                                let mut sorted_chunks = milestone.chunks.clone();
+                                sorted_chunks.sort_by_key(|c| c.order);
+                                if let Some(chunk) = sorted_chunks.get(idx) {
+                                    let milestone_slug = milestone.slug.clone();
+                                    let chunk_slug = chunk.slug.clone();
+                                    self.screen = Screen::ChunkDetail { milestone_slug, chunk_slug };
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
                 }
                 false
             }
@@ -339,7 +399,62 @@ fn draw_dashboard(
     }
 
     // Hint bar.
-    let hint = Paragraph::new(Line::from("↑↓ navigate · n new milestone · q quit").dim());
+    let hint = Paragraph::new(Line::from("↑↓ navigate · Enter open · n new · q quit").dim());
+    frame.render_widget(hint, hint_area);
+}
+
+/// Render the chunk list for a single milestone.
+fn draw_milestone_detail(
+    frame: &mut ratatui::Frame,
+    milestone: Option<&Milestone>,
+    list_state: &mut ListState,
+) {
+    let area = frame.area();
+
+    let [title_area, list_area, hint_area] = Layout::vertical([
+        Constraint::Length(1),
+        Constraint::Fill(1),
+        Constraint::Length(1),
+    ])
+    .areas(area);
+
+    // Title bar.
+    let title_text = milestone
+        .map(|ms| format!(" Milestones › {} ", ms.name))
+        .unwrap_or_else(|| " Loading… ".to_string());
+    let title = Paragraph::new(Line::from(title_text).bold());
+    frame.render_widget(title, title_area);
+
+    // Chunk list.
+    if let Some(ms) = milestone {
+        if ms.chunks.is_empty() {
+            let msg = Paragraph::new(Line::from("No chunks in this milestone.").dim())
+                .block(Block::default().borders(Borders::ALL));
+            frame.render_widget(msg, list_area);
+        } else {
+            let mut sorted_chunks = ms.chunks.clone();
+            sorted_chunks.sort_by_key(|c| c.order);
+            let items: Vec<ListItem> = sorted_chunks
+                .iter()
+                .map(|chunk| {
+                    let icon = if ms.completed_chunks.contains(&chunk.slug) { "✓" } else { "·" };
+                    ListItem::new(Line::from(format!("  {icon}  {}", chunk.slug)))
+                })
+                .collect();
+            let list = List::new(items)
+                .block(Block::default().borders(Borders::ALL))
+                .highlight_style(Style::default().bold().reversed());
+            frame.render_stateful_widget(list, list_area, list_state);
+        }
+    } else {
+        let msg = Paragraph::new(Line::from("Loading…").dim())
+            .block(Block::default().borders(Borders::ALL));
+        frame.render_widget(msg, list_area);
+    }
+
+    // Hint bar.
+    let hint =
+        Paragraph::new(Line::from("↑↓ navigate · Enter open chunk · Esc back").dim());
     frame.render_widget(hint, hint_area);
 }
 
