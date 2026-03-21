@@ -2,9 +2,9 @@
 
 **Active Milestone:** M007 — TUI Agent Harness
 **Active Slice:** S01 — Channel Event Loop and Agent Run Panel
-**Active Task:** T03 — COMPLETE; S01 tasks T01–T03 all done
-**Phase:** Verifying
-**Last Updated:** 2026-03-21 (T03 complete: channel-based event loop in main.rs, r key handler in Dashboard wired to relay-wrapper thread; all 35 TUI tests pass; cargo build -p assay-tui succeeds)
+**Active Task:** T04 — COMPLETE; S01 all tasks done (T01–T04)
+**Phase:** Done
+**Last Updated:** 2026-03-21 (T04 complete: just ready exits 0; fmt/clippy/test/deny all green; all 35 assay-tui tests pass; target/debug/assay-tui binary present; S01 slice complete)
 **Requirements Status:** 7 active (R053–R059) · 46 validated (R001–R052) · 2 deferred · 4 out of scope
 **Test Count:** 1367 (27 assay-tui; all workspace tests pass; just ready green)
 
@@ -38,7 +38,7 @@ Key patterns:
 
 ## M007 Roadmap
 
-- [ ] S01: Channel Event Loop and Agent Run Panel `risk:high` — refactor blocking run() to TuiEvent channel loop; add Screen::AgentRun with live streaming; launch_agent_streaming in assay-core::pipeline; r key from Dashboard. R053+R054 (Anthropic path).
+- [x] S01: Channel Event Loop and Agent Run Panel — TuiEvent channel loop in main.rs; Screen::AgentRun with live streaming; launch_agent_streaming in assay-core::pipeline; r key from Dashboard; all 35 TUI tests pass; just ready green. R053+R054 (Anthropic path). DONE.
 - [ ] S02: Provider Dispatch and Harness Wiring `risk:medium` — provider_harness_writer dispatches per ProviderKind; Ollama + OpenAI adapters; Settings model input fields. R054 (all providers).
 - [ ] S03: Slash Command Overlay `risk:low` — / key opens SlashState overlay; /gate-check, /status, /next-chunk, /pr-create commands; sync dispatch to assay-core. R056.
 - [ ] S04: MCP Server Configuration Panel `risk:medium` — Screen::McpPanel reads/writes .assay/mcp.json; add/delete/save servers; no live connection. R055.
@@ -61,4 +61,4 @@ None.
 
 ## Next Action
 
-S01 all tasks complete (T01–T03). Run slice verification (`just ready`, `cargo test -p assay-tui`, `cargo test -p assay-core -- launch_agent_streaming`) and mark S01 done, then proceed to S02: Provider Dispatch and Harness Wiring.
+S01 complete. Proceed to S02: Provider Dispatch and Harness Wiring — provider_harness_writer dispatches per ProviderKind; Ollama + OpenAI adapters; Settings model input fields. R054 (all providers).
