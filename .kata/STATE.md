@@ -2,9 +2,9 @@
 
 **Active Milestone:** M007 — TUI Agent Harness
 **Active Slice:** S01 — Channel Event Loop and Agent Run Panel
-**Active Task:** T03
-**Phase:** Executing
-**Last Updated:** 2026-03-21 (T02 complete: handle_agent_line, handle_agent_done, draw_agent_run implemented; all 8 agent_run tests + 35 total TUI tests pass)
+**Active Task:** T03 — COMPLETE; S01 tasks T01–T03 all done
+**Phase:** Verifying
+**Last Updated:** 2026-03-21 (T03 complete: channel-based event loop in main.rs, r key handler in Dashboard wired to relay-wrapper thread; all 35 TUI tests pass; cargo build -p assay-tui succeeds)
 **Requirements Status:** 7 active (R053–R059) · 46 validated (R001–R052) · 2 deferred · 4 out of scope
 **Test Count:** 1367 (27 assay-tui; all workspace tests pass; just ready green)
 
@@ -61,4 +61,4 @@ None.
 
 ## Next Action
 
-S01/T03: Refactor `run()` to channel-based event loop + wire `r` key handler in Dashboard.
+S01 all tasks complete (T01–T03). Run slice verification (`just ready`, `cargo test -p assay-tui`, `cargo test -p assay-core -- launch_agent_streaming`) and mark S01 done, then proceed to S02: Provider Dispatch and Harness Wiring.
