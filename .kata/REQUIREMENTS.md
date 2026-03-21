@@ -540,8 +540,8 @@
 - Source: user
 - Primary owning slice: M007/S01
 - Supporting slices: M006/S01
-- Validation: unmapped
-- Notes: Uses assay-core pipeline. Agent output streamed to TUI panel. Gate results update dashboard in real time.
+- Validation: M007/S01 — channel-based TuiEvent loop proven; launch_agent_streaming proven with real echo subprocess; Screen::AgentRun accumulates lines and transitions to Done/Failed; r key handler spawns relay-wrapper thread from Dashboard; gate refresh on AgentDone; 8 integration tests pass. Real Claude invocation is UAT-only.
+- Notes: Uses assay-core pipeline. Agent output streamed to TUI panel. Gate counts refresh on AgentDone. Full validation pending human UAT with real Claude Code.
 
 ### R054 — Provider abstraction
 - Class: core-capability
@@ -551,7 +551,8 @@
 - Source: user
 - Primary owning slice: M007/S01
 - Supporting slices: M007/S02
-- Validation: unmapped
+- Validation: M007/S01 — Anthropic (Claude Code) path wired in r key handler; S02 adds Ollama and OpenAI provider dispatch. Full validation after S02.
+- Notes: Anthropic path proven by S01 harness config write + spawn. Ollama/OpenAI adapters and provider_harness_writer dispatch in S02.
 - Notes: Anthropic (Claude Code) already works. OpenAI and Ollama require new harness adapters or config-level switching.
 
 ### R055 — TUI MCP server management

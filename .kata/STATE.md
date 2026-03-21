@@ -1,12 +1,12 @@
 # Kata State
 
 **Active Milestone:** M007 — TUI Agent Harness
-**Active Slice:** S01 — Channel Event Loop and Agent Run Panel
-**Active Task:** T04 — COMPLETE; S01 all tasks done (T01–T04)
-**Phase:** Done
-**Last Updated:** 2026-03-21 (T04 complete: just ready exits 0; fmt/clippy/test/deny all green; all 35 assay-tui tests pass; target/debug/assay-tui binary present; S01 slice complete)
+**Active Slice:** S02 — Provider Dispatch and Harness Wiring
+**Active Task:** none (S01 complete; S02 not yet started)
+**Phase:** Planning
+**Last Updated:** 2026-03-21 (S01 complete: channel event loop + AgentRun panel; all 35 TUI tests pass; just ready green)
 **Requirements Status:** 7 active (R053–R059) · 46 validated (R001–R052) · 2 deferred · 4 out of scope
-**Test Count:** 1367 (27 assay-tui; all workspace tests pass; just ready green)
+**Test Count:** 1367 (35 assay-tui: 27 pre-existing + 8 agent_run; all workspace tests pass; just ready green)
 
 ## Completed Milestones
 
@@ -17,31 +17,22 @@
 - [x] M005: Spec-Driven Development Core (6/6 slices, 10 requirements validated [R039–R048], 1333 tests)
 - [x] M006: TUI as Primary Surface (5/5 slices, 4 requirements validated [R049–R052], 1367 tests)
 
-## M006 Roadmap (complete)
-
-- [x] S01: App Scaffold, Dashboard, and Binary Fix — binary name fix (`assay-tui`), App+Screen enum, dashboard with real milestone data, no-project guard. R049. DONE.
-- [x] S02: In-TUI Authoring Wizard — WizardState multi-step form, draw_wizard popup, App wiring (n/Cancel/Submit); wizard_round_trip integration test. R050. DONE.
-- [x] S03: Chunk Detail View and Spec Browser — MilestoneDetail + ChunkDetail screens; join_results criterion join; 6 spec_browser integration tests. R051 validated. DONE.
-- [x] S04: Provider Configuration Screen — ProviderKind+ProviderConfig in assay-types (D092), config_save atomic write (D093), Screen::Settings full-screen view (↑↓ selection, w saves, Esc cancels), 5 settings integration tests including restart-persistence, schema snapshots locked. R052. DONE.
-- [x] S05: Help Overlay, Status Bar, and Integration Polish — `?` help overlay, persistent status bar, global layout split with `area: Rect` refactor, Event::Resize fix, cycle_slug loading, just ready green. DONE.
-
-## Key Decisions Made During M006
-
-- D088–D106: full list in DECISIONS.md (search for "M006" in the Scope column)
-
-Key patterns:
-- Screen-specific render fns take individual fields (not &mut App) — borrow checker + stateful widgets (D097)
-- App-level detail_* fields for loaded data; not embedded in Screen variants (D099)
-- All draw_* accept explicit area: Rect; global layout split once in App::draw (D105)
-- ProviderConfig follows D056 pattern exactly for backward-compat Config extension (D092)
-- config_save uses NamedTempFile+sync_all+persist consistent with milestone_save (D093)
-
 ## M007 Roadmap
 
 - [x] S01: Channel Event Loop and Agent Run Panel — TuiEvent channel loop in main.rs; Screen::AgentRun with live streaming; launch_agent_streaming in assay-core::pipeline; r key from Dashboard; all 35 TUI tests pass; just ready green. R053+R054 (Anthropic path). DONE.
 - [ ] S02: Provider Dispatch and Harness Wiring `risk:medium` — provider_harness_writer dispatches per ProviderKind; Ollama + OpenAI adapters; Settings model input fields. R054 (all providers).
 - [ ] S03: Slash Command Overlay `risk:low` — / key opens SlashState overlay; /gate-check, /status, /next-chunk, /pr-create commands; sync dispatch to assay-core. R056.
 - [ ] S04: MCP Server Configuration Panel `risk:medium` — Screen::McpPanel reads/writes .assay/mcp.json; add/delete/save servers; no live connection. R055.
+
+## S01 Deliverables Summary
+
+- `TuiEvent` enum (Key, Resize, AgentLine, AgentDone) in `assay_tui::app`
+- `AgentRunStatus` enum (Running, Done, Failed) in `assay_tui::app`
+- `Screen::AgentRun` variant with scrollable line list and status bar
+- `launch_agent_streaming` in `assay_core::pipeline` (BufReader::lines, JoinHandle<i32>)
+- Channel-based `run()` in `main.rs` with background crossterm thread
+- `r` key handler: harness config → relay-wrapper thread → Screen::AgentRun
+- 8 agent_run integration tests pass; 27 pre-existing TUI tests unchanged
 
 ## Key Decisions
 
@@ -50,10 +41,13 @@ Key patterns:
 - D109: provider_harness_writer — free fn dispatching to per-provider closures (D001)
 - D110: MCP panel = static config management, no live async MCP client
 - D111: Slash command dispatch synchronous in-process
+- D112: AgentRunStatus name avoids collision with assay-core::checkpoint::AgentStatus
+- D113: Relay-wrapper thread guarantees no AgentLine lost before AgentDone
+- D114: Harness config written to temp_dir for S01 MVP; S02 uses real worktree path
 
 ## Known Issues
 
-None. `just ready` passes clean (fmt, lint, test, deny). RUSTSEC-2026-0044 to -0049 are listed as ignore entries in deny.toml (pre-existing, not introduced by M006).
+None. `just ready` passes clean (fmt, lint, test, deny).
 
 ## Blockers
 
@@ -61,4 +55,4 @@ None.
 
 ## Next Action
 
-S01 complete. Proceed to S02: Provider Dispatch and Harness Wiring — provider_harness_writer dispatches per ProviderKind; Ollama + OpenAI adapters; Settings model input fields. R054 (all providers).
+S02: Provider Dispatch and Harness Wiring — implement `provider_harness_writer(config: &Config) -> Box<HarnessWriter>` in `assay-tui::agent` module; add Ollama adapter (`ollama run <model>`); add OpenAI adapter; extend Settings screen with per-phase model input fields. Depends on S01 (complete). Proves R054 fully.

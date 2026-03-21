@@ -52,7 +52,7 @@ This milestone is complete only when all are true:
 
 ## Slices
 
-- [ ] **S01: Channel Event Loop and Agent Run Panel** `risk:high` `depends:[]`
+- [x] **S01: Channel Event Loop and Agent Run Panel** `risk:high` `depends:[]`
   > After this: pressing `r` from the TUI dashboard on a project with an InProgress chunk spawns the Claude Code agent, streams its stdout line-by-line into a `Screen::AgentRun` panel (proven by integration test with echo subprocess; real Claude invocation is UAT), and shows Done/Failed status when it exits — the event loop refactor from blocking `event::read()` to channel-based `TuiEvent` dispatch is complete and all 27 existing TUI tests still pass
 
 - [ ] **S02: Provider Dispatch and Harness Wiring** `risk:medium` `depends:[S01]`
