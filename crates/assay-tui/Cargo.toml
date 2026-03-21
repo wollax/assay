@@ -15,6 +15,7 @@ color-eyre.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+assay-harness.workspace = true
 
 [lints]
 workspace = true

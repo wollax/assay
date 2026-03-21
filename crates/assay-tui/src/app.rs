@@ -5,6 +5,7 @@
 //! assert on `app.screen` after driving key events.
 
 use std::path::PathBuf;
+use std::sync::mpsc;
 
 use assay_core::config::save as config_save;
 use assay_core::history;
@@ -23,6 +24,35 @@ use ratatui::widgets::{
 };
 
 use crate::wizard::{WizardAction, WizardState, draw_wizard, handle_wizard_event};
+
+// ── TUI event channel types ───────────────────────────────────────────────────
+
+/// Events that flow through the TUI event channel.
+///
+/// `Key` and `Resize` come from the crossterm input thread;
+/// `AgentLine` and `AgentDone` come from the relay-wrapper thread that
+/// monitors a live agent subprocess (see `launch_agent_streaming`).
+pub enum TuiEvent {
+    /// A keyboard event from the terminal.
+    Key(crossterm::event::KeyEvent),
+    /// Terminal was resized to (cols, rows).
+    Resize(u16, u16),
+    /// One line of stdout from the running agent subprocess.
+    AgentLine(String),
+    /// Agent subprocess has exited. `exit_code` is the process return value
+    /// (or -1 on spawn error).
+    AgentDone { exit_code: i32 },
+}
+
+/// Status of the agent run displayed in `Screen::AgentRun`.
+pub enum AgentRunStatus {
+    /// Agent subprocess is still running.
+    Running,
+    /// Agent exited with zero (success).
+    Done { exit_code: i32 },
+    /// Agent exited with a non-zero code (failure).
+    Failed { exit_code: i32 },
+}
 
 // ── Screen variants ───────────────────────────────────────────────────────────
 
@@ -50,6 +80,17 @@ pub enum Screen {
         selected: usize,
         /// Inline error message from a failed save attempt.
         error: Option<String>,
+    },
+    /// Live agent run view — streams stdout lines and shows final status.
+    AgentRun {
+        /// Slug of the chunk being run.
+        chunk_slug: String,
+        /// Accumulated stdout lines from the agent subprocess (capped at 10 000).
+        lines: Vec<String>,
+        /// Scroll offset for the line list.
+        scroll_offset: usize,
+        /// Current run status.
+        status: AgentRunStatus,
     },
 }
 
@@ -82,6 +123,13 @@ pub struct App {
     pub cycle_slug: Option<String>,
     /// Loaded project config (used by status bar and settings screen).
     pub config: Option<assay_types::Config>,
+    /// Sender side of the TUI event channel. `None` until the channel is wired
+    /// in `main.rs`. Used by the relay-wrapper thread to push `AgentLine` and
+    /// `AgentDone` events into the main loop.
+    pub event_tx: Option<mpsc::Sender<TuiEvent>>,
+    /// Join handle for a live agent subprocess thread. `None` when no agent
+    /// is running. The thread returns the process exit code as `i32`.
+    pub agent_thread: Option<std::thread::JoinHandle<i32>>,
 }
 
 impl App {
@@ -140,8 +188,22 @@ impl App {
             show_help: false,
             cycle_slug,
             config,
+            event_tx: None,
+            agent_thread: None,
         })
     }
+
+    /// Accumulate a line of agent stdout into `Screen::AgentRun`.
+    ///
+    /// No-op if the current screen is not `Screen::AgentRun`.
+    /// Lines are capped at 10 000 to prevent unbounded memory growth.
+    pub fn handle_agent_line(&mut self, _line: String) {}
+
+    /// Handle agent subprocess exit.
+    ///
+    /// Transitions `Screen::AgentRun.status` to `Done` or `Failed`.
+    /// No-op until T02 implements the real state machine.
+    pub fn handle_agent_done(&mut self, _exit_code: i32) {}
 
     /// Draw the current screen into `frame`.
     pub fn draw(&mut self, frame: &mut ratatui::Frame) {
@@ -182,6 +244,22 @@ impl App {
                     *selected,
                     error.as_deref(),
                 );
+            }
+            Screen::AgentRun {
+                chunk_slug,
+                lines,
+                scroll_offset,
+                status,
+            } => {
+                let cs = chunk_slug.clone();
+                let ls = lines.clone();
+                let so = *scroll_offset;
+                let st = match status {
+                    AgentRunStatus::Running => "Running",
+                    AgentRunStatus::Done { .. } => "Done",
+                    AgentRunStatus::Failed { .. } => "Failed",
+                };
+                draw_agent_run_stub(frame, content_area, &cs, &ls, so, st);
             }
         }
 
@@ -472,6 +550,8 @@ impl App {
                 false
             }
 
+            Screen::AgentRun { .. } => false,
+
             Screen::Settings { .. } => {
                 match key.code {
                     KeyCode::Esc | KeyCode::Char('q') => {
@@ -569,6 +649,27 @@ impl App {
 }
 
 // ── Screen renderers ──────────────────────────────────────────────────────────
+
+/// Stub renderer for the agent run screen.
+///
+/// Shows a bordered block with the chunk slug, status, and a line count.
+/// The full implementation (scrollable line list, etc.) is added in T02.
+fn draw_agent_run_stub(
+    frame: &mut ratatui::Frame,
+    area: Rect,
+    chunk_slug: &str,
+    lines: &[String],
+    _scroll_offset: usize,
+    status: &str,
+) {
+    let text = Paragraph::new(vec![
+        Line::from(format!("AgentRun: {chunk_slug}")).bold().centered(),
+        Line::from(format!("Status: {status}")).centered(),
+        Line::from(format!("Lines: {}", lines.len())).centered().dim(),
+    ])
+    .block(Block::default().borders(Borders::ALL).title(" Agent Run "));
+    frame.render_widget(text, area);
+}
 
 /// Render a load-error screen when milestone data could not be read.
 fn draw_load_error(frame: &mut ratatui::Frame, area: Rect, msg: &str) {

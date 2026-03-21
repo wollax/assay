@@ -2,9 +2,9 @@
 
 **Active Milestone:** M007 — TUI Agent Harness
 **Active Slice:** S01 — Channel Event Loop and Agent Run Panel
-**Active Task:** T01
+**Active Task:** T02
 **Phase:** Executing
-**Last Updated:** 2026-03-21 (S01 planned, T01–T04 written)
+**Last Updated:** 2026-03-21 (T01 complete: TuiEvent, AgentRunStatus, Screen::AgentRun, launch_agent_streaming added; 8-test scaffold written, 4 green / 4 red)
 **Requirements Status:** 7 active (R053–R059) · 46 validated (R001–R052) · 2 deferred · 4 out of scope
 **Test Count:** 1367 (27 assay-tui; all workspace tests pass; just ready green)
 
