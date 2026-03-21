@@ -54,7 +54,7 @@ This milestone is complete only when all are true:
 - [x] **S01: App Scaffold, Dashboard, and Binary Fix** `risk:high` `depends:[]`
   > After this: `cargo build -p assay-tui` produces a real `assay-tui` binary; launching it on any project shows a live dashboard with milestones (name, status badge, chunk progress fraction) loaded from `assay-core::milestone_scan`; arrow keys navigate the list; `q` quits; no panic on missing `.assay/`
 
-- [ ] **S02: In-TUI Authoring Wizard** `risk:high` `depends:[S01]`
+- [x] **S02: In-TUI Authoring Wizard** `risk:high` `depends:[S01]`
   > After this: pressing `n` from the dashboard opens a multi-step form (milestone name → chunk slugs/names → criteria per chunk); completing it calls `create_from_inputs` and the new milestone appears in the dashboard list immediately; proven by an integration test that writes real files to a tempdir
 
 - [ ] **S03: Chunk Detail View and Spec Browser** `risk:medium` `depends:[S01]`

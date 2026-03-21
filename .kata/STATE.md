@@ -1,12 +1,12 @@
 # Kata State
 
 **Active Milestone:** M006 — TUI as Primary Surface
-**Active Slice:** S02 — In-TUI Authoring Wizard
-**Active Task:** S02 planning
-**Phase:** S01 complete; advancing to S02
+**Active Slice:** S03 — Chunk Detail View and Spec Browser
+**Active Task:** — (S02 complete; S03 not yet started)
+**Phase:** Planning
 **Last Updated:** 2026-03-20
-**Requirements Status:** 9 active (R050–R059) · 44 validated (R001–R049) · 2 deferred · 4 out of scope
-**Test Count:** 769+ (all passing; `cargo deny` blocked on pre-existing aws-lc-sys advisory unrelated to M006)
+**Requirements Status:** 9 active (R051–R059) · 44 validated (R001–R050) · 2 deferred · 4 out of scope
+**Test Count:** 1356 (all passing)
 
 ## Completed Milestones
 
@@ -18,8 +18,8 @@
 
 ## M006 Roadmap
 
-- [x] S01: App Scaffold, Dashboard, and Binary Fix `risk:high` — binary name fix (`assay-tui`), App+Screen enum, dashboard with real milestone data, no-project guard. R049 validated.
-- [ ] S02: In-TUI Authoring Wizard `risk:high` `depends:[S01]` — WizardState multi-step form, create_from_inputs round-trip, new milestone appears in dashboard. R050.
+- [x] S01: App Scaffold, Dashboard, and Binary Fix `risk:high` — binary name fix (`assay-tui`), App+Screen enum, dashboard with real milestone data, no-project guard. R049. DONE.
+- [x] S02: In-TUI Authoring Wizard `risk:high` `depends:[S01]` — WizardState multi-step form, draw_wizard popup, App wiring (n/Cancel/Submit); 23 assay-tui tests + 1356 workspace tests green. R050. DONE.
 - [ ] S03: Chunk Detail View and Spec Browser `risk:medium` `depends:[S01]` — milestone → chunk list → chunk detail with criteria and gate results. R051.
 - [ ] S04: Provider Configuration Screen `risk:medium` `depends:[S01]` — ProviderConfig type in assay-types (D056 pattern), settings screen, config_save, backward-compat. R052.
 - [ ] S05: Help Overlay, Status Bar, and Integration Polish `risk:low` `depends:[S01,S02,S03,S04]` — help overlay, status bar, just ready passes, full flow integration.
@@ -32,15 +32,13 @@
 - D091: TUI data loading is synchronous on navigation transitions (not inside terminal.draw())
 - D092: `ProviderConfig` in assay-types follows D056 pattern exactly (serde default + skip + snapshot)
 - D093: `config_save` free function in assay-core::config using NamedTempFile pattern
+- D094: ChunkCount digit validation uses replace-semantics; only '1'–'7' accepted, others silently ignored
+- D095: Combined bin+lib: app.rs in binary tree, wizard types accessed via `assay_tui::` lib path
+- D096: draw() renders Dashboard unconditionally first, overlays Wizard popup if Screen::Wizard (refactor needed in S03 for full-screen views)
 
-## S01 Completion Notes
+## Known Issues
 
-- `assay-tui` binary (11.9 MB) and `assay` binary (40.8 MB) both present; no collision
-- `App::new()` checks `.assay/` existence; `Screen::NoProject` if absent; silently degrades on bad config/milestones
-- `compute_gate_data()` loads latest gate run per chunk, accumulates passed/failed per milestone
-- Polling event loop (250ms); q/Q/Esc quit; Up/Down wrap; Enter currently no-op (wired in S02/S03)
-- `list_state.select_previous()/select_next()` (ratatui built-in) handles wrap-around
-- `app.screen` and `app.milestones.len() == app.gate_data.len()` are the key invariants for downstream slices
+- `just ready` deny check fails on 6 pre-existing `aws-lc-sys` CVEs (RUSTSEC-2026-0044 to -0049) via jsonschema dev-dep. Not introduced by S02. Address before M006 milestone sign-off (S05 or separate fix).
 
 ## Blockers
 
@@ -48,4 +46,4 @@ None.
 
 ## Next Action
 
-Begin S02: In-TUI Authoring Wizard. The branch `kata/root/M006/S01` will be squash-merged to main by the Kata extension. Start S02 on a new branch `kata/root/M006/S02`. Key entry points already available: `App.project_root`, `Screen::Wizard` slot, `assay_core::wizard::create_from_inputs`. Plan: WizardState multi-step form (name → chunk slugs → chunk names → criteria per chunk), draw_wizard(), handle_wizard_event(), and an integration test that writes real files to a TempDir.
+Start S03: Chunk Detail View and Spec Browser. Before implementing, read actual `app.rs` to confirm Screen enum variants and App struct as they exist (project_root is PathBuf not Option<PathBuf>; draw() needs to be refactored from unconditional Dashboard-first to proper match for full-screen detail views). Add Screen::MilestoneDetail and Screen::ChunkDetail variants; implement draw_milestone_detail and draw_chunk_detail; wire Enter navigation and Esc back.

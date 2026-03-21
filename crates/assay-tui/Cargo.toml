@@ -6,6 +6,10 @@ license.workspace = true
 repository.workspace = true
 description = "Assay terminal user interface"
 
+[lib]
+name = "assay_tui"
+path = "src/lib.rs"
+
 [[bin]]
 name = "assay-tui"
 path = "src/main.rs"
