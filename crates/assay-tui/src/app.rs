@@ -12,10 +12,12 @@ use assay_core::spec::{SpecEntry, load_spec_entry_with_diagnostics};
 use assay_core::wizard::create_from_inputs;
 use assay_types::{Criterion, GateRunRecord, GatesSpec, Milestone, MilestoneStatus};
 use crossterm::event::KeyCode;
-use ratatui::layout::{Constraint, Layout};
+use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Style, Stylize};
-use ratatui::text::Line;
-use ratatui::widgets::{Block, Borders, Cell, List, ListItem, ListState, Paragraph, Row, Table};
+use ratatui::text::{Line, Span};
+use ratatui::widgets::{
+    Block, Borders, Cell, Clear, List, ListItem, ListState, Paragraph, Row, Table,
+};
 
 use crate::wizard::{WizardAction, WizardState, draw_wizard, handle_wizard_event};
 
@@ -68,6 +70,13 @@ pub struct App {
     /// Slug of the currently active (InProgress) milestone, or `None` when no
     /// milestone is in progress.  Used by the status bar renderer.
     pub cycle_slug: Option<String>,
+    /// Project display name from config, used by the status bar.
+    pub config: Option<AppConfig>,
+}
+
+/// Minimal project config surfaced to the status bar.
+pub struct AppConfig {
+    pub project_name: String,
 }
 
 impl App {
@@ -121,19 +130,26 @@ impl App {
             detail_run: None,
             show_help: false,
             cycle_slug,
+            config: None,
         })
     }
 
     /// Draw the current screen into `frame`.
     pub fn draw(&mut self, frame: &mut ratatui::Frame) {
+        let [content_area, status_area] =
+            Layout::vertical([Constraint::Fill(1), Constraint::Length(1)]).areas(frame.area());
+
         match &self.screen {
-            Screen::NoProject => draw_no_project(frame),
-            Screen::Dashboard => draw_dashboard(frame, &self.milestones, &mut self.list_state),
-            Screen::Wizard(state) => draw_wizard(frame, state),
-            Screen::LoadError(msg) => draw_load_error(frame, msg),
+            Screen::NoProject => draw_no_project(frame, content_area),
+            Screen::Dashboard => {
+                draw_dashboard(frame, content_area, &self.milestones, &mut self.list_state)
+            }
+            Screen::Wizard(state) => draw_wizard(frame, content_area, state),
+            Screen::LoadError(msg) => draw_load_error(frame, content_area, msg),
             Screen::MilestoneDetail { .. } => {
                 draw_milestone_detail(
                     frame,
+                    content_area,
                     self.detail_milestone.as_ref(),
                     &mut self.detail_list_state,
                 );
@@ -142,6 +158,7 @@ impl App {
                 let slug = chunk_slug.clone();
                 draw_chunk_detail(
                     frame,
+                    content_area,
                     &slug,
                     self.detail_spec.as_ref(),
                     self.detail_spec_note.as_deref(),
@@ -149,10 +166,35 @@ impl App {
                 );
             }
         }
+
+        let project_name = self
+            .config
+            .as_ref()
+            .map(|c| c.project_name.as_str())
+            .unwrap_or("");
+        draw_status_bar(frame, status_area, project_name, self.cycle_slug.as_deref());
+
+        if self.show_help {
+            draw_help_overlay(frame, frame.area());
+        }
     }
 
     /// Handle a single key event. Returns `true` if the app should exit.
     pub fn handle_event(&mut self, key: crossterm::event::KeyEvent) -> bool {
+        // When help overlay is visible, only ? and Esc dismiss it; all other keys are no-ops.
+        if self.show_help {
+            if matches!(key.code, KeyCode::Char('?') | KeyCode::Esc) {
+                self.show_help = false;
+            }
+            return false;
+        }
+
+        // Global ? key opens help from any non-wizard screen.
+        if key.code == KeyCode::Char('?') && !matches!(self.screen, Screen::Wizard(_)) {
+            self.show_help = true;
+            return false;
+        }
+
         match self.screen {
             Screen::NoProject | Screen::LoadError(_) => {
                 // q / Esc exit; all other keys are ignored.
@@ -400,8 +442,7 @@ impl App {
 // ── Screen renderers ──────────────────────────────────────────────────────────
 
 /// Render a load-error screen when milestone data could not be read.
-fn draw_load_error(frame: &mut ratatui::Frame, msg: &str) {
-    let area = frame.area();
+fn draw_load_error(frame: &mut ratatui::Frame, area: Rect, msg: &str) {
     let text = Paragraph::new(vec![
         Line::from("Failed to load project data.").bold().centered(),
         Line::from("").centered(),
@@ -414,8 +455,7 @@ fn draw_load_error(frame: &mut ratatui::Frame, msg: &str) {
 }
 
 /// Render the no-project info screen.
-fn draw_no_project(frame: &mut ratatui::Frame) {
-    let area = frame.area();
+fn draw_no_project(frame: &mut ratatui::Frame, area: Rect) {
     let msg = Paragraph::new(vec![
         Line::from("Not an Assay project.").bold().centered(),
         Line::from("Run `assay init` first, then relaunch assay-tui.")
@@ -430,11 +470,10 @@ fn draw_no_project(frame: &mut ratatui::Frame) {
 /// Render the milestone dashboard list.
 fn draw_dashboard(
     frame: &mut ratatui::Frame,
+    area: Rect,
     milestones: &[Milestone],
     list_state: &mut ListState,
 ) {
-    let area = frame.area();
-
     let [title_area, list_area, hint_area] = Layout::vertical([
         Constraint::Length(1),
         Constraint::Fill(1),
@@ -479,11 +518,10 @@ fn draw_dashboard(
 /// Render the chunk list for a single milestone.
 fn draw_milestone_detail(
     frame: &mut ratatui::Frame,
+    area: Rect,
     milestone: Option<&Milestone>,
     list_state: &mut ListState,
 ) {
-    let area = frame.area();
-
     let [title_area, list_area, hint_area] = Layout::vertical([
         Constraint::Length(1),
         Constraint::Fill(1),
@@ -564,13 +602,12 @@ fn join_results<'a>(
 /// Render the chunk detail screen with a table of criteria and their results.
 fn draw_chunk_detail(
     frame: &mut ratatui::Frame,
+    area: Rect,
     chunk_slug: &str,
     spec: Option<&GatesSpec>,
     spec_note: Option<&str>,
     run: Option<&GateRunRecord>,
 ) {
-    let area = frame.area();
-
     let [title_area, table_area, hint_area] = Layout::vertical([
         Constraint::Length(1),
         Constraint::Fill(1),
@@ -622,6 +659,111 @@ fn draw_chunk_detail(
     // Hint bar.
     let hint = Paragraph::new(Line::from("Esc back").dim());
     frame.render_widget(hint, hint_area);
+}
+
+/// Render the persistent one-line status bar showing project context.
+///
+/// Shows: `<project_name>  ·  <cycle_slug>  ·  ? help  q quit` (dim hints).
+/// When `project_name` is empty and `cycle_slug` is `None`, only the key hints
+/// are shown so the bar is never blank.
+fn draw_status_bar(
+    frame: &mut ratatui::Frame,
+    area: Rect,
+    project_name: &str,
+    cycle_slug: Option<&str>,
+) {
+    let sep = Span::styled("  ·  ", Style::default().dim());
+    let mut spans: Vec<Span> = Vec::new();
+
+    if !project_name.is_empty() {
+        spans.push(Span::raw(project_name.to_string()));
+        spans.push(sep.clone());
+    }
+
+    let slug_text = cycle_slug.unwrap_or("");
+    spans.push(Span::styled(slug_text.to_string(), Style::default().dim()));
+
+    spans.push(sep);
+    spans.push(Span::styled("? help  q quit", Style::default().dim()));
+
+    let bar = Paragraph::new(Line::from(spans));
+    frame.render_widget(bar, area);
+}
+
+/// Render a centered bordered help overlay listing all keybindings.
+///
+/// Renders on top of all other content. The caller is responsible for calling
+/// this only when `App::show_help` is `true`. Uses `Clear` to erase background
+/// content beneath the popup.
+fn draw_help_overlay(frame: &mut ratatui::Frame, area: Rect) {
+    let w = area.width.min(62);
+    let h = 22;
+    let x = area.x + (area.width.saturating_sub(w)) / 2;
+    let y = area.y + (area.height.saturating_sub(h)) / 2;
+    let popup = Rect::new(x, y, w, h);
+
+    frame.render_widget(Clear, popup);
+
+    let block = Block::bordered().title(" Keybindings — press ? or Esc to close ");
+    frame.render_widget(block.clone(), popup);
+    let inner = block.inner(popup);
+
+    let rows = vec![
+        Row::new(vec![
+            Cell::from("Global").style(Style::default().bold()),
+            Cell::from(""),
+        ]),
+        Row::new(vec![
+            Cell::from("  ?"),
+            Cell::from("Toggle this help overlay"),
+        ]),
+        Row::new(vec![Cell::from("  q"), Cell::from("Quit")]),
+        Row::new(vec![
+            Cell::from("Dashboard").style(Style::default().bold()),
+            Cell::from(""),
+        ]),
+        Row::new(vec![
+            Cell::from("  ↑↓"),
+            Cell::from("Navigate milestone list"),
+        ]),
+        Row::new(vec![Cell::from("  Enter"), Cell::from("Open milestone")]),
+        Row::new(vec![
+            Cell::from("  n"),
+            Cell::from("New milestone (wizard)"),
+        ]),
+        Row::new(vec![Cell::from("  s"), Cell::from("Settings")]),
+        Row::new(vec![
+            Cell::from("Detail views").style(Style::default().bold()),
+            Cell::from(""),
+        ]),
+        Row::new(vec![Cell::from("  ↑↓"), Cell::from("Navigate chunk list")]),
+        Row::new(vec![Cell::from("  Enter"), Cell::from("Open chunk")]),
+        Row::new(vec![Cell::from("  Esc"), Cell::from("Back to parent")]),
+        Row::new(vec![
+            Cell::from("Wizard").style(Style::default().bold()),
+            Cell::from(""),
+        ]),
+        Row::new(vec![
+            Cell::from("  Enter"),
+            Cell::from("Next step / confirm"),
+        ]),
+        Row::new(vec![
+            Cell::from("  Backspace"),
+            Cell::from("Delete / previous step"),
+        ]),
+        Row::new(vec![Cell::from("  Esc"), Cell::from("Cancel wizard")]),
+        Row::new(vec![
+            Cell::from("Settings").style(Style::default().bold()),
+            Cell::from(""),
+        ]),
+        Row::new(vec![Cell::from("  ↑↓"), Cell::from("Select provider")]),
+        Row::new(vec![Cell::from("  w"), Cell::from("Save settings")]),
+        Row::new(vec![Cell::from("  Esc / q"), Cell::from("Cancel")]),
+    ];
+
+    let widths = [Constraint::Length(14), Constraint::Fill(1)];
+    let table = Table::new(rows, widths);
+    frame.render_widget(table, inner);
 }
 
 // ── Project discovery ─────────────────────────────────────────────────────────
