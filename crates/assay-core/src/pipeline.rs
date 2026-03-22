@@ -339,6 +339,15 @@ pub fn launch_agent_streaming(
     use std::io::{BufRead, BufReader};
     use std::process::Stdio;
 
+    // Guard: an empty cli_args would panic on cli_args[0].
+    // Return a thread that immediately signals EOF and exits with -1.
+    if cli_args.is_empty() {
+        return std::thread::spawn(move || {
+            drop(line_tx);
+            -1
+        });
+    }
+
     // Clone the args + path before moving into the thread.
     let binary = cli_args[0].clone();
     let args: Vec<String> = cli_args[1..].to_vec();
@@ -363,13 +372,16 @@ pub fn launch_agent_streaming(
         // Drain stdout line-by-line, forwarding each line to the channel.
         if let Some(stdout) = child.stdout.take() {
             let reader = BufReader::new(stdout);
+            let mut receiver_alive = true;
             for line in reader.lines() {
                 match line {
                     Ok(l) => {
-                        // If the receiver has hung up, stop draining — no point
-                        // reading more lines that no one will consume.
-                        if line_tx.send(l).is_err() {
-                            break;
+                        if receiver_alive && line_tx.send(l).is_err() {
+                            // Receiver dropped. Stop forwarding but keep reading
+                            // until EOF so the child can drain its pipe and exit
+                            // cleanly — otherwise the child blocks on a full pipe
+                            // and child.wait() below hangs indefinitely.
+                            receiver_alive = false;
                         }
                     }
                     Err(_) => break,

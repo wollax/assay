@@ -232,6 +232,8 @@ impl App {
                 .flatten()
                 .map(|cs| cs.milestone_slug);
         }
+        // Clear the handle so a subsequent `r` press can start a new run.
+        self.agent_thread = None;
     }
 
     /// Draw the current screen into `frame`.
@@ -353,6 +355,12 @@ impl App {
                         }
                     }
                     KeyCode::Char('r') => {
+                        // Guard: no-op while a relay thread is already live.
+                        // Prevents double-spawning when the user presses r → Esc → r
+                        // before the previous agent run has finished.
+                        if self.agent_thread.is_some() {
+                            return false;
+                        }
                         // Guard: no-op when event_tx is None (test environments).
                         let tx = match self.event_tx.clone() {
                             Some(tx) => tx,
@@ -706,17 +714,19 @@ impl App {
                                 }
                             }
                             Some(root) => {
-                                // Build or mutate config.
-                                let mut cfg =
-                                    self.config.clone().unwrap_or_else(|| assay_types::Config {
-                                        project_name: String::new(),
-                                        specs_dir: "specs/".to_string(),
-                                        gates: None,
-                                        guard: None,
-                                        worktree: None,
-                                        sessions: None,
-                                        provider: None,
-                                    });
+                                // Require an existing config so we don't write a
+                                // config.toml with an empty project_name (which would
+                                // fail to reload on the next startup). Per D103.
+                                let mut cfg = match self.config.clone() {
+                                    Some(c) => c,
+                                    None => {
+                                        if let Screen::Settings { ref mut error, .. } = self.screen
+                                        {
+                                            *error = Some("Cannot save: no project config found. Run `assay init` first.".to_string());
+                                        }
+                                        return false;
+                                    }
+                                };
                                 cfg.provider = Some(ProviderConfig {
                                     provider: kind,
                                     planning_model: cfg
