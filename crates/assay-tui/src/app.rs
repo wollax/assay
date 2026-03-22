@@ -25,6 +25,7 @@ use ratatui::widgets::{
     Block, Borders, Cell, Clear, List, ListItem, ListState, Paragraph, Row, Table,
 };
 
+use crate::agent::provider_harness_writer;
 use crate::wizard::{WizardAction, WizardState, draw_wizard, handle_wizard_event};
 
 // ── TUI event channel types ───────────────────────────────────────────────────
@@ -377,8 +378,7 @@ impl App {
                                 .unwrap_or_else(|| cs.milestone_slug.clone()),
                             _ => return false,
                         };
-                        // Build a minimal HarnessProfile for S01.
-                        // S02 replaces this with real provider dispatch from app.config.
+                        // Build a minimal HarnessProfile for provider dispatch.
                         let profile = HarnessProfile {
                             name: chunk_slug.clone(),
                             prompt_layers: vec![],
@@ -397,11 +397,11 @@ impl App {
                         if std::fs::create_dir_all(&run_dir).is_err() {
                             return false;
                         }
-                        let claude_config = assay_harness::claude::generate_config(&profile);
-                        if assay_harness::claude::write_config(&claude_config, &run_dir).is_err() {
-                            return false;
-                        }
-                        let cli_args = assay_harness::claude::build_cli_args(&claude_config);
+                        let writer = provider_harness_writer(self.config.as_ref());
+                        let cli_args = match writer(&profile, &run_dir) {
+                            Ok(args) => args,
+                            Err(_) => return false,
+                        };
                         let working_dir = run_dir.clone();
                         // Transition to AgentRun screen.
                         self.screen = Screen::AgentRun {
