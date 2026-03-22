@@ -10,7 +10,7 @@ A beginning developer installs Assay, describes a feature, and gets a structured
 
 ## Current State
 
-v0.6.0-dev. M001–M006 complete. ~22K lines of Rust across 6 crates. 1371+ tests passing. `assay-tui` is a full Ratatui application with dashboard (S01), in-TUI authoring wizard (S02), spec browser with criteria/gate results (S03), provider configuration screen (S04), persistent status bar, `?` help overlay, and terminal resize handling (S05).
+v0.6.0-dev. M001–M006 complete. ~22K lines of Rust across 6 crates. 1367 tests passing. `assay-tui` is a full Ratatui application with dashboard (S01), in-TUI authoring wizard (S02), spec browser with criteria/gate results (S03), provider configuration screen (S04), persistent status bar, `?` help overlay, and terminal resize handling (S05).
 
 **M001 (complete):** Single-agent harness end-to-end — manifest → worktree → agent launch → gate evaluation → merge proposal. 19 requirements validated.
 
@@ -22,7 +22,7 @@ v0.6.0-dev. M001–M006 complete. ~22K lines of Rust across 6 crates. 1371+ test
 
 **M005 (complete):** Spec-driven development core — S01 delivered Milestone/ChunkRef/MilestoneStatus types, atomic I/O, milestone_list/milestone_get MCP tools. S02 delivered the full development cycle state machine: `cycle_status`/`cycle_advance`/`chunk_status` MCP tools, guarded phase transitions (Draft→InProgress→Verify→Complete), `assay milestone status`/`advance` CLI subcommands. S03 delivered the guided authoring wizard: `assay_core::wizard` module (create_from_inputs, create_milestone_from_params, create_spec_from_params), `assay plan` CLI with dialoguer TTY guard, `milestone_create`/`spec_create` MCP tools. S04 delivered gate-gated PR creation: `pr_check_milestone_gates`/`pr_create_if_gates_pass`, `assay pr create` CLI, `pr_create` MCP tool. S05 delivered the Claude Code plugin upgrade: three new skills (`/assay:plan`, `/assay:status`, `/assay:next-chunk`), updated CLAUDE.md, cycle-aware `cycle-stop-check.sh` Stop hook, updated PostToolUse reminder with active chunk name, plugin version 0.5.0. S06 delivered the Codex plugin: AGENTS.md workflow guide + 5 skills (gate-check, spec-show, cycle-status, next-chunk, plan). 43 requirements validated (R039–R048). 1333 tests.
 
-**M006 (complete):** TUI as primary surface — S01 fixed binary name + delivered live dashboard (milestone_scan + gate history). S02 delivered in-TUI authoring wizard (WizardState, draw_wizard, App wiring, wizard_round_trip test). S03 delivered spec browser (MilestoneDetail + ChunkDetail screens, join_results criterion join). S04 delivered provider configuration (ProviderConfig + ProviderKind types, config_save atomic write, Screen::Settings full-screen view). S05 delivered integration polish (`?` help overlay, persistent status bar, global layout split with `area: Rect` refactor, Event::Resize fix, just ready green). 4 new requirements validated (R049–R052). 1371+ tests.
+**M006 (complete):** TUI as primary surface — S01 fixed binary name (`[[bin]] name = "assay-tui"`) + live dashboard from `milestone_scan`. S02 delivered in-TUI authoring wizard (`WizardState` pure state machine, `draw_wizard` popup, `wizard_round_trip` integration test). S03 delivered spec browser (`MilestoneDetail` + `ChunkDetail` screens, `join_results` criterion/gate-result join, Esc chains). S04 delivered provider configuration (`ProviderKind`+`ProviderConfig` in `assay-types`, `config_save` atomic write, `Screen::Settings` full-screen view, 5 settings integration tests including restart-persistence). S05 delivered integration polish (`?` help overlay, persistent status bar, global `area: Rect` layout split, `Event::Resize` fix, `just ready` green). 4 new requirements validated (R049–R052). 1367 tests.
 
 Crates:
 
@@ -31,7 +31,7 @@ Crates:
 - **assay-harness**: Agent harness adapters — prompt builder, settings merger, Claude Code/Codex/OpenCode adapters, scope enforcement
 - **assay-cli**: CLI binary — init, spec, gate, worktree, context, checkpoint, guard, mcp, run, harness, milestone, plan, pr subcommands
 - **assay-mcp**: MCP server — 30 tools (spec, gate, worktree, session, merge, context, orchestrate, milestone, cycle, pr)
-- **assay-tui**: TUI binary — full Ratatui app (M006/S01): App+Screen state machine, live dashboard loading milestones + gate history from assay-core, keyboard navigation, no-project guard
+- **assay-tui**: TUI binary — full Ratatui app (M006): App+Screen state machine (Dashboard/NoProject/Wizard/MilestoneDetail/ChunkDetail/Settings/LoadError), live dashboard, in-TUI authoring wizard, spec browser, provider config screen, help overlay, status bar
 
 Key patterns: free functions (zero traits), sync core with async surfaces, atomic file writes, `deny_unknown_fields` on persisted types, schema registry via `inventory`, shell-out to git CLI, closure-based control inversion (D001).
 

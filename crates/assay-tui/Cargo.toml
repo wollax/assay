@@ -9,6 +9,7 @@ description = "Assay terminal user interface"
 [dependencies]
 assay-core.workspace = true
 assay-types.workspace = true
+assay-harness.workspace = true
 ratatui.workspace = true
 crossterm.workspace = true
 color-eyre.workspace = true

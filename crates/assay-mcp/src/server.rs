@@ -4644,6 +4644,7 @@ cmd = "echo ok"
             guard: None,
             worktree: None,
             sessions: None,
+            provider: None,
         };
 
         let result = resolve_working_dir(&cwd, &config);
@@ -4667,6 +4668,7 @@ cmd = "echo ok"
             guard: None,
             worktree: None,
             sessions: None,
+            provider: None,
         };
 
         let result = resolve_working_dir(&cwd, &config);
@@ -4694,6 +4696,7 @@ cmd = "echo ok"
             guard: None,
             worktree: None,
             sessions: None,
+            provider: None,
         };
 
         let result = resolve_working_dir(&cwd, &config);

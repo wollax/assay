@@ -110,6 +110,7 @@ fn config_validates() {
         guard: None,
         worktree: None,
         sessions: None,
+        provider: None,
     });
 }
 

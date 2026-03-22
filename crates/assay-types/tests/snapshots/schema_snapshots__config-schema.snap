@@ -111,6 +111,59 @@ expression: schema.to_value()
       },
       "type": "object"
     },
+    "ProviderConfig": {
+      "additionalProperties": false,
+      "description": "AI provider and model configuration.\n\nAll fields are optional and omitted from serialized output when absent.",
+      "properties": {
+        "execution_model": {
+          "description": "Model to use for execution tasks.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "planning_model": {
+          "description": "Model to use for planning tasks (e.g. \"claude-opus-4-5\").",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "provider": {
+          "$ref": "#/$defs/ProviderKind",
+          "default": "anthropic",
+          "description": "Which AI provider to use. Defaults to Anthropic."
+        },
+        "review_model": {
+          "description": "Model to use for review tasks.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "ProviderKind": {
+      "description": "AI provider selection.",
+      "oneOf": [
+        {
+          "const": "anthropic",
+          "description": "Anthropic (Claude).",
+          "type": "string"
+        },
+        {
+          "const": "open_ai",
+          "description": "OpenAI (GPT).",
+          "type": "string"
+        },
+        {
+          "const": "ollama",
+          "description": "Ollama (local models).",
+          "type": "string"
+        }
+      ]
+    },
     "SessionsConfig": {
       "additionalProperties": false,
       "description": "Session management configuration.",
@@ -167,6 +220,17 @@ expression: schema.to_value()
     "project_name": {
       "description": "Project name (required, non-empty after trim).",
       "type": "string"
+    },
+    "provider": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ProviderConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "AI provider configuration (Anthropic, OpenAI, Ollama).\nOmit to use the default provider (Anthropic)."
     },
     "sessions": {
       "anyOf": [

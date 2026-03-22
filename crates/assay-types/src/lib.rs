@@ -194,12 +194,67 @@ pub struct Config {
     /// Session management configuration.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sessions: Option<SessionsConfig>,
+
+    /// AI provider configuration (Anthropic, OpenAI, Ollama).
+    /// Omit to use the default provider (Anthropic).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider: Option<ProviderConfig>,
 }
 
 inventory::submit! {
     schema_registry::SchemaEntry {
         name: "config",
         generate: || schemars::schema_for!(Config),
+    }
+}
+
+/// AI provider selection.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ProviderKind {
+    /// Anthropic (Claude).
+    #[default]
+    Anthropic,
+    /// OpenAI (GPT).
+    OpenAi,
+    /// Ollama (local models).
+    Ollama,
+}
+
+inventory::submit! {
+    schema_registry::SchemaEntry {
+        name: "provider_kind",
+        generate: || schemars::schema_for!(ProviderKind),
+    }
+}
+
+/// AI provider and model configuration.
+///
+/// All fields are optional and omitted from serialized output when absent.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ProviderConfig {
+    /// Which AI provider to use. Defaults to Anthropic.
+    #[serde(default)]
+    pub provider: ProviderKind,
+
+    /// Model to use for planning tasks (e.g. "claude-opus-4-5").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub planning_model: Option<String>,
+
+    /// Model to use for execution tasks.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub execution_model: Option<String>,
+
+    /// Model to use for review tasks.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub review_model: Option<String>,
+}
+
+inventory::submit! {
+    schema_registry::SchemaEntry {
+        name: "provider_config",
+        generate: || schemars::schema_for!(ProviderConfig),
     }
 }
 

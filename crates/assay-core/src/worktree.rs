@@ -659,6 +659,7 @@ detached
                 base_dir: d.to_string(),
             }),
             sessions: None,
+            provider: None,
         }
     }
 
@@ -1108,6 +1109,7 @@ cmd = "echo ok"
                 base_dir: d.to_string(),
             }),
             sessions: None,
+            provider: None,
         }
     }
 
