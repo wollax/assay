@@ -5,12 +5,18 @@
 //! assert on `app.screen` after driving key events.
 
 use std::path::PathBuf;
+use std::sync::mpsc;
 
+use assay_core::config::save as config_save;
 use assay_core::history;
 use assay_core::milestone::{cycle_status, milestone_load, milestone_scan};
+use assay_core::pipeline::launch_agent_streaming;
 use assay_core::spec::{SpecEntry, load_spec_entry_with_diagnostics};
 use assay_core::wizard::create_from_inputs;
-use assay_types::{Criterion, GateRunRecord, GatesSpec, Milestone, MilestoneStatus};
+use assay_types::{
+    Criterion, GateRunRecord, GatesSpec, HarnessProfile, Milestone, MilestoneStatus,
+    ProviderConfig, ProviderKind, SettingsOverride,
+};
 use crossterm::event::KeyCode;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Style, Stylize};
@@ -20,6 +26,35 @@ use ratatui::widgets::{
 };
 
 use crate::wizard::{WizardAction, WizardState, draw_wizard, handle_wizard_event};
+
+// ── TUI event channel types ───────────────────────────────────────────────────
+
+/// Events that flow through the TUI event channel.
+///
+/// `Key` and `Resize` come from the crossterm input thread;
+/// `AgentLine` and `AgentDone` come from the relay-wrapper thread that
+/// monitors a live agent subprocess (see `launch_agent_streaming`).
+pub enum TuiEvent {
+    /// A keyboard event from the terminal.
+    Key(crossterm::event::KeyEvent),
+    /// Terminal was resized to (cols, rows).
+    Resize(u16, u16),
+    /// One line of stdout from the running agent subprocess.
+    AgentLine(String),
+    /// Agent subprocess has exited. `exit_code` is the process return value
+    /// (or -1 on spawn error).
+    AgentDone { exit_code: i32 },
+}
+
+/// Status of the agent run displayed in `Screen::AgentRun`.
+pub enum AgentRunStatus {
+    /// Agent subprocess is still running.
+    Running,
+    /// Agent exited with zero (success).
+    Done { exit_code: i32 },
+    /// Agent exited with a non-zero code (failure).
+    Failed { exit_code: i32 },
+}
 
 // ── Screen variants ───────────────────────────────────────────────────────────
 
@@ -40,6 +75,24 @@ pub enum Screen {
     ChunkDetail {
         milestone_slug: String,
         chunk_slug: String,
+    },
+    /// Provider / model configuration screen.
+    Settings {
+        /// Currently selected provider in the list.
+        selected: usize,
+        /// Inline error message from a failed save attempt.
+        error: Option<String>,
+    },
+    /// Live agent run view — streams stdout lines and shows final status.
+    AgentRun {
+        /// Slug of the chunk being run.
+        chunk_slug: String,
+        /// Accumulated stdout lines from the agent subprocess (capped at 10 000).
+        lines: Vec<String>,
+        /// Scroll offset for the line list.
+        scroll_offset: usize,
+        /// Current run status.
+        status: AgentRunStatus,
     },
 }
 
@@ -70,13 +123,15 @@ pub struct App {
     /// Slug of the currently active (InProgress) milestone, or `None` when no
     /// milestone is in progress.  Used by the status bar renderer.
     pub cycle_slug: Option<String>,
-    /// Project display name from config, used by the status bar.
-    pub config: Option<AppConfig>,
-}
-
-/// Minimal project config surfaced to the status bar.
-pub struct AppConfig {
-    pub project_name: String,
+    /// Loaded project config (used by status bar and settings screen).
+    pub config: Option<assay_types::Config>,
+    /// Sender side of the TUI event channel. `None` until the channel is wired
+    /// in `main.rs`. Used by the relay-wrapper thread to push `AgentLine` and
+    /// `AgentDone` events into the main loop.
+    pub event_tx: Option<mpsc::Sender<TuiEvent>>,
+    /// Join handle for a live agent subprocess thread. `None` when no agent
+    /// is running. The thread returns the process exit code as `i32`.
+    pub agent_thread: Option<std::thread::JoinHandle<i32>>,
 }
 
 impl App {
@@ -118,6 +173,10 @@ impl App {
             list_state.select(Some(0));
         }
 
+        let config = project_root
+            .as_deref()
+            .and_then(|root| assay_core::config::load(root).ok());
+
         Ok(App {
             screen,
             milestones,
@@ -130,8 +189,51 @@ impl App {
             detail_run: None,
             show_help: false,
             cycle_slug,
-            config: None,
+            config,
+            event_tx: None,
+            agent_thread: None,
         })
+    }
+
+    /// Accumulate a line of agent stdout into `Screen::AgentRun`.
+    ///
+    /// No-op if the current screen is not `Screen::AgentRun`.
+    /// Lines are capped at 10 000 to prevent unbounded memory growth.
+    pub fn handle_agent_line(&mut self, line: String) {
+        if let Screen::AgentRun { ref mut lines, .. } = self.screen {
+            lines.push(line);
+            if lines.len() > 10_000 {
+                lines.remove(0);
+            }
+        }
+    }
+
+    /// Handle agent subprocess exit.
+    ///
+    /// Transitions `Screen::AgentRun.status` to `Done` (exit 0) or `Failed`
+    /// (non-zero exit). Then refreshes milestones and cycle_slug from disk so
+    /// the dashboard reflects any state changes caused by the agent run.
+    pub fn handle_agent_done(&mut self, exit_code: i32) {
+        if let Screen::AgentRun { ref mut status, .. } = self.screen {
+            *status = if exit_code == 0 {
+                AgentRunStatus::Done { exit_code }
+            } else {
+                AgentRunStatus::Failed { exit_code }
+            };
+        }
+        // Refresh disk state (graceful degradation on I/O error).
+        if let Some(ref root) = self.project_root {
+            let assay_dir = root.join(".assay");
+            if let Ok(ms) = milestone_scan(&assay_dir) {
+                self.milestones = ms;
+            }
+            self.cycle_slug = cycle_status(&assay_dir)
+                .ok()
+                .flatten()
+                .map(|cs| cs.milestone_slug);
+        }
+        // Clear the handle so a subsequent `r` press can start a new run.
+        self.agent_thread = None;
     }
 
     /// Draw the current screen into `frame`.
@@ -163,6 +265,30 @@ impl App {
                     self.detail_spec.as_ref(),
                     self.detail_spec_note.as_deref(),
                     self.detail_run.as_ref(),
+                );
+            }
+            Screen::Settings { selected, error } => {
+                draw_settings(
+                    frame,
+                    content_area,
+                    self.config.as_ref(),
+                    *selected,
+                    error.as_deref(),
+                );
+            }
+            Screen::AgentRun {
+                chunk_slug,
+                lines,
+                scroll_offset,
+                status,
+            } => {
+                draw_agent_run(
+                    frame,
+                    content_area,
+                    chunk_slug,
+                    lines,
+                    *scroll_offset,
+                    status,
                 );
             }
         }
@@ -227,6 +353,98 @@ impl App {
                         if self.project_root.is_some() {
                             self.screen = Screen::Wizard(WizardState::new());
                         }
+                    }
+                    KeyCode::Char('r') => {
+                        // Guard: no-op while a relay thread is already live.
+                        // Prevents double-spawning when the user presses r → Esc → r
+                        // before the previous agent run has finished.
+                        if self.agent_thread.is_some() {
+                            return false;
+                        }
+                        // Guard: no-op when event_tx is None (test environments).
+                        let tx = match self.event_tx.clone() {
+                            Some(tx) => tx,
+                            None => return false,
+                        };
+                        let assay_dir = match &self.project_root {
+                            Some(root) => root.join(".assay"),
+                            None => return false,
+                        };
+                        // Get the active chunk slug from cycle_status.
+                        let chunk_slug = match cycle_status(&assay_dir) {
+                            Ok(Some(cs)) => cs
+                                .active_chunk_slug
+                                .unwrap_or_else(|| cs.milestone_slug.clone()),
+                            _ => return false,
+                        };
+                        // Build a minimal HarnessProfile for S01.
+                        // S02 replaces this with real provider dispatch from app.config.
+                        let profile = HarnessProfile {
+                            name: chunk_slug.clone(),
+                            prompt_layers: vec![],
+                            settings: SettingsOverride {
+                                model: None,
+                                permissions: vec![],
+                                tools: vec![],
+                                max_turns: None,
+                            },
+                            hooks: vec![],
+                            working_dir: None,
+                        };
+                        // Write harness config to a temp dir to avoid polluting worktree.
+                        let run_dir =
+                            std::env::temp_dir().join(format!("assay-agent-{}", chunk_slug));
+                        if std::fs::create_dir_all(&run_dir).is_err() {
+                            return false;
+                        }
+                        let claude_config = assay_harness::claude::generate_config(&profile);
+                        if assay_harness::claude::write_config(&claude_config, &run_dir).is_err() {
+                            return false;
+                        }
+                        let cli_args = assay_harness::claude::build_cli_args(&claude_config);
+                        let working_dir = run_dir.clone();
+                        // Transition to AgentRun screen.
+                        self.screen = Screen::AgentRun {
+                            chunk_slug: chunk_slug.clone(),
+                            lines: vec![],
+                            scroll_offset: 0,
+                            status: AgentRunStatus::Running,
+                        };
+                        // Spawn relay-wrapper thread: inner launch_agent_streaming +
+                        // outer drain loop. Serializes AgentLine before AgentDone to
+                        // prevent line loss.
+                        let tui_tx = tx.clone();
+                        let handle = std::thread::spawn(move || {
+                            let (str_tx, str_rx) = std::sync::mpsc::channel::<String>();
+                            let inner = launch_agent_streaming(&cli_args, &working_dir, str_tx);
+                            // Drain lines → TuiEvent::AgentLine.
+                            for line in str_rx {
+                                let _ = tui_tx.send(TuiEvent::AgentLine(line));
+                            }
+                            // All lines sent; get exit code from inner thread.
+                            let exit_code = inner.join().unwrap_or(-1);
+                            let _ = tui_tx.send(TuiEvent::AgentDone { exit_code });
+                            exit_code
+                        });
+                        self.agent_thread = Some(handle);
+                    }
+                    KeyCode::Char('s') => {
+                        // Open settings screen.  Pre-select the current provider if
+                        // config is loaded; default to Anthropic (index 0) otherwise.
+                        let selected = self
+                            .config
+                            .as_ref()
+                            .and_then(|c| c.provider.as_ref())
+                            .map(|p| match p.provider {
+                                ProviderKind::Anthropic => 0,
+                                ProviderKind::OpenAi => 1,
+                                ProviderKind::Ollama => 2,
+                            })
+                            .unwrap_or(0);
+                        self.screen = Screen::Settings {
+                            selected,
+                            error: None,
+                        };
                     }
                     KeyCode::Enter => {
                         if let Some(idx) = self.list_state.selected()
@@ -435,11 +653,183 @@ impl App {
                 }
                 false
             }
+
+            Screen::AgentRun {
+                ref mut scroll_offset,
+                ..
+            } => {
+                match key.code {
+                    KeyCode::Esc => {
+                        self.screen = Screen::Dashboard;
+                    }
+                    KeyCode::Down | KeyCode::Char('j') => {
+                        *scroll_offset = scroll_offset.saturating_add(1);
+                    }
+                    KeyCode::Up | KeyCode::Char('k') => {
+                        *scroll_offset = scroll_offset.saturating_sub(1);
+                    }
+                    _ => {}
+                }
+                false
+            }
+
+            Screen::Settings { .. } => {
+                match key.code {
+                    KeyCode::Esc | KeyCode::Char('q') => {
+                        self.screen = Screen::Dashboard;
+                    }
+                    KeyCode::Down => {
+                        if let Screen::Settings { selected, .. } = &mut self.screen {
+                            *selected = (*selected + 1) % 3;
+                        }
+                    }
+                    KeyCode::Up => {
+                        if let Screen::Settings { selected, .. } = &mut self.screen {
+                            *selected = selected.checked_sub(1).unwrap_or(2);
+                        }
+                    }
+                    KeyCode::Char('w') => {
+                        // Save provider selection to config.toml.
+                        let (selected, _error_slot) = if let Screen::Settings {
+                            selected,
+                            ref mut error,
+                        } = self.screen
+                        {
+                            (selected, error)
+                        } else {
+                            unreachable!("must be in Settings screen");
+                        };
+                        let kind = match selected {
+                            1 => ProviderKind::OpenAi,
+                            2 => ProviderKind::Ollama,
+                            _ => ProviderKind::Anthropic,
+                        };
+                        match &self.project_root {
+                            None => {
+                                if let Screen::Settings { ref mut error, .. } = self.screen {
+                                    *error = Some(
+                                        "Cannot save: no project root. Run `assay init` first."
+                                            .to_string(),
+                                    );
+                                }
+                            }
+                            Some(root) => {
+                                // Require an existing config so we don't write a
+                                // config.toml with an empty project_name (which would
+                                // fail to reload on the next startup). Per D103.
+                                let mut cfg = match self.config.clone() {
+                                    Some(c) => c,
+                                    None => {
+                                        if let Screen::Settings { ref mut error, .. } = self.screen
+                                        {
+                                            *error = Some("Cannot save: no project config found. Run `assay init` first.".to_string());
+                                        }
+                                        return false;
+                                    }
+                                };
+                                cfg.provider = Some(ProviderConfig {
+                                    provider: kind,
+                                    planning_model: cfg
+                                        .provider
+                                        .as_ref()
+                                        .and_then(|p| p.planning_model.clone()),
+                                    execution_model: cfg
+                                        .provider
+                                        .as_ref()
+                                        .and_then(|p| p.execution_model.clone()),
+                                    review_model: cfg
+                                        .provider
+                                        .as_ref()
+                                        .and_then(|p| p.review_model.clone()),
+                                });
+                                match config_save(root, &cfg) {
+                                    Ok(()) => {
+                                        self.config = Some(cfg);
+                                        // Refresh cycle_slug after settings save.
+                                        let assay_dir = root.join(".assay");
+                                        self.cycle_slug = cycle_status(&assay_dir)
+                                            .ok()
+                                            .flatten()
+                                            .map(|cs| cs.milestone_slug);
+                                        self.screen = Screen::Dashboard;
+                                    }
+                                    Err(e) => {
+                                        if let Screen::Settings { ref mut error, .. } = self.screen
+                                        {
+                                            *error = Some(format!("Save failed: {e}"));
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+                false
+            }
         }
     }
 }
 
 // ── Screen renderers ──────────────────────────────────────────────────────────
+
+/// Render the live agent run screen.
+///
+/// Layout: bordered block with title at top; inside → scrollable line list
+/// (fills available height) + 1-row status line at the bottom.
+fn draw_agent_run(
+    frame: &mut ratatui::Frame,
+    area: Rect,
+    chunk_slug: &str,
+    lines: &[String],
+    scroll_offset: usize,
+    status: &AgentRunStatus,
+) {
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(format!(" Agent Run: {chunk_slug} "));
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    let [content_area, status_area] =
+        Layout::vertical([Constraint::Fill(1), Constraint::Length(1)]).areas(inner);
+
+    // Line list.
+    let visible_rows = content_area.height as usize;
+    if lines.is_empty() {
+        let placeholder = List::new(vec![
+            ListItem::new("Starting…").style(Style::default().dim()),
+        ]);
+        frame.render_widget(placeholder, content_area);
+    } else {
+        let safe_start = scroll_offset.min(lines.len().saturating_sub(1));
+        let safe_end = (safe_start + visible_rows).min(lines.len());
+        let items: Vec<ListItem> = lines[safe_start..safe_end]
+            .iter()
+            .map(|l| ListItem::new(l.as_str()))
+            .collect();
+        let list = List::new(items);
+        frame.render_widget(list, content_area);
+    }
+
+    // Status line.
+    let (status_text, status_style) = match status {
+        AgentRunStatus::Running => (
+            "● Running…  Esc: back".to_string(),
+            Style::default().fg(Color::Yellow),
+        ),
+        AgentRunStatus::Done { exit_code } => (
+            format!("✓ Done (exit {exit_code})  Esc: back"),
+            Style::default().fg(Color::Green),
+        ),
+        AgentRunStatus::Failed { exit_code } => (
+            format!("✗ Failed (exit {exit_code})  Esc: back"),
+            Style::default().fg(Color::Red),
+        ),
+    };
+    let status_line = Paragraph::new(Line::from(Span::styled(status_text, status_style)));
+    frame.render_widget(status_line, status_area);
+}
 
 /// Render a load-error screen when milestone data could not be read.
 fn draw_load_error(frame: &mut ratatui::Frame, area: Rect, msg: &str) {
@@ -662,6 +1052,79 @@ fn draw_chunk_detail(
 }
 
 /// Render the persistent one-line status bar showing project context.
+/// Render the provider configuration screen.
+///
+/// Full-screen bordered block listing three provider options (Anthropic,
+/// OpenAI, Ollama) with the currently selected one highlighted and a brief
+/// legend of key hints at the bottom.
+fn draw_settings(
+    frame: &mut ratatui::Frame,
+    area: Rect,
+    config: Option<&assay_types::Config>,
+    selected: usize,
+    error: Option<&str>,
+) {
+    let block = Block::default()
+        .title(" Provider Configuration ")
+        .borders(Borders::ALL);
+    frame.render_widget(block.clone(), area);
+
+    let inner = block.inner(area);
+
+    // Layout: list of providers + optional error + key hints at bottom.
+    let [list_area, hint_area] = Layout::vertical([
+        Constraint::Fill(1),
+        Constraint::Length(if error.is_some() { 3 } else { 2 }),
+    ])
+    .areas(inner);
+
+    let providers = ["Anthropic (Claude)", "OpenAI (GPT)", "Ollama (local)"];
+    let current_kind = config
+        .and_then(|c| c.provider.as_ref())
+        .map(|p| p.provider)
+        .unwrap_or(ProviderKind::Anthropic);
+    let saved_idx = match current_kind {
+        ProviderKind::Anthropic => 0,
+        ProviderKind::OpenAi => 1,
+        ProviderKind::Ollama => 2,
+    };
+
+    let items: Vec<ListItem> = providers
+        .iter()
+        .enumerate()
+        .map(|(i, name)| {
+            let prefix = if i == selected { "▶ " } else { "  " };
+            let suffix = if i == saved_idx { "  [saved]" } else { "" };
+            let label = format!("{prefix}{name}{suffix}");
+            let style = if i == selected {
+                Style::default().bold().fg(Color::Cyan)
+            } else {
+                Style::default()
+            };
+            ListItem::new(label).style(style)
+        })
+        .collect();
+
+    let list = List::new(items);
+    frame.render_widget(list, list_area);
+
+    // Key hints (and optional error above them).
+    let mut hint_lines: Vec<Line> = Vec::new();
+    if let Some(msg) = error {
+        hint_lines.push(Line::from(Span::styled(
+            format!("Error: {msg}"),
+            Style::default().fg(Color::Red),
+        )));
+    }
+    hint_lines.push(Line::from(Span::styled(
+        "↑↓ select  w save  Esc cancel",
+        Style::default().dim(),
+    )));
+
+    let hint = Paragraph::new(hint_lines);
+    frame.render_widget(hint, hint_area);
+}
+
 ///
 /// Shows: `<project_name>  ·  <cycle_slug>  ·  ? help  q quit` (dim hints).
 /// When `project_name` is empty and `cycle_slug` is `None`, only the key hints

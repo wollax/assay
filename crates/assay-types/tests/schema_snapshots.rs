@@ -446,3 +446,15 @@ fn gossip_status_schema_snapshot() {
     let schema = schemars::schema_for!(assay_types::GossipStatus);
     assert_json_snapshot!("gossip-status-schema", schema.to_value());
 }
+
+#[test]
+fn provider_kind_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::ProviderKind);
+    assert_json_snapshot!("provider-kind-schema", schema.to_value());
+}
+
+#[test]
+fn provider_config_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::ProviderConfig);
+    assert_json_snapshot!("provider-config-schema", schema.to_value());
+}

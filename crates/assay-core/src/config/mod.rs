@@ -4,9 +4,11 @@
 //! from files and environment.
 
 use std::fmt;
+use std::io::Write;
 use std::path::Path;
 
 use assay_types::Config;
+use tempfile::NamedTempFile;
 
 use crate::error::{AssayError, Result};
 
@@ -216,6 +218,46 @@ pub fn load(root: &Path) -> Result<Config> {
     }
 
     Ok(config)
+}
+
+/// Atomically save a [`Config`] to `.assay/config.toml` under `root`.
+///
+/// Uses the NamedTempFile-write-sync-persist pattern to prevent partial writes.
+/// The `.assay/` directory must already exist.
+pub fn save(root: &Path, config: &Config) -> Result<()> {
+    let assay_dir = root.join(".assay");
+    let path = assay_dir.join("config.toml");
+    let content = toml::to_string_pretty(config).map_err(|e| AssayError::Io {
+        operation: "serializing config".into(),
+        path: path.clone(),
+        source: std::io::Error::other(e.to_string()),
+    })?;
+    let mut tmpfile = NamedTempFile::new_in(&assay_dir).map_err(|source| AssayError::Io {
+        operation: "creating temp file for config".into(),
+        path: assay_dir.clone(),
+        source,
+    })?;
+    tmpfile
+        .write_all(content.as_bytes())
+        .map_err(|source| AssayError::Io {
+            operation: "writing config".into(),
+            path: path.clone(),
+            source,
+        })?;
+    tmpfile
+        .as_file()
+        .sync_all()
+        .map_err(|source| AssayError::Io {
+            operation: "syncing config".into(),
+            path: path.clone(),
+            source,
+        })?;
+    tmpfile.persist(&path).map_err(|e| AssayError::Io {
+        operation: "persisting config".into(),
+        path: path.clone(),
+        source: e.error,
+    })?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -561,6 +603,7 @@ default_timeout = 600
             guard: None,
             worktree: None,
             sessions: None,
+            provider: None,
         };
 
         let errors = super::validate(&config).unwrap_err();

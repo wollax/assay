@@ -496,8 +496,8 @@
 - Source: user
 - Primary owning slice: M006/S01
 - Supporting slices: none
-- Validation: S01 — assay-tui binary produced (no collision with assay-cli); App::new() with Screen::NoProject guard (unit test); compute_gate_data() loads gate history from assay-core::history (integration test); handle_event() Up/Down/q tested; draw_dashboard() renders milestone name + status badge + chunk fraction + gate counts; 5 unit tests pass; just ready fmt/clippy/test green
-- Notes: Reads milestone and gate data from `.assay/` via assay-core. No agent spawning in M006/S01.
+- Validation: M006 complete — assay-tui binary produced (no collision with assay-cli); App::new() with Screen::NoProject guard (unit test); draw_dashboard() renders milestone name + status badge + chunk fraction from milestone_scan; handle_event() Up/Down/q/Enter tested; 6 spec_browser integration tests prove navigation; just ready green (1367 tests)
+- Notes: Reads milestone and gate data from `.assay/` via assay-core. No agent spawning in M006.
 
 ### R050 — TUI interactive wizard
 - Class: primary-user-loop
@@ -507,7 +507,7 @@
 - Source: user
 - Primary owning slice: M006/S02
 - Supporting slices: M006/S01
-- Validation: S02 — WizardState state machine + draw_wizard popup + App wiring (n→wizard→Dashboard) implemented; wizard_round_trip integration test drives synthetic KeyEvents through N=2 chunk flow → create_from_inputs → asserts milestone TOML + two gates.toml files written to tempdir; App tests prove n-key opens wizard, Esc returns to dashboard without writing, error on slug collision stays in wizard; 23 assay-tui tests + 1356 workspace tests all pass
+- Validation: M006 complete — WizardState state machine + draw_wizard popup (centered 64×14 popup, hardware cursor); App wiring (n→wizard→Dashboard); wizard_round_trip integration test drives synthetic KeyEvents through N=2 chunk flow → create_from_inputs → asserts milestone TOML + two gates.toml files in tempdir; App tests prove n-key opens wizard, Esc cancels, error on slug collision stays in wizard; 27 assay-tui tests + 1367 workspace tests all pass
 - Notes: Pure WizardState in assay-tui (TUI concern); create_from_inputs from assay-core does the file I/O. Criteria are text-only (no cmd field, per D076).
 
 ### R051 — TUI spec browser
@@ -529,8 +529,8 @@
 - Source: user
 - Primary owning slice: M006/S04
 - Supporting slices: M006/S05
-- Validation: S04 — ProviderConfig + ProviderKind in assay-types with serde(default, skip_serializing_if) backward-compat; config_save atomic write; Screen::Settings full-screen view with provider list and model fields; w key saves to .assay/config.toml; round-trip TOML tests and schema snapshot locked. S05 — App.config integration complete (status bar shows project name); just ready green (22 assay-tui tests, workspace clean).
-- Notes: Config.provider field uses Option<ProviderConfig> with serde(default) so existing config.toml files without provider section load without error (D092).
+- Validation: M006 complete — ProviderKind+ProviderConfig in assay-types with serde(default, skip_serializing_if) per D092; config_save (save fn) in assay-core::config using NamedTempFile atomic write; Screen::Settings full-screen view with ↑↓ provider selection and w save; 5 settings integration tests pass (open/close/navigate/save/restart-persistence); config_toml_roundtrip_without_provider proves backward compat; schema snapshots locked; status bar shows project name from Config; just ready green (1367 tests)
+- Notes: Config.provider field uses Option<ProviderConfig> with serde(default) so existing config.toml files without provider section load without error (D092). Model-per-phase fields exist in ProviderConfig but UI shows only provider selection; model editing requires manual config.toml editing.
 
 ### R053 — TUI agent spawning
 - Class: core-capability
@@ -540,8 +540,8 @@
 - Source: user
 - Primary owning slice: M007/S01
 - Supporting slices: M006/S01
-- Validation: unmapped
-- Notes: Uses assay-core pipeline. Agent output streamed to TUI panel. Gate results update dashboard in real time.
+- Validation: M007/S01 — channel-based TuiEvent loop proven; launch_agent_streaming proven with real echo subprocess; Screen::AgentRun accumulates lines and transitions to Done/Failed; r key handler spawns relay-wrapper thread from Dashboard; gate refresh on AgentDone; 8 integration tests pass. Real Claude invocation is UAT-only.
+- Notes: Uses assay-core pipeline. Agent output streamed to TUI panel. Gate counts refresh on AgentDone. Full validation pending human UAT with real Claude Code.
 
 ### R054 — Provider abstraction
 - Class: core-capability
@@ -551,7 +551,8 @@
 - Source: user
 - Primary owning slice: M007/S01
 - Supporting slices: M007/S02
-- Validation: unmapped
+- Validation: M007/S01 — Anthropic (Claude Code) path wired in r key handler; S02 adds Ollama and OpenAI provider dispatch. Full validation after S02.
+- Notes: Anthropic path proven by S01 harness config write + spawn. Ollama/OpenAI adapters and provider_harness_writer dispatch in S02.
 - Notes: Anthropic (Claude Code) already works. OpenAI and Ollama require new harness adapters or config-level switching.
 
 ### R055 — TUI MCP server management
