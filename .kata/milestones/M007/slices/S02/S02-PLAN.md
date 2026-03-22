@@ -54,7 +54,7 @@
 
 ## Tasks
 
-- [ ] **T01: Rebase onto origin/main and write failing provider dispatch tests** `est:30m`
+- [x] **T01: Rebase onto origin/main and write failing provider dispatch tests** `est:30m`
   - Why: Gets all S01 deliverables onto this branch; establishes the unambiguous test contract before writing any implementation; tests should compile and fail (or panic-fail) until T02 provides `agent.rs`
   - Files: `crates/assay-tui/tests/provider_dispatch.rs` (new)
   - Do: (1) `git rebase origin/main` from `kata/root/M007/S02`; verify `cargo build -p assay-tui` passes post-rebase. (2) Create `tests/provider_dispatch.rs` with helper `run_writer(config) -> Vec<String>` that calls `provider_harness_writer`, passes a dummy `HarnessProfile` + temp `Path`, and asserts the returned `Vec<String>` starts with the expected binary name. (3) Write three `#[test]` functions: `provider_dispatch_anthropic_uses_claude_binary` (expects `cli_args[0]` to be `"claude"` or start with the claude binary path), `provider_dispatch_ollama_uses_ollama_binary` (expects `"ollama"`), `provider_dispatch_openai_uses_openai_binary` (expects `"openai"`). (4) The tests reference `assay_tui::agent::provider_harness_writer` — they will fail with a compile error until T02 creates the module; confirm the compile error is the only failure.
