@@ -10,7 +10,7 @@ A beginning developer installs Assay, describes a feature, and gets a structured
 
 ## Current State
 
-v0.6.0-dev. M001–M006 complete. ~22K lines of Rust across 6 crates. 1367 tests passing. `assay-tui` is a full Ratatui application with dashboard (S01), in-TUI authoring wizard (S02), spec browser with criteria/gate results (S03), provider configuration screen (S04), persistent status bar, `?` help overlay, and terminal resize handling (S05).
+v0.6.0-dev. M001–M006 complete, M007 S01–S02 complete. ~22K lines of Rust across 6 crates. 1400+ tests passing. `assay-tui` is a full Ratatui application with dashboard, wizard, spec browser, provider config, help overlay, status bar (M006), plus channel-based TuiEvent loop, Screen::AgentRun with live streaming, and provider dispatch (Anthropic/Ollama/OpenAI) via `provider_harness_writer` (M007 S01–S02).
 
 **M001 (complete):** Single-agent harness end-to-end — manifest → worktree → agent launch → gate evaluation → merge proposal. 19 requirements validated.
 

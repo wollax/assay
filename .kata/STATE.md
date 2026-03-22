@@ -4,7 +4,7 @@
 **Active Slice:** S03 — Slash Command Overlay
 **Active Task:** — (S02 complete; S03 planning next)
 **Phase:** Planning
-**Last Updated:** 2026-03-21 (T03 complete: `Screen::Settings` extended with 4 model fields; Tab/Char/Backspace/Esc model focus handling; `w` saves model buffers; 40 TUI tests pass; just ready exit 0; S02 all tasks done)
+**Last Updated:** 2026-03-21 (S02 complete: summary + UAT written, S02 marked [x] in roadmap; 40 TUI tests pass, just ready exit 0; decisions D115–D117 appended)
 **Requirements Status:** 7 active (R053–R059) · 46 validated (R001–R052) · 2 deferred · 4 out of scope
 **Test Count:** 1367 (35 assay-tui: 27 pre-existing + 8 agent_run; all workspace tests pass; just ready green)
 
