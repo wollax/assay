@@ -2,9 +2,9 @@
 
 **Active Milestone:** M007 — TUI Agent Harness
 **Active Slice:** S02 — Provider Dispatch and Harness Wiring
-**Active Task:** none (S01 complete; S02 not yet started)
+**Active Task:** T02 — Create `assay-tui::agent` module and wire `r` key handler
 **Phase:** Planning
-**Last Updated:** 2026-03-21 (S01 complete: channel event loop + AgentRun panel; all 35 TUI tests pass; just ready green)
+**Last Updated:** 2026-03-21 (T01 complete: branch rebased onto S01; `tests/provider_dispatch.rs` written with 3 compile-failing tests anchoring the provider_harness_writer contract; all 35 pre-existing TUI tests pass)
 **Requirements Status:** 7 active (R053–R059) · 46 validated (R001–R052) · 2 deferred · 4 out of scope
 **Test Count:** 1367 (35 assay-tui: 27 pre-existing + 8 agent_run; all workspace tests pass; just ready green)
 
@@ -55,4 +55,4 @@ None.
 
 ## Next Action
 
-S02: Provider Dispatch and Harness Wiring — implement `provider_harness_writer(config: &Config) -> Box<HarnessWriter>` in `assay-tui::agent` module; add Ollama adapter (`ollama run <model>`); add OpenAI adapter; extend Settings screen with per-phase model input fields. Depends on S01 (complete). Proves R054 fully.
+T02: Create `crates/assay-tui/src/agent.rs` with `provider_harness_writer(Option<&Config>) -> Box<HarnessWriter>`; declare `pub mod agent` in `lib.rs`; replace hardcoded claude block in `r` key handler with the new dispatch call. Three `provider_dispatch` tests must pass 3/3 after T02.
