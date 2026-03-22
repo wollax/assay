@@ -1,10 +1,10 @@
 # Kata State
 
 **Active Milestone:** M007 — TUI Agent Harness
-**Active Slice:** S02 — Provider Dispatch and Harness Wiring
-**Active Task:** T03 — Extend Settings screen with model text-input fields and finalize
-**Phase:** Executing
-**Last Updated:** 2026-03-21 (T02 complete: `crates/assay-tui/src/agent.rs` created with `provider_harness_writer`; `r` key handler dispatches via provider_harness_writer; 3/3 provider_dispatch tests green; 38 total TUI tests pass; zero warnings)
+**Active Slice:** S03 — Slash Command Overlay
+**Active Task:** — (S02 complete; S03 planning next)
+**Phase:** Planning
+**Last Updated:** 2026-03-21 (T03 complete: `Screen::Settings` extended with 4 model fields; Tab/Char/Backspace/Esc model focus handling; `w` saves model buffers; 40 TUI tests pass; just ready exit 0; S02 all tasks done)
 **Requirements Status:** 7 active (R053–R059) · 46 validated (R001–R052) · 2 deferred · 4 out of scope
 **Test Count:** 1367 (35 assay-tui: 27 pre-existing + 8 agent_run; all workspace tests pass; just ready green)
 
@@ -20,7 +20,7 @@
 ## M007 Roadmap
 
 - [x] S01: Channel Event Loop and Agent Run Panel — TuiEvent channel loop in main.rs; Screen::AgentRun with live streaming; launch_agent_streaming in assay-core::pipeline; r key from Dashboard; all 35 TUI tests pass; just ready green. R053+R054 (Anthropic path). DONE.
-- [ ] S02: Provider Dispatch and Harness Wiring `risk:medium` — provider_harness_writer dispatches per ProviderKind; Ollama + OpenAI adapters; Settings model input fields. R054 (all providers).
+- [x] S02: Provider Dispatch and Harness Wiring `risk:medium` — provider_harness_writer dispatches per ProviderKind; Ollama + OpenAI adapters; Settings model input fields; 40 TUI tests pass; just ready green. R054 (all providers). DONE.
 - [ ] S03: Slash Command Overlay `risk:low` — / key opens SlashState overlay; /gate-check, /status, /next-chunk, /pr-create commands; sync dispatch to assay-core. R056.
 - [ ] S04: MCP Server Configuration Panel `risk:medium` — Screen::McpPanel reads/writes .assay/mcp.json; add/delete/save servers; no live connection. R055.
 
@@ -55,4 +55,4 @@ None.
 
 ## Next Action
 
-T03: Extend `Screen::Settings` with `planning_model`, `execution_model`, `review_model`, `model_focus` fields; pre-populate from `app.config` in `s` key handler; Tab cycles focus through model fields; char input/Backspace edits active field; `w` save writes model strings to `ProviderConfig`; add 2 tests to `tests/settings.rs`; finish with `just ready` exit 0.
+Begin S03 (Slash Command Overlay): plan tasks for `/` key overlay with `/gate-check`, `/status`, `/next-chunk`, `/pr-create` commands; synchronous in-process dispatch to assay-core. R056.

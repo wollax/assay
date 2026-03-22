@@ -83,6 +83,14 @@ pub enum Screen {
         selected: usize,
         /// Inline error message from a failed save attempt.
         error: Option<String>,
+        /// Editable buffer for the planning model name.
+        planning_model: String,
+        /// Editable buffer for the execution model name.
+        execution_model: String,
+        /// Editable buffer for the review model name.
+        review_model: String,
+        /// Which model field has focus (`None` = provider list has focus).
+        model_focus: Option<usize>,
     },
     /// Live agent run view — streams stdout lines and shows final status.
     AgentRun {
@@ -268,13 +276,24 @@ impl App {
                     self.detail_run.as_ref(),
                 );
             }
-            Screen::Settings { selected, error } => {
+            Screen::Settings {
+                selected,
+                error,
+                model_focus,
+                planning_model,
+                execution_model,
+                review_model,
+            } => {
                 draw_settings(
                     frame,
                     content_area,
                     self.config.as_ref(),
                     *selected,
                     error.as_deref(),
+                    *model_focus,
+                    planning_model,
+                    execution_model,
+                    review_model,
                 );
             }
             Screen::AgentRun {
@@ -441,9 +460,25 @@ impl App {
                                 ProviderKind::Ollama => 2,
                             })
                             .unwrap_or(0);
+                        let (pm, em, rm) = self
+                            .config
+                            .as_ref()
+                            .and_then(|c| c.provider.as_ref())
+                            .map(|p| {
+                                (
+                                    p.planning_model.clone().unwrap_or_default(),
+                                    p.execution_model.clone().unwrap_or_default(),
+                                    p.review_model.clone().unwrap_or_default(),
+                                )
+                            })
+                            .unwrap_or_default();
                         self.screen = Screen::Settings {
                             selected,
                             error: None,
+                            planning_model: pm,
+                            execution_model: em,
+                            review_model: rm,
+                            model_focus: None,
                         };
                     }
                     KeyCode::Enter => {
@@ -674,7 +709,125 @@ impl App {
             }
 
             Screen::Settings { .. } => {
+                // ── Model-section key handling ────────────────────────────
+                // When model_focus is Some, intercept Tab/Esc/Char/Backspace
+                // before falling through to provider-list navigation.
+                let model_focus_val = if let Screen::Settings { model_focus, .. } = &self.screen {
+                    *model_focus
+                } else {
+                    None
+                };
+
+                if let Some(focused) = model_focus_val {
+                    match key.code {
+                        KeyCode::Tab => {
+                            // Cycle: 0→1→2→None (returns to provider list).
+                            if let Screen::Settings {
+                                ref mut model_focus,
+                                ..
+                            } = self.screen
+                            {
+                                *model_focus = if focused < 2 { Some(focused + 1) } else { None };
+                            }
+                            return false;
+                        }
+                        KeyCode::Esc => {
+                            // Unfocus model section; stay on Settings.
+                            if let Screen::Settings {
+                                ref mut model_focus,
+                                ..
+                            } = self.screen
+                            {
+                                *model_focus = None;
+                            }
+                            return false;
+                        }
+                        KeyCode::Char('w') => {
+                            // 'w' is the global save command — let it fall
+                            // through to the provider-list handler below.
+                        }
+                        KeyCode::Char(c) => {
+                            match focused {
+                                0 => {
+                                    if let Screen::Settings {
+                                        ref mut planning_model,
+                                        ..
+                                    } = self.screen
+                                    {
+                                        planning_model.push(c);
+                                    }
+                                }
+                                1 => {
+                                    if let Screen::Settings {
+                                        ref mut execution_model,
+                                        ..
+                                    } = self.screen
+                                    {
+                                        execution_model.push(c);
+                                    }
+                                }
+                                _ => {
+                                    if let Screen::Settings {
+                                        ref mut review_model,
+                                        ..
+                                    } = self.screen
+                                    {
+                                        review_model.push(c);
+                                    }
+                                }
+                            }
+                            return false;
+                        }
+                        KeyCode::Backspace => {
+                            match focused {
+                                0 => {
+                                    if let Screen::Settings {
+                                        ref mut planning_model,
+                                        ..
+                                    } = self.screen
+                                    {
+                                        planning_model.pop();
+                                    }
+                                }
+                                1 => {
+                                    if let Screen::Settings {
+                                        ref mut execution_model,
+                                        ..
+                                    } = self.screen
+                                    {
+                                        execution_model.pop();
+                                    }
+                                }
+                                _ => {
+                                    if let Screen::Settings {
+                                        ref mut review_model,
+                                        ..
+                                    } = self.screen
+                                    {
+                                        review_model.pop();
+                                    }
+                                }
+                            }
+                            return false;
+                        }
+                        _ => {
+                            return false;
+                        }
+                    }
+                }
+
+                // ── Provider-list key handling (model_focus is None) ──────
                 match key.code {
+                    KeyCode::Tab => {
+                        // Enter model section, focus planning_model.
+                        if let Screen::Settings {
+                            ref mut model_focus,
+                            ..
+                        } = self.screen
+                        {
+                            *model_focus = Some(0);
+                        }
+                    }
                     KeyCode::Esc | KeyCode::Char('q') => {
                         self.screen = Screen::Dashboard;
                     }
@@ -689,13 +842,22 @@ impl App {
                         }
                     }
                     KeyCode::Char('w') => {
-                        // Save provider selection to config.toml.
-                        let (selected, _error_slot) = if let Screen::Settings {
+                        // Extract what we need from the screen before taking
+                        // a mutable borrow on self.project_root / self.config.
+                        let (selected, pm_buf, em_buf, rm_buf) = if let Screen::Settings {
                             selected,
-                            ref mut error,
+                            ref planning_model,
+                            ref execution_model,
+                            ref review_model,
+                            ..
                         } = self.screen
                         {
-                            (selected, error)
+                            (
+                                selected,
+                                planning_model.clone(),
+                                execution_model.clone(),
+                                review_model.clone(),
+                            )
                         } else {
                             unreachable!("must be in Settings screen");
                         };
@@ -729,18 +891,10 @@ impl App {
                                 };
                                 cfg.provider = Some(ProviderConfig {
                                     provider: kind,
-                                    planning_model: cfg
-                                        .provider
-                                        .as_ref()
-                                        .and_then(|p| p.planning_model.clone()),
-                                    execution_model: cfg
-                                        .provider
-                                        .as_ref()
-                                        .and_then(|p| p.execution_model.clone()),
-                                    review_model: cfg
-                                        .provider
-                                        .as_ref()
-                                        .and_then(|p| p.review_model.clone()),
+                                    // Use in-screen buffers; empty → None.
+                                    planning_model: Some(pm_buf).filter(|s| !s.is_empty()),
+                                    execution_model: Some(em_buf).filter(|s| !s.is_empty()),
+                                    review_model: Some(rm_buf).filter(|s| !s.is_empty()),
                                 });
                                 match config_save(root, &cfg) {
                                     Ok(()) => {
@@ -1057,12 +1211,17 @@ fn draw_chunk_detail(
 /// Full-screen bordered block listing three provider options (Anthropic,
 /// OpenAI, Ollama) with the currently selected one highlighted and a brief
 /// legend of key hints at the bottom.
+#[allow(clippy::too_many_arguments)]
 fn draw_settings(
     frame: &mut ratatui::Frame,
     area: Rect,
     config: Option<&assay_types::Config>,
     selected: usize,
     error: Option<&str>,
+    model_focus: Option<usize>,
+    planning_model: &str,
+    execution_model: &str,
+    review_model: &str,
 ) {
     let block = Block::default()
         .title(" Provider Configuration ")
@@ -1071,13 +1230,15 @@ fn draw_settings(
 
     let inner = block.inner(area);
 
-    // Layout: list of providers + optional error + key hints at bottom.
-    let [list_area, hint_area] = Layout::vertical([
-        Constraint::Fill(1),
+    // Layout: provider list (3 rows) + model section (4 rows) + hints at bottom.
+    let [provider_area, model_area, hint_area] = Layout::vertical([
+        Constraint::Length(3),
+        Constraint::Length(4),
         Constraint::Length(if error.is_some() { 3 } else { 2 }),
     ])
     .areas(inner);
 
+    // ── Provider list ────────────────────────────────────────────────────────
     let providers = ["Anthropic (Claude)", "OpenAI (GPT)", "Ollama (local)"];
     let current_kind = config
         .and_then(|c| c.provider.as_ref())
@@ -1093,10 +1254,14 @@ fn draw_settings(
         .iter()
         .enumerate()
         .map(|(i, name)| {
-            let prefix = if i == selected { "▶ " } else { "  " };
+            let prefix = if i == selected && model_focus.is_none() {
+                "▶ "
+            } else {
+                "  "
+            };
             let suffix = if i == saved_idx { "  [saved]" } else { "" };
             let label = format!("{prefix}{name}{suffix}");
-            let style = if i == selected {
+            let style = if i == selected && model_focus.is_none() {
                 Style::default().bold().fg(Color::Cyan)
             } else {
                 Style::default()
@@ -1106,9 +1271,28 @@ fn draw_settings(
         .collect();
 
     let list = List::new(items);
-    frame.render_widget(list, list_area);
+    frame.render_widget(list, provider_area);
 
-    // Key hints (and optional error above them).
+    // ── Model fields ─────────────────────────────────────────────────────────
+    let model_labels = ["Planning model", "Execution model", "Review model"];
+    let model_values = [planning_model, execution_model, review_model];
+    let mut model_lines: Vec<Line> = vec![Line::from(Span::styled(
+        "  Models:",
+        Style::default().dim(),
+    ))];
+    for (i, (label, value)) in model_labels.iter().zip(model_values.iter()).enumerate() {
+        let text = format!("  {label:<18} [{value}]");
+        let style = if model_focus == Some(i) {
+            Style::default().bold().fg(Color::Cyan)
+        } else {
+            Style::default().dim()
+        };
+        model_lines.push(Line::from(Span::styled(text, style)));
+    }
+    let model_para = Paragraph::new(model_lines);
+    frame.render_widget(model_para, model_area);
+
+    // ── Key hints (and optional error above them) ─────────────────────────────
     let mut hint_lines: Vec<Line> = Vec::new();
     if let Some(msg) = error {
         hint_lines.push(Line::from(Span::styled(
@@ -1116,10 +1300,12 @@ fn draw_settings(
             Style::default().fg(Color::Red),
         )));
     }
-    hint_lines.push(Line::from(Span::styled(
-        "↑↓ select  w save  Esc cancel",
-        Style::default().dim(),
-    )));
+    let hint_text = if model_focus.is_some() {
+        "Tab next field  Esc exit models  w save"
+    } else {
+        "↑↓ select  Tab edit models  w save  Esc cancel"
+    };
+    hint_lines.push(Line::from(Span::styled(hint_text, Style::default().dim())));
 
     let hint = Paragraph::new(hint_lines);
     frame.render_widget(hint, hint_area);
