@@ -2,9 +2,9 @@
 
 **Active Milestone:** M007 — TUI Agent Harness
 **Active Slice:** S02 — Provider Dispatch and Harness Wiring
-**Active Task:** T02 — Create `assay-tui::agent` module and wire `r` key handler
-**Phase:** Planning
-**Last Updated:** 2026-03-21 (T01 complete: branch rebased onto S01; `tests/provider_dispatch.rs` written with 3 compile-failing tests anchoring the provider_harness_writer contract; all 35 pre-existing TUI tests pass)
+**Active Task:** T03 — Extend Settings screen with model text-input fields and finalize
+**Phase:** Executing
+**Last Updated:** 2026-03-21 (T02 complete: `crates/assay-tui/src/agent.rs` created with `provider_harness_writer`; `r` key handler dispatches via provider_harness_writer; 3/3 provider_dispatch tests green; 38 total TUI tests pass; zero warnings)
 **Requirements Status:** 7 active (R053–R059) · 46 validated (R001–R052) · 2 deferred · 4 out of scope
 **Test Count:** 1367 (35 assay-tui: 27 pre-existing + 8 agent_run; all workspace tests pass; just ready green)
 
@@ -55,4 +55,4 @@ None.
 
 ## Next Action
 
-T02: Create `crates/assay-tui/src/agent.rs` with `provider_harness_writer(Option<&Config>) -> Box<HarnessWriter>`; declare `pub mod agent` in `lib.rs`; replace hardcoded claude block in `r` key handler with the new dispatch call. Three `provider_dispatch` tests must pass 3/3 after T02.
+T03: Extend `Screen::Settings` with `planning_model`, `execution_model`, `review_model`, `model_focus` fields; pre-populate from `app.config` in `s` key handler; Tab cycles focus through model fields; char input/Backspace edits active field; `w` save writes model strings to `ProviderConfig`; add 2 tests to `tests/settings.rs`; finish with `just ready` exit 0.
