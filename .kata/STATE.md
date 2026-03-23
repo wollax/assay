@@ -1,12 +1,12 @@
 # Kata State
 
 **Active Milestone:** M007 — TUI Agent Harness
-**Active Slice:** S02 — Provider Dispatch and Harness Wiring
-**Active Task:** (none — S02 not yet started)
+**Active Slice:** S03 — Slash Command Overlay
+**Active Task:** (none — S03 not yet started)
 **Phase:** Planning
 **Last Updated:** 2026-03-23
-**Requirements Status:** 6 active (R054–R059) · 47 validated (R001–R053) · 2 deferred · 4 out of scope
-**Test Count:** 1400+ (30 assay-tui; all workspace tests pass; just ready green)
+**Requirements Status:** 5 active (R055–R059) · 48 validated (R001–R054) · 2 deferred · 4 out of scope
+**Test Count:** 1400+ (40 assay-tui; all workspace tests pass; just ready green)
 
 ## Completed Milestones
 
@@ -20,7 +20,7 @@
 ## M007 Roadmap
 
 - [x] S01: Channel Event Loop and Agent Run Panel — TuiEvent channel loop, Screen::AgentRun, launch_agent_streaming, r key wired, two-channel bridge design, assay-harness dep, 6 new integration tests, just ready green. R053 validated. DONE.
-- [ ] S02: Provider Dispatch and Harness Wiring `risk:medium` — provider_harness_writer dispatches per ProviderKind; Ollama + OpenAI adapters; Settings model input fields. R054 (all providers).
+- [x] S02: Provider Dispatch and Harness Wiring — provider_harness_writer dispatches per ProviderKind (Anthropic/Ollama/OpenAI); Settings model text-input fields; 40 tests pass. R054 validated. DONE.
 - [ ] S03: Slash Command Overlay `risk:low` — / key opens SlashState overlay; /gate-check, /status, /next-chunk, /pr-create commands; sync dispatch to assay-core. R056.
 - [ ] S04: MCP Server Configuration Panel `risk:medium` — Screen::McpPanel reads/writes .assay/mcp.json; add/delete/save servers; no live connection. R055.
 
@@ -43,12 +43,17 @@
 - D114: TuiEvent extracted to src/event.rs — avoids circular imports between main.rs and app.rs
 - D115: TempDir leaked via std::mem::forget — keeps harness config files alive during subprocess execution
 
-## S02 Starting Context
+## S02 Key Deliverables
 
-- The `r` key currently hardcodes the Claude Code adapter (calls `assay_harness::claude::*` directly in `handle_r_key`)
-- S02 must implement `provider_harness_writer(config: &Config) -> Box<HarnessWriter>` and replace the hardcoded path
-- `App.event_tx` is already wired — S02 can add new TuiEvent variants (e.g. for provider switch notifications) without touching the channel infrastructure
-- Settings screen (Screen::Settings) already shows ProviderKind selection — S02 adds model-per-phase text input fields
+- `crates/assay-tui/src/agent.rs` — `provider_harness_writer(Option<&Config>) -> Box<HarnessWriter>` dispatching Anthropic/Ollama/OpenAI
+- `OllamaConfig { model }` and `OpenAiConfig { model, api_key_env }` TUI-local structs in `agent.rs`
+- `pub mod agent` in `lib.rs`; `r` key handler routes through `provider_harness_writer`
+- `Screen::Settings` extended: `planning_model`, `execution_model`, `review_model: String`, `model_focus: Option<usize>`
+- Tab/Char/Backspace/Esc model-focus state machine; `w` saves buffers to `ProviderConfig`
+- 40 assay-tui tests pass (3 provider_dispatch + 2 model-field + 35 pre-S02)
+- D115: Anthropic closure prepends `"claude"` before `build_cli_args` flags
+- D116: `w` save falls through to save arm even when model_focus is Some
+- D117: Tab cycle linear (0→1→2→None), not wrap-around
 
 ## Known Issues
 
@@ -60,4 +65,4 @@ None.
 
 ## Next Action
 
-Begin S02: Provider Dispatch and Harness Wiring. Implement `provider_harness_writer`, Ollama adapter, OpenAI minimal adapter, and Settings model input fields.
+Begin S03: Slash Command Overlay. Implement `SlashCmd` enum, `parse_slash_cmd`, `execute_slash_cmd`, `SlashState`, `Screen::SlashCmd`, `draw_slash_overlay`, and `/` key handler wiring. Write integration tests in `tests/slash_commands.rs` first.
