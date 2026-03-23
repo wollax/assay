@@ -1,8 +1,8 @@
 # Kata State
 
 **Active Milestone:** M007 — TUI Agent Harness
-**Active Slice:** S03 — Slash Command Overlay
-**Active Task:** T02 (next)
+**Active Slice:** S04 — MCP Server Configuration Panel
+**Active Task:** T01 (next)
 **Phase:** Executing
 **Last Updated:** 2026-03-23
 **Requirements Status:** 5 active (R055–R059) · 48 validated (R001–R054) · 2 deferred · 4 out of scope
@@ -19,41 +19,15 @@
 
 ## M007 Roadmap
 
-- [x] S01: Channel Event Loop and Agent Run Panel — TuiEvent channel loop, Screen::AgentRun, launch_agent_streaming, r key wired, two-channel bridge design, assay-harness dep, 6 new integration tests, just ready green. R053 validated. DONE.
-- [x] S02: Provider Dispatch and Harness Wiring — provider_harness_writer dispatches per ProviderKind (Anthropic/Ollama/OpenAI); Settings model text-input fields; 40 tests pass. R054 validated. DONE.
-- [ ] S03: Slash Command Overlay `risk:low` — / key opens SlashState overlay; /gate-check, /status, /next-chunk, /pr-create commands; sync dispatch to assay-core. R056. **T01 done** — slash module with parse/dispatch/tab-complete + 6 integration tests (3 green, 3 red-phase).
-- [ ] S04: MCP Server Configuration Panel `risk:medium` — Screen::McpPanel reads/writes .assay/mcp.json; add/delete/save servers; no live connection. R055.
+- [x] S01: Channel Event Loop and Agent Run Panel — R053 validated. DONE.
+- [x] S02: Provider Dispatch and Harness Wiring — R054 validated. DONE.
+- [x] S03: Slash Command Overlay — R056 validated. DONE.
+- [ ] S04: MCP Server Configuration Panel `risk:medium` — Screen::McpPanel reads/writes .assay/mcp.json; add/delete/save servers; no live connection. R055. **PLANNED — 2 tasks (T01, T02).**
 
-## S01 Key Deliverables
+## S04 Plan Summary
 
-- `TuiEvent` enum in `assay_tui::event` (Key, Resize, AgentLine, AgentDone)
-- `run()` refactored to `mpsc::Receiver<TuiEvent>` loop with crossterm background thread
-- `launch_agent_streaming(cli_args, working_dir, line_tx) -> JoinHandle<i32>` in assay-core::pipeline
-- `Screen::AgentRun { chunk_slug, lines, scroll_offset, status }` + `AgentRunStatus` enum
-- `App.event_tx: Option<mpsc::Sender<TuiEvent>>` wired from run()
-- `handle_r_key()` — two-channel bridge: (line_tx/line_rx) for stdout, (exit_tx/exit_rx) for exit code
-- Integration tests: `pipeline_streaming.rs` (3 tests), `agent_run.rs` (3 tests)
-
-## S01 Key Decisions
-
-- D107: Unified TuiEvent channel loop (Key/Resize/AgentLine/AgentDone) — no tokio runtime
-- D108: launch_agent_streaming — new free fn; existing launch_agent unchanged
-- D112: AgentRunStatus (not AgentStatus) — TUI-local enum, avoids collision with assay-core::checkpoint::AgentStatus
-- D113: Two-channel exit-code bridge — bridge thread owns JoinHandle via inner join thread + exit_rx; App.agent_thread always None in production
-- D114: TuiEvent extracted to src/event.rs — avoids circular imports between main.rs and app.rs
-- D115: TempDir leaked via std::mem::forget — keeps harness config files alive during subprocess execution
-
-## S02 Key Deliverables
-
-- `crates/assay-tui/src/agent.rs` — `provider_harness_writer(Option<&Config>) -> Box<HarnessWriter>` dispatching Anthropic/Ollama/OpenAI
-- `OllamaConfig { model }` and `OpenAiConfig { model, api_key_env }` TUI-local structs in `agent.rs`
-- `pub mod agent` in `lib.rs`; `r` key handler routes through `provider_harness_writer`
-- `Screen::Settings` extended: `planning_model`, `execution_model`, `review_model: String`, `model_focus: Option<usize>`
-- Tab/Char/Backspace/Esc model-focus state machine; `w` saves buffers to `ProviderConfig`
-- 40 assay-tui tests pass (3 provider_dispatch + 2 model-field + 35 pre-S02)
-- D115: Anthropic closure prepends `"claude"` before `build_cli_args` flags
-- D116: `w` save falls through to save arm even when model_focus is Some
-- D117: Tab cycle linear (0→1→2→None), not wrap-around
+- T01: MCP panel types, JSON I/O, Screen variant, and integration tests (30m) — data model, file I/O, 4 tests
+- T02: Draw function, event handling, and wire all keys — make tests green (45m) — rendering, key handling, all tests pass
 
 ## Known Issues
 
@@ -65,4 +39,4 @@ None.
 
 ## Next Action
 
-Begin S03: Slash Command Overlay. Implement `SlashCmd` enum, `parse_slash_cmd`, `execute_slash_cmd`, `SlashState`, `Screen::SlashCmd`, `draw_slash_overlay`, and `/` key handler wiring. Write integration tests in `tests/slash_commands.rs` first.
+Execute T01: Add serde/serde_json deps, create mcp_panel.rs with types and I/O functions, add Screen::McpPanel variant, write 4 integration tests.
