@@ -3,102 +3,83 @@ id: T01
 parent: S01
 milestone: M007
 provides:
-  - TuiEvent enum in assay_tui::app
-  - AgentRunStatus enum in assay_tui::app
-  - Screen::AgentRun variant with stub draw/event arms
-  - App.event_tx and App.agent_thread fields (None by default)
-  - App::handle_agent_line and App::handle_agent_done stub methods
-  - launch_agent_streaming in assay_core::pipeline
-  - crates/assay-tui/tests/agent_run.rs with 8 integration tests (4 pass, 4 red)
+  - AgentRunStatus enum and Screen::AgentRun variant in app.rs
+  - App.agent_thread field stub
+  - App::handle_agent_line and App::handle_agent_done method stubs (todo!())
+  - launch_agent_streaming stub in pipeline.rs
+  - crates/assay-core/tests/pipeline_streaming.rs (3 failing tests)
+  - crates/assay-tui/tests/agent_run.rs (3 tests: 2 failing, 1 passing)
 key_files:
   - crates/assay-tui/src/app.rs
   - crates/assay-core/src/pipeline.rs
-  - crates/assay-tui/Cargo.toml
+  - crates/assay-core/tests/pipeline_streaming.rs
   - crates/assay-tui/tests/agent_run.rs
 key_decisions:
-  - launch_agent_streaming uses unbounded mpsc::channel() to avoid deadlock
-  - launch_agent_streaming tests added to pipeline.rs unit tests (not only TUI tests) to satisfy cargo test -p assay-core -- launch_agent_streaming verification command
-  - TuiEvent and AgentRunStatus defined in app.rs (lib crate), not main.rs
+  - launch_agent_streaming stub returns todo!() — allows tests to compile; real impl in T02
+  - Screen::AgentRun arm in handle_event quits on q/Esc (minimal safe default)
+  - AgentRunStatus derives PartialEq+Eq to enable assert_eq! in tests
 patterns_established:
-  - launch_agent_streaming drops line_tx before child.wait() to ensure receiver sees EOF before thread blocks
-  - Screen::AgentRun stub draw uses draw_agent_run_stub helper (full impl deferred to T02)
+  - Test-first anchor pattern — integration tests compile against stub types and fail at runtime
+  - Screen::AgentRun { chunk_slug, lines, scroll_offset, status } field layout established
+  - AgentRunStatus::Running/Done{exit_code}/Failed{exit_code} enum shape established
 observability_surfaces:
-  - app.event_tx.is_some() indicates whether channel is wired
-  - app.screen variant indicates current state (AgentRun vs Dashboard etc.)
-  - Screen::AgentRun.status exposes Running/Done/Failed at all times
-duration: ~45min
-verification_result: partial (T01 tasks 1-2 pass; tasks 3-8 red as expected; 27 pre-existing tests green)
-completed_at: 2026-03-21
+  - App.screen readable as Screen::AgentRun { status, lines, .. } from integration tests
+  - AgentRunStatus::Done { exit_code } and Failed { exit_code } expose subprocess outcome
+duration: ~20 minutes
+verification_result: passed
+completed_at: 2026-03-23
 blocker_discovered: false
 ---
 
-# T01: Define `TuiEvent`, `AgentRunStatus`, `Screen::AgentRun`, and `launch_agent_streaming` — with failing tests
+# T01: Write failing integration tests for streaming and AgentRun
 
-**Added all S01 type contracts to `app.rs` and `pipeline.rs`, wrote 8-test scaffold (4 green / 4 red as expected).**
+**Added stub types and two integration-test files that compile cleanly but fail at runtime, establishing the T02–T04 API contract.**
 
 ## What Happened
 
-Implemented all 7 steps from the task plan:
+Added stub scaffolding to `crates/assay-tui/src/app.rs`:
+- `AgentRunStatus` enum (`Running`, `Done { exit_code: i32 }`, `Failed { exit_code: i32 }`) with `PartialEq + Eq` derives for test assertions
+- `Screen::AgentRun { chunk_slug, lines, scroll_offset, status }` variant
+- `App.agent_thread: Option<std::thread::JoinHandle<i32>>` field initialized to `None`
+- `handle_agent_line` and `handle_agent_done` method stubs with `todo!()`
+- `Screen::AgentRun { .. }` arm in `draw()` (empty) and `handle_event()` (q/Esc exits)
 
-1. Added `TuiEvent` and `AgentRunStatus` enums to `app.rs` above the `Screen` enum, with `use std::sync::mpsc` import.
+Added `launch_agent_streaming` stub to `crates/assay-core/src/pipeline.rs` returning `todo!()` to satisfy test imports.
 
-2. Added `Screen::AgentRun { chunk_slug, lines, scroll_offset, status }` variant. Added `draw_agent_run_stub` helper (renders bordered block with status and line count). Added `Screen::AgentRun { .. } => false` arm in `handle_event`.
+Wrote `crates/assay-core/tests/pipeline_streaming.rs` with three tests targeting `launch_agent_streaming` channel delivery and exit-code reporting.
 
-3. Added `event_tx: Option<mpsc::Sender<TuiEvent>>` and `agent_thread: Option<std::thread::JoinHandle<i32>>` fields to `App`, both initialized to `None` in `with_project_root`.
-
-4. Added stub methods `pub fn handle_agent_line(&mut self, _line: String) {}` and `pub fn handle_agent_done(&mut self, _exit_code: i32) {}` — intentional no-ops for T01.
-
-5. Implemented `launch_agent_streaming` in `assay-core::pipeline`. Uses `BufReader::lines()` to drain stdout, sends each line via `line_tx`, drops `line_tx` before `child.wait()` (so receiver sees EOF before thread blocks), returns `JoinHandle<i32>` with the exit code.
-
-6. Added `assay-harness.workspace = true` to `[dev-dependencies]` in `crates/assay-tui/Cargo.toml`.
-
-7. Wrote `crates/assay-tui/tests/agent_run.rs` with all 8 tests. Tests 1–2 (real subprocess via `sh -c printf` and `true`/`false`) pass immediately. Tests 3–8 (App state machine stubs) fail as expected with clear assertion messages.
-
-**Deviation from plan:** Added `launch_agent_streaming` unit tests directly in `pipeline.rs` (in addition to the TUI test file) to satisfy the slice verification command `cargo test -p assay-core -- launch_agent_streaming`. The plan didn't explicitly call this out but the verification section requires it.
+Wrote `crates/assay-tui/tests/agent_run.rs` with three tests: two verify `handle_agent_line`/`handle_agent_done` state transitions, one verifies that `r` key on `Screen::NoProject` is a no-op (passes already, as intended).
 
 ## Verification
 
 ```
-cargo check -p assay-tui          → clean (0 errors, 0 warnings)
-cargo test -p assay-core -- launch_agent_streaming → 2 passed
-cargo test -p assay-tui           → 27 pre-existing pass; 4 new pass; 4 new fail (expected)
+cargo check -p assay-core --tests    # → Finished, zero errors
+cargo check -p assay-tui --tests     # → Finished, zero errors (2 harmless warnings fixed)
+cargo test -p assay-core --test pipeline_streaming
+  # → 3 FAILED (panicked at pipeline.rs:332 — todo!() in launch_agent_streaming)
+cargo test -p assay-tui --test agent_run
+  # → 2 FAILED (panicked at app.rs — todo!() in handle_agent_line/done), 1 PASSED (noop test)
+cargo test -p assay-tui --test app_wizard --test help_status --test settings --test spec_browser --test wizard_round_trip
+  # → 27 existing tests all pass
 ```
-
-Pre-existing tests by file:
-- app_wizard.rs: 1/1 ✓
-- help_status.rs: 6/6 ✓
-- settings.rs: 5/5 ✓
-- spec_browser.rs: 6/6 ✓
-- wizard_round_trip.rs: 9/9 ✓
-
-New agent_run.rs results:
-- launch_agent_streaming_delivers_all_lines ✓
-- launch_agent_streaming_delivers_exit_code ✓
-- handle_agent_line_noops_on_non_agent_run_screen ✓
-- r_key_noops_when_event_tx_is_none ✓
-- handle_agent_line_accumulates_in_agent_run_screen ✗ (stub no-op, fixed in T02)
-- handle_agent_done_zero_exit_transitions_to_done ✗ (stub no-op, fixed in T02)
-- handle_agent_done_nonzero_exit_transitions_to_failed ✗ (stub no-op, fixed in T02)
-- handle_agent_line_caps_at_ten_thousand ✗ (stub no-op, fixed in T02)
 
 ## Diagnostics
 
-- `app.event_tx.is_some()` → whether TUI channel is wired (false until main.rs T03 wiring)
-- `app.agent_thread.is_some()` → whether a subprocess is tracked
-- `app.screen` discriminant → current screen (AgentRun visible)
-- `launch_agent_streaming` drops `line_tx` on spawn error → receiver channel closes → relay thread sees disconnect → can emit `AgentDone { exit_code: -1 }`
+- `match &app.screen { Screen::AgentRun { lines, status, .. } => ... }` — read line buffer and status after driving events
+- `AgentRunStatus::Done { exit_code }` / `Failed { exit_code }` — subprocess exit code surfaced in enum
+- Stub panics include file+line: `pipeline.rs:332` and `app.rs:614/622` for easy location
 
 ## Deviations
 
-Added unit tests for `launch_agent_streaming` inside `pipeline.rs` test module to satisfy the slice-level verification command `cargo test -p assay-core -- launch_agent_streaming`. The task plan placed all 8 tests in `assay-tui/tests/agent_run.rs`, but the verification section separately mandated the assay-core command. Both locations now have the launch_agent_streaming tests.
+- Added `Screen::AgentRun` arm to `handle_event` (not mentioned in plan) — required for exhaustive match compilation; implemented as q/Esc → exit with `false` otherwise, which is the safest default.
 
 ## Known Issues
 
-Tests 3–6 in `agent_run.rs` fail intentionally (stub methods). They will pass after T02 implements `handle_agent_line` and `handle_agent_done`.
+- None. All expected outcomes achieved.
 
 ## Files Created/Modified
 
-- `crates/assay-tui/src/app.rs` — Added `TuiEvent`, `AgentRunStatus`, `Screen::AgentRun`, `event_tx`/`agent_thread` fields, `handle_agent_line`/`handle_agent_done` stubs, `draw_agent_run_stub`
-- `crates/assay-core/src/pipeline.rs` — Added `launch_agent_streaming` + 2 unit tests
-- `crates/assay-tui/Cargo.toml` — Added `assay-harness` dev-dependency
-- `crates/assay-tui/tests/agent_run.rs` — New file: 8 integration tests (2 pass, 4 red, 2 pass)
+- `crates/assay-tui/src/app.rs` — added `AgentRunStatus` enum, `Screen::AgentRun` variant, `App.agent_thread` field, `handle_agent_line`/`handle_agent_done` stubs, draw and event arms
+- `crates/assay-core/src/pipeline.rs` — added `launch_agent_streaming` stub
+- `crates/assay-core/tests/pipeline_streaming.rs` — new file with 3 failing integration tests
+- `crates/assay-tui/tests/agent_run.rs` — new file with 3 integration tests (2 failing, 1 passing)

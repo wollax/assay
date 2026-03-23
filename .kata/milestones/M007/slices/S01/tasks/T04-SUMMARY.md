@@ -3,77 +3,87 @@ id: T04
 parent: S01
 milestone: M007
 provides:
-  - just ready green (fmt, clippy, test, deny all pass)
-  - cargo build -p assay-tui produces binary
+  - assay-harness dependency in assay-tui
+  - App.event_tx field (Option<mpsc::Sender<TuiEvent>>) wired from run()
+  - r key handler in Dashboard arm spawning agent via launch_agent_streaming
+  - TuiEvent moved to shared assay_tui::event module (event.rs)
+  - Two-channel exit-code design for AgentDone (no JoinHandle on App)
+  - All 3 agent_run integration tests green; just ready passes
 key_files:
+  - crates/assay-tui/Cargo.toml
+  - crates/assay-tui/src/event.rs
+  - crates/assay-tui/src/lib.rs
   - crates/assay-tui/src/app.rs
   - crates/assay-tui/src/main.rs
-  - crates/assay-core/src/pipeline.rs
 key_decisions:
-  - none — this was a cleanup/polish task; no new architectural decisions were needed
+  - TuiEvent moved from main.rs to new src/event.rs module so app.rs can reference it without circular imports
+  - Two-channel design implemented as specified — line_tx/line_rx for streamed stdout, exit_tx/exit_rx for exit code; bridge thread forwards both into TuiEvent channel; App.agent_thread is None after r key press
+  - ManifestSession constructed field-by-field (no Default derive on the type)
+  - tempfile dir leaked via std::mem::forget to keep harness config alive for subprocess duration
+  - handle_agent_done simplified to defensive-only join (always None in production path)
 patterns_established:
-  - none
+  - Two-channel streaming pattern — separate mpsc channels for lines and exit code, bridged into single TuiEvent channel; eliminates JoinHandle ownership conflicts
+  - Shared event module pattern — TuiEvent in src/event.rs, imported by both main.rs and app.rs
 observability_surfaces:
-  - none — this is a cleanup task; all observability surfaces already in place from T01-T03
-duration: <5m
+  - App.event_tx presence indicates agent can be spawned from r key (None means no-op)
+  - Screen::AgentRun.lines captures full agent stdout verbatim
+  - Screen::AgentRun.status is AgentRunStatus::Done{exit_code} or Failed{exit_code} after AgentDone
+  - Non-zero exit_code renders red "Failed (exit N)" in TUI status bar
+duration: 1 session
 verification_result: passed
-completed_at: 2026-03-21
+completed_at: 2026-03-23
 blocker_discovered: false
 ---
 
-# T04: Final cleanup and `just ready` green
+# T04: Wire `r` key handler, add `assay-harness` dependency, complete integration tests
 
-**`just ready` exits 0 with zero warnings or errors; all 35 assay-tui tests pass (27 pre-existing + 8 agent_run); `cargo build -p assay-tui` produces `target/debug/assay-tui`.**
+**Added `assay-harness` to `assay-tui`, moved `TuiEvent` to a shared module, added `App.event_tx`, and implemented the `r` key handler using a two-channel design — all 3 agent_run integration tests pass and `just ready` is green.**
 
 ## What Happened
 
-The workspace was already in a clean state from T01–T03. All four quality gates passed on the first attempt with no fixes required:
+Step 1: Added `assay-harness.workspace = true` and `tempfile.workspace = true` to `[dependencies]` in `crates/assay-tui/Cargo.toml`.
 
-1. `cargo fmt --all` — no formatting changes needed; output was empty.
-2. `cargo clippy --workspace --all-targets` — zero warnings, zero errors. The S01 changes introduced no lint issues.
-3. `cargo test --workspace` — 35 assay-tui tests (27 pre-existing + 8 agent_run integration tests) passed; full workspace test suite passed.
-4. `cargo deny check` — passed with only pre-existing "not-encountered" warnings for allowlist entries that don't match any current dep (harmless).
+Step 2: `TuiEvent` was defined in `main.rs` but needed by `app.rs`. Moved it to a new `crates/assay-tui/src/event.rs` module and added `pub mod event` to `lib.rs`. Updated `main.rs` to import from `assay_tui::event::TuiEvent`.
+
+Step 3: Added `use std::sync::mpsc` and `use crate::event::TuiEvent` to `app.rs`. Added `event_tx: Option<mpsc::Sender<TuiEvent>>` field to `App`, initialized to `None` in `with_project_root`. In `main.rs`, set `app.event_tx = Some(tx.clone())` after channel creation.
+
+Step 4: Implemented `handle_r_key()` as a private method on `App`. Uses the two-channel design: `(line_tx, line_rx)` for streamed stdout lines, `(exit_tx, exit_rx)` for the exit code. The JoinHandle from `launch_agent_streaming` is moved into a dedicated exit-code thread that joins it and sends the code via `exit_tx`. A bridge thread drains `line_rx` forwarding `TuiEvent::AgentLine`, then receives from `exit_rx` and sends `TuiEvent::AgentDone { exit_code }`. `App.agent_thread` is set to `None`. The temp dir is leaked via `std::mem::forget`.
+
+`ManifestSession` does not derive `Default`, so it was constructed field-by-field.
+
+Step 5: Updated `handle_agent_done` to use `if let ... && let Err(e) = ...` (collapsible-if fix for clippy). The join is now defensive-only; in production the handle is always `None`.
+
+Step 6: Ran `cargo fmt --all` to fix formatting. `just ready` passed (fmt + lint + test + deny all green).
 
 ## Verification
 
 ```
-# fmt — no changes
-cargo fmt --all                          → (empty output)
+cargo test -p assay-tui --test agent_run
+# 3/3 pass: agent_run_streams_lines_and_transitions_to_done,
+#            agent_run_failed_exit_code_shows_failed_status,
+#            agent_run_r_key_on_no_project_is_noop
 
-# clippy — clean
-cargo clippy --workspace --all-targets  → Finished dev profile, no warnings
+cargo test -p assay-tui
+# all tests pass (wizard + agent_run)
 
-# all tests
-cargo test --workspace                   → all 35 assay-tui tests pass; full workspace green
+cargo test -p assay-core --test pipeline_streaming
+# 3/3 pass
 
-# full gate
-just ready                               → All checks passed. (exit 0)
-
-# binary present
-cargo build -p assay-tui
-ls -la target/debug/assay-tui           → -rwxr-xr-x 14826104 bytes
-```
-
-### Slice verification (all commands pass)
-
-```bash
-cargo test -p assay-tui --test agent_run    ✓  8/8 tests pass
-cargo test -p assay-tui                      ✓  35/35 tests pass
-cargo test -p assay-core -- launch_agent_streaming  ✓  1 pass
-cargo build -p assay-tui                     ✓  binary produced
-just ready                                   ✓  exit 0
+just ready
+# fmt + lint + test + deny all pass
 ```
 
 ## Diagnostics
 
-No diagnostics surfaces were added in this task. Observability is fully documented in T01–T03 summaries:
-- `app.screen` discriminant → `Screen::AgentRun { status, lines }` for runtime inspection
-- TUI renders "Done (exit 0)" / "Failed (exit N)" in status bar
-- `just ready` is the canonical pass/fail signal for the slice
+- `match &app.screen { Screen::AgentRun { lines, status, .. } => ... }` — inspect line buffer and status after driving events
+- `app.event_tx.is_some()` — true when inside a real `run()` loop, false in unit tests (r key no-ops without it)
+- Bridge thread logs nothing — silent disconnect on receiver drop is intentional
+- `handle_agent_done` logs join errors via `eprintln!` (non-fatal, defensive path only)
 
 ## Deviations
 
-None. The task plan anticipated potential clippy or fmt issues; none materialized.
+- `TuiEvent` moved to `src/event.rs` (new shared module). The plan described `TuiEvent` as living in `main.rs` and implied passing the sender through `App`. Moving to a shared module was necessary to avoid circular imports and is the correct Rust architecture.
+- `ManifestSession::default()` was not available — constructed field-by-field instead. No behavioral difference.
 
 ## Known Issues
 
@@ -81,4 +91,8 @@ None.
 
 ## Files Created/Modified
 
-No files were modified. The workspace was already in a clean, gate-passing state from T03.
+- `crates/assay-tui/Cargo.toml` — added `assay-harness.workspace = true`, moved `tempfile` to runtime deps
+- `crates/assay-tui/src/event.rs` — new file; `TuiEvent` enum (Key, Resize, AgentLine, AgentDone)
+- `crates/assay-tui/src/lib.rs` — added `pub mod event`
+- `crates/assay-tui/src/app.rs` — added `use std::sync::mpsc`, `use crate::event::TuiEvent`; `App.event_tx` field; `handle_r_key()` method; updated `handle_agent_done`
+- `crates/assay-tui/src/main.rs` — removed `TuiEvent` definition; added `use assay_tui::event::TuiEvent`; `app.event_tx = Some(tx.clone())`

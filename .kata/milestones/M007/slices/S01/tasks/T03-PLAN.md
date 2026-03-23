@@ -1,170 +1,123 @@
 ---
 estimated_steps: 6
-estimated_files: 3
+estimated_files: 2
 ---
 
-# T03: Refactor `run()` to channel-based event loop + wire `r` key handler
+# T03: Refactor `run()` to channel-based `TuiEvent` loop and implement `AgentRun` rendering
 
 **Slice:** S01 — Channel Event Loop and Agent Run Panel
 **Milestone:** M007
 
 ## Description
 
-This task wires the runtime: replaces `main.rs::run()`'s blocking `event::read()` loop with a `mpsc::channel::<TuiEvent>()` receiver loop, spawns the crossterm event background thread, and implements the `r` key handler in the Dashboard arm of `handle_event()`. After this task, a developer pressing `r` on a project with an InProgress chunk will see `Screen::AgentRun` appear and lines stream in as the Claude agent runs.
+Replace the blocking `event::read()` loop in `main.rs` with a channel-based `TuiEvent` dispatch loop. Implement `handle_agent_line`, `handle_agent_done`, and `draw_agent_run` in `app.rs`. This task does NOT wire the `r` key to actual agent spawning — that is T04. After this task, the TUI compiles and all 27 existing tests still pass.
 
-The `r` key handler in `app.rs` is the most complex part:
-1. Guard on `event_tx` being Some (tests leave it None → no-op)
-2. Get active chunk slug via `cycle_status`
-3. Build a minimal `HarnessProfile` and call the Claude harness adapter
-4. Spawn the relay-wrapper thread: inner `launch_agent_streaming` + outer drain loop
-
-The relay-wrapper thread pattern (inner thread + outer drain) ensures `AgentDone` is sent AFTER all `AgentLine` events, preventing line loss.
-
-Key constraints per research doc:
-- Use `mpsc::channel()` (unbounded) for both the `line_tx` inside `launch_agent_streaming` and the `TuiEvent` channel itself — bounded channels risk deadlock
-- The crossterm background thread will block forever on `event::read()` after TUI exit — this is acceptable; the OS reclaims it on process exit (do NOT try to signal it)
-- `write_config` for the harness needs a writable directory; for S01, write to a temp subdir of the assay_dir (e.g., `.assay/.claude-run-tmp/`) to avoid polluting the worktree root; clean approach: use `std::env::temp_dir().join("assay-agent-run")` and `std::fs::create_dir_all` before calling `write_config`
+The crossterm background thread uses `event::read()` (blocking) in a loop and sends `TuiEvent::Key`/`TuiEvent::Resize` to a `Sender<TuiEvent>`. The main loop becomes `while let Ok(event) = rx.recv()`. Agent-related `TuiEvent` variants are handled but the `r` key dispatch to actual spawning is still a no-op at this stage.
 
 ## Steps
 
-1. **Refactor `main.rs::run()` to channel-based loop**
-   - Add `use assay_tui::app::TuiEvent;` import to `main.rs`
-   - Replace the function body with:
-     ```rust
-     fn run(mut terminal: DefaultTerminal) -> color_eyre::Result<()> {
-         let mut app = App::new()?;
-         let (tx, rx) = std::sync::mpsc::channel::<TuiEvent>();
-         app.event_tx = Some(tx.clone());
+1. In `crates/assay-tui/src/main.rs`, define the `TuiEvent` enum:
+   ```rust
+   pub enum TuiEvent {
+       Key(crossterm::event::KeyEvent),
+       Resize(u16, u16),
+       AgentLine(String),
+       AgentDone { exit_code: i32 },
+   }
+   ```
+   Make it `pub` so `app.rs` and tests can reference it.
 
-         // Background thread: crossterm events → TuiEvent channel
-         std::thread::spawn(move || {
-             loop {
-                 match crossterm::event::read() {
-                     Ok(crossterm::event::Event::Key(k)) => { let _ = tx.send(TuiEvent::Key(k)); }
-                     Ok(crossterm::event::Event::Resize(w, h)) => { let _ = tx.send(TuiEvent::Resize(w, h)); }
-                     _ => {}
-                 }
-             }
-         });
+2. Refactor `run()` in `main.rs`:
+   - Create `mpsc::channel::<TuiEvent>()`
+   - Spawn crossterm background thread: `let tx_cross = tx.clone(); std::thread::spawn(move || loop { if let Ok(e) = event::read() { match e { Event::Key(k) => { let _ = tx_cross.send(TuiEvent::Key(k)); } Event::Resize(w, h) => { let _ = tx_cross.send(TuiEvent::Resize(w, h)); } _ => {} } } });`
+   - Main loop: `loop { terminal.draw(|frame| app.draw(frame))?; match rx.recv() { Ok(TuiEvent::Key(key)) => { if app.handle_event(key) { break; } } Ok(TuiEvent::Resize(..)) => { terminal.clear()?; } Ok(TuiEvent::AgentLine(line)) => { app.handle_agent_line(line); } Ok(TuiEvent::AgentDone { exit_code }) => { app.handle_agent_done(exit_code); } Err(_) => break, } }`
+   - Remove `use crossterm::event::{self, Event}` if now unused in main; add `use std::sync::mpsc`
 
-         loop {
-             terminal.draw(|frame| app.draw(frame))?;
-             match rx.recv() {
-                 Ok(TuiEvent::Key(k)) => { if app.handle_event(k) { break; } }
-                 Ok(TuiEvent::Resize(..)) => { terminal.clear()?; }
-                 Ok(TuiEvent::AgentLine(line)) => { app.handle_agent_line(line); }
-                 Ok(TuiEvent::AgentDone { exit_code }) => { app.handle_agent_done(exit_code); }
-                 Err(_) => break, // channel disconnected
-             }
-         }
-         Ok(())
-     }
-     ```
-   - Remove the old `use crossterm::event::{self, Event};` import (no longer needed in main.rs)
+3. In `crates/assay-tui/src/app.rs`, implement `handle_agent_line`:
+   ```rust
+   pub fn handle_agent_line(&mut self, line: String) {
+       if let Screen::AgentRun { ref mut lines, .. } = self.screen {
+           lines.push(line);
+           // scroll_offset updated in draw_agent_run dynamically
+       }
+   }
+   ```
 
-2. **Add `r` key handler to Dashboard arm in `app.rs`**
-   - In the `Screen::Dashboard` match arm of `handle_event()`, add `KeyCode::Char('r')` case:
-   - Guard: `if let Some(tx) = self.event_tx.clone()` — if None, `return false` (no-op in tests)
-   - Get `assay_dir`: `let assay_dir = match &self.project_root { Some(root) => root.join(".assay"), None => return false, };`
-   - Get active chunk: `let chunk_slug = match cycle_status(&assay_dir) { Ok(Some(cs)) => cs.active_chunk_slug.unwrap_or_else(|| cs.milestone_slug.clone()), _ => return false, };`
-   - Build a minimal `HarnessProfile` for S01 (real provider dispatch in S02) — note `HarnessProfile` has no `Default` impl, construct explicitly: `let profile = assay_types::HarnessProfile { name: chunk_slug.clone(), prompt_layers: vec![], settings: assay_types::SettingsOverride { model: None, permissions: vec![], tools: vec![], max_turns: None }, hooks: vec![], working_dir: None };`
-   - Generate harness config and write to temp dir:
-     ```rust
-     let run_dir = std::env::temp_dir().join(format!("assay-agent-{}", chunk_slug));
-     let _ = std::fs::create_dir_all(&run_dir);
-     let claude_config = assay_harness::claude::generate_config(&profile);
-     if let Err(_) = assay_harness::claude::write_config(&claude_config, &run_dir) {
-         return false;
-     }
-     let cli_args = assay_harness::claude::build_cli_args(&claude_config);
-     let working_dir = run_dir.clone();
-     ```
-   - Transition to AgentRun screen: `self.screen = Screen::AgentRun { chunk_slug: chunk_slug.clone(), lines: vec![], scroll_offset: 0, status: AgentRunStatus::Running };`
-   - Spawn relay-wrapper thread:
-     ```rust
-     let tui_tx = tx.clone();
-     let handle = std::thread::spawn(move || {
-         let (str_tx, str_rx) = std::sync::mpsc::channel::<String>();
-         let inner = assay_core::pipeline::launch_agent_streaming(&cli_args, &working_dir, str_tx);
-         // Drain lines → TuiEvent::AgentLine
-         for line in str_rx {
-             let _ = tui_tx.send(TuiEvent::AgentLine(line));
-         }
-         // All lines sent; get exit code
-         let exit_code = inner.join().unwrap_or(-1);
-         let _ = tui_tx.send(TuiEvent::AgentDone { exit_code });
-         exit_code
-     });
-     self.agent_thread = Some(handle);
-     ```
+4. In `app.rs`, implement `handle_agent_done`:
+   ```rust
+   pub fn handle_agent_done(&mut self, exit_code: i32) {
+       // Join the background thread for cleanup
+       if let Some(handle) = self.agent_thread.take() {
+           let _ = handle.join();
+       }
+       // Refresh milestone data
+       if let Some(ref root) = self.project_root {
+           let assay_dir = root.join(".assay");
+           self.milestones = milestone_scan(&assay_dir).unwrap_or_default();
+           self.cycle_slug = cycle_status(&assay_dir).ok().flatten()
+               .map(|s| s.milestone_slug);
+       }
+       // Update AgentRun status
+       let new_status = if exit_code == 0 {
+           AgentRunStatus::Done { exit_code }
+       } else {
+           AgentRunStatus::Failed { exit_code }
+       };
+       if let Screen::AgentRun { ref mut status, .. } = self.screen {
+           *status = new_status;
+       }
+   }
+   ```
+   Honor D098: scan first (borrows `self.project_root`), mutate `self.screen` after.
 
-3. **Add `use assay_harness` and `use assay_core::pipeline` imports to `app.rs`**
-   - Add `use assay_harness::claude as claude_harness;` (or inline the path)
-   - Add `use assay_core::pipeline::launch_agent_streaming;`
-   - Add `use assay_types::HarnessProfile;` if not already imported
+5. In `app.rs`, implement `draw_agent_run(frame, area, chunk_slug, lines, scroll_offset, status)`:
+   - Outer block with title "Agent Run: {chunk_slug}"
+   - Inner layout: content area (most of height) + status line (1 row)
+   - Content area: `List` widget showing lines; auto-scroll: compute visible height, pass `scroll_offset = lines.len().saturating_sub(visible_height)` — store it back into the screen variant before render (or compute and pass as parameter). For simplicity, compute visible height from `area.height.saturating_sub(3)` (borders + status line).
+   - Status line: match `status` → "Running..." (yellow) / "Done (exit 0)" (green) / "Failed (exit N)" (red)
+   - Honor D097: accepts explicit fields, not `&mut App`; honor D105: receives `area` from `App::draw()`
 
-4. **Verify existing tests still compile and pass**
-   - Tests use `App::with_project_root(Some(root))` which sets `event_tx = None`
-   - All `handle_event(key(...))` calls bypass `run()` entirely
-   - The `r` key guard `if let Some(tx) = self.event_tx.clone()` returns false (no-op) when `event_tx` is None
-   - Run `cargo test -p assay-tui` to confirm
-
-5. **Add `use assay_types::SettingsOverride` import and confirm profile construction compiles**
-   - `HarnessProfile` has no `Default` impl — use explicit struct construction (see Step 2)
-   - This is S01 MVP — S02 replaces this with real provider dispatch from `app.config`
-
-6. **Smoke-test the refactored `run()` with integration tests**
-   - `cargo test -p assay-tui` — all tests must pass
-   - `cargo build -p assay-tui` — binary produced
-   - Verify the r-key agent_run test passes: `cargo test -p assay-tui --test agent_run -- r_key_noops_when_event_tx_is_none`
+6. Add `Screen::AgentRun` arm to `draw()` in `App`:
+   ```rust
+   Screen::AgentRun { ref chunk_slug, ref lines, scroll_offset, ref status } => {
+       draw_agent_run(frame, content_area, chunk_slug, lines, *scroll_offset, status);
+   }
+   ```
+   Note: `scroll_offset` may need to be computed and stored; keep it simple — update `scroll_offset` in `handle_agent_line` as `lines.len().saturating_sub(visible_height)` where `visible_height` is a reasonable constant (e.g., 20) or passed in. Exact auto-scroll precision is secondary to correctness.
 
 ## Must-Haves
 
-- [ ] `run()` uses `mpsc::Receiver<TuiEvent>` instead of `event::read()`
-- [ ] Background crossterm thread spawned; sends `TuiEvent::Key` and `TuiEvent::Resize`
-- [ ] `app.event_tx = Some(tx.clone())` set before the main loop
-- [ ] Main loop dispatches `AgentLine` → `handle_agent_line`, `AgentDone` → `handle_agent_done`
-- [ ] `r` key in Dashboard: no-op when `event_tx` is None; transitions to `Screen::AgentRun` and spawns relay-wrapper thread when wired
-- [ ] Relay-wrapper thread: drains String lines → `TuiEvent::AgentLine`; then joins inner JoinHandle; then sends `TuiEvent::AgentDone { exit_code }`
-- [ ] `self.agent_thread` stores the wrapper's `JoinHandle<i32>`
-- [ ] All 27 pre-existing TUI tests still pass
-- [ ] All 8 agent_run tests still pass
-- [ ] `cargo build -p assay-tui` succeeds
+- [ ] `TuiEvent` enum is `pub` in `main.rs` with Key, Resize, AgentLine, AgentDone variants
+- [ ] `run()` uses `mpsc::Receiver<TuiEvent>`; crossterm thread sends Key/Resize; no blocking `event::read()` in main loop
+- [ ] `handle_agent_line` appends to `Screen::AgentRun.lines` when screen is AgentRun
+- [ ] `handle_agent_done` joins `agent_thread`, refreshes milestones + cycle_slug, updates `Screen::AgentRun.status`
+- [ ] `draw_agent_run` renders: scrollable lines list + status line at bottom; accepts individual field params (D097)
+- [ ] `draw()` has `Screen::AgentRun` arm calling `draw_agent_run`
+- [ ] All 27 existing `cargo test -p assay-tui` tests still pass
+- [ ] `cargo build -p assay-tui` zero warnings
 
 ## Verification
 
-```bash
-# Smoke test: binary builds
-cargo build -p assay-tui
-
-# All TUI tests (including new agent_run tests)
-cargo test -p assay-tui
-
-# Specific r-key no-op test
-cargo test -p assay-tui --test agent_run -- r_key_noops_when_event_tx_is_none
-
-# No clippy errors
-cargo clippy -p assay-tui
-```
+- `cargo test -p assay-tui 2>&1 | tail -3` — "test result: ok. 27 passed"
+- `cargo build -p assay-tui 2>&1 | grep "^error"` — empty
+- `cargo test -p assay-tui --test agent_run -- agent_run_streams_lines_and_transitions_to_done` — should pass (T01 test now exercisable via handle_agent_line/handle_agent_done)
+- `cargo test -p assay-tui --test agent_run -- agent_run_failed_exit_code_shows_failed_status` — should pass
 
 ## Observability Impact
 
-- Signals added/changed: `run()` now dispatches `TuiEvent::AgentLine` and `TuiEvent::AgentDone` — these are the runtime signals that drive the agent streaming UI.
-- How a future agent inspects this: `app.agent_thread.is_some()` indicates an active streaming agent; `app.screen` shows `Screen::AgentRun { status: AgentRunStatus::Running, .. }` during execution.
-- Failure state exposed: If `write_config` fails in the `r` handler, the transition is silently skipped (screen stays on Dashboard). S02 can add a visible error message to the Dashboard. If the relay-wrapper thread panics, `rx.recv()` returns `Err(_)` and the TUI exits gracefully (the `Err(_) => break` arm in `run()`).
+- Signals added/changed: `TuiEvent` enum is the new event bus; `Screen::AgentRun.lines` accumulates all agent stdout for post-mortem inspection; `Screen::AgentRun.status` transitions: Running → Done/Failed
+- How a future agent inspects this: `match &app.screen { Screen::AgentRun { lines, status, .. } => { /* inspect */ } }`
+- Failure state exposed: `AgentRunStatus::Failed { exit_code }` is visually rendered in red in the status line; `handle_agent_done` refreshes milestones so gate results update immediately
 
 ## Inputs
 
-- `crates/assay-tui/src/app.rs` (T02 output) — real `handle_agent_line`, `handle_agent_done`, `Screen::AgentRun` variant with working draw/event arms
-- `crates/assay-core/src/pipeline.rs` (T01 output) — `launch_agent_streaming` implemented
-- `crates/assay-harness/src/claude.rs` — `generate_config`, `write_config`, `build_cli_args` (existing)
-- `crates/assay-core/src/milestone/cycle.rs` — `cycle_status` (existing)
-- D107, D108 (channel-based event loop decisions)
-- Research doc "Common Pitfalls" — crossterm thread never exits (acceptable), relay-wrapper ordering guarantee
+- `crates/assay-tui/src/main.rs` — current 30-line blocking loop to be replaced
+- `crates/assay-tui/src/app.rs` — stub scaffolding from T01 (AgentRunStatus, Screen::AgentRun, method stubs) to be filled in
+- `crates/assay-tui/tests/agent_run.rs` — T01 tests that `handle_agent_line`/`handle_agent_done` must now make pass
 
 ## Expected Output
 
-- `crates/assay-tui/src/main.rs` — channel-based `run()` with background crossterm thread
-- `crates/assay-tui/src/app.rs` — `r` key handler in Dashboard arm; `use assay_harness::claude` import
-- `target/debug/assay-tui` — binary produced by `cargo build -p assay-tui`
-- All 35 TUI tests (27 pre-existing + 8 agent_run) green
+- `crates/assay-tui/src/main.rs` — channel-based `TuiEvent` loop; background crossterm thread
+- `crates/assay-tui/src/app.rs` — `handle_agent_line`, `handle_agent_done`, `draw_agent_run` implemented; `draw()` updated
+- `agent_run_streams_lines_and_transitions_to_done` and `agent_run_failed_exit_code_shows_failed_status` tests green
+- All 27 existing TUI tests still pass

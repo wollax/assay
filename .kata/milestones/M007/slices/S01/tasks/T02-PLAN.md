@@ -1,101 +1,98 @@
 ---
-estimated_steps: 5
-estimated_files: 3
+estimated_steps: 4
+estimated_files: 2
 ---
 
-# T02: Implement `handle_agent_line`, `handle_agent_done`, and `draw_agent_run`
+# T02: Implement `launch_agent_streaming` in `assay-core::pipeline`
 
 **Slice:** S01 — Channel Event Loop and Agent Run Panel
 **Milestone:** M007
 
 ## Description
 
-This task replaces the T01 stubs with real implementations for `handle_agent_line`, `handle_agent_done`, and the `draw_agent_run` renderer. After this task, the 8 integration tests in `agent_run.rs` all pass. The main loop refactor (T03) is separate — this task only touches `app.rs` and makes the App state machine correct.
+Add `launch_agent_streaming` as a new public free function in `crates/assay-core/src/pipeline.rs`. The function spawns a child process with piped stdout, reads stdout line-by-line in a background thread, sends each line to the provided `mpsc::Sender<String>`, and returns a `JoinHandle<i32>` whose join value is the process exit code. The existing batch `launch_agent()` function is not touched in any way (D108).
 
-Key constraints:
-- `handle_agent_line` caps lines at 10 000 to prevent unbounded memory growth (per research doc).
-- `handle_agent_done` must refresh milestones and cycle_slug from disk using the same patterns already in `with_project_root` (guard on `project_root`; use `.ok()` to degrade gracefully on I/O error).
-- `draw_agent_run` must handle `lines.is_empty()` gracefully — show "Starting…" rather than panic.
-- The `Screen::AgentRun` arm in `handle_event()` needs real scroll + Esc wiring.
-- The stub `draw_agent_run_stub` from T01 is replaced by the real `draw_agent_run` free function (consistent with D097/D105 pattern: free fn, explicit `area: Rect` parameter).
+This task is proven independently of the TUI, making the streaming primitive verifiable before the event loop refactor in T03.
 
 ## Steps
 
-1. **Implement `handle_agent_line`**
-   - If `self.screen` is `Screen::AgentRun { ref mut lines, .. }`: push `line` to `lines`; if `lines.len() > 10_000`, remove the first element (`lines.remove(0)` or use `Vec::drain` for efficiency — a `VecDeque<String>` is more efficient but the research doc accepts `Vec` with a cap; use `Vec` for simplicity, trim from front)
-   - All other screen variants: no-op (return early)
+1. In `crates/assay-core/src/pipeline.rs`, add the `launch_agent_streaming` function after the existing `launch_agent()` function:
+   ```rust
+   pub fn launch_agent_streaming(
+       cli_args: &[String],
+       working_dir: &Path,
+       line_tx: mpsc::Sender<String>,
+   ) -> std::thread::JoinHandle<i32> {
+       // Spawn child with piped stdout; stderr goes to inherit (visible in terminal) or null
+       let mut child = std::process::Command::new(cli_args[0].as_str())
+           .args(&cli_args[1..])
+           .current_dir(working_dir)
+           .stdout(std::process::Stdio::piped())
+           .stderr(std::process::Stdio::inherit())
+           .spawn()
+           .expect("failed to spawn agent subprocess");
+       
+       let stdout = child.stdout.take().expect("stdout was piped");
+       
+       std::thread::spawn(move || {
+           use std::io::BufRead;
+           let reader = std::io::BufReader::new(stdout);
+           for line in reader.lines() {
+               match line {
+                   Ok(l) => {
+                       if line_tx.send(l).is_err() {
+                           break; // receiver dropped — TUI closed
+                       }
+                   }
+                   Err(_) => break,
+               }
+           }
+           // Wait for child and return exit code
+           match child.wait() {
+               Ok(status) => status.code().unwrap_or(-1),
+               Err(_) => -1,
+           }
+       })
+   }
+   ```
+   Note: If `cli_args` could be empty, guard with an early check. Use the existing `std::sync::mpsc` import that's already in the file.
 
-2. **Implement `handle_agent_done`**
-   - If `self.screen` is `Screen::AgentRun { ref mut status, .. }`: set `*status = if exit_code == 0 { AgentRunStatus::Done { exit_code } } else { AgentRunStatus::Failed { exit_code } }`
-   - Then refresh disk state: `if let Some(ref root) = self.project_root { let assay_dir = root.join(".assay"); if let Ok(ms) = milestone_scan(&assay_dir) { self.milestones = ms; } self.cycle_slug = cycle_status(&assay_dir).ok().flatten().map(|cs| cs.milestone_slug); }`
-   - Keep it at this; `detail_run` refresh deferred (the user can press `Enter` to re-navigate)
+2. Ensure the function is exported from `assay-core` lib root if needed (check `crates/assay-core/src/lib.rs` for `pub use pipeline::*` or add a specific re-export).
 
-3. **Implement `draw_agent_run` free function**
-   - Signature: `fn draw_agent_run(frame: &mut Frame, area: Rect, chunk_slug: &str, lines: &[String], scroll_offset: usize, status: &AgentRunStatus)`
-   - Split `area` into content rows (area.height - 2) and a 1-row status line at bottom, 1-row title at top
-   - Render a bordered Block with title `"Agent Run: {chunk_slug}"`
-   - If `lines.is_empty()`: display a single "Starting…" item styled dim
-   - Otherwise: compute the visible window as `lines[safe_start..safe_end]` where `safe_start = scroll_offset.min(lines.len().saturating_sub(1))` and `safe_end = (safe_start + visible_rows).min(lines.len())`; render each as a `ListItem`
-   - Status line: match `status` → `"● Running…"` (yellow), `"✓ Done (exit {n})"` (green, n==0), `"✗ Failed (exit {n})"` (red); append `"  Esc: back"` hint
-   - Remove `draw_agent_run_stub` and update the `draw()` match arm to call the real function with field references
+3. Handle the case where `cli_args` is empty: the function should panic with a clear message (acceptable — callers always provide at least the binary name).
 
-4. **Implement `Screen::AgentRun` arm in `handle_event()`**
-   - Replace the stub `Screen::AgentRun { .. } => false` with:
-     ```
-     Screen::AgentRun { ref mut scroll_offset, .. } => {
-         match key.code {
-             KeyCode::Esc => { self.screen = Screen::Dashboard; }
-             KeyCode::Down | KeyCode::Char('j') => { *scroll_offset = scroll_offset.saturating_add(1); }
-             KeyCode::Up | KeyCode::Char('k') => { *scroll_offset = scroll_offset.saturating_sub(1); }
-             _ => {}
-         }
-         false
-     }
-     ```
-   - Use the clone-then-mutate pattern from D098 if the borrow checker requires it (only needed if accessing other `self` fields during the arm; scroll is self-contained so direct mutation should work)
-
-5. **Update `draw()` match arm for `Screen::AgentRun`**
-   - Destructure `Screen::AgentRun { chunk_slug, lines, scroll_offset, status }` from `&self.screen` (use `..` trick per D098 if borrow splitting is needed)
-   - Call `draw_agent_run(frame, content_area, chunk_slug, lines, *scroll_offset, status)`
+4. Run `cargo test -p assay-core --test pipeline_streaming` — all three tests from T01 should now pass.
 
 ## Must-Haves
 
-- [ ] `handle_agent_line` appends to `Screen::AgentRun.lines` and caps at 10 000
-- [ ] `handle_agent_line` is a no-op on all non-`AgentRun` screens (no panic)
-- [ ] `handle_agent_done` sets `AgentRunStatus::Done` for exit_code == 0, `Failed` for exit_code != 0
-- [ ] `handle_agent_done` refreshes `self.milestones` and `self.cycle_slug` from disk (graceful `.ok()` degradation)
-- [ ] `draw_agent_run` handles `lines.is_empty()` (shows "Starting…")
-- [ ] `Screen::AgentRun` `handle_event` arm: `Esc` → `Screen::Dashboard`, `j`/`↓` → scroll down, `k`/`↑` → scroll up
-- [ ] All 8 agent_run integration tests pass
-- [ ] All 27 pre-existing TUI tests still pass
+- [ ] `launch_agent_streaming` is `pub` in `assay-core::pipeline`
+- [ ] Function accepts `cli_args: &[String]`, `working_dir: &Path`, `line_tx: mpsc::Sender<String>`
+- [ ] Returns `std::thread::JoinHandle<i32>`
+- [ ] Background thread reads stdout line-by-line via `BufReader::lines()`
+- [ ] Each line sent to `line_tx`; send errors (receiver dropped) break the loop cleanly
+- [ ] Thread returns exit code as join value; on wait error returns -1
+- [ ] Existing `launch_agent()` function is completely untouched (zero diff on that function)
+- [ ] `cargo test -p assay-core --test pipeline_streaming` — all 3 tests green
+- [ ] `cargo test -p assay-core` — all existing tests still pass (no regressions)
 
 ## Verification
 
-```bash
-# All 8 new agent_run tests pass
-cargo test -p assay-tui --test agent_run
-
-# All pre-existing tests unchanged
-cargo test -p assay-tui
-
-# No compile errors
-cargo check -p assay-tui
-```
+- `cargo test -p assay-core --test pipeline_streaming` — 3/3 pass
+- `cargo test -p assay-core 2>&1 | tail -3` — "test result: ok." with 0 failures
+- `git diff crates/assay-core/src/pipeline.rs | grep '^-.*fn launch_agent'` — should be empty (existing function unchanged)
 
 ## Observability Impact
 
-- Signals added/changed: `Screen::AgentRun.lines` now accumulates real content; `Screen::AgentRun.status` reflects `AgentRunStatus::Done`/`Failed` — a future agent can inspect `app.screen` for post-run diagnostics.
-- How a future agent inspects this: `match app.screen { Screen::AgentRun { ref lines, ref status, .. } => … }` to read the full stdout buffer and exit status.
-- Failure state exposed: `AgentRunStatus::Failed { exit_code }` is visible in the TUI and in test assertions; non-zero exit codes are preserved and rendered.
+- Signals added/changed: `launch_agent_streaming` is itself an observability primitive — it exposes agent stdout as a stream of `String` events. Each line delivered to `line_tx` is visible in whatever UI or log sink receives it. Exit code delivered via join handle is the final status signal.
+- How a future agent inspects this: `let handle = launch_agent_streaming(...); for line in line_rx { inspect(line); } let exit = handle.join().unwrap();`
+- Failure state exposed: non-zero exit code returned by `handle.join()` is the failure signal; `SendError` on closed receiver is silent (not an error — receiver intentionally dropped on TUI close)
 
 ## Inputs
 
-- `crates/assay-tui/src/app.rs` (T01 output) — stub `handle_agent_line`, `handle_agent_done`, stub `draw_agent_run_stub` to replace
-- `crates/assay-tui/tests/agent_run.rs` (T01 output) — failing tests to make pass
-- D097/D105 — draw functions take individual fields, not `&mut App`; `area: Rect` passed explicitly
-- D098 — `..` pattern in draw() match arms; clone-then-mutate in handle_event() for borrow splitting
+- `crates/assay-core/src/pipeline.rs` — existing file with `launch_agent()` batch impl as structural reference; `std::sync::mpsc` already imported
+- `crates/assay-core/tests/pipeline_streaming.rs` — T01 test file whose three tests this task must make pass
 
 ## Expected Output
 
-- `crates/assay-tui/src/app.rs` — real `handle_agent_line`, `handle_agent_done`, `draw_agent_run` (free fn), updated `draw()` and `handle_event()` arms
-- All 8 `tests/agent_run.rs` tests green
+- `crates/assay-core/src/pipeline.rs` — new `launch_agent_streaming` function added; existing code unmodified
+- All three tests in `pipeline_streaming.rs` pass
