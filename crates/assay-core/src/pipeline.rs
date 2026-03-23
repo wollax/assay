@@ -305,6 +305,82 @@ pub fn launch_agent(
     }
 }
 
+// ── Streaming agent launcher ─────────────────────────────────────────
+
+/// Launch an agent subprocess and stream its stdout line-by-line to a channel.
+///
+/// Spawns the process, moves stdout into a `BufReader`, and iterates
+/// `.lines()` in a background thread, forwarding each line to `line_tx`.
+/// The returned `JoinHandle<i32>` resolves to the child's exit code when
+/// the process finishes (or -1 on panic or signal-killed process).
+///
+/// If `cli_args` is empty, no process is spawned and the handle immediately
+/// returns -1 — keeping error handling consistent for the caller.
+///
+/// # Arguments
+///
+/// * `cli_args` — Full argv slice: `cli_args[0]` is the binary, rest are args.
+/// * `working_dir` — Working directory for the subprocess.
+/// * `line_tx` — Channel sender; each stdout line is sent as a `String`.
+///                The channel is closed (sender dropped) when the process exits.
+///
+/// # Observability
+///
+/// - Per-line observable stream: collect from the paired `Receiver<String>`.
+/// - Exit code observable: join the returned handle → `Ok(i32)`.
+/// - Panic in spawned thread → `JoinHandle::join()` returns `Err` → callers
+///   should map that to exit code -1.
+pub fn launch_agent_streaming(
+    cli_args: &[String],
+    working_dir: &Path,
+    line_tx: std::sync::mpsc::Sender<String>,
+) -> std::thread::JoinHandle<i32> {
+    // Edge case: no command to run.
+    if cli_args.is_empty() {
+        return std::thread::spawn(|| -1);
+    }
+
+    let mut child = match std::process::Command::new(&cli_args[0])
+        .args(&cli_args[1..])
+        .current_dir(working_dir)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+    {
+        Ok(c) => c,
+        Err(_) => {
+            // Spawn failed — return a handle that resolves to -1.
+            return std::thread::spawn(|| -1);
+        }
+    };
+
+    // Take stdout before moving child into the thread.
+    let stdout = child.stdout.take().expect("stdout was piped");
+
+    std::thread::spawn(move || {
+        use std::io::BufRead;
+        let reader = std::io::BufReader::new(stdout);
+        for line in reader.lines() {
+            match line {
+                Ok(l) => {
+                    // Send the line; if the receiver is gone, stop reading.
+                    if line_tx.send(l).is_err() {
+                        break;
+                    }
+                }
+                Err(_) => break,
+            }
+        }
+        // Drop sender so the receiver sees Disconnected when we're done.
+        drop(line_tx);
+        // Collect exit code.
+        child
+            .wait()
+            .map(|s| s.code().unwrap_or(-1))
+            .unwrap_or(-1)
+    })
+}
+
 // ── Harness profile construction ─────────────────────────────────────
 
 /// Construct a [`HarnessProfile`] from a manifest session's inline overrides.
@@ -986,6 +1062,51 @@ mod tests {
             "recovery should mention spec name, got: {}",
             err.recovery
         );
+    }
+
+    // ── launch_agent_streaming ───────────────────────────────────
+
+    #[test]
+    fn launch_agent_streaming_delivers_all_lines() {
+        use std::sync::mpsc;
+        use std::time::Duration;
+
+        let (tx, rx) = mpsc::channel::<String>();
+        let args: Vec<String> = ["sh", "-c", "printf 'line1\\nline2\\n'; exit 0"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+
+        let handle = launch_agent_streaming(
+            &args,
+            &std::env::current_dir().unwrap(),
+            tx,
+        );
+
+        // Collect all lines until the channel is closed.
+        let mut lines = Vec::new();
+        loop {
+            match rx.recv_timeout(Duration::from_secs(5)) {
+                Ok(line) => lines.push(line),
+                Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                Err(mpsc::RecvTimeoutError::Timeout) => {
+                    panic!("timed out waiting for lines from subprocess");
+                }
+            }
+        }
+
+        let exit_code = handle.join().expect("streaming thread panicked");
+
+        assert_eq!(lines, vec!["line1", "line2"], "lines mismatch: {lines:?}");
+        assert_eq!(exit_code, 0, "expected exit code 0, got {exit_code}");
+    }
+
+    #[test]
+    fn launch_agent_streaming_empty_args_returns_minus_one() {
+        let (tx, _rx) = std::sync::mpsc::channel::<String>();
+        let handle = launch_agent_streaming(&[], Path::new("/tmp"), tx);
+        let code = handle.join().expect("thread panicked");
+        assert_eq!(code, -1);
     }
 
     // ── run_session worktree collision ────────────────────────────

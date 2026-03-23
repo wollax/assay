@@ -53,7 +53,7 @@
 
 ## Tasks
 
-- [ ] **T01: Add `launch_agent_streaming` to assay-core pipeline** `est:45m`
+- [x] **T01: Add `launch_agent_streaming` to assay-core pipeline** `est:45m`
   - Why: Provides the line-by-line subprocess streaming function; integration test proves real delivery before S02/S03 build on top
   - Files: `crates/assay-core/src/pipeline.rs`, `crates/assay-core/tests/pipeline.rs` (or new inline test)
   - Do: Add `pub fn launch_agent_streaming(cli_args: &[String], working_dir: &Path, line_tx: std::sync::mpsc::Sender<String>) -> std::thread::JoinHandle<i32>` — spawn child with `Stdio::piped()`, `BufReader::lines()` on stdout, send each line, return thread join handle carrying exit code (panic → -1). Leave existing `launch_agent()` fully untouched. Write integration test that spawns `sh -c 'printf "line1\nline2\n"; exit 0'` via `launch_agent_streaming`, collects all lines, joins thread, asserts `["line1", "line2"]` and exit code 0.
