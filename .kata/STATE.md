@@ -2,7 +2,7 @@
 
 **Active Milestone:** M007 — TUI Agent Harness
 **Active Slice:** S01 — Channel Event Loop and Agent Run Panel
-**Active Task:** T03 — Implement `handle_tui_event`, `r` key, `draw_agent_run`, and refactor `run()`
+**Active Task:** S01 COMPLETE — next: S02 Provider Dispatch and Harness Wiring
 **Phase:** Executing
 **Last Updated:** 2026-03-23
 **Requirements Status:** 7 active (R053–R059) · 46 validated (R001–R052) · 2 deferred · 4 out of scope
@@ -38,7 +38,7 @@ Key patterns:
 
 ## M007 Roadmap
 
-- [ ] S01: Channel Event Loop and Agent Run Panel `risk:high` — refactor blocking run() to TuiEvent channel loop; add Screen::AgentRun with live streaming; launch_agent_streaming in assay-core::pipeline; r key from Dashboard. R053+R054 (Anthropic path).
+- [x] S01: Channel Event Loop and Agent Run Panel `risk:high` — refactor blocking run() to TuiEvent channel loop; add Screen::AgentRun with live streaming; launch_agent_streaming in assay-core::pipeline; r key from Dashboard. R053+R054 (Anthropic path). DONE (31 tests pass).
 - [ ] S02: Provider Dispatch and Harness Wiring `risk:medium` — provider_harness_writer dispatches per ProviderKind; Ollama + OpenAI adapters; Settings model input fields. R054 (all providers).
 - [ ] S03: Slash Command Overlay `risk:low` — / key opens SlashState overlay; /gate-check, /status, /next-chunk, /pr-create commands; sync dispatch to assay-core. R056.
 - [ ] S04: MCP Server Configuration Panel `risk:medium` — Screen::McpPanel reads/writes .assay/mcp.json; add/delete/save servers; no live connection. R055.
@@ -65,4 +65,4 @@ None.
 
 ## Next Action
 
-Execute T03: implement `App::handle_tui_event` (AgentLine pushes to lines, AgentDone sets Done/Failed status); add `r` key handler in Dashboard arm (cycle_status → hardcoded claude args → launch_agent_streaming → Screen::AgentRun); implement real `draw_agent_run` (scrollable list + status line); refactor `main.rs::run()` to mpsc channel loop. All 4 agent_run tests must pass green after T03.
+Begin S02: Provider Dispatch and Harness Wiring — provider_harness_writer dispatches per ProviderKind; Ollama + OpenAI adapters; Settings model input fields. R054 (all providers).
