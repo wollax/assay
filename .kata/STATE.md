@@ -1,8 +1,8 @@
 # Kata State
 
 **Active Milestone:** M007 — TUI Agent Harness
-**Active Slice:** S02 — Provider Dispatch and Harness Wiring (NEXT)
-**Active Task:** S01 COMPLETE — begin S02
+**Active Slice:** S03 — Slash Command Overlay
+**Active Task:** T01 — Create slash module with parse, dispatch, state types, and red-phase integration tests
 **Phase:** Executing
 **Last Updated:** 2026-03-23
 **Requirements Status:** 7 active (R053–R059) · 46 validated (R001–R052) · 2 deferred · 4 out of scope
@@ -19,26 +19,18 @@
 
 ## M007 Roadmap
 
-- [x] S01: Channel Event Loop and Agent Run Panel `risk:high` — refactor blocking run() to TuiEvent channel loop; add Screen::AgentRun with live streaming; launch_agent_streaming in assay-core::pipeline; r key from Dashboard. R053+R054 (Anthropic path). DONE (31 tests pass).
-- [x] S02: Provider Dispatch and Harness Wiring `risk:medium` — provider_harness_writer dispatches per ProviderKind; Ollama + OpenAI adapters; Settings model input fields. R054 (all providers). DONE.
-- [ ] S03: Slash Command Overlay `risk:low` — / key opens SlashState overlay; /gate-check, /status, /next-chunk, /pr-create commands; sync dispatch to assay-core. R056.
-- [ ] S04: MCP Server Configuration Panel `risk:medium` — Screen::McpPanel reads/writes .assay/mcp.json; add/delete/save servers; no live connection. R055.
+- [x] S01: Channel Event Loop and Agent Run Panel `risk:high` — DONE (31 tests pass)
+- [x] S02: Provider Dispatch and Harness Wiring `risk:medium` — DONE
+- [ ] S03: Slash Command Overlay `risk:low` — PLANNED. / key opens SlashState overlay; /gate-check, /status, /next-chunk, /spec-show, /pr-create; sync dispatch to assay-core. R056. 2 tasks.
+- [ ] S04: MCP Server Configuration Panel `risk:medium` — not started
 
-## S01 Completed (2026-03-23)
+## S03 Plan Summary
 
-All three tasks complete:
-- T01: `launch_agent_streaming` in assay-core::pipeline — real subprocess streaming, 2 tests green
-- T02: TuiEvent/AgentStatus/Screen::AgentRun enums + App fields + stub implementations + 4 red-phase tests
-- T03: Real handle_tui_event, r key handler, draw_agent_run, Esc→Dashboard, channel-based run() loop
+Two tasks:
+- T01: Create slash.rs module (SlashCmd, SlashState, SlashAction, parse_slash_cmd, execute_slash_cmd, tab_complete) + 6 integration tests (parse tests pass, overlay tests red until T02)
+- T02: Wire into App (slash_state field, handle_event guard, / key handler, draw_slash_overlay, real handle_slash_event) → all 6 tests green
 
-31 assay-tui tests pass (27 existing + 4 new). Zero regressions.
-
-Key deliverables from S01 for S02 consumption:
-- `TuiEvent` enum: Key, Resize, AgentLine(String), AgentDone { exit_code: i32 }
-- `App.event_tx: Option<Sender<TuiEvent>>` — set in run(), None in tests; r handler guards on is_some()
-- `Screen::AgentRun { chunk_slug, lines, scroll_offset, status: AgentStatus }` wired and rendering
-- `r` key hardcodes `["claude", "--print"]` — S02 replaces with provider_harness_writer dispatch
-- Forwarder thread sends AgentDone { exit_code: 0 } sentinel — S02 wires real exit code
+Key decision: D113 — slash as App.slash_state overlay (not Screen variant), following D104 help guard pattern.
 
 ## Key Decisions
 
@@ -48,6 +40,7 @@ Key deliverables from S01 for S02 consumption:
 - D110: MCP panel = static config management, no live async MCP client
 - D111: Slash command dispatch synchronous in-process
 - D112: App.event_tx: Option<Sender<TuiEvent>> — avoids changing handle_event signature
+- D113: Slash overlay as App.slash_state: Option<SlashState>, not Screen variant (D104 pattern)
 
 ## Known Issues
 
@@ -59,4 +52,4 @@ None.
 
 ## Next Action
 
-Begin S02: Provider Dispatch and Harness Wiring — `provider_harness_writer(config)` dispatches per `ProviderKind`; Ollama + OpenAI adapters; Settings model input fields; accurate exit code delivery from forwarder thread. R054 (all providers).
+Execute T01: Create slash module with parse, dispatch, state types, and red-phase integration tests.
