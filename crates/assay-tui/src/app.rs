@@ -211,8 +211,13 @@ impl App {
                     error.as_deref(),
                 );
             }
-            Screen::AgentRun { .. } => {
-                // Placeholder — rendering implemented in T03.
+            Screen::AgentRun {
+                chunk_slug,
+                lines,
+                scroll_offset,
+                status,
+            } => {
+                draw_agent_run(frame, content_area, chunk_slug, lines, *scroll_offset, status);
             }
         }
 
@@ -609,17 +614,50 @@ impl App {
     /// Append a line from the streaming agent output to the current `AgentRun` screen.
     ///
     /// No-op when the current screen is not `Screen::AgentRun`.
-    /// Full implementation arrives in T02/T03.
-    pub fn handle_agent_line(&mut self, _line: String) {
-        todo!("handle_agent_line: implementation pending T02/T03")
+    pub fn handle_agent_line(&mut self, line: String) {
+        if let Screen::AgentRun { ref mut lines, ref mut scroll_offset, .. } = self.screen {
+            lines.push(line);
+            // Auto-scroll: keep the last lines visible (assume ~20 visible rows).
+            const VISIBLE_HEIGHT: usize = 20;
+            *scroll_offset = lines.len().saturating_sub(VISIBLE_HEIGHT);
+        }
     }
 
     /// Transition the `AgentRun` screen to `Done` or `Failed` based on the exit code.
     ///
     /// Also joins and drops `self.agent_thread` to avoid zombie threads.
-    /// Full implementation arrives in T02/T03.
-    pub fn handle_agent_done(&mut self, _exit_code: i32) {
-        todo!("handle_agent_done: implementation pending T02/T03")
+    /// Refreshes milestone data and `cycle_slug` immediately after the agent exits
+    /// so gate results are up to date.
+    ///
+    /// Honors D098: borrows from `self.project_root` are completed before
+    /// `self.screen` is mutated.
+    pub fn handle_agent_done(&mut self, exit_code: i32) {
+        // Join background thread for cleanup (non-fatal on join error).
+        if let Some(handle) = self.agent_thread.take() {
+            if let Err(e) = handle.join() {
+                eprintln!("agent_thread join error: {e:?}");
+            }
+        }
+
+        // Refresh milestone data — borrow project_root first, mutate screen after (D098).
+        if let Some(ref root) = self.project_root {
+            let assay_dir = root.join(".assay");
+            self.milestones = milestone_scan(&assay_dir).unwrap_or_default();
+            self.cycle_slug = cycle_status(&assay_dir)
+                .ok()
+                .flatten()
+                .map(|s| s.milestone_slug);
+        }
+
+        // Update AgentRun status.
+        let new_status = if exit_code == 0 {
+            AgentRunStatus::Done { exit_code }
+        } else {
+            AgentRunStatus::Failed { exit_code }
+        };
+        if let Screen::AgentRun { ref mut status, .. } = self.screen {
+            *status = new_status;
+        }
     }
 }
 
@@ -917,6 +955,61 @@ fn draw_settings(
 
     let hint = Paragraph::new(hint_lines);
     frame.render_widget(hint, hint_area);
+}
+
+/// Render the streaming agent run output screen.
+///
+/// Layout:
+/// - Outer bordered block titled "Agent Run: {chunk_slug}"
+/// - Content area: scrollable list of output lines from the agent
+/// - Status line (1 row): "Running…" (yellow) / "Done (exit 0)" (green) /
+///   "Failed (exit N)" (red)
+///
+/// Accepts individual field params (D097) rather than `&mut App`.
+fn draw_agent_run(
+    frame: &mut ratatui::Frame,
+    area: Rect,
+    chunk_slug: &str,
+    lines: &[String],
+    scroll_offset: usize,
+    status: &AgentRunStatus,
+) {
+    let block = Block::default()
+        .title(format!(" Agent Run: {chunk_slug} "))
+        .borders(Borders::ALL);
+    frame.render_widget(block.clone(), area);
+    let inner = block.inner(area);
+
+    // Inner layout: content area + 1-row status line.
+    let [content_area, status_area] =
+        Layout::vertical([Constraint::Fill(1), Constraint::Length(1)]).areas(inner);
+
+    // Content area: list of agent output lines with scroll offset.
+    let items: Vec<ListItem> = lines
+        .iter()
+        .skip(scroll_offset)
+        .map(|l| ListItem::new(l.as_str()))
+        .collect();
+    let list = List::new(items);
+    frame.render_widget(list, content_area);
+
+    // Status line.
+    let (status_text, status_style) = match status {
+        AgentRunStatus::Running => (
+            "Running…".to_string(),
+            Style::default().fg(Color::Yellow),
+        ),
+        AgentRunStatus::Done { exit_code } => (
+            format!("Done (exit {exit_code})"),
+            Style::default().fg(Color::Green),
+        ),
+        AgentRunStatus::Failed { exit_code } => (
+            format!("Failed (exit {exit_code})"),
+            Style::default().fg(Color::Red),
+        ),
+    };
+    let status_line = Paragraph::new(Line::from(Span::styled(status_text, status_style)));
+    frame.render_widget(status_line, status_area);
 }
 
 ///
