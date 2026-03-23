@@ -2,7 +2,7 @@
 
 **Active Milestone:** M007 — TUI Agent Harness
 **Active Slice:** S01 — Channel Event Loop and Agent Run Panel
-**Active Task:** T03 (T01, T02 done)
+**Active Task:** T04 (T01, T02, T03 done)
 **Phase:** Executing
 **Last Updated:** 2026-03-23
 **Requirements Status:** 7 active (R053–R059) · 46 validated (R001–R052) · 2 deferred · 4 out of scope
@@ -63,4 +63,4 @@ None.
 
 ## Next Action
 
-T02 complete. Begin T03: refactor run() to channel-based TuiEvent loop and add Screen::AgentRun.
+T03 complete. Begin T04: wire `r` key from Dashboard to launch_agent_streaming and connect TuiEvent::AgentLine/AgentDone to the channel.
