@@ -3,11 +3,7 @@
 //! Thin binary entry point. All application logic lives in `assay_tui::app`
 //! so it can be reached by integration tests.
 
-use std::sync::mpsc;
-
-use assay_tui::app::App;
-use assay_tui::event::TuiEvent;
-use crossterm::event::{self, Event};
+use assay_tui::app::{App, TuiEvent};
 use ratatui::DefaultTerminal;
 
 fn main() -> color_eyre::Result<()> {
@@ -27,38 +23,31 @@ fn main() -> color_eyre::Result<()> {
 
 fn run(mut terminal: DefaultTerminal) -> color_eyre::Result<()> {
     let mut app = App::new()?;
-
-    let (tx, rx) = mpsc::channel::<TuiEvent>();
-
-    // Wire the event sender into App so the `r` key handler can forward agent events.
+    let (tx, rx) = std::sync::mpsc::channel::<TuiEvent>();
     app.event_tx = Some(tx.clone());
 
-    // Spawn a background thread to forward crossterm events into the channel.
-    let tx_cross = tx.clone();
+    // Background thread: crossterm events → TuiEvent channel.
+    // This thread blocks forever on event::read() — that is intentional and
+    // acceptable; the OS reclaims it on process exit.
     std::thread::spawn(move || {
         loop {
-            match event::read() {
-                Ok(Event::Key(k)) => {
-                    let _ = tx_cross.send(TuiEvent::Key(k));
+            match crossterm::event::read() {
+                Ok(crossterm::event::Event::Key(k)) => {
+                    let _ = tx.send(TuiEvent::Key(k));
                 }
-                Ok(Event::Resize(w, h)) => {
-                    let _ = tx_cross.send(TuiEvent::Resize(w, h));
+                Ok(crossterm::event::Event::Resize(w, h)) => {
+                    let _ = tx.send(TuiEvent::Resize(w, h));
                 }
-                Ok(_) => {}
-                Err(e) => {
-                    eprintln!("[assay-tui] terminal event error: {e}");
-                    break; // avoid busy-loop on persistent terminal errors
-                }
+                _ => {}
             }
         }
     });
 
     loop {
         terminal.draw(|frame| app.draw(frame))?;
-
         match rx.recv() {
-            Ok(TuiEvent::Key(key)) => {
-                if app.handle_event(key) {
+            Ok(TuiEvent::Key(k)) => {
+                if app.handle_event(k) {
                     break;
                 }
             }
@@ -71,9 +60,8 @@ fn run(mut terminal: DefaultTerminal) -> color_eyre::Result<()> {
             Ok(TuiEvent::AgentDone { exit_code }) => {
                 app.handle_agent_done(exit_code);
             }
-            Err(_) => break,
+            Err(_) => break, // channel disconnected
         }
     }
-
     Ok(())
 }
