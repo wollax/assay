@@ -2,7 +2,7 @@
 
 **Active Milestone:** M007 — TUI Agent Harness
 **Active Slice:** S01 — Channel Event Loop and Agent Run Panel
-**Active Task:** T02 (T01 done)
+**Active Task:** T03 (T01, T02 done)
 **Phase:** Executing
 **Last Updated:** 2026-03-23
 **Requirements Status:** 7 active (R053–R059) · 46 validated (R001–R052) · 2 deferred · 4 out of scope
@@ -63,4 +63,4 @@ None.
 
 ## Next Action
 
-S01 planned. Begin T01: write failing integration tests for pipeline_streaming and agent_run.
+T02 complete. Begin T03: refactor run() to channel-based TuiEvent loop and add Screen::AgentRun.
