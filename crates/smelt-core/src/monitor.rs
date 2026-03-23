@@ -1,7 +1,9 @@
 //! Job monitoring — tracks job execution state and persists it to disk.
 //!
-//! `JobMonitor` writes structured TOML state to `.smelt/run-state.toml` on every
-//! phase transition, providing the primary observability surface for running jobs.
+//! `JobMonitor` writes structured TOML state to `.smelt/runs/<job-name>/state.toml`
+//! on every phase transition, providing the primary observability surface for running
+//! jobs. Legacy flat `.smelt/run-state.toml` files (written before S04) can be read
+//! via [`JobMonitor::read_legacy`].
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -10,38 +12,78 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 
 use crate::error::{Result, SmeltError};
+use crate::forge::{CiStatus, PrState};
 use crate::manifest::JobManifest;
 
 /// Execution phase of a running job.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum JobPhase {
+    /// Container is being provisioned from the Docker image.
     Provisioning,
+    /// Job manifest is being written into the container.
     WritingManifest,
+    /// Job script is executing inside the container.
     Executing,
+    /// Output artifacts are being collected from the container.
     Collecting,
+    /// Container is being stopped and removed.
     TearingDown,
+    /// Job finished successfully.
     Complete,
+    /// Job exited with a non-zero status or encountered a fatal error.
     Failed,
+    /// Job exceeded its configured timeout duration.
     Timeout,
+    /// Job was cancelled before completion.
     Cancelled,
+    /// Job completed but one or more quality gates did not pass.
     GatesFailed,
 }
 
 /// Serializable snapshot of job execution state.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RunState {
+    /// Unique name of the job, matching the manifest `job.name` field.
     pub job_name: String,
+    /// Current execution phase of the job.
     pub phase: JobPhase,
+    /// Docker container ID assigned to this run, if a container has been started.
     pub container_id: Option<String>,
+    /// Session IDs associated with this run.
     pub sessions: Vec<String>,
+    /// Unix timestamp (seconds) when the job was started.
     pub started_at: u64,
+    /// Unix timestamp (seconds) of the most recent state transition.
     pub updated_at: u64,
+    /// PID of the smelt process managing this job.
     pub pid: u32,
+    /// URL of the pull request created for this run, if any.
+    #[serde(default)]
+    pub pr_url: Option<String>,
+    /// Number of the pull request created for this run, if any.
+    #[serde(default)]
+    pub pr_number: Option<u64>,
+    /// Last-known high-level state of the PR (cached from a poll).
+    #[serde(default)]
+    pub pr_status: Option<PrState>,
+    /// Last-known CI check status of the PR (cached from a poll).
+    #[serde(default)]
+    pub ci_status: Option<CiStatus>,
+    /// Last-known review count for the PR (cached from a poll).
+    #[serde(default)]
+    pub review_count: Option<u32>,
+    /// `owner/repo` slug from ForgeConfig, saved at Phase 9 for watch/status.
+    #[serde(default)]
+    pub forge_repo: Option<String>,
+    /// Env var name holding the forge auth token (never the token value).
+    #[serde(default)]
+    pub forge_token_env: Option<String>,
 }
 
 /// Tracks job execution state and persists it to a TOML file on disk.
 pub struct JobMonitor {
+    /// Current run state — updated at each phase transition and persisted to disk.
     pub state: RunState,
     state_dir: PathBuf,
 }
@@ -70,6 +112,13 @@ impl JobMonitor {
                 started_at: now,
                 updated_at: now,
                 pid: std::process::id(),
+                pr_url: None,
+                pr_number: None,
+                pr_status: None,
+                ci_status: None,
+                review_count: None,
+                forge_repo: None,
+                forge_token_env: None,
             },
             state_dir: state_dir.into(),
         }
@@ -87,7 +136,9 @@ impl JobMonitor {
         self.state.container_id = Some(container_id.into());
     }
 
-    /// Serialize state to `{state_dir}/run-state.toml`.
+    /// Serialize state to `{state_dir}/state.toml`.
+    ///
+    /// Creates `state_dir` (and any parent directories) if it does not exist.
     pub fn write(&self) -> Result<()> {
         fs::create_dir_all(&self.state_dir).map_err(|e| {
             SmeltError::Io {
@@ -96,7 +147,7 @@ impl JobMonitor {
                 source: e,
             }
         })?;
-        let path = self.state_dir.join("run-state.toml");
+        let path = self.state_dir.join("state.toml");
         let content = toml::to_string_pretty(&self.state).map_err(|e| {
             SmeltError::Config {
                 path: path.clone(),
@@ -112,9 +163,30 @@ impl JobMonitor {
         })
     }
 
-    /// Read and deserialize state from `{state_dir}/run-state.toml`.
+    /// Read and deserialize state from `{state_dir}/state.toml`.
     pub fn read(state_dir: &Path) -> Result<RunState> {
-        let path = state_dir.join("run-state.toml");
+        let path = state_dir.join("state.toml");
+        let content = fs::read_to_string(&path).map_err(|e| {
+            SmeltError::Io {
+                operation: "read".into(),
+                path: path.clone(),
+                source: e,
+            }
+        })?;
+        toml::from_str(&content).map_err(|e| {
+            SmeltError::Config {
+                path,
+                message: format!("parse run state: {e}"),
+            }
+        })
+    }
+
+    /// Read and deserialize legacy state from `{base_dir}/run-state.toml`.
+    ///
+    /// Provides backward compatibility for `smelt status` when called without a
+    /// job name — reads the flat state file written by versions prior to S04.
+    pub fn read_legacy(base_dir: &Path) -> Result<RunState> {
+        let path = base_dir.join("run-state.toml");
         let content = fs::read_to_string(&path).map_err(|e| {
             SmeltError::Io {
                 operation: "read".into(),
@@ -132,7 +204,7 @@ impl JobMonitor {
 
     /// Remove the state file. Tolerates a missing file.
     pub fn cleanup(&self) -> Result<()> {
-        let path = self.state_dir.join("run-state.toml");
+        let path = self.state_dir.join("state.toml");
         match fs::remove_file(&path) {
             Ok(()) => Ok(()),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
@@ -233,10 +305,10 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let mon = make_monitor(dir.path());
         mon.write().unwrap();
-        assert!(dir.path().join("run-state.toml").exists());
+        assert!(dir.path().join("state.toml").exists());
 
         mon.cleanup().unwrap();
-        assert!(!dir.path().join("run-state.toml").exists());
+        assert!(!dir.path().join("state.toml").exists());
     }
 
     #[test]
@@ -341,7 +413,7 @@ target = "main"
         mon.set_container("abc123");
         mon.set_phase(JobPhase::Executing).unwrap();
 
-        let content = std::fs::read_to_string(dir.path().join("run-state.toml")).unwrap();
+        let content = std::fs::read_to_string(dir.path().join("state.toml")).unwrap();
         assert!(content.contains("job_name"), "missing job_name key");
         assert!(content.contains("phase"), "missing phase key");
         assert!(content.contains("container_id"), "missing container_id key");
@@ -359,10 +431,70 @@ target = "main"
         let mut mon = make_monitor(dir.path());
         // set_phase should auto-write
         mon.set_phase(JobPhase::WritingManifest).unwrap();
-        assert!(dir.path().join("run-state.toml").exists());
+        assert!(dir.path().join("state.toml").exists());
 
         let state = JobMonitor::read(dir.path()).unwrap();
         assert_eq!(state.phase, JobPhase::WritingManifest);
+    }
+
+    /// read_legacy reads a flat `run-state.toml` written without JobMonitor.
+    #[test]
+    fn test_read_legacy_reads_flat_file() {
+        let dir = TempDir::new().unwrap();
+        // Manually write a legacy flat state file (not via JobMonitor::write)
+        let legacy_state = RunState {
+            job_name: "legacy-job".into(),
+            phase: JobPhase::Complete,
+            container_id: Some("dead1234".into()),
+            sessions: vec!["s1".into()],
+            started_at: 1_700_000_000,
+            updated_at: 1_700_000_060,
+            pid: 99999,
+            pr_url: None,
+            pr_number: None,
+            pr_status: None,
+            ci_status: None,
+            review_count: None,
+            forge_repo: None,
+            forge_token_env: None,
+        };
+        let content = toml::to_string_pretty(&legacy_state).unwrap();
+        std::fs::write(dir.path().join("run-state.toml"), content).unwrap();
+
+        let read = JobMonitor::read_legacy(dir.path()).unwrap();
+        assert_eq!(read.job_name, "legacy-job");
+        assert_eq!(read.phase, JobPhase::Complete);
+        assert_eq!(read.container_id.as_deref(), Some("dead1234"));
+        assert_eq!(read.started_at, 1_700_000_000);
+    }
+
+    /// write() writes to {state_dir}/state.toml, not run-state.toml.
+    #[test]
+    fn test_state_path_resolution() {
+        let tmp = TempDir::new().unwrap();
+        let state_dir = tmp.path().join(".smelt").join("runs").join("my-job");
+        let mon = JobMonitor::new("my-job", vec![], &state_dir);
+        mon.write().unwrap();
+        assert!(
+            state_dir.join("state.toml").exists(),
+            "expected state.toml at {}/state.toml",
+            state_dir.display()
+        );
+        assert!(
+            !state_dir.join("run-state.toml").exists(),
+            "run-state.toml must not exist after write()"
+        );
+    }
+
+    /// cleanup() removes state.toml, not run-state.toml.
+    #[test]
+    fn test_cleanup_uses_state_toml() {
+        let dir = TempDir::new().unwrap();
+        let mon = make_monitor(dir.path());
+        mon.write().unwrap();
+        assert!(dir.path().join("state.toml").exists(), "state.toml must exist after write");
+        mon.cleanup().unwrap();
+        assert!(!dir.path().join("state.toml").exists(), "state.toml must be removed after cleanup");
     }
 
     #[test]
@@ -386,5 +518,28 @@ target = "main"
         // Deserialize → must round-trip back to GatesFailed
         let deserialized: Wrapper = toml::from_str(&serialized).unwrap();
         assert_eq!(deserialized.phase, JobPhase::GatesFailed);
+    }
+
+    /// Verify that a RunState TOML written before `pr_url`/`pr_number` fields
+    /// were added deserializes successfully, with both fields defaulting to None.
+    #[test]
+    fn test_run_state_backward_compat_no_pr_fields() {
+        // Manually constructed TOML that mimics a state file from before T01
+        // introduced pr_url and pr_number. These fields must not be required.
+        let old_toml = r#"
+job_name = "legacy-job"
+phase = "complete"
+sessions = ["s1", "s2"]
+started_at = 1700000000
+updated_at = 1700000060
+pid = 12345
+"#;
+        let state: RunState = toml::from_str(old_toml).expect(
+            "RunState should deserialize without pr_url/pr_number fields (backward compat)"
+        );
+        assert_eq!(state.job_name, "legacy-job");
+        assert_eq!(state.phase, JobPhase::Complete);
+        assert!(state.pr_url.is_none(), "pr_url should default to None");
+        assert!(state.pr_number.is_none(), "pr_number should default to None");
     }
 }

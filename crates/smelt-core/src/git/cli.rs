@@ -25,30 +25,9 @@ impl GitCli {
         }
     }
 
-    /// Run a git command and return trimmed stdout on success.
+    /// Run a git command in `self.repo_root` and return trimmed stdout on success.
     async fn run(&self, args: &[&str]) -> Result<String> {
-        let output = Command::new(&self.git_binary)
-            .args(args)
-            .current_dir(&self.repo_root)
-            .output()
-            .await
-            .map_err(|e| {
-                SmeltError::io(
-                    format!("running git {}", args.first().unwrap_or(&"")),
-                    &self.git_binary,
-                    e,
-                )
-            })?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(SmeltError::GitExecution {
-                operation: args.join(" "),
-                message: stderr.trim().to_string(),
-            });
-        }
-
-        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+        self.run_in(&self.repo_root, args).await
     }
 
     /// Run a git command in a specific working directory (not necessarily `self.repo_root`).
@@ -169,9 +148,11 @@ impl GitOps for GitCli {
         base_ref: &str,
     ) -> Result<bool> {
         let output = self.run(&["branch", "--merged", base_ref]).await?;
-        Ok(output
-            .lines()
-            .any(|line| line.trim().trim_start_matches("* ") == branch_name))
+        Ok(output.lines().any(|line| {
+            let name = line.trim();
+            let name = name.strip_prefix("* ").unwrap_or(name);
+            name == branch_name
+        }))
     }
 
     async fn branch_exists(&self, branch_name: &str) -> Result<bool> {
@@ -353,6 +334,10 @@ impl GitOps for GitCli {
     ) -> Result<String> {
         self.run_in(work_dir, &["show", &format!(":{stage}:{file}")])
             .await
+    }
+
+    async fn fetch_ref(&self, remote: &str, refspec: &str) -> Result<()> {
+        self.run(&["fetch", remote, refspec]).await.map(|_| ())
     }
 }
 
@@ -1260,5 +1245,98 @@ mod tests {
             .expect("log_subjects empty");
 
         assert!(subjects.is_empty(), "same ref range should be empty");
+    }
+
+    #[tokio::test]
+    async fn test_fetch_ref_creates_local_branch() {
+        let git_bin = which::which("git").expect("git on PATH");
+
+        // Step 1: create a bare remote repo
+        let bare_dir = tempfile::tempdir().expect("bare temp dir");
+        let status = std::process::Command::new(&git_bin)
+            .args(["init", "--bare"])
+            .current_dir(bare_dir.path())
+            .output()
+            .expect("git init --bare");
+        assert!(status.status.success(), "git init --bare failed");
+
+        // Step 2: clone the bare repo and push an initial commit
+        let push_dir = tempfile::tempdir().expect("push temp dir");
+        std::process::Command::new(&git_bin)
+            .args(["clone", bare_dir.path().to_str().unwrap(), "."])
+            .current_dir(push_dir.path())
+            .output()
+            .expect("git clone for push");
+        for args in [
+            &["config", "user.email", "test@example.com"][..],
+            &["config", "user.name", "Test"][..],
+        ] {
+            std::process::Command::new(&git_bin)
+                .args(args)
+                .current_dir(push_dir.path())
+                .output()
+                .expect("git config");
+        }
+        std::fs::write(push_dir.path().join("file.txt"), "hello\n").unwrap();
+        std::process::Command::new(&git_bin)
+            .args(["add", "file.txt"])
+            .current_dir(push_dir.path())
+            .output()
+            .expect("git add");
+        std::process::Command::new(&git_bin)
+            .args(["commit", "-m", "initial"])
+            .current_dir(push_dir.path())
+            .output()
+            .expect("git commit");
+        // Determine the default branch name
+        let branch_output = std::process::Command::new(&git_bin)
+            .args(["rev-parse", "--abbrev-ref", "HEAD"])
+            .current_dir(push_dir.path())
+            .output()
+            .expect("rev-parse HEAD");
+        let default_branch = String::from_utf8_lossy(&branch_output.stdout).trim().to_string();
+        std::process::Command::new(&git_bin)
+            .args(["push", "origin", &default_branch])
+            .current_dir(push_dir.path())
+            .output()
+            .expect("git push");
+
+        // Step 3: create a third clone (the working clone that will fetch)
+        let work_dir = tempfile::tempdir().expect("work temp dir");
+        std::process::Command::new(&git_bin)
+            .args(["clone", bare_dir.path().to_str().unwrap(), "."])
+            .current_dir(work_dir.path())
+            .output()
+            .expect("git clone for work");
+        for args in [
+            &["config", "user.email", "test@example.com"][..],
+            &["config", "user.name", "Test"][..],
+        ] {
+            std::process::Command::new(&git_bin)
+                .args(args)
+                .current_dir(work_dir.path())
+                .output()
+                .expect("git config");
+        }
+
+        let git = GitCli::new(git_bin.clone(), work_dir.path().to_path_buf());
+
+        // The local branch "fetched-main" does not exist yet
+        assert!(
+            !git.branch_exists("fetched-main").await.expect("branch_exists before fetch"),
+            "fetched-main should not exist before fetch_ref"
+        );
+
+        // fetch_ref with force-refspec creates the local branch directly
+        let refspec = format!("+{}:{}", default_branch, "fetched-main");
+        git.fetch_ref("origin", &refspec)
+            .await
+            .expect("fetch_ref should succeed");
+
+        // After fetch_ref, the local branch exists
+        assert!(
+            git.branch_exists("fetched-main").await.expect("branch_exists after fetch"),
+            "fetched-main should exist after fetch_ref"
+        );
     }
 }

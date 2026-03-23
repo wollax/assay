@@ -1,0 +1,46 @@
+# Example Smelt job manifest — Docker Compose runtime with a Postgres service.
+#
+# Run with: smelt run examples/job-manifest-compose.toml --dry-run
+#
+# Note: `job.repo` must be an absolute local path for real (non-dry-run) execution.
+# The "." placeholder works for --dry-run but `smelt run` will resolve it
+# to the current working directory at runtime.
+
+[job]
+name = "compose-job"
+repo = "."
+base_ref = "main"
+
+[environment]
+runtime = "compose"
+image = "alpine:3"
+
+[credentials]
+provider = "anthropic"
+model = "claude-sonnet-4-20250514"
+
+[credentials.env]
+api_key = "ANTHROPIC_API_KEY"
+
+[[services]]
+name = "postgres"
+image = "postgres:16-alpine"
+
+[services.environment]
+POSTGRES_PASSWORD = "smelt"
+
+[services.healthcheck]
+test = ["CMD-SHELL", "pg_isready -U postgres"]
+interval = "5s"
+retries = 5
+
+[[session]]
+name = "db-check"
+spec = "Verify the database connection is available and run a simple query."
+harness = "sh -c 'echo SELECT 1'"
+timeout = 300
+
+[merge]
+strategy = "sequential"
+target = "main"
+ai_resolution = false

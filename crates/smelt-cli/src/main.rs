@@ -18,10 +18,16 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Generate a skeleton job manifest
+    Init(commands::init::InitArgs),
+    /// List past runs
+    List(commands::list::ListArgs),
     /// Run a job manifest
     Run(commands::run::RunArgs),
     /// Show status of a running job
     Status(commands::status::StatusArgs),
+    /// Watch a PR until merged or closed
+    Watch(commands::watch::WatchArgs),
 }
 
 #[tokio::main]
@@ -39,8 +45,11 @@ async fn main() {
         .init();
 
     let code = match cli.command {
+        Commands::Init(ref args) => commands::init::execute(args).await,
+        Commands::List(ref args) => commands::list::execute(args).await,
         Commands::Run(ref args) => commands::run::execute(args).await,
         Commands::Status(ref args) => commands::status::execute(args).await,
+        Commands::Watch(ref args) => commands::watch::execute(args).await,
     };
 
     match code {

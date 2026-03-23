@@ -3,6 +3,7 @@
 .kata/activity/
 .kata/runtime/
 .kata/auto.lock
+.kata-cli/auto.lock
 .kata/metrics.json
 .kata/STATE.md
 .DS_Store
@@ -30,3 +31,10 @@ vendor/
 coverage/
 .cache/
 tmp/
+
+# smelt runtime state (per-job directories)
+**/.smelt/runs/
+
+# ── Kata baseline (auto-generated) ──
+.kata/debug.log
+.assay/

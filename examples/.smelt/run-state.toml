@@ -1,0 +1,10 @@
+job_name = "add-user-auth"
+phase = "provisioning"
+sessions = [
+    "frontend",
+    "backend",
+    "integration",
+]
+started_at = 1774122618
+updated_at = 1774122618
+pid = 76827

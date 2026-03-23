@@ -20,49 +20,90 @@ pub enum SmeltError {
 
     /// A git command failed.
     #[error("git {operation} failed: {message}")]
-    GitExecution { operation: String, message: String },
+    GitExecution {
+        /// The git sub-command or operation that failed (e.g. `"fetch"`).
+        operation: String,
+        /// Human-readable error message from git.
+        message: String,
+    },
 
     /// Merge conflict occurred.
     #[error("merge conflict in session '{session}': conflicting files: {}", files.join(", "))]
-    MergeConflict { session: String, files: Vec<String> },
+    MergeConflict {
+        /// Name of the session in which the conflict occurred.
+        session: String,
+        /// List of conflicting file paths.
+        files: Vec<String>,
+    },
 
     // ── Manifest errors ─────────────────────────────────────────
 
     /// Manifest parsing or validation error.
     #[error("manifest error ({field}): {message}")]
-    Manifest { field: String, message: String },
+    Manifest {
+        /// The manifest field that failed validation.
+        field: String,
+        /// Human-readable description of the validation failure.
+        message: String,
+    },
 
     // ── Provider errors ─────────────────────────────────────────
 
     /// A runtime provider operation failed.
     #[error("provider {operation} failed: {message}")]
     Provider {
+        /// The provider operation that failed (e.g. `"execute"`).
         operation: String,
+        /// Human-readable error message from the provider.
         message: String,
         /// Optional underlying cause.
         #[source]
         source: Option<Box<dyn std::error::Error + Send + Sync>>,
     },
 
+    // ── Forge errors ────────────────────────────────────────────
+
+    /// A forge (GitHub/VCS API) operation failed.
+    #[error("forge {operation} failed: {message}")]
+    Forge {
+        /// The forge operation that failed (e.g. `"create_pr"`).
+        operation: String,
+        /// Human-readable error message from the forge API.
+        message: String,
+    },
+
     // ── Credential errors ───────────────────────────────────────
 
     /// Credential resolution or validation failed.
     #[error("credential error ({provider}): {message}")]
-    Credential { provider: String, message: String },
+    Credential {
+        /// Name of the credential provider (e.g. `"github"`).
+        provider: String,
+        /// Human-readable description of the credential failure.
+        message: String,
+    },
 
     // ── Config errors ───────────────────────────────────────────
 
     /// Configuration loading or parsing failed.
     #[error("config error at `{path}`: {message}")]
-    Config { path: PathBuf, message: String },
+    Config {
+        /// Path to the configuration file that could not be loaded.
+        path: PathBuf,
+        /// Human-readable description of the configuration error.
+        message: String,
+    },
 
     // ── I/O errors ──────────────────────────────────────────────
 
     /// An I/O operation failed with context.
     #[error("{operation} at `{path}`: {source}")]
     Io {
+        /// Description of the I/O operation that failed (e.g. `"read"`).
         operation: String,
+        /// Path to the file or directory involved in the failed operation.
         path: PathBuf,
+        /// Underlying I/O error.
         source: std::io::Error,
     },
 }
@@ -102,6 +143,34 @@ impl SmeltError {
             operation: operation.into(),
             message: message.into(),
             source: Some(Box::new(source)),
+        }
+    }
+
+    /// Convenience constructor for the [`Forge`](SmeltError::Forge) variant.
+    pub fn forge(operation: impl Into<String>, message: impl Into<String>) -> Self {
+        Self::Forge {
+            operation: operation.into(),
+            message: message.into(),
+        }
+    }
+
+    /// Convenience constructor for the [`Forge`](SmeltError::Forge) variant
+    /// with an underlying source error stringified into the message.
+    ///
+    /// Note: if `octocrab::Error` proves to implement `Send + Sync + 'static`
+    /// and a chain is needed, upgrade this to carry a `source` field (see
+    /// `Provider` variant).  For now, stringifying is sufficient and keeps
+    /// the variant `#[non_exhaustive]`-stable.  Record any change in
+    /// `.kata/DECISIONS.md`.
+    pub fn forge_with_source(
+        operation: impl Into<String>,
+        message: impl Into<String>,
+        source: impl std::error::Error + Send + Sync + 'static,
+    ) -> Self {
+        let message = message.into();
+        Self::Forge {
+            operation: operation.into(),
+            message: format!("{message}: {source}"),
         }
     }
 

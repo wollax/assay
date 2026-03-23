@@ -193,6 +193,9 @@ fn test_manifest_with_repo(name: &str, repo: &str) -> JobManifest {
             ai_resolution: false,
             target: "main".to_string(),
         },
+        forge: None,
+        kubernetes: None,
+        services: vec![],
     }
 }
 

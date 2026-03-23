@@ -1,0 +1,55 @@
+# Example Smelt job manifest with forge (GitHub PR) integration.
+#
+# Run with: smelt run examples/job-manifest-forge.toml --dry-run
+#
+# When a [forge] section is present, `smelt run` will create a GitHub PR
+# after result collection. Requires GITHUB_TOKEN to be set in your env.
+# Use --no-pr to skip PR creation even when [forge] is configured.
+
+[job]
+name = "add-user-auth"
+repo = "."
+base_ref = "main"
+
+[environment]
+runtime = "docker"
+image = "alpine:3"
+
+[credentials]
+provider = "anthropic"
+model = "claude-sonnet-4-20250514"
+
+[credentials.env]
+api_key = "ANTHROPIC_API_KEY"
+
+[[session]]
+name = "frontend"
+spec = "Implement the login page with email/password form, validation, and error states."
+harness = "npm test -- --filter auth"
+timeout = 300
+
+[[session]]
+name = "backend"
+spec = "Implement the /api/auth/login endpoint with JWT tokens and rate limiting."
+harness = "npm test -- --filter api-auth"
+timeout = 600
+
+[merge]
+strategy = "sequential"
+order = ["frontend", "backend"]
+ai_resolution = true
+target = "main"
+
+# After `smelt run` completes, the PR is created on GitHub automatically.
+# Use the following commands to monitor and await the outcome:
+#
+#   smelt status add-user-auth        — view run results and PR section
+#   smelt watch add-user-auth         — block until the PR is merged (polls every 30s)
+#   smelt watch --interval-secs 60 add-user-auth
+#                                     — same, but poll every 60 s to reduce API usage
+#
+# `smelt watch` exits 0 when the PR merges, or non-zero if it is closed without merging.
+[forge]
+provider = "github"
+repo = "owner/my-repo"
+token_env = "GITHUB_TOKEN"

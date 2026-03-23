@@ -6,26 +6,52 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use anyhow::Result;
 use clap::Args;
 
+use smelt_core::forge::{CiStatus, PrState};
 use smelt_core::monitor::{JobMonitor, JobPhase, RunState};
 
 /// Show status of a running job.
+///
+/// Pass `job-name` to read per-job state from `.smelt/runs/<job-name>/state.toml`.
+/// Omit `job-name` to read legacy flat state from `.smelt/run-state.toml` for
+/// backward compatibility with runs made before S04.
 #[derive(Debug, Args)]
 pub struct StatusArgs {
     /// Path to the project root directory (defaults to current directory).
     #[arg(long, default_value = ".")]
     pub dir: PathBuf,
+
+    /// Job name to read (reads per-job state from `.smelt/runs/<job-name>/state.toml`).
+    /// Omit to read legacy flat state for backward compat.
+    #[arg()]
+    pub job_name: Option<String>,
 }
 
 /// Execute the `status` subcommand.
 pub async fn execute(args: &StatusArgs) -> Result<i32> {
-    let state_dir = args.dir.join(".smelt");
+    let state_dir_base = args.dir.join(".smelt");
 
-    let state = match JobMonitor::read(&state_dir) {
-        Ok(s) => s,
-        Err(_) => {
-            eprintln!("No running job.");
-            return Ok(1);
+    let state = match &args.job_name {
+        Some(name) => {
+            let state_dir = state_dir_base.join("runs").join(name);
+            match JobMonitor::read(&state_dir) {
+                Ok(s) => s,
+                Err(_) => {
+                    eprintln!(
+                        "No state file for job '{}' at {}",
+                        name,
+                        state_dir.display()
+                    );
+                    return Ok(1);
+                }
+            }
         }
+        None => match JobMonitor::read_legacy(&state_dir_base) {
+            Ok(s) => s,
+            Err(_) => {
+                eprintln!("No running job.");
+                return Ok(1);
+            }
+        },
     };
 
     let stale = is_pid_stale(state.pid);
@@ -86,6 +112,32 @@ fn format_elapsed(seconds: u64) -> String {
     }
 }
 
+/// Build the `── Pull Request ──` section string from cached RunState fields.
+///
+/// Returns `None` when `state.pr_url` is not set (no PR was created).
+/// When a PR URL is present, returns `Some(text)` with URL, state, CI, and
+/// review count. Status fields that are not yet cached show as "unknown" / "0".
+pub fn format_pr_section(state: &RunState) -> Option<String> {
+    let url = state.pr_url.as_deref()?;
+    let pr_state = match &state.pr_status {
+        Some(PrState::Open) => "Open",
+        Some(PrState::Merged) => "Merged",
+        Some(PrState::Closed) => "Closed",
+        None => "unknown",
+    };
+    let ci = match &state.ci_status {
+        Some(CiStatus::Pending) => "Pending",
+        Some(CiStatus::Passing) => "Passing",
+        Some(CiStatus::Failing) => "Failing",
+        Some(CiStatus::Unknown) => "unknown",
+        None => "unknown",
+    };
+    let reviews = state.review_count.unwrap_or(0);
+    Some(format!(
+        "── Pull Request ──\n  URL:     {url}\n  State:   {pr_state}\n  CI:      {ci}\n  Reviews: {reviews}"
+    ))
+}
+
 /// Print formatted job status to stdout.
 fn print_status(state: &RunState, stale: bool) {
     let now = SystemTime::now()
@@ -112,6 +164,9 @@ fn print_status(state: &RunState, stale: bool) {
     println!("PID:       {}", state.pid);
     println!("Started:   {} ago", format_elapsed(elapsed));
     println!("Elapsed:   {}", format_elapsed(elapsed));
+    if let Some(section) = format_pr_section(state) {
+        println!("{section}");
+    }
 }
 
 #[cfg(test)]
@@ -119,12 +174,19 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
-    /// Helper: write a RunState TOML file directly to a temp directory.
-    fn write_state(dir: &std::path::Path, state: &RunState) {
-        let state_dir = dir.join(".smelt");
-        std::fs::create_dir_all(&state_dir).unwrap();
+    /// Helper: write a RunState TOML file to an explicit state_dir as `state.toml`.
+    fn write_state(state_dir: &std::path::Path, state: &RunState) {
+        std::fs::create_dir_all(state_dir).unwrap();
         let content = toml::to_string_pretty(state).unwrap();
-        std::fs::write(state_dir.join("run-state.toml"), content).unwrap();
+        std::fs::write(state_dir.join("state.toml"), content).unwrap();
+    }
+
+    /// Helper: write a RunState TOML file in legacy flat format (`run-state.toml`).
+    fn write_legacy_state(base_dir: &std::path::Path, state: &RunState) {
+        let smelt_dir = base_dir.join(".smelt");
+        std::fs::create_dir_all(&smelt_dir).unwrap();
+        let content = toml::to_string_pretty(state).unwrap();
+        std::fs::write(smelt_dir.join("run-state.toml"), content).unwrap();
     }
 
     fn make_active_state() -> RunState {
@@ -140,6 +202,13 @@ mod tests {
             started_at: now - 120,
             updated_at: now - 10,
             pid: std::process::id(), // current process — definitely alive
+            pr_url: None,
+            pr_number: None,
+            pr_status: None,
+            ci_status: None,
+            review_count: None,
+            forge_repo: None,
+            forge_token_env: None,
         }
     }
 
@@ -148,6 +217,7 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let args = StatusArgs {
             dir: dir.path().to_path_buf(),
+            job_name: None,
         };
         let code = execute(&args).await.unwrap();
         assert_eq!(code, 1, "should return 1 when no state file exists");
@@ -157,10 +227,13 @@ mod tests {
     async fn test_status_with_active_job() {
         let dir = TempDir::new().unwrap();
         let state = make_active_state();
-        write_state(dir.path(), &state);
+        // Per-job path: .smelt/runs/integration-test/state.toml
+        let state_dir = dir.path().join(".smelt").join("runs").join("integration-test");
+        write_state(&state_dir, &state);
 
         let args = StatusArgs {
             dir: dir.path().to_path_buf(),
+            job_name: Some("integration-test".into()),
         };
         let code = execute(&args).await.unwrap();
         assert_eq!(code, 0, "should return 0 for active job with live PID");
@@ -171,13 +244,34 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let mut state = make_active_state();
         state.pid = 99_999_999; // extremely unlikely to be a real PID
-        write_state(dir.path(), &state);
+        let state_dir = dir.path().join(".smelt").join("runs").join("integration-test");
+        write_state(&state_dir, &state);
 
         let args = StatusArgs {
             dir: dir.path().to_path_buf(),
+            job_name: Some("integration-test".into()),
         };
         let code = execute(&args).await.unwrap();
         assert_eq!(code, 1, "should return 1 for stale PID");
+    }
+
+    /// Backward compat: status with no job_name reads legacy flat state file.
+    #[tokio::test]
+    async fn test_status_legacy_backward_compat() {
+        let dir = TempDir::new().unwrap();
+        let mut state = make_active_state();
+        // Use a dead PID so we don't accidentally have a live process clash
+        state.pid = 99_999_998;
+        state.phase = JobPhase::Complete;
+        write_legacy_state(dir.path(), &state);
+
+        let args = StatusArgs {
+            dir: dir.path().to_path_buf(),
+            job_name: None, // legacy path
+        };
+        let code = execute(&args).await.unwrap();
+        // Complete phase → terminal → returns 1
+        assert_eq!(code, 1, "terminal phase should return 1 even via legacy path");
     }
 
     #[test]

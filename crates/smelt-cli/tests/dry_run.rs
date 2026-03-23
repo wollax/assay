@@ -165,6 +165,115 @@ fn run_without_dry_run_attempts_docker() {
     );
 }
 
+// ── Forge section ─────────────────────────────────────────────
+
+#[test]
+fn test_dry_run_with_forge_shows_forge_section() {
+    smelt()
+        .args(["run", "examples/job-manifest-forge.toml", "--dry-run"])
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("── Forge ──")
+                .and(predicate::str::contains("github"))
+                .and(predicate::str::contains("owner/my-repo"))
+                .and(predicate::str::contains("GITHUB_TOKEN"))
+                .and(predicate::str::contains("--no-pr")),
+        );
+}
+
+#[test]
+fn test_dry_run_no_pr_flag_accepted() {
+    // --no-pr only affects live runs; dry-run still shows the forge section.
+    smelt()
+        .args(["run", "examples/job-manifest-forge.toml", "--dry-run", "--no-pr"])
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("── Forge ──")
+                .and(predicate::str::contains("owner/my-repo"))
+                .and(predicate::str::contains("GITHUB_TOKEN")),
+        );
+}
+
+// ── smelt init → dry-run smoke ─────────────────────────────────
+
+/// End-to-end smoke: `smelt init` in a fresh tempdir, then `smelt run --dry-run`
+/// against the generated manifest.  Proves the skeleton is always valid and that
+/// the init→dry-run path works without Docker or credentials.
+#[test]
+fn test_init_then_dry_run_smoke() {
+    let dir = tempfile::TempDir::new().expect("tempdir should be created");
+
+    // Step 1: smelt init
+    Command::cargo_bin("smelt")
+        .expect("binary should be built")
+        .current_dir(dir.path())
+        .arg("init")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Created job-manifest.toml"));
+
+    // Manifest must exist after init
+    assert!(
+        dir.path().join("job-manifest.toml").exists(),
+        "job-manifest.toml must exist after smelt init"
+    );
+
+    // Step 2: smelt run --dry-run against the generated manifest
+    Command::cargo_bin("smelt")
+        .expect("binary should be built")
+        .current_dir(dir.path())
+        .args(["run", "job-manifest.toml", "--dry-run"])
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("═══ Execution Plan ═══")
+                .and(predicate::str::contains("my-job"))
+                .and(predicate::str::contains("═══ End Plan ═══")
+                    .or(predicate::str::contains("End Plan"))),
+        );
+}
+
+// ── Compose services section ──────────────────────────────────
+
+#[test]
+fn dry_run_compose_manifest_shows_services_section() {
+    smelt()
+        .args(["run", "examples/job-manifest-compose.toml", "--dry-run"])
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("── Compose Services ──")
+                .and(predicate::str::contains("postgres"))
+                .and(predicate::str::contains("postgres:16-alpine")),
+        );
+}
+
+#[test]
+fn dry_run_docker_manifest_no_services_section() {
+    smelt()
+        .args(["run", "examples/job-manifest.toml", "--dry-run"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("── Compose Services ──").not());
+}
+
+// ── Kubernetes section ────────────────────────────────────────
+
+#[test]
+fn dry_run_kubernetes_manifest_shows_kubernetes_section() {
+    smelt()
+        .args(["run", "examples/job-manifest-k8s.toml", "--dry-run"])
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("── Kubernetes ──")
+                .and(predicate::str::contains("smelt"))
+                .and(predicate::str::contains("ambient")),
+        );
+}
+
 // ── Credential value never leaked ──────────────────────────────
 
 #[test]

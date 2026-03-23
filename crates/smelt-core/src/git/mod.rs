@@ -11,10 +11,15 @@ use crate::error::{Result, SmeltError};
 /// Entry from `git worktree list --porcelain`.
 #[derive(Debug, Clone)]
 pub struct GitWorktreeEntry {
+    /// Absolute path to the worktree root directory.
     pub path: PathBuf,
+    /// SHA-1 of the HEAD commit in this worktree.
     pub head: String,
+    /// Branch checked out in this worktree, or `None` for a detached HEAD.
     pub branch: Option<String>,
+    /// Whether this worktree was created with `--bare`.
     pub is_bare: bool,
+    /// Whether this worktree is locked (cannot be pruned).
     pub is_locked: bool,
 }
 
@@ -191,6 +196,17 @@ pub trait GitOps {
 
     /// Resolve a ref to a full commit hash.
     fn rev_parse(&self, rev: &str) -> impl Future<Output = Result<String>> + Send;
+
+    /// Fetch a refspec from a remote into the local repository.
+    ///
+    /// The refspec `+<branch>:<branch>` force-updates the local ref from the
+    /// remote — the leading `+` is required for re-runs when the local branch
+    /// already exists.
+    fn fetch_ref(
+        &self,
+        remote: &str,
+        refspec: &str,
+    ) -> impl Future<Output = Result<()>> + Send;
 
     /// List changed file paths between two refs.
     fn diff_name_only(

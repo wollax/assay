@@ -1,0 +1,33 @@
+[job]
+name = "my-k8s-job"
+repo = "git@github.com:example/repo.git"
+base_ref = "main"
+
+[environment]
+runtime = "kubernetes"
+image = "ghcr.io/example/assay-agent:latest"
+
+[credentials]
+provider = "anthropic"
+model = "claude-opus-4-5"
+
+[credentials.env]
+ANTHROPIC_API_KEY = "ANTHROPIC_API_KEY"
+
+[[session]]
+name = "code-review"
+spec = "review"
+harness = "default"
+timeout = 1800
+
+[merge]
+strategy = "sequential"
+target = "main"
+
+[kubernetes]
+namespace = "smelt"
+ssh_key_env = "SMELT_SSH_KEY"
+cpu_request = "500m"
+memory_request = "512Mi"
+cpu_limit = "2000m"
+memory_limit = "2Gi"

@@ -28,7 +28,7 @@ const CONTAINER_MANIFEST_PATH: &str = "/tmp/smelt-manifest.toml";
 /// Maps to `[[sessions]]` (plural) in Assay's schema.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct SmeltRunManifest {
+pub(crate) struct SmeltRunManifest {
     /// Session references for Assay to execute.
     pub sessions: Vec<SmeltManifestSession>,
 }
@@ -39,7 +39,7 @@ pub struct SmeltRunManifest {
 /// a human-readable display name and dependency list.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct SmeltManifestSession {
+pub(crate) struct SmeltManifestSession {
     /// Sanitized spec file name (no extension) — references a file under
     /// `/workspace/.assay/specs/<spec>.toml`.
     pub spec: String,
@@ -57,7 +57,7 @@ pub struct SmeltManifestSession {
 /// `/workspace/.assay/specs/<sanitized_name>.toml`.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct SmeltSpec {
+pub(crate) struct SmeltSpec {
     /// Unique spec name (sanitized session name).
     pub name: String,
 
@@ -72,7 +72,7 @@ pub struct SmeltSpec {
 /// A single criterion within a spec's `[[criteria]]` array.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct SmeltCriterion {
+pub(crate) struct SmeltCriterion {
     /// Criterion name.
     pub name: String,
 
@@ -171,8 +171,8 @@ impl AssayInvoker {
 
     /// Build an Assay run manifest TOML string from a Smelt [`JobManifest`].
     ///
-    /// Maps each [`SessionDef`](crate::manifest::SessionDef) to a
-    /// [`SmeltManifestSession`] (referencing a spec file by sanitized name)
+    /// Maps each [`SessionDef`] to a
+    /// `SmeltManifestSession` (referencing a spec file by sanitized name)
     /// and serializes the result as pretty-printed TOML.
     pub fn build_run_manifest_toml(manifest: &JobManifest) -> String {
         let run_manifest = SmeltRunManifest {

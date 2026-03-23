@@ -6,9 +6,42 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
+use indexmap::IndexMap;
 use serde::Deserialize;
 
 use crate::error::SmeltError;
+use crate::forge::ForgeConfig;
+
+/// Configuration for the Kubernetes runtime provider.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct KubernetesConfig {
+    /// Kubernetes namespace for the Pod and SSH Secret.
+    pub namespace: String,
+
+    /// kubeconfig context to use; uses ambient context if absent.
+    #[serde(default)]
+    pub context: Option<String>,
+
+    /// Name of the env var containing the SSH private key.
+    pub ssh_key_env: String,
+
+    /// CPU request for the agent container (e.g. "500m").
+    #[serde(default)]
+    pub cpu_request: Option<String>,
+
+    /// Memory request for the agent container (e.g. "512Mi").
+    #[serde(default)]
+    pub memory_request: Option<String>,
+
+    /// CPU limit for the agent container.
+    #[serde(default)]
+    pub cpu_limit: Option<String>,
+
+    /// Memory limit for the agent container.
+    #[serde(default)]
+    pub memory_limit: Option<String>,
+}
 
 /// Top-level job manifest parsed from TOML.
 #[derive(Debug, Deserialize)]
@@ -28,6 +61,19 @@ pub struct JobManifest {
 
     /// Merge configuration.
     pub merge: MergeConfig,
+
+    /// Optional forge (PR creation) configuration.
+    #[serde(default)]
+    pub forge: Option<ForgeConfig>,
+
+    /// Optional Kubernetes runtime configuration.
+    #[serde(default)]
+    pub kubernetes: Option<KubernetesConfig>,
+
+    /// Docker Compose service definitions, populated from `[[services]]` TOML array.
+    /// Defaults to an empty vec so existing manifests without services still parse.
+    #[serde(default)]
+    pub services: Vec<ComposeService>,
 }
 
 /// `[job]` — high-level job metadata.
@@ -115,6 +161,25 @@ pub struct MergeConfig {
     pub target: String,
 }
 
+/// `[[services]]` — a Docker Compose service definition.
+///
+/// Known fields (`name`, `image`) are captured as typed fields. Any additional
+/// Compose keys (e.g. `ports`, `volumes`, `environment`) are captured as-is
+/// via serde flatten into `extra`. No `deny_unknown_fields` so this is an
+/// intentional passthrough per D073.
+#[derive(Debug, Deserialize)]
+pub struct ComposeService {
+    /// Service name used to identify this container within the compose network.
+    pub name: String,
+
+    /// Container image reference (e.g. `"postgres:16"`).
+    pub image: String,
+
+    /// All remaining Compose keys for this service (ports, volumes, env, etc.).
+    #[serde(flatten)]
+    pub extra: IndexMap<String, toml::Value>,
+}
+
 /// Validation errors collected during manifest validation.
 #[derive(Debug)]
 pub struct ValidationErrors {
@@ -177,6 +242,43 @@ impl JobManifest {
             errors.push("environment.image: must not be empty".to_string());
         }
 
+        // environment.runtime must be a known value
+        const VALID_RUNTIMES: &[&str] = &["docker", "compose", "kubernetes"];
+        if !VALID_RUNTIMES.contains(&self.environment.runtime.as_str()) {
+            errors.push(format!(
+                "environment.runtime: must be one of {:?}, got `{}`",
+                VALID_RUNTIMES, self.environment.runtime
+            ));
+        }
+
+        // kubernetes block requires kubernetes runtime and vice versa
+        if self.environment.runtime == "kubernetes" {
+            match &self.kubernetes {
+                None => errors.push("kubernetes: `runtime = \"kubernetes\"` requires a `[kubernetes]` block".to_string()),
+                Some(k) => {
+                    if k.namespace.trim().is_empty() {
+                        errors.push("kubernetes.namespace: must not be empty".to_string());
+                    }
+                    if k.ssh_key_env.trim().is_empty() {
+                        errors.push("kubernetes.ssh_key_env: must not be empty".to_string());
+                    }
+                }
+            }
+        } else if self.kubernetes.is_some() {
+            errors.push(format!(
+                "kubernetes: `[kubernetes]` block requires `runtime = \"kubernetes\"`, got `{}`",
+                self.environment.runtime
+            ));
+        }
+
+        // services entries require compose runtime
+        if self.environment.runtime != "compose" && !self.services.is_empty() {
+            errors.push(format!(
+                "services: `[[services]]` entries require `runtime = \"compose\"`, got `{}`",
+                self.environment.runtime
+            ));
+        }
+
         // At least one session required
         if self.session.is_empty() {
             errors.push("session: at least one session is required".to_string());
@@ -222,6 +324,18 @@ impl JobManifest {
             errors.push(format!("session dependencies: cycle detected: {cycle}"));
         }
 
+        // Per-service validation (only enforced when runtime is compose)
+        if self.environment.runtime == "compose" {
+            for (i, svc) in self.services.iter().enumerate() {
+                if svc.name.trim().is_empty() {
+                    errors.push(format!("services[{i}].name: must not be empty"));
+                }
+                if svc.image.trim().is_empty() {
+                    errors.push(format!("services[{i}].image: must not be empty"));
+                }
+            }
+        }
+
         // merge.target must not be empty
         if self.merge.target.trim().is_empty() {
             errors.push("merge.target: must not be empty".to_string());
@@ -232,6 +346,24 @@ impl JobManifest {
             if !all_names.contains(entry.as_str()) {
                 errors.push(format!(
                     "merge.order: unknown session `{entry}`"
+                ));
+            }
+        }
+
+        // forge section validation (structural only — D018)
+        if let Some(ref forge) = self.forge {
+            if forge.token_env.trim().is_empty() {
+                errors.push("forge.token_env: must not be empty".to_string());
+            }
+            let valid_repo = forge
+                .repo
+                .split_once('/')
+                .map(|(owner, name)| !owner.is_empty() && !name.is_empty())
+                .unwrap_or(false);
+            if !valid_repo {
+                errors.push(format!(
+                    "forge.repo: must be in `owner/repo` format, got `{}`",
+                    forge.repo
                 ));
             }
         }
@@ -327,9 +459,15 @@ impl JobManifest {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CredentialStatus {
     /// Credential was found at the given source.
-    Resolved { source: String },
+    Resolved {
+        /// Description of where the credential was resolved from (e.g. an environment variable name).
+        source: String,
+    },
     /// Credential was not found at the expected source.
-    Missing { source: String },
+    Missing {
+        /// Description of where the credential was expected to be found.
+        source: String,
+    },
 }
 
 impl std::fmt::Display for CredentialStatus {
@@ -438,6 +576,47 @@ target = "main"
     fn load_from_str(content: &str) -> crate::Result<JobManifest> {
         JobManifest::from_str(content, Path::new("test.toml"))
     }
+
+    /// Minimal compose manifest with two `[[services]]` entries:
+    /// - `postgres` with extra fields covering all four extra-field types
+    ///   (string, integer, boolean, array) to prove type fidelity.
+    /// - `redis` bare (name + image only).
+    const VALID_COMPOSE_MANIFEST: &str = r#"
+[job]
+name = "compose-job"
+repo = "https://github.com/example/repo"
+base_ref = "main"
+
+[environment]
+runtime = "compose"
+image = "ubuntu:22.04"
+
+[credentials]
+provider = "anthropic"
+model = "claude-sonnet-4-20250514"
+
+[[session]]
+name = "run"
+spec = "Run the suite"
+harness = "pytest"
+timeout = 300
+
+[merge]
+strategy = "sequential"
+target = "main"
+
+[[services]]
+name = "postgres"
+image = "postgres:16"
+port = 5432
+restart = true
+command = ["pg_isready", "-U", "postgres"]
+tag = "db"
+
+[[services]]
+name = "redis"
+image = "redis:7"
+"#;
 
     #[test]
     fn parse_valid_manifest() {
@@ -972,5 +1151,649 @@ target = ""
         let result = resolve_repo_path(spaced.to_str().unwrap()).unwrap();
         assert!(result.is_absolute());
         assert_eq!(result, std::fs::canonicalize(&spaced).unwrap());
+    }
+
+    // ── forge field tests ─────────────────────────────────────────────────────
+
+    const MANIFEST_WITH_FORGE: &str = r#"
+[job]
+name = "test-job"
+repo = "https://github.com/example/repo"
+base_ref = "main"
+
+[environment]
+runtime = "docker"
+image = "ubuntu:22.04"
+
+[credentials]
+provider = "anthropic"
+model = "claude-sonnet-4-20250514"
+
+[[session]]
+name = "frontend"
+spec = "Implement the login page"
+harness = "npm test"
+timeout = 300
+
+[merge]
+strategy = "sequential"
+target = "main"
+
+[forge]
+provider = "github"
+repo = "owner/my-repo"
+token_env = "GITHUB_TOKEN"
+"#;
+
+    #[test]
+    fn test_parse_manifest_with_forge() {
+        let manifest = load_from_str(MANIFEST_WITH_FORGE).expect("should parse");
+        let forge = manifest.forge.as_ref().expect("forge should be Some");
+        assert_eq!(forge.provider, "github");
+        assert_eq!(forge.repo, "owner/my-repo");
+        assert_eq!(forge.token_env, "GITHUB_TOKEN");
+    }
+
+    #[test]
+    fn test_parse_manifest_without_forge() {
+        let manifest = load_from_str(VALID_MANIFEST).expect("should parse");
+        assert!(manifest.forge.is_none(), "forge should be None when no [forge] section");
+    }
+
+    #[test]
+    fn test_validate_forge_invalid_repo_format() {
+        let toml = r#"
+[job]
+name = "test-job"
+repo = "https://github.com/example/repo"
+base_ref = "main"
+
+[environment]
+runtime = "docker"
+image = "ubuntu:22.04"
+
+[credentials]
+provider = "anthropic"
+model = "claude-sonnet-4-20250514"
+
+[[session]]
+name = "s1"
+spec = "s"
+harness = "h"
+timeout = 60
+
+[merge]
+strategy = "sequential"
+target = "main"
+
+[forge]
+provider = "github"
+repo = "no-slash"
+token_env = "GITHUB_TOKEN"
+"#;
+        let manifest = load_from_str(toml).expect("should parse");
+        let err = manifest.validate().unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("owner/repo"),
+            "should report invalid repo format: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_validate_forge_empty_token_env() {
+        let toml = r#"
+[job]
+name = "test-job"
+repo = "https://github.com/example/repo"
+base_ref = "main"
+
+[environment]
+runtime = "docker"
+image = "ubuntu:22.04"
+
+[credentials]
+provider = "anthropic"
+model = "claude-sonnet-4-20250514"
+
+[[session]]
+name = "s1"
+spec = "s"
+harness = "h"
+timeout = 60
+
+[merge]
+strategy = "sequential"
+target = "main"
+
+[forge]
+provider = "github"
+repo = "owner/repo"
+token_env = ""
+"#;
+        let manifest = load_from_str(toml).expect("should parse");
+        let err = manifest.validate().unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("forge.token_env: must not be empty"),
+            "should report empty token_env: {msg}"
+        );
+    }
+
+    // ── ComposeService / services tests ──────────────────────────────────────
+
+    #[test]
+    fn test_compose_manifest_roundtrip_with_services() {
+        let manifest = load_from_str(VALID_COMPOSE_MANIFEST).expect("should parse");
+        assert_eq!(manifest.services.len(), 2);
+        assert_eq!(manifest.services[0].name, "postgres");
+        assert_eq!(manifest.services[0].image, "postgres:16");
+        // extra keys are present
+        assert!(manifest.services[0].extra.contains_key("port"), "extra should have 'port'");
+        assert!(manifest.services[0].extra.contains_key("restart"), "extra should have 'restart'");
+        assert!(manifest.services[0].extra.contains_key("command"), "extra should have 'command'");
+        assert!(manifest.services[0].extra.contains_key("tag"), "extra should have 'tag'");
+        // serde flatten must NOT capture name/image into extra
+        assert!(!manifest.services[0].extra.contains_key("name"), "extra must not contain 'name'");
+        assert!(!manifest.services[0].extra.contains_key("image"), "extra must not contain 'image'");
+        // second service is bare
+        assert_eq!(manifest.services[1].name, "redis");
+        assert_eq!(manifest.services[1].image, "redis:7");
+        assert!(manifest.services[1].extra.is_empty(), "redis extra should be empty");
+    }
+
+    #[test]
+    fn test_compose_manifest_roundtrip_no_services() {
+        // VALID_MANIFEST uses runtime = "docker" and has no [[services]] section
+        let manifest = load_from_str(VALID_MANIFEST).expect("should parse");
+        assert!(manifest.services.is_empty(), "docker manifest should have no services");
+    }
+
+    #[test]
+    fn test_compose_service_extra_does_not_contain_name_or_image() {
+        let toml = r#"
+[job]
+name = "j"
+repo = "r"
+base_ref = "main"
+
+[environment]
+runtime = "compose"
+image = "img"
+
+[credentials]
+provider = "anthropic"
+model = "m"
+
+[[session]]
+name = "s"
+spec = "s"
+harness = "h"
+timeout = 60
+
+[merge]
+strategy = "sequential"
+target = "main"
+
+[[services]]
+name = "mydb"
+image = "postgres:16"
+port = 5432
+"#;
+        let manifest = load_from_str(toml).expect("should parse");
+        let svc = &manifest.services[0];
+        assert!(!svc.extra.contains_key("name"), "serde flatten must exclude 'name' from extra");
+        assert!(!svc.extra.contains_key("image"), "serde flatten must exclude 'image' from extra");
+        assert!(svc.extra.contains_key("port"), "extra should have 'port'");
+    }
+
+    #[test]
+    fn test_compose_service_passthrough_types() {
+        let manifest = load_from_str(VALID_COMPOSE_MANIFEST).expect("should parse");
+        let svc = &manifest.services[0]; // postgres with all extra types
+
+        // integer
+        let port = svc.extra.get("port").expect("port must be present");
+        assert!(matches!(port, toml::Value::Integer(5432)), "port should be Integer(5432), got {port:?}");
+
+        // boolean
+        let restart = svc.extra.get("restart").expect("restart must be present");
+        assert!(matches!(restart, toml::Value::Boolean(true)), "restart should be Boolean(true), got {restart:?}");
+
+        // array
+        let command = svc.extra.get("command").expect("command must be present");
+        assert!(matches!(command, toml::Value::Array(_)), "command should be Array, got {command:?}");
+        if let toml::Value::Array(arr) = command {
+            assert_eq!(arr.len(), 3);
+            assert_eq!(arr[0], toml::Value::String("pg_isready".to_string()));
+        }
+
+        // string
+        let tag = svc.extra.get("tag").expect("tag must be present");
+        assert!(matches!(tag, toml::Value::String(_)), "tag should be String, got {tag:?}");
+    }
+
+    #[test]
+    fn test_validate_compose_service_missing_name() {
+        let toml = r#"
+[job]
+name = "j"
+repo = "r"
+base_ref = "main"
+
+[environment]
+runtime = "compose"
+image = "img"
+
+[credentials]
+provider = "anthropic"
+model = "m"
+
+[[session]]
+name = "s"
+spec = "s"
+harness = "h"
+timeout = 60
+
+[merge]
+strategy = "sequential"
+target = "main"
+
+[[services]]
+name = ""
+image = "img"
+"#;
+        let manifest = load_from_str(toml).expect("should parse");
+        let err = manifest.validate().unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("services[0].name"), "should report empty service name: {msg}");
+    }
+
+    #[test]
+    fn test_validate_compose_service_missing_image() {
+        let toml = r#"
+[job]
+name = "j"
+repo = "r"
+base_ref = "main"
+
+[environment]
+runtime = "compose"
+image = "img"
+
+[credentials]
+provider = "anthropic"
+model = "m"
+
+[[session]]
+name = "s"
+spec = "s"
+harness = "h"
+timeout = 60
+
+[merge]
+strategy = "sequential"
+target = "main"
+
+[[services]]
+name = "svc"
+image = ""
+"#;
+        let manifest = load_from_str(toml).expect("should parse");
+        let err = manifest.validate().unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("services[0].image"), "should report empty service image: {msg}");
+    }
+
+    #[test]
+    fn test_validate_services_require_compose_runtime() {
+        let toml = r#"
+[job]
+name = "j"
+repo = "r"
+base_ref = "main"
+
+[environment]
+runtime = "docker"
+image = "img"
+
+[credentials]
+provider = "anthropic"
+model = "m"
+
+[[session]]
+name = "s"
+spec = "s"
+harness = "h"
+timeout = 60
+
+[merge]
+strategy = "sequential"
+target = "main"
+
+[[services]]
+name = "db"
+image = "postgres:16"
+"#;
+        let manifest = load_from_str(toml).expect("should parse");
+        let err = manifest.validate().unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("services:"), "should report services error: {msg}");
+        assert!(msg.contains("compose"), "should mention compose runtime: {msg}");
+    }
+
+    #[test]
+    fn test_validate_compose_empty_services_allowed() {
+        let toml = r#"
+[job]
+name = "j"
+repo = "r"
+base_ref = "main"
+
+[environment]
+runtime = "compose"
+image = "img"
+
+[credentials]
+provider = "anthropic"
+model = "m"
+
+[[session]]
+name = "s"
+spec = "s"
+harness = "h"
+timeout = 60
+
+[merge]
+strategy = "sequential"
+target = "main"
+"#;
+        let manifest = load_from_str(toml).expect("should parse");
+        assert!(manifest.services.is_empty());
+        manifest.validate().expect("compose with no services should be valid");
+    }
+
+    #[test]
+    fn test_validate_runtime_unknown_rejected() {
+        // "podman" is not a valid runtime — tests that unknown values are rejected
+        let toml = r#"
+[job]
+name = "j"
+repo = "r"
+base_ref = "main"
+
+[environment]
+runtime = "podman"
+image = "img"
+
+[credentials]
+provider = "anthropic"
+model = "m"
+
+[[session]]
+name = "s"
+spec = "s"
+harness = "h"
+timeout = 60
+
+[merge]
+strategy = "sequential"
+target = "main"
+"#;
+        let manifest = load_from_str(toml).expect("should parse");
+        let err = manifest.validate().unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("environment.runtime"), "should report unknown runtime: {msg}");
+    }
+
+    // ── Kubernetes field tests ────────────────────────────────────────────────
+
+    const KUBERNETES_MANIFEST: &str = r#"
+[job]
+name = "kube-job"
+repo = "https://github.com/example/repo"
+base_ref = "main"
+
+[environment]
+runtime = "kubernetes"
+image = "ubuntu:22.04"
+
+[credentials]
+provider = "anthropic"
+model = "claude-sonnet-4-20250514"
+
+[[session]]
+name = "agent"
+spec = "Run the task"
+harness = "kata run"
+timeout = 600
+
+[merge]
+strategy = "sequential"
+target = "main"
+
+[kubernetes]
+namespace = "smelt-jobs"
+context = "my-cluster"
+ssh_key_env = "SSH_PRIVATE_KEY"
+cpu_request = "500m"
+memory_request = "512Mi"
+cpu_limit = "2"
+memory_limit = "2Gi"
+"#;
+
+    #[test]
+    fn test_kubernetes_roundtrip_present() {
+        let manifest = load_from_str(KUBERNETES_MANIFEST).expect("should parse");
+        let kube = manifest.kubernetes.as_ref().expect("kubernetes should be Some");
+        assert_eq!(kube.namespace, "smelt-jobs");
+        assert_eq!(kube.context.as_deref(), Some("my-cluster"));
+        assert_eq!(kube.ssh_key_env, "SSH_PRIVATE_KEY");
+        assert_eq!(kube.cpu_request.as_deref(), Some("500m"));
+        assert_eq!(kube.memory_request.as_deref(), Some("512Mi"));
+        assert_eq!(kube.cpu_limit.as_deref(), Some("2"));
+        assert_eq!(kube.memory_limit.as_deref(), Some("2Gi"));
+    }
+
+    #[test]
+    fn test_kubernetes_roundtrip_absent() {
+        // Standard docker-runtime manifest — kubernetes must be None
+        let manifest = load_from_str(VALID_MANIFEST).expect("should parse");
+        assert!(manifest.kubernetes.is_none(), "kubernetes should be None when no [kubernetes] section");
+    }
+
+    #[test]
+    fn test_validate_kubernetes_runtime_requires_block() {
+        // runtime = "kubernetes" but no [kubernetes] block → error
+        let toml = r#"
+[job]
+name = "j"
+repo = "r"
+base_ref = "main"
+
+[environment]
+runtime = "kubernetes"
+image = "img"
+
+[credentials]
+provider = "anthropic"
+model = "m"
+
+[[session]]
+name = "s"
+spec = "s"
+harness = "h"
+timeout = 60
+
+[merge]
+strategy = "sequential"
+target = "main"
+"#;
+        let manifest = load_from_str(toml).expect("should parse");
+        let err = manifest.validate().unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("kubernetes"), "should report kubernetes error: {msg}");
+    }
+
+    #[test]
+    fn test_validate_kubernetes_block_requires_runtime() {
+        // runtime = "docker" + [kubernetes] block → error
+        let toml = r#"
+[job]
+name = "j"
+repo = "r"
+base_ref = "main"
+
+[environment]
+runtime = "docker"
+image = "img"
+
+[credentials]
+provider = "anthropic"
+model = "m"
+
+[[session]]
+name = "s"
+spec = "s"
+harness = "h"
+timeout = 60
+
+[merge]
+strategy = "sequential"
+target = "main"
+
+[kubernetes]
+namespace = "smelt-jobs"
+ssh_key_env = "SSH_PRIVATE_KEY"
+"#;
+        let manifest = load_from_str(toml).expect("should parse");
+        let err = manifest.validate().unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("kubernetes"), "should report kubernetes error: {msg}");
+    }
+
+    #[test]
+    fn test_validate_kubernetes_empty_namespace() {
+        let toml = r#"
+[job]
+name = "j"
+repo = "r"
+base_ref = "main"
+
+[environment]
+runtime = "kubernetes"
+image = "img"
+
+[credentials]
+provider = "anthropic"
+model = "m"
+
+[[session]]
+name = "s"
+spec = "s"
+harness = "h"
+timeout = 60
+
+[merge]
+strategy = "sequential"
+target = "main"
+
+[kubernetes]
+namespace = ""
+ssh_key_env = "SSH_PRIVATE_KEY"
+"#;
+        let manifest = load_from_str(toml).expect("should parse");
+        let err = manifest.validate().unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("namespace"), "should report namespace error: {msg}");
+    }
+
+    #[test]
+    fn test_validate_kubernetes_empty_ssh_key_env() {
+        let toml = r#"
+[job]
+name = "j"
+repo = "r"
+base_ref = "main"
+
+[environment]
+runtime = "kubernetes"
+image = "img"
+
+[credentials]
+provider = "anthropic"
+model = "m"
+
+[[session]]
+name = "s"
+spec = "s"
+harness = "h"
+timeout = 60
+
+[merge]
+strategy = "sequential"
+target = "main"
+
+[kubernetes]
+namespace = "smelt-jobs"
+ssh_key_env = ""
+"#;
+        let manifest = load_from_str(toml).expect("should parse");
+        let err = manifest.validate().unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("ssh_key_env"), "should report ssh_key_env error: {msg}");
+    }
+
+    #[test]
+    fn test_validate_kubernetes_valid() {
+        let manifest = load_from_str(KUBERNETES_MANIFEST).expect("should parse");
+        manifest.validate().expect("fully valid kubernetes manifest should pass validation");
+    }
+
+    #[test]
+    fn test_validate_runtime_compose_valid() {
+        // compose runtime + services should pass validate()
+        let manifest = load_from_str(VALID_COMPOSE_MANIFEST).expect("should parse");
+        manifest.validate().expect("compose manifest with services should be valid");
+    }
+
+    #[test]
+    fn test_forge_deny_unknown_fields() {
+        let toml = r#"
+[job]
+name = "test-job"
+repo = "https://github.com/example/repo"
+base_ref = "main"
+
+[environment]
+runtime = "docker"
+image = "ubuntu:22.04"
+
+[credentials]
+provider = "anthropic"
+model = "claude-sonnet-4-20250514"
+
+[[session]]
+name = "s1"
+spec = "s"
+harness = "h"
+timeout = 60
+
+[merge]
+strategy = "sequential"
+target = "main"
+
+[forge]
+provider = "github"
+repo = "owner/repo"
+token_env = "GITHUB_TOKEN"
+unknown_field = "oops"
+"#;
+        let err = load_from_str(toml).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("unknown_field") || msg.contains("unknown field"),
+            "should report unknown field in forge: {msg}"
+        );
     }
 }
