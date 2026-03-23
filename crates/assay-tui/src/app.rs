@@ -613,6 +613,23 @@ impl App {
                     KeyCode::Esc => {
                         self.screen = Screen::Dashboard;
                     }
+                    KeyCode::Up => {
+                        let current = self.agent_list_state.selected().unwrap_or(0);
+                        if current > 0 {
+                            self.agent_list_state.select(Some(current - 1));
+                        }
+                    }
+                    KeyCode::Down => {
+                        let line_count = if let Screen::AgentRun { ref lines, .. } = self.screen {
+                            lines.len()
+                        } else {
+                            0
+                        };
+                        let current = self.agent_list_state.selected().unwrap_or(0);
+                        if line_count > 0 && current < line_count - 1 {
+                            self.agent_list_state.select(Some(current + 1));
+                        }
+                    }
                     _ => {}
                 }
                 false
@@ -659,17 +676,24 @@ impl App {
                                 }
                             }
                             Some(root) => {
-                                // Build or mutate config.
-                                let mut cfg =
-                                    self.config.clone().unwrap_or_else(|| assay_types::Config {
-                                        project_name: String::new(),
-                                        specs_dir: "specs/".to_string(),
-                                        gates: None,
-                                        guard: None,
-                                        worktree: None,
-                                        sessions: None,
-                                        provider: None,
-                                    });
+                                // Refuse to save when no config is loaded — creating a
+                                // Config with project_name: "" would write an invalid file.
+                                // The user must run `assay init` to create a valid config.
+                                let mut cfg = match self.config.clone() {
+                                    Some(existing) => existing,
+                                    None => {
+                                        if let Screen::Settings { ref mut error, .. } =
+                                            self.screen
+                                        {
+                                            *error = Some(
+                                                "Cannot save: no config.toml found. \
+                                                 Run `assay init` first."
+                                                    .to_string(),
+                                            );
+                                        }
+                                        return false;
+                                    }
+                                };
                                 cfg.provider = Some(ProviderConfig {
                                     provider: kind,
                                     planning_model: cfg
@@ -718,8 +742,10 @@ impl App {
     /// Returns `true` if the app should exit (currently always `false`).
     ///
     /// - `AgentLine(s)`: appends `s` to `Screen::AgentRun.lines` when in that screen.
-    /// - `AgentDone { exit_code }`: transitions `status` to `Done` or `Failed`, joins
-    ///   the agent thread, and reloads milestones/cycle_slug from disk.
+    /// - `AgentDone { exit_code }`: joins `agent_thread` to get the real exit code
+    ///   (falls back to the event's `exit_code` when no thread is stored, e.g. in
+    ///   tests), transitions `status` to `Done` or `Failed`, and reloads
+    ///   milestones/cycle_slug/detail_milestone from disk.
     /// - `Key` and `Resize`: handled by the `run()` loop directly; ignored here.
     pub fn handle_tui_event(&mut self, event: TuiEvent) -> bool {
         match event {
@@ -729,17 +755,26 @@ impl App {
                 }
             }
             TuiEvent::AgentDone { exit_code } => {
+                // Prefer the agent thread's exit code when available; fall back to
+                // the event's exit_code (e.g., in tests that drive events directly
+                // without a real thread).
+                let final_exit_code = if let Some(handle) = self.agent_thread.take() {
+                    match handle.join() {
+                        Ok(code) => code,
+                        Err(_) => -1, // Thread panicked — treat as failure.
+                    }
+                } else {
+                    exit_code
+                };
                 if let Screen::AgentRun { ref mut status, .. } = self.screen {
-                    *status = if exit_code == 0 {
+                    *status = if final_exit_code == 0 {
                         AgentStatus::Done { exit_code: 0 }
                     } else {
-                        AgentStatus::Failed { exit_code }
+                        AgentStatus::Failed {
+                            exit_code: final_exit_code,
+                        }
                     };
                 }
-                // Consume the join handle to avoid resource leaks.
-                self.agent_thread.take().map(|h| {
-                    let _ = h.join();
-                });
                 // Reload milestones and cycle_slug from disk so the dashboard
                 // reflects any state changes made by the agent.
                 if let Some(ref root) = self.project_root.clone() {
@@ -750,6 +785,13 @@ impl App {
                             .ok()
                             .flatten()
                             .map(|cs| cs.milestone_slug);
+                    }
+                    // Refresh the detail milestone if a detail view was active
+                    // (e.g. the user navigated to ChunkDetail before pressing r).
+                    if let Some(ref ms) = self.detail_milestone.clone() {
+                        if let Ok(refreshed) = milestone_load(&assay_dir, &ms.slug) {
+                            self.detail_milestone = Some(refreshed);
+                        }
                     }
                 }
             }
@@ -1160,7 +1202,7 @@ fn draw_help_overlay(frame: &mut ratatui::Frame, area: Rect) {
     frame.render_widget(table, inner);
 }
 
-// ── Agent run renderer (stub) ─────────────────────────────────────────────────
+// ── Agent run renderer ───────────────────────────────────────────────────────
 
 /// Render the agent run output panel.
 ///

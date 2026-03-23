@@ -371,13 +371,15 @@ pub fn launch_agent_streaming(
                 Err(_) => break,
             }
         }
-        // Drop sender so the receiver sees Disconnected when we're done.
-        drop(line_tx);
-        // Collect exit code.
-        child
+        // Collect exit code. `line_tx` is dropped here (end of scope), after
+        // `child.wait()` completes, so the receiver only sees Disconnected once
+        // the process has truly exited.
+        let code = child
             .wait()
             .map(|s| s.code().unwrap_or(-1))
-            .unwrap_or(-1)
+            .unwrap_or(-1);
+        drop(line_tx);
+        code
     })
 }
 

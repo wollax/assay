@@ -55,21 +55,26 @@ fn run(mut terminal: DefaultTerminal) -> color_eyre::Result<()> {
         }
     });
 
-    // Main event loop: dispatch each TuiEvent to app or terminal.
+    // Initial render before the first event so the screen is not blank on startup.
+    terminal.draw(|frame| app.draw(frame))?;
+
+    // Main event loop: process each TuiEvent first, then redraw so every state
+    // change is immediately visible (process-then-draw, not draw-then-process).
     while let Ok(event) = rx.recv() {
-        terminal.draw(|frame| app.draw(frame))?;
-        match event {
-            TuiEvent::Key(key) => {
-                if app.handle_event(key) {
-                    break;
-                }
-            }
+        let should_quit = match event {
+            TuiEvent::Key(key) => app.handle_event(key),
             TuiEvent::Resize(..) => {
                 terminal.clear()?;
+                false
             }
             TuiEvent::AgentLine(_) | TuiEvent::AgentDone { .. } => {
                 app.handle_tui_event(event);
+                false
             }
+        };
+        terminal.draw(|frame| app.draw(frame))?;
+        if should_quit {
+            break;
         }
     }
 
