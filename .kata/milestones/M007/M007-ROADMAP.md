@@ -58,7 +58,7 @@ This milestone is complete only when all are true:
 - [x] **S02: Provider Dispatch and Harness Wiring** `risk:medium` `depends:[S01]`
   > After this: `ProviderKind` in `App.config` routes agent spawning to the correct harness adapter — Anthropic uses existing Claude Code adapter, Ollama uses `ollama run <model>`, OpenAI uses a new minimal adapter; Settings screen gains per-phase model input fields; unit tests prove correct CLI args per provider; pressing `r` with Ollama as provider invokes `ollama` instead of `claude`
 
-- [ ] **S03: Slash Command Overlay** `risk:low` `depends:[S01]`
+- [x] **S03: Slash Command Overlay** `risk:low` `depends:[S01]`
   > After this: pressing `/` from any non-wizard TUI screen opens a command input overlay with tab completion; typing `/gate-check` runs gate evaluation on the active chunk and shows pass/fail results inline; `/status` shows cycle status; `/next-chunk` shows active chunk info; `/pr-create` triggers PR creation — all dispatching to existing assay-core functions, proven by integration tests driving synthetic key events through the overlay
 
 - [ ] **S04: MCP Server Configuration Panel** `risk:medium` `depends:[]`
