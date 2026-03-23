@@ -1,15 +1,15 @@
 # Kata State
 
 **Active Milestone:** M007 — Persistent Queue
-**Active Slice:** S02 — Atomic state file — write on every transition
-**Active Task:** (S02 not yet started)
-**Phase:** Planning
+**Active Slice:** S03 — Load-on-startup + restart-recovery integration test
+**Active Task:** None — S03 planning next
+**Phase:** Planning S03
 
 ## Milestone Plan
 
 **M007 — Persistent Queue** (3 slices)
 - [x] S01: Serialize queue types + migrate Instant to SystemTime
-- [ ] S02: Atomic state file — write on every transition
+- [x] S02: Atomic state file — write on every transition
 - [ ] S03: Load-on-startup + restart-recovery integration test
 
 **M008 — SSH Worker Pools** (4 slices, planned)
@@ -20,11 +20,11 @@
 
 ## Recent Decisions
 
+- D114: QueueState wrapper in queue.rs — TOML needs a top-level table; maps to [[jobs]] array-of-tables
+- D115: new() unchanged (queue_dir: None); new_with_persistence() added alongside
+- D116: try_dispatch does NOT write state — Dispatching is transient
 - D108: Queue persistence uses TOML file in queue_dir, not Redis/SQLite
 - D109: In-flight jobs at crash time are re-queued (not Failed) on restart
-- D110: Instant fields replaced with u64 Unix epoch seconds for serializability
-- D111: SSH dispatch uses subprocess ssh/scp (not openssh/ssh2 crate)
-- D112: Worker key_env field holds name of env var with SSH key path
 
 ## Blockers
 
@@ -32,4 +32,4 @@ None.
 
 ## Next Action
 
-S01 complete. Begin S02: Atomic state file — write on every transition. Plan: implement `write_queue_state(queue_dir, jobs)` (atomic write to `.smelt-queue-state.toml.tmp` then rename) and `read_queue_state(queue_dir) -> Vec<QueuedJob>` (empty vec on missing file, warn + empty on parse error); wire calls into every `ServerState` mutation; add round-trip unit test.
+Begin S03: `ServerState::load_or_new(queue_dir, max_concurrent)` — reads state file via `read_queue_state`, remaps non-terminal jobs (Queued/Retrying/Dispatching/Running) to Queued, preserves attempt counts, calls `new_with_persistence`. Wire into `commands/serve.rs`. Add integration test: serialize 3 queued jobs → drop state → reconstruct via `load_or_new()` → assert all 3 re-dispatched with correct attempt counts. `cargo test --workspace` all green.

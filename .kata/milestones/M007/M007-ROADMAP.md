@@ -51,7 +51,7 @@ This milestone is complete only when all are true:
 - [x] **S01: Serialize queue types + migrate Instant to SystemTime** `risk:high` `depends:[]`
   > After this: all 19 existing serve tests pass with `SystemTime`-based timing; `QueuedJob` round-trips through TOML; HTTP `elapsed_secs` and TUI elapsed column show correct values.
 
-- [ ] **S02: Atomic state file — write on every transition** `risk:medium` `depends:[S01]`
+- [x] **S02: Atomic state file — write on every transition** `risk:medium` `depends:[S01]`
   > After this: every enqueue, complete, cancel, and mark_running writes `queue_dir/.smelt-queue-state.toml` atomically; round-trip unit test proves the file can reconstruct a full `ServerState`; existing serve tests still pass.
 
 - [ ] **S03: Load-on-startup + restart-recovery integration test** `risk:medium` `depends:[S02]`

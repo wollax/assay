@@ -1,7 +1,80 @@
 use std::collections::VecDeque;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+
+use tracing::warn;
 
 use crate::serve::types::{now_epoch, JobId, JobSource, JobStatus, QueuedJob};
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct QueueState {
+    jobs: Vec<QueuedJob>,
+}
+
+/// Persist the current queue to `queue_dir/.smelt-queue-state.toml` atomically.
+///
+/// Writes to a `.tmp` file first then renames — guarantees readers never see a
+/// partially-written file.  All failures are logged at `WARN` and the function
+/// returns without propagating the error so the daemon is never interrupted.
+pub fn write_queue_state(queue_dir: &Path, jobs: &VecDeque<QueuedJob>) {
+    let state = QueueState {
+        jobs: jobs.iter().cloned().collect(),
+    };
+    let toml_str = match toml::to_string_pretty(&state) {
+        Ok(s) => s,
+        Err(e) => {
+            warn!("write_queue_state: failed to serialize queue state: {e}");
+            return;
+        }
+    };
+    if let Err(e) = std::fs::create_dir_all(queue_dir) {
+        warn!(
+            "write_queue_state: failed to create queue dir {}: {e}",
+            queue_dir.display()
+        );
+        return;
+    }
+    let tmp_path = queue_dir.join(".smelt-queue-state.toml.tmp");
+    if let Err(e) = std::fs::write(&tmp_path, &toml_str) {
+        warn!(
+            "write_queue_state: failed to write tmp file {}: {e}",
+            tmp_path.display()
+        );
+        return;
+    }
+    let final_path = queue_dir.join(".smelt-queue-state.toml");
+    if let Err(e) = std::fs::rename(&tmp_path, &final_path) {
+        warn!(
+            "write_queue_state: failed to rename {} -> {}: {e}",
+            tmp_path.display(),
+            final_path.display()
+        );
+    }
+}
+
+/// Read the persisted queue from `queue_dir/.smelt-queue-state.toml`.
+///
+/// Returns an empty `Vec` when the file does not exist, cannot be read, or
+/// cannot be parsed — all errors are logged at `WARN`.
+pub fn read_queue_state(queue_dir: &Path) -> Vec<QueuedJob> {
+    let path = queue_dir.join(".smelt-queue-state.toml");
+    if !path.exists() {
+        return vec![];
+    }
+    let content = match std::fs::read_to_string(&path) {
+        Ok(c) => c,
+        Err(e) => {
+            warn!("read_queue_state: failed to read {}: {e}", path.display());
+            return vec![];
+        }
+    };
+    match toml::from_str::<QueueState>(&content) {
+        Ok(state) => state.jobs,
+        Err(e) => {
+            warn!("read_queue_state: failed to parse {}: {e}", path.display());
+            vec![]
+        }
+    }
+}
 
 fn new_job_id() -> JobId {
     use std::sync::atomic::{AtomicU64, Ordering};
@@ -15,6 +88,7 @@ pub struct ServerState {
     pub jobs: VecDeque<QueuedJob>,
     pub running_count: usize,
     pub max_concurrent: usize,
+    pub queue_dir: Option<PathBuf>,
 }
 
 impl ServerState {
@@ -23,6 +97,18 @@ impl ServerState {
             jobs: VecDeque::new(),
             running_count: 0,
             max_concurrent,
+            queue_dir: None,
+        }
+    }
+
+    /// Create a `ServerState` that persists queue state to `queue_dir` after
+    /// every durable mutation (`enqueue`, `complete`, `cancel`).
+    pub fn new_with_persistence(max_concurrent: usize, queue_dir: PathBuf) -> Self {
+        ServerState {
+            jobs: VecDeque::new(),
+            running_count: 0,
+            max_concurrent,
+            queue_dir: Some(queue_dir),
         }
     }
 
@@ -38,6 +124,9 @@ impl ServerState {
             queued_at: now_epoch(),
             started_at: None,
         });
+        if let Some(ref dir) = self.queue_dir {
+            write_queue_state(dir, &self.jobs);
+        }
         id
     }
 
@@ -77,19 +166,31 @@ impl ServerState {
                 self.running_count = self.running_count.saturating_sub(1);
             }
         }
+        if let Some(ref dir) = self.queue_dir {
+            write_queue_state(dir, &self.jobs);
+        }
     }
 
     /// Cancel a `Queued` job. Returns `true` if it was found and removed,
     /// `false` if the job is missing, already running/dispatching, or in any
     /// non-Queued terminal state.
     pub fn cancel(&mut self, id: &JobId) -> bool {
-        if let Some(pos) = self.jobs.iter().position(|j| &j.id == id) {
+        let cancelled = if let Some(pos) = self.jobs.iter().position(|j| &j.id == id) {
             if self.jobs[pos].status == JobStatus::Queued {
                 self.jobs.remove(pos);
-                return true;
+                true
+            } else {
+                false
+            }
+        } else {
+            false
+        };
+        if cancelled {
+            if let Some(ref dir) = self.queue_dir {
+                write_queue_state(dir, &self.jobs);
             }
         }
-        false
+        cancelled
     }
 
     /// Return `true` if the job exists, is in `Retrying` state, and has not
@@ -98,5 +199,91 @@ impl ServerState {
         self.jobs.iter().any(|j| {
             &j.id == id && j.status == JobStatus::Retrying && j.attempt < max_attempts
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::serve::types::{JobId, JobSource, JobStatus};
+    use std::path::PathBuf;
+    use tempfile::TempDir;
+
+    fn make_job(id: &str, status: JobStatus, started_at: Option<u64>) -> QueuedJob {
+        QueuedJob {
+            id: JobId::new(id),
+            manifest_path: PathBuf::from(format!("/tmp/{id}.smelt.toml")),
+            source: JobSource::HttpApi,
+            attempt: 0,
+            status,
+            queued_at: 1_000_000,
+            started_at,
+        }
+    }
+
+    #[test]
+    fn test_queue_state_round_trip() {
+        let dir = TempDir::new().unwrap();
+        let job0 = make_job("job-1", JobStatus::Queued, None);
+        let job1 = make_job("job-2", JobStatus::Complete, Some(1_000_042));
+
+        let mut jobs: VecDeque<QueuedJob> = VecDeque::new();
+        jobs.push_back(job0.clone());
+        jobs.push_back(job1.clone());
+
+        write_queue_state(dir.path(), &jobs);
+
+        let read_back = read_queue_state(dir.path());
+        assert_eq!(read_back.len(), 2);
+
+        // Job 0 — all 7 fields
+        assert_eq!(read_back[0].id, job0.id);
+        assert_eq!(read_back[0].manifest_path, job0.manifest_path);
+        assert_eq!(format!("{:?}", read_back[0].source), format!("{:?}", job0.source));
+        assert_eq!(read_back[0].attempt, job0.attempt);
+        assert_eq!(read_back[0].status, job0.status);
+        assert_eq!(read_back[0].queued_at, job0.queued_at);
+        assert_eq!(read_back[0].started_at, job0.started_at);
+
+        // Job 1 — all 7 fields
+        assert_eq!(read_back[1].id, job1.id);
+        assert_eq!(read_back[1].manifest_path, job1.manifest_path);
+        assert_eq!(format!("{:?}", read_back[1].source), format!("{:?}", job1.source));
+        assert_eq!(read_back[1].attempt, job1.attempt);
+        assert_eq!(read_back[1].status, job1.status);
+        assert_eq!(read_back[1].queued_at, job1.queued_at);
+        assert_eq!(read_back[1].started_at, job1.started_at);
+    }
+
+    #[test]
+    fn test_read_queue_state_missing_file() {
+        let dir = TempDir::new().unwrap();
+        let result = read_queue_state(dir.path());
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_read_queue_state_corrupt_file() {
+        let dir = TempDir::new().unwrap();
+        let state_path = dir.path().join(".smelt-queue-state.toml");
+        std::fs::write(&state_path, b"not toml at all!!!").unwrap();
+        let result = read_queue_state(dir.path());
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_server_state_writes_on_enqueue() {
+        let tmp = TempDir::new().unwrap();
+        let mut state = ServerState::new_with_persistence(2, tmp.path().to_path_buf());
+        state.enqueue(PathBuf::from("/tmp/test.toml"), JobSource::HttpApi);
+
+        // State file must exist after enqueue
+        let state_file = tmp.path().join(".smelt-queue-state.toml");
+        assert!(state_file.exists(), "state file should exist after enqueue");
+
+        // read_queue_state should return 1 job with status Queued
+        let jobs = read_queue_state(tmp.path());
+        assert_eq!(jobs.len(), 1);
+        assert_eq!(jobs[0].status, JobStatus::Queued);
     }
 }
