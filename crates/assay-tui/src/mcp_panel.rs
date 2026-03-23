@@ -9,6 +9,10 @@ use std::collections::HashMap;
 use std::io::Write;
 use std::path::Path;
 
+use ratatui::layout::{Constraint, Layout, Rect};
+use ratatui::style::{Color, Style, Stylize};
+use ratatui::text::{Line, Span};
+use ratatui::widgets::{Block, Borders, Clear, List, ListItem, Paragraph};
 use serde::{Deserialize, Serialize};
 use tempfile::NamedTempFile;
 
@@ -25,10 +29,22 @@ pub struct McpServerEntry {
 /// State for the inline "add server" form.
 ///
 /// `active_field`: 0 = name, 1 = command.
+#[derive(Default)]
 pub struct AddServerForm {
     pub name: String,
     pub command: String,
     pub active_field: usize,
+}
+
+impl AddServerForm {
+    /// Create a new empty add-server form with focus on the name field.
+    pub fn new() -> Self {
+        Self {
+            name: String::new(),
+            command: String::new(),
+            active_field: 0,
+        }
+    }
 }
 
 // ── Internal serde model ──────────────────────────────────────────────────────
@@ -117,6 +133,131 @@ pub fn mcp_config_save(root: &Path, servers: &[McpServerEntry]) -> Result<(), St
         .map_err(|e| format!("failed to persist mcp.json: {e}"))?;
 
     Ok(())
+}
+
+// ── Drawing ───────────────────────────────────────────────────────────────────
+
+/// Render the MCP server configuration panel.
+///
+/// Shows a server list with selection highlight, an optional add-form popup,
+/// an optional inline error, and a hint bar at the bottom.
+pub fn draw_mcp_panel(
+    frame: &mut ratatui::Frame,
+    area: Rect,
+    servers: &[McpServerEntry],
+    selected: usize,
+    add_form: Option<&AddServerForm>,
+    error: Option<&str>,
+) {
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(" MCP Server Configuration ");
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    // Layout: list fills, optional error row, hint row.
+    let error_height = if error.is_some() { 1 } else { 0 };
+    let [list_area, error_area, hint_area] = Layout::vertical([
+        Constraint::Fill(1),
+        Constraint::Length(error_height),
+        Constraint::Length(1),
+    ])
+    .areas(inner);
+
+    // ── Server list ──────────────────────────────────────────────────────
+    if servers.is_empty() {
+        let msg = Paragraph::new(Line::from("No servers configured.").dim());
+        frame.render_widget(msg, list_area);
+    } else {
+        let items: Vec<ListItem> = servers
+            .iter()
+            .enumerate()
+            .map(|(i, entry)| {
+                let prefix = if i == selected { "▶ " } else { "  " };
+                let text = format!("{prefix}{}  ({})", entry.name, entry.command);
+                let style = if i == selected {
+                    Style::default().bold().reversed()
+                } else {
+                    Style::default()
+                };
+                ListItem::new(text).style(style)
+            })
+            .collect();
+        let list = List::new(items);
+        frame.render_widget(list, list_area);
+    }
+
+    // ── Error line ───────────────────────────────────────────────────────
+    if let Some(msg) = error {
+        let err_line = Paragraph::new(Line::from(Span::styled(
+            format!("Error: {msg}"),
+            Style::default().fg(Color::Red),
+        )));
+        frame.render_widget(err_line, error_area);
+    }
+
+    // ── Hint bar ─────────────────────────────────────────────────────────
+    let hint_text = "a:add  d:delete  w:save  Esc:back";
+    let hint = Paragraph::new(Line::from(hint_text).dim());
+    frame.render_widget(hint, hint_area);
+
+    // ── Add-form overlay ─────────────────────────────────────────────────
+    if let Some(form) = add_form {
+        let popup_w = area.width.min(50);
+        let popup_h = 8;
+        let x = area.x + (area.width.saturating_sub(popup_w)) / 2;
+        let y = area.y + (area.height.saturating_sub(popup_h)) / 2;
+        let popup = Rect::new(x, y, popup_w, popup_h);
+
+        frame.render_widget(Clear, popup);
+
+        let form_block = Block::default().borders(Borders::ALL).title(" Add Server ");
+        let form_inner = form_block.inner(popup);
+        frame.render_widget(form_block, popup);
+
+        let [name_area, cmd_area, form_hint_area] = Layout::vertical([
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Fill(1),
+        ])
+        .areas(form_inner);
+
+        let name_style = if form.active_field == 0 {
+            Style::default().bold().fg(Color::Cyan)
+        } else {
+            Style::default()
+        };
+        let cmd_style = if form.active_field == 1 {
+            Style::default().bold().fg(Color::Cyan)
+        } else {
+            Style::default()
+        };
+
+        let name_line = Line::from(vec![
+            Span::styled("Name:    ", Style::default().dim()),
+            Span::styled(&form.name, name_style),
+            if form.active_field == 0 {
+                Span::styled("█", name_style)
+            } else {
+                Span::raw("")
+            },
+        ]);
+        let cmd_line = Line::from(vec![
+            Span::styled("Command: ", Style::default().dim()),
+            Span::styled(&form.command, cmd_style),
+            if form.active_field == 1 {
+                Span::styled("█", cmd_style)
+            } else {
+                Span::raw("")
+            },
+        ]);
+
+        frame.render_widget(Paragraph::new(name_line), name_area);
+        frame.render_widget(Paragraph::new(cmd_line), cmd_area);
+
+        let form_hint = Paragraph::new(Line::from("Tab:switch  Enter:confirm  Esc:cancel").dim());
+        frame.render_widget(form_hint, form_hint_area);
+    }
 }
 
 #[cfg(test)]

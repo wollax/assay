@@ -50,7 +50,7 @@
   - Verify: `cargo test -p assay-tui --test mcp_panel` compiles (some tests may fail pending T02 event wiring); `cargo build -p assay-tui` succeeds; `cargo clippy -p assay-tui` clean
   - Done when: `mcp_config_load` and `mcp_config_save` round-trip JSON correctly; `Screen::McpPanel` variant exists; test file compiles with all 4 test functions
 
-- [ ] **T02: Draw function, event handling, and wire all keys — make tests green** `est:45m`
+- [x] **T02: Draw function, event handling, and wire all keys — make tests green** `est:45m`
   - Why: Implements the actual UI rendering and keyboard interaction that makes the panel usable and passes all 4 integration tests.
   - Files: `crates/assay-tui/src/mcp_panel.rs`, `crates/assay-tui/src/app.rs`
   - Do: Write `draw_mcp_panel(frame, area, servers, selected, add_form, error)` free function — server list with selection highlight, add-form overlay (name + command fields with Tab switching), status/hint line. Wire `m` key in Dashboard arm to load config and transition to `Screen::McpPanel`. Handle keys in McpPanel arm: `a` opens add form, `d` deletes selected, `w` saves via `mcp_config_save`, `Esc` returns to Dashboard (or cancels add form), `Up`/`Down` navigate list, `Enter` confirms add form, `Tab` switches add-form fields. Sort servers alphabetically on load and after add. Validate name uniqueness on add — set `error` field on duplicate.

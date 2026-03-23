@@ -24,7 +24,7 @@ v0.6.0-dev. M001–M006 complete. ~22K lines of Rust across 6 crates. 1367 tests
 
 **M006 (complete):** TUI as primary surface — S01 fixed binary name (`[[bin]] name = "assay-tui"`) + live dashboard from `milestone_scan`. S02 delivered in-TUI authoring wizard (`WizardState` pure state machine, `draw_wizard` popup, `wizard_round_trip` integration test). S03 delivered spec browser (`MilestoneDetail` + `ChunkDetail` screens, `join_results` criterion/gate-result join, Esc chains). S04 delivered provider configuration (`ProviderKind`+`ProviderConfig` in `assay-types`, `config_save` atomic write, `Screen::Settings` full-screen view, 5 settings integration tests including restart-persistence). S05 delivered integration polish (`?` help overlay, persistent status bar, global `area: Rect` layout split, `Event::Resize` fix, `just ready` green). 4 new requirements validated (R049–R052). 1367 tests.
 
-**M007 S01 (complete):** Channel event loop and agent run panel — `TuiEvent` enum in `assay_tui::event`; channel-based `run()` loop replacing blocking `event::read()`; `launch_agent_streaming` in `assay-core::pipeline` (real subprocess pipes, mpsc line delivery, JoinHandle<i32>); `Screen::AgentRun` with `AgentRunStatus` (Running/Done/Failed); `r` key handler using two-channel bridge design; `assay-harness` dependency added. 6 new integration tests (3 pipeline_streaming + 3 agent_run). R053 validated. 1400+ tests.
+**M007 (complete):** TUI agent harness — S01 delivered channel-based event loop (`TuiEvent`), `launch_agent_streaming`, `Screen::AgentRun` with `r` key spawning agents. S02 delivered provider dispatch (`provider_harness_writer` routing Anthropic/Ollama/OpenAI), Settings screen model input fields. S03 delivered slash command overlay (`/` key, tab completion, `/gate-check`/`/status`/`/next-chunk`/`/pr-create` commands). S04 delivered MCP server configuration panel (`m` key, add/delete/save servers to `.assay/mcp.json`). R053, R055 validated. 1400+ tests.
 
 Crates:
 
@@ -64,5 +64,5 @@ See `.kata/REQUIREMENTS.md` for the explicit capability contract, requirement st
 - [x] M004: Coordination Modes — Mesh and Gossip modes, mode dispatch, knowledge manifest, SWIM membership (complete, 32 requirements validated, 1271 tests)
 - [x] M005: Spec-Driven Development Core — all 6 slices complete (types/I/O/cycle state machine/wizard/PR workflow/plugins). 43 requirements validated (R039–R048), 1333 tests.
 - [x] M006: TUI as Primary Surface — full Ratatui TUI: dashboard, wizard, spec browser, provider config, help overlay, status bar (complete, R049–R052 validated, 1371+ tests)
-- [ ] M007: TUI Agent Harness — TUI spawns and controls AI agents, provider abstraction (Anthropic/OpenAI/Ollama), MCP management, slash commands
+- [x] M007: TUI Agent Harness — TUI spawns and controls AI agents, provider abstraction (Anthropic/OpenAI/Ollama), MCP management, slash commands (complete, R053/R055 validated, 1400+ tests)
 - [ ] M008: PR Workflow + Plugin Parity — advanced PR automation, OpenCode plugin, history analytics

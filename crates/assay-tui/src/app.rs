@@ -25,8 +25,8 @@ use ratatui::widgets::{
     Block, Borders, Cell, Clear, List, ListItem, ListState, Paragraph, Row, Table,
 };
 
-use crate::mcp_panel::{AddServerForm, McpServerEntry};
 use crate::agent::provider_harness_writer;
+use crate::mcp_panel::{AddServerForm, McpServerEntry};
 use crate::slash::{
     SlashAction, SlashState, draw_slash_overlay, execute_slash_cmd, handle_slash_event,
 };
@@ -283,6 +283,134 @@ impl App {
         self.agent_thread = None;
     }
 
+    /// Handle key events for `Screen::McpPanel`.
+    ///
+    /// Extracted as a separate method to avoid borrow-splitting issues in
+    /// the main `handle_event` match (D098). Returns `true` if the app
+    /// should exit.
+    fn handle_mcp_panel_event(&mut self, key: crossterm::event::KeyEvent) -> bool {
+        let Screen::McpPanel {
+            servers,
+            selected: _,
+            add_form,
+            error,
+        } = &mut self.screen
+        else {
+            return false;
+        };
+
+        // When add_form is active, intercept form-specific keys first.
+        if let Some(form) = add_form {
+            match key.code {
+                KeyCode::Esc => {
+                    *add_form = None;
+                }
+                KeyCode::Tab => {
+                    form.active_field = if form.active_field == 0 { 1 } else { 0 };
+                }
+                KeyCode::Char(c) => {
+                    if form.active_field == 0 {
+                        form.name.push(c);
+                    } else {
+                        form.command.push(c);
+                    }
+                }
+                KeyCode::Backspace => {
+                    if form.active_field == 0 {
+                        form.name.pop();
+                    } else {
+                        form.command.pop();
+                    }
+                }
+                KeyCode::Enter => {
+                    let new_name = form.name.trim().to_string();
+                    if new_name.is_empty() {
+                        *error = Some("Server name cannot be empty.".to_string());
+                    } else if servers.iter().any(|s| s.name == new_name) {
+                        *error = Some(format!("Duplicate server name: {new_name}"));
+                    } else {
+                        *error = None;
+                        let new_entry = McpServerEntry {
+                            name: new_name,
+                            command: form.command.trim().to_string(),
+                            args: vec![],
+                        };
+                        servers.push(new_entry);
+                        servers.sort_by(|a, b| a.name.cmp(&b.name));
+                        *add_form = None;
+                    }
+                }
+                _ => {}
+            }
+            return false;
+        }
+
+        // Normal McpPanel keys (no add_form active).
+        match key.code {
+            KeyCode::Esc => {
+                self.screen = Screen::Dashboard;
+            }
+            KeyCode::Char('q') => return true,
+            KeyCode::Up => {
+                if let Screen::McpPanel { selected, .. } = &mut self.screen {
+                    *selected = selected.saturating_sub(1);
+                }
+            }
+            KeyCode::Down => {
+                if let Screen::McpPanel {
+                    servers, selected, ..
+                } = &mut self.screen
+                    && !servers.is_empty()
+                {
+                    *selected = (*selected + 1).min(servers.len() - 1);
+                }
+            }
+            KeyCode::Char('a') => {
+                if let Screen::McpPanel { add_form, .. } = &mut self.screen {
+                    *add_form = Some(AddServerForm::new());
+                }
+            }
+            KeyCode::Char('d') => {
+                if let Screen::McpPanel {
+                    servers, selected, ..
+                } = &mut self.screen
+                    && !servers.is_empty()
+                {
+                    servers.remove(*selected);
+                    if *selected >= servers.len() && !servers.is_empty() {
+                        *selected = servers.len() - 1;
+                    }
+                }
+            }
+            KeyCode::Char('w') => {
+                // Extract servers for save, then handle result.
+                let save_result = if let Screen::McpPanel { servers, .. } = &self.screen {
+                    if let Some(ref root) = self.project_root {
+                        Some(crate::mcp_panel::mcp_config_save(root, servers))
+                    } else {
+                        Some(Err("No project root found.".to_string()))
+                    }
+                } else {
+                    None
+                };
+                if let Some(result) = save_result {
+                    match result {
+                        Ok(()) => {
+                            self.screen = Screen::Dashboard;
+                        }
+                        Err(e) => {
+                            if let Screen::McpPanel { error, .. } = &mut self.screen {
+                                *error = Some(e);
+                            }
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+        false
+    }
+
     /// Draw the current screen into `frame`.
     pub fn draw(&mut self, frame: &mut ratatui::Frame) {
         let [content_area, status_area] =
@@ -349,11 +477,20 @@ impl App {
                     status,
                 );
             }
-            Screen::McpPanel { .. } => {
-                // Rendering will be implemented in T02; placeholder to satisfy exhaustive match.
-                let placeholder = Paragraph::new("MCP Server Configuration (rendering TODO)")
-                    .block(Block::default().borders(Borders::ALL).title(" MCP Servers "));
-                frame.render_widget(placeholder, content_area);
+            Screen::McpPanel {
+                servers,
+                selected,
+                add_form,
+                error,
+            } => {
+                crate::mcp_panel::draw_mcp_panel(
+                    frame,
+                    content_area,
+                    servers,
+                    *selected,
+                    add_form.as_ref(),
+                    error.as_deref(),
+                );
             }
         }
 
@@ -741,8 +878,7 @@ impl App {
                                     Ok(loaded) => {
                                         self.milestones = loaded;
                                         if let Ok(status) = cycle_status(&assay_dir) {
-                                            self.cycle_slug =
-                                                status.map(|cs| cs.milestone_slug);
+                                            self.cycle_slug = status.map(|cs| cs.milestone_slug);
                                         }
                                         let idx = self
                                             .milestones
@@ -1005,8 +1141,7 @@ impl App {
                                         // silently clearing it.
                                         let assay_dir = root.join(".assay");
                                         if let Ok(status) = cycle_status(&assay_dir) {
-                                            self.cycle_slug =
-                                                status.map(|cs| cs.milestone_slug);
+                                            self.cycle_slug = status.map(|cs| cs.milestone_slug);
                                         }
                                         self.screen = Screen::Dashboard;
                                     }
@@ -1028,17 +1163,7 @@ impl App {
                 false
             }
 
-            Screen::McpPanel { .. } => {
-                // Event handling will be implemented in T02; placeholder for exhaustive match.
-                match key.code {
-                    KeyCode::Esc => {
-                        self.screen = Screen::Dashboard;
-                    }
-                    KeyCode::Char('q') => return true,
-                    _ => {}
-                }
-                false
-            }
+            Screen::McpPanel { .. } => self.handle_mcp_panel_event(key),
         }
     }
 }

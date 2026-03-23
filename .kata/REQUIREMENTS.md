@@ -556,14 +556,14 @@
 
 ### R055 — TUI MCP server management
 - Class: operability
-- Status: active
-- Description: The TUI has a panel for connecting, disconnecting, and inspecting MCP servers. Shows connected servers, available tools, and connection status.
+- Status: validated
+- Description: The TUI has a panel for managing MCP server configuration. Shows configured servers from `.assay/mcp.json`, allows adding and deleting servers, and persists changes atomically to disk.
 - Why it matters: Power users need to extend Assay's capabilities via MCP without editing JSON config files
 - Source: user
-- Primary owning slice: M007/S02
+- Primary owning slice: M007/S04
 - Supporting slices: none
-- Validation: unmapped
-- Notes: Connects to MCP servers via the same mechanism as the CLI. Server list configured in `.assay/mcp.json`.
+- Validation: S04 — Screen::McpPanel with add/delete/save keyboard UX; mcp_config_load/mcp_config_save with atomic NamedTempFile writes; 4 integration tests (load-empty, load-from-file, add-writes, delete-writes); name uniqueness validation; just ready green
+- Notes: Static config management only (D110) — live MCP server connection/tool inspection deferred to M008+. Server list configured in `.assay/mcp.json`.
 
 ### R056 — TUI slash commands
 - Class: primary-user-loop
@@ -713,7 +713,7 @@
 | R052 | operability | validated | M006/S04 | M006/S05 | S04, S05 |
 | R053 | core-capability | validated | M007/S01 | M006/S01 | S01 |
 | R054 | core-capability | active | M007/S01 | M007/S02 | mapped |
-| R055 | operability | active | M007/S02 | none | mapped |
+| R055 | operability | validated | M007/S04 | none | S04 |
 | R056 | primary-user-loop | active | M007/S03 | M007/S01, M007/S02 | mapped |
 | R057 | differentiator | active | M008/S01 | none | mapped |
 | R058 | primary-user-loop | active | M008/S02 | M008/S01 | mapped |
