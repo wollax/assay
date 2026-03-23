@@ -128,9 +128,23 @@ impl App {
             list_state.select(Some(0));
         }
 
-        let config = project_root
-            .as_deref()
-            .and_then(|root| assay_core::config::load(root).ok());
+        let config = match project_root.as_deref() {
+            None => None,
+            Some(root) => {
+                let cfg_path = root.join(".assay").join("config.toml");
+                if cfg_path.exists() {
+                    match assay_core::config::load(root) {
+                        Ok(cfg) => Some(cfg),
+                        Err(e) => {
+                            eprintln!("Warning: failed to load config.toml: {e}");
+                            None
+                        }
+                    }
+                } else {
+                    None
+                }
+            }
+        };
 
         Ok(App {
             screen,
@@ -536,14 +550,9 @@ impl App {
                     }
                     KeyCode::Char('w') => {
                         // Save provider selection to config.toml.
-                        let (selected, _error_slot) = if let Screen::Settings {
-                            selected,
-                            ref mut error,
-                        } = self.screen
-                        {
-                            (selected, error)
-                        } else {
-                            unreachable!("must be in Settings screen");
+                        let selected = match self.screen {
+                            Screen::Settings { selected, .. } => selected,
+                            _ => unreachable!("must be in Settings screen"),
                         };
                         let kind = match selected {
                             1 => ProviderKind::OpenAi,
@@ -560,29 +569,28 @@ impl App {
                                 }
                             }
                             Some(root) => {
-                                // Build or mutate config.
-                                let mut cfg =
-                                    self.config.clone().unwrap_or_else(|| assay_types::Config {
-                                        project_name: String::new(),
-                                        specs_dir: "specs/".to_string(),
-                                        gates: None,
-                                        guard: None,
-                                        worktree: None,
-                                        sessions: None,
-                                        provider: None,
-                                    });
+                                // Guard: refuse to save if config was never loaded (avoids
+                                // overwriting an existing config.toml with blank defaults).
+                                let Some(mut cfg) = self.config.clone() else {
+                                    if let Screen::Settings { ref mut error, .. } = self.screen {
+                                        *error = Some(
+                                            "Cannot save: config.toml could not be loaded. \
+                                             Check .assay/config.toml for syntax errors."
+                                                .to_string(),
+                                        );
+                                    }
+                                    return false;
+                                };
+                                let old = cfg.provider.take();
                                 cfg.provider = Some(ProviderConfig {
                                     provider: kind,
-                                    planning_model: cfg
-                                        .provider
+                                    planning_model: old
                                         .as_ref()
                                         .and_then(|p| p.planning_model.clone()),
-                                    execution_model: cfg
-                                        .provider
+                                    execution_model: old
                                         .as_ref()
                                         .and_then(|p| p.execution_model.clone()),
-                                    review_model: cfg
-                                        .provider
+                                    review_model: old
                                         .as_ref()
                                         .and_then(|p| p.review_model.clone()),
                                 });
@@ -591,11 +599,24 @@ impl App {
                                         self.config = Some(cfg);
                                         // Refresh cycle_slug after settings save.
                                         let assay_dir = root.join(".assay");
-                                        self.cycle_slug = cycle_status(&assay_dir)
-                                            .ok()
-                                            .flatten()
-                                            .map(|cs| cs.milestone_slug);
-                                        self.screen = Screen::Dashboard;
+                                        match cycle_status(&assay_dir) {
+                                            Ok(opt) => {
+                                                self.cycle_slug =
+                                                    opt.map(|cs| cs.milestone_slug);
+                                                self.screen = Screen::Dashboard;
+                                            }
+                                            Err(e) => {
+                                                // Config saved OK, but status refresh failed.
+                                                if let Screen::Settings {
+                                                    ref mut error, ..
+                                                } = self.screen
+                                                {
+                                                    *error = Some(format!(
+                                                        "Saved, but could not refresh status: {e}"
+                                                    ));
+                                                }
+                                            }
+                                        }
                                     }
                                     Err(e) => {
                                         if let Screen::Settings { ref mut error, .. } = self.screen
@@ -837,7 +858,6 @@ fn draw_chunk_detail(
     frame.render_widget(hint, hint_area);
 }
 
-/// Render the persistent one-line status bar showing project context.
 /// Render the provider configuration screen.
 ///
 /// Full-screen bordered block listing three provider options (Anthropic,
@@ -911,6 +931,7 @@ fn draw_settings(
     frame.render_widget(hint, hint_area);
 }
 
+/// Render the persistent one-line status bar showing project context.
 ///
 /// Shows: `<project_name>  ·  <cycle_slug>  ·  ? help  q quit` (dim hints).
 /// When `project_name` is empty and `cycle_slug` is `None`, only the key hints

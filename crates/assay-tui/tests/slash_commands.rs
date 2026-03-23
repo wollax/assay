@@ -1,8 +1,7 @@
-//! Integration tests for the slash command module (S03).
+//! Integration tests for the slash command module (S03/M007).
 //!
-//! Tests for `parse_slash_cmd`, `tab_complete` pass immediately (T01).
-//! Tests for overlay interaction (`slash_key_opens_overlay`, `enter_dispatches_status_command`,
-//! `esc_closes_overlay`) compile but fail until T02 wires the overlay into App.
+//! Covers: `parse_slash_cmd`, `tab_complete` (pure functions), and overlay
+//! lifecycle via synthetic `KeyEvent`s through `App::handle_event`.
 //!
 //! Run with:
 //!   cargo test -p assay-tui --test slash_commands

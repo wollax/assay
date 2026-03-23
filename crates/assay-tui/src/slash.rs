@@ -1,7 +1,8 @@
-//! Slash command parsing, dispatch, overlay state, and stubs.
+//! Slash command overlay: parsing, dispatch, state, event handling, and rendering.
 //!
-//! `parse_slash_cmd` and `execute_slash_cmd` are fully implemented.
-//! `handle_slash_event` and `draw_slash_overlay` are stubs for T02.
+//! Entry points: [`parse_slash_cmd`], [`execute_slash_cmd`], [`handle_slash_event`],
+//! [`draw_slash_overlay`]. All functions are free functions with no trait objects (D001).
+//! Command dispatch is synchronous and in-process (D111).
 
 use std::path::Path;
 
@@ -222,7 +223,7 @@ pub fn execute_slash_cmd(cmd: SlashCmd, project_root: &Path) -> String {
             ) {
                 Ok(failures) if failures.is_empty() => {
                     format!(
-                        "All gates pass for '{}'. Ready to create PR.",
+                        "Gates pass for '{}'. Run `assay pr create` to open the PR.",
                         status.milestone_slug
                     )
                 }
@@ -316,8 +317,34 @@ pub fn draw_slash_overlay(frame: &mut ratatui::Frame, area: Rect, state: &SlashS
     use ratatui::text::{Line, Span};
     use ratatui::widgets::{Clear, Paragraph};
 
-    let has_feedback = state.result.is_some() || state.error.is_some();
-    let overlay_height: u16 = if has_feedback { 3 } else { 2 };
+    // Compute feedback lines (result or error), capped to avoid filling the screen.
+    let max_result_lines: usize = (area.height as usize / 2).max(1).min(10);
+    let mut feedback_lines: Vec<Line> = Vec::new();
+
+    if let Some(ref result) = state.result {
+        let all_lines: Vec<&str> = result.lines().collect();
+        let display_count = all_lines.len().min(max_result_lines);
+        for line in &all_lines[..display_count] {
+            feedback_lines.push(Line::from(Span::styled(
+                format!("  {line}"),
+                Style::default().fg(Color::Green),
+            )));
+        }
+        if all_lines.len() > display_count {
+            feedback_lines.push(Line::from(Span::styled(
+                format!("  … ({} more lines)", all_lines.len() - display_count),
+                Style::default().dim(),
+            )));
+        }
+    } else if let Some(ref error) = state.error {
+        feedback_lines.push(Line::from(Span::styled(
+            format!("  {error}"),
+            Style::default().fg(Color::Red),
+        )));
+    }
+
+    // 2 = input line + hint line; plus feedback lines.
+    let overlay_height: u16 = (2 + feedback_lines.len() as u16).min(area.height);
     let y = area.y + area.height.saturating_sub(overlay_height);
     let overlay_area = Rect::new(area.x, y, area.width, overlay_height);
 
@@ -325,21 +352,7 @@ pub fn draw_slash_overlay(frame: &mut ratatui::Frame, area: Rect, state: &SlashS
     frame.render_widget(Clear, overlay_area);
 
     let mut lines: Vec<Line> = Vec::new();
-
-    // Result or error feedback line.
-    if let Some(ref result) = state.result {
-        // Show first line of result (multi-line results truncated in overlay).
-        let first_line = result.lines().next().unwrap_or("");
-        lines.push(Line::from(Span::styled(
-            format!("  {first_line}"),
-            Style::default().fg(Color::Green),
-        )));
-    } else if let Some(ref error) = state.error {
-        lines.push(Line::from(Span::styled(
-            format!("  {error}"),
-            Style::default().fg(Color::Red),
-        )));
-    }
+    lines.append(&mut feedback_lines);
 
     // Input line: `/ <input>` with dimmed suggestion suffix.
     let mut input_spans = vec![
