@@ -1,10 +1,10 @@
 # Kata State
 
 **Active Milestone:** M007 — TUI Agent Harness
-**Active Slice:** S01 — Channel Event Loop and Agent Run Panel
-**Active Task:** None
+**Active Slice:** S03 — Slash Command Overlay
+**Active Task:** T02 (next)
 **Phase:** Executing
-**Last Updated:** 2026-03-21
+**Last Updated:** 2026-03-23
 **Requirements Status:** 7 active (R053–R059) · 46 validated (R001–R052) · 2 deferred · 4 out of scope
 **Test Count:** 1367 (27 assay-tui; all workspace tests pass; just ready green)
 
@@ -40,7 +40,7 @@ Key patterns:
 
 - [ ] S01: Channel Event Loop and Agent Run Panel `risk:high` — refactor blocking run() to TuiEvent channel loop; add Screen::AgentRun with live streaming; launch_agent_streaming in assay-core::pipeline; r key from Dashboard. R053+R054 (Anthropic path).
 - [ ] S02: Provider Dispatch and Harness Wiring `risk:medium` — provider_harness_writer dispatches per ProviderKind; Ollama + OpenAI adapters; Settings model input fields. R054 (all providers).
-- [ ] S03: Slash Command Overlay `risk:low` — / key opens SlashState overlay; /gate-check, /status, /next-chunk, /pr-create commands; sync dispatch to assay-core. R056.
+- [ ] S03: Slash Command Overlay `risk:low` — / key opens SlashState overlay; /gate-check, /status, /next-chunk, /pr-create commands; sync dispatch to assay-core. R056. **T01 done** — slash module with parse/dispatch/tab-complete + 6 integration tests (3 green, 3 red-phase).
 - [ ] S04: MCP Server Configuration Panel `risk:medium` — Screen::McpPanel reads/writes .assay/mcp.json; add/delete/save servers; no live connection. R055.
 
 ## Key Decisions
@@ -61,4 +61,4 @@ None.
 
 ## Next Action
 
-M007 planned. Begin S01: refactor event loop + launch_agent_streaming + Screen::AgentRun.
+S03/T01 complete. Continue with S03/T02: wire slash overlay into App (handle_slash_event, draw_slash_overlay, App.slash_state field).
