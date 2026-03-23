@@ -2,7 +2,7 @@
 
 **Active Milestone:** M007 — TUI Agent Harness
 **Active Slice:** S01 — Channel Event Loop and Agent Run Panel
-**Active Task:** T02 — Add `launch_agent_streaming` to assay-core pipeline
+**Active Task:** T03 — Implement `handle_tui_event`, `r` key, `draw_agent_run`, and refactor `run()`
 **Phase:** Executing
 **Last Updated:** 2026-03-23
 **Requirements Status:** 7 active (R053–R059) · 46 validated (R001–R052) · 2 deferred · 4 out of scope
@@ -65,4 +65,4 @@ None.
 
 ## Next Action
 
-Execute T02: add `TuiEvent` enum and `Screen::AgentRun` + `AgentStatus` types; create test file `crates/assay-tui/tests/agent_run.rs` with all four new tests (initially failing). T01 complete.
+Execute T03: implement `App::handle_tui_event` (AgentLine pushes to lines, AgentDone sets Done/Failed status); add `r` key handler in Dashboard arm (cycle_status → hardcoded claude args → launch_agent_streaming → Screen::AgentRun); implement real `draw_agent_run` (scrollable list + status line); refactor `main.rs::run()` to mpsc channel loop. All 4 agent_run tests must pass green after T03.
