@@ -165,3 +165,65 @@ fn saved_provider_survives_restart() {
         "provider must be Ollama after restart"
     );
 }
+
+/// S02/T03: Opening Settings pre-populates model buffers from config.
+#[test]
+fn settings_model_fields_prepopulated_from_config() {
+    let tmp = TempDir::new().unwrap();
+    let root = tmp.path().to_path_buf();
+    let assay_dir = root.join(".assay");
+    std::fs::create_dir_all(assay_dir.join("milestones")).unwrap();
+    std::fs::write(
+        assay_dir.join("config.toml"),
+        "project_name = \"test-project\"\n\
+         [provider]\n\
+         provider = \"anthropic\"\n\
+         planning_model = \"claude-3-haiku\"\n",
+    )
+    .unwrap();
+
+    let mut app = App::with_project_root(Some(root)).unwrap();
+    app.handle_event(key(KeyCode::Char('s')));
+
+    let planning = if let Screen::Settings {
+        ref planning_model, ..
+    } = app.screen
+    {
+        planning_model.clone()
+    } else {
+        panic!("must be on Settings screen");
+    };
+    assert_eq!(planning, "claude-3-haiku");
+}
+
+/// S02/T03: `w` save persists model buffer contents to config.toml.
+#[test]
+fn settings_w_save_includes_model_fields() {
+    let tmp = TempDir::new().unwrap();
+    let root = setup_project(&tmp);
+    let mut app = App::with_project_root(Some(root.clone())).unwrap();
+
+    // Open settings.
+    app.handle_event(key(KeyCode::Char('s')));
+    // Tab to enter model section (focus planning_model, index 0).
+    app.handle_event(key(KeyCode::Tab));
+    // Type "test" into planning_model.
+    for c in ['t', 'e', 's', 't'] {
+        app.handle_event(key(KeyCode::Char(c)));
+    }
+    // Save.
+    app.handle_event(key(KeyCode::Char('w')));
+
+    assert!(
+        matches!(app.screen, Screen::Dashboard),
+        "w save must return to Dashboard"
+    );
+
+    let saved = assay_core::config::load(&root).expect("config should be loadable after save");
+    let provider = saved.provider.expect("provider should be Some after save");
+    assert_eq!(
+        provider.planning_model.as_deref(),
+        Some("test"),
+        "planning_model must be saved"
+    );
+}

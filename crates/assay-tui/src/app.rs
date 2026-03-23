@@ -5,14 +5,17 @@
 //! assert on `app.screen` after driving key events.
 
 use std::path::PathBuf;
+use std::sync::mpsc;
 
 use assay_core::config::save as config_save;
 use assay_core::history;
 use assay_core::milestone::{cycle_status, milestone_load, milestone_scan};
+use assay_core::pipeline::launch_agent_streaming;
 use assay_core::spec::{SpecEntry, load_spec_entry_with_diagnostics};
 use assay_core::wizard::create_from_inputs;
 use assay_types::{
-    Criterion, GateRunRecord, GatesSpec, Milestone, MilestoneStatus, ProviderConfig, ProviderKind,
+    Criterion, GateRunRecord, GatesSpec, HarnessProfile, Milestone, MilestoneStatus,
+    ProviderConfig, ProviderKind, SettingsOverride,
 };
 use crossterm::event::KeyCode;
 use ratatui::layout::{Constraint, Layout, Rect};
@@ -22,7 +25,37 @@ use ratatui::widgets::{
     Block, Borders, Cell, Clear, List, ListItem, ListState, Paragraph, Row, Table,
 };
 
+use crate::agent::provider_harness_writer;
 use crate::wizard::{WizardAction, WizardState, draw_wizard, handle_wizard_event};
+
+// ── TUI event channel types ───────────────────────────────────────────────────
+
+/// Events that flow through the TUI event channel.
+///
+/// `Key` and `Resize` come from the crossterm input thread;
+/// `AgentLine` and `AgentDone` come from the relay-wrapper thread that
+/// monitors a live agent subprocess (see `launch_agent_streaming`).
+pub enum TuiEvent {
+    /// A keyboard event from the terminal.
+    Key(crossterm::event::KeyEvent),
+    /// Terminal was resized to (cols, rows).
+    Resize(u16, u16),
+    /// One line of stdout from the running agent subprocess.
+    AgentLine(String),
+    /// Agent subprocess has exited. `exit_code` is the process return value
+    /// (or -1 on spawn error).
+    AgentDone { exit_code: i32 },
+}
+
+/// Status of the agent run displayed in `Screen::AgentRun`.
+pub enum AgentRunStatus {
+    /// Agent subprocess is still running.
+    Running,
+    /// Agent exited with zero (success).
+    Done { exit_code: i32 },
+    /// Agent exited with a non-zero code (failure).
+    Failed { exit_code: i32 },
+}
 
 // ── Screen variants ───────────────────────────────────────────────────────────
 
@@ -50,6 +83,25 @@ pub enum Screen {
         selected: usize,
         /// Inline error message from a failed save attempt.
         error: Option<String>,
+        /// Editable buffer for the planning model name.
+        planning_model: String,
+        /// Editable buffer for the execution model name.
+        execution_model: String,
+        /// Editable buffer for the review model name.
+        review_model: String,
+        /// Which model field has focus (`None` = provider list has focus).
+        model_focus: Option<usize>,
+    },
+    /// Live agent run view — streams stdout lines and shows final status.
+    AgentRun {
+        /// Slug of the chunk being run.
+        chunk_slug: String,
+        /// Accumulated stdout lines from the agent subprocess (capped at 10 000).
+        lines: Vec<String>,
+        /// Scroll offset for the line list.
+        scroll_offset: usize,
+        /// Current run status.
+        status: AgentRunStatus,
     },
 }
 
@@ -82,6 +134,13 @@ pub struct App {
     pub cycle_slug: Option<String>,
     /// Loaded project config (used by status bar and settings screen).
     pub config: Option<assay_types::Config>,
+    /// Sender side of the TUI event channel. `None` until the channel is wired
+    /// in `main.rs`. Used by the relay-wrapper thread to push `AgentLine` and
+    /// `AgentDone` events into the main loop.
+    pub event_tx: Option<mpsc::Sender<TuiEvent>>,
+    /// Join handle for a live agent subprocess thread. `None` when no agent
+    /// is running. The thread returns the process exit code as `i32`.
+    pub agent_thread: Option<std::thread::JoinHandle<i32>>,
 }
 
 impl App {
@@ -140,7 +199,50 @@ impl App {
             show_help: false,
             cycle_slug,
             config,
+            event_tx: None,
+            agent_thread: None,
         })
+    }
+
+    /// Accumulate a line of agent stdout into `Screen::AgentRun`.
+    ///
+    /// No-op if the current screen is not `Screen::AgentRun`.
+    /// Lines are capped at 10 000 to prevent unbounded memory growth.
+    pub fn handle_agent_line(&mut self, line: String) {
+        if let Screen::AgentRun { ref mut lines, .. } = self.screen {
+            lines.push(line);
+            if lines.len() > 10_000 {
+                lines.remove(0);
+            }
+        }
+    }
+
+    /// Handle agent subprocess exit.
+    ///
+    /// Transitions `Screen::AgentRun.status` to `Done` (exit 0) or `Failed`
+    /// (non-zero exit). Then refreshes milestones and cycle_slug from disk so
+    /// the dashboard reflects any state changes caused by the agent run.
+    pub fn handle_agent_done(&mut self, exit_code: i32) {
+        if let Screen::AgentRun { ref mut status, .. } = self.screen {
+            *status = if exit_code == 0 {
+                AgentRunStatus::Done { exit_code }
+            } else {
+                AgentRunStatus::Failed { exit_code }
+            };
+        }
+        // Refresh disk state (graceful degradation on I/O error).
+        if let Some(ref root) = self.project_root {
+            let assay_dir = root.join(".assay");
+            if let Ok(ms) = milestone_scan(&assay_dir) {
+                self.milestones = ms;
+            }
+            self.cycle_slug = cycle_status(&assay_dir)
+                .ok()
+                .flatten()
+                .map(|cs| cs.milestone_slug);
+        }
+        // Clear the handle so a subsequent `r` press can start a new run.
+        self.agent_thread = None;
     }
 
     /// Draw the current screen into `frame`.
@@ -174,13 +276,39 @@ impl App {
                     self.detail_run.as_ref(),
                 );
             }
-            Screen::Settings { selected, error } => {
+            Screen::Settings {
+                selected,
+                error,
+                model_focus,
+                planning_model,
+                execution_model,
+                review_model,
+            } => {
                 draw_settings(
                     frame,
                     content_area,
                     self.config.as_ref(),
                     *selected,
                     error.as_deref(),
+                    *model_focus,
+                    planning_model,
+                    execution_model,
+                    review_model,
+                );
+            }
+            Screen::AgentRun {
+                chunk_slug,
+                lines,
+                scroll_offset,
+                status,
+            } => {
+                draw_agent_run(
+                    frame,
+                    content_area,
+                    chunk_slug,
+                    lines,
+                    *scroll_offset,
+                    status,
                 );
             }
         }
@@ -246,6 +374,79 @@ impl App {
                             self.screen = Screen::Wizard(WizardState::new());
                         }
                     }
+                    KeyCode::Char('r') => {
+                        // Guard: no-op while a relay thread is already live.
+                        // Prevents double-spawning when the user presses r → Esc → r
+                        // before the previous agent run has finished.
+                        if self.agent_thread.is_some() {
+                            return false;
+                        }
+                        // Guard: no-op when event_tx is None (test environments).
+                        let tx = match self.event_tx.clone() {
+                            Some(tx) => tx,
+                            None => return false,
+                        };
+                        let assay_dir = match &self.project_root {
+                            Some(root) => root.join(".assay"),
+                            None => return false,
+                        };
+                        // Get the active chunk slug from cycle_status.
+                        let chunk_slug = match cycle_status(&assay_dir) {
+                            Ok(Some(cs)) => cs
+                                .active_chunk_slug
+                                .unwrap_or_else(|| cs.milestone_slug.clone()),
+                            _ => return false,
+                        };
+                        // Build a minimal HarnessProfile for provider dispatch.
+                        let profile = HarnessProfile {
+                            name: chunk_slug.clone(),
+                            prompt_layers: vec![],
+                            settings: SettingsOverride {
+                                model: None,
+                                permissions: vec![],
+                                tools: vec![],
+                                max_turns: None,
+                            },
+                            hooks: vec![],
+                            working_dir: None,
+                        };
+                        // Write harness config to a temp dir to avoid polluting worktree.
+                        let run_dir =
+                            std::env::temp_dir().join(format!("assay-agent-{}", chunk_slug));
+                        if std::fs::create_dir_all(&run_dir).is_err() {
+                            return false;
+                        }
+                        let writer = provider_harness_writer(self.config.as_ref());
+                        let cli_args = match writer(&profile, &run_dir) {
+                            Ok(args) => args,
+                            Err(_) => return false,
+                        };
+                        let working_dir = run_dir.clone();
+                        // Transition to AgentRun screen.
+                        self.screen = Screen::AgentRun {
+                            chunk_slug: chunk_slug.clone(),
+                            lines: vec![],
+                            scroll_offset: 0,
+                            status: AgentRunStatus::Running,
+                        };
+                        // Spawn relay-wrapper thread: inner launch_agent_streaming +
+                        // outer drain loop. Serializes AgentLine before AgentDone to
+                        // prevent line loss.
+                        let tui_tx = tx.clone();
+                        let handle = std::thread::spawn(move || {
+                            let (str_tx, str_rx) = std::sync::mpsc::channel::<String>();
+                            let inner = launch_agent_streaming(&cli_args, &working_dir, str_tx);
+                            // Drain lines → TuiEvent::AgentLine.
+                            for line in str_rx {
+                                let _ = tui_tx.send(TuiEvent::AgentLine(line));
+                            }
+                            // All lines sent; get exit code from inner thread.
+                            let exit_code = inner.join().unwrap_or(-1);
+                            let _ = tui_tx.send(TuiEvent::AgentDone { exit_code });
+                            exit_code
+                        });
+                        self.agent_thread = Some(handle);
+                    }
                     KeyCode::Char('s') => {
                         // Open settings screen.  Pre-select the current provider if
                         // config is loaded; default to Anthropic (index 0) otherwise.
@@ -259,9 +460,25 @@ impl App {
                                 ProviderKind::Ollama => 2,
                             })
                             .unwrap_or(0);
+                        let (pm, em, rm) = self
+                            .config
+                            .as_ref()
+                            .and_then(|c| c.provider.as_ref())
+                            .map(|p| {
+                                (
+                                    p.planning_model.clone().unwrap_or_default(),
+                                    p.execution_model.clone().unwrap_or_default(),
+                                    p.review_model.clone().unwrap_or_default(),
+                                )
+                            })
+                            .unwrap_or_default();
                         self.screen = Screen::Settings {
                             selected,
                             error: None,
+                            planning_model: pm,
+                            execution_model: em,
+                            review_model: rm,
+                            model_focus: None,
                         };
                     }
                     KeyCode::Enter => {
@@ -472,8 +689,145 @@ impl App {
                 false
             }
 
-            Screen::Settings { .. } => {
+            Screen::AgentRun {
+                ref mut scroll_offset,
+                ..
+            } => {
                 match key.code {
+                    KeyCode::Esc => {
+                        self.screen = Screen::Dashboard;
+                    }
+                    KeyCode::Down | KeyCode::Char('j') => {
+                        *scroll_offset = scroll_offset.saturating_add(1);
+                    }
+                    KeyCode::Up | KeyCode::Char('k') => {
+                        *scroll_offset = scroll_offset.saturating_sub(1);
+                    }
+                    _ => {}
+                }
+                false
+            }
+
+            Screen::Settings { .. } => {
+                // ── Model-section key handling ────────────────────────────
+                // When model_focus is Some, intercept Tab/Esc/Char/Backspace
+                // before falling through to provider-list navigation.
+                let model_focus_val = if let Screen::Settings { model_focus, .. } = &self.screen {
+                    *model_focus
+                } else {
+                    None
+                };
+
+                if let Some(focused) = model_focus_val {
+                    match key.code {
+                        KeyCode::Tab => {
+                            // Cycle: 0→1→2→None (returns to provider list).
+                            if let Screen::Settings {
+                                ref mut model_focus,
+                                ..
+                            } = self.screen
+                            {
+                                *model_focus = if focused < 2 { Some(focused + 1) } else { None };
+                            }
+                            return false;
+                        }
+                        KeyCode::Esc => {
+                            // Unfocus model section; stay on Settings.
+                            if let Screen::Settings {
+                                ref mut model_focus,
+                                ..
+                            } = self.screen
+                            {
+                                *model_focus = None;
+                            }
+                            return false;
+                        }
+                        KeyCode::Char('w') => {
+                            // 'w' is the global save command — let it fall
+                            // through to the provider-list handler below.
+                        }
+                        KeyCode::Char(c) => {
+                            match focused {
+                                0 => {
+                                    if let Screen::Settings {
+                                        ref mut planning_model,
+                                        ..
+                                    } = self.screen
+                                    {
+                                        planning_model.push(c);
+                                    }
+                                }
+                                1 => {
+                                    if let Screen::Settings {
+                                        ref mut execution_model,
+                                        ..
+                                    } = self.screen
+                                    {
+                                        execution_model.push(c);
+                                    }
+                                }
+                                _ => {
+                                    if let Screen::Settings {
+                                        ref mut review_model,
+                                        ..
+                                    } = self.screen
+                                    {
+                                        review_model.push(c);
+                                    }
+                                }
+                            }
+                            return false;
+                        }
+                        KeyCode::Backspace => {
+                            match focused {
+                                0 => {
+                                    if let Screen::Settings {
+                                        ref mut planning_model,
+                                        ..
+                                    } = self.screen
+                                    {
+                                        planning_model.pop();
+                                    }
+                                }
+                                1 => {
+                                    if let Screen::Settings {
+                                        ref mut execution_model,
+                                        ..
+                                    } = self.screen
+                                    {
+                                        execution_model.pop();
+                                    }
+                                }
+                                _ => {
+                                    if let Screen::Settings {
+                                        ref mut review_model,
+                                        ..
+                                    } = self.screen
+                                    {
+                                        review_model.pop();
+                                    }
+                                }
+                            }
+                            return false;
+                        }
+                        _ => {
+                            return false;
+                        }
+                    }
+                }
+
+                // ── Provider-list key handling (model_focus is None) ──────
+                match key.code {
+                    KeyCode::Tab => {
+                        // Enter model section, focus planning_model.
+                        if let Screen::Settings {
+                            ref mut model_focus,
+                            ..
+                        } = self.screen
+                        {
+                            *model_focus = Some(0);
+                        }
+                    }
                     KeyCode::Esc | KeyCode::Char('q') => {
                         self.screen = Screen::Dashboard;
                     }
@@ -488,13 +842,22 @@ impl App {
                         }
                     }
                     KeyCode::Char('w') => {
-                        // Save provider selection to config.toml.
-                        let (selected, _error_slot) = if let Screen::Settings {
+                        // Extract what we need from the screen before taking
+                        // a mutable borrow on self.project_root / self.config.
+                        let (selected, pm_buf, em_buf, rm_buf) = if let Screen::Settings {
                             selected,
-                            ref mut error,
+                            ref planning_model,
+                            ref execution_model,
+                            ref review_model,
+                            ..
                         } = self.screen
                         {
-                            (selected, error)
+                            (
+                                selected,
+                                planning_model.clone(),
+                                execution_model.clone(),
+                                review_model.clone(),
+                            )
                         } else {
                             unreachable!("must be in Settings screen");
                         };
@@ -513,31 +876,25 @@ impl App {
                                 }
                             }
                             Some(root) => {
-                                // Build or mutate config.
-                                let mut cfg =
-                                    self.config.clone().unwrap_or_else(|| assay_types::Config {
-                                        project_name: String::new(),
-                                        specs_dir: "specs/".to_string(),
-                                        gates: None,
-                                        guard: None,
-                                        worktree: None,
-                                        sessions: None,
-                                        provider: None,
-                                    });
+                                // Require an existing config so we don't write a
+                                // config.toml with an empty project_name (which would
+                                // fail to reload on the next startup). Per D103.
+                                let mut cfg = match self.config.clone() {
+                                    Some(c) => c,
+                                    None => {
+                                        if let Screen::Settings { ref mut error, .. } = self.screen
+                                        {
+                                            *error = Some("Cannot save: no project config found. Run `assay init` first.".to_string());
+                                        }
+                                        return false;
+                                    }
+                                };
                                 cfg.provider = Some(ProviderConfig {
                                     provider: kind,
-                                    planning_model: cfg
-                                        .provider
-                                        .as_ref()
-                                        .and_then(|p| p.planning_model.clone()),
-                                    execution_model: cfg
-                                        .provider
-                                        .as_ref()
-                                        .and_then(|p| p.execution_model.clone()),
-                                    review_model: cfg
-                                        .provider
-                                        .as_ref()
-                                        .and_then(|p| p.review_model.clone()),
+                                    // Use in-screen buffers; empty → None.
+                                    planning_model: Some(pm_buf).filter(|s| !s.is_empty()),
+                                    execution_model: Some(em_buf).filter(|s| !s.is_empty()),
+                                    review_model: Some(rm_buf).filter(|s| !s.is_empty()),
                                 });
                                 match config_save(root, &cfg) {
                                     Ok(()) => {
@@ -569,6 +926,64 @@ impl App {
 }
 
 // ── Screen renderers ──────────────────────────────────────────────────────────
+
+/// Render the live agent run screen.
+///
+/// Layout: bordered block with title at top; inside → scrollable line list
+/// (fills available height) + 1-row status line at the bottom.
+fn draw_agent_run(
+    frame: &mut ratatui::Frame,
+    area: Rect,
+    chunk_slug: &str,
+    lines: &[String],
+    scroll_offset: usize,
+    status: &AgentRunStatus,
+) {
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(format!(" Agent Run: {chunk_slug} "));
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    let [content_area, status_area] =
+        Layout::vertical([Constraint::Fill(1), Constraint::Length(1)]).areas(inner);
+
+    // Line list.
+    let visible_rows = content_area.height as usize;
+    if lines.is_empty() {
+        let placeholder = List::new(vec![
+            ListItem::new("Starting…").style(Style::default().dim()),
+        ]);
+        frame.render_widget(placeholder, content_area);
+    } else {
+        let safe_start = scroll_offset.min(lines.len().saturating_sub(1));
+        let safe_end = (safe_start + visible_rows).min(lines.len());
+        let items: Vec<ListItem> = lines[safe_start..safe_end]
+            .iter()
+            .map(|l| ListItem::new(l.as_str()))
+            .collect();
+        let list = List::new(items);
+        frame.render_widget(list, content_area);
+    }
+
+    // Status line.
+    let (status_text, status_style) = match status {
+        AgentRunStatus::Running => (
+            "● Running…  Esc: back".to_string(),
+            Style::default().fg(Color::Yellow),
+        ),
+        AgentRunStatus::Done { exit_code } => (
+            format!("✓ Done (exit {exit_code})  Esc: back"),
+            Style::default().fg(Color::Green),
+        ),
+        AgentRunStatus::Failed { exit_code } => (
+            format!("✗ Failed (exit {exit_code})  Esc: back"),
+            Style::default().fg(Color::Red),
+        ),
+    };
+    let status_line = Paragraph::new(Line::from(Span::styled(status_text, status_style)));
+    frame.render_widget(status_line, status_area);
+}
 
 /// Render a load-error screen when milestone data could not be read.
 fn draw_load_error(frame: &mut ratatui::Frame, area: Rect, msg: &str) {
@@ -796,12 +1211,17 @@ fn draw_chunk_detail(
 /// Full-screen bordered block listing three provider options (Anthropic,
 /// OpenAI, Ollama) with the currently selected one highlighted and a brief
 /// legend of key hints at the bottom.
+#[allow(clippy::too_many_arguments)]
 fn draw_settings(
     frame: &mut ratatui::Frame,
     area: Rect,
     config: Option<&assay_types::Config>,
     selected: usize,
     error: Option<&str>,
+    model_focus: Option<usize>,
+    planning_model: &str,
+    execution_model: &str,
+    review_model: &str,
 ) {
     let block = Block::default()
         .title(" Provider Configuration ")
@@ -810,13 +1230,15 @@ fn draw_settings(
 
     let inner = block.inner(area);
 
-    // Layout: list of providers + optional error + key hints at bottom.
-    let [list_area, hint_area] = Layout::vertical([
-        Constraint::Fill(1),
+    // Layout: provider list (3 rows) + model section (4 rows) + hints at bottom.
+    let [provider_area, model_area, hint_area] = Layout::vertical([
+        Constraint::Length(3),
+        Constraint::Length(4),
         Constraint::Length(if error.is_some() { 3 } else { 2 }),
     ])
     .areas(inner);
 
+    // ── Provider list ────────────────────────────────────────────────────────
     let providers = ["Anthropic (Claude)", "OpenAI (GPT)", "Ollama (local)"];
     let current_kind = config
         .and_then(|c| c.provider.as_ref())
@@ -832,10 +1254,14 @@ fn draw_settings(
         .iter()
         .enumerate()
         .map(|(i, name)| {
-            let prefix = if i == selected { "▶ " } else { "  " };
+            let prefix = if i == selected && model_focus.is_none() {
+                "▶ "
+            } else {
+                "  "
+            };
             let suffix = if i == saved_idx { "  [saved]" } else { "" };
             let label = format!("{prefix}{name}{suffix}");
-            let style = if i == selected {
+            let style = if i == selected && model_focus.is_none() {
                 Style::default().bold().fg(Color::Cyan)
             } else {
                 Style::default()
@@ -845,9 +1271,28 @@ fn draw_settings(
         .collect();
 
     let list = List::new(items);
-    frame.render_widget(list, list_area);
+    frame.render_widget(list, provider_area);
 
-    // Key hints (and optional error above them).
+    // ── Model fields ─────────────────────────────────────────────────────────
+    let model_labels = ["Planning model", "Execution model", "Review model"];
+    let model_values = [planning_model, execution_model, review_model];
+    let mut model_lines: Vec<Line> = vec![Line::from(Span::styled(
+        "  Models:",
+        Style::default().dim(),
+    ))];
+    for (i, (label, value)) in model_labels.iter().zip(model_values.iter()).enumerate() {
+        let text = format!("  {label:<18} [{value}]");
+        let style = if model_focus == Some(i) {
+            Style::default().bold().fg(Color::Cyan)
+        } else {
+            Style::default().dim()
+        };
+        model_lines.push(Line::from(Span::styled(text, style)));
+    }
+    let model_para = Paragraph::new(model_lines);
+    frame.render_widget(model_para, model_area);
+
+    // ── Key hints (and optional error above them) ─────────────────────────────
     let mut hint_lines: Vec<Line> = Vec::new();
     if let Some(msg) = error {
         hint_lines.push(Line::from(Span::styled(
@@ -855,10 +1300,12 @@ fn draw_settings(
             Style::default().fg(Color::Red),
         )));
     }
-    hint_lines.push(Line::from(Span::styled(
-        "↑↓ select  w save  Esc cancel",
-        Style::default().dim(),
-    )));
+    let hint_text = if model_focus.is_some() {
+        "Tab next field  Esc exit models  w save"
+    } else {
+        "↑↓ select  Tab edit models  w save  Esc cancel"
+    };
+    hint_lines.push(Line::from(Span::styled(hint_text, Style::default().dim())));
 
     let hint = Paragraph::new(hint_lines);
     frame.render_widget(hint, hint_area);
