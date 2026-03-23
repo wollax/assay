@@ -2,9 +2,9 @@
 
 **Active Milestone:** M007 — TUI Agent Harness
 **Active Slice:** S01 — Channel Event Loop and Agent Run Panel
-**Active Task:** None
+**Active Task:** T01
 **Phase:** Executing
-**Last Updated:** 2026-03-21
+**Last Updated:** 2026-03-23
 **Requirements Status:** 7 active (R053–R059) · 46 validated (R001–R052) · 2 deferred · 4 out of scope
 **Test Count:** 1367 (27 assay-tui; all workspace tests pass; just ready green)
 
@@ -50,6 +50,8 @@ Key patterns:
 - D109: provider_harness_writer — free fn dispatching to per-provider closures (D001)
 - D110: MCP panel = static config management, no live async MCP client
 - D111: Slash command dispatch synchronous in-process
+- D112: AgentRunStatus (not AgentStatus) — TUI-local enum, avoids name collision with assay-core::checkpoint::AgentStatus
+- D113: Two-channel exit-code bridge design — bridge thread owns JoinHandle via inner join thread + exit_rx; App.agent_thread unused for join
 
 ## Known Issues
 
@@ -61,4 +63,4 @@ None.
 
 ## Next Action
 
-M007 planned. Begin S01: refactor event loop + launch_agent_streaming + Screen::AgentRun.
+S01 planned. Begin T01: write failing integration tests for pipeline_streaming and agent_run.
