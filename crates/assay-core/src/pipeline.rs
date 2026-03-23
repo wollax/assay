@@ -305,25 +305,29 @@ pub fn launch_agent(
     }
 }
 
-// ── Streaming agent launcher (stub) ──────────────────────────────────
+// ── Streaming agent launcher ──────────────────────────────────────────
 
 /// Launch an agent subprocess with line-by-line streaming output.
 ///
 /// Spawns the given command, reads its stdout line-by-line in a background
 /// thread, and sends each line to `line_tx`. The returned `JoinHandle`
 /// resolves to the process exit code (or `-1` if the process was killed by a
-/// signal or could not be spawned).
+/// signal; `-2` if `child.wait()` fails).
+///
+/// Returns `Err(io::Error)` if the subprocess cannot be spawned (binary not
+/// found, permission denied, invalid working directory, etc.). Callers should
+/// surface this error to the user rather than panicking.
 ///
 /// # Arguments
 ///
-/// * `argv` — Full command + arguments (`argv[0]` is the binary).
+/// * `cli_args` — Full command + arguments (`cli_args[0]` is the binary).
 /// * `working_dir` — Working directory for the subprocess.
 /// * `line_tx` — Sender end of a channel that receives each stdout line.
 pub fn launch_agent_streaming(
     cli_args: &[String],
     working_dir: &std::path::Path,
     line_tx: mpsc::Sender<String>,
-) -> std::thread::JoinHandle<i32> {
+) -> std::io::Result<std::thread::JoinHandle<i32>> {
     assert!(
         !cli_args.is_empty(),
         "launch_agent_streaming: cli_args must not be empty"
@@ -334,12 +338,11 @@ pub fn launch_agent_streaming(
         .current_dir(working_dir)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::inherit())
-        .spawn()
-        .expect("failed to spawn agent subprocess");
+        .spawn()?;
 
     let stdout = child.stdout.take().expect("stdout was piped");
 
-    std::thread::spawn(move || {
+    Ok(std::thread::spawn(move || {
         use std::io::BufRead;
         let reader = std::io::BufReader::new(stdout);
         for line in reader.lines() {
@@ -355,9 +358,12 @@ pub fn launch_agent_streaming(
         // Wait for child and return exit code
         match child.wait() {
             Ok(status) => status.code().unwrap_or(-1),
-            Err(_) => -1,
+            Err(e) => {
+                eprintln!("[assay-core] agent wait() error: {e}");
+                -2
+            }
         }
-    })
+    }))
 }
 
 // ── Harness profile construction ─────────────────────────────────────

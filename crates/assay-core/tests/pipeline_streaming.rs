@@ -1,10 +1,7 @@
 //! Integration tests for `launch_agent_streaming`.
 //!
-//! These tests define the exact API contract for streaming line delivery and
-//! exit-code reporting. They are expected to **fail at runtime** until
-//! `launch_agent_streaming` is implemented in T02.
-//!
-//! All three tests compile against the stub signature added in T01.
+//! Proves line-by-line delivery via mpsc channel and correct exit-code
+//! reporting using real OS subprocess pipes.
 
 use std::sync::mpsc;
 
@@ -16,7 +13,7 @@ use assay_core::pipeline::launch_agent_streaming;
 fn streaming_delivers_lines_to_receiver() {
     let (line_tx, line_rx) = mpsc::channel::<String>();
 
-    let _handle = launch_agent_streaming(
+    let handle = launch_agent_streaming(
         &[
             "sh".to_string(),
             "-c".to_string(),
@@ -24,15 +21,15 @@ fn streaming_delivers_lines_to_receiver() {
         ],
         std::path::Path::new("/tmp"),
         line_tx,
-    );
+    )
+    .expect("failed to spawn sh");
 
     // Collect all lines until the channel closes.
-    let mut lines: Vec<String> = Vec::new();
-    for line in line_rx {
-        lines.push(line);
-    }
+    let lines: Vec<String> = line_rx.into_iter().collect();
+    let exit_code = handle.join().expect("thread should not panic");
 
     assert_eq!(lines, vec!["alpha", "beta", "gamma"]);
+    assert_eq!(exit_code, 0);
 }
 
 /// Verify that the `JoinHandle` returned by `launch_agent_streaming` resolves
@@ -45,7 +42,8 @@ fn streaming_join_handle_returns_exit_code() {
         &["sh".to_string(), "-c".to_string(), "exit 42".to_string()],
         std::path::Path::new("/tmp"),
         line_tx,
-    );
+    )
+    .expect("failed to spawn sh");
 
     let exit_code = handle.join().expect("thread should not panic");
     assert_eq!(exit_code, 42);
@@ -64,9 +62,23 @@ fn streaming_failed_process_returns_nonzero() {
         ],
         std::path::Path::new("/tmp"),
         line_tx,
-    );
+    )
+    .expect("failed to spawn sh");
 
     let exit_code = handle.join().expect("thread should not panic");
-    assert_ne!(exit_code, 0, "expected non-zero exit code, got {exit_code}");
     assert_eq!(exit_code, 1);
+}
+
+/// Verify that `launch_agent_streaming` returns an error for a nonexistent binary.
+#[test]
+fn streaming_nonexistent_binary_returns_err() {
+    let (line_tx, _line_rx) = mpsc::channel::<String>();
+
+    let result = launch_agent_streaming(
+        &["__nonexistent_binary_assay_test__".to_string()],
+        std::path::Path::new("/tmp"),
+        line_tx,
+    );
+
+    assert!(result.is_err(), "expected Err for nonexistent binary");
 }

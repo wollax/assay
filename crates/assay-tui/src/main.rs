@@ -37,15 +37,17 @@ fn run(mut terminal: DefaultTerminal) -> color_eyre::Result<()> {
     let tx_cross = tx.clone();
     std::thread::spawn(move || {
         loop {
-            if let Ok(e) = event::read() {
-                match e {
-                    Event::Key(k) => {
-                        let _ = tx_cross.send(TuiEvent::Key(k));
-                    }
-                    Event::Resize(w, h) => {
-                        let _ = tx_cross.send(TuiEvent::Resize(w, h));
-                    }
-                    _ => {}
+            match event::read() {
+                Ok(Event::Key(k)) => {
+                    let _ = tx_cross.send(TuiEvent::Key(k));
+                }
+                Ok(Event::Resize(w, h)) => {
+                    let _ = tx_cross.send(TuiEvent::Resize(w, h));
+                }
+                Ok(_) => {}
+                Err(e) => {
+                    eprintln!("[assay-tui] terminal event error: {e}");
+                    break; // avoid busy-loop on persistent terminal errors
                 }
             }
         }

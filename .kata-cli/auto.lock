@@ -1,9 +1,0 @@
-{
-  "pid": 98378,
-  "startedAt": "2026-03-23T00:58:20.193Z",
-  "unitType": "complete-slice",
-  "unitId": "M007/S01",
-  "unitStartedAt": "2026-03-23T01:57:14.394Z",
-  "completedUnits": 6,
-  "sessionFile": "/Users/wollax/.kata-cli/sessions/2026-03-23T01-57-14-247Z_9820913b-817c-498d-8341-88e4eb41aee3.jsonl"
-}

@@ -449,9 +449,12 @@ impl App {
             }
 
             Screen::AgentRun { .. } => {
-                // Key handling implemented in T03.
-                if matches!(key.code, KeyCode::Char('q') | KeyCode::Esc) {
-                    return true;
+                match key.code {
+                    KeyCode::Esc => {
+                        self.screen = Screen::Dashboard;
+                    }
+                    KeyCode::Char('q') => return true,
+                    _ => {}
                 }
                 false
             }
@@ -653,7 +656,17 @@ impl App {
         let assay_dir = root.join(".assay");
         let status = match assay_core::milestone::cycle_status(&assay_dir) {
             Ok(Some(s)) => s,
-            _ => return,
+            Ok(None) => return, // no active chunk — valid no-op
+            Err(e) => {
+                // Surface the I/O error in an AgentRun screen so the user knows why r did nothing.
+                self.screen = Screen::AgentRun {
+                    chunk_slug: String::new(),
+                    lines: vec![format!("[error] failed to read cycle status: {e}")],
+                    scroll_offset: 0,
+                    status: AgentRunStatus::Failed { exit_code: -1 },
+                };
+                return;
+            }
         };
         let chunk_slug = match status.active_chunk_slug {
             Some(slug) => slug,
@@ -674,17 +687,50 @@ impl App {
         let profile = assay_core::pipeline::build_harness_profile(&session);
         let claude_config = assay_harness::claude::generate_config(&profile);
 
-        // Write harness config to a temp dir (leak it to keep it alive for the run).
-        let tmp = tempfile::tempdir().expect("tempdir");
-        let _ = assay_harness::claude::write_config(&claude_config, tmp.path());
+        // Create a temp dir for harness config files.
+        let tmp = match tempfile::tempdir() {
+            Ok(d) => d,
+            Err(e) => {
+                self.screen = Screen::AgentRun {
+                    chunk_slug,
+                    lines: vec![format!("[error] cannot create temp directory: {e}")],
+                    scroll_offset: 0,
+                    status: AgentRunStatus::Failed { exit_code: -1 },
+                };
+                return;
+            }
+        };
+
+        // Write harness config; abort if it fails (disk full, permissions, etc.).
+        if let Err(e) = assay_harness::claude::write_config(&claude_config, tmp.path()) {
+            self.screen = Screen::AgentRun {
+                chunk_slug,
+                lines: vec![format!("[error] failed to write harness config: {e}")],
+                scroll_offset: 0,
+                status: AgentRunStatus::Failed { exit_code: -1 },
+            };
+            return;
+        }
+
         let cli_args = assay_harness::claude::build_cli_args(&claude_config);
 
         // Two channels: one for streamed lines, one for the exit code.
         let (line_tx, line_rx) = mpsc::channel::<String>();
         let (exit_tx, exit_rx) = mpsc::channel::<i32>();
 
-        // Spawn the agent subprocess; get the JoinHandle for exit code.
-        let handle = assay_core::pipeline::launch_agent_streaming(&cli_args, &root, line_tx);
+        // Spawn the agent subprocess; propagate spawn errors to the AgentRun screen.
+        let handle = match assay_core::pipeline::launch_agent_streaming(&cli_args, &root, line_tx) {
+            Ok(h) => h,
+            Err(e) => {
+                self.screen = Screen::AgentRun {
+                    chunk_slug,
+                    lines: vec![format!("[error] failed to spawn agent: {e}")],
+                    scroll_offset: 0,
+                    status: AgentRunStatus::Failed { exit_code: -1 },
+                };
+                return;
+            }
+        };
 
         // Spawn a second thread that joins the handle and sends the exit code.
         std::thread::spawn(move || {
