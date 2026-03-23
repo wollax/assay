@@ -2,7 +2,7 @@
 
 **Active Milestone:** M007 — TUI Agent Harness
 **Active Slice:** S01 — Channel Event Loop and Agent Run Panel
-**Active Task:** T01 — Add `launch_agent_streaming` to assay-core pipeline
+**Active Task:** T02 — Add `launch_agent_streaming` to assay-core pipeline
 **Phase:** Executing
 **Last Updated:** 2026-03-23
 **Requirements Status:** 7 active (R053–R059) · 46 validated (R001–R052) · 2 deferred · 4 out of scope
@@ -65,4 +65,4 @@ None.
 
 ## Next Action
 
-Execute T01: add `launch_agent_streaming` to `crates/assay-core/src/pipeline.rs` + integration test. Then T02 (types + test file), then T03 (full wiring + run() refactor).
+Execute T02: add `TuiEvent` enum and `Screen::AgentRun` + `AgentStatus` types; create test file `crates/assay-tui/tests/agent_run.rs` with all four new tests (initially failing). T01 complete.
