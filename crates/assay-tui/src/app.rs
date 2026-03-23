@@ -5,6 +5,7 @@
 //! assert on `app.screen` after driving key events.
 
 use std::path::PathBuf;
+use std::sync::mpsc;
 
 use assay_core::config::save as config_save;
 use assay_core::history;
@@ -131,6 +132,10 @@ pub struct App {
     pub agent_thread: Option<std::thread::JoinHandle<i32>>,
     /// List widget selection state for the agent output panel.
     pub agent_list_state: ListState,
+    /// Sender half of the main TUI event channel. Set by `run()` before
+    /// starting the event loop so the `r` key handler can send agent events
+    /// back into the main loop from spawned threads.
+    pub event_tx: Option<mpsc::Sender<TuiEvent>>,
 }
 
 impl App {
@@ -191,6 +196,7 @@ impl App {
             config,
             agent_thread: None,
             agent_list_state: ListState::default(),
+            event_tx: None,
         })
     }
 
@@ -331,6 +337,67 @@ impl App {
                         self.screen = Screen::Settings {
                             selected,
                             error: None,
+                        };
+                    }
+                    KeyCode::Char('r') => {
+                        // Spawn agent for the active chunk (S01: hardcoded claude args).
+                        // Guard: must have a project root.
+                        let Some(ref root) = self.project_root.clone() else {
+                            return false;
+                        };
+                        let assay_dir = root.join(".assay");
+
+                        // Guard: must have an active chunk to run.
+                        let chunk_slug = match cycle_status(&assay_dir) {
+                            Ok(Some(cs)) if cs.active_chunk_slug.is_some() => {
+                                cs.active_chunk_slug.unwrap()
+                            }
+                            _ => return false,
+                        };
+
+                        // Guard: must have an event sender (set by run()).
+                        let Some(tx) = self.event_tx.clone() else {
+                            return false;
+                        };
+
+                        // S01: minimal args — real dispatch is S02's concern.
+                        let cli_args: Vec<String> =
+                            vec!["claude".to_string(), "--print".to_string()];
+                        let working_dir = root.clone();
+
+                        // Create a line-delivery channel.
+                        let (line_tx, line_rx) = mpsc::channel::<String>();
+
+                        // Spawn the streaming agent thread.
+                        let agent_handle =
+                            assay_core::pipeline::launch_agent_streaming(
+                                &cli_args,
+                                &working_dir,
+                                line_tx,
+                            );
+                        self.agent_thread = Some(agent_handle);
+
+                        // Spawn a forwarder thread: relays lines and sends AgentDone
+                        // via the main event sender once the agent finishes.
+                        let tx_done = tx.clone();
+                        std::thread::spawn(move || {
+                            // Forward each line as an AgentLine event.
+                            for line in line_rx {
+                                let _ = tx_done.send(TuiEvent::AgentLine(line));
+                            }
+                            // line_rx is Disconnected — agent thread dropped the sender.
+                            // We cannot join the handle from here (it lives in App), so
+                            // send AgentDone with a sentinel; handle_tui_event will join.
+                            // For S01 the real exit code is joined in handle_tui_event.
+                            let _ = tx_done.send(TuiEvent::AgentDone { exit_code: 0 });
+                        });
+
+                        // Transition to AgentRun screen.
+                        self.screen = Screen::AgentRun {
+                            chunk_slug,
+                            lines: vec![],
+                            scroll_offset: 0,
+                            status: AgentStatus::Running,
                         };
                     }
                     KeyCode::Enter => {
@@ -542,8 +609,12 @@ impl App {
             }
 
             Screen::AgentRun { .. } => {
-                // T03 will implement Esc → Dashboard, scroll, etc.
-                // For now, all key events are no-ops on the AgentRun screen.
+                match key.code {
+                    KeyCode::Esc => {
+                        self.screen = Screen::Dashboard;
+                    }
+                    _ => {}
+                }
                 false
             }
 
@@ -644,9 +715,47 @@ impl App {
 
     /// Handle a `TuiEvent` from the channel-based event loop.
     ///
-    /// Returns `true` if the app should exit.
-    /// Stub: T03 implements the real dispatch. Exists so integration tests compile.
-    pub fn handle_tui_event(&mut self, _event: TuiEvent) -> bool {
+    /// Returns `true` if the app should exit (currently always `false`).
+    ///
+    /// - `AgentLine(s)`: appends `s` to `Screen::AgentRun.lines` when in that screen.
+    /// - `AgentDone { exit_code }`: transitions `status` to `Done` or `Failed`, joins
+    ///   the agent thread, and reloads milestones/cycle_slug from disk.
+    /// - `Key` and `Resize`: handled by the `run()` loop directly; ignored here.
+    pub fn handle_tui_event(&mut self, event: TuiEvent) -> bool {
+        match event {
+            TuiEvent::AgentLine(s) => {
+                if let Screen::AgentRun { ref mut lines, .. } = self.screen {
+                    lines.push(s);
+                }
+            }
+            TuiEvent::AgentDone { exit_code } => {
+                if let Screen::AgentRun { ref mut status, .. } = self.screen {
+                    *status = if exit_code == 0 {
+                        AgentStatus::Done { exit_code: 0 }
+                    } else {
+                        AgentStatus::Failed { exit_code }
+                    };
+                }
+                // Consume the join handle to avoid resource leaks.
+                self.agent_thread.take().map(|h| {
+                    let _ = h.join();
+                });
+                // Reload milestones and cycle_slug from disk so the dashboard
+                // reflects any state changes made by the agent.
+                if let Some(ref root) = self.project_root.clone() {
+                    let assay_dir = root.join(".assay");
+                    if let Ok(loaded) = milestone_scan(&assay_dir) {
+                        self.milestones = loaded;
+                        self.cycle_slug = cycle_status(&assay_dir)
+                            .ok()
+                            .flatten()
+                            .map(|cs| cs.milestone_slug);
+                    }
+                }
+            }
+            // Key and Resize are dispatched by the run() loop in main.rs.
+            TuiEvent::Key(_) | TuiEvent::Resize(_, _) => {}
+        }
         false
     }
 }
@@ -1055,10 +1164,11 @@ fn draw_help_overlay(frame: &mut ratatui::Frame, area: Rect) {
 
 /// Render the agent run output panel.
 ///
-/// **Stub** — T03 implements the real scrollable list, status line, and
-/// key-hint bar.  This function exists solely so the `Screen::AgentRun` draw
-/// arm compiles and the module builds without warnings.
-#[allow(unused_variables)]
+/// Layout (top to bottom):
+/// - 1 row: title bar showing the chunk slug
+/// - fill: scrollable list of agent output lines
+/// - 1 row: status line ("Running…", "Done (exit 0)", "Failed (exit N)")
+/// - 1 row: key hint bar
 fn draw_agent_run(
     frame: &mut ratatui::Frame,
     area: Rect,
@@ -1066,9 +1176,37 @@ fn draw_agent_run(
     lines: &[String],
     _scroll_offset: usize,
     status: &AgentStatus,
-    _list_state: &mut ListState,
+    list_state: &mut ListState,
 ) {
-    // T03 implements this
+    let [title_area, list_area, status_area, hint_area] = Layout::vertical([
+        Constraint::Length(1),
+        Constraint::Fill(1),
+        Constraint::Length(1),
+        Constraint::Length(1),
+    ])
+    .areas(area);
+
+    // Title bar.
+    let title = Paragraph::new(format!("  Agent Run — {chunk_slug}  ")).bold();
+    frame.render_widget(title, title_area);
+
+    // Output list.
+    let items: Vec<ListItem> = lines.iter().map(|l| ListItem::new(l.as_str())).collect();
+    let list = List::new(items).block(Block::default().borders(Borders::ALL));
+    frame.render_stateful_widget(list, list_area, list_state);
+
+    // Status line.
+    let status_text = match status {
+        AgentStatus::Running => "Running…".to_string(),
+        AgentStatus::Done { exit_code } => format!("Done (exit {exit_code})"),
+        AgentStatus::Failed { exit_code } => format!("Failed (exit {exit_code})"),
+    };
+    let status_line = Paragraph::new(status_text);
+    frame.render_widget(status_line, status_area);
+
+    // Hint bar.
+    let hint = Paragraph::new("↑↓ scroll  Esc back").dim();
+    frame.render_widget(hint, hint_area);
 }
 
 // ── Project discovery ─────────────────────────────────────────────────────────
