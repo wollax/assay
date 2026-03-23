@@ -319,17 +319,42 @@ pub fn launch_agent(
 /// * `argv` — Full command + arguments (`argv[0]` is the binary).
 /// * `working_dir` — Working directory for the subprocess.
 /// * `line_tx` — Sender end of a channel that receives each stdout line.
-///
-/// # Implementation note
-///
-/// This is a **stub** added in T01 to satisfy integration-test imports.
-/// The real implementation is provided in T02.
 pub fn launch_agent_streaming(
-    _argv: &[String],
-    _working_dir: &std::path::Path,
-    _line_tx: std::sync::mpsc::Sender<String>,
+    cli_args: &[String],
+    working_dir: &std::path::Path,
+    line_tx: mpsc::Sender<String>,
 ) -> std::thread::JoinHandle<i32> {
-    todo!("launch_agent_streaming: implementation pending T02")
+    assert!(!cli_args.is_empty(), "launch_agent_streaming: cli_args must not be empty");
+
+    let mut child = std::process::Command::new(cli_args[0].as_str())
+        .args(&cli_args[1..])
+        .current_dir(working_dir)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::inherit())
+        .spawn()
+        .expect("failed to spawn agent subprocess");
+
+    let stdout = child.stdout.take().expect("stdout was piped");
+
+    std::thread::spawn(move || {
+        use std::io::BufRead;
+        let reader = std::io::BufReader::new(stdout);
+        for line in reader.lines() {
+            match line {
+                Ok(l) => {
+                    if line_tx.send(l).is_err() {
+                        break; // receiver dropped — TUI closed
+                    }
+                }
+                Err(_) => break,
+            }
+        }
+        // Wait for child and return exit code
+        match child.wait() {
+            Ok(status) => status.code().unwrap_or(-1),
+            Err(_) => -1,
+        }
+    })
 }
 
 // ── Harness profile construction ─────────────────────────────────────

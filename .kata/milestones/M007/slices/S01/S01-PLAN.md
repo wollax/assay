@@ -58,7 +58,7 @@
   - Verify: `cargo test -p assay-core --test pipeline_streaming 2>&1 | grep "FAILED\|error\[E"` — expect compile errors or test failures (red). `cargo test -p assay-tui --test agent_run 2>&1 | grep "FAILED\|error\[E"` — same expectation.
   - Done when: Both test files exist, compile (perhaps with stub types), and the tests fail at runtime with "not yet implemented" or similar — but no compile errors
 
-- [ ] **T02: Implement `launch_agent_streaming` in `assay-core::pipeline`** `est:45m`
+- [x] **T02: Implement `launch_agent_streaming` in `assay-core::pipeline`** `est:45m`
   - Why: Provides the core streaming primitive that the TUI event loop depends on; proven independently before TUI wiring
   - Files: `crates/assay-core/src/pipeline.rs`
   - Do: Add `pub fn launch_agent_streaming(cli_args: &[String], working_dir: &Path, line_tx: mpsc::Sender<String>) -> std::thread::JoinHandle<i32>`. Spawn child with `Stdio::piped()`. In a new thread: read stdout via `BufReader::lines()`, send each line to `line_tx` (stop on `SendError`), wait for child exit, return exit code as the join value. Leave `launch_agent()` untouched. The `Sender<String>` parameter uses the existing `std::sync::mpsc` import already in the file.
