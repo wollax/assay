@@ -1,0 +1,15 @@
+# Directory to watch for incoming manifest .toml files
+queue_dir = "/tmp/smelt-queue"
+# Maximum number of jobs to run concurrently
+max_concurrent = 2
+# Maximum retry attempts before marking a job as permanently failed
+retry_attempts = 3
+# Seconds to wait between retry attempts
+retry_backoff_secs = 5
+
+# HTTP API server settings
+[server]
+# Host address for the HTTP API
+host = "127.0.0.1"
+# Port for the HTTP API
+port = 8765

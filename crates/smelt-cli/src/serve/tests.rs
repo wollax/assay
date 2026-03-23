@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use crate::serve::config::ServerConfig;
 use crate::serve::queue::ServerState;
 use crate::serve::types::{JobSource, JobStatus};
 
@@ -522,4 +523,158 @@ async fn test_http_delete_running_job() {
         409,
         "DELETE dispatching/running job should return 409 Conflict"
     );
+}
+
+// ──────────────────────────────────────────────
+// S03/T01 ServerConfig unit tests
+// ──────────────────────────────────────────────
+
+#[test]
+fn test_server_config_roundtrip() {
+    let toml = r#"
+queue_dir = "/tmp/smelt-queue"
+max_concurrent = 4
+retry_attempts = 5
+retry_backoff_secs = 10
+
+[server]
+host = "0.0.0.0"
+port = 9000
+"#;
+    let config: ServerConfig = toml::from_str(toml).expect("valid TOML should parse");
+    assert_eq!(config.queue_dir, std::path::PathBuf::from("/tmp/smelt-queue"));
+    assert_eq!(config.max_concurrent, 4);
+    assert_eq!(config.retry_attempts, 5);
+    assert_eq!(config.retry_backoff_secs, 10);
+    assert_eq!(config.server.host, "0.0.0.0");
+    assert_eq!(config.server.port, 9000);
+}
+
+#[test]
+fn test_server_config_missing_queue_dir() {
+    let toml = r#"
+max_concurrent = 2
+"#;
+    let result: Result<ServerConfig, _> = toml::from_str(toml);
+    assert!(result.is_err(), "missing required field queue_dir should fail");
+}
+
+#[test]
+fn test_server_config_invalid_max_concurrent() {
+    use std::io::Write;
+    use tempfile::NamedTempFile;
+
+    let mut f = NamedTempFile::new().unwrap();
+    writeln!(f, r#"queue_dir = "/tmp/smelt-queue""#).unwrap();
+    writeln!(f, "max_concurrent = 0").unwrap();
+    f.flush().unwrap();
+
+    let result = ServerConfig::load(f.path());
+    assert!(result.is_err(), "max_concurrent=0 should fail validation");
+    let err_msg = result.unwrap_err().to_string();
+    assert!(
+        err_msg.contains("max_concurrent"),
+        "error message should mention 'max_concurrent', got: {err_msg}"
+    );
+}
+
+// ──────────────────────────────────────────────
+// S03/T02 serve integration test
+// ──────────────────────────────────────────────
+
+/// Verify that `smelt serve --no-tui --config <tmpfile>` starts, the HTTP API
+/// responds with `[]` on GET /api/v1/jobs, and the task handle can be aborted
+/// cleanly (no panic, no zombie).
+///
+/// Uses port 18765 to avoid needing port-0 extraction across tokio::spawn.
+#[tokio::test]
+async fn test_serve_http_responds_while_running() {
+    use std::io::Write;
+    use tempfile::{NamedTempFile, TempDir};
+
+    use crate::commands::serve::{ServeArgs, execute};
+
+    let queue_dir = TempDir::new().unwrap();
+    let queue_dir_path = queue_dir.path().to_path_buf();
+
+    // Write a minimal server.toml pointing to the temp queue dir.
+    let mut cfg_file = NamedTempFile::new().unwrap();
+    writeln!(
+        cfg_file,
+        r#"queue_dir = "{}"
+max_concurrent = 2
+
+[server]
+host = "127.0.0.1"
+port = 18765
+"#,
+        queue_dir_path.display()
+    )
+    .unwrap();
+    cfg_file.flush().unwrap();
+
+    let cfg_path = cfg_file.path().to_path_buf();
+
+    let handle = tokio::spawn(async move {
+        let args = ServeArgs {
+            config: cfg_path,
+            no_tui: true,
+        };
+        execute(&args).await.expect("serve execute failed");
+    });
+
+    // Give the server time to bind and start accepting connections.
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .get("http://127.0.0.1:18765/api/v1/jobs")
+        .send()
+        .await
+        .expect("GET /api/v1/jobs should succeed");
+
+    assert_eq!(resp.status(), 200, "GET /api/v1/jobs should return 200");
+    let body: Vec<serde_json::Value> = resp.json().await.expect("response should be JSON array");
+    assert!(body.is_empty(), "initial job list should be empty");
+
+    // Abort the server task — simulates clean teardown in tests.
+    handle.abort();
+    // A brief wait ensures the OS releases the port before any subsequent test.
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+}
+
+
+#[test]
+fn test_tui_render_no_panic() {
+    use ratatui::backend::TestBackend;
+    use ratatui::Terminal;
+    use crate::serve::tui::render;
+    use crate::serve::queue::ServerState;
+    use std::sync::{Arc, Mutex};
+
+    let backend = TestBackend::new(80, 24);
+    let mut terminal = Terminal::new(backend).unwrap();
+    let state = Arc::new(Mutex::new(ServerState::new(2)));
+
+    // Render with empty state — must not panic
+    terminal.draw(|frame| render(frame, &state)).unwrap();
+
+    // Add a mock job entry to state and render again
+    // (directly mutate queue for test — no manifest file needed)
+    {
+        use std::path::PathBuf;
+        use crate::serve::types::{JobSource, JobStatus, QueuedJob, JobId};
+        use std::time::Instant;
+        let mut s = state.lock().unwrap();
+        s.jobs.push_back(QueuedJob {
+            id: JobId::new("job-1"),
+            manifest_path: PathBuf::from("test-manifest.toml"),
+            source: JobSource::HttpApi,
+            attempt: 0,
+            status: JobStatus::Running,
+            queued_at: Instant::now(),
+            started_at: Some(Instant::now()),
+        });
+    }
+    terminal.draw(|frame| render(frame, &state)).unwrap();
 }

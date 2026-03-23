@@ -195,42 +195,44 @@ This file is the explicit capability and coverage contract for the project.
 - Validation: validated
 - Notes: M005 delivers single-node K8s proof (kind/minikube). S01 (manifest + generate_pod_spec + KubernetesConfig), S02 (full KubernetesProvider lifecycle integration tests against kind), S03 (push-from-Pod collection: SMELT_GIT_REMOTE injection, GitOps::fetch_ref(), Phase 8 host-side git fetch), S04 (CLI dispatch: AnyProvider::Kubernetes, ── Kubernetes ── dry-run section, dry-run integration test). All 5 slices complete. Automated proof: 27 dry-run tests, 155 smelt-core unit tests, k8s_lifecycle integration tests (SMELT_K8S_TEST=1). Live end-to-end proof (real kind cluster + real Assay image) deferred to S04-UAT.md. Parallel multi-session scheduling (R023) deferred to a later milestone.
 
----
-
-## Active
-
 ### R023 — Parallel dispatch daemon (`smelt serve`)
 - Class: core-capability
-- Status: active
+- Status: validated
 - Description: `smelt serve` is a long-running daemon that accepts job manifests via directory watch or HTTP POST, dispatches up to N concurrent sessions (Docker/Compose/Kubernetes), enforces a `max_concurrent` cap, auto-retries failures with backoff, and exposes a Ratatui TUI for live observability.
 - Why it matters: Single-job invocation is the limit of the current model. A parallel dispatch daemon enables autonomous multi-job workflows, headless server deployment, and programmatic job submission — without requiring Linear or any external tracker.
 - Source: user
 - Primary owning slice: M006/S01
 - Supporting slices: M006/S02, M006/S03
-- Validation: unmapped
-- Notes: Generalizes R023 (formerly K8s-only) to all runtimes. Requires no Assay or Linear changes. `smelt run` single-job path must remain unchanged.
+- Validation: validated
+- Notes: Proven across M006/S01 (JobQueue unit tests, concurrent dispatch, CancellationToken teardown), M006/S02 (DirectoryWatcher + HTTP API integration tests), M006/S03 (smelt serve assembly, HTTP smoke test, cargo test --workspace green). `smelt run` single-job path unchanged — zero regressions. Live end-to-end proof with real Docker jobs + Ctrl+C teardown deferred to S03-UAT.md.
 
 ### R024 — `smelt serve` HTTP API for job submission and status
 - Class: integration
-- Status: active
+- Status: validated
 - Description: `smelt serve` exposes a REST API: `POST /api/v1/jobs` (enqueue a manifest, return job_id), `GET /api/v1/jobs` (list all jobs), `GET /api/v1/jobs/:id` (single job state), `DELETE /api/v1/jobs/:id` (cancel queued job).
 - Why it matters: Programmatic job submission enables CI integration, scripted batch runs, and future tracker integrations (Linear, GitHub Issues) without changing the manifest format.
 - Source: user
 - Primary owning slice: M006/S02
 - Supporting slices: M006/S03
-- Validation: unmapped
-- Notes: JSON response format. TOML body for POST. No authentication in M006 (trusted local network assumed).
+- Validation: validated
+- Notes: Proven by M006/S02 integration tests (POST, GET, DELETE) and M006/S03 smoke test (GET /api/v1/jobs returns [] on clean start). JSON response format. TOML body for POST. No authentication in M006 (trusted local network assumed).
 
 ### R025 — Live terminal dashboard for `smelt serve`
 - Class: failure-visibility
-- Status: active
+- Status: validated
 - Description: When `smelt serve` runs, it displays a live Ratatui TUI table showing all queued, running, and completed jobs with job name, runtime, phase, attempt count, elapsed time, and exit status — updating in real time.
 - Why it matters: Without live observability, an operator cannot tell which jobs are running, which are queued, or which failed — especially when dispatching many concurrent sessions.
 - Source: user
 - Primary owning slice: M006/S03
 - Supporting slices: M006/S01
-- Validation: unmapped
-- Notes: TUI is default-on. Disable with `--no-tui` flag. RUST_LOG/tracing output must not corrupt the TUI display.
+- Validation: validated
+- Notes: Proven by M006/S03: ratatui TUI thread implemented; test_tui_render_no_panic via TestBackend confirms render doesn't panic; tracing redirected to .smelt/serve.log in TUI mode. Full live rendering with real Docker jobs deferred to S03-UAT.md. TUI is default-on; `--no-tui` disables it.
+
+---
+
+## Active
+
+_(No active requirements — R023, R024, R025 validated by M006 completion)_
 
 ---
 
@@ -340,9 +342,9 @@ This file is the explicit capability and coverage contract for the project.
 | R020 | core-capability      | validated   | M004/S03      | M004/S01,S02,S04     | validated |
 | R021 | integration          | validated   | M005/S02      | M005/S01,S03,S04     | validated |
 | R022 | admin/support        | deferred    | none          | none                 | unmapped  |
-| R023 | core-capability      | active      | M006/S01      | M006/S02,S03         | unmapped  |
-| R024 | integration          | active      | M006/S02      | M006/S03             | unmapped  |
-| R025 | failure-visibility   | active      | M006/S03      | M006/S01             | unmapped  |
+| R023 | core-capability      | validated   | M006/S01      | M006/S02,S03         | validated |
+| R024 | integration          | validated   | M006/S02      | M006/S03             | validated |
+| R025 | failure-visibility   | validated   | M006/S03      | M006/S01             | validated |
 | R026 | integration          | deferred    | none          | none                 | unmapped  |
 | R027 | integration          | deferred    | none          | none                 | unmapped  |
 | R028 | operability          | deferred    | none          | none                 | unmapped  |
@@ -352,7 +354,7 @@ This file is the explicit capability and coverage contract for the project.
 
 ## Coverage Summary
 
-- Active requirements: 3 (R023, R024, R025)
-- Mapped to slices: 3 (R023 → M006/S01, R024 → M006/S02, R025 → M006/S03)
-- Validated (all milestones + M005/S01–S04): 16 (R001–R008, R010–R015, R020, R021)
+- Active requirements: 0
+- Mapped to slices: 0
+- Validated (all milestones + M006 complete): 19 (R001–R008, R010–R015, R020, R021, R023, R024, R025)
 - Unmapped active requirements: 0

@@ -62,7 +62,7 @@ This milestone is complete only when all are true:
 - [x] **S02: Directory Watch + HTTP API** `risk:medium` `depends:[S01]`
   > After this: `smelt serve` accepts jobs via directory watch (drop a `.toml` → job dispatches) and via `POST /api/v1/jobs`; `GET /api/v1/jobs` and `GET /api/v1/jobs/:id` return live JSON state; cancel queued job via `DELETE /api/v1/jobs/:id`; integration tests for both ingress paths pass.
 
-- [ ] **S03: Ratatui TUI + Server Config + Graceful Shutdown** `risk:medium` `depends:[S01,S02]`
+- [x] **S03: Ratatui TUI + Server Config + Graceful Shutdown** `risk:medium` `depends:[S01,S02]`
   > After this: `smelt serve --config server.toml` runs with a live Ratatui TUI showing all jobs, phases, elapsed time, and attempt counts; Ctrl+C tears down all running containers cleanly; `ServerConfig` validates and parses; `examples/server.toml` ships; `cargo test --workspace` all green.
 
 ## Boundary Map
