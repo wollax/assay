@@ -712,7 +712,9 @@ impl App {
             return;
         }
 
-        let cli_args = assay_harness::claude::build_cli_args(&claude_config);
+        // build_cli_args returns flags only (e.g. ["--print", ...]) — prepend the binary.
+        let mut cli_args = vec!["claude".to_string()];
+        cli_args.extend(assay_harness::claude::build_cli_args(&claude_config));
 
         // Two channels: one for streamed lines, one for the exit code.
         let (line_tx, line_rx) = mpsc::channel::<String>();
@@ -809,6 +811,10 @@ impl App {
                 .flatten()
                 .map(|s| s.milestone_slug);
         }
+
+        // Clear cached ChunkDetail gate history so the next navigation reload reflects
+        // any gate runs completed during the agent session.
+        self.detail_run = None;
 
         // Update AgentRun status.
         let new_status = if exit_code == 0 {
