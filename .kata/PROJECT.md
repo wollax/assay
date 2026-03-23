@@ -10,7 +10,7 @@ A beginning developer installs Assay, describes a feature, and gets a structured
 
 ## Current State
 
-v0.6.0-dev. M001–M006 complete. ~22K lines of Rust across 6 crates. 1367 tests passing. `assay-tui` is a full Ratatui application with dashboard (S01), in-TUI authoring wizard (S02), spec browser with criteria/gate results (S03), provider configuration screen (S04), persistent status bar, `?` help overlay, and terminal resize handling (S05).
+v0.7.0-dev. M001–M007 complete. ~24K lines of Rust across 6 crates. 1400+ tests passing. `assay-tui` is a full Ratatui application with dashboard, in-TUI authoring wizard, spec browser, provider configuration, agent spawning with live output streaming, slash command overlay, and MCP server configuration panel.
 
 **M001 (complete):** Single-agent harness end-to-end — manifest → worktree → agent launch → gate evaluation → merge proposal. 19 requirements validated.
 
@@ -24,7 +24,7 @@ v0.6.0-dev. M001–M006 complete. ~22K lines of Rust across 6 crates. 1367 tests
 
 **M006 (complete):** TUI as primary surface — S01 fixed binary name (`[[bin]] name = "assay-tui"`) + live dashboard from `milestone_scan`. S02 delivered in-TUI authoring wizard (`WizardState` pure state machine, `draw_wizard` popup, `wizard_round_trip` integration test). S03 delivered spec browser (`MilestoneDetail` + `ChunkDetail` screens, `join_results` criterion/gate-result join, Esc chains). S04 delivered provider configuration (`ProviderKind`+`ProviderConfig` in `assay-types`, `config_save` atomic write, `Screen::Settings` full-screen view, 5 settings integration tests including restart-persistence). S05 delivered integration polish (`?` help overlay, persistent status bar, global `area: Rect` layout split, `Event::Resize` fix, `just ready` green). 4 new requirements validated (R049–R052). 1367 tests.
 
-**M007 S01 (complete):** Channel event loop and agent run panel — `TuiEvent` enum in `assay_tui::event`; channel-based `run()` loop replacing blocking `event::read()`; `launch_agent_streaming` in `assay-core::pipeline` (real subprocess pipes, mpsc line delivery, JoinHandle<i32>); `Screen::AgentRun` with `AgentRunStatus` (Running/Done/Failed); `r` key handler using two-channel bridge design; `assay-harness` dependency added. 6 new integration tests (3 pipeline_streaming + 3 agent_run). R053 validated. 1400+ tests.
+**M007 (complete):** TUI agent harness — S01 delivered channel-based event loop (`TuiEvent`), `launch_agent_streaming`, `Screen::AgentRun` with `r` key spawning agents. S02 delivered provider dispatch (`provider_harness_writer` routing Anthropic/Ollama/OpenAI), Settings screen model input fields. S03 delivered slash command overlay (`/` key, tab completion, `/gate-check`/`/status`/`/next-chunk`/`/pr-create` commands). S04 delivered MCP server configuration panel (`m` key, add/delete/save servers to `.assay/mcp.json`). R053, R055 validated. 1400+ tests.
 
 Crates:
 
@@ -33,7 +33,7 @@ Crates:
 - **assay-harness**: Agent harness adapters — prompt builder, settings merger, Claude Code/Codex/OpenCode adapters, scope enforcement
 - **assay-cli**: CLI binary — init, spec, gate, worktree, context, checkpoint, guard, mcp, run, harness, milestone, plan, pr subcommands
 - **assay-mcp**: MCP server — 30 tools (spec, gate, worktree, session, merge, context, orchestrate, milestone, cycle, pr)
-- **assay-tui**: TUI binary — full Ratatui app (M006): App+Screen state machine (Dashboard/NoProject/Wizard/MilestoneDetail/ChunkDetail/Settings/LoadError), live dashboard, in-TUI authoring wizard, spec browser, provider config screen, help overlay, status bar
+- **assay-tui**: TUI binary — full Ratatui app (M006+M007): App+Screen state machine (Dashboard/NoProject/Wizard/MilestoneDetail/ChunkDetail/Settings/AgentRun/McpPanel/LoadError), live dashboard, in-TUI authoring wizard, spec browser, provider config, agent spawning with live output streaming, slash command overlay, MCP server config panel, help overlay, status bar
 
 Key patterns: free functions (zero traits), sync core with async surfaces, atomic file writes, `deny_unknown_fields` on persisted types, schema registry via `inventory`, shell-out to git CLI, closure-based control inversion (D001).
 
@@ -64,5 +64,5 @@ See `.kata/REQUIREMENTS.md` for the explicit capability contract, requirement st
 - [x] M004: Coordination Modes — Mesh and Gossip modes, mode dispatch, knowledge manifest, SWIM membership (complete, 32 requirements validated, 1271 tests)
 - [x] M005: Spec-Driven Development Core — all 6 slices complete (types/I/O/cycle state machine/wizard/PR workflow/plugins). 43 requirements validated (R039–R048), 1333 tests.
 - [x] M006: TUI as Primary Surface — full Ratatui TUI: dashboard, wizard, spec browser, provider config, help overlay, status bar (complete, R049–R052 validated, 1371+ tests)
-- [ ] M007: TUI Agent Harness — TUI spawns and controls AI agents, provider abstraction (Anthropic/OpenAI/Ollama), MCP management, slash commands
+- [x] M007: TUI Agent Harness — TUI spawns and controls AI agents, provider abstraction (Anthropic/OpenAI/Ollama), MCP management, slash commands (complete, R053/R055 validated, 1400+ tests)
 - [ ] M008: PR Workflow + Plugin Parity — advanced PR automation, OpenCode plugin, history analytics
