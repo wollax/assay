@@ -534,14 +534,14 @@
 
 ### R053 — TUI agent spawning
 - Class: core-capability
-- Status: active
+- Status: validated
 - Description: The TUI can spawn, monitor, and display output from AI agent sessions (assay pipeline runs) for the active chunk. Shows live status, gate results as they come in, and surfaces failures inline.
 - Why it matters: The TUI becomes the primary development loop — spawning agents from the dashboard closes the cycle without leaving the TUI
 - Source: user
 - Primary owning slice: M007/S01
 - Supporting slices: M006/S01
-- Validation: M007/S01 — channel-based TuiEvent loop proven; launch_agent_streaming proven with real echo subprocess; Screen::AgentRun accumulates lines and transitions to Done/Failed; r key handler spawns relay-wrapper thread from Dashboard; gate refresh on AgentDone; 8 integration tests pass. Real Claude invocation is UAT-only.
-- Notes: Uses assay-core pipeline. Agent output streamed to TUI panel. Gate counts refresh on AgentDone. Full validation pending human UAT with real Claude Code.
+- Validation: S01 — channel-based event loop (TuiEvent dispatch), launch_agent_streaming (real subprocess pipes, line-by-line delivery), Screen::AgentRun with AgentRunStatus (Running/Done/Failed), r key handler spawning agent and transitioning to AgentRun, gate results refreshed on AgentDone; 6 integration tests (3 pipeline_streaming + 3 agent_run) prove mechanical correctness; all 30 assay-tui tests pass; just ready green. Real Claude invocation is UAT-only.
+- Notes: Agent output streamed verbatim via mpsc channel. Gate results refresh synchronously in handle_agent_done via milestone_scan. Provider dispatch (Ollama/OpenAI) deferred to S02.
 
 ### R054 — Provider abstraction
 - Class: core-capability
@@ -551,8 +551,7 @@
 - Source: user
 - Primary owning slice: M007/S01
 - Supporting slices: M007/S02
-- Validation: M007/S01 — Anthropic (Claude Code) path wired in r key handler; S02 adds Ollama and OpenAI provider dispatch. Full validation after S02.
-- Notes: Anthropic path proven by S01 harness config write + spawn. Ollama/OpenAI adapters and provider_harness_writer dispatch in S02.
+- Validation: unmapped
 - Notes: Anthropic (Claude Code) already works. OpenAI and Ollama require new harness adapters or config-level switching.
 
 ### R055 — TUI MCP server management
@@ -712,7 +711,7 @@
 | R050 | primary-user-loop | validated | M006/S02 | M006/S01 | S02 |
 | R051 | primary-user-loop | validated | M006/S03 | M006/S01 | S03 |
 | R052 | operability | validated | M006/S04 | M006/S05 | S04, S05 |
-| R053 | core-capability | active | M007/S01 | M006/S01 | mapped |
+| R053 | core-capability | validated | M007/S01 | M006/S01 | S01 |
 | R054 | core-capability | active | M007/S01 | M007/S02 | mapped |
 | R055 | operability | active | M007/S02 | none | mapped |
 | R056 | primary-user-loop | active | M007/S03 | M007/S01, M007/S02 | mapped |
