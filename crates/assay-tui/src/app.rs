@@ -24,6 +24,19 @@ use ratatui::widgets::{
 
 use crate::wizard::{WizardAction, WizardState, draw_wizard, handle_wizard_event};
 
+// ── AgentRun status ───────────────────────────────────────────────────────────
+
+/// Status of a running or completed agent session shown on `Screen::AgentRun`.
+#[derive(Debug, PartialEq, Eq)]
+pub enum AgentRunStatus {
+    /// Agent subprocess is still running.
+    Running,
+    /// Agent subprocess exited cleanly.
+    Done { exit_code: i32 },
+    /// Agent subprocess exited with a non-zero code.
+    Failed { exit_code: i32 },
+}
+
 // ── Screen variants ───────────────────────────────────────────────────────────
 
 /// The active screen the application is rendering.
@@ -51,6 +64,17 @@ pub enum Screen {
         /// Inline error message from a failed save attempt.
         error: Option<String>,
     },
+    /// Streaming agent run output for a chunk.
+    AgentRun {
+        /// Slug of the chunk being run.
+        chunk_slug: String,
+        /// Lines streamed from the agent subprocess so far.
+        lines: Vec<String>,
+        /// Current scroll offset (number of lines scrolled down).
+        scroll_offset: usize,
+        /// Current status of the agent subprocess.
+        status: AgentRunStatus,
+    },
 }
 
 // ── App ───────────────────────────────────────────────────────────────────────
@@ -75,6 +99,9 @@ pub struct App {
     pub detail_spec_note: Option<String>,
     /// Latest gate run record (`None` if no history exists).
     pub detail_run: Option<GateRunRecord>,
+    /// Background thread running the agent subprocess.
+    /// Holds a `JoinHandle<i32>` that resolves to the exit code when joined.
+    pub agent_thread: Option<std::thread::JoinHandle<i32>>,
     /// Whether the help overlay is currently visible.
     pub show_help: bool,
     /// Slug of the currently active (InProgress) milestone, or `None` when no
@@ -137,6 +164,7 @@ impl App {
             detail_spec: None,
             detail_spec_note: None,
             detail_run: None,
+            agent_thread: None,
             show_help: false,
             cycle_slug,
             config,
@@ -182,6 +210,9 @@ impl App {
                     *selected,
                     error.as_deref(),
                 );
+            }
+            Screen::AgentRun { .. } => {
+                // Placeholder — rendering implemented in T03.
             }
         }
 
@@ -394,6 +425,14 @@ impl App {
                 false
             }
 
+            Screen::AgentRun { .. } => {
+                // Key handling implemented in T03.
+                if matches!(key.code, KeyCode::Char('q') | KeyCode::Esc) {
+                    return true;
+                }
+                false
+            }
+
             Screen::Wizard(ref mut state) => {
                 match handle_wizard_event(state, key) {
                     WizardAction::Continue => {} // state already mutated
@@ -565,6 +604,22 @@ impl App {
                 false
             }
         }
+    }
+
+    /// Append a line from the streaming agent output to the current `AgentRun` screen.
+    ///
+    /// No-op when the current screen is not `Screen::AgentRun`.
+    /// Full implementation arrives in T02/T03.
+    pub fn handle_agent_line(&mut self, _line: String) {
+        todo!("handle_agent_line: implementation pending T02/T03")
+    }
+
+    /// Transition the `AgentRun` screen to `Done` or `Failed` based on the exit code.
+    ///
+    /// Also joins and drops `self.agent_thread` to avoid zombie threads.
+    /// Full implementation arrives in T02/T03.
+    pub fn handle_agent_done(&mut self, _exit_code: i32) {
+        todo!("handle_agent_done: implementation pending T02/T03")
     }
 }
 

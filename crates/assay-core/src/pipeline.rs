@@ -305,6 +305,33 @@ pub fn launch_agent(
     }
 }
 
+// ── Streaming agent launcher (stub) ──────────────────────────────────
+
+/// Launch an agent subprocess with line-by-line streaming output.
+///
+/// Spawns the given command, reads its stdout line-by-line in a background
+/// thread, and sends each line to `line_tx`. The returned `JoinHandle`
+/// resolves to the process exit code (or `-1` if the process was killed by a
+/// signal or could not be spawned).
+///
+/// # Arguments
+///
+/// * `argv` — Full command + arguments (`argv[0]` is the binary).
+/// * `working_dir` — Working directory for the subprocess.
+/// * `line_tx` — Sender end of a channel that receives each stdout line.
+///
+/// # Implementation note
+///
+/// This is a **stub** added in T01 to satisfy integration-test imports.
+/// The real implementation is provided in T02.
+pub fn launch_agent_streaming(
+    _argv: &[String],
+    _working_dir: &std::path::Path,
+    _line_tx: std::sync::mpsc::Sender<String>,
+) -> std::thread::JoinHandle<i32> {
+    todo!("launch_agent_streaming: implementation pending T02")
+}
+
 // ── Harness profile construction ─────────────────────────────────────
 
 /// Construct a [`HarnessProfile`] from a manifest session's inline overrides.

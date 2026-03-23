@@ -51,7 +51,7 @@
 
 ## Tasks
 
-- [ ] **T01: Write failing integration tests for streaming and AgentRun** `est:45m`
+- [x] **T01: Write failing integration tests for streaming and AgentRun** `est:45m`
   - Why: Test-first; establishes the exact API contract that T02–T04 must satisfy; tests fail until implementation lands, proving correctness
   - Files: `crates/assay-core/tests/pipeline_streaming.rs`, `crates/assay-tui/tests/agent_run.rs`
   - Do: Write `pipeline_streaming.rs` with tests for `launch_agent_streaming` (line delivery, exit code). Write `agent_run.rs` with tests that construct a real `TuiEvent` channel, drive `AgentLine`/`AgentDone` events into `App::handle_event_tui`, and assert `Screen::AgentRun` state. Tests must compile with placeholder/stub types added to `app.rs` (`AgentRunStatus` enum, `Screen::AgentRun` variant, `App::handle_event_tui` signature) but fail at runtime because implementations are absent. Do NOT implement the feature — only add the minimum type scaffolding needed to make tests compile.
