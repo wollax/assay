@@ -304,6 +304,7 @@ impl App {
             match key.code {
                 KeyCode::Esc => {
                     *add_form = None;
+                    *error = None;
                 }
                 KeyCode::Tab => {
                     form.active_field = if form.active_field == 0 { 1 } else { 0 };
@@ -324,15 +325,18 @@ impl App {
                 }
                 KeyCode::Enter => {
                     let new_name = form.name.trim().to_string();
+                    let new_command = form.command.trim().to_string();
                     if new_name.is_empty() {
                         *error = Some("Server name cannot be empty.".to_string());
+                    } else if new_command.is_empty() {
+                        *error = Some("Command cannot be empty.".to_string());
                     } else if servers.iter().any(|s| s.name == new_name) {
                         *error = Some(format!("Duplicate server name: {new_name}"));
                     } else {
                         *error = None;
                         let new_entry = McpServerEntry {
                             name: new_name,
-                            command: form.command.trim().to_string(),
+                            command: new_command,
                             args: vec![],
                         };
                         servers.push(new_entry);
@@ -660,12 +664,16 @@ impl App {
                     KeyCode::Char('m') => {
                         // Open MCP server configuration panel.
                         if let Some(ref root) = self.project_root {
-                            let servers = crate::mcp_panel::mcp_config_load(root);
+                            let (servers, load_error) =
+                                match crate::mcp_panel::mcp_config_load(root) {
+                                    Ok(s) => (s, None),
+                                    Err(e) => (Vec::new(), Some(e)),
+                                };
                             self.screen = Screen::McpPanel {
                                 servers,
                                 selected: 0,
                                 add_form: None,
-                                error: None,
+                                error: load_error,
                             };
                         }
                     }

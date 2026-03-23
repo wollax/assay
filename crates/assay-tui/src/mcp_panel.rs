@@ -68,18 +68,18 @@ struct McpServerValue {
 
 /// Load MCP server entries from `.assay/mcp.json` under `root`.
 ///
-/// Returns an empty vec when the file is missing. Entries are sorted
-/// alphabetically by name for stable display order.
-pub fn mcp_config_load(root: &Path) -> Vec<McpServerEntry> {
+/// Returns `Ok(empty vec)` when the file does not exist.
+/// Returns `Err` when the file exists but is unreadable or contains invalid JSON.
+/// Entries are sorted alphabetically by name for stable display order.
+pub fn mcp_config_load(root: &Path) -> Result<Vec<McpServerEntry>, String> {
     let path = root.join(".assay").join("mcp.json");
     let content = match std::fs::read_to_string(&path) {
         Ok(c) => c,
-        Err(_) => return Vec::new(),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) => return Err(format!("Failed to read {}: {e}", path.display())),
     };
-    let config: McpConfigFile = match serde_json::from_str(&content) {
-        Ok(c) => c,
-        Err(_) => return Vec::new(),
-    };
+    let config: McpConfigFile = serde_json::from_str(&content)
+        .map_err(|e| format!("{} contains invalid JSON: {e}", path.display()))?;
     let mut entries: Vec<McpServerEntry> = config
         .mcp_servers
         .into_iter()
@@ -90,15 +90,21 @@ pub fn mcp_config_load(root: &Path) -> Vec<McpServerEntry> {
         })
         .collect();
     entries.sort_by(|a, b| a.name.cmp(&b.name));
-    entries
+    Ok(entries)
 }
 
 /// Atomically save MCP server entries to `.assay/mcp.json` under `root`.
 ///
 /// Uses the NamedTempFile-write-sync-persist pattern (D093) to prevent
-/// partial writes. The `.assay/` directory must already exist.
+/// partial writes. Returns `Err` if `.assay/` does not exist.
 pub fn mcp_config_save(root: &Path, servers: &[McpServerEntry]) -> Result<(), String> {
     let assay_dir = root.join(".assay");
+    if !assay_dir.exists() {
+        return Err(format!(
+            "Project directory {} not found. Run `assay init` to create it.",
+            assay_dir.display()
+        ));
+    }
     let path = assay_dir.join("mcp.json");
 
     let mut map = HashMap::new();
@@ -285,7 +291,7 @@ mod tests {
         ];
 
         mcp_config_save(root, &servers).unwrap();
-        let loaded = mcp_config_load(root);
+        let loaded = mcp_config_load(root).unwrap();
 
         // Loaded entries are sorted alphabetically.
         assert_eq!(loaded.len(), 2);
@@ -299,7 +305,18 @@ mod tests {
     #[test]
     fn load_missing_file_returns_empty() {
         let tmp = TempDir::new().unwrap();
-        let loaded = mcp_config_load(tmp.path());
+        let loaded = mcp_config_load(tmp.path()).unwrap();
         assert!(loaded.is_empty());
+    }
+
+    #[test]
+    fn load_corrupt_json_returns_error() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        std::fs::create_dir_all(root.join(".assay")).unwrap();
+        std::fs::write(root.join(".assay").join("mcp.json"), "not valid json").unwrap();
+        let result = mcp_config_load(root);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("invalid JSON"));
     }
 }
