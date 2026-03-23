@@ -324,7 +324,10 @@ pub fn launch_agent_streaming(
     working_dir: &std::path::Path,
     line_tx: mpsc::Sender<String>,
 ) -> std::thread::JoinHandle<i32> {
-    assert!(!cli_args.is_empty(), "launch_agent_streaming: cli_args must not be empty");
+    assert!(
+        !cli_args.is_empty(),
+        "launch_agent_streaming: cli_args must not be empty"
+    );
 
     let mut child = std::process::Command::new(cli_args[0].as_str())
         .args(&cli_args[1..])

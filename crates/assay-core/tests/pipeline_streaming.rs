@@ -17,7 +17,11 @@ fn streaming_delivers_lines_to_receiver() {
     let (line_tx, line_rx) = mpsc::channel::<String>();
 
     let _handle = launch_agent_streaming(
-        &["sh".to_string(), "-c".to_string(), r#"printf "alpha\nbeta\ngamma\n"; exit 0"#.to_string()],
+        &[
+            "sh".to_string(),
+            "-c".to_string(),
+            r#"printf "alpha\nbeta\ngamma\n"; exit 0"#.to_string(),
+        ],
         std::path::Path::new("/tmp"),
         line_tx,
     );
@@ -53,7 +57,11 @@ fn streaming_failed_process_returns_nonzero() {
     let (line_tx, _line_rx) = mpsc::channel::<String>();
 
     let handle = launch_agent_streaming(
-        &["sh".to_string(), "-c".to_string(), "echo err; exit 1".to_string()],
+        &[
+            "sh".to_string(),
+            "-c".to_string(),
+            "echo err; exit 1".to_string(),
+        ],
         std::path::Path::new("/tmp"),
         line_tx,
     );

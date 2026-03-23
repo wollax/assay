@@ -8,13 +8,14 @@ description = "Assay terminal user interface"
 
 [dependencies]
 assay-core.workspace = true
+assay-harness.workspace = true
 assay-types.workspace = true
 ratatui.workspace = true
 crossterm.workspace = true
 color-eyre.workspace = true
+tempfile.workspace = true
 
 [dev-dependencies]
-tempfile.workspace = true
 
 [lints]
 workspace = true

@@ -6,24 +6,9 @@
 use std::sync::mpsc;
 
 use assay_tui::app::App;
+use assay_tui::event::TuiEvent;
 use crossterm::event::{self, Event};
 use ratatui::DefaultTerminal;
-
-/// Events dispatched through the TUI event loop.
-///
-/// The channel-based dispatch loop replaced the blocking `event::read()` in
-/// `run()`. `AgentLine` and `AgentDone` variants are sent by the agent
-/// background thread; `Key` and `Resize` are sent by the crossterm thread.
-pub enum TuiEvent {
-    /// A keyboard event from crossterm.
-    Key(crossterm::event::KeyEvent),
-    /// A terminal resize event.
-    Resize(u16, u16),
-    /// A single line of stdout from the agent subprocess.
-    AgentLine(String),
-    /// The agent subprocess has exited with the given exit code.
-    AgentDone { exit_code: i32 },
-}
 
 fn main() -> color_eyre::Result<()> {
     color_eyre::install()?;
@@ -45,18 +30,23 @@ fn run(mut terminal: DefaultTerminal) -> color_eyre::Result<()> {
 
     let (tx, rx) = mpsc::channel::<TuiEvent>();
 
+    // Wire the event sender into App so the `r` key handler can forward agent events.
+    app.event_tx = Some(tx.clone());
+
     // Spawn a background thread to forward crossterm events into the channel.
     let tx_cross = tx.clone();
-    std::thread::spawn(move || loop {
-        if let Ok(e) = event::read() {
-            match e {
-                Event::Key(k) => {
-                    let _ = tx_cross.send(TuiEvent::Key(k));
+    std::thread::spawn(move || {
+        loop {
+            if let Ok(e) = event::read() {
+                match e {
+                    Event::Key(k) => {
+                        let _ = tx_cross.send(TuiEvent::Key(k));
+                    }
+                    Event::Resize(w, h) => {
+                        let _ = tx_cross.send(TuiEvent::Resize(w, h));
+                    }
+                    _ => {}
                 }
-                Event::Resize(w, h) => {
-                    let _ = tx_cross.send(TuiEvent::Resize(w, h));
-                }
-                _ => {}
             }
         }
     });

@@ -5,6 +5,7 @@
 //! assert on `app.screen` after driving key events.
 
 use std::path::PathBuf;
+use std::sync::mpsc;
 
 use assay_core::config::save as config_save;
 use assay_core::history;
@@ -22,6 +23,7 @@ use ratatui::widgets::{
     Block, Borders, Cell, Clear, List, ListItem, ListState, Paragraph, Row, Table,
 };
 
+use crate::event::TuiEvent;
 use crate::wizard::{WizardAction, WizardState, draw_wizard, handle_wizard_event};
 
 // ── AgentRun status ───────────────────────────────────────────────────────────
@@ -102,6 +104,11 @@ pub struct App {
     /// Background thread running the agent subprocess.
     /// Holds a `JoinHandle<i32>` that resolves to the exit code when joined.
     pub agent_thread: Option<std::thread::JoinHandle<i32>>,
+    /// Sender half of the TUI event channel.
+    ///
+    /// Set from `run()` after the channel is created. The `r` key handler uses
+    /// this to forward agent lines and done signals into the event loop.
+    pub event_tx: Option<mpsc::Sender<TuiEvent>>,
     /// Whether the help overlay is currently visible.
     pub show_help: bool,
     /// Slug of the currently active (InProgress) milestone, or `None` when no
@@ -165,6 +172,7 @@ impl App {
             detail_spec_note: None,
             detail_run: None,
             agent_thread: None,
+            event_tx: None,
             show_help: false,
             cycle_slug,
             config,
@@ -217,7 +225,14 @@ impl App {
                 scroll_offset,
                 status,
             } => {
-                draw_agent_run(frame, content_area, chunk_slug, lines, *scroll_offset, status);
+                draw_agent_run(
+                    frame,
+                    content_area,
+                    chunk_slug,
+                    lines,
+                    *scroll_offset,
+                    status,
+                );
             }
         }
 
@@ -281,6 +296,9 @@ impl App {
                         if self.project_root.is_some() {
                             self.screen = Screen::Wizard(WizardState::new());
                         }
+                    }
+                    KeyCode::Char('r') => {
+                        self.handle_r_key();
                     }
                     KeyCode::Char('s') => {
                         // Open settings screen.  Pre-select the current provider if
@@ -611,11 +629,103 @@ impl App {
         }
     }
 
+    /// Handle the `r` key press from the Dashboard screen.
+    ///
+    /// Spawns the agent for the active chunk if:
+    /// - `self.project_root` is `Some`
+    /// - `cycle_status()` returns an `active_chunk_slug`
+    /// - `self.event_tx` is `Some` (i.e. we're inside a real `run()` loop)
+    ///
+    /// Uses the two-channel design: `line_tx/line_rx` for streamed lines,
+    /// `exit_tx/exit_rx` for the exit code. The bridge thread drains `line_rx`,
+    /// then receives the exit code from `exit_rx`, then sends `TuiEvent::AgentDone`.
+    /// This ensures the `JoinHandle<i32>` never needs to be joined from `App`.
+    fn handle_r_key(&mut self) {
+        let root = match &self.project_root {
+            Some(r) => r.clone(),
+            None => return,
+        };
+        let event_tx = match &self.event_tx {
+            Some(tx) => tx.clone(),
+            None => return,
+        };
+
+        let assay_dir = root.join(".assay");
+        let status = match assay_core::milestone::cycle_status(&assay_dir) {
+            Ok(Some(s)) => s,
+            _ => return,
+        };
+        let chunk_slug = match status.active_chunk_slug {
+            Some(slug) => slug,
+            None => return,
+        };
+
+        // Build a minimal ManifestSession referencing the active chunk.
+        let session = assay_types::ManifestSession {
+            spec: chunk_slug.clone(),
+            name: None,
+            settings: None,
+            hooks: vec![],
+            prompt_layers: vec![],
+            file_scope: vec![],
+            shared_files: vec![],
+            depends_on: vec![],
+        };
+        let profile = assay_core::pipeline::build_harness_profile(&session);
+        let claude_config = assay_harness::claude::generate_config(&profile);
+
+        // Write harness config to a temp dir (leak it to keep it alive for the run).
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let _ = assay_harness::claude::write_config(&claude_config, tmp.path());
+        let cli_args = assay_harness::claude::build_cli_args(&claude_config);
+
+        // Two channels: one for streamed lines, one for the exit code.
+        let (line_tx, line_rx) = mpsc::channel::<String>();
+        let (exit_tx, exit_rx) = mpsc::channel::<i32>();
+
+        // Spawn the agent subprocess; get the JoinHandle for exit code.
+        let handle = assay_core::pipeline::launch_agent_streaming(&cli_args, &root, line_tx);
+
+        // Spawn a second thread that joins the handle and sends the exit code.
+        std::thread::spawn(move || {
+            let exit_code = handle.join().unwrap_or(-1);
+            let _ = exit_tx.send(exit_code);
+        });
+
+        // Bridge thread: forward lines → TuiEvent::AgentLine, then exit code → AgentDone.
+        std::thread::spawn(move || {
+            for line in line_rx {
+                let _ = event_tx.send(TuiEvent::AgentLine(line));
+            }
+            // line_rx disconnected = agent stdout closed. Now wait for exit code.
+            let exit_code = exit_rx.recv().unwrap_or(-1);
+            let _ = event_tx.send(TuiEvent::AgentDone { exit_code });
+        });
+
+        // Keep tmp dir alive for the duration of the subprocess run.
+        std::mem::forget(tmp);
+
+        // App no longer owns the JoinHandle — it moved to the exit-code thread.
+        self.agent_thread = None;
+
+        self.screen = Screen::AgentRun {
+            chunk_slug,
+            lines: vec![],
+            scroll_offset: 0,
+            status: AgentRunStatus::Running,
+        };
+    }
+
     /// Append a line from the streaming agent output to the current `AgentRun` screen.
     ///
     /// No-op when the current screen is not `Screen::AgentRun`.
     pub fn handle_agent_line(&mut self, line: String) {
-        if let Screen::AgentRun { ref mut lines, ref mut scroll_offset, .. } = self.screen {
+        if let Screen::AgentRun {
+            ref mut lines,
+            ref mut scroll_offset,
+            ..
+        } = self.screen
+        {
             lines.push(line);
             // Auto-scroll: keep the last lines visible (assume ~20 visible rows).
             const VISIBLE_HEIGHT: usize = 20;
@@ -625,18 +735,23 @@ impl App {
 
     /// Transition the `AgentRun` screen to `Done` or `Failed` based on the exit code.
     ///
-    /// Also joins and drops `self.agent_thread` to avoid zombie threads.
     /// Refreshes milestone data and `cycle_slug` immediately after the agent exits
     /// so gate results are up to date.
+    ///
+    /// With the revised two-channel design from T04, `agent_thread` is `None` when
+    /// `r` is pressed (the handle is moved into the exit-code thread). If for some
+    /// reason a handle is present (e.g. set externally in tests), it is joined here
+    /// as a defensive cleanup measure.
     ///
     /// Honors D098: borrows from `self.project_root` are completed before
     /// `self.screen` is mutated.
     pub fn handle_agent_done(&mut self, exit_code: i32) {
-        // Join background thread for cleanup (non-fatal on join error).
-        if let Some(handle) = self.agent_thread.take() {
-            if let Err(e) = handle.join() {
-                eprintln!("agent_thread join error: {e:?}");
-            }
+        // Defensive join in case agent_thread was set externally (e.g. tests).
+        // In production use via `r` key, this is always None.
+        if let Some(handle) = self.agent_thread.take()
+            && let Err(e) = handle.join()
+        {
+            eprintln!("agent_thread join error: {e:?}");
         }
 
         // Refresh milestone data — borrow project_root first, mutate screen after (D098).
@@ -995,10 +1110,7 @@ fn draw_agent_run(
 
     // Status line.
     let (status_text, status_style) = match status {
-        AgentRunStatus::Running => (
-            "Running…".to_string(),
-            Style::default().fg(Color::Yellow),
-        ),
+        AgentRunStatus::Running => ("Running…".to_string(), Style::default().fg(Color::Yellow)),
         AgentRunStatus::Done { exit_code } => (
             format!("Done (exit {exit_code})"),
             Style::default().fg(Color::Green),
