@@ -158,10 +158,13 @@ impl App {
             let assay_dir = root.join(".assay");
             match milestone_scan(&assay_dir) {
                 Ok(milestones) => {
-                    let slug = cycle_status(&assay_dir)
-                        .ok()
-                        .flatten()
-                        .map(|cs| cs.milestone_slug);
+                    let slug = match cycle_status(&assay_dir) {
+                        Ok(status) => status.map(|cs| cs.milestone_slug),
+                        Err(e) => {
+                            eprintln!("Warning: could not read cycle status: {e}");
+                            None
+                        }
+                    };
                     (Screen::Dashboard, milestones, slug)
                 }
                 Err(e) => {
@@ -182,9 +185,22 @@ impl App {
             list_state.select(Some(0));
         }
 
-        let config = project_root
-            .as_deref()
-            .and_then(|root| assay_core::config::load(root).ok());
+        let config = project_root.as_deref().and_then(|root| {
+            let config_path = root.join(".assay").join("config.toml");
+            if config_path.exists() {
+                match assay_core::config::load(root) {
+                    Ok(cfg) => Some(cfg),
+                    Err(e) => {
+                        // Config file exists but is unreadable — surface as status-bar
+                        // warning via eprintln (not silently swallowed).
+                        eprintln!("Warning: failed to load .assay/config.toml: {e}");
+                        None
+                    }
+                }
+            } else {
+                None
+            }
+        });
 
         Ok(App {
             screen,
@@ -236,10 +252,14 @@ impl App {
             if let Ok(ms) = milestone_scan(&assay_dir) {
                 self.milestones = ms;
             }
-            self.cycle_slug = cycle_status(&assay_dir)
-                .ok()
-                .flatten()
-                .map(|cs| cs.milestone_slug);
+            match cycle_status(&assay_dir) {
+                Ok(status) => {
+                    self.cycle_slug = status.map(|cs| cs.milestone_slug);
+                }
+                Err(_) => {
+                    // Preserve existing cycle_slug on refresh failure.
+                }
+            }
         }
         // Clear the handle so a subsequent `r` press can start a new run.
         self.agent_thread = None;
@@ -647,10 +667,10 @@ impl App {
                                 match milestone_scan(&assay_dir) {
                                     Ok(loaded) => {
                                         self.milestones = loaded;
-                                        self.cycle_slug = cycle_status(&assay_dir)
-                                            .ok()
-                                            .flatten()
-                                            .map(|cs| cs.milestone_slug);
+                                        if let Ok(status) = cycle_status(&assay_dir) {
+                                            self.cycle_slug =
+                                                status.map(|cs| cs.milestone_slug);
+                                        }
                                         let idx = self
                                             .milestones
                                             .iter()
@@ -900,17 +920,22 @@ impl App {
                                     Ok(()) => {
                                         self.config = Some(cfg);
                                         // Refresh cycle_slug after settings save.
+                                        // On error, preserve existing slug rather than
+                                        // silently clearing it.
                                         let assay_dir = root.join(".assay");
-                                        self.cycle_slug = cycle_status(&assay_dir)
-                                            .ok()
-                                            .flatten()
-                                            .map(|cs| cs.milestone_slug);
+                                        if let Ok(status) = cycle_status(&assay_dir) {
+                                            self.cycle_slug =
+                                                status.map(|cs| cs.milestone_slug);
+                                        }
                                         self.screen = Screen::Dashboard;
                                     }
                                     Err(e) => {
                                         if let Screen::Settings { ref mut error, .. } = self.screen
                                         {
-                                            *error = Some(format!("Save failed: {e}"));
+                                            *error = Some(format!(
+                                                "Save failed: {e}. Check that \
+                                                 .assay/config.toml is writable."
+                                            ));
                                         }
                                     }
                                 }
@@ -1205,7 +1230,6 @@ fn draw_chunk_detail(
     frame.render_widget(hint, hint_area);
 }
 
-/// Render the persistent one-line status bar showing project context.
 /// Render the provider configuration screen.
 ///
 /// Full-screen bordered block listing three provider options (Anthropic,
@@ -1311,6 +1335,7 @@ fn draw_settings(
     frame.render_widget(hint, hint_area);
 }
 
+/// Render the persistent one-line status bar showing project context.
 ///
 /// Shows: `<project_name>  ·  <cycle_slug>  ·  ? help  q quit` (dim hints).
 /// When `project_name` is empty and `cycle_slug` is `None`, only the key hints
