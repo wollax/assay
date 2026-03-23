@@ -9,7 +9,7 @@
 use std::path::PathBuf;
 
 use assay_tui::app::App;
-use assay_tui::slash::{parse_slash_cmd, tab_complete, SlashCmd};
+use assay_tui::slash::{SlashCmd, parse_slash_cmd, tab_complete};
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 use tempfile::TempDir;
 
@@ -118,7 +118,10 @@ fn slash_key_opens_overlay() {
 
     app.handle_event(key(KeyCode::Char('/')));
 
-    assert!(app.slash_state.is_some(), "slash overlay must open on '/' key");
+    assert!(
+        app.slash_state.is_some(),
+        "slash overlay must open on '/' key"
+    );
     assert_eq!(app.slash_state.as_ref().unwrap().input, "");
 }
 
@@ -137,10 +140,19 @@ fn enter_dispatches_status_command() {
     }
     app.handle_event(key(KeyCode::Enter));
 
-    let slash = app.slash_state.as_ref().expect("overlay should still be open after Enter");
-    assert!(slash.result.is_some(), "result should be populated after dispatching /status");
+    let slash = app
+        .slash_state
+        .as_ref()
+        .expect("overlay should still be open after Enter");
+    assert!(
+        slash.result.is_some(),
+        "result should be populated after dispatching /status"
+    );
     let result = slash.result.as_ref().unwrap();
-    assert!(result.contains("Milestone:"), "result should contain milestone info, got: {result}");
+    assert!(
+        result.contains("Milestone:"),
+        "result should contain milestone info, got: {result}"
+    );
 }
 
 /// Pressing Esc should close the overlay.
@@ -156,5 +168,8 @@ fn esc_closes_overlay() {
 
     // Close it
     app.handle_event(key(KeyCode::Esc));
-    assert!(app.slash_state.is_none(), "overlay should be closed after Esc");
+    assert!(
+        app.slash_state.is_none(),
+        "overlay should be closed after Esc"
+    );
 }

@@ -545,36 +545,36 @@
 
 ### R054 — Provider abstraction
 - Class: core-capability
-- Status: active
+- Status: validated
 - Description: Assay abstracts the AI provider layer so users can configure Anthropic (Claude), OpenAI (GPT), or Ollama (local) as the agent backend. Provider selection affects harness adapter choice and model configuration.
 - Why it matters: Lock-in to a single provider limits adoption — provider abstraction enables beginners to use whichever AI tool they have access to
 - Source: user
-- Primary owning slice: M007/S01
-- Supporting slices: M007/S02
-- Validation: unmapped
-- Notes: Anthropic (Claude Code) already works. OpenAI and Ollama require new harness adapters or config-level switching.
+- Primary owning slice: M007/S02
+- Supporting slices: M007/S01
+- Validation: S02 — `provider_harness_writer` dispatches Anthropic/Ollama/OpenAI; 3 unit tests prove correct CLI args per provider; Settings screen model fields persist; real invocation is UAT-only
+- Notes: Anthropic uses existing Claude Code adapter. Ollama uses `ollama run <model>`. OpenAI uses `openai api chat.completions.create --model <model>`. All three dispatched via closures (D001/D109).
 
 ### R055 — TUI MCP server management
 - Class: operability
-- Status: active
-- Description: The TUI has a panel for connecting, disconnecting, and inspecting MCP servers. Shows connected servers, available tools, and connection status.
+- Status: validated
+- Description: The TUI has a panel for managing MCP server configuration. Shows configured servers from `.assay/mcp.json`, allows adding and deleting servers, and persists changes atomically to disk.
 - Why it matters: Power users need to extend Assay's capabilities via MCP without editing JSON config files
 - Source: user
-- Primary owning slice: M007/S02
+- Primary owning slice: M007/S04
 - Supporting slices: none
-- Validation: unmapped
-- Notes: Connects to MCP servers via the same mechanism as the CLI. Server list configured in `.assay/mcp.json`.
+- Validation: S04 — Screen::McpPanel with add/delete/save keyboard UX; mcp_config_load/mcp_config_save with atomic NamedTempFile writes; 4 integration tests (load-empty, load-from-file, add-writes, delete-writes); name uniqueness validation; just ready green
+- Notes: Static config management only (D110) — live MCP server connection/tool inspection deferred to M008+. Server list configured in `.assay/mcp.json`.
 
 ### R056 — TUI slash commands
 - Class: primary-user-loop
-- Status: active
-- Description: The TUI has a command input (triggered by `/`) that accepts slash commands: `/gate-check`, `/spec-show`, `/plan`, `/status`, `/next-chunk`, `/pr-create`. Commands execute against the active milestone/chunk context.
+- Status: validated
+- Description: The TUI has a command input (triggered by `/`) that accepts slash commands: `/gate-check`, `/spec-show`, `/status`, `/next-chunk`, `/pr-create`. Commands execute against the active milestone/chunk context.
 - Why it matters: Power users expect keyboard-driven control — slash commands provide a fast path for common operations without mouse navigation
 - Source: user
 - Primary owning slice: M007/S03
-- Supporting slices: M007/S01, M007/S02
-- Validation: unmapped
-- Notes: Same commands as the plugin skills, but executed locally in the TUI context.
+- Supporting slices: M007/S01
+- Validation: S03 — 6 integration tests prove parse, dispatch, tab completion, overlay open/close, and command execution; `/` key opens from all non-wizard screens; synchronous dispatch to assay-core (D111); just ready green
+- Notes: Same commands as the plugin skills, but executed locally in the TUI context. `/plan` not implemented (wizard is the TUI planning surface).
 
 ### R057 — OpenCode plugin
 - Class: differentiator
@@ -712,18 +712,18 @@
 | R051 | primary-user-loop | validated | M006/S03 | M006/S01 | S03 |
 | R052 | operability | validated | M006/S04 | M006/S05 | S04, S05 |
 | R053 | core-capability | validated | M007/S01 | M006/S01 | S01 |
-| R054 | core-capability | active | M007/S01 | M007/S02 | mapped |
-| R055 | operability | active | M007/S02 | none | mapped |
-| R056 | primary-user-loop | active | M007/S03 | M007/S01, M007/S02 | mapped |
+| R054 | core-capability | validated | M007/S02 | M007/S01 | S02 |
+| R055 | operability | validated | M007/S04 | none | S04 |
+| R056 | primary-user-loop | validated | M007/S03 | M007/S01 | S03 |
 | R057 | differentiator | active | M008/S01 | none | mapped |
 | R058 | primary-user-loop | active | M008/S02 | M008/S01 | mapped |
 | R059 | failure-visibility | active | M008/S03 | none | mapped |
 
 ## Coverage Summary
 
-- Active requirements: 21 (R039–R059)
-- Mapped to slices: 21
-- Validated: 32 (R001–R029, R034–R038)
+- Active requirements: 3 (R057–R059)
+- Mapped to slices: 3
+- Validated: 52 (R001–R029, R034–R056)
 - Deferred: 2 (R025, R027 — with rationale)
 - Out of scope: 4 (R030, R031, R032, R033)
 - Unmapped active requirements: 0

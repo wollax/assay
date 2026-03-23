@@ -30,7 +30,7 @@ use crate::orchestrate::{GossipConfig, MeshConfig, OrchestratorMode};
 /// spec = "checkout"
 /// name = "checkout-with-hooks"
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct RunManifest {
     /// Ordered list of sessions to execute.
@@ -59,20 +59,6 @@ inventory::submit! {
     crate::schema_registry::SchemaEntry {
         name: "run-manifest",
         generate: || schemars::schema_for!(RunManifest),
-    }
-}
-
-impl Default for RunManifest {
-    fn default() -> Self {
-        Self {
-            sessions: vec![],
-            #[cfg(feature = "orchestrate")]
-            mode: OrchestratorMode::Dag,
-            #[cfg(feature = "orchestrate")]
-            mesh_config: None,
-            #[cfg(feature = "orchestrate")]
-            gossip_config: None,
-        }
     }
 }
 

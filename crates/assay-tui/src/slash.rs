@@ -137,9 +137,7 @@ pub fn execute_slash_cmd(cmd: SlashCmd, project_root: &Path) -> String {
             match assay_core::spec::load_spec_entry_with_diagnostics(&chunk_slug, &specs_dir) {
                 Ok(entry) => {
                     let spec_name = match &entry {
-                        assay_core::spec::SpecEntry::Directory { gates, .. } => {
-                            gates.name.clone()
-                        }
+                        assay_core::spec::SpecEntry::Directory { gates, .. } => gates.name.clone(),
                         assay_core::spec::SpecEntry::Legacy { slug, .. } => slug.clone(),
                     };
                     format!(
@@ -228,12 +226,8 @@ pub fn execute_slash_cmd(cmd: SlashCmd, project_root: &Path) -> String {
                     )
                 }
                 Ok(failures) => {
-                    let slugs: Vec<&str> =
-                        failures.iter().map(|f| f.chunk_slug.as_str()).collect();
-                    format!(
-                        "Cannot create PR — gate failures in: {}",
-                        slugs.join(", ")
-                    )
+                    let slugs: Vec<&str> = failures.iter().map(|f| f.chunk_slug.as_str()).collect();
+                    format!("Cannot create PR — gate failures in: {}", slugs.join(", "))
                 }
                 Err(e) => format!("Error checking gates for PR: {e}"),
             }
@@ -311,14 +305,14 @@ pub fn handle_slash_event(state: &mut SlashState, key: KeyEvent) -> SlashAction 
 /// Layout (bottom-aligned within `area`):
 /// - Result/error line (if any) — 1 line
 /// - Input line showing `/ <input>` with dimmed suggestion — 1 line
-/// Total height: 2–3 lines anchored to the bottom of `area`.
+///   Total height: 2–3 lines anchored to the bottom of `area`.
 pub fn draw_slash_overlay(frame: &mut ratatui::Frame, area: Rect, state: &SlashState) {
     use ratatui::style::{Color, Style};
     use ratatui::text::{Line, Span};
     use ratatui::widgets::{Clear, Paragraph};
 
     // Compute feedback lines (result or error), capped to avoid filling the screen.
-    let max_result_lines: usize = (area.height as usize / 2).max(1).min(10);
+    let max_result_lines: usize = (area.height as usize / 2).clamp(1, 10);
     let mut feedback_lines: Vec<Line> = Vec::new();
 
     if let Some(ref result) = state.result {
@@ -371,9 +365,10 @@ pub fn draw_slash_overlay(frame: &mut ratatui::Frame, area: Rect, state: &SlashS
     lines.push(Line::from(input_spans));
 
     // Hint line.
-    lines.push(Line::from(
-        Span::styled("Tab complete · Enter run · Esc close", Style::default().dim()),
-    ));
+    lines.push(Line::from(Span::styled(
+        "Tab complete · Enter run · Esc close",
+        Style::default().dim(),
+    )));
 
     let paragraph = Paragraph::new(lines);
     frame.render_widget(paragraph, overlay_area);

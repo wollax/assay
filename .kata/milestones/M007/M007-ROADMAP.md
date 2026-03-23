@@ -61,7 +61,7 @@ This milestone is complete only when all are true:
 - [x] **S03: Slash Command Overlay** `risk:low` `depends:[S01]`
   > After this: pressing `/` from any non-wizard TUI screen opens a command input overlay with tab completion; typing `/gate-check` runs gate evaluation on the active chunk and shows pass/fail results inline; `/status` shows cycle status; `/next-chunk` shows active chunk info; `/pr-create` triggers PR creation — all dispatching to existing assay-core functions, proven by integration tests driving synthetic key events through the overlay
 
-- [ ] **S04: MCP Server Configuration Panel** `risk:medium` `depends:[]`
+- [x] **S04: MCP Server Configuration Panel** `risk:medium` `depends:[]`
   > After this: pressing `m` from the dashboard opens `Screen::McpPanel` showing servers from `.assay/mcp.json` (or "none configured" when absent); pressing `a` opens an add-server form (name + command); pressing `d` deletes the selected server; `w` writes changes atomically to `.assay/mcp.json`; `Esc` returns to dashboard — proven by integration tests with tempdir fixtures; no live async MCP client required
 
 ## Boundary Map

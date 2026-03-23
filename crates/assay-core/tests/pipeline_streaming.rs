@@ -21,8 +21,7 @@ fn streaming_delivers_lines_to_receiver() {
         ],
         std::path::Path::new("/tmp"),
         line_tx,
-    )
-    .expect("failed to spawn sh");
+    );
 
     // Collect all lines until the channel closes.
     let lines: Vec<String> = line_rx.into_iter().collect();
@@ -42,8 +41,7 @@ fn streaming_join_handle_returns_exit_code() {
         &["sh".to_string(), "-c".to_string(), "exit 42".to_string()],
         std::path::Path::new("/tmp"),
         line_tx,
-    )
-    .expect("failed to spawn sh");
+    );
 
     let exit_code = handle.join().expect("thread should not panic");
     assert_eq!(exit_code, 42);
@@ -62,23 +60,23 @@ fn streaming_failed_process_returns_nonzero() {
         ],
         std::path::Path::new("/tmp"),
         line_tx,
-    )
-    .expect("failed to spawn sh");
+    );
 
     let exit_code = handle.join().expect("thread should not panic");
     assert_eq!(exit_code, 1);
 }
 
-/// Verify that `launch_agent_streaming` returns an error for a nonexistent binary.
+/// Verify that `launch_agent_streaming` returns -1 for a nonexistent binary.
 #[test]
-fn streaming_nonexistent_binary_returns_err() {
+fn streaming_nonexistent_binary_returns_negative_one() {
     let (line_tx, _line_rx) = mpsc::channel::<String>();
 
-    let result = launch_agent_streaming(
+    let handle = launch_agent_streaming(
         &["__nonexistent_binary_assay_test__".to_string()],
         std::path::Path::new("/tmp"),
         line_tx,
     );
 
-    assert!(result.is_err(), "expected Err for nonexistent binary");
+    let exit_code = handle.join().expect("thread should not panic");
+    assert_eq!(exit_code, -1, "expected -1 for nonexistent binary");
 }
