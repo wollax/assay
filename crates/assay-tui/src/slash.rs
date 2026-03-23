@@ -240,20 +240,128 @@ pub fn execute_slash_cmd(cmd: SlashCmd, project_root: &Path) -> String {
     }
 }
 
-// ── handle_slash_event (stub) ─────────────────────────────────────────────────
+// ── handle_slash_event ────────────────────────────────────────────────────────
 
 /// Handle a key event within the slash overlay.
 ///
-/// **Stub**: always returns `SlashAction::Continue`. Real implementation in T02.
-#[allow(unused_variables)]
+/// Processes character input, Backspace, Tab completion, Enter dispatch, and
+/// Esc to close. Returns a `SlashAction` that the caller (`App::handle_event`)
+/// uses to drive state transitions.
 pub fn handle_slash_event(state: &mut SlashState, key: KeyEvent) -> SlashAction {
-    SlashAction::Continue
+    use crossterm::event::KeyCode;
+
+    match key.code {
+        KeyCode::Esc => SlashAction::Close,
+
+        KeyCode::Enter => {
+            // Clear previous result/error before dispatching.
+            state.result = None;
+            state.error = None;
+            match parse_slash_cmd(&state.input) {
+                Some(cmd) => SlashAction::Execute(cmd),
+                None => {
+                    if state.input.trim().is_empty() {
+                        SlashAction::Close
+                    } else {
+                        state.error = Some(format!("Unknown command: /{}", state.input));
+                        SlashAction::Continue
+                    }
+                }
+            }
+        }
+
+        KeyCode::Tab => {
+            if let Some(suggestion) = tab_complete(&state.input) {
+                // Strip the leading `/` since input buffer doesn't store it.
+                state.input = suggestion.trim_start_matches('/').to_string();
+                state.suggestion = Some(suggestion);
+            }
+            SlashAction::Continue
+        }
+
+        KeyCode::Backspace => {
+            state.input.pop();
+            // Refresh suggestion on input change.
+            state.suggestion = tab_complete(&state.input);
+            // Clear previous result/error when editing.
+            state.result = None;
+            state.error = None;
+            SlashAction::Continue
+        }
+
+        KeyCode::Char(c) => {
+            state.input.push(c);
+            // Refresh suggestion on input change.
+            state.suggestion = tab_complete(&state.input);
+            // Clear previous result/error when editing.
+            state.result = None;
+            state.error = None;
+            SlashAction::Continue
+        }
+
+        _ => SlashAction::Continue,
+    }
 }
 
-// ── draw_slash_overlay (stub) ─────────────────────────────────────────────────
+// ── draw_slash_overlay ────────────────────────────────────────────────────────
 
 /// Draw the slash command overlay at the bottom of the screen.
 ///
-/// **Stub**: no-op. Real implementation in T02.
-#[allow(unused_variables)]
-pub fn draw_slash_overlay(frame: &mut ratatui::Frame, area: Rect, state: &SlashState) {}
+/// Layout (bottom-aligned within `area`):
+/// - Result/error line (if any) — 1 line
+/// - Input line showing `/ <input>` with dimmed suggestion — 1 line
+/// Total height: 2–3 lines anchored to the bottom of `area`.
+pub fn draw_slash_overlay(frame: &mut ratatui::Frame, area: Rect, state: &SlashState) {
+    use ratatui::style::{Color, Style};
+    use ratatui::text::{Line, Span};
+    use ratatui::widgets::{Clear, Paragraph};
+
+    let has_feedback = state.result.is_some() || state.error.is_some();
+    let overlay_height: u16 = if has_feedback { 3 } else { 2 };
+    let y = area.y + area.height.saturating_sub(overlay_height);
+    let overlay_area = Rect::new(area.x, y, area.width, overlay_height);
+
+    // Clear background behind overlay.
+    frame.render_widget(Clear, overlay_area);
+
+    let mut lines: Vec<Line> = Vec::new();
+
+    // Result or error feedback line.
+    if let Some(ref result) = state.result {
+        // Show first line of result (multi-line results truncated in overlay).
+        let first_line = result.lines().next().unwrap_or("");
+        lines.push(Line::from(Span::styled(
+            format!("  {first_line}"),
+            Style::default().fg(Color::Green),
+        )));
+    } else if let Some(ref error) = state.error {
+        lines.push(Line::from(Span::styled(
+            format!("  {error}"),
+            Style::default().fg(Color::Red),
+        )));
+    }
+
+    // Input line: `/ <input>` with dimmed suggestion suffix.
+    let mut input_spans = vec![
+        Span::styled("/ ", Style::default().bold().fg(Color::Cyan)),
+        Span::raw(&state.input),
+    ];
+    if let Some(ref suggestion) = state.suggestion {
+        let suffix = suggestion
+            .trim_start_matches('/')
+            .strip_prefix(state.input.as_str())
+            .unwrap_or("");
+        if !suffix.is_empty() {
+            input_spans.push(Span::styled(suffix, Style::default().dim()));
+        }
+    }
+    lines.push(Line::from(input_spans));
+
+    // Hint line.
+    lines.push(Line::from(
+        Span::styled("Tab complete · Enter run · Esc close", Style::default().dim()),
+    ));
+
+    let paragraph = Paragraph::new(lines);
+    frame.render_widget(paragraph, overlay_area);
+}

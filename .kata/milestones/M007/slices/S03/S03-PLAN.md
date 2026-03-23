@@ -57,7 +57,7 @@
   - Verify: `cargo test -p assay-tui --test slash_commands` — parse tests pass, overlay tests compile but may fail; `cargo build -p assay-tui` zero warnings
   - Done when: `slash.rs` has all 5 public types/fns, `lib.rs` exports `pub mod slash`, all 6 tests compile, parse tests pass
 
-- [ ] **T02: Wire slash overlay into App event handling and drawing** `est:45m`
+- [x] **T02: Wire slash overlay into App event handling and drawing** `est:45m`
   - Why: Connects the slash module to the App lifecycle — the guard in `handle_event`, `/` key handler, `draw_slash_overlay` call in `draw()`, and Esc/Enter/Tab routing. This makes all T01 integration tests pass.
   - Files: `crates/assay-tui/src/app.rs`, `crates/assay-tui/src/slash.rs`
   - Do: Add `App.slash_state: Option<SlashState>` field. Add guard at top of `handle_event` (after help guard, before wizard check): when `slash_state.is_some()`, delegate to `handle_slash_event`, act on `SlashAction`. Add `/` key case in Dashboard/MilestoneDetail/ChunkDetail/AgentRun/Settings arms (or as a global match after the screen-specific match). Add `draw_slash_overlay` call in `draw()` when `slash_state.is_some()`. Implement real `handle_slash_event` (char input, Backspace, Tab completion, Enter dispatch, Esc close). Implement real `draw_slash_overlay` (bottom-aligned: input line + result area).

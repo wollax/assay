@@ -22,6 +22,9 @@ use ratatui::widgets::{
     Block, Borders, Cell, Clear, List, ListItem, ListState, Paragraph, Row, Table,
 };
 
+use crate::slash::{
+    SlashAction, SlashState, draw_slash_overlay, execute_slash_cmd, handle_slash_event,
+};
 use crate::wizard::{WizardAction, WizardState, draw_wizard, handle_wizard_event};
 
 // ── Screen variants ───────────────────────────────────────────────────────────
@@ -82,6 +85,8 @@ pub struct App {
     pub cycle_slug: Option<String>,
     /// Loaded project config (used by status bar and settings screen).
     pub config: Option<assay_types::Config>,
+    /// Slash command overlay state. `Some` when overlay is open.
+    pub slash_state: Option<SlashState>,
 }
 
 impl App {
@@ -140,6 +145,7 @@ impl App {
             show_help: false,
             cycle_slug,
             config,
+            slash_state: None,
         })
     }
 
@@ -195,6 +201,10 @@ impl App {
         if self.show_help {
             draw_help_overlay(frame, frame.area());
         }
+
+        if let Some(ref state) = self.slash_state {
+            draw_slash_overlay(frame, content_area, state);
+        }
     }
 
     /// Handle a single key event. Returns `true` if the app should exit.
@@ -203,6 +213,27 @@ impl App {
         if self.show_help {
             if matches!(key.code, KeyCode::Char('?') | KeyCode::Esc) {
                 self.show_help = false;
+            }
+            return false;
+        }
+
+        // When slash overlay is visible, intercept all keys before screen dispatch (D104).
+        if let Some(ref mut slash) = self.slash_state {
+            match handle_slash_event(slash, key) {
+                SlashAction::Continue => {}
+                SlashAction::Close => {
+                    self.slash_state = None;
+                }
+                SlashAction::Execute(cmd) => {
+                    if let Some(ref root) = self.project_root {
+                        let result = execute_slash_cmd(cmd, root);
+                        if let Some(ref mut s) = self.slash_state {
+                            s.result = Some(result);
+                        }
+                    } else if let Some(ref mut s) = self.slash_state {
+                        s.error = Some("No project root found.".to_string());
+                    }
+                }
             }
             return false;
         }
@@ -221,6 +252,10 @@ impl App {
 
             Screen::Dashboard => {
                 match key.code {
+                    KeyCode::Char('/') => {
+                        self.slash_state = Some(SlashState::default());
+                        return false;
+                    }
                     KeyCode::Char('q') | KeyCode::Esc => return true,
                     KeyCode::Down => {
                         let i = self
@@ -303,6 +338,10 @@ impl App {
                     .map(|m| m.chunks.len())
                     .unwrap_or(0);
                 match key.code {
+                    KeyCode::Char('/') => {
+                        self.slash_state = Some(SlashState::default());
+                        return false;
+                    }
                     KeyCode::Esc => {
                         self.screen = Screen::Dashboard;
                     }
@@ -385,6 +424,10 @@ impl App {
             Screen::ChunkDetail {
                 ref milestone_slug, ..
             } => {
+                if key.code == KeyCode::Char('/') {
+                    self.slash_state = Some(SlashState::default());
+                    return false;
+                }
                 if key.code == KeyCode::Esc {
                     let slug = milestone_slug.clone();
                     self.screen = Screen::MilestoneDetail { slug };
@@ -474,6 +517,10 @@ impl App {
 
             Screen::Settings { .. } => {
                 match key.code {
+                    KeyCode::Char('/') => {
+                        self.slash_state = Some(SlashState::default());
+                        return false;
+                    }
                     KeyCode::Esc | KeyCode::Char('q') => {
                         self.screen = Screen::Dashboard;
                     }
