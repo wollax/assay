@@ -10,7 +10,7 @@ A beginning developer installs Assay, describes a feature, and gets a structured
 
 ## Current State
 
-v0.6.0-dev. M001–M006 complete. ~22K lines of Rust across 6 crates. 1367 tests passing. `assay-tui` is a full Ratatui application with dashboard (S01), in-TUI authoring wizard (S02), spec browser with criteria/gate results (S03), provider configuration screen (S04), persistent status bar, `?` help overlay, and terminal resize handling (S05).
+v0.7.0-dev. M001–M007 complete. ~24K lines of Rust across 6 crates. 1400+ tests passing. `assay-tui` is a full Ratatui application with dashboard, in-TUI authoring wizard, spec browser, provider configuration, agent spawning with live output streaming, slash command overlay, and MCP server configuration panel.
 
 **M001 (complete):** Single-agent harness end-to-end — manifest → worktree → agent launch → gate evaluation → merge proposal. 19 requirements validated.
 
@@ -33,7 +33,7 @@ Crates:
 - **assay-harness**: Agent harness adapters — prompt builder, settings merger, Claude Code/Codex/OpenCode adapters, scope enforcement
 - **assay-cli**: CLI binary — init, spec, gate, worktree, context, checkpoint, guard, mcp, run, harness, milestone, plan, pr subcommands
 - **assay-mcp**: MCP server — 30 tools (spec, gate, worktree, session, merge, context, orchestrate, milestone, cycle, pr)
-- **assay-tui**: TUI binary — full Ratatui app (M006): App+Screen state machine (Dashboard/NoProject/Wizard/MilestoneDetail/ChunkDetail/Settings/LoadError), live dashboard, in-TUI authoring wizard, spec browser, provider config screen, help overlay, status bar
+- **assay-tui**: TUI binary — full Ratatui app (M006+M007): App+Screen state machine (Dashboard/NoProject/Wizard/MilestoneDetail/ChunkDetail/Settings/AgentRun/McpPanel/LoadError), live dashboard, in-TUI authoring wizard, spec browser, provider config, agent spawning with live output streaming, slash command overlay, MCP server config panel, help overlay, status bar
 
 Key patterns: free functions (zero traits), sync core with async surfaces, atomic file writes, `deny_unknown_fields` on persisted types, schema registry via `inventory`, shell-out to git CLI, closure-based control inversion (D001).
 
