@@ -60,7 +60,7 @@
   - Verify: `cargo test -p assay-core` passes; `launch_agent_streaming_delivers_all_lines` test is green
   - Done when: `launch_agent_streaming` is pub in `assay-core::pipeline`, integration test green, no existing assay-core tests broken
 
-- [ ] **T02: Add `TuiEvent`, `AgentStatus`, `Screen::AgentRun`, and `App` fields** `est:60m`
+- [x] **T02: Add `TuiEvent`, `AgentStatus`, `Screen::AgentRun`, and `App` fields** `est:60m`
   - Why: Establishes the data model S01 tests will exercise; App fields must be initialized before the integration tests can construct App
   - Files: `crates/assay-tui/src/app.rs`, `crates/assay-tui/src/main.rs`, `crates/assay-tui/tests/agent_run.rs` (created failing)
   - Do: (1) Add `pub enum TuiEvent { Key(KeyEvent), Resize(u16, u16), AgentLine(String), AgentDone { exit_code: i32 } }` in `app.rs`. (2) Add `pub enum AgentStatus { Running, Done { exit_code: i32 }, Failed { exit_code: i32 } }`. (3) Add `Screen::AgentRun { chunk_slug: String, lines: Vec<String>, scroll_offset: usize, status: AgentStatus }` variant to `Screen` enum. (4) Add `pub agent_thread: Option<std::thread::JoinHandle<i32>>` and `pub agent_list_state: ListState` fields to `App`; initialize both to `None`/default in `with_project_root`. (5) Add `pub fn handle_tui_event(&mut self, event: TuiEvent) -> bool` method that handles `AgentLine` (pushes to lines if in `AgentRun`) and `AgentDone` (sets status, refreshes milestones/cycle_slug). (6) Create `crates/assay-tui/tests/agent_run.rs` with all four tests listed in Verification — they will compile after App fields are added but the `r`-key and event-handling logic is wired in T02/T03. Write them now so they drive T03 implementation. Add `draw_agent_run` stub (panics) to satisfy compilation.

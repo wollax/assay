@@ -24,6 +24,39 @@ use ratatui::widgets::{
 
 use crate::wizard::{WizardAction, WizardState, draw_wizard, handle_wizard_event};
 
+// ── TuiEvent ──────────────────────────────────────────────────────────────────
+
+/// Events flowing through the TUI event loop.
+///
+/// `Key` and `Resize` wrap raw terminal events; `AgentLine` and `AgentDone`
+/// carry output from the agent subprocess streamed via `mpsc::Receiver<String>`.
+/// Public so integration tests can construct synthetic event sequences.
+pub enum TuiEvent {
+    /// A raw key press from the terminal.
+    Key(crossterm::event::KeyEvent),
+    /// Terminal resize event with new (cols, rows).
+    Resize(u16, u16),
+    /// A single line of agent stdout output.
+    AgentLine(String),
+    /// The agent subprocess finished with the given exit code.
+    AgentDone { exit_code: i32 },
+}
+
+// ── AgentStatus ───────────────────────────────────────────────────────────────
+
+/// Runtime status of the agent subprocess.
+///
+/// Transitions: `Running → Done` (exit 0) or `Running → Failed` (exit != 0).
+/// The exit code is preserved in both terminal states for diagnostic display.
+pub enum AgentStatus {
+    /// Agent is still running.
+    Running,
+    /// Agent finished successfully (exit code 0).
+    Done { exit_code: i32 },
+    /// Agent exited with a non-zero code (or panicked → mapped to -1).
+    Failed { exit_code: i32 },
+}
+
 // ── Screen variants ───────────────────────────────────────────────────────────
 
 /// The active screen the application is rendering.
@@ -50,6 +83,17 @@ pub enum Screen {
         selected: usize,
         /// Inline error message from a failed save attempt.
         error: Option<String>,
+    },
+    /// Live agent run output panel for a given chunk.
+    AgentRun {
+        /// Slug of the chunk being evaluated.
+        chunk_slug: String,
+        /// Accumulated stdout lines from the agent subprocess.
+        lines: Vec<String>,
+        /// Scroll offset for the scrollable output list.
+        scroll_offset: usize,
+        /// Current execution status.
+        status: AgentStatus,
     },
 }
 
@@ -82,6 +126,11 @@ pub struct App {
     pub cycle_slug: Option<String>,
     /// Loaded project config (used by status bar and settings screen).
     pub config: Option<assay_types::Config>,
+    /// Handle to the agent subprocess thread, if one is running.
+    /// `join()` returns the exit code; `None` when no agent is active.
+    pub agent_thread: Option<std::thread::JoinHandle<i32>>,
+    /// List widget selection state for the agent output panel.
+    pub agent_list_state: ListState,
 }
 
 impl App {
@@ -140,6 +189,8 @@ impl App {
             show_help: false,
             cycle_slug,
             config,
+            agent_thread: None,
+            agent_list_state: ListState::default(),
         })
     }
 
@@ -181,6 +232,24 @@ impl App {
                     self.config.as_ref(),
                     *selected,
                     error.as_deref(),
+                );
+            }
+            Screen::AgentRun {
+                chunk_slug,
+                lines,
+                scroll_offset,
+                status,
+            } => {
+                let slug = chunk_slug.clone();
+                let offset = *scroll_offset;
+                draw_agent_run(
+                    frame,
+                    content_area,
+                    &slug,
+                    lines,
+                    offset,
+                    status,
+                    &mut self.agent_list_state,
                 );
             }
         }
@@ -472,6 +541,12 @@ impl App {
                 false
             }
 
+            Screen::AgentRun { .. } => {
+                // T03 will implement Esc → Dashboard, scroll, etc.
+                // For now, all key events are no-ops on the AgentRun screen.
+                false
+            }
+
             Screen::Settings { .. } => {
                 match key.code {
                     KeyCode::Esc | KeyCode::Char('q') => {
@@ -565,6 +640,14 @@ impl App {
                 false
             }
         }
+    }
+
+    /// Handle a `TuiEvent` from the channel-based event loop.
+    ///
+    /// Returns `true` if the app should exit.
+    /// Stub: T03 implements the real dispatch. Exists so integration tests compile.
+    pub fn handle_tui_event(&mut self, _event: TuiEvent) -> bool {
+        false
     }
 }
 
@@ -966,6 +1049,26 @@ fn draw_help_overlay(frame: &mut ratatui::Frame, area: Rect) {
     let widths = [Constraint::Length(14), Constraint::Fill(1)];
     let table = Table::new(rows, widths);
     frame.render_widget(table, inner);
+}
+
+// ── Agent run renderer (stub) ─────────────────────────────────────────────────
+
+/// Render the agent run output panel.
+///
+/// **Stub** — T03 implements the real scrollable list, status line, and
+/// key-hint bar.  This function exists solely so the `Screen::AgentRun` draw
+/// arm compiles and the module builds without warnings.
+#[allow(unused_variables)]
+fn draw_agent_run(
+    frame: &mut ratatui::Frame,
+    area: Rect,
+    chunk_slug: &str,
+    lines: &[String],
+    _scroll_offset: usize,
+    status: &AgentStatus,
+    _list_state: &mut ListState,
+) {
+    // T03 implements this
 }
 
 // ── Project discovery ─────────────────────────────────────────────────────────
