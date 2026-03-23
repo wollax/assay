@@ -2,9 +2,9 @@
 
 **Active Milestone:** M007 — TUI Agent Harness
 **Active Slice:** S01 — Channel Event Loop and Agent Run Panel
-**Active Task:** None
+**Active Task:** T01 — Add `launch_agent_streaming` to assay-core pipeline
 **Phase:** Executing
-**Last Updated:** 2026-03-21
+**Last Updated:** 2026-03-23
 **Requirements Status:** 7 active (R053–R059) · 46 validated (R001–R052) · 2 deferred · 4 out of scope
 **Test Count:** 1367 (27 assay-tui; all workspace tests pass; just ready green)
 
@@ -59,6 +59,10 @@ None. `just ready` passes clean (fmt, lint, test, deny). RUSTSEC-2026-0044 to -0
 
 None.
 
+## Key Decisions (S01 planning)
+
+- D112: `App.event_tx: Option<Sender<TuiEvent>>` field for agent thread back-channel — avoids changing `handle_event` signature that all 27 tests depend on
+
 ## Next Action
 
-M007 planned. Begin S01: refactor event loop + launch_agent_streaming + Screen::AgentRun.
+Execute T01: add `launch_agent_streaming` to `crates/assay-core/src/pipeline.rs` + integration test. Then T02 (types + test file), then T03 (full wiring + run() refactor).
