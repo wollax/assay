@@ -2,8 +2,8 @@
 
 **Active Milestone:** M007 — TUI Agent Harness
 **Active Slice:** S03 — Slash Command Overlay
-**Active Task:** (none — S03 not yet started)
-**Phase:** Planning
+**Active Task:** T02 (next)
+**Phase:** Executing
 **Last Updated:** 2026-03-23
 **Requirements Status:** 5 active (R055–R059) · 48 validated (R001–R054) · 2 deferred · 4 out of scope
 **Test Count:** 1400+ (40 assay-tui; all workspace tests pass; just ready green)
@@ -21,7 +21,7 @@
 
 - [x] S01: Channel Event Loop and Agent Run Panel — TuiEvent channel loop, Screen::AgentRun, launch_agent_streaming, r key wired, two-channel bridge design, assay-harness dep, 6 new integration tests, just ready green. R053 validated. DONE.
 - [x] S02: Provider Dispatch and Harness Wiring — provider_harness_writer dispatches per ProviderKind (Anthropic/Ollama/OpenAI); Settings model text-input fields; 40 tests pass. R054 validated. DONE.
-- [ ] S03: Slash Command Overlay `risk:low` — / key opens SlashState overlay; /gate-check, /status, /next-chunk, /pr-create commands; sync dispatch to assay-core. R056.
+- [ ] S03: Slash Command Overlay `risk:low` — / key opens SlashState overlay; /gate-check, /status, /next-chunk, /pr-create commands; sync dispatch to assay-core. R056. **T01 done** — slash module with parse/dispatch/tab-complete + 6 integration tests (3 green, 3 red-phase).
 - [ ] S04: MCP Server Configuration Panel `risk:medium` — Screen::McpPanel reads/writes .assay/mcp.json; add/delete/save servers; no live connection. R055.
 
 ## S01 Key Deliverables
