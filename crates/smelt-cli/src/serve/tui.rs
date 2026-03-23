@@ -10,6 +10,7 @@ use ratatui::DefaultTerminal;
 use ratatui::Frame;
 
 use crate::serve::queue::ServerState;
+use crate::serve::types::elapsed_secs_since;
 
 /// Spawn the TUI background thread. Returns a JoinHandle.
 /// `shutdown` is an AtomicBool: when set to `true`, the TUI loop exits.
@@ -71,7 +72,7 @@ pub(crate) fn render(frame: &mut Frame, state: &Arc<Mutex<ServerState>>) {
             .map(|j| {
                 let elapsed = j
                     .started_at
-                    .map(|t| format!("{}s", t.elapsed().as_secs()))
+                    .map(|t| format!("{}s", elapsed_secs_since(t) as u64))
                     .unwrap_or_else(|| "-".to_string());
                 let manifest_name = j
                     .manifest_path

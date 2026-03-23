@@ -11,7 +11,7 @@ use serde::Serialize;
 use smelt_core::manifest::JobManifest;
 
 use crate::serve::queue::ServerState;
-use crate::serve::types::{JobSource, JobStatus, QueuedJob};
+use crate::serve::types::{elapsed_secs_since, JobSource, JobStatus, QueuedJob};
 
 /// JSON-serialisable snapshot of a single job's state.
 ///
@@ -50,8 +50,8 @@ impl From<&QueuedJob> for JobStateResponse {
                 .unwrap_or_default(),
             status: status_str.to_string(),
             attempt: job.attempt,
-            queued_age_secs: job.queued_at.elapsed().as_secs(),
-            elapsed_secs: job.started_at.map(|t| t.elapsed().as_secs_f64()),
+            queued_age_secs: elapsed_secs_since(job.queued_at) as u64,
+            elapsed_secs: job.started_at.map(|t| elapsed_secs_since(t)),
         }
     }
 }

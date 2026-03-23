@@ -11,7 +11,7 @@
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
@@ -39,7 +39,7 @@ pub(crate) async fn run_job_task(
         let mut s = state.lock().unwrap();
         if let Some(job) = s.jobs.iter_mut().find(|j| j.id == job_id) {
             job.status = crate::serve::types::JobStatus::Running;
-            job.started_at = Some(Instant::now());
+            job.started_at = Some(crate::serve::types::now_epoch());
             job.attempt
         } else {
             warn!(job_id = %job_id, "run_job_task: job not found in state");

@@ -232,7 +232,27 @@ This file is the explicit capability and coverage contract for the project.
 
 ## Active
 
-_(No active requirements — R023, R024, R025 validated by M006 completion)_
+### R027 — SSH worker pools / remote dispatch
+- Class: integration
+- Status: active
+- Description: `smelt serve` dispatches jobs to remote machines over SSH — static `[[workers]]` in `server.toml`, manifest delivered via scp, `smelt run` executed on the remote, state synced back.
+- Why it matters: Multi-machine parallelism without cloud infrastructure; scales agentic workloads beyond a single host.
+- Source: user
+- Primary owning slice: M008/S04
+- Supporting slices: M008/S01, M008/S02, M008/S03
+- Validation: unmapped
+- Notes: Round-robin worker selection; offline-worker re-queue; scp manifest delivery; scp state sync back to dispatcher.
+
+### R028 — Persistent queue across `smelt serve` restarts
+- Class: operability
+- Status: active
+- Description: Jobs queued at crash time are automatically re-queued on the next startup; attempt counts preserved; `Dispatching`/`Running` jobs treated as Queued.
+- Why it matters: Crash recovery prevents lost work in long-running unattended deployments.
+- Source: inferred
+- Primary owning slice: M007/S03
+- Supporting slices: M007/S01, M007/S02
+- Validation: unmapped
+- Notes: Serialize queue state to `queue_dir/.smelt-queue-state.toml` atomically on every transition; `ServerState::load_or_new()` on startup.
 
 ---
 
@@ -262,25 +282,25 @@ _(No active requirements — R023, R024, R025 validated by M006 completion)_
 
 ### R027 — SSH worker pools / remote dispatch
 - Class: integration
-- Status: deferred
-- Description: `smelt serve` can distribute job execution to remote machines via SSH, not just the local machine.
-- Why it matters: Remote dispatch enables multi-machine parallelism and resource isolation for large workloads.
+- Status: active
+- Description: `smelt serve` can distribute job execution to remote machines via SSH — static `[[workers]]` list in `server.toml`, manifest delivered via scp, `smelt run` executed on the remote, state synced back to dispatcher.
+- Why it matters: Remote dispatch enables multi-machine parallelism and resource isolation for large workloads without cloud infrastructure.
 - Source: user (inspired by Symphony SSH worker pools)
-- Primary owning slice: none
-- Supporting slices: none
+- Primary owning slice: M008/S04
+- Supporting slices: M008/S01, M008/S02, M008/S03
 - Validation: unmapped
-- Notes: Deferred until M006 proves local parallel dispatch.
+- Notes: M006 proves local dispatch. M008 adds SSH routing: round-robin worker selection, offline-worker re-queue, scp manifest delivery, scp state sync back.
 
 ### R028 — Persistent queue across `smelt serve` restarts
 - Class: operability
-- Status: deferred
-- Description: Jobs queued in-memory at the time of a `smelt serve` crash or restart are automatically re-queued on the next startup.
+- Status: active
+- Description: Jobs queued in-memory at the time of a `smelt serve` crash or restart are automatically re-queued on the next startup; attempt counts preserved.
 - Why it matters: Crash recovery prevents lost work in long-running unattended deployments.
 - Source: inferred
-- Primary owning slice: none
-- Supporting slices: none
+- Primary owning slice: M007/S03
+- Supporting slices: M007/S01, M007/S02
 - Validation: unmapped
-- Notes: M006 uses file-move semantics (pickup = move to dispatched/) for lightweight restart recovery of not-yet-dispatched manifests. True in-flight persistence deferred.
+- Notes: Implementation: serialize queue state to `queue_dir/.smelt-queue-state.toml` on every transition (atomic write); load on startup via `ServerState::load_or_new()`; re-queue any non-terminal job. `Dispatching`/`Running` at crash time → re-queued (not failed).
 
 ---
 
@@ -346,15 +366,15 @@ _(No active requirements — R023, R024, R025 validated by M006 completion)_
 | R024 | integration          | validated   | M006/S02      | M006/S03             | validated |
 | R025 | failure-visibility   | validated   | M006/S03      | M006/S01             | validated |
 | R026 | integration          | deferred    | none          | none                 | unmapped  |
-| R027 | integration          | deferred    | none          | none                 | unmapped  |
-| R028 | operability          | deferred    | none          | none                 | unmapped  |
+| R027 | integration          | active      | M008/S04      | M008/S01,S02,S03     | unmapped  |
+| R028 | operability          | active      | M007/S03      | M007/S01,S02         | unmapped  |
 | R030 | anti-feature         | out-of-scope| none          | none                 | n/a       |
 | R031 | anti-feature         | out-of-scope| none          | none                 | n/a       |
 | R032 | anti-feature         | out-of-scope| none          | none                 | n/a       |
 
 ## Coverage Summary
 
-- Active requirements: 0
-- Mapped to slices: 0
+- Active requirements: 2 (R027, R028)
+- Mapped to slices: 2 (R027 → M008/S04, R028 → M007/S03)
 - Validated (all milestones + M006 complete): 19 (R001–R008, R010–R015, R020, R021, R023, R024, R025)
 - Unmapped active requirements: 0

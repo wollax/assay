@@ -1,42 +1,35 @@
 # Kata State
 
-**Active Milestone:** M006 — Parallel Dispatch Daemon
-**Active Slice:** S03 — Ratatui TUI + Server Config + Graceful Shutdown
-**Phase:** Complete — milestone M006 is complete; all 3 slices done
+**Active Milestone:** M007 — Persistent Queue
+**Active Slice:** S02 — Atomic state file — write on every transition
+**Active Task:** (S02 not yet started)
+**Phase:** Planning
+
+## Milestone Plan
+
+**M007 — Persistent Queue** (3 slices)
+- [x] S01: Serialize queue types + migrate Instant to SystemTime
+- [ ] S02: Atomic state file — write on every transition
+- [ ] S03: Load-on-startup + restart-recovery integration test
+
+**M008 — SSH Worker Pools** (4 slices, planned)
+- [ ] S01: WorkerConfig + SSH connection proof
+- [ ] S02: Manifest delivery + remote smelt run execution
+- [ ] S03: State sync back via scp
+- [ ] S04: Dispatch routing + round-robin + TUI/API worker field
 
 ## Recent Decisions
-- D107: Tracing subscriber branched in main() before dispatch — file appender for TUI mode, stderr for others
-- D106: TUI shutdown coordination via Arc<AtomicBool> shared between tokio runtime and std::thread
-- D105: HTTP POST persists TOML body via std::mem::forget(TempPath) — decouples file lifetime from handler scope
-- D104: ServerState::complete() sets Retrying in-place (not re-enqueue) — single entry per job in VecDeque
-- D103: JobId uses atomic u64 counter for deterministic test IDs
-- D102: ServerConfig is a separate TOML file, not embedded in job manifests
-- D101: axum for HTTP API, ratatui + crossterm for TUI
-- D100: Queue pickup via file-move (queue_dir → queue_dir/dispatched/) — atomic, restart-safe
 
-## Completed Milestones
-- M001: ✅ Docker-First Infrastructure MVP (2026-03-17)
-- M002: ✅ Real Assay Integration (2026-03-17)
-- M003: ✅ GitHub Forge + PR Lifecycle (2026-03-21)
-- M004: ✅ Docker Compose Runtime (2026-03-23)
-- M005: ✅ Kubernetes Runtime (2026-03-23, pending live UAT)
-- M006: ✅ Parallel Dispatch Daemon (2026-03-23, pending live UAT for TUI + Ctrl+C)
-
-## M006 Slices
-- S01: ✅ JobQueue + In-Process Dispatch — concurrent dispatch, CancellationToken, all tests pass
-- S02: ✅ Directory Watch + HTTP API — DirectoryWatcher + axum API, 14/14 tests pass
-- S03: ✅ Ratatui TUI + Server Config + Graceful Shutdown — final assembly, cargo test --workspace green
-  - T01: [x] ServerConfig TOML struct + examples/server.toml
-  - T02: [x] smelt serve CLI subcommand wiring (no TUI)
-  - T03: [x] Ratatui TUI background thread
-  - T04: [x] Wire TUI + tracing redirect; cargo test --workspace green
-
-## Requirements Status
-- R023, R024, R025 — all validated by M006 completion
-- Active requirements: 0
+- D108: Queue persistence uses TOML file in queue_dir, not Redis/SQLite
+- D109: In-flight jobs at crash time are re-queued (not Failed) on restart
+- D110: Instant fields replaced with u64 Unix epoch seconds for serializability
+- D111: SSH dispatch uses subprocess ssh/scp (not openssh/ssh2 crate)
+- D112: Worker key_env field holds name of env var with SSH key path
 
 ## Blockers
-- None
+
+None.
 
 ## Next Action
-M006 is complete. Squash-merge S03 branch to main via kata extension. Manual UAT (live TUI + Ctrl+C with real Docker jobs) available in S03-UAT.md.
+
+S01 complete. Begin S02: Atomic state file — write on every transition. Plan: implement `write_queue_state(queue_dir, jobs)` (atomic write to `.smelt-queue-state.toml.tmp` then rename) and `read_queue_state(queue_dir) -> Vec<QueuedJob>` (empty vec on missing file, warn + empty on parse error); wire calls into every `ServerState` mutation; add round-trip unit test.

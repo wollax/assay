@@ -1,8 +1,7 @@
 use std::collections::VecDeque;
 use std::path::PathBuf;
-use std::time::Instant;
 
-use crate::serve::types::{JobId, JobSource, JobStatus, QueuedJob};
+use crate::serve::types::{now_epoch, JobId, JobSource, JobStatus, QueuedJob};
 
 fn new_job_id() -> JobId {
     use std::sync::atomic::{AtomicU64, Ordering};
@@ -36,7 +35,7 @@ impl ServerState {
             source,
             attempt: 0,
             status: JobStatus::Queued,
-            queued_at: Instant::now(),
+            queued_at: now_epoch(),
             started_at: None,
         });
         id
@@ -53,7 +52,7 @@ impl ServerState {
             .iter_mut()
             .find(|j| j.status == JobStatus::Queued || j.status == JobStatus::Retrying)?;
         job.status = JobStatus::Dispatching;
-        job.started_at = Some(Instant::now());
+        job.started_at = Some(now_epoch());
         self.running_count += 1;
         Some(job.clone())
     }

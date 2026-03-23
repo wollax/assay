@@ -663,8 +663,7 @@ fn test_tui_render_no_panic() {
     // (directly mutate queue for test — no manifest file needed)
     {
         use std::path::PathBuf;
-        use crate::serve::types::{JobSource, JobStatus, QueuedJob, JobId};
-        use std::time::Instant;
+        use crate::serve::types::{JobSource, JobStatus, QueuedJob, JobId, now_epoch};
         let mut s = state.lock().unwrap();
         s.jobs.push_back(QueuedJob {
             id: JobId::new("job-1"),
@@ -672,8 +671,8 @@ fn test_tui_render_no_panic() {
             source: JobSource::HttpApi,
             attempt: 0,
             status: JobStatus::Running,
-            queued_at: Instant::now(),
-            started_at: Some(Instant::now()),
+            queued_at: now_epoch(),
+            started_at: Some(now_epoch()),
         });
     }
     terminal.draw(|frame| render(frame, &state)).unwrap();
