@@ -204,6 +204,8 @@ dependencies = [
  "color-eyre",
  "crossterm 0.28.1",
  "ratatui",
+ "serde",
+ "serde_json",
  "tempfile",
 ]
 

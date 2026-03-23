@@ -2,7 +2,7 @@
 
 **Active Milestone:** M007 — TUI Agent Harness
 **Active Slice:** S04 — MCP Server Configuration Panel
-**Active Task:** T01 (next)
+**Active Task:** T02 (next)
 **Phase:** Executing
 **Last Updated:** 2026-03-23
 **Requirements Status:** 5 active (R055–R059) · 48 validated (R001–R054) · 2 deferred · 4 out of scope
@@ -39,4 +39,4 @@ None.
 
 ## Next Action
 
-Execute T01: Add serde/serde_json deps, create mcp_panel.rs with types and I/O functions, add Screen::McpPanel variant, write 4 integration tests.
+Execute T02: Implement draw_mcp_panel free function, wire event handling for a/d/w/Esc/Up/Down/Enter/Tab keys in Screen::McpPanel arm, add name-uniqueness validation — make all 4 integration tests pass.

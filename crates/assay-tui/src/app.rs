@@ -25,6 +25,7 @@ use ratatui::widgets::{
     Block, Borders, Cell, Clear, List, ListItem, ListState, Paragraph, Row, Table,
 };
 
+use crate::mcp_panel::{AddServerForm, McpServerEntry};
 use crate::agent::provider_harness_writer;
 use crate::slash::{
     SlashAction, SlashState, draw_slash_overlay, execute_slash_cmd, handle_slash_event,
@@ -105,6 +106,17 @@ pub enum Screen {
         scroll_offset: usize,
         /// Current run status.
         status: AgentRunStatus,
+    },
+    /// MCP server configuration panel — add, delete, and persist servers.
+    McpPanel {
+        /// Loaded MCP server entries (sorted alphabetically by name).
+        servers: Vec<McpServerEntry>,
+        /// Currently selected server index in the list.
+        selected: usize,
+        /// Active add-server form, if open.
+        add_form: Option<AddServerForm>,
+        /// Inline error message from a failed load or save attempt.
+        error: Option<String>,
     },
 }
 
@@ -337,6 +349,12 @@ impl App {
                     status,
                 );
             }
+            Screen::McpPanel { .. } => {
+                // Rendering will be implemented in T02; placeholder to satisfy exhaustive match.
+                let placeholder = Paragraph::new("MCP Server Configuration (rendering TODO)")
+                    .block(Block::default().borders(Borders::ALL).title(" MCP Servers "));
+                frame.render_widget(placeholder, content_area);
+            }
         }
 
         let project_name = self
@@ -501,6 +519,18 @@ impl App {
                             exit_code
                         });
                         self.agent_thread = Some(handle);
+                    }
+                    KeyCode::Char('m') => {
+                        // Open MCP server configuration panel.
+                        if let Some(ref root) = self.project_root {
+                            let servers = crate::mcp_panel::mcp_config_load(root);
+                            self.screen = Screen::McpPanel {
+                                servers,
+                                selected: 0,
+                                add_form: None,
+                                error: None,
+                            };
+                        }
                     }
                     KeyCode::Char('s') => {
                         // Open settings screen.  Pre-select the current provider if
@@ -993,6 +1023,18 @@ impl App {
                             }
                         }
                     }
+                    _ => {}
+                }
+                false
+            }
+
+            Screen::McpPanel { .. } => {
+                // Event handling will be implemented in T02; placeholder for exhaustive match.
+                match key.code {
+                    KeyCode::Esc => {
+                        self.screen = Screen::Dashboard;
+                    }
+                    KeyCode::Char('q') => return true,
                     _ => {}
                 }
                 false

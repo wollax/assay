@@ -43,7 +43,7 @@
 
 ## Tasks
 
-- [ ] **T01: MCP panel types, JSON I/O, Screen variant, and integration tests** `est:30m`
+- [x] **T01: MCP panel types, JSON I/O, Screen variant, and integration tests** `est:30m`
   - Why: Establishes the data model, file I/O contract, Screen variant, and 4 integration tests that define the acceptance criteria. Tests will initially fail (Screen exists but no event handling yet).
   - Files: `crates/assay-tui/Cargo.toml`, `crates/assay-tui/src/mcp_panel.rs`, `crates/assay-tui/src/lib.rs`, `crates/assay-tui/src/app.rs`, `crates/assay-tui/tests/mcp_panel.rs`
   - Do: Add `serde.workspace = true` and `serde_json.workspace = true` to assay-tui deps. Create `mcp_panel.rs` with `McpServerEntry`, `AddServerForm`, `mcp_config_load`, `mcp_config_save`. Add `Screen::McpPanel` variant to `app.rs`. Add `pub mod mcp_panel` to `lib.rs`. Write 4 integration tests: `mcp_panel_loads_empty_when_no_file`, `mcp_panel_loads_from_mcp_json`, `mcp_panel_add_server_writes_file`, `mcp_panel_delete_server_writes_file`. Verify load/save unit behavior compiles and passes; full test suite may have failures in tests that depend on event handling (T02).
