@@ -50,7 +50,7 @@
 
 ## Tasks
 
-- [ ] **T01: Add Screen::Analytics variant, App field, integration tests, and wire `a` key handler** `est:25m`
+- [x] **T01: Add Screen::Analytics variant, App field, integration tests, and wire `a` key handler** `est:25m`
   - Why: Establishes the Screen variant, App-level analytics storage, key handler, and test contract. Tests start passing immediately since the handler + screen variant + draw match arm are all wired in this task.
   - Files: `crates/assay-tui/src/app.rs`, `crates/assay-tui/tests/analytics_screen.rs`
   - Do: Add `Screen::Analytics` variant (no fields — D099). Add `App.analytics_report: Option<AnalyticsReport>`. Wire `a` key in Dashboard (guard on `project_root`, call `compute_analytics`, store result, transition screen). Add `Esc`/`q` handling in `Screen::Analytics` match arm. Add stub `draw_analytics` arm in `draw()` that renders a placeholder block. Write integration tests using synthetic key events and `App::with_project_root`. Follow D097/D098/D105 patterns exactly.

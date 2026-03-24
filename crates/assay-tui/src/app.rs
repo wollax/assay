@@ -12,6 +12,7 @@ use std::sync::{Arc, Mutex};
 
 use assay_core::config::save as config_save;
 use assay_core::history;
+use assay_core::history::analytics::{AnalyticsReport, compute_analytics};
 use assay_core::milestone::{cycle_status, milestone_load, milestone_scan};
 use assay_core::pipeline::launch_agent_streaming;
 use assay_core::pr::PrStatusInfo;
@@ -118,6 +119,8 @@ pub enum Screen {
         /// Current run status.
         status: AgentRunStatus,
     },
+    /// Full-screen analytics view showing gate failure frequency and milestone velocity.
+    Analytics,
     /// MCP server configuration panel — add, delete, and persist servers.
     McpPanel {
         /// Loaded MCP server entries (sorted alphabetically by name).
@@ -169,6 +172,8 @@ pub struct App {
     pub agent_thread: Option<std::thread::JoinHandle<i32>>,
     /// Slash command overlay state. `Some` when overlay is open.
     pub slash_state: Option<SlashState>,
+    /// Cached analytics report, populated when the user presses `a` from Dashboard.
+    pub analytics_report: Option<AnalyticsReport>,
     /// Cached PR status info per milestone slug, populated by the background
     /// polling thread via `TuiEvent::PrStatusUpdate`.
     pub pr_statuses: HashMap<String, PrStatusInfo>,
@@ -254,6 +259,7 @@ impl App {
             show_help: false,
             cycle_slug,
             config,
+            analytics_report: None,
             event_tx: None,
             agent_thread: None,
             slash_state: None,
@@ -531,6 +537,9 @@ impl App {
                     status,
                 );
             }
+            Screen::Analytics => {
+                draw_analytics(frame, content_area, self.analytics_report.as_ref());
+            }
             Screen::McpPanel {
                 servers,
                 selected,
@@ -725,6 +734,14 @@ impl App {
                                 add_form: None,
                                 error: load_error,
                             };
+                        }
+                    }
+                    KeyCode::Char('a') => {
+                        // Open analytics screen.
+                        if let Some(ref root) = self.project_root {
+                            let assay_dir = root.join(".assay");
+                            self.analytics_report = compute_analytics(&assay_dir).ok();
+                            self.screen = Screen::Analytics;
                         }
                     }
                     KeyCode::Char('s') => {
@@ -1222,6 +1239,17 @@ impl App {
                 false
             }
 
+            Screen::Analytics => {
+                match key.code {
+                    KeyCode::Esc => {
+                        self.screen = Screen::Dashboard;
+                    }
+                    KeyCode::Char('q') => return true,
+                    _ => {}
+                }
+                false
+            }
+
             Screen::McpPanel { .. } => self.handle_mcp_panel_event(key),
         }
     }
@@ -1660,6 +1688,12 @@ fn draw_settings(
 
     let hint = Paragraph::new(hint_lines);
     frame.render_widget(hint, hint_area);
+}
+
+/// Render the analytics screen (stub — real tables come in T02).
+fn draw_analytics(frame: &mut ratatui::Frame, area: Rect, _report: Option<&AnalyticsReport>) {
+    let block = Block::default().borders(Borders::ALL).title(" Analytics ");
+    frame.render_widget(block, area);
 }
 
 /// Render the persistent one-line status bar showing project context.
