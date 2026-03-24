@@ -51,7 +51,7 @@
   - Verify: `cargo test -p assay-core --test pr_status` — all tests pass
   - Done when: `pr_status_poll` returns correct `PrStatusInfo` for all test scenarios; `gh` not found returns `Err` gracefully
 
-- [ ] **T02: TuiEvent variant + polling thread + App state + dashboard badge rendering** `est:60m`
+- [x] **T02: TuiEvent variant + polling thread + App state + dashboard badge rendering** `est:60m`
   - Why: Wires the core function into the TUI event loop with background polling and renders the badge on the dashboard
   - Files: `crates/assay-tui/src/event.rs`, `crates/assay-tui/src/app.rs`, `crates/assay-tui/src/main.rs`, `crates/assay-tui/src/lib.rs`
   - Do: (1) Add `TuiEvent::PrStatusUpdate { slug: String, info: PrStatusInfo }` variant to `event.rs`. (2) Add `pr_statuses: HashMap<String, PrStatusInfo>` and `poll_targets: Arc<Mutex<Vec<(String, u64)>>>` to `App`. Initialize `poll_targets` from `self.milestones` filtering on `pr_number.is_some()`. (3) Add `handle_pr_status_update(&mut self, slug, info)` method. (4) Update `poll_targets` in `handle_agent_done` and wizard submit paths where `self.milestones` is refreshed. (5) In `main.rs run()`, check `gh` availability once; if found, spawn polling thread that clones `tx` and `poll_targets`, loops with 60s sleep, reads targets from mutex, calls `pr_status_poll` for each, sends `PrStatusUpdate` on success. (6) Add `TuiEvent::PrStatusUpdate` arm to main loop dispatch. (7) In `draw_dashboard`, append PR badge to `ListItem` line when `pr_statuses` has an entry for the milestone slug. Badge format: `🟢 OPEN ✓2/3` or `🟣 MERGED` or `🔴 CLOSED` with CI counts.
