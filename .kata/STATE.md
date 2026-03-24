@@ -2,7 +2,7 @@
 
 **Active Milestone:** M009 — Observability
 **Active Slice:** S01 — Structured tracing foundation and eprintln migration
-**Active Task:** T03 — Migrate assay-core eprintln! calls to tracing macros
+**Active Task:** T04 — Migrate assay-cli eprintln calls to tracing macros (batch 1: run, gate, harness)
 **Phase:** Executing
 **Last Updated:** 2026-03-24
 **Requirements Status:** 7 active (R027, R060–R065) · 55 validated · 3 deferred (R025, R066, R067) · 4 out of scope
@@ -11,7 +11,7 @@
 ## M009 Progress
 
 5 slices planned:
-- [ ] S01: Structured tracing foundation and eprintln migration — R060 (5 tasks planned, T01+T02 done)
+- [ ] S01: Structured tracing foundation and eprintln migration — R060 (5 tasks planned, T01–T03 done)
 - [ ] S02: Pipeline span instrumentation — R061
 - [ ] S03: Orchestration span instrumentation — R062
 - [ ] S04: JSON file trace export and CLI — R063
@@ -31,4 +31,4 @@ None.
 
 ## Next Action
 
-Execute T03: Migrate assay-core eprintln! calls to tracing macros.
+Execute T04: Migrate assay-cli eprintln calls to tracing macros (batch 1: run, gate, harness).
