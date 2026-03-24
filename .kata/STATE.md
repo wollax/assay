@@ -2,26 +2,23 @@
 
 **Active Milestone:** M008 — PR Workflow + Plugin Parity
 **Active Slice:** S01 — Advanced PR creation with labels, reviewers, and templates
-**Active Task:** none (slice not yet planned)
-**Phase:** Planning (roadmap written, slice planning next)
+**Active Task:** T01 — Milestone type extension + TOML round-trip
+**Phase:** Executing
 **Last Updated:** 2026-03-23
 **Requirements Status:** 3 active (R057–R059) mapped to M008 slices · 52 validated (R001–R056) · 2 deferred · 4 out of scope
 **Test Count:** 1400+ (50 assay-tui; all workspace tests pass; just ready green)
 
 ## Completed Milestones
 
-- [x] M001: Single-Agent Harness End-to-End (7/7 slices, 19 requirements validated, ~991 tests)
-- [x] M002: Multi-Agent Orchestration (6/6 slices, 5 new requirements validated, ~1183 tests)
-- [x] M003: Conflict Resolution & Polish (2/2 slices, 3 new requirements validated, 1222 tests)
-- [x] M004: Coordination Modes — Mesh & Gossip (4/4 slices, 6 new requirements validated, 1271 tests)
-- [x] M005: Spec-Driven Development Core (6/6 slices, 10 requirements validated, 1333 tests)
-- [x] M006: TUI as Primary Surface (5/5 slices, 4 requirements validated, 1367 tests)
-- [x] M007: TUI Agent Harness (4/4 slices, 4 requirements validated [R053–R056], 1400+ tests)
+- [x] M001–M007 (see prior STATE.md for details)
 
-## M008 Roadmap
+## M008 Progress
 
-5 slices planned:
-- [ ] S01: Advanced PR creation (labels, reviewers, templates) — R058
+5 slices planned, all contexts written:
+- [ ] S01: Advanced PR creation (labels, reviewers, templates) — R058 ← ACTIVE
+  - [ ] T01: Milestone type extension + TOML round-trip ← NEXT
+  - [ ] T02: PR body template rendering + core PR function update
+  - [ ] T03: CLI flags + MCP params + wiring
 - [ ] S02: TUI PR status panel with background polling — R058
 - [ ] S03: OpenCode plugin with full skill parity — R057
 - [ ] S04: Gate history analytics engine and CLI — R059
@@ -41,4 +38,4 @@ None.
 
 ## Next Action
 
-Plan S01 (decompose into tasks, write S01-PLAN.md).
+Execute T01: Add pr_labels, pr_reviewers, pr_body_template fields to Milestone in assay-types. Update schema snapshot. Write TOML round-trip tests.
