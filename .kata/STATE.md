@@ -2,7 +2,7 @@
 
 **Active Milestone:** M008 — PR Workflow + Plugin Parity
 **Active Slice:** S05 — TUI Analytics Screen
-**Active Task:** T01 — Add Screen::Analytics variant, App field, integration tests, and wire `a` key handler
+**Active Task:** T02 — Implement draw_analytics with failure-frequency and velocity tables
 **Phase:** Execute Task
 **Last Updated:** 2026-03-24
 **Requirements Status:** 1 active (R059 partial — CLI done, TUI pending S05) · 54 validated (R001–R058) · 2 deferred · 4 out of scope
@@ -19,7 +19,7 @@
 - [x] S02: TUI PR status panel with background polling — R058 ✓
 - [x] S03: OpenCode plugin with full skill parity — R057 ✓
 - [x] S04: Gate history analytics engine and CLI — R059 (CLI done)
-- [ ] S05: TUI analytics screen — R059 (TUI pending) — **planned, 2 tasks (T01–T02)**
+- [ ] S05: TUI analytics screen — R059 (TUI pending) — **T01 done, T02 remaining**
 
 ## Recent Decisions
 
@@ -34,4 +34,4 @@ None.
 
 ## Next Action
 
-Execute T01: Add Screen::Analytics variant, App field, integration tests, and wire `a` key handler.
+Execute T02: Implement draw_analytics with failure-frequency and velocity tables.
