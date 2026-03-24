@@ -2,8 +2,8 @@
 
 **Active Milestone:** M008 — PR Workflow + Plugin Parity
 **Active Slice:** S04 — Gate History Analytics Engine and CLI
-**Active Task:** T03 — Add `assay history` CLI subcommand
-**Phase:** Executing
+**Active Task:** — (T03 complete, checking for remaining tasks)
+**Phase:** Advancing
 **Last Updated:** 2026-03-24
 **Requirements Status:** 1 active (R059) mapped to M008 slices · 54 validated (R001–R058) · 2 deferred · 4 out of scope
 **Test Count:** 1400+ (50 assay-tui; all workspace tests pass)
@@ -34,4 +34,4 @@ None.
 
 ## Next Action
 
-Execute T03: Add `assay history` CLI subcommand (S04). Create `commands/history.rs` with structured text and JSON output for analytics data.
+T03 complete. Check S04-PLAN.md for remaining tasks in S04.
