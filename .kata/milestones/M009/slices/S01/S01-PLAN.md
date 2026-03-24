@@ -44,7 +44,7 @@
 
 ## Tasks
 
-- [ ] **T01: Create telemetry module with init_tracing and TracingGuard** `est:45m`
+- [x] **T01: Create telemetry module with init_tracing and TracingGuard** `est:45m`
   - Why: Foundation for all structured tracing — every other task and downstream slice depends on this module
   - Files: `crates/assay-core/src/telemetry.rs`, `crates/assay-core/src/lib.rs`, `crates/assay-core/Cargo.toml`
   - Do: Create `assay-core::telemetry` module. Add `tracing-subscriber` dep to assay-core. Implement `TracingConfig` struct (default_level, ansi, is_mcp), `TracingGuard` wrapping `WorkerGuard`, `init_tracing(config) -> TracingGuard` using `Registry` + `fmt` layer + `EnvFilter` + `non_blocking` stderr writer. Default level `info` (CLI) or `warn` (MCP). `try_init()` to avoid panics on double init. Add unit tests for guard creation, default config, EnvFilter fallback.
