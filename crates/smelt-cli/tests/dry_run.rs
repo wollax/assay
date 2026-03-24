@@ -13,8 +13,14 @@ fn workspace_root() -> std::path::PathBuf {
         .to_path_buf()
 }
 
+fn smelt_bin() -> Command {
+    #[allow(deprecated)]
+    let cmd = Command::cargo_bin("smelt").expect("binary should be built");
+    cmd
+}
+
 fn smelt() -> Command {
-    let mut cmd = Command::cargo_bin("smelt").expect("binary should be built");
+    let mut cmd = smelt_bin();
     cmd.current_dir(workspace_root());
     cmd
 }
@@ -206,8 +212,7 @@ fn test_init_then_dry_run_smoke() {
     let dir = tempfile::TempDir::new().expect("tempdir should be created");
 
     // Step 1: smelt init
-    Command::cargo_bin("smelt")
-        .expect("binary should be built")
+    smelt_bin()
         .current_dir(dir.path())
         .arg("init")
         .assert()
@@ -221,8 +226,7 @@ fn test_init_then_dry_run_smoke() {
     );
 
     // Step 2: smelt run --dry-run against the generated manifest
-    Command::cargo_bin("smelt")
-        .expect("binary should be built")
+    smelt_bin()
         .current_dir(dir.path())
         .args(["run", "job-manifest.toml", "--dry-run"])
         .assert()

@@ -399,6 +399,7 @@ target = "main"
     );
     std::fs::write(&manifest_path, manifest_content).unwrap();
 
+    #[allow(deprecated)]
     let cmd = assert_cmd::Command::cargo_bin("smelt")
         .expect("binary should exist")
         .arg("run")
@@ -707,6 +708,7 @@ exit 1
 /// Test that running with an invalid manifest produces exit code 1 and an error message.
 #[tokio::test]
 async fn test_cli_run_invalid_manifest() {
+    #[allow(deprecated)]
     let cmd = assert_cmd::Command::cargo_bin("smelt")
         .expect("binary should exist")
         .arg("run")
