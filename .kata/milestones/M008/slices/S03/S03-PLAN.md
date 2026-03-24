@@ -83,7 +83,7 @@ test -f plugins/opencode/opencode.json
 
 ## Tasks
 
-- [ ] **T01: Author AGENTS.md and all 5 skill files for the OpenCode plugin** `est:30m`
+- [x] **T01: Author AGENTS.md and all 5 skill files for the OpenCode plugin** `est:30m`
   - Why: Delivers the complete S03 deliverable — all 7 files needed for OpenCode plugin parity, plus .gitkeep removal
   - Files: `plugins/opencode/AGENTS.md`, `plugins/opencode/skills/gate-check.md`, `plugins/opencode/skills/spec-show.md`, `plugins/opencode/skills/cycle-status.md`, `plugins/opencode/skills/next-chunk.md`, `plugins/opencode/skills/plan.md`
   - Do: (1) Delete `plugins/opencode/skills/.gitkeep` and `plugins/opencode/agents/.gitkeep`. (2) Write `plugins/opencode/AGENTS.md` — identical to `plugins/codex/AGENTS.md` with "Codex" replaced by "OpenCode" in the title; include pr_create in MCP tools table (10 tools total). (3) Copy all 5 skill files from `plugins/codex/skills/` to `plugins/opencode/skills/` unchanged — content is already platform-neutral. (4) Verify constraints: AGENTS.md ≤60 lines; flat .md files only; both null guards present in next-chunk.md; interview-first in plan.md; cmd-editing warning in plan.md.
