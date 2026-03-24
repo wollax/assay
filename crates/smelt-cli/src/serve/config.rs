@@ -46,11 +46,16 @@ pub struct WorkerConfig {
     pub port: u16,
 }
 
+/// Network binding settings for the HTTP API server.
+///
+/// Defaults to `127.0.0.1:8765` when omitted from the config file.
 #[derive(Debug, Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct ServerNetworkConfig {
+    /// IP address to bind the HTTP listener to (default `127.0.0.1`).
     #[serde(default = "default_host")]
     pub host: String,
+    /// TCP port for the HTTP listener (default `8765`).
     #[serde(default = "default_port")]
     pub port: u16,
 }
@@ -64,16 +69,29 @@ impl Default for ServerNetworkConfig {
     }
 }
 
+/// Top-level server configuration loaded from `server.toml`.
+///
+/// Controls concurrency limits, retry policy, network binding, SSH worker
+/// pool, and the on-disk queue directory.
 #[derive(Debug, Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct ServerConfig {
+    /// Directory where the persistent queue state file is stored.
     pub queue_dir: PathBuf,
+    /// Maximum number of jobs that may execute concurrently.
     pub max_concurrent: usize,
+    /// How many times a failed job is retried before it is marked `Failed`.
     #[serde(default = "default_retry_attempts")]
     pub retry_attempts: u32,
+    /// Seconds to wait between retry attempts (exponential back-off base).
+    ///
+    /// Deserialized from config but not yet consumed by the dispatch loop;
+    /// kept for forward-compatibility so existing `server.toml` files remain
+    /// valid when retry back-off is wired up.
     #[serde(default = "default_retry_backoff_secs")]
-    #[allow(dead_code)] // used in future dispatch retry logic
+    #[allow(dead_code)]
     pub retry_backoff_secs: u64,
+    /// HTTP API network binding (host + port).
     #[serde(default)]
     pub server: ServerNetworkConfig,
     /// SSH worker pool. When present, `smelt serve` dispatches jobs to these

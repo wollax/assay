@@ -27,7 +27,9 @@ use crate::serve::types::JobId;
 /// Captured output from a remote SSH command.
 #[derive(Debug, Clone)]
 pub struct SshOutput {
+    /// Standard output captured from the remote command.
     pub stdout: String,
+    /// Standard error captured from the remote command.
     pub stderr: String,
     /// Exit code returned by the remote process.  Mapped to `-1` when the
     /// subprocess was killed by a signal and no numeric code is available.
@@ -182,7 +184,7 @@ impl SubprocessSshClient {
 
     /// Build the argument list for an SCP invocation.
     ///
-    /// Mirrors [`build_ssh_args`] but uses uppercase `-P` for port (SCP
+    /// Mirrors `build_ssh_args` but uses uppercase `-P` for port (SCP
     /// convention) instead of lowercase `-p`.
     pub fn build_scp_args(
         worker: &WorkerConfig,
@@ -529,7 +531,6 @@ pub(crate) mod tests {
             self
         }
 
-        #[allow(dead_code)]
         pub fn with_probe_result(self, result: anyhow::Result<()>) -> Self {
             self.probe_results.lock().unwrap().push_back(result);
             self

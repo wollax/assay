@@ -1,17 +1,17 @@
 # Kata State
 
-**Active Milestone:** M008 — SSH Worker Pools (COMPLETE)
-**Active Slice:** None — all slices complete
-**Active Task:** None
-**Phase:** Complete
+**Active Milestone:** M009 — Documentation, Examples & Code Cleanup
+**Active Slice:** S02 — README + example manifest documentation
+**Active Task:** None — slice not yet planned
+**Phase:** Planning
 
 ## Recent Decisions
-- D122: dispatch_loop generic over SshClient for testability
-- D123: round_robin_idx is volatile (not serialized) on ServerState
-- D124: All-workers-offline re-queues job (status → Queued)
+- D125: M009 is documentation/cleanup only — no behavior changes
+- D126: Large file threshold: 500 lines
+- D127: #![deny(missing_docs)] enforced on smelt-cli (matches smelt-core)
 
 ## Blockers
 - None
 
 ## Next Action
-M008 milestone complete. All 4 slices (S01–S04) done. 155 workspace tests green. R027 validated. Ready for squash-merge to main and milestone summary.
+Plan S02 (README + example manifest documentation) — decompose into tasks, write S02-PLAN.md.

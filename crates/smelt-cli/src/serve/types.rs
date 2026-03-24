@@ -36,6 +36,7 @@ impl fmt::Display for JobId {
 }
 
 impl JobId {
+    /// Wrap an arbitrary string as a `JobId`.
     pub fn new(id: impl Into<String>) -> Self {
         JobId(id.into())
     }
@@ -45,7 +46,9 @@ impl JobId {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "snake_case")]
 pub enum JobSource {
+    /// Job was triggered by a filesystem watcher.
     DirectoryWatch,
+    /// Job was submitted via the HTTP API.
     HttpApi,
 }
 
@@ -53,23 +56,36 @@ pub enum JobSource {
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum JobStatus {
+    /// Job is waiting in the queue.
     Queued,
+    /// Job is being dispatched to an SSH host.
     Dispatching,
+    /// Job is executing on the remote host.
     Running,
+    /// Job failed and is scheduled for retry.
     Retrying,
+    /// Job finished successfully.
     Complete,
+    /// Job finished with an error.
     Failed,
 }
 
 /// A single job entry in the queue.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct QueuedJob {
+    /// Unique identifier assigned at enqueue time.
     pub id: JobId,
+    /// Path to the `.smelt.toml` manifest that defines this job.
     pub manifest_path: PathBuf,
+    /// How this job entered the queue (HTTP API vs directory watch).
     pub source: JobSource,
+    /// Zero-based retry counter; incremented on each re-queue after failure.
     pub attempt: u32,
+    /// Current lifecycle state of the job.
     pub status: JobStatus,
+    /// Unix epoch seconds when the job was first enqueued.
     pub queued_at: u64,
+    /// Unix epoch seconds when the job most recently started executing.
     pub started_at: Option<u64>,
     /// Which worker host this job was dispatched to, if any.
     /// `None` means locally dispatched. `#[serde(default)]` ensures backward

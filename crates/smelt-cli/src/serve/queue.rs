@@ -85,15 +85,20 @@ fn new_job_id() -> JobId {
 
 /// In-memory queue and concurrency controller for smelt-serve jobs.
 pub struct ServerState {
+    /// FIFO queue of all known jobs (queued, running, and terminal).
     pub jobs: VecDeque<QueuedJob>,
+    /// Number of jobs currently in `Dispatching` or `Running` state.
     pub running_count: usize,
+    /// Upper bound on simultaneous running jobs.
     pub max_concurrent: usize,
+    /// When `Some`, queue mutations are persisted to this directory.
     pub queue_dir: Option<PathBuf>,
     /// Round-robin index for SSH worker selection. Volatile — not serialized.
     pub round_robin_idx: usize,
 }
 
 impl ServerState {
+    /// Create a non-persistent `ServerState` (queue is only in memory).
     pub fn new(max_concurrent: usize) -> Self {
         ServerState {
             jobs: VecDeque::new(),

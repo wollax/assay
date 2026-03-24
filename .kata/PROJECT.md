@@ -12,7 +12,7 @@ Automated infrastructure delivery: `smelt run manifest.toml` provisions → runs
 
 ## Current State
 
-**M008 complete.** SSH worker pools — `smelt serve` dispatches jobs to remote machines via SSH. S01 delivered `WorkerConfig` + `SshClient` trait + probe timeout. S02 added `deliver_manifest()` + `run_remote_job()`. S03 added `sync_state_back()`. S04 wired everything into `dispatch_loop`: round-robin worker selection with probe-based offline skip, all-workers-offline re-queue, `worker_host` visible in `GET /api/v1/jobs` and TUI Worker column. 155 workspace tests green. R027 validated. Live multi-host proof deferred to S04-UAT.md.
+**M008 complete.** SSH worker pools — `smelt serve` dispatches jobs to remote machines via SSH. S01 delivered `WorkerConfig` + `SshClient` trait + probe timeout. S02 added `deliver_manifest()` + `run_remote_job()` with MockSshClient. S03 added `sync_state_back()` for recursive remote-to-local state sync. S04 wired everything into `dispatch_loop`: round-robin worker selection with probe-based offline skip, all-workers-offline re-queue, `worker_host` visible in `GET /api/v1/jobs` and TUI Worker column. 286 workspace tests green (81 smelt-cli + 155 smelt-core + integration + doctests), 0 failures. R027 validated. Live multi-host proof deferred to S04-UAT.md.
 
 **M007 complete.** `smelt serve` now survives restarts without losing queued work. Queue state is written atomically to `queue_dir/.smelt-queue-state.toml` on every enqueue/complete/cancel (S02) and loaded on startup via `ServerState::load_or_new()` (S03). Jobs that were Queued/Retrying/Running at crash time are automatically re-dispatched on restart with attempt counts preserved. R028 (persistent queue) validated. 52 smelt-cli tests pass.
 
@@ -80,7 +80,8 @@ examples/
 | M005 | Kubernetes Runtime | ✅ Complete (2026-03-23, pending live UAT) |
 | M006 | Parallel Dispatch Daemon | ✅ Complete (2026-03-23, pending live UAT) |
 | M007 | Persistent Queue | ✅ Complete (2026-03-23) |
-| M008 | SSH Worker Pools | ✅ Complete (2026-03-24, pending live UAT) |
+| M008 | SSH Worker Pools | ✅ Complete (2026-03-24, pending live UAT via S04-UAT.md) |
+| M009 | Documentation, Examples & Code Cleanup | 🔄 Active |
 
 ## Technology Decisions
 

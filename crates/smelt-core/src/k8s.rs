@@ -181,7 +181,7 @@ pub fn generate_pod_spec(
 /// Stored in `KubernetesProvider::state` keyed by `ContainerId` so that
 /// `exec`, `teardown`, and `collect` can locate the right namespace, pod, and
 /// SSH Secret without re-reading the manifest.
-#[allow(dead_code)] // fields read in T03 (exec) and T04 (teardown)
+#[allow(dead_code)] // namespace and pod_name stored for future exec/collect; only secret_name read today
 struct PodState {
     namespace: String,
     pod_name: String,

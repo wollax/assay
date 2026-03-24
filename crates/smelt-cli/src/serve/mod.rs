@@ -1,8 +1,11 @@
+/// Job data types: identifiers, status, source, and queue entries.
 pub mod types;
+/// Persistent job queue and concurrency controller.
 pub mod queue;
 pub(crate) use queue::ServerState;
 pub(crate) mod config;
 pub(crate) use config::ServerConfig;
+/// SSH transport layer for dispatching jobs to remote workers.
 pub mod ssh;
 pub use ssh::{SshClient, SshOutput, SubprocessSshClient};
 pub(crate) mod dispatch;

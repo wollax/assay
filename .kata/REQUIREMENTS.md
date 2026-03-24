@@ -232,27 +232,71 @@ This file is the explicit capability and coverage contract for the project.
 
 ## Active
 
-### R027 — SSH worker pools / remote dispatch
-- Class: integration
+### R040 — Zero-warning cargo doc
+- Class: quality-attribute
 - Status: validated
-- Description: `smelt serve` dispatches jobs to remote machines over SSH — static `[[workers]]` in `server.toml`, manifest delivered via scp, `smelt run` executed on the remote, state synced back.
-- Why it matters: Multi-machine parallelism without cloud infrastructure; scales agentic workloads beyond a single host.
+- Description: `cargo doc --workspace --no-deps` exits 0 with zero warnings and zero errors.
+- Why it matters: Broken doc builds prevent publishing to docs.rs and signal unmaintained code.
 - Source: user
-- Primary owning slice: M008/S04
-- Supporting slices: M008/S01, M008/S02, M008/S03
+- Primary owning slice: M009/S01
+- Supporting slices: none
 - Validation: validated
-- Notes: Proven by M008: S01 (WorkerConfig + SshClient + probe timeout), S02 (deliver_manifest + run_remote_job with MockSshClient), S03 (sync_state_back + state round-trip), S04 (dispatch routing + round-robin + failover + worker_host in API/TUI; 155 workspace tests green). Live multi-host proof deferred to S04-UAT.md.
+- Notes: Proven by M009/S01: `cargo doc --workspace --no-deps` exits 0 with zero warnings. Broken intra-doc link in ssh.rs fixed (D070 backtick-only). All public items documented.
 
-### R028 — Persistent queue across `smelt serve` restarts
-- Class: operability
+### R041 — Workspace README with usage documentation
+- Class: launchability
+- Status: active
+- Description: A comprehensive `README.md` at the workspace root explains what Smelt is, how to install it, and documents all subcommands with examples.
+- Why it matters: No README exists. New users and contributors have no entry point.
+- Source: user
+- Primary owning slice: M009/S02
+- Supporting slices: none
+- Validation: unmapped
+- Notes: None.
+
+### R042 — deny(missing_docs) on smelt-cli
+- Class: quality-attribute
 - Status: validated
-- Description: Jobs queued at crash time are automatically re-queued on the next startup; attempt counts preserved; `Dispatching`/`Running` jobs treated as Queued.
-- Why it matters: Crash recovery prevents lost work in long-running unattended deployments.
-- Source: inferred
-- Primary owning slice: M007/S03
-- Supporting slices: M007/S01, M007/S02
+- Description: `#![deny(missing_docs)]` is enforced on `smelt-cli` and compiles without warnings. All public items have doc comments.
+- Why it matters: smelt-core already enforces this (D070); smelt-cli should match. Undocumented public API is a maintenance liability.
+- Source: user
+- Primary owning slice: M009/S01
+- Supporting slices: none
 - Validation: validated
-- Notes: Proven by M007/S01 (QueuedJob Serialize+Deserialize, Instant→u64 migration), M007/S02 (atomic write_queue_state + read_queue_state round-trip), M007/S03 (ServerState::load_or_new, wired into serve.rs, test_load_or_new_restart_recovery + test_load_or_new_missing_file; 52 tests pass). Live kill-and-restart with real Docker jobs deferred to S03-UAT.md.
+- Notes: Proven by M009/S01: `#![deny(missing_docs)]` in lib.rs compiles clean; all ~37 public items documented (D127). Self-enforcing — future undocumented items fail the build.
+
+### R043 — No stale #[allow] annotations in production code
+- Class: quality-attribute
+- Status: validated
+- Description: Every `#[allow(dead_code)]` or similar suppression in production code is either removed (code is now used) or justified with a comment referencing why the suppression is necessary.
+- Why it matters: Stale annotations mask real dead code and signal neglect.
+- Source: user
+- Primary owning slice: M009/S01
+- Supporting slices: none
+- Validation: validated
+- Notes: Proven by M009/S01: all 4 annotations audited — 2 removed (MockSshClient::with_probe_result was used in 12+ test sites; tests/docker_lifecycle.rs doesn't exist as source), 2 kept with updated rationale (retry_backoff_secs: serde forward-compat; PodState: fields stored for future use).
+
+### R044 — Large file decomposition
+- Class: quality-attribute
+- Status: active
+- Description: Files over 500 lines are decomposed into focused modules along natural seams. Targets: run.rs (755L), ssh.rs (978L), serve/tests.rs (1322L).
+- Why it matters: Large files are harder to navigate, review, and modify without merge conflicts.
+- Source: user
+- Primary owning slice: M009/S03
+- Supporting slices: none
+- Validation: unmapped
+- Notes: Decomposition must preserve all existing public API signatures and test coverage.
+
+### R045 — Example manifest documentation
+- Class: launchability
+- Status: active
+- Description: All example manifests in `examples/` have inline field-level comments explaining every field, valid defaults, and when to use each option.
+- Why it matters: Examples are the primary learning tool. Uncommented examples force users to read source code.
+- Source: user
+- Primary owning slice: M009/S02
+- Supporting slices: none
+- Validation: unmapped
+- Notes: 7 example files exist; some have comments, some don't.
 
 ---
 
@@ -371,10 +415,16 @@ This file is the explicit capability and coverage contract for the project.
 | R030 | anti-feature         | out-of-scope| none          | none                 | n/a       |
 | R031 | anti-feature         | out-of-scope| none          | none                 | n/a       |
 | R032 | anti-feature         | out-of-scope| none          | none                 | n/a       |
+| R040 | quality-attribute    | validated   | M009/S01      | none                 | validated |
+| R041 | launchability        | active      | M009/S02      | none                 | mapped    |
+| R042 | quality-attribute    | validated   | M009/S01      | none                 | validated |
+| R043 | quality-attribute    | validated   | M009/S01      | none                 | validated |
+| R044 | quality-attribute    | active      | M009/S03      | none                 | mapped    |
+| R045 | launchability        | active      | M009/S02      | none                 | mapped    |
 
 ## Coverage Summary
 
-- Active requirements: 0
-- Mapped to slices: 0
-- Validated (all milestones through M008 complete): 21 (R001–R008, R010–R015, R020, R021, R023, R024, R025, R027, R028)
+- Active requirements: 3 (R041, R044, R045)
+- Mapped to slices: 3
+- Validated (all milestones through M008 + M009/S01): 24 (R001–R008, R010–R015, R020, R021, R023, R024, R025, R027, R028, R040, R042, R043)
 - Unmapped active requirements: 0
