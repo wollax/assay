@@ -99,10 +99,27 @@ expression: schema.to_value()
         "null"
       ]
     },
+    "pr_body_template": {
+      "description": "Template for the PR body with placeholder substitution.\n\nSupported placeholders: `{milestone_name}`, `{milestone_slug}`,\n`{chunk_list}` (bulleted chunk names), `{gate_summary}` (pass/fail per chunk).",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "pr_branch": {
       "description": "Feature branch name for this milestone's pull request (e.g. `\"feat/my-feature\"`).",
       "type": [
         "string",
+        "null"
+      ]
+    },
+    "pr_labels": {
+      "description": "Labels to apply to the GitHub pull request (e.g. `[\"ready-for-review\", \"feature\"]`).",
+      "items": {
+        "type": "string"
+      },
+      "type": [
+        "array",
         "null"
       ]
     },
@@ -112,6 +129,16 @@ expression: schema.to_value()
       "minimum": 0,
       "type": [
         "integer",
+        "null"
+      ]
+    },
+    "pr_reviewers": {
+      "description": "GitHub usernames to request as reviewers on the pull request.",
+      "items": {
+        "type": "string"
+      },
+      "type": [
+        "array",
         "null"
       ]
     },

@@ -23,6 +23,9 @@ fn make_milestone(slug: &str) -> Milestone {
         pr_base: Some("main".to_string()),
         pr_number: None,
         pr_url: None,
+        pr_labels: None,
+        pr_reviewers: None,
+        pr_body_template: None,
         created_at: now,
         updated_at: now,
     }
