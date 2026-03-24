@@ -1690,10 +1690,152 @@ fn draw_settings(
     frame.render_widget(hint, hint_area);
 }
 
-/// Render the analytics screen (stub — real tables come in T02).
-fn draw_analytics(frame: &mut ratatui::Frame, area: Rect, _report: Option<&AnalyticsReport>) {
-    let block = Block::default().borders(Borders::ALL).title(" Analytics ");
-    frame.render_widget(block, area);
+/// Render the analytics screen with failure frequency and milestone velocity tables.
+fn draw_analytics(frame: &mut ratatui::Frame, area: Rect, report: Option<&AnalyticsReport>) {
+    // Empty / None case: centered message in a bordered block.
+    let is_empty = report
+        .map(|r| r.failure_frequency.is_empty() && r.milestone_velocity.is_empty())
+        .unwrap_or(true);
+
+    if is_empty {
+        let msg = Paragraph::new(
+            Line::from("No analytics data available")
+                .centered()
+                .style(Style::default().dim()),
+        )
+        .block(Block::default().borders(Borders::ALL).title(" Analytics "));
+        frame.render_widget(msg, area);
+        return;
+    }
+
+    let report = report.unwrap(); // safe: is_empty already checked
+
+    // Layout: title, failure frequency table, velocity table, hint line.
+    let [title_area, freq_area, vel_area, hint_area] = Layout::vertical([
+        Constraint::Length(1),
+        Constraint::Fill(1),
+        Constraint::Length((report.milestone_velocity.len() as u16 + 3).min(12)),
+        Constraint::Length(1),
+    ])
+    .areas(area);
+
+    // Title bar.
+    let title = Paragraph::new(Line::from(" Analytics ").bold());
+    frame.render_widget(title, title_area);
+
+    // ── Failure Frequency Table ──────────────────────────────────────────
+    if report.failure_frequency.is_empty() {
+        let msg = Paragraph::new(Line::from("No gate run history found.").dim()).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(" Gate Failure Frequency "),
+        );
+        frame.render_widget(msg, freq_area);
+    } else {
+        let freq_rows: Vec<Row> = report
+            .failure_frequency
+            .iter()
+            .map(|f| {
+                let rate = if f.total_runs > 0 {
+                    f.fail_count as f64 / f.total_runs as f64 * 100.0
+                } else {
+                    0.0
+                };
+                let rate_str = format!("{rate:.1}%");
+                let rate_color = if rate > 50.0 {
+                    Color::Red
+                } else if rate > 0.0 {
+                    Color::Yellow
+                } else {
+                    Color::Green
+                };
+                let enforcement_label = match f.enforcement {
+                    assay_types::Enforcement::Required => "Required",
+                    assay_types::Enforcement::Advisory => "Advisory",
+                };
+                Row::new(vec![
+                    Cell::from(f.spec_name.as_str()),
+                    Cell::from(f.criterion_name.as_str()),
+                    Cell::from(format!("{}", f.fail_count)),
+                    Cell::from(format!("{}", f.total_runs)),
+                    Cell::from(rate_str).style(Style::default().fg(rate_color)),
+                    Cell::from(enforcement_label),
+                ])
+            })
+            .collect();
+
+        let freq_widths = [
+            Constraint::Length(20),
+            Constraint::Fill(1),
+            Constraint::Length(6),
+            Constraint::Length(6),
+            Constraint::Length(8),
+            Constraint::Length(10),
+        ];
+        let freq_table = Table::new(freq_rows, freq_widths)
+            .header(
+                Row::new(vec![
+                    "Spec",
+                    "Criterion",
+                    "Fails",
+                    "Runs",
+                    "Rate",
+                    "Enforce",
+                ])
+                .style(Style::default().bold()),
+            )
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(" Gate Failure Frequency "),
+            );
+        frame.render_widget(freq_table, freq_area);
+    }
+
+    // ── Milestone Velocity Table ─────────────────────────────────────────
+    if report.milestone_velocity.is_empty() {
+        let msg = Paragraph::new(Line::from("No milestones with completed chunks.").dim()).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(" Milestone Velocity "),
+        );
+        frame.render_widget(msg, vel_area);
+    } else {
+        let vel_rows: Vec<Row> = report
+            .milestone_velocity
+            .iter()
+            .map(|v| {
+                Row::new(vec![
+                    Cell::from(v.milestone_name.as_str()),
+                    Cell::from(format!("{}/{}", v.chunks_completed, v.total_chunks)),
+                    Cell::from(format!("{:.1}", v.days_elapsed)),
+                    Cell::from(format!("{:.1}/day", v.chunks_per_day)),
+                ])
+            })
+            .collect();
+
+        let vel_widths = [
+            Constraint::Fill(1),
+            Constraint::Length(10),
+            Constraint::Length(8),
+            Constraint::Length(10),
+        ];
+        let vel_table = Table::new(vel_rows, vel_widths)
+            .header(
+                Row::new(vec!["Milestone", "Chunks", "Days", "Velocity"])
+                    .style(Style::default().bold()),
+            )
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(" Milestone Velocity "),
+            );
+        frame.render_widget(vel_table, vel_area);
+    }
+
+    // Hint line.
+    let hint = Paragraph::new(Line::from("Esc back  q quit").dim());
+    frame.render_widget(hint, hint_area);
 }
 
 /// Render the persistent one-line status bar showing project context.
@@ -1732,7 +1874,7 @@ fn draw_status_bar(
 /// content beneath the popup.
 fn draw_help_overlay(frame: &mut ratatui::Frame, area: Rect) {
     let w = area.width.min(62);
-    let h = 22;
+    let h = 23;
     let x = area.x + (area.width.saturating_sub(w)) / 2;
     let y = area.y + (area.height.saturating_sub(h)) / 2;
     let popup = Rect::new(x, y, w, h);
@@ -1766,6 +1908,7 @@ fn draw_help_overlay(frame: &mut ratatui::Frame, area: Rect) {
             Cell::from("  n"),
             Cell::from("New milestone (wizard)"),
         ]),
+        Row::new(vec![Cell::from("  a"), Cell::from("Analytics")]),
         Row::new(vec![Cell::from("  s"), Cell::from("Settings")]),
         Row::new(vec![
             Cell::from("Detail views").style(Style::default().bold()),

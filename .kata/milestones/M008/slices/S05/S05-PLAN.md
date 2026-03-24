@@ -57,7 +57,7 @@
   - Verify: `cargo test -p assay-tui --test analytics_screen` passes; `cargo test -p assay-tui` all pass
   - Done when: `a` from Dashboard transitions to Analytics, `Esc`/`q` returns, tests pass, `analytics_report` populated
 
-- [ ] **T02: Implement draw_analytics with failure frequency and velocity tables, update help overlay** `est:25m`
+- [x] **T02: Implement draw_analytics with failure frequency and velocity tables, update help overlay** `est:25m`
   - Why: Renders the actual analytics content — failure heatmap table and velocity summary — completing the user-visible feature. Updates help overlay so users discover the `a` key.
   - Files: `crates/assay-tui/src/app.rs`, `crates/assay-tui/tests/analytics_screen.rs`
   - Do: Replace the stub `draw_analytics` with a full implementation: bordered block titled "Analytics", vertical layout split for two tables + hints. Failure frequency table: columns Spec, Criterion, Fails, Runs, Rate, Enforcement; rate color-coded (red >50%, yellow >0%, green 0%). Velocity table: columns Milestone, Chunks, Days, Velocity. Empty report → centered "No analytics data available" paragraph. Add `a → Analytics` row to the Dashboard section of `draw_help_overlay`. Add a smoke test that constructs an App with an AnalyticsReport and verifies no panic on screen variant.

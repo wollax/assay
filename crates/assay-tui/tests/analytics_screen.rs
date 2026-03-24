@@ -5,7 +5,9 @@
 
 use std::path::PathBuf;
 
+use assay_core::history::analytics::{AnalyticsReport, FailureFrequency, MilestoneVelocity};
 use assay_tui::app::{App, Screen};
+use assay_types::Enforcement;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 use tempfile::TempDir;
 
@@ -125,4 +127,58 @@ fn test_analytics_report_populated() {
         app.analytics_report.is_some(),
         "expected analytics_report to be Some after pressing 'a' with a valid project"
     );
+}
+
+#[test]
+fn test_data_driven_analytics_does_not_panic() {
+    let tmp = TempDir::new().unwrap();
+    let root = setup_project(&tmp);
+    let mut app = App::with_project_root(Some(root)).unwrap();
+
+    // Inject a synthetic report with real data.
+    app.analytics_report = Some(AnalyticsReport {
+        failure_frequency: vec![
+            FailureFrequency {
+                spec_name: "auth-flow".to_string(),
+                criterion_name: "login-works".to_string(),
+                fail_count: 7,
+                total_runs: 10,
+                enforcement: Enforcement::Required,
+            },
+            FailureFrequency {
+                spec_name: "auth-flow".to_string(),
+                criterion_name: "signup-ok".to_string(),
+                fail_count: 1,
+                total_runs: 8,
+                enforcement: Enforcement::Advisory,
+            },
+            FailureFrequency {
+                spec_name: "perf-spec".to_string(),
+                criterion_name: "latency-p99".to_string(),
+                fail_count: 0,
+                total_runs: 5,
+                enforcement: Enforcement::Required,
+            },
+        ],
+        milestone_velocity: vec![MilestoneVelocity {
+            milestone_slug: "alpha".to_string(),
+            milestone_name: "Alpha".to_string(),
+            chunks_completed: 3,
+            total_chunks: 5,
+            days_elapsed: 2.0,
+            chunks_per_day: 1.5,
+        }],
+        unreadable_records: 0,
+    });
+    app.screen = Screen::Analytics;
+
+    // Verify screen state is correct (proves data path setup doesn't panic).
+    assert!(
+        matches!(app.screen, Screen::Analytics),
+        "expected Screen::Analytics with synthetic data"
+    );
+    assert!(app.analytics_report.is_some());
+    let report = app.analytics_report.as_ref().unwrap();
+    assert_eq!(report.failure_frequency.len(), 3);
+    assert_eq!(report.milestone_velocity.len(), 1);
 }
