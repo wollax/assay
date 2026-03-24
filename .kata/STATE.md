@@ -1,11 +1,11 @@
 # Kata State
 
 **Active Milestone:** M008 — PR Workflow + Plugin Parity
-**Active Slice:** S03 — OpenCode plugin with full skill parity
+**Active Slice:** —
 **Active Task:** —
-**Phase:** Verifying (S03 complete — all tasks done)
+**Phase:** Between slices (S03 complete, S04 next)
 **Last Updated:** 2026-03-24
-**Requirements Status:** 2 active (R057, R059) mapped to M008 slices · 53 validated (R001–R058) · 2 deferred · 4 out of scope
+**Requirements Status:** 1 active (R059) mapped to M008 slices · 54 validated (R001–R058) · 2 deferred · 4 out of scope
 **Test Count:** 1400+ (50 assay-tui; all workspace tests pass)
 
 ## Completed Milestones

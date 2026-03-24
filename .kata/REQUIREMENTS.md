@@ -578,14 +578,14 @@
 
 ### R057 — OpenCode plugin
 - Class: differentiator
-- Status: active
+- Status: validated
 - Description: Full OpenCode plugin matching Claude Code plugin: AGENTS.md, skills (gate-check, spec-show, cycle-status, plan), and opencode.json configuration. Completes the three-platform plugin parity.
 - Why it matters: OpenCode is the third major agent platform — parity across all three platforms maximizes reach
 - Source: user
-- Primary owning slice: M008/S01
+- Primary owning slice: M008/S03
 - Supporting slices: none
-- Validation: unmapped
-- Notes: OpenCode plugin scaffold already exists in `plugins/opencode/` (package.json, opencode.json, tsconfig.json). M008 fills in the content.
+- Validation: S03 — AGENTS.md (37 lines, ≤60 cap); 5 skill files (gate-check, spec-show, cycle-status, next-chunk, plan) copied verbatim from Codex plugin; all 10 MCP tool names verified present; flat .md file convention; interview-first pattern confirmed; both null guards confirmed; .gitkeep removed; opencode.json untouched; 22/22 structural checks pass
+- Notes: OpenCode plugin scaffold already existed in `plugins/opencode/` (package.json, opencode.json, tsconfig.json). S03 filled in AGENTS.md + 5 skills. Content is identical to Codex plugin except the AGENTS.md title heading.
 
 ### R058 — Advanced PR workflow
 - Class: primary-user-loop
@@ -715,15 +715,15 @@
 | R054 | core-capability | validated | M007/S02 | M007/S01 | S02 |
 | R055 | operability | validated | M007/S04 | none | S04 |
 | R056 | primary-user-loop | validated | M007/S03 | M007/S01 | S03 |
-| R057 | differentiator | active | M008/S01 | none | mapped |
+| R057 | differentiator | validated | M008/S03 | none | S03 |
 | R058 | primary-user-loop | validated | M008/S02 | M008/S01 | S01, S02 |
 | R059 | failure-visibility | active | M008/S03 | none | mapped |
 
 ## Coverage Summary
 
-- Active requirements: 2 (R057, R059)
-- Mapped to slices: 2
-- Validated: 53 (R001–R029, R034–R058)
+- Active requirements: 1 (R059)
+- Mapped to slices: 1
+- Validated: 54 (R001–R029, R034–R058 including R057)
 - Deferred: 2 (R025, R027 — with rationale)
 - Out of scope: 4 (R030, R031, R032, R033)
 - Unmapped active requirements: 0
