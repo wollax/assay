@@ -589,14 +589,14 @@
 
 ### R058 — Advanced PR workflow
 - Class: primary-user-loop
-- Status: active
+- Status: validated
 - Description: PR creation supports configurable labels, reviewers, and PR body templates. The TUI shows PR status (open/merged/closed, CI status, review status) for milestones with open PRs.
 - Why it matters: The basic PR creation (R045) gets work out the door — labels, reviewers, and templates make it usable in team workflows
 - Source: user
 - Primary owning slice: M008/S02
 - Supporting slices: M008/S01
-- Validation: S01 — Milestone TOML extended with pr_labels/pr_reviewers/pr_body_template (backward-compatible); pr_create_if_gates_pass passes --label/--reviewer/--body to gh; CLI --label/--reviewer flags and MCP labels/reviewers params with extend semantics; 12 integration tests with mock gh binary; template rendering with 4 placeholders proven. TUI PR status panel remains for S02.
-- Notes: Extends the milestone TOML pr_settings field. PR status from `gh pr view --json`.
+- Validation: S01 — Milestone TOML extended with pr_labels/pr_reviewers/pr_body_template (backward-compatible); pr_create_if_gates_pass passes --label/--reviewer/--body to gh; CLI --label/--reviewer flags and MCP labels/reviewers params with extend semantics; 12 integration tests with mock gh binary; template rendering with 4 placeholders proven. S02 — PrStatusInfo type + pr_status_poll() calling gh pr view --json; TuiEvent::PrStatusUpdate + background polling thread (60s interval, initial-poll-no-delay); dashboard badge rendering (state icon + CI counts + review abbreviation); graceful degradation when gh missing; 8 core + 3 TUI integration tests.
+- Notes: Extends the milestone TOML pr_settings field. PR status from `gh pr view --json`. Fully validated across S01+S02.
 
 ### R059 — Gate history analytics
 - Class: failure-visibility
@@ -716,14 +716,14 @@
 | R055 | operability | validated | M007/S04 | none | S04 |
 | R056 | primary-user-loop | validated | M007/S03 | M007/S01 | S03 |
 | R057 | differentiator | active | M008/S01 | none | mapped |
-| R058 | primary-user-loop | active | M008/S02 | M008/S01 | mapped |
+| R058 | primary-user-loop | validated | M008/S02 | M008/S01 | S01, S02 |
 | R059 | failure-visibility | active | M008/S03 | none | mapped |
 
 ## Coverage Summary
 
-- Active requirements: 3 (R057–R059)
-- Mapped to slices: 3
-- Validated: 52 (R001–R029, R034–R056)
+- Active requirements: 2 (R057, R059)
+- Mapped to slices: 2
+- Validated: 53 (R001–R029, R034–R058)
 - Deferred: 2 (R025, R027 — with rationale)
 - Out of scope: 4 (R030, R031, R032, R033)
 - Unmapped active requirements: 0
