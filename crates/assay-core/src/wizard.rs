@@ -182,6 +182,9 @@ pub fn create_from_inputs(
         pr_base: None,
         pr_number: None,
         pr_url: None,
+            pr_labels: None,
+            pr_reviewers: None,
+            pr_body_template: None,
         created_at: now,
         updated_at: now,
     };
@@ -254,6 +257,9 @@ pub fn create_milestone_from_params(
         pr_base: None,
         pr_number: None,
         pr_url: None,
+            pr_labels: None,
+            pr_reviewers: None,
+            pr_body_template: None,
         created_at: now,
         updated_at: now,
     };

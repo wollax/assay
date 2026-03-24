@@ -18,7 +18,7 @@
 - [x] **T01: Milestone type extension + TOML round-trip**
   Add `pr_labels`, `pr_reviewers`, `pr_body_template` to `Milestone` in assay-types with serde(default, skip_serializing_if). Update schema snapshot. Write TOML round-trip tests proving backward compatibility.
 
-- [ ] **T02: PR body template rendering + core PR function update**
+- [x] **T02: PR body template rendering + core PR function update**
   Add template rendering (str::replace on 4 placeholders) and update `pr_create_if_gates_pass()` to read labels/reviewers/template from the loaded milestone and pass them as `--label`/`--reviewer`/`--body` args to `gh`. Write integration tests with mock `gh` binary.
 
 - [ ] **T03: CLI flags + MCP params + wiring**

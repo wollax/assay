@@ -3491,6 +3491,8 @@ impl AssayServer {
                 &p.milestone_slug,
                 &p.title,
                 p.body.as_deref(),
+                &[],
+                &[],
             )
         })
         .await

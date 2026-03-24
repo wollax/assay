@@ -57,6 +57,8 @@ fn pr_create_cmd(
         &milestone,
         &effective_title,
         body.as_deref(),
+        &[],
+        &[],
     ) {
         Ok(result) => {
             println!("PR created: #{} — {}", result.pr_number, result.pr_url);

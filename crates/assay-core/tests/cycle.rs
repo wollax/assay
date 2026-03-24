@@ -39,6 +39,9 @@ fn make_milestone_with_status(
         pr_base: None,
         pr_number: None,
         pr_url: None,
+        pr_labels: None,
+        pr_reviewers: None,
+        pr_body_template: None,
         created_at: now,
         updated_at: now,
     }
@@ -352,6 +355,9 @@ fn test_milestone_phase_transition_valid() {
         pr_base: None,
         pr_number: None,
         pr_url: None,
+        pr_labels: None,
+        pr_reviewers: None,
+        pr_body_template: None,
         created_at: now,
         updated_at: now,
     };
@@ -391,6 +397,9 @@ fn test_milestone_phase_transition_invalid() {
             pr_base: None,
             pr_number: None,
             pr_url: None,
+        pr_labels: None,
+        pr_reviewers: None,
+        pr_body_template: None,
             created_at: now,
             updated_at: now,
         }
