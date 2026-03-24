@@ -74,6 +74,21 @@ pub trait SshClient {
         local_path: &std::path::Path,
         remote_dest: &str,
     ) -> anyhow::Result<()>;
+
+    /// Copy a remote file or directory to a local destination.
+    ///
+    /// `remote_src` is a path on the remote host (e.g. `/tmp/.smelt/runs/my-job/`).
+    /// The method builds the `user@host:<remote_src>` spec internally.
+    ///
+    /// Note: `SubprocessSshClient` adds `-r` for recursive copy; other
+    /// implementations may handle recursion differently.
+    async fn scp_from(
+        &self,
+        worker: &WorkerConfig,
+        timeout_secs: u64,
+        remote_src: &str,
+        local_dest: &std::path::Path,
+    ) -> anyhow::Result<()>;
 }
 
 // ---------------------------------------------------------------------------
@@ -318,6 +333,68 @@ impl SshClient for SubprocessSshClient {
 
         Ok(())
     }
+
+    async fn scp_from(
+        &self,
+        worker: &WorkerConfig,
+        timeout_secs: u64,
+        remote_src: &str,
+        local_dest: &std::path::Path,
+    ) -> anyhow::Result<()> {
+        let scp = Self::scp_binary()?;
+        let remote_spec = format!("{}@{}:{}", worker.user, worker.host, remote_src);
+        let local_str = local_dest.to_string_lossy();
+        let extra: &[&str] = &["-r", &remote_spec, &local_str];
+        let args = Self::build_scp_args(worker, timeout_secs, extra);
+
+        debug!(
+            host = %worker.host,
+            remote_src = %remote_src,
+            local_dest = %local_dest.display(),
+            "scp_from entry"
+        );
+
+        let output = Command::new(&scp)
+            .args(&args)
+            .output()
+            .await
+            .map_err(|e| anyhow!("failed to spawn scp for host {}: {}", worker.host, e))?;
+
+        let exit_code = match output.status.code() {
+            Some(code) => code,
+            None => {
+                // Process killed by signal (Unix) — log the signal number.
+                #[cfg(unix)]
+                {
+                    use std::os::unix::process::ExitStatusExt;
+                    let sig = output.status.signal();
+                    warn!(
+                        host = %worker.host,
+                        signal = ?sig,
+                        "scp_from killed by signal"
+                    );
+                }
+                -1
+            }
+        };
+        if exit_code != 0 {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            warn!(
+                host = %worker.host,
+                exit_code = exit_code,
+                stderr = %stderr.trim(),
+                "scp_from non-zero exit"
+            );
+            return Err(anyhow!(
+                "scp from {} failed: exit_code={} stderr={}",
+                worker.host,
+                exit_code,
+                stderr.trim()
+            ));
+        }
+
+        Ok(())
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -340,6 +417,44 @@ pub async fn deliver_manifest<C: SshClient>(
         .scp_to(worker, timeout_secs, local_manifest, &remote_dest)
         .await?;
     Ok(remote_path)
+}
+
+/// SCP the remote `.smelt/runs/<job_name>/` directory back to the local
+/// filesystem so `smelt status` can read job state after remote execution.
+///
+/// `job_name` is the manifest's `[job] name` field (not the queue `JobId`) —
+/// it must match what `smelt run` uses to compute its state directory.
+///
+/// Creates the local target directory (`local_dest_dir/.smelt/runs/<job_name>/`)
+/// before calling `scp_from`.
+pub async fn sync_state_back<C: SshClient>(
+    client: &C,
+    worker: &WorkerConfig,
+    timeout_secs: u64,
+    job_name: &str,
+    local_dest_dir: &std::path::Path,
+) -> anyhow::Result<()> {
+    let remote_src = format!("/tmp/.smelt/runs/{}/", job_name);
+    let local_target = local_dest_dir.join(".smelt/runs").join(job_name);
+
+    debug!(
+        host = %worker.host,
+        job_name = %job_name,
+        local_dest_dir = %local_dest_dir.display(),
+        "sync_state_back entry"
+    );
+
+    std::fs::create_dir_all(&local_target).map_err(|e| {
+        anyhow!(
+            "failed to create local state dir {}: {}",
+            local_target.display(),
+            e
+        )
+    })?;
+
+    client
+        .scp_from(worker, timeout_secs, &remote_src, &local_target)
+        .await
 }
 
 /// SSH exec `smelt run <remote_manifest_path>` on the worker, returning the
@@ -383,6 +498,7 @@ mod tests {
         exec_results: Arc<Mutex<VecDeque<anyhow::Result<SshOutput>>>>,
         probe_results: Arc<Mutex<VecDeque<anyhow::Result<()>>>>,
         scp_results: Arc<Mutex<VecDeque<anyhow::Result<()>>>>,
+        scp_from_results: Arc<Mutex<VecDeque<anyhow::Result<()>>>>,
     }
 
     impl MockSshClient {
@@ -391,6 +507,7 @@ mod tests {
                 exec_results: Arc::new(Mutex::new(VecDeque::new())),
                 probe_results: Arc::new(Mutex::new(VecDeque::new())),
                 scp_results: Arc::new(Mutex::new(VecDeque::new())),
+                scp_from_results: Arc::new(Mutex::new(VecDeque::new())),
             }
         }
 
@@ -407,6 +524,11 @@ mod tests {
         #[allow(dead_code)]
         pub fn with_probe_result(self, result: anyhow::Result<()>) -> Self {
             self.probe_results.lock().unwrap().push_back(result);
+            self
+        }
+
+        pub fn with_scp_from_result(self, result: anyhow::Result<()>) -> Self {
+            self.scp_from_results.lock().unwrap().push_back(result);
             self
         }
     }
@@ -449,6 +571,20 @@ mod tests {
                 .unwrap()
                 .pop_front()
                 .unwrap_or_else(|| Err(anyhow!("MockSshClient: no scp results configured")))
+        }
+
+        async fn scp_from(
+            &self,
+            _worker: &WorkerConfig,
+            _timeout_secs: u64,
+            _remote_src: &str,
+            _local_dest: &std::path::Path,
+        ) -> anyhow::Result<()> {
+            self.scp_from_results
+                .lock()
+                .unwrap()
+                .pop_front()
+                .unwrap_or_else(|| Err(anyhow!("MockSshClient: no scp_from results configured")))
         }
     }
 
@@ -622,6 +758,137 @@ mod tests {
         let result = run_remote_job(&client, &worker, 10, "/tmp/smelt-job-1.toml").await;
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 2);
+    }
+
+    // -----------------------------------------------------------------------
+    // scp_from unit tests
+    // -----------------------------------------------------------------------
+
+    /// Verifies that build_scp_args with `-r` produces the expected args:
+    /// - `-r` flag is present
+    /// - Remote spec comes before local path
+    /// - Uses uppercase `-P` for custom port (not lowercase `-p`)
+    #[test]
+    fn test_scp_from_args_recursive() {
+        let worker = WorkerConfig {
+            host: "remote".to_string(),
+            user: "bob".to_string(),
+            key_env: "SMELT_SSH_KEY_NONEXISTENT_XYZ".to_string(),
+            port: 2222,
+        };
+        let remote_spec = "bob@remote:/home/bob/.smelt/runs/job-1";
+        let local_dest = "/tmp/local-state";
+        let args = SubprocessSshClient::build_scp_args(
+            &worker,
+            5,
+            &["-r", remote_spec, local_dest],
+        );
+        let args_str: Vec<&str> = args.iter().map(String::as_str).collect();
+
+        // -r flag present
+        assert!(
+            args_str.contains(&"-r"),
+            "expected -r flag in scp_from args: {args_str:?}"
+        );
+
+        // Remote spec comes before local path in the extra_args portion
+        let r_pos = args_str.iter().position(|&a| a == remote_spec).unwrap();
+        let l_pos = args_str.iter().position(|&a| a == local_dest).unwrap();
+        assert!(
+            r_pos < l_pos,
+            "remote spec should come before local dest: remote@{r_pos}, local@{l_pos}"
+        );
+
+        // Uppercase -P for port, not lowercase -p
+        assert!(
+            args_str.windows(2).any(|w| w == ["-P", "2222"]),
+            "expected uppercase -P 2222 in scp args: {args_str:?}"
+        );
+        assert!(
+            !args_str.contains(&"-p"),
+            "scp should use -P (uppercase), not -p: {args_str:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_scp_from_mock_success() {
+        let client = MockSshClient::new().with_scp_from_result(Ok(()));
+        let worker = test_worker();
+        let local_dest = std::path::Path::new("/tmp/local-state");
+
+        let result = client
+            .scp_from(&worker, 5, "/remote/.smelt/runs/job-1", local_dest)
+            .await;
+        assert!(
+            result.is_ok(),
+            "scp_from mock success should return Ok: {:?}",
+            result.err()
+        );
+    }
+
+    #[tokio::test]
+    async fn test_scp_from_mock_failure() {
+        let client = MockSshClient::new()
+            .with_scp_from_result(Err(anyhow!("scp failed: connection refused")));
+        let worker = test_worker();
+        let local_dest = std::path::Path::new("/tmp/local-state");
+
+        let result = client
+            .scp_from(&worker, 5, "/remote/.smelt/runs/job-1", local_dest)
+            .await;
+        assert!(result.is_err(), "scp_from mock failure should return Err");
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("connection refused"),
+            "error should contain original message: {err_msg}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // sync_state_back unit tests
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn test_sync_state_back_mock_success() {
+        let client = MockSshClient::new().with_scp_from_result(Ok(()));
+        let worker = test_worker();
+        let tmp = tempfile::TempDir::new().unwrap();
+
+        let result = sync_state_back(&client, &worker, 5, "test-job", tmp.path()).await;
+        assert!(
+            result.is_ok(),
+            "sync_state_back should succeed: {:?}",
+            result.err()
+        );
+
+        // Verify local directory was created
+        let expected_dir = tmp.path().join(".smelt/runs/test-job");
+        assert!(
+            expected_dir.exists(),
+            "expected local dir to exist: {}",
+            expected_dir.display()
+        );
+        assert!(
+            expected_dir.is_dir(),
+            "expected local path to be a directory: {}",
+            expected_dir.display()
+        );
+    }
+
+    #[tokio::test]
+    async fn test_sync_state_back_mock_failure() {
+        let client =
+            MockSshClient::new().with_scp_from_result(Err(anyhow!("scp failed")));
+        let worker = test_worker();
+        let tmp = tempfile::TempDir::new().unwrap();
+
+        let result = sync_state_back(&client, &worker, 5, "test-job", tmp.path()).await;
+        assert!(result.is_err(), "sync_state_back should propagate scp_from error");
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("scp failed"),
+            "error should contain original message: {err_msg}"
+        );
     }
 
     // -----------------------------------------------------------------------

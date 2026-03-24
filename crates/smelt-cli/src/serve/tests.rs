@@ -876,3 +876,104 @@ fn test_tui_render_no_panic() {
     }
     terminal.draw(|frame| render(frame, &state)).unwrap();
 }
+
+// ──────────────────────────────────────────────
+// M008/S03 gated integration test — state sync round-trip
+// ──────────────────────────────────────────────
+
+/// Create state on a remote host via ssh exec, sync it back via
+/// `sync_state_back()`, and verify the local copy is valid TOML.
+///
+/// Requires: `SMELT_SSH_TEST=1`, sshd on localhost, current user can auth.
+#[tokio::test]
+#[ignore]
+async fn test_state_sync_round_trip() {
+    if std::env::var("SMELT_SSH_TEST").is_err() {
+        return;
+    }
+
+    use tempfile::TempDir;
+
+    use crate::serve::config::WorkerConfig;
+    use crate::serve::ssh::{SubprocessSshClient, SshClient, sync_state_back};
+
+    let user = std::env::var("USER")
+        .or_else(|_| std::env::var("LOGNAME"))
+        .unwrap_or_else(|_| "root".to_string());
+
+    let worker = WorkerConfig {
+        host: "127.0.0.1".to_string(),
+        user,
+        key_env: "SMELT_SSH_KEY".to_string(),
+        port: 22,
+    };
+
+    let client = SubprocessSshClient;
+
+    // Use a unique job name to avoid collisions with parallel test runs.
+    let random_suffix: u64 = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos() as u64;
+    let job_name = format!("sync-test-{}", random_suffix);
+    let remote_dir = format!("/tmp/.smelt/runs/{}", job_name);
+
+    // Create remote state directory and write a valid state.toml.
+    let state_toml = format!(
+        r#"job_name = "{job_name}"
+phase = "Complete"
+sessions = ["main"]
+started_at = 1000000
+updated_at = 1000001
+pid = 12345
+"#
+    );
+    let create_cmd = format!(
+        "mkdir -p {remote_dir} && cat > {remote_dir}/state.toml << 'SMELT_EOF'\n{state_toml}SMELT_EOF"
+    );
+    let create_out = client
+        .exec(&worker, 5, &create_cmd)
+        .await
+        .expect("create remote state dir");
+    assert_eq!(
+        create_out.exit_code, 0,
+        "remote mkdir+cat should succeed, stderr: {}",
+        create_out.stderr.trim()
+    );
+
+    // Sync state back to a local tempdir.
+    let local_dir = TempDir::new().unwrap();
+    sync_state_back(&client, &worker, 5, &job_name, local_dir.path())
+        .await
+        .expect("sync_state_back should succeed");
+
+    // Verify local file exists and is valid TOML.
+    let local_state_path = local_dir
+        .path()
+        .join(".smelt/runs")
+        .join(&job_name)
+        .join("state.toml");
+    assert!(
+        local_state_path.exists(),
+        "local state.toml should exist at {}",
+        local_state_path.display()
+    );
+
+    let content = std::fs::read_to_string(&local_state_path).expect("read local state.toml");
+    let parsed: toml::Value = toml::from_str(&content).expect("local state.toml should be valid TOML");
+    assert_eq!(
+        parsed["job_name"].as_str().unwrap(),
+        job_name,
+        "job_name should match"
+    );
+    assert_eq!(
+        parsed["phase"].as_str().unwrap(),
+        "Complete",
+        "phase should be Complete"
+    );
+
+    // Clean up remote dir — best-effort.
+    let _ = client
+        .exec(&worker, 5, &format!("rm -rf {remote_dir}"))
+        .await;
+}
