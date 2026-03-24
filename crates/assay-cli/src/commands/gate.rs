@@ -9,8 +9,8 @@ const EVIDENCE_DISPLAY_CHARS: usize = 200;
 
 use super::{
     ANSI_COLOR_OVERHEAD, assay_dir, colors_enabled, criterion_label, format_count,
-    format_duration_ms, format_fail, format_pass, format_relative_timestamp, format_warn,
-    gate_kind_label, project_root,
+    format_duration_ms, format_fail, format_pass, format_relative_timestamp, gate_kind_label,
+    project_root,
 };
 
 #[derive(Subcommand)]
@@ -248,9 +248,8 @@ fn stream_criterion(
     // AgentReport criteria are pending (not evaluable via CLI)
     if criterion.kind == Some(assay_types::CriterionKind::AgentReport) {
         counters.skipped += 1;
-        let cr = if cfg.color { "\r\x1b[K" } else { "\r" };
         let label = criterion_label(criterion);
-        eprintln!("{cr}  {label} {} ... pending", criterion.name);
+        tracing::info!(criterion_name = %criterion.name, kind = %label, status = "pending", "Criterion pending (agent-report)");
         return;
     }
 
@@ -264,31 +263,17 @@ fn stream_criterion(
     let timeout =
         assay_core::gate::resolve_timeout(cfg.cli_timeout, criterion.timeout, cfg.config_timeout);
 
-    let advisory_tag = if is_advisory { " [advisory]" } else { "" };
-
     match assay_core::gate::evaluate(criterion, working_dir, timeout) {
         Ok(result) => {
             if result.passed {
                 counters.passed += 1;
-                eprintln!(
-                    "{cr}  {label}{advisory_tag} {} ... {}",
-                    criterion.name,
-                    format_pass(cfg.color)
-                );
+                tracing::info!(criterion_name = %criterion.name, passed = true, advisory = is_advisory, "Criterion passed");
             } else if is_advisory {
                 counters.warned += 1;
-                eprintln!(
-                    "{cr}  {label}{advisory_tag} {} ... {}",
-                    criterion.name,
-                    format_warn(cfg.color)
-                );
+                tracing::warn!(criterion_name = %criterion.name, passed = false, advisory = true, "Criterion warned");
             } else {
                 counters.failed += 1;
-                eprintln!(
-                    "{cr}  {label} {} ... {}",
-                    criterion.name,
-                    format_fail(cfg.color)
-                );
+                tracing::error!(criterion_name = %criterion.name, passed = false, "Criterion failed");
             }
 
             // Show actionable hint for exit code 127/126
@@ -298,7 +283,7 @@ fn stream_criterion(
                 && let Some(cmd) = criterion.cmd.as_deref()
             {
                 let hint = assay_core::gate::format_command_error(cmd, kind);
-                eprintln!("    {hint}");
+                tracing::error!(hint = %hint, "Command error");
             }
 
             if !result.passed || cfg.verbose {
@@ -306,16 +291,13 @@ fn stream_criterion(
             }
         }
         Err(err) => {
-            let (tag, status) = if is_advisory {
+            if is_advisory {
                 counters.warned += 1;
-                (advisory_tag, format_warn(cfg.color))
+                tracing::warn!(criterion_name = %criterion.name, advisory = true, error = %assay_core::gate::enriched_error_display(&err, criterion.cmd.as_deref()), "Criterion error (advisory)");
             } else {
                 counters.failed += 1;
-                ("", format_fail(cfg.color))
+                tracing::error!(criterion_name = %criterion.name, error = %assay_core::gate::enriched_error_display(&err, criterion.cmd.as_deref()), "Criterion error");
             };
-            eprintln!("{cr}  {label}{tag} {} ... {status}", criterion.name);
-            let display = assay_core::gate::enriched_error_display(&err, criterion.cmd.as_deref());
-            eprintln!("    {display}");
         }
     }
 }
@@ -380,7 +362,7 @@ fn handle_gate_run_all(cli_timeout: Option<u64>, verbose: bool, json: bool) -> a
     let result = assay_core::spec::scan(&specs_dir)?;
 
     for err in &result.errors {
-        eprintln!("Warning: {err}");
+        tracing::warn!(error = %err, "Spec scan warning");
     }
 
     if result.entries.is_empty() {
@@ -442,15 +424,15 @@ fn handle_gate_run_all(cli_timeout: Option<u64>, verbose: bool, json: bool) -> a
 
     for (i, entry) in result.entries.iter().enumerate() {
         if i > 0 {
-            eprintln!();
+            tracing::debug!("---");
         }
-        eprintln!("--- {} ---", entry.slug());
+        tracing::info!(spec = %entry.slug(), "Running gates for spec");
 
         let (gate_section, criteria) = spec_entry_gate_info(entry);
 
         let executable_count = criteria.iter().filter(|c| is_executable(c)).count();
         if executable_count == 0 {
-            eprintln!("  No executable criteria");
+            tracing::info!(spec = %entry.slug(), "No executable criteria");
             counters.skipped += criteria.len();
             continue;
         }
@@ -597,11 +579,11 @@ fn save_run_record(
     ) {
         Ok(result) => {
             if result.pruned > 0 && !suppress_prune_msg {
-                eprintln!("Pruned {} old run(s) for {name}", result.pruned);
+                tracing::info!(pruned = result.pruned, spec_name = %name, "Pruned old run(s)");
             }
         }
         Err(e) => {
-            eprintln!("Warning: could not save run history: {e}");
+            tracing::warn!(error = %e, "Could not save run history");
         }
     }
 }
@@ -637,7 +619,7 @@ fn handle_gate_history(name: &str, json: bool, limit: usize) -> anyhow::Result<i
         .filter_map(|id| match assay_core::history::load(&assay_dir, name, id) {
             Ok(r) => Some(r),
             Err(e) => {
-                eprintln!("Warning: skipping run {id}: {e}");
+                tracing::warn!(run_id = %id, error = %e, "Skipping corrupt run");
                 None
             }
         })
@@ -830,28 +812,17 @@ fn handle_gate_history_detail(name: &str, run_id: &str, json: bool) -> anyhow::R
 ///
 /// Multi-line output is indented with 4 spaces per line. If the output
 /// was truncated, a note is appended.
-fn print_evidence(stdout: &str, stderr: &str, truncated: bool, color: bool) {
+fn print_evidence(stdout: &str, stderr: &str, truncated: bool, _color: bool) {
     let stdout = stdout.trim();
     let stderr = stderr.trim();
 
     if !stdout.is_empty() {
-        eprintln!("    stdout:");
-        for line in stdout.lines() {
-            eprintln!("      {line}");
-        }
+        tracing::debug!(stream = "stdout", output = %stdout, "Criterion evidence");
     }
     if !stderr.is_empty() {
-        eprintln!("    stderr:");
-        for line in stderr.lines() {
-            eprintln!("      {line}");
-        }
+        tracing::debug!(stream = "stderr", output = %stderr, "Criterion evidence");
     }
     if truncated {
-        let note = if color {
-            "\x1b[33m[output truncated]\x1b[0m"
-        } else {
-            "[output truncated]"
-        };
-        eprintln!("    {note}");
+        tracing::debug!("Criterion output truncated");
     }
 }

@@ -272,14 +272,10 @@ fn handle_generate(
     let config = generate_for_adapter(adapter, &profile)?;
     let files = config.files();
 
-    // Print config summary to stdout.
-    eprintln!(
-        "Generated {} file(s) for adapter '{}':",
-        files.len(),
-        adapter
-    );
+    // Print config summary.
+    tracing::info!(file_count = files.len(), adapter = %adapter, "Generated config");
     for (path, content) in &files {
-        eprintln!("  {path} ({} bytes)", content.len());
+        tracing::info!(path = %path, bytes = content.len(), "Generated file");
     }
 
     // Print file contents to stdout for piping.
@@ -294,7 +290,7 @@ fn handle_generate(
         std::fs::create_dir_all(&dir_path)
             .with_context(|| format!("failed to create output dir: {}", dir_path.display()))?;
         config.write(&dir_path)?;
-        eprintln!("Wrote config to {}", dir_path.display());
+        tracing::info!(output_dir = %dir_path.display(), "Wrote config");
     }
 
     Ok(0)
@@ -312,14 +308,9 @@ fn handle_install(adapter: &str, spec: Option<&str>) -> anyhow::Result<i32> {
     config.write(&root)?;
 
     let files = config.files();
-    eprintln!(
-        "Installed {} file(s) for adapter '{}' into {}:",
-        files.len(),
-        adapter,
-        root.display()
-    );
+    tracing::info!(file_count = files.len(), adapter = %adapter, root = %root.display(), "Installed config");
     for (path, _) in &files {
-        eprintln!("  {path}");
+        tracing::info!(path = %path, "Installed file");
     }
 
     Ok(0)
@@ -366,26 +357,26 @@ fn handle_diff(adapter: &str, spec: Option<&str>) -> anyhow::Result<i32> {
     let has_changes = !added.is_empty() || !changed.is_empty() || !removed.is_empty();
 
     if !has_changes {
-        eprintln!("No changes detected for adapter '{adapter}'.");
+        tracing::info!(adapter = %adapter, "No changes detected");
         return Ok(0);
     }
 
-    eprintln!("Diff for adapter '{adapter}':");
+    tracing::info!(adapter = %adapter, "Diff results");
     for path in &added {
-        eprintln!("  + {path} (added)");
+        tracing::info!(path = %path, change = "added", "Diff entry");
     }
     for path in &changed {
-        eprintln!("  ~ {path} (changed)");
+        tracing::info!(path = %path, change = "changed", "Diff entry");
     }
     for path in &removed {
-        eprintln!("  - {path} (removed)");
+        tracing::info!(path = %path, change = "removed", "Diff entry");
     }
-    eprintln!(
-        "\n{} added, {} changed, {} removed, {} unchanged",
-        added.len(),
-        changed.len(),
-        removed.len(),
-        unchanged.len()
+    tracing::info!(
+        added = added.len(),
+        changed = changed.len(),
+        removed = removed.len(),
+        unchanged = unchanged.len(),
+        "Diff summary"
     );
 
     Ok(1) // Exit code 1 indicates changes detected.

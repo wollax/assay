@@ -65,7 +65,7 @@
   - Verify: `grep -rn 'eprintln!' crates/assay-core/src/ --include='*.rs'` returns zero; `cargo test -p assay-core` passes
   - Done when: Zero eprintln in assay-core, all existing tests pass
 
-- [ ] **T04: Migrate assay-cli eprintln calls to tracing macros (batch 1: run, gate, harness)** `est:45m`
+- [x] **T04: Migrate assay-cli eprintln calls to tracing macros (batch 1: run, gate, harness)** `est:45m`
   - Why: The three highest-count files (run.rs: 31, gate.rs: 19, harness.rs: 11) account for 61 of 94 CLI eprintln calls — this is the bulk migration
   - Files: `crates/assay-cli/src/commands/run.rs`, `crates/assay-cli/src/commands/gate.rs`, `crates/assay-cli/src/commands/harness.rs`
   - Do: Migrate each eprintln individually — user-facing progress banners → `info!`, error reports → `error!`, warnings → `warn!`, diagnostic details → `debug!`. Keep the 1 `eprint!` (no newline) in gate.rs for live criterion progress (it uses carriage returns — not a tracing event). For run.rs result tables (`[✓] name — completed`), use `info!` with structured fields. For gate.rs ANSI formatting, strip ANSI codes from tracing messages (fmt layer handles coloring). Check for any test that captures stderr — update assertions if needed.
