@@ -408,11 +408,10 @@ impl JobManifest {
                         path.push(dep.clone());
                         return Some(path.join(" -> "));
                     }
-                    if state[dep_idx] == 0 {
-                        if let Some(cycle) = dfs(dep_idx, sessions, name_to_idx, state, path) {
+                    if state[dep_idx] == 0
+                        && let Some(cycle) = dfs(dep_idx, sessions, name_to_idx, state, path) {
                             return Some(cycle);
                         }
-                    }
                 }
             }
 
@@ -423,11 +422,10 @@ impl JobManifest {
 
         let mut path = Vec::new();
         for i in 0..sessions.len() {
-            if state[i] == 0 {
-                if let Some(cycle) = dfs(i, sessions, &name_to_idx, &mut state, &mut path) {
+            if state[i] == 0
+                && let Some(cycle) = dfs(i, sessions, &name_to_idx, &mut state, &mut path) {
                     return Some(cycle);
                 }
-            }
         }
         None
     }
@@ -508,9 +506,9 @@ pub fn resolve_repo_path(repo: &str) -> crate::Result<PathBuf> {
     }
 
     // Reject SCP-style SSH syntax: user@host:path
-    if let Some(at_pos) = repo.find('@') {
-        if let Some(colon_pos) = repo.find(':') {
-            if at_pos < colon_pos {
+    if let Some(at_pos) = repo.find('@')
+        && let Some(colon_pos) = repo.find(':')
+            && at_pos < colon_pos {
                 return Err(SmeltError::Manifest {
                     field: "job.repo".to_string(),
                     message: format!(
@@ -518,8 +516,6 @@ pub fn resolve_repo_path(repo: &str) -> crate::Result<PathBuf> {
                     ),
                 });
             }
-        }
-    }
 
     // Canonicalize (resolves relative paths, symlinks, verifies existence)
     std::fs::canonicalize(repo).map_err(|e| SmeltError::Manifest {

@@ -221,11 +221,10 @@ impl ServerState {
         } else {
             false
         };
-        if cancelled {
-            if let Some(ref dir) = self.queue_dir {
+        if cancelled
+            && let Some(ref dir) = self.queue_dir {
                 write_queue_state(dir, &self.jobs);
             }
-        }
         cancelled
     }
 

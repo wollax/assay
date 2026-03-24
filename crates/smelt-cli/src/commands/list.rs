@@ -44,10 +44,10 @@ pub async fn execute(args: &ListArgs) -> Result<i32> {
         // Emit header before first data row
         if !header_printed {
             println!(
-                "  {:<20}  {:<15}  {:<8}  {}",
-                "JOB", "PHASE", "ELAPSED", "PR URL"
+                "  {:<20}  {:<15}  {:<8}  PR URL",
+                "JOB", "PHASE", "ELAPSED"
             );
-            println!("  {:-<20}  {:-<15}  {:-<8}  {}", "", "", "", "------");
+            println!("  {:-<20}  {:-<15}  {:-<8}  ------", "", "", "");
             header_printed = true;
         }
 

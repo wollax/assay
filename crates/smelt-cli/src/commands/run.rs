@@ -164,11 +164,10 @@ where
     info!("manifest validation passed");
 
     // Phase 3.5: Ensure .assay/ is in .gitignore for the repo
-    if let Ok(repo_path) = manifest::resolve_repo_path(&manifest.job.repo) {
-        if let Err(e) = ensure_gitignore_assay(&repo_path) {
+    if let Ok(repo_path) = manifest::resolve_repo_path(&manifest.job.repo)
+        && let Err(e) = ensure_gitignore_assay(&repo_path) {
             eprintln!("[WARN] could not update .gitignore: {e:#}");
         }
-    }
 
     // Compute state dir and timeout
     let state_dir = args

@@ -42,8 +42,8 @@ fn tui_loop(
         }
         terminal.draw(|frame| render(frame, &state))?;
         // Poll for key events without blocking (non-blocking check)
-        if event::poll(Duration::from_millis(250))? {
-            if let Event::Key(key) = event::read()? {
+        if event::poll(Duration::from_millis(250))?
+            && let Event::Key(key) = event::read()? {
                 match key.code {
                     KeyCode::Char('q') => {
                         shutdown.store(true, Ordering::SeqCst);
@@ -58,7 +58,6 @@ fn tui_loop(
                     _ => {}
                 }
             }
-        }
     }
     Ok(())
 }

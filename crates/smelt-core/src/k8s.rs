@@ -351,15 +351,13 @@ impl RuntimeProvider for KubernetesProvider {
             let status = fetched.status.as_ref();
 
             // Check init container (git-clone)
-            if !init_done {
-                if let Some(init_statuses) =
+            if !init_done
+                && let Some(init_statuses) =
                     status.and_then(|s| s.init_container_statuses.as_ref())
-                {
-                    if let Some(git_clone) =
+                    && let Some(git_clone) =
                         init_statuses.iter().find(|c| c.name == "git-clone")
-                    {
-                        if let Some(state) = &git_clone.state {
-                            if let Some(terminated) = &state.terminated {
+                        && let Some(state) = &git_clone.state
+                            && let Some(terminated) = &state.terminated {
                                 if terminated.exit_code == 0 {
                                     init_done = true;
                                 } else {
@@ -372,25 +370,19 @@ impl RuntimeProvider for KubernetesProvider {
                                     ));
                                 }
                             }
-                        }
-                    }
-                }
-            }
 
             // Check main container (smelt-agent)
-            if !main_running {
-                if let Some(container_statuses) =
+            if !main_running
+                && let Some(container_statuses) =
                     status.and_then(|s| s.container_statuses.as_ref())
-                {
-                    if let Some(agent) =
+                    && let Some(agent) =
                         container_statuses.iter().find(|c| c.name == "smelt-agent")
-                    {
-                        if let Some(state) = &agent.state {
+                        && let Some(state) = &agent.state {
                             if state.running.is_some() {
                                 main_running = true;
-                            } else if let Some(waiting) = &state.waiting {
-                                if let Some(reason) = &waiting.reason {
-                                    if reason == "ImagePullBackOff" || reason == "ErrImagePull" {
+                            } else if let Some(waiting) = &state.waiting
+                                && let Some(reason) = &waiting.reason
+                                    && (reason == "ImagePullBackOff" || reason == "ErrImagePull") {
                                         return Err(SmeltError::provider(
                                             "k8s",
                                             format!(
@@ -398,12 +390,7 @@ impl RuntimeProvider for KubernetesProvider {
                                             ),
                                         ));
                                     }
-                                }
-                            }
                         }
-                    }
-                }
-            }
 
             if init_done && main_running {
                 break;

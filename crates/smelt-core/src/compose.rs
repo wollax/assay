@@ -212,11 +212,10 @@ impl RuntimeProvider for ComposeProvider {
                     .to_string();
 
                 // Capture agent container ID.
-                if service == "smelt-agent" {
-                    if let Some(id) = val.get("ID").and_then(|v| v.as_str()) {
+                if service == "smelt-agent"
+                    && let Some(id) = val.get("ID").and_then(|v| v.as_str()) {
                         agent_container_id = Some(id.to_string());
                     }
-                }
 
                 // Readiness logic per the NDJSON strategy in the research doc.
                 //
@@ -296,13 +295,11 @@ impl RuntimeProvider for ComposeProvider {
                 if line.is_empty() {
                     continue;
                 }
-                if let Ok(val) = serde_json::from_str::<serde_json::Value>(line) {
-                    if val.get("Service").and_then(|v| v.as_str()) == Some("smelt-agent") {
-                        if let Some(id) = val.get("ID").and_then(|v| v.as_str()) {
+                if let Ok(val) = serde_json::from_str::<serde_json::Value>(line)
+                    && val.get("Service").and_then(|v| v.as_str()) == Some("smelt-agent")
+                        && let Some(id) = val.get("ID").and_then(|v| v.as_str()) {
                             agent_container_id = Some(id.to_string());
                         }
-                    }
-                }
             }
         }
 

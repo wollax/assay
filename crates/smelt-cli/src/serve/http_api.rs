@@ -54,7 +54,7 @@ impl From<&QueuedJob> for JobStateResponse {
             status: status_str.to_string(),
             attempt: job.attempt,
             queued_age_secs: elapsed_secs_since(job.queued_at) as u64,
-            elapsed_secs: job.started_at.map(|t| elapsed_secs_since(t)),
+            elapsed_secs: job.started_at.map(elapsed_secs_since),
             worker_host: job.worker_host.clone(),
         }
     }
