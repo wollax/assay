@@ -264,7 +264,10 @@ async fn main() {
     let code = match run().await {
         Ok(code) => code,
         Err(e) => {
-            tracing::error!(error = format!("{e:#}"), "Fatal error");
+            // eprintln! intentional: _tracing_guard dropped when run() returned,
+            // so the non-blocking writer channel is closed. Direct stderr is the
+            // only reliable output path here.
+            eprintln!("Error: {e:#}");
             1
         }
     };

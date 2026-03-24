@@ -46,9 +46,9 @@ fn handle_analytics(json: bool) -> anyhow::Result<i32> {
             return Ok(1);
         }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            tracing::error!("Not an Assay project (no .assay directory found)");
-            tracing::info!(
-                "Run `assay init` to initialise a project, then run some gates to build history."
+            tracing::error!(
+                "Not an Assay project (no .assay directory found). \
+                 Run `assay init` to initialise a project, then run some gates to build history."
             );
             return Ok(1);
         }

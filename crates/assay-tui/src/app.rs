@@ -231,8 +231,8 @@ impl App {
                 match assay_core::config::load(root) {
                     Ok(cfg) => Some(cfg),
                     Err(e) => {
-                        // Config file exists but is unreadable — surface as status-bar
-                        // warning via eprintln (not silently swallowed).
+                        // Config file exists but is unreadable — surface as a warning
+                        // (not silently swallowed).
                         tracing::warn!(error = %e, "Failed to load .assay/config.toml");
                         None
                     }

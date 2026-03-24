@@ -77,14 +77,27 @@ pub struct TracingGuard {
 /// Builds a layered `fmt` subscriber that:
 /// - Writes to stderr via a non-blocking writer
 /// - Respects `RUST_LOG` for filtering, falling back to
-///   [`TracingConfig::default_level`] on parse error
+///   [`TracingConfig::default_level`] on parse error (with a stderr warning)
 /// - Uses [`try_init`](tracing_subscriber::util::SubscriberInitExt::try_init)
-///   so double-init is a silent no-op (safe for tests)
+///   so calling this a second time does not panic; the second subscriber
+///   installation is silently skipped, though a background writer thread
+///   is still spawned and held until the returned guard drops.
 ///
 /// Returns a [`TracingGuard`] whose [`WorkerGuard`] flushes on drop.
 pub fn init_tracing(config: TracingConfig) -> TracingGuard {
-    let filter =
-        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(&config.default_level));
+    let filter = match EnvFilter::try_from_default_env() {
+        Ok(f) => f,
+        Err(e) => {
+            // Emit to stderr directly — the subscriber is not yet established.
+            if std::env::var_os("RUST_LOG").is_some() {
+                eprintln!(
+                    "[assay] warning: RUST_LOG is invalid ({e}); falling back to '{}'",
+                    config.default_level
+                );
+            }
+            EnvFilter::new(&config.default_level)
+        }
+    };
 
     let (non_blocking, worker_guard) = tracing_appender::non_blocking(std::io::stderr());
 
@@ -93,12 +106,19 @@ pub fn init_tracing(config: TracingConfig) -> TracingGuard {
         .with_ansi(config.ansi)
         .with_target(config.with_target);
 
-    // try_init: silent no-op if a subscriber is already set (safe for tests
-    // and binaries that might double-init).
-    let _ = tracing_subscriber::registry()
+    // try_init: skips installation if a subscriber is already set — no panic,
+    // but a background writer thread is still allocated until the guard drops.
+    if let Err(_e) = tracing_subscriber::registry()
         .with(filter)
         .with(fmt_layer)
-        .try_init();
+        .try_init()
+    {
+        eprintln!(
+            "[assay] warning: tracing subscriber already initialized; \
+             this init (default_level='{}') was skipped — first init wins.",
+            config.default_level
+        );
+    }
 
     TracingGuard {
         _worker_guard: worker_guard,
@@ -131,6 +151,15 @@ mod tests {
         // returns a guard. Because try_init is used, this is safe even if
         // another test in the process already initialized a subscriber.
         let _guard = init_tracing(TracingConfig::default());
-        // Guard exists — non-blocking writer is active.
+        // Guard holds a WorkerGuard. If a subscriber was already registered,
+        // the writer is unused but safely cleaned up when the guard drops.
+    }
+
+    #[test]
+    fn test_double_init_is_safe() {
+        // Second call must not panic — try_init silently skips subscriber
+        // installation. The returned guard is still valid and droppable.
+        let _guard1 = init_tracing(TracingConfig::default());
+        let _guard2 = init_tracing(TracingConfig::mcp());
     }
 }

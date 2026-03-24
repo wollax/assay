@@ -604,9 +604,9 @@ fn handle_guard_start(session: Option<&str>) -> anyhow::Result<i32> {
     // Validate guard config
     let errors = assay_core::guard::config::validate(&guard_config);
     if !errors.is_empty() {
-        tracing::error!("Guard configuration errors:");
+        tracing::error!(error_count = errors.len(), "Guard configuration is invalid");
         for e in &errors {
-            tracing::error!(error = %e, "  - {e}");
+            tracing::error!(error = %e, "Guard configuration error");
         }
         return Ok(1);
     }
@@ -625,11 +625,9 @@ fn handle_guard_start(session: Option<&str>) -> anyhow::Result<i32> {
     std::fs::create_dir_all(&guard_dir)
         .with_context(|| format!("creating guard log directory: {}", guard_dir.display()))?;
 
-    // Note: guard daemon previously used a file-based tracing-appender here.
-    // File-based logging will be revisited in S04. For now, the centralized
-    // stderr subscriber (already initialized in main()) is sufficient.
-    // The guard.log file is created but not actively written to until S04.
-    let _ = &guard_dir; // keep guard_dir creation above for S04 file logging
+    // Note: the guard directory is created here for S04, which will add
+    // file-based trace logging. Until then, the centralized stderr subscriber
+    // initialized in main() is sufficient.
 
     tracing::info!(path = %session_path.display(), "[guard] Starting — watching");
     tracing::info!(

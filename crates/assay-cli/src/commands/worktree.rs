@@ -444,6 +444,7 @@ fn handle_worktree_cleanup_all(
     }
 
     let mut removed = Vec::new();
+    let mut failed = Vec::new();
     for entry in &entries {
         // Always use the canonical path reported by `git worktree list`.
         let path = entry.path.clone();
@@ -452,7 +453,8 @@ fn handle_worktree_cleanup_all(
         match assay_core::worktree::cleanup(root, &path, &entry.spec_slug, entry_force) {
             Ok(()) => removed.push(entry.spec_slug.clone()),
             Err(e) => {
-                tracing::warn!(spec_slug = %entry.spec_slug, error = %e, "Failed to remove worktree")
+                tracing::warn!(spec_slug = %entry.spec_slug, error = %e, "Failed to remove worktree");
+                failed.push(entry.spec_slug.clone());
             }
         }
     }
@@ -464,6 +466,14 @@ fn handle_worktree_cleanup_all(
         for name in &removed {
             println!("Removed worktree for '{name}'");
         }
+    }
+
+    if !failed.is_empty() {
+        tracing::error!(
+            failed_count = failed.len(),
+            "Some worktrees could not be removed"
+        );
+        return Ok(1);
     }
 
     Ok(0)

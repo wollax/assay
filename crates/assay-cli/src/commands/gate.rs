@@ -287,7 +287,7 @@ fn stream_criterion(
             }
 
             if !result.passed || cfg.verbose {
-                print_evidence(&result.stdout, &result.stderr, result.truncated, cfg.color);
+                print_evidence(&result.stdout, &result.stderr, result.truncated);
             }
         }
         Err(err) => {
@@ -808,11 +808,11 @@ fn handle_gate_history_detail(name: &str, run_id: &str, json: bool) -> anyhow::R
     Ok(0)
 }
 
-/// Print evidence (stdout/stderr) for a gate result.
+/// Emit stdout/stderr evidence as `tracing::debug!` events.
 ///
-/// Multi-line output is indented with 4 spaces per line. If the output
-/// was truncated, a note is appended.
-fn print_evidence(stdout: &str, stderr: &str, truncated: bool, _color: bool) {
+/// Multi-line content is passed as-is in the `output` field.
+/// A separate event is emitted when the output was truncated by the caller.
+fn print_evidence(stdout: &str, stderr: &str, truncated: bool) {
     let stdout = stdout.trim();
     let stderr = stderr.trim();
 
