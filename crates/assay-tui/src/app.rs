@@ -7,10 +7,14 @@
 use std::path::PathBuf;
 use std::sync::mpsc;
 
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+
 use assay_core::config::save as config_save;
 use assay_core::history;
 use assay_core::milestone::{cycle_status, milestone_load, milestone_scan};
 use assay_core::pipeline::launch_agent_streaming;
+use assay_core::pr::PrStatusInfo;
 use assay_core::spec::{SpecEntry, load_spec_entry_with_diagnostics};
 use assay_core::wizard::create_from_inputs;
 use assay_types::{
@@ -49,6 +53,13 @@ pub enum TuiEvent {
     /// Agent subprocess has exited. `exit_code` is the process return value
     /// (or -1 on spawn error).
     AgentDone { exit_code: i32 },
+    /// Background PR status poll result for a milestone.
+    PrStatusUpdate {
+        /// Milestone slug this status belongs to.
+        slug: String,
+        /// Polled PR status info.
+        info: PrStatusInfo,
+    },
 }
 
 /// Status of the agent run displayed in `Screen::AgentRun`.
@@ -158,6 +169,12 @@ pub struct App {
     pub agent_thread: Option<std::thread::JoinHandle<i32>>,
     /// Slash command overlay state. `Some` when overlay is open.
     pub slash_state: Option<SlashState>,
+    /// Cached PR status info per milestone slug, populated by the background
+    /// polling thread via `TuiEvent::PrStatusUpdate`.
+    pub pr_statuses: HashMap<String, PrStatusInfo>,
+    /// Milestones with a `pr_number`, shared with the background polling
+    /// thread. Each entry is `(slug, pr_number)`.
+    pub poll_targets: Arc<Mutex<Vec<(String, u64)>>>,
 }
 
 impl App {
@@ -219,6 +236,11 @@ impl App {
             }
         });
 
+        let poll_targets: Vec<(String, u64)> = milestones
+            .iter()
+            .filter_map(|m| m.pr_number.map(|n| (m.slug.clone(), n)))
+            .collect();
+
         Ok(App {
             screen,
             milestones,
@@ -235,6 +257,8 @@ impl App {
             event_tx: None,
             agent_thread: None,
             slash_state: None,
+            pr_statuses: HashMap::new(),
+            poll_targets: Arc::new(Mutex::new(poll_targets)),
         })
     }
 
@@ -248,6 +272,27 @@ impl App {
             if lines.len() > 10_000 {
                 lines.remove(0);
             }
+        }
+    }
+
+    /// Store a PR status update from the background polling thread.
+    pub fn handle_pr_status_update(&mut self, slug: String, info: PrStatusInfo) {
+        self.pr_statuses.insert(slug, info);
+    }
+
+    /// Refresh the shared `poll_targets` list from `self.milestones`.
+    ///
+    /// Called whenever `self.milestones` is reloaded from disk so the
+    /// background polling thread picks up newly created PRs or drops
+    /// milestones whose PR was removed.
+    pub fn refresh_poll_targets(&self) {
+        let targets: Vec<(String, u64)> = self
+            .milestones
+            .iter()
+            .filter_map(|m| m.pr_number.map(|n| (m.slug.clone(), n)))
+            .collect();
+        if let Ok(mut guard) = self.poll_targets.lock() {
+            *guard = targets;
         }
     }
 
@@ -269,6 +314,7 @@ impl App {
             let assay_dir = root.join(".assay");
             if let Ok(ms) = milestone_scan(&assay_dir) {
                 self.milestones = ms;
+                self.refresh_poll_targets();
             }
             match cycle_status(&assay_dir) {
                 Ok(status) => {
@@ -422,9 +468,13 @@ impl App {
 
         match &self.screen {
             Screen::NoProject => draw_no_project(frame, content_area),
-            Screen::Dashboard => {
-                draw_dashboard(frame, content_area, &self.milestones, &mut self.list_state)
-            }
+            Screen::Dashboard => draw_dashboard(
+                frame,
+                content_area,
+                &self.milestones,
+                &mut self.list_state,
+                &self.pr_statuses,
+            ),
             Screen::Wizard(state) => draw_wizard(frame, content_area, state),
             Screen::LoadError(msg) => draw_load_error(frame, content_area, msg),
             Screen::MilestoneDetail { .. } => {
@@ -885,6 +935,7 @@ impl App {
                                 match milestone_scan(&assay_dir) {
                                     Ok(loaded) => {
                                         self.milestones = loaded;
+                                        self.refresh_poll_targets();
                                         if let Ok(status) = cycle_status(&assay_dir) {
                                             self.cycle_slug = status.map(|cs| cs.milestone_slug);
                                         }
@@ -1263,12 +1314,18 @@ fn draw_no_project(frame: &mut ratatui::Frame, area: Rect) {
 }
 
 /// Render the milestone dashboard list.
+///
+/// `pr_statuses` provides cached PR badge data per milestone slug (D097 —
+/// pass individual fields, not `&mut App`).
 fn draw_dashboard(
     frame: &mut ratatui::Frame,
     area: Rect,
     milestones: &[Milestone],
     list_state: &mut ListState,
+    pr_statuses: &HashMap<String, PrStatusInfo>,
 ) {
+    use assay_core::pr::PrStatusState;
+
     let [title_area, list_area, hint_area] = Layout::vertical([
         Constraint::Length(1),
         Constraint::Fill(1),
@@ -1290,13 +1347,57 @@ fn draw_dashboard(
             .iter()
             .map(|m| {
                 // Use Display-friendly labels rather than `{:?}` Rust variant names.
-                let status = match m.status {
+                let status_label = match m.status {
                     MilestoneStatus::Draft => "Draft",
                     MilestoneStatus::InProgress => "In Progress",
                     MilestoneStatus::Verify => "Verify",
                     MilestoneStatus::Complete => "✓ Done",
                 };
-                ListItem::new(Line::from(format!("  {status:<12}  {}", m.name)))
+
+                let mut spans: Vec<Span> =
+                    vec![Span::raw(format!("  {status_label:<12}  {}", m.name))];
+
+                // PR status badge (if polled).
+                if let Some(info) = pr_statuses.get(&m.slug) {
+                    let (state_icon, state_color) = match info.state {
+                        PrStatusState::Open => ("🟢 OPEN", Color::Green),
+                        PrStatusState::Merged => ("🟣 MERGED", Color::Magenta),
+                        PrStatusState::Closed => ("🔴 CLOSED", Color::Red),
+                    };
+                    spans.push(Span::raw("  "));
+                    spans.push(Span::styled(state_icon, Style::default().fg(state_color)));
+
+                    // CI summary.
+                    let total = info.ci_pass + info.ci_fail + info.ci_pending;
+                    if total > 0 {
+                        let ci_text = if info.ci_fail > 0 {
+                            format!(" ✗{} fail", info.ci_fail)
+                        } else {
+                            format!(" ✓{}/{}", info.ci_pass, total)
+                        };
+                        let ci_color = if info.ci_fail > 0 {
+                            Color::Red
+                        } else if info.ci_pending > 0 {
+                            Color::Yellow
+                        } else {
+                            Color::Green
+                        };
+                        spans.push(Span::styled(ci_text, Style::default().fg(ci_color)));
+                    }
+
+                    // Review decision.
+                    if !info.review_decision.is_empty() {
+                        let abbrev = match info.review_decision.as_str() {
+                            "APPROVED" => "✓rvw",
+                            "CHANGES_REQUESTED" => "△rvw",
+                            "REVIEW_REQUIRED" => "?rvw",
+                            other => other,
+                        };
+                        spans.push(Span::styled(format!(" {abbrev}"), Style::default().dim()));
+                    }
+                }
+
+                ListItem::new(Line::from(spans))
             })
             .collect();
         let list = List::new(items)

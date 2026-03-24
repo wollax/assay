@@ -53,7 +53,7 @@ This milestone is complete only when all are true:
 - [x] **S01: Advanced PR creation with labels, reviewers, and templates** `risk:medium` `depends:[]`
   > After this: user adds `pr_labels = ["ready-for-review"]` and `pr_reviewers = ["teammate"]` to milestone TOML; `assay pr create` creates the PR with those labels and reviewer assigned. Proven by integration tests with mock `gh` binary.
 
-- [ ] **S02: TUI PR status panel with background polling** `risk:high` `depends:[S01]`
+- [x] **S02: TUI PR status panel with background polling** `risk:high` `depends:[S01]`
   > After this: TUI dashboard shows a PR status badge (open/merged/closed) and CI check summary next to milestones with open PRs, polled via background thread every 60s. Proven by integration tests with mock `gh` binary.
 
 - [ ] **S03: OpenCode plugin with full skill parity** `risk:low` `depends:[]`
