@@ -2,7 +2,7 @@
 
 **Active Milestone:** M008 — PR Workflow + Plugin Parity
 **Active Slice:** S02 — TUI PR status panel with background polling
-**Active Task:** T01 — PrStatusInfo type + pr_status_poll function + integration tests
+**Active Task:** T02 — TuiEvent variant + polling thread + App state + dashboard badge rendering
 **Phase:** Executing
 **Last Updated:** 2026-03-23
 **Requirements Status:** 3 active (R057–R059) mapped to M008 slices · 52 validated (R001–R056) · 2 deferred · 4 out of scope
@@ -17,8 +17,8 @@
 5 slices planned:
 - [x] S01: Advanced PR creation (labels, reviewers, templates) — R058
 - [ ] S02: TUI PR status panel with background polling — R058 ← ACTIVE
-  - [ ] T01: PrStatusInfo type + pr_status_poll function + integration tests ← NEXT
-  - [ ] T02: TuiEvent variant + polling thread + App state + dashboard badge rendering
+  - [x] T01: PrStatusInfo type + pr_status_poll function + integration tests ✓
+  - [ ] T02: TuiEvent variant + polling thread + App state + dashboard badge rendering ← NEXT
   - [ ] T03: TUI integration tests for PR status panel
 - [ ] S03: OpenCode plugin with full skill parity — R057
 - [ ] S04: Gate history analytics engine and CLI — R059
@@ -37,4 +37,4 @@ None.
 
 ## Next Action
 
-Execute T01: Add PrStatusInfo struct and pr_status_poll() to assay-core::pr. Write integration tests with mock gh binary covering OPEN/MERGED/CLOSED states, mixed CI checks, and gh-not-found.
+Execute T02: Add TuiEvent::PrStatusUpdate variant, spawn background polling thread, add pr_statuses HashMap to App, render PR badge in dashboard list items.

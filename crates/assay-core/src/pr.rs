@@ -1,8 +1,11 @@
-//! Gate-gated PR creation workflow.
+//! Gate-gated PR creation workflow and PR status polling.
 //!
 //! Provides [`pr_check_milestone_gates`] and [`pr_create_if_gates_pass`] for
 //! evaluating all milestone chunk gates before opening a GitHub PR via `gh`.
 //! PR number and URL are persisted to the milestone TOML after creation.
+//!
+//! [`pr_status_poll`] queries a PR's current state (open/merged/closed), CI
+//! check counts, and review decision via `gh pr view --json`.
 //!
 //! All errors use [`AssayError::Io`] — no new variants (consistent with D065,
 //! D008, S01/S02 patterns).
@@ -10,6 +13,8 @@
 use std::io;
 use std::path::Path;
 use std::process::{Command, Stdio};
+
+use serde::Deserialize;
 
 use chrono::Utc;
 
@@ -38,6 +43,141 @@ pub struct PrCreateResult {
     pub pr_number: u64,
     /// The HTML URL of the new pull request.
     pub pr_url: String,
+}
+
+// ── PR status polling ─────────────────────────────────────────────────────────
+
+/// State of a GitHub pull request as reported by `gh pr view`.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "UPPERCASE")]
+pub enum PrStatusState {
+    Open,
+    Merged,
+    Closed,
+}
+
+/// Snapshot of a PR's status: state, CI check counts, and review decision.
+#[derive(Debug, Clone)]
+pub struct PrStatusInfo {
+    /// Current PR state (Open, Merged, or Closed).
+    pub state: PrStatusState,
+    /// Number of CI checks that passed (conclusion == "SUCCESS").
+    pub ci_pass: usize,
+    /// Number of CI checks that failed (conclusion == "FAILURE" or "CANCELLED").
+    pub ci_fail: usize,
+    /// Number of CI checks still pending (in-progress or null conclusion).
+    pub ci_pending: usize,
+    /// Review decision string from GitHub: "", "APPROVED", "CHANGES_REQUESTED",
+    /// or "REVIEW_REQUIRED". Stored as-is.
+    pub review_decision: String,
+}
+
+/// Query the current status of a GitHub PR via `gh pr view`.
+///
+/// Spawns `gh pr view <pr_number> --json state,statusCheckRollup,reviewDecision`,
+/// parses the JSON output, and returns a typed [`PrStatusInfo`].
+///
+/// # Errors
+///
+/// Returns [`AssayError::Io`] when:
+/// - `gh` binary is not found in `PATH`
+/// - `gh` exits with a non-zero status (stderr included in error message)
+/// - JSON output cannot be parsed
+pub fn pr_status_poll(pr_number: u64) -> Result<PrStatusInfo> {
+    let output = Command::new("gh")
+        .args([
+            "pr",
+            "view",
+            &pr_number.to_string(),
+            "--json",
+            "state,statusCheckRollup,reviewDecision",
+        ])
+        .stdin(Stdio::null())
+        .output()
+        .map_err(|e| AssayError::Io {
+            operation: format!("pr_status_poll(#{})", pr_number),
+            path: std::path::PathBuf::from(format!("PR #{}", pr_number)),
+            source: if e.kind() == io::ErrorKind::NotFound {
+                io::Error::new(
+                    io::ErrorKind::NotFound,
+                    "gh CLI not found — install from https://cli.github.com",
+                )
+            } else {
+                io::Error::new(e.kind(), format!("failed to spawn gh: {e}"))
+            },
+        })?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(AssayError::Io {
+            operation: format!("pr_status_poll(#{})", pr_number),
+            path: std::path::PathBuf::from(format!("PR #{}", pr_number)),
+            source: io::Error::other(format!(
+                "gh exited with status {}: {}",
+                output.status,
+                if stderr.is_empty() {
+                    format!("(no stderr; exit {})", output.status)
+                } else {
+                    stderr
+                }
+            )),
+        });
+    }
+
+    parse_pr_status_json(&output.stdout, pr_number)
+}
+
+/// Raw JSON shape for a single status check from `statusCheckRollup`.
+#[derive(Debug, Deserialize)]
+#[allow(dead_code)]
+struct RawStatusCheck {
+    conclusion: Option<String>,
+    status: Option<String>,
+    name: Option<String>,
+}
+
+/// Raw JSON shape from `gh pr view --json state,statusCheckRollup,reviewDecision`.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RawPrStatus {
+    state: PrStatusState,
+    status_check_rollup: Option<Vec<RawStatusCheck>>,
+    review_decision: Option<String>,
+}
+
+/// Parse the JSON output from `gh pr view` into a [`PrStatusInfo`].
+fn parse_pr_status_json(stdout: &[u8], pr_number: u64) -> Result<PrStatusInfo> {
+    let raw: RawPrStatus = serde_json::from_slice(stdout).map_err(|e| AssayError::Io {
+        operation: format!("pr_status_poll(#{})", pr_number),
+        path: std::path::PathBuf::from(format!("PR #{}", pr_number)),
+        source: io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("failed to parse gh JSON output: {e}"),
+        ),
+    })?;
+
+    let mut ci_pass: usize = 0;
+    let mut ci_fail: usize = 0;
+    let mut ci_pending: usize = 0;
+
+    if let Some(checks) = &raw.status_check_rollup {
+        for check in checks {
+            match check.conclusion.as_deref() {
+                Some("SUCCESS") => ci_pass += 1,
+                Some("FAILURE") | Some("CANCELLED") => ci_fail += 1,
+                // null conclusion or IN_PROGRESS status → pending
+                _ => ci_pending += 1,
+            }
+        }
+    }
+
+    Ok(PrStatusInfo {
+        state: raw.state,
+        ci_pass,
+        ci_fail,
+        ci_pending,
+        review_decision: raw.review_decision.unwrap_or_default(),
+    })
 }
 
 // ── PR body template rendering ────────────────────────────────────────────────

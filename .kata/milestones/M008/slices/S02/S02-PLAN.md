@@ -44,7 +44,7 @@
 
 ## Tasks
 
-- [ ] **T01: PrStatusInfo type + pr_status_poll function + integration tests** `est:45m`
+- [x] **T01: PrStatusInfo type + pr_status_poll function + integration tests** `est:45m`
   - Why: Core polling function is the foundation — must parse `gh pr view --json` output correctly before wiring into TUI
   - Files: `crates/assay-core/src/pr.rs`, `crates/assay-core/tests/pr_status.rs`
   - Do: Add `PrStatusInfo` struct (state enum, ci_pass/ci_fail/ci_pending counts, review_decision string) to `assay-core::pr`. Implement `pr_status_poll(pr_number) -> Result<PrStatusInfo>` using `Command::new("gh")`. Parse JSON with `serde_json`. Write integration tests using `write_fake_gh`/`with_mock_gh_path` pattern from existing `pr.rs` tests — cover OPEN with passing checks, MERGED with no checks, CLOSED, empty statusCheckRollup, in-progress checks, and `gh` not found error.
