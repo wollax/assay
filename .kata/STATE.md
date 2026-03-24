@@ -2,7 +2,7 @@
 
 **Active Milestone:** M009 — Observability
 **Active Slice:** S01 — Structured tracing foundation and eprintln migration
-**Active Task:** T01 — Create telemetry module with init_tracing and TracingGuard
+**Active Task:** T02 — Add init_tracing() calls to CLI and TUI entry points
 **Phase:** Executing
 **Last Updated:** 2026-03-24
 **Requirements Status:** 7 active (R027, R060–R065) · 55 validated · 3 deferred (R025, R066, R067) · 4 out of scope
@@ -29,4 +29,4 @@ None.
 
 ## Next Action
 
-Execute T01: Create telemetry module with init_tracing and TracingGuard.
+Execute T02: Add init_tracing() calls to CLI and TUI entry points.
