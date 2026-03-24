@@ -37,7 +37,7 @@ blocker_discovered: false
 
 ## Verification
 
-All 22 checks passed:
+All 25 checks passed:
 - File existence: all 6 target files present
 - `.gitkeep` removal: both deleted
 - AGENTS.md line count: 37 (≤60 ✓)

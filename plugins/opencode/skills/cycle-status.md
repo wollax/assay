@@ -21,7 +21,7 @@ Display a concise overview of the active milestone, chunk completion, and latest
 2. **Call `chunk_status` for the active chunk:**
    - Use the `active_chunk_slug` field from the `cycle_status` response
    - If `active_chunk_slug` is `null`, all chunks are complete — print:
-     "All chunks complete — call `cycle_advance` to transition to Verify phase."
+     "All chunks complete. Call `cycle_advance` to advance the milestone to Verify."
      Then stop.
    - If `has_history` is `false`, note: "No gate runs yet — implement the chunk then run `/assay:gate-check` with the `active_chunk_slug` value"
 

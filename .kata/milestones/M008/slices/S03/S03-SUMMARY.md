@@ -41,7 +41,7 @@ Deleted `.gitkeep` placeholders from `plugins/opencode/skills/` and `plugins/ope
 
 ## Verification
 
-22 structural checks passed:
+25 structural checks passed:
 - 6 file existence checks (AGENTS.md + 5 skills) ✓
 - 2 .gitkeep removal checks ✓
 - AGENTS.md line count: 37 (≤60 limit) ✓

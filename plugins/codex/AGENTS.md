@@ -25,6 +25,7 @@ This project uses Assay for spec-driven development with quality gates. Each fea
 | `milestone_list` | List all milestones |
 | `milestone_create` | Create a new milestone with chunks |
 | `spec_create` | Create a spec for a chunk with criteria |
+| `pr_create` | Open a pull request for the completed milestone |
 
 ## Workflow
 
