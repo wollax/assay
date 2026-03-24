@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Fast checks — runs on every commit
+set -euo pipefail
+
+echo "🔍 pre-commit: fmt-check + clippy + plugin version"
+
+just fmt-check
+just lint
+just check-plugin-version
+
+echo "✅ pre-commit passed"
