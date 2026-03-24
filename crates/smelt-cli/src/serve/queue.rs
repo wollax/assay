@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 
-use tracing::warn;
+use tracing::{info, warn};
 
 use crate::serve::types::{now_epoch, JobId, JobSource, JobStatus, QueuedJob};
 
@@ -99,6 +99,32 @@ impl ServerState {
             max_concurrent,
             queue_dir: None,
         }
+    }
+
+    /// Load persisted queue state from `queue_dir` and return a `ServerState`
+    /// ready for use.  Any job whose status is `Dispatching` or `Running` is
+    /// remapped to `Queued` so interrupted work is re-queued on the next
+    /// dispatch cycle.  The `attempt` count is preserved unchanged.
+    ///
+    /// When no state file exists (first run or empty dir) the function returns
+    /// an empty queue — equivalent to calling `new_with_persistence`.
+    pub fn load_or_new(queue_dir: PathBuf, max_concurrent: usize) -> Self {
+        let mut jobs: Vec<QueuedJob> = read_queue_state(&queue_dir);
+        let n = jobs.len();
+        let mut remapped = 0usize;
+        for job in jobs.iter_mut() {
+            if matches!(job.status, JobStatus::Dispatching | JobStatus::Running) {
+                job.status = JobStatus::Queued;
+                remapped += 1;
+            }
+        }
+        info!(
+            "load_or_new: loaded {n} jobs from {}, {remapped} remapped to Queued",
+            queue_dir.display()
+        );
+        let mut state = Self::new_with_persistence(max_concurrent, queue_dir);
+        state.jobs = VecDeque::from(jobs);
+        state
     }
 
     /// Create a `ServerState` that persists queue state to `queue_dir` after
@@ -285,5 +311,48 @@ mod tests {
         let jobs = read_queue_state(tmp.path());
         assert_eq!(jobs.len(), 1);
         assert_eq!(jobs[0].status, JobStatus::Queued);
+    }
+
+    #[test]
+    fn test_load_or_new_restart_recovery() {
+        let dir = TempDir::new().unwrap();
+
+        // Build 3 jobs: Queued/attempt=0, Running/attempt=2, Queued/attempt=1
+        let mut job_a = make_job("job-a", JobStatus::Queued, None);
+        job_a.attempt = 0;
+        let mut job_b = make_job("job-b", JobStatus::Running, Some(1_000_000));
+        job_b.attempt = 2;
+        let mut job_c = make_job("job-c", JobStatus::Queued, None);
+        job_c.attempt = 1;
+
+        let mut jobs: VecDeque<QueuedJob> = VecDeque::new();
+        jobs.push_back(job_a);
+        jobs.push_back(job_b);
+        jobs.push_back(job_c);
+        write_queue_state(dir.path(), &jobs);
+
+        let state = ServerState::load_or_new(dir.path().to_path_buf(), 2);
+
+        assert_eq!(state.jobs.len(), 3);
+        // All jobs must be Queued after recovery
+        assert_eq!(state.jobs[0].status, JobStatus::Queued);
+        assert_eq!(state.jobs[1].status, JobStatus::Queued);
+        assert_eq!(state.jobs[2].status, JobStatus::Queued);
+        // Attempt counts preserved
+        assert_eq!(state.jobs[0].attempt, 0);
+        assert_eq!(state.jobs[1].attempt, 2);
+        assert_eq!(state.jobs[2].attempt, 1);
+        // queue_dir is set so future mutations persist
+        assert_eq!(state.queue_dir, Some(dir.path().to_path_buf()));
+    }
+
+    #[test]
+    fn test_load_or_new_missing_file() {
+        let dir = TempDir::new().unwrap(); // no writes
+        let state = ServerState::load_or_new(dir.path().to_path_buf(), 4);
+
+        assert!(state.jobs.is_empty());
+        assert!(state.queue_dir.is_some());
+        assert_eq!(state.max_concurrent, 4);
     }
 }

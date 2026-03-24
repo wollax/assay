@@ -48,7 +48,7 @@ pub async fn execute(args: &ServeArgs) -> anyhow::Result<i32> {
     let config = ServerConfig::load(&args.config)?;
     std::fs::create_dir_all(&config.queue_dir)?;
 
-    let state = Arc::new(Mutex::new(ServerState::new(config.max_concurrent)));
+    let state = Arc::new(Mutex::new(ServerState::load_or_new(config.queue_dir.clone(), config.max_concurrent)));
     let cancel_token = CancellationToken::new();
     let shutdown = Arc::new(AtomicBool::new(false));
 

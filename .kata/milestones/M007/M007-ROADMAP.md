@@ -54,7 +54,7 @@ This milestone is complete only when all are true:
 - [x] **S02: Atomic state file — write on every transition** `risk:medium` `depends:[S01]`
   > After this: every enqueue, complete, cancel, and mark_running writes `queue_dir/.smelt-queue-state.toml` atomically; round-trip unit test proves the file can reconstruct a full `ServerState`; existing serve tests still pass.
 
-- [ ] **S03: Load-on-startup + restart-recovery integration test** `risk:medium` `depends:[S02]`
+- [x] **S03: Load-on-startup + restart-recovery integration test** `risk:medium` `depends:[S02]`
   > After this: `smelt serve` calls `ServerState::load_or_new()` on startup; integration test proves enqueue → serialize → drop → reconstruct → dispatch cycle; attempt counts preserved; `cargo test --workspace` all green.
 
 ## Boundary Map

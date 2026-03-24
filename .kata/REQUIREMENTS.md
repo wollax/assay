@@ -245,14 +245,14 @@ This file is the explicit capability and coverage contract for the project.
 
 ### R028 — Persistent queue across `smelt serve` restarts
 - Class: operability
-- Status: active
+- Status: validated
 - Description: Jobs queued at crash time are automatically re-queued on the next startup; attempt counts preserved; `Dispatching`/`Running` jobs treated as Queued.
 - Why it matters: Crash recovery prevents lost work in long-running unattended deployments.
 - Source: inferred
 - Primary owning slice: M007/S03
 - Supporting slices: M007/S01, M007/S02
-- Validation: unmapped
-- Notes: Serialize queue state to `queue_dir/.smelt-queue-state.toml` atomically on every transition; `ServerState::load_or_new()` on startup.
+- Validation: validated
+- Notes: Proven by M007/S01 (QueuedJob Serialize+Deserialize, Instant→u64 migration), M007/S02 (atomic write_queue_state + read_queue_state round-trip), M007/S03 (ServerState::load_or_new, wired into serve.rs, test_load_or_new_restart_recovery + test_load_or_new_missing_file; 52 tests pass). Live kill-and-restart with real Docker jobs deferred to S03-UAT.md.
 
 ---
 
@@ -293,14 +293,14 @@ This file is the explicit capability and coverage contract for the project.
 
 ### R028 — Persistent queue across `smelt serve` restarts
 - Class: operability
-- Status: active
+- Status: validated
 - Description: Jobs queued in-memory at the time of a `smelt serve` crash or restart are automatically re-queued on the next startup; attempt counts preserved.
 - Why it matters: Crash recovery prevents lost work in long-running unattended deployments.
 - Source: inferred
 - Primary owning slice: M007/S03
 - Supporting slices: M007/S01, M007/S02
-- Validation: unmapped
-- Notes: Implementation: serialize queue state to `queue_dir/.smelt-queue-state.toml` on every transition (atomic write); load on startup via `ServerState::load_or_new()`; re-queue any non-terminal job. `Dispatching`/`Running` at crash time → re-queued (not failed).
+- Validation: validated
+- Notes: Proven by M007 (all 3 slices complete). Atomic state file (S02) + ServerState::load_or_new startup wiring (S03) + 52 tests green.
 
 ---
 
@@ -367,14 +367,14 @@ This file is the explicit capability and coverage contract for the project.
 | R025 | failure-visibility   | validated   | M006/S03      | M006/S01             | validated |
 | R026 | integration          | deferred    | none          | none                 | unmapped  |
 | R027 | integration          | active      | M008/S04      | M008/S01,S02,S03     | unmapped  |
-| R028 | operability          | active      | M007/S03      | M007/S01,S02         | unmapped  |
+| R028 | operability          | validated   | M007/S03      | M007/S01,S02         | validated |
 | R030 | anti-feature         | out-of-scope| none          | none                 | n/a       |
 | R031 | anti-feature         | out-of-scope| none          | none                 | n/a       |
 | R032 | anti-feature         | out-of-scope| none          | none                 | n/a       |
 
 ## Coverage Summary
 
-- Active requirements: 2 (R027, R028)
-- Mapped to slices: 2 (R027 → M008/S04, R028 → M007/S03)
-- Validated (all milestones + M006 complete): 19 (R001–R008, R010–R015, R020, R021, R023, R024, R025)
+- Active requirements: 1 (R027)
+- Mapped to slices: 1 (R027 → M008/S04)
+- Validated (all milestones + M007 complete): 20 (R001–R008, R010–R015, R020, R021, R023, R024, R025, R028)
 - Unmapped active requirements: 0

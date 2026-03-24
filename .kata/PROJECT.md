@@ -12,6 +12,8 @@ Automated infrastructure delivery: `smelt run manifest.toml` provisions → runs
 
 ## Current State
 
+**M007 complete.** `smelt serve` now survives restarts without losing queued work. Queue state is written atomically to `queue_dir/.smelt-queue-state.toml` on every enqueue/complete/cancel (S02) and loaded on startup via `ServerState::load_or_new()` (S03). Jobs that were Queued/Retrying/Running at crash time are automatically re-dispatched on restart with attempt counts preserved. R028 (persistent queue) validated. 52 smelt-cli tests pass.
+
 **M006 complete.** `smelt serve --config server.toml` is the primary new capability. A long-running daemon accepts job manifests via directory watch (drop a `.toml` into `queue_dir/`) or HTTP POST (`/api/v1/jobs`), dispatches up to `max_concurrent` concurrent `smelt run` sessions, auto-retries failures, and displays a live Ratatui TUI table of all jobs. Ctrl+C broadcasts cancellation to all running job tasks via `CancellationToken`. R023 (parallel dispatch), R024 (HTTP API), and R025 (live TUI) are all validated. `cargo test --workspace` green. Live TUI rendering + Ctrl+C teardown with real Docker containers deferred to S03-UAT.md.
 
 **M002 complete.** Smelt integrates a real Assay binary with contract-correct manifest generation, streaming output, and exit-code semantics:
@@ -75,7 +77,7 @@ examples/
 | M004 | Docker Compose Runtime | ✅ Complete (2026-03-23) |
 | M005 | Kubernetes Runtime | ✅ Complete (2026-03-23, pending live UAT) |
 | M006 | Parallel Dispatch Daemon | ✅ Complete (2026-03-23, pending live UAT) |
-| M007 | Persistent Queue | 🔄 In Progress (S01 ✅) |
+| M007 | Persistent Queue | ✅ Complete (2026-03-23) |
 | M008 | SSH Worker Pools | 🔄 Planned |
 
 ## Technology Decisions

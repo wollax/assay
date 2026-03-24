@@ -1,3 +1,7 @@
+# Queue state is automatically persisted to queue_dir/.smelt-queue-state.toml
+# after every enqueue, complete, and cancel. On restart, smelt serve loads this
+# file and re-queues any jobs that were Queued, Retrying, Dispatching, or Running
+# at shutdown time — no operator intervention required.
 # Directory to watch for incoming manifest .toml files
 queue_dir = "/tmp/smelt-queue"
 # Maximum number of jobs to run concurrently
