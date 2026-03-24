@@ -15,7 +15,7 @@
 
 ## Tasks
 
-- [ ] **T01: Milestone type extension + TOML round-trip**
+- [x] **T01: Milestone type extension + TOML round-trip**
   Add `pr_labels`, `pr_reviewers`, `pr_body_template` to `Milestone` in assay-types with serde(default, skip_serializing_if). Update schema snapshot. Write TOML round-trip tests proving backward compatibility.
 
 - [ ] **T02: PR body template rendering + core PR function update**
