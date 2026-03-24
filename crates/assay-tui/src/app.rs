@@ -737,7 +737,6 @@ impl App {
                         }
                     }
                     KeyCode::Char('a') => {
-                        // Open analytics screen.
                         if let Some(ref root) = self.project_root {
                             let assay_dir = root.join(".assay");
                             self.analytics_report = compute_analytics(&assay_dir).ok();
@@ -1692,23 +1691,19 @@ fn draw_settings(
 
 /// Render the analytics screen with failure frequency and milestone velocity tables.
 fn draw_analytics(frame: &mut ratatui::Frame, area: Rect, report: Option<&AnalyticsReport>) {
-    // Empty / None case: centered message in a bordered block.
-    let is_empty = report
-        .map(|r| r.failure_frequency.is_empty() && r.milestone_velocity.is_empty())
-        .unwrap_or(true);
-
-    if is_empty {
-        let msg = Paragraph::new(
-            Line::from("No analytics data available")
-                .centered()
-                .style(Style::default().dim()),
-        )
-        .block(Block::default().borders(Borders::ALL).title(" Analytics "));
-        frame.render_widget(msg, area);
-        return;
-    }
-
-    let report = report.unwrap(); // safe: is_empty already checked
+    let report = match report {
+        Some(r) if !r.failure_frequency.is_empty() || !r.milestone_velocity.is_empty() => r,
+        _ => {
+            let msg = Paragraph::new(
+                Line::from("No analytics data available")
+                    .centered()
+                    .style(Style::default().dim()),
+            )
+            .block(Block::default().borders(Borders::ALL).title(" Analytics "));
+            frame.render_widget(msg, area);
+            return;
+        }
+    };
 
     // Layout: title, failure frequency table, velocity table, hint line.
     let [title_area, freq_area, vel_area, hint_area] = Layout::vertical([
@@ -1719,7 +1714,6 @@ fn draw_analytics(frame: &mut ratatui::Frame, area: Rect, report: Option<&Analyt
     ])
     .areas(area);
 
-    // Title bar.
     let title = Paragraph::new(Line::from(" Analytics ").bold());
     frame.render_widget(title, title_area);
 
@@ -1756,8 +1750,8 @@ fn draw_analytics(frame: &mut ratatui::Frame, area: Rect, report: Option<&Analyt
                 Row::new(vec![
                     Cell::from(f.spec_name.as_str()),
                     Cell::from(f.criterion_name.as_str()),
-                    Cell::from(format!("{}", f.fail_count)),
-                    Cell::from(format!("{}", f.total_runs)),
+                    Cell::from(f.fail_count.to_string()),
+                    Cell::from(f.total_runs.to_string()),
                     Cell::from(rate_str).style(Style::default().fg(rate_color)),
                     Cell::from(enforcement_label),
                 ])
@@ -1833,7 +1827,6 @@ fn draw_analytics(frame: &mut ratatui::Frame, area: Rect, report: Option<&Analyt
         frame.render_widget(vel_table, vel_area);
     }
 
-    // Hint line.
     let hint = Paragraph::new(Line::from("Esc back  q quit").dim());
     frame.render_widget(hint, hint_area);
 }

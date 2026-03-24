@@ -1,4 +1,4 @@
-//! Integration tests for the Analytics screen (S05).
+//! Integration tests for the Analytics screen.
 //!
 //! Run with:
 //!   cargo test -p assay-tui --test analytics_screen
@@ -117,7 +117,6 @@ fn test_analytics_report_populated() {
     let root = setup_project(&tmp);
     let mut app = App::with_project_root(Some(root)).unwrap();
 
-    // analytics_report starts as None.
     assert!(app.analytics_report.is_none());
 
     app.handle_event(key(KeyCode::Char('a')));
@@ -130,7 +129,7 @@ fn test_analytics_report_populated() {
 }
 
 #[test]
-fn test_data_driven_analytics_does_not_panic() {
+fn test_analytics_app_state_with_synthetic_report() {
     let tmp = TempDir::new().unwrap();
     let root = setup_project(&tmp);
     let mut app = App::with_project_root(Some(root)).unwrap();
