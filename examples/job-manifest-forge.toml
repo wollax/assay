@@ -1,31 +1,47 @@
 # Example Smelt job manifest with forge (GitHub PR) integration.
 #
-# Run with: smelt run examples/job-manifest-forge.toml --dry-run
-#
 # When a [forge] section is present, `smelt run` will create a GitHub PR
 # after result collection. Requires GITHUB_TOKEN to be set in your env.
 # Use --no-pr to skip PR creation even when [forge] is configured.
+#
+# Run with: smelt run examples/job-manifest-forge.toml --dry-run
 
+# [job] — required. Identifies the job and which repo/ref to work against.
 [job]
+# Human-readable job name. Must be non-empty.
 name = "add-user-auth"
+# Repository URL or local path. Use "." for the current directory.
 repo = "."
+# Git ref (branch, tag, or commit SHA) to base work on.
 base_ref = "main"
 
+# [environment] — required. Container runtime and image configuration.
 [environment]
+# Container runtime to use. Values: "docker" (default), "compose", "kubernetes".
 runtime = "docker"
+# Container image reference.
 image = "alpine:3"
 
+# [credentials] — required. LLM provider and model selection.
 [credentials]
+# LLM provider name (e.g. "anthropic", "openai").
 provider = "anthropic"
+# Model identifier for the coding agent.
 model = "claude-sonnet-4-20250514"
 
+# [credentials.env] — optional. Environment variable mappings for credential resolution.
 [credentials.env]
 api_key = "ANTHROPIC_API_KEY"
 
+# [[session]] — at least one required.
 [[session]]
+# Unique session name.
 name = "frontend"
+# Task specification / prompt for the agent.
 spec = "Implement the login page with email/password form, validation, and error states."
+# Harness command for verification.
 harness = "npm test -- --filter auth"
+# Maximum seconds before timeout. Must be > 0.
 timeout = 300
 
 [[session]]
@@ -34,22 +50,34 @@ spec = "Implement the /api/auth/login endpoint with JWT tokens and rate limiting
 harness = "npm test -- --filter api-auth"
 timeout = 600
 
+# [merge] — required. Controls how session results are combined.
 [merge]
+# Merge strategy: "sequential" merges sessions one at a time in order.
 strategy = "sequential"
+# Explicit merge order. All referenced session names must exist.
 order = ["frontend", "backend"]
+# Whether to use AI-assisted conflict resolution. Default: false.
 ai_resolution = true
+# Target branch for the merged result.
 target = "main"
 
+# [forge] — optional. When present, smelt run creates a GitHub PR after completion.
+# Fields map to the ForgeConfig struct in forge.rs.
+#
 # After `smelt run` completes, the PR is created on GitHub automatically.
-# Use the following commands to monitor and await the outcome:
+# Use these commands to monitor and await the outcome:
 #
 #   smelt status add-user-auth        — view run results and PR section
 #   smelt watch add-user-auth         — block until the PR is merged (polls every 30s)
 #   smelt watch --interval-secs 60 add-user-auth
-#                                     — same, but poll every 60 s to reduce API usage
+#                                     — same, but poll every 60s to reduce API usage
 #
-# `smelt watch` exits 0 when the PR merges, or non-zero if it is closed without merging.
+# `smelt watch` exits 0 when the PR merges, or non-zero if closed without merging.
 [forge]
+# Forge provider. Currently only "github" is supported.
 provider = "github"
+# Repository slug in "owner/repo" format for PR creation.
 repo = "owner/my-repo"
+# Name of the env var holding the GitHub personal access token.
+# The token needs repo scope for PR creation.
 token_env = "GITHUB_TOKEN"

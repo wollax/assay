@@ -1,8 +1,8 @@
 # Kata State
 
 **Active Milestone:** M009 — Documentation, Examples & Code Cleanup
-**Active Slice:** S02 — README + example manifest documentation
-**Active Task:** None — slice not yet planned
+**Active Slice:** S03 — Large file decomposition
+**Active Task:** — (not started)
 **Phase:** Planning
 
 ## Recent Decisions
@@ -14,4 +14,4 @@
 - None
 
 ## Next Action
-Plan S02 (README + example manifest documentation) — decompose into tasks, write S02-PLAN.md.
+Plan S03 (large file decomposition): decompose run.rs, ssh.rs, and serve tests.rs into focused modules. Read the roadmap boundary map and S01 summary for context.

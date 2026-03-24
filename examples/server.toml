@@ -1,29 +1,57 @@
+# Smelt server configuration — used by `smelt serve`.
+#
+# The server watches a queue directory for incoming manifest .toml files,
+# dispatches jobs (locally or to SSH workers), and exposes an HTTP API
+# for job status, enqueue, and lifecycle management.
+#
 # Queue state is automatically persisted to queue_dir/.smelt-queue-state.toml
 # after every enqueue, complete, and cancel. On restart, smelt serve loads this
 # file and re-queues any jobs that were Queued, Retrying, Dispatching, or Running
 # at shutdown time — no operator intervention required.
-# Directory to watch for incoming manifest .toml files
+#
+# Run with: smelt serve --config examples/server.toml
+
+# Directory to watch for incoming manifest .toml files.
+# New .toml files dropped here are automatically enqueued.
+# Queue state is persisted to <queue_dir>/.smelt-queue-state.toml.
 queue_dir = "/tmp/smelt-queue"
-# Maximum number of jobs to run concurrently
+
+# Maximum number of jobs to run concurrently.
+# Additional jobs wait in the queue until a slot opens.
 max_concurrent = 2
-# Maximum retry attempts before marking a job as permanently failed
+
+# Maximum retry attempts before marking a job as permanently failed.
+# Default: 3.
 retry_attempts = 3
-# Seconds to wait between retry attempts
+
+# Seconds to wait between retry attempts.
+# Default: 5.
 retry_backoff_secs = 5
 
-# HTTP API server settings
+# [server] — optional. HTTP API server settings.
+# Defaults: host = "127.0.0.1", port = 8765.
 [server]
-# Host address for the HTTP API
+# Host address for the HTTP API to bind to.
 host = "127.0.0.1"
-# Port for the HTTP API
+# Port for the HTTP API.
 port = 8765
 
-# SSH worker pool — optional. When present, smelt serve dispatches jobs to these
-# remote hosts instead of running them locally. Jobs are round-robined across
-# available workers; unreachable workers are skipped and the job is re-queued.
+# [[workers]] — optional. SSH worker pool.
+# When present, smelt serve dispatches jobs to these remote hosts instead of
+# running them locally. Jobs are round-robined across available workers;
+# unreachable workers are skipped and the job is re-queued.
 #
+# Fields per worker:
+#   host     — SSH hostname or IP address (required)
+#   user     — SSH username (required)
+#   key_env  — name of env var holding path to SSH private key (required)
+#   port     — SSH port (optional, default: 22)
+#
+# Timeout in seconds for SSH connection probes to workers. Default: 3.
+# ssh_timeout_secs = 3
+
 # [[workers]]
 # host = "worker1.example.com"
 # user = "smelt"
-# key_env = "WORKER_SSH_KEY"   # name of env var holding path to SSH private key
-# port = 22                    # optional, default 22
+# key_env = "WORKER_SSH_KEY"
+# port = 22

@@ -245,14 +245,14 @@ This file is the explicit capability and coverage contract for the project.
 
 ### R041 — Workspace README with usage documentation
 - Class: launchability
-- Status: active
+- Status: validated
 - Description: A comprehensive `README.md` at the workspace root explains what Smelt is, how to install it, and documents all subcommands with examples.
 - Why it matters: No README exists. New users and contributors have no entry point.
 - Source: user
 - Primary owning slice: M009/S02
 - Supporting slices: none
-- Validation: unmapped
-- Notes: None.
+- Validation: validated
+- Notes: Proven by M009/S02: 335-line README.md covers install, quickstart, all 6 subcommands (init, list, run, serve, status, watch) with exact flags from --help, server mode, examples directory, and Smelt/Assay/Cupel ecosystem. Human readability UAT in S02-UAT.md.
 
 ### R042 — deny(missing_docs) on smelt-cli
 - Class: quality-attribute
@@ -289,14 +289,14 @@ This file is the explicit capability and coverage contract for the project.
 
 ### R045 — Example manifest documentation
 - Class: launchability
-- Status: active
+- Status: validated
 - Description: All example manifests in `examples/` have inline field-level comments explaining every field, valid defaults, and when to use each option.
 - Why it matters: Examples are the primary learning tool. Uncommented examples force users to read source code.
 - Source: user
 - Primary owning slice: M009/S02
 - Supporting slices: none
-- Validation: unmapped
-- Notes: 7 example files exist; some have comments, some don't.
+- Validation: validated
+- Notes: Proven by M009/S02: all 7 example files have field-level comments (22-47 comment lines each); agent-manifest.toml fixed from broken to valid; bad-manifest.toml documents all 7 intentional errors with VIOLATION comments; all parseable examples verified with --dry-run.
 
 ---
 
@@ -416,15 +416,15 @@ This file is the explicit capability and coverage contract for the project.
 | R031 | anti-feature         | out-of-scope| none          | none                 | n/a       |
 | R032 | anti-feature         | out-of-scope| none          | none                 | n/a       |
 | R040 | quality-attribute    | validated   | M009/S01      | none                 | validated |
-| R041 | launchability        | active      | M009/S02      | none                 | mapped    |
+| R041 | launchability        | validated   | M009/S02      | none                 | validated |
 | R042 | quality-attribute    | validated   | M009/S01      | none                 | validated |
 | R043 | quality-attribute    | validated   | M009/S01      | none                 | validated |
 | R044 | quality-attribute    | active      | M009/S03      | none                 | mapped    |
-| R045 | launchability        | active      | M009/S02      | none                 | mapped    |
+| R045 | launchability        | validated   | M009/S02      | none                 | validated |
 
 ## Coverage Summary
 
-- Active requirements: 3 (R041, R044, R045)
-- Mapped to slices: 3
-- Validated (all milestones through M008 + M009/S01): 24 (R001–R008, R010–R015, R020, R021, R023, R024, R025, R027, R028, R040, R042, R043)
+- Active requirements: 1 (R044)
+- Mapped to slices: 1
+- Validated (all milestones through M008 + M009/S01, M009/S02): 26 (R001–R008, R010–R015, R020, R021, R023, R024, R025, R027, R028, R040, R041, R042, R043, R045)
 - Unmapped active requirements: 0

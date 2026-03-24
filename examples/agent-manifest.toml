@@ -1,15 +1,58 @@
-[manifest]
+# Minimal agent-style Smelt manifest — a lightweight job using only
+# required sections with minimal configuration. Good starting point
+# for quick, single-repo agent tasks with no forge integration.
+#
+# Run with: smelt run examples/agent-manifest.toml --dry-run
+#
+# This style is useful for quick, single-repo agent tasks where
+# you only need to specify what to do and where.
+
+# [job] — required. Identifies the job and which repo/ref to work against.
+[job]
+# Human-readable name for this job. Must be non-empty.
 name = "agent-demo"
+# Repository URL or local path. Use "." for the current directory.
+# For real (non-dry-run) execution this must be a valid repo path or URL.
+repo = "."
+# Git ref (branch, tag, or commit SHA) to base work on.
 base_ref = "HEAD"
 
+# [environment] — required. Specifies the container runtime and image.
+[environment]
+# Container runtime to use. Values: "docker", "compose", "kubernetes".
+runtime = "docker"
+# Container image reference (e.g. "alpine:3", "ubuntu:22.04").
+image = "alpine:3"
+
+# [credentials] — required. LLM provider and model selection.
+[credentials]
+# LLM provider name (e.g. "anthropic", "openai").
+provider = "anthropic"
+# Model identifier for the coding agent.
+model = "claude-sonnet-4-20250514"
+
+# [[session]] — at least one required. Each session is an independent coding task.
 [[session]]
+# Unique name for this session. Used in depends_on and merge order.
 name = "add-greeting"
-task = "Create a file src/greeting.rs with a public function greet() that returns the string 'Hello from Smelt!'. Add appropriate module declaration."
-file_scope = ["src/greeting.rs", "src/lib.rs"]
-timeout_secs = 120
+# Task specification / prompt describing what the agent should do.
+spec = "Create a file src/greeting.rs with a public function greet() that returns the string 'Hello from Smelt!'. Add appropriate module declaration."
+# Command to run for verification after the agent finishes. Use "true" to skip.
+harness = "true"
+# Maximum seconds before this session times out. Must be > 0.
+timeout = 120
 
 [[session]]
 name = "add-farewell"
-task = "Create a file src/farewell.rs with a public function farewell() that returns the string 'Goodbye from Smelt!'. Add appropriate module declaration."
-file_scope = ["src/farewell.rs", "src/lib.rs"]
-timeout_secs = 120
+spec = "Create a file src/farewell.rs with a public function farewell() that returns the string 'Goodbye from Smelt!'. Add appropriate module declaration."
+harness = "true"
+timeout = 120
+
+# [merge] — required. Controls how session results are combined.
+[merge]
+# Merge strategy: "sequential" merges sessions one at a time in order.
+strategy = "sequential"
+# Explicit merge order. If omitted, sessions are merged in definition order.
+order = ["add-greeting", "add-farewell"]
+# Target branch for the merged result.
+target = "main"

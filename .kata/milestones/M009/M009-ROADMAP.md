@@ -55,7 +55,7 @@ This milestone is complete only when all are true:
 - [x] **S01: cargo doc zero-warning + deny(missing_docs) on smelt-cli** `risk:high` `depends:[]`
   > After this: `cargo doc --workspace --no-deps` exits 0 with zero warnings; `#![deny(missing_docs)]` enabled on smelt-cli and compiles clean; all stale `#[allow(dead_code)]` annotations removed or justified.
 
-- [ ] **S02: README + example manifest documentation** `risk:low` `depends:[]`
+- [x] **S02: README + example manifest documentation** `risk:low` `depends:[]`
   > After this: workspace-level `README.md` with project overview, install, all subcommand usage, and example walkthrough; example manifests have inline field-level comments.
 
 - [ ] **S03: Large file decomposition** `risk:medium` `depends:[S01]`
