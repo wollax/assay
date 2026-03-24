@@ -26,6 +26,8 @@ v0.8.0-dev. M001–M007 complete, M008 in progress (S01–S04 done). ~24K lines 
 
 **M007 (complete):** TUI agent harness — S01 delivered channel-based event loop (`TuiEvent`), `launch_agent_streaming`, `Screen::AgentRun` with `r` key spawning agents. S02 delivered provider dispatch (`provider_harness_writer` routing Anthropic/Ollama/OpenAI), Settings screen model input fields. S03 delivered slash command overlay (`/` key, tab completion, `/gate-check`/`/status`/`/next-chunk`/`/pr-create` commands). S04 delivered MCP server configuration panel (`m` key, add/delete/save servers to `.assay/mcp.json`). R053, R055 validated. 1400+ tests.
 
+**M008 (complete):** PR Workflow + Plugin Parity — S01 delivered advanced PR creation with labels, reviewers, and body templates from milestone TOML. S02 delivered TUI PR status panel with background `gh` polling (60s interval) showing state/CI/review badges. S03 delivered OpenCode plugin with AGENTS.md + 5 skills matching Codex parity. S04 delivered gate history analytics engine (`compute_analytics`, `assay history analytics` CLI with text tables and `--json`). S05 delivered TUI analytics screen (`a` key from Dashboard, failure frequency heatmap with color-coded rates, milestone velocity table). R057, R058, R059 validated. 1400+ tests.
+
 Crates:
 
 - **assay-types**: Serializable DTOs — Spec, Criterion, GateRunRecord, GateEvalContext, WorkSession, WorktreeMetadata, Config, HarnessProfile, PromptLayer, SettingsOverride, HookContract, OrchestratorStatus, SessionRunState, FailurePolicy, MergeStrategy, ScopeConfig, ScopeViolation, etc.
@@ -65,4 +67,4 @@ See `.kata/REQUIREMENTS.md` for the explicit capability contract, requirement st
 - [x] M005: Spec-Driven Development Core — all 6 slices complete (types/I/O/cycle state machine/wizard/PR workflow/plugins). 43 requirements validated (R039–R048), 1333 tests.
 - [x] M006: TUI as Primary Surface — full Ratatui TUI: dashboard, wizard, spec browser, provider config, help overlay, status bar (complete, R049–R052 validated, 1371+ tests)
 - [x] M007: TUI Agent Harness — TUI spawns and controls AI agents, provider abstraction (Anthropic/OpenAI/Ollama), MCP management, slash commands (complete, R053/R055 validated, 1400+ tests)
-- [ ] M008: PR Workflow + Plugin Parity — advanced PR automation, OpenCode plugin, history analytics
+- [x] M008: PR Workflow + Plugin Parity — advanced PR automation, OpenCode plugin, history analytics (complete, R057–R059 validated, 1400+ tests)
