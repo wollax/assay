@@ -96,6 +96,10 @@ fn create_synthetic_record(
 }
 
 /// Create and save a synthetic milestone TOML file.
+///
+/// `chunks` is the total chunk count; `completed_chunks` is the number of those
+/// chunks marked complete (generated as `chunk-0`..`chunk-{n-1}`). `created_at`
+/// and `updated_at` control the velocity calculation.
 #[allow(clippy::too_many_arguments)]
 fn create_synthetic_milestone(
     assay_dir: &std::path::Path,
@@ -354,12 +358,12 @@ fn test_milestone_velocity_zero_elapsed() {
 }
 
 #[test]
-fn test_milestone_velocity_skips_draft_milestones() {
+fn test_milestone_velocity_excludes_zero_chunk_milestones() {
     let dir = TempDir::new().unwrap();
     let now = Utc::now();
     let five_days_ago = now - Duration::days(5);
 
-    // Draft milestone with zero completed chunks → excluded.
+    // Milestone with 0 completed chunks → excluded (regardless of status).
     create_synthetic_milestone(
         dir.path(),
         "draft-ms",
@@ -371,7 +375,7 @@ fn test_milestone_velocity_skips_draft_milestones() {
         now,
     );
 
-    // InProgress milestone with completed chunks → included.
+    // Milestone with completed chunks → included.
     create_synthetic_milestone(
         dir.path(),
         "active-ms",
@@ -388,7 +392,7 @@ fn test_milestone_velocity_skips_draft_milestones() {
     assert_eq!(
         velocities.len(),
         1,
-        "draft with 0 completed should be excluded"
+        "milestone with 0 completed chunks should be excluded"
     );
     assert_eq!(velocities[0].milestone_slug, "active-ms");
 }

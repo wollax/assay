@@ -36,12 +36,29 @@ fn handle_analytics(json: bool) -> anyhow::Result<i32> {
     let root = project_root()?;
     let ad = assay_dir(&root);
 
-    if !ad.is_dir() {
-        eprintln!("Error: not an Assay project (no .assay directory found)");
-        eprintln!(
-            "Run `assay init` to initialise a project, then run some gates to build history."
-        );
-        return Ok(1);
+    match std::fs::metadata(&ad) {
+        Ok(m) if m.is_dir() => {} // proceed
+        Ok(_) => {
+            eprintln!(
+                "Error: .assay exists but is not a directory (path: {})",
+                ad.display()
+            );
+            return Ok(1);
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            eprintln!("Error: not an Assay project (no .assay directory found)");
+            eprintln!(
+                "Run `assay init` to initialise a project, then run some gates to build history."
+            );
+            return Ok(1);
+        }
+        Err(e) => {
+            eprintln!(
+                "Error: cannot access .assay directory ({}): {e}",
+                ad.display()
+            );
+            return Ok(1);
+        }
     }
 
     let report = assay_core::history::analytics::compute_analytics(&ad)
@@ -61,18 +78,11 @@ fn handle_analytics(json: bool) -> anyhow::Result<i32> {
 
     if report.unreadable_records > 0 {
         println!();
-        let note = if color {
-            format!(
-                "\x1b[33mNote:\x1b[0m {count} history record(s) could not be read and were skipped.",
-                count = report.unreadable_records
-            )
-        } else {
-            format!(
-                "Note: {count} history record(s) could not be read and were skipped.",
-                count = report.unreadable_records
-            )
-        };
-        println!("{note}");
+        let prefix = super::colorize("Note:", "\x1b[33m", color);
+        println!(
+            "{prefix} {} history record(s) could not be read and were skipped.",
+            report.unreadable_records
+        );
     }
 
     Ok(0)
@@ -134,16 +144,14 @@ fn print_failure_frequency(
         };
 
         let rate_str = format!("{rate:5.1}%");
-        let rate_display = if color {
-            if rate > 50.0 {
-                format!("\x1b[31m{rate_str}\x1b[0m") // red for high fail rate
-            } else if rate > 0.0 {
-                format!("\x1b[33m{rate_str}\x1b[0m") // yellow for some failures
-            } else {
-                format!("\x1b[32m{rate_str}\x1b[0m") // green for 0%
-            }
+        let rate_display = if !color {
+            rate_str
+        } else if rate > 50.0 {
+            format!("\x1b[31m{rate_str}\x1b[0m") // red for high fail rate
+        } else if rate > 0.0 {
+            format!("\x1b[33m{rate_str}\x1b[0m") // yellow for some failures
         } else {
-            rate_str.clone()
+            format!("\x1b[32m{rate_str}\x1b[0m") // green for 0%
         };
 
         let enforcement_label = match f.enforcement {
@@ -178,7 +186,7 @@ fn print_milestone_velocity(
     color: bool,
 ) {
     println!("Milestone Velocity");
-    println!("===================");
+    println!("==================");
 
     if velocities.is_empty() {
         println!("  No milestones with completed chunks found.");
@@ -216,12 +224,8 @@ fn print_milestone_velocity(
         let days_str = format!("{:.0}", v.days_elapsed);
         let rate_str = format!("{:.1}/d", v.chunks_per_day);
 
-        let rate_display = if color {
-            if v.chunks_per_day > 1.0 {
-                format!("\x1b[32m{rate_str}\x1b[0m") // green for fast
-            } else {
-                rate_str.clone()
-            }
+        let rate_display = if color && v.chunks_per_day > 1.0 {
+            format!("\x1b[32m{rate_str}\x1b[0m") // green for fast
         } else {
             rate_str
         };
@@ -284,8 +288,8 @@ mod tests {
     fn test_analytics_text_output_shape() {
         let report = synthetic_report();
 
-        // Capture text output by calling the formatters with color disabled.
-        // We can't easily capture println, so verify the data that feeds the formatters.
+        // We can't easily capture println, so this test validates only the
+        // report data, not the rendered output.
         assert_eq!(report.failure_frequency.len(), 2);
         assert_eq!(report.failure_frequency[0].spec_name, "auth-flow");
         assert_eq!(report.failure_frequency[0].criterion_name, "login-works");
@@ -310,15 +314,19 @@ mod tests {
     }
 
     #[test]
-    fn test_analytics_no_project_shows_error() {
-        // Run in a temp dir with no .assay directory.
+    fn test_analytics_no_project_returns_empty() {
+        // When .assay doesn't exist, compute_analytics still works — it returns
+        // empty data. The CLI guard (metadata check) is what returns exit code 1;
+        // that path requires integration testing via process spawning.
         let tmp = tempfile::TempDir::new().unwrap();
-        let prev = std::env::current_dir().unwrap();
-        // We test the logic inline: assay_dir check should fail.
         let ad = tmp.path().join(".assay");
-        assert!(!ad.is_dir(), ".assay should not exist in temp dir");
-        // Restore — this is a unit-level check of the guard logic.
-        let _ = prev;
+        assert!(!ad.is_dir());
+
+        // compute_analytics on a non-existent .assay dir returns empty report.
+        let report = assay_core::history::analytics::compute_analytics(&ad).unwrap();
+        assert!(report.failure_frequency.is_empty());
+        assert!(report.milestone_velocity.is_empty());
+        assert_eq!(report.unreadable_records, 0);
     }
 
     #[test]

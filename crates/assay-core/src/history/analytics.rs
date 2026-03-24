@@ -31,7 +31,8 @@ pub struct FailureFrequency {
     pub fail_count: usize,
     /// Total number of runs where this criterion was evaluated (passed or failed).
     pub total_runs: usize,
-    /// Enforcement level of this criterion (from the most recent run).
+    /// Enforcement level of this criterion (from the last-iterated run;
+    /// iteration order is filesystem-defined, not chronological).
     pub enforcement: Enforcement,
 }
 
@@ -48,9 +49,11 @@ pub struct MilestoneVelocity {
     pub chunks_completed: usize,
     /// Total number of chunks in the milestone.
     pub total_chunks: usize,
-    /// Calendar days elapsed since milestone creation.
+    /// Calendar days between milestone creation and its last update
+    /// (`updated_at − created_at`). Clamped to `>= 0.0`.
     pub days_elapsed: f64,
-    /// Completed chunks per calendar day (`chunks_completed / max(1, days_elapsed)`).
+    /// Completed chunks per calendar day
+    /// (`chunks_completed / max(1, days_elapsed)`).
     pub chunks_per_day: f64,
 }
 
@@ -79,8 +82,15 @@ pub fn compute_failure_frequency(assay_dir: &Path) -> Result<(Vec<FailureFrequen
         return Ok((vec![], 0));
     }
 
-    // Key: (spec_name, criterion_name) → (fail_count, total_runs, enforcement)
-    let mut agg: HashMap<(String, String), (usize, usize, Enforcement)> = HashMap::new();
+    /// Accumulator for per-criterion aggregation.
+    struct CriterionAcc {
+        fail_count: usize,
+        total_runs: usize,
+        enforcement: Enforcement,
+    }
+
+    // Key: (spec_name, criterion_name)
+    let mut agg: HashMap<(String, String), CriterionAcc> = HashMap::new();
     let mut unreadable: usize = 0;
 
     let spec_dirs = std::fs::read_dir(&results_dir)
@@ -91,6 +101,7 @@ pub fn compute_failure_frequency(assay_dir: &Path) -> Result<(Vec<FailureFrequen
             Ok(e) => e,
             Err(e) => {
                 eprintln!("Warning: skipping results entry: {e}");
+                unreadable += 1;
                 continue;
             }
         };
@@ -103,9 +114,10 @@ pub fn compute_failure_frequency(assay_dir: &Path) -> Result<(Vec<FailureFrequen
             Ok(rd) => rd,
             Err(e) => {
                 eprintln!(
-                    "Warning: could not read spec dir {}: {e}",
+                    "Warning: could not read spec dir {} — all history for this spec skipped: {e}",
                     spec_path.display()
                 );
+                unreadable += 1;
                 continue;
             }
         };
@@ -156,30 +168,31 @@ pub fn compute_failure_frequency(assay_dir: &Path) -> Result<(Vec<FailureFrequen
                 };
 
                 let key = (spec_name.clone(), cr.criterion_name.clone());
-                let entry = agg.entry(key).or_insert((0, 0, cr.enforcement));
-                entry.1 += 1; // total_runs
+                let entry = agg.entry(key).or_insert(CriterionAcc {
+                    fail_count: 0,
+                    total_runs: 0,
+                    enforcement: cr.enforcement,
+                });
+                entry.total_runs += 1;
                 if !result.passed {
-                    entry.0 += 1; // fail_count
+                    entry.fail_count += 1;
                 }
-                // Update enforcement to most recent value.
-                entry.2 = cr.enforcement;
+                // Update enforcement to last-iterated value
+                // (iteration order is filesystem-defined, not chronological).
+                entry.enforcement = cr.enforcement;
             }
         }
     }
 
     let mut freqs: Vec<FailureFrequency> = agg
         .into_iter()
-        .map(
-            |((spec_name, criterion_name), (fail_count, total_runs, enforcement))| {
-                FailureFrequency {
-                    spec_name,
-                    criterion_name,
-                    fail_count,
-                    total_runs,
-                    enforcement,
-                }
-            },
-        )
+        .map(|((spec_name, criterion_name), acc)| FailureFrequency {
+            spec_name,
+            criterion_name,
+            fail_count: acc.fail_count,
+            total_runs: acc.total_runs,
+            enforcement: acc.enforcement,
+        })
         .collect();
 
     // Sort by fail_count desc, then spec_name asc, criterion_name asc.
@@ -196,12 +209,24 @@ pub fn compute_failure_frequency(assay_dir: &Path) -> Result<(Vec<FailureFrequen
 /// Compute per-milestone completion velocity.
 ///
 /// Scans `.assay/milestones/` for TOML files, computing `chunks_per_day`
-/// for each non-draft milestone that has at least one completed chunk.
-/// Draft milestones with zero completed chunks are excluded.
+/// for each milestone that has at least one completed chunk, regardless of status.
+/// Milestones with zero completed chunks are excluded.
 pub fn compute_milestone_velocity(assay_dir: &Path) -> Result<Vec<MilestoneVelocity>> {
     let milestones = match crate::milestone::milestone_scan(assay_dir) {
         Ok(m) => m,
-        Err(_) => return Ok(vec![]), // No milestones dir is not fatal
+        Err(e) => {
+            // Only suppress when the milestones directory simply doesn't exist yet.
+            let milestones_dir = assay_dir.join("milestones");
+            if !milestones_dir.exists() {
+                return Ok(vec![]);
+            }
+            // Any other error (permission denied, corrupt TOML, etc.) is unexpected.
+            eprintln!(
+                "Warning: could not read milestones directory {}: {e}",
+                milestones_dir.display()
+            );
+            return Ok(vec![]);
+        }
     };
 
     let mut velocities: Vec<MilestoneVelocity> = milestones
@@ -210,7 +235,15 @@ pub fn compute_milestone_velocity(assay_dir: &Path) -> Result<Vec<MilestoneVeloc
         .map(|m| {
             let chunks_completed = m.completed_chunks.len();
             let total_chunks = m.chunks.len();
-            let days_elapsed = (m.updated_at - m.created_at).num_seconds() as f64 / 86400.0;
+            let raw_days = (m.updated_at - m.created_at).num_seconds() as f64 / 86400.0;
+            if raw_days < 0.0 {
+                eprintln!(
+                    "Warning: milestone '{}' has updated_at before created_at ({raw_days:.1} days) — \
+                     timestamps may be corrupt. Treating as 0 days elapsed.",
+                    m.slug
+                );
+            }
+            let days_elapsed = raw_days.max(0.0);
             let effective_days = days_elapsed.max(1.0);
             let chunks_per_day = chunks_completed as f64 / effective_days;
 
