@@ -1,11 +1,11 @@
 # Kata State
 
 **Active Milestone:** M008 — PR Workflow + Plugin Parity
-**Active Slice:** S03 — OpenCode plugin with full skill parity
-**Active Task:** None — planning needed
-**Phase:** Planning
-**Last Updated:** 2026-03-23
-**Requirements Status:** 2 active (R057, R059) mapped to M008 slices · 53 validated (R001–R058) · 2 deferred · 4 out of scope
+**Active Slice:** —
+**Active Task:** —
+**Phase:** Between slices (S03 complete, S04 next)
+**Last Updated:** 2026-03-24
+**Requirements Status:** 1 active (R059) mapped to M008 slices · 54 validated (R001–R058) · 2 deferred · 4 out of scope
 **Test Count:** 1400+ (50 assay-tui; all workspace tests pass)
 
 ## Completed Milestones
@@ -17,7 +17,7 @@
 5 slices planned:
 - [x] S01: Advanced PR creation (labels, reviewers, templates) — R058
 - [x] S02: TUI PR status panel with background polling — R058 ✓
-- [ ] S03: OpenCode plugin with full skill parity — R057 ← NEXT
+- [x] S03: OpenCode plugin with full skill parity — R057 ✓
 - [ ] S04: Gate history analytics engine and CLI — R059
 - [ ] S05: TUI analytics screen — R059
 
@@ -34,4 +34,4 @@ None.
 
 ## Next Action
 
-Plan and execute S03 (OpenCode plugin with full skill parity). Low-risk, pure markdown — AGENTS.md + 5 skills matching Codex plugin structure.
+Advance to S04: Gate history analytics engine and CLI (R059).

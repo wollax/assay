@@ -56,7 +56,7 @@ This milestone is complete only when all are true:
 - [x] **S02: TUI PR status panel with background polling** `risk:high` `depends:[S01]`
   > After this: TUI dashboard shows a PR status badge (open/merged/closed) and CI check summary next to milestones with open PRs, polled via background thread every 60s. Proven by integration tests with mock `gh` binary.
 
-- [ ] **S03: OpenCode plugin with full skill parity** `risk:low` `depends:[]`
+- [x] **S03: OpenCode plugin with full skill parity** `risk:low` `depends:[]`
   > After this: `plugins/opencode/` contains AGENTS.md + 5 skills (gate-check, spec-show, cycle-status, next-chunk, plan) matching Codex plugin structure. Proven by file existence and structural checks.
 
 - [ ] **S04: Gate history analytics engine and CLI** `risk:medium` `depends:[]`

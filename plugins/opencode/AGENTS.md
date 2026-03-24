@@ -1,4 +1,4 @@
-# Assay — Codex Agent Instructions
+# Assay — OpenCode Agent Instructions
 
 This project uses Assay for spec-driven development with quality gates. Each feature is defined as a spec with verifiable criteria; gates run commands to confirm the criteria are met. During an active milestone, work advances one chunk at a time through a structured cycle.
 
