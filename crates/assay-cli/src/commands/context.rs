@@ -625,12 +625,11 @@ fn handle_guard_start(session: Option<&str>) -> anyhow::Result<i32> {
     std::fs::create_dir_all(&guard_dir)
         .with_context(|| format!("creating guard log directory: {}", guard_dir.display()))?;
 
-    let file_appender = tracing_appender::rolling::never(&guard_dir, "guard.log");
-    let (non_blocking, _appender_guard) = tracing_appender::non_blocking(file_appender);
-    tracing_subscriber::fmt()
-        .with_writer(non_blocking)
-        .with_ansi(false)
-        .init();
+    // Note: guard daemon previously used a file-based tracing-appender here.
+    // File-based logging will be revisited in S04. For now, the centralized
+    // stderr subscriber (already initialized in main()) is sufficient.
+    // The guard.log file is created but not actively written to until S04.
+    let _ = &guard_dir; // keep guard_dir creation above for S04 file logging
 
     eprintln!("[guard] Starting — watching {}", session_path.display());
     eprintln!(

@@ -12,6 +12,11 @@ use ratatui::DefaultTerminal;
 fn main() -> color_eyre::Result<()> {
     color_eyre::install()?;
 
+    // Initialize centralized tracing subscriber before any other logic.
+    // The guard must live until process exit to flush buffered events.
+    let _tracing_guard =
+        assay_core::telemetry::init_tracing(assay_core::telemetry::TracingConfig::default());
+
     let original_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |panic_info| {
         ratatui::restore();

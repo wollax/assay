@@ -51,7 +51,7 @@
   - Verify: `cargo test -p assay-core telemetry` passes; `cargo build -p assay-core` succeeds
   - Done when: `init_tracing()` returns a valid `TracingGuard`, tests prove `EnvFilter` fallback on invalid `RUST_LOG`, module is `pub` in lib.rs
 
-- [ ] **T02: Wire init_tracing into CLI, TUI, and MCP entry points** `est:30m`
+- [x] **T02: Wire init_tracing into CLI, TUI, and MCP entry points** `est:30m`
   - Why: Subscribers must be initialized before any tracing macro fires — this wires the centralized init into all three binaries and removes the two ad-hoc subscriber inits
   - Files: `crates/assay-cli/src/main.rs`, `crates/assay-cli/src/commands/mcp.rs`, `crates/assay-cli/src/commands/context.rs`, `crates/assay-tui/src/main.rs`, `crates/assay-tui/Cargo.toml`, `crates/assay-cli/Cargo.toml`
   - Do: Add `tracing.workspace = true` to assay-tui Cargo.toml. Call `init_tracing(TracingConfig::default())` at top of CLI `main()`, hold `_guard` for lifetime. Call `init_tracing(TracingConfig { is_mcp: true, .. })` in MCP serve, remove `init_mcp_tracing()`. Replace guard daemon's ad-hoc subscriber init in `context.rs` with `init_tracing()` call (file layer support deferred — use stderr-only for now, guard daemon tracing-appender file writer is a S04 concern). Call `init_tracing()` in TUI `main()` before event loop. Add `tracing` dep to assay-cli Cargo.toml if not present.
