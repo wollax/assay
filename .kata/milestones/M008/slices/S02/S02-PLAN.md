@@ -58,7 +58,7 @@
   - Verify: `cargo build -p assay-tui` compiles clean; `cargo clippy -p assay-tui -- -D warnings` clean
   - Done when: Polling thread spawns, badge renders in dashboard list items, graceful degradation when `gh` is missing
 
-- [ ] **T03: TUI integration tests for PR status panel** `est:30m`
+- [x] **T03: TUI integration tests for PR status panel** `est:30m`
   - Why: Proves the full loop mechanically — event delivery, state update, and badge rendering — without a real `gh` binary or live PR
   - Files: `crates/assay-tui/tests/pr_status_panel.rs`
   - Do: (1) Test that `App.handle_pr_status_update` stores info in `pr_statuses` map and the entry is retrievable. (2) Test that `poll_targets` is populated from milestones with `pr_number`. (3) Test that poll_targets is refreshed after milestone reload (simulate `handle_agent_done` with a project root containing milestones). (4) Test graceful degradation: `handle_pr_status_update` for unknown slug is a no-op (no panic).
