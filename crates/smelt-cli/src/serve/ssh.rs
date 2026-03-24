@@ -18,6 +18,7 @@ use tokio::process::Command;
 use tracing::{debug, warn};
 
 use crate::serve::config::WorkerConfig;
+use crate::serve::types::JobId;
 
 // ---------------------------------------------------------------------------
 // Output type
@@ -62,6 +63,17 @@ pub trait SshClient {
     /// otherwise.  The error is returned within `timeout_secs + 1s` thanks to
     /// SSH's own `ConnectTimeout` option.
     async fn probe(&self, worker: &WorkerConfig, timeout_secs: u64) -> anyhow::Result<()>;
+
+    /// Copy a local file to a remote destination via `scp`.
+    ///
+    /// `remote_dest` is in `user@host:/path` format.
+    async fn scp_to(
+        &self,
+        worker: &WorkerConfig,
+        timeout_secs: u64,
+        local_path: &std::path::Path,
+        remote_dest: &str,
+    ) -> anyhow::Result<()>;
 }
 
 // ---------------------------------------------------------------------------
@@ -140,6 +152,67 @@ impl SubprocessSshClient {
 
         args
     }
+
+    /// Resolve the path to the `scp` binary using [`which::which`].
+    fn scp_binary() -> anyhow::Result<PathBuf> {
+        which::which("scp").map_err(|e| anyhow!("scp binary not found in PATH: {}", e))
+    }
+
+    /// Build the argument list for an SCP invocation.
+    ///
+    /// Mirrors [`build_ssh_args`] but uses uppercase `-P` for port (SCP
+    /// convention) instead of lowercase `-p`.
+    pub fn build_scp_args(
+        worker: &WorkerConfig,
+        timeout_secs: u64,
+        extra_args: &[&str],
+    ) -> Vec<String> {
+        let mut args: Vec<String> = vec![
+            "-o".to_string(),
+            "BatchMode=yes".to_string(),
+            "-o".to_string(),
+            "StrictHostKeyChecking=accept-new".to_string(),
+            "-o".to_string(),
+            format!("ConnectTimeout={timeout_secs}"),
+        ];
+
+        if worker.port != 22 {
+            args.push("-P".to_string());
+            args.push(worker.port.to_string());
+        }
+
+        match std::env::var(&worker.key_env) {
+            Ok(key_path) if !key_path.is_empty() => {
+                debug!(
+                    key_path = %key_path,
+                    key_env = %worker.key_env,
+                    "using SCP identity file"
+                );
+                args.push("-i".to_string());
+                args.push(key_path);
+            }
+            Ok(_) => {
+                warn!(
+                    key_env = %worker.key_env,
+                    host = %worker.host,
+                    "key_env is set but resolves to an empty path; SCP will use default keys"
+                );
+            }
+            Err(_) => {
+                warn!(
+                    key_env = %worker.key_env,
+                    host = %worker.host,
+                    "key_env is not set; SCP will use default keys"
+                );
+            }
+        }
+
+        for arg in extra_args {
+            args.push(arg.to_string());
+        }
+
+        args
+    }
 }
 
 impl SshClient for SubprocessSshClient {
@@ -200,6 +273,93 @@ impl SshClient for SubprocessSshClient {
             Err(e) => Err(anyhow!("ssh probe failed for host {}: {}", worker.host, e)),
         }
     }
+
+    async fn scp_to(
+        &self,
+        worker: &WorkerConfig,
+        timeout_secs: u64,
+        local_path: &std::path::Path,
+        remote_dest: &str,
+    ) -> anyhow::Result<()> {
+        let scp = Self::scp_binary()?;
+        let local_str = local_path.to_string_lossy();
+        let extra: &[&str] = &[&local_str, remote_dest];
+        let args = Self::build_scp_args(worker, timeout_secs, extra);
+
+        debug!(
+            host = %worker.host,
+            local_path = %local_path.display(),
+            remote_dest = %remote_dest,
+            "scp_to entry"
+        );
+
+        let output = Command::new(&scp)
+            .args(&args)
+            .output()
+            .await
+            .map_err(|e| anyhow!("failed to spawn scp for host {}: {}", worker.host, e))?;
+
+        let exit_code = output.status.code().unwrap_or(-1);
+        if exit_code != 0 {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            warn!(
+                host = %worker.host,
+                exit_code = exit_code,
+                stderr = %stderr.trim(),
+                "scp_to non-zero exit"
+            );
+            return Err(anyhow!(
+                "scp to {} failed: exit_code={} stderr={}",
+                worker.host,
+                exit_code,
+                stderr.trim()
+            ));
+        }
+
+        Ok(())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Free functions
+// ---------------------------------------------------------------------------
+
+/// SCP the local manifest file to `/tmp/smelt-<job_id>.toml` on the worker.
+///
+/// Returns the remote path string on success.
+pub async fn deliver_manifest<C: SshClient>(
+    client: &C,
+    worker: &WorkerConfig,
+    timeout_secs: u64,
+    job_id: &JobId,
+    local_manifest: &std::path::Path,
+) -> anyhow::Result<String> {
+    let remote_path = format!("/tmp/smelt-{}.toml", job_id);
+    let remote_dest = format!("{}@{}:{}", worker.user, worker.host, remote_path);
+    client
+        .scp_to(worker, timeout_secs, local_manifest, &remote_dest)
+        .await?;
+    Ok(remote_path)
+}
+
+/// SSH exec `smelt run <remote_manifest_path>` on the worker, returning the
+/// raw exit code.  Callers map 0/2/other per D050.
+pub async fn run_remote_job<C: SshClient>(
+    client: &C,
+    worker: &WorkerConfig,
+    timeout_secs: u64,
+    remote_manifest_path: &str,
+) -> anyhow::Result<i32> {
+    let cmd = format!("smelt run {}", remote_manifest_path);
+    let output = client.exec(worker, timeout_secs, &cmd).await?;
+    if output.exit_code == 127 {
+        warn!(
+            host = %worker.host,
+            cmd = %cmd,
+            "exit code 127: smelt may not be on the remote PATH"
+        );
+    }
+    Ok(output.exit_code)
 }
 
 // ---------------------------------------------------------------------------
@@ -208,9 +368,99 @@ impl SshClient for SubprocessSshClient {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::VecDeque;
+    use std::sync::{Arc, Mutex};
     use std::time::Duration;
 
     use super::*;
+
+    // -----------------------------------------------------------------------
+    // MockSshClient
+    // -----------------------------------------------------------------------
+
+    /// Test double for `SshClient` with configurable pop-front results.
+    pub(crate) struct MockSshClient {
+        exec_results: Arc<Mutex<VecDeque<anyhow::Result<SshOutput>>>>,
+        probe_results: Arc<Mutex<VecDeque<anyhow::Result<()>>>>,
+        scp_results: Arc<Mutex<VecDeque<anyhow::Result<()>>>>,
+    }
+
+    impl MockSshClient {
+        pub fn new() -> Self {
+            Self {
+                exec_results: Arc::new(Mutex::new(VecDeque::new())),
+                probe_results: Arc::new(Mutex::new(VecDeque::new())),
+                scp_results: Arc::new(Mutex::new(VecDeque::new())),
+            }
+        }
+
+        pub fn with_exec_result(self, result: anyhow::Result<SshOutput>) -> Self {
+            self.exec_results.lock().unwrap().push_back(result);
+            self
+        }
+
+        pub fn with_scp_result(self, result: anyhow::Result<()>) -> Self {
+            self.scp_results.lock().unwrap().push_back(result);
+            self
+        }
+
+        #[allow(dead_code)]
+        pub fn with_probe_result(self, result: anyhow::Result<()>) -> Self {
+            self.probe_results.lock().unwrap().push_back(result);
+            self
+        }
+    }
+
+    impl SshClient for MockSshClient {
+        async fn exec(
+            &self,
+            _worker: &WorkerConfig,
+            _timeout_secs: u64,
+            _cmd: &str,
+        ) -> anyhow::Result<SshOutput> {
+            self.exec_results
+                .lock()
+                .unwrap()
+                .pop_front()
+                .unwrap_or_else(|| Err(anyhow!("MockSshClient: no exec results configured")))
+        }
+
+        async fn probe(
+            &self,
+            _worker: &WorkerConfig,
+            _timeout_secs: u64,
+        ) -> anyhow::Result<()> {
+            self.probe_results
+                .lock()
+                .unwrap()
+                .pop_front()
+                .unwrap_or_else(|| Err(anyhow!("MockSshClient: no probe results configured")))
+        }
+
+        async fn scp_to(
+            &self,
+            _worker: &WorkerConfig,
+            _timeout_secs: u64,
+            _local_path: &std::path::Path,
+            _remote_dest: &str,
+        ) -> anyhow::Result<()> {
+            self.scp_results
+                .lock()
+                .unwrap()
+                .pop_front()
+                .unwrap_or_else(|| Err(anyhow!("MockSshClient: no scp results configured")))
+        }
+    }
+
+    /// Helper: build a test WorkerConfig.
+    fn test_worker() -> WorkerConfig {
+        WorkerConfig {
+            host: "testhost".to_string(),
+            user: "testuser".to_string(),
+            key_env: "SMELT_SSH_KEY_NONEXISTENT_XYZ".to_string(),
+            port: 22,
+        }
+    }
 
     /// Non-gated unit test: verifies that `build_ssh_args` assembles the expected
     /// flag set without making any actual SSH connection.
@@ -276,6 +526,102 @@ mod tests {
             args_str.windows(2).any(|w| w == ["-p", "2222"]),
             "expected -p 2222 in args: {args_str:?}"
         );
+    }
+
+    // -----------------------------------------------------------------------
+    // SCP args unit tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_scp_args_build() {
+        let worker = test_worker();
+        let args = SubprocessSshClient::build_scp_args(&worker, 5, &["/local/file", "user@host:/remote"]);
+        let args_str: Vec<&str> = args.iter().map(String::as_str).collect();
+
+        assert!(
+            args_str.windows(2).any(|w| w == ["-o", "BatchMode=yes"]),
+            "expected BatchMode=yes in scp args: {args_str:?}"
+        );
+        assert!(
+            args_str
+                .windows(2)
+                .any(|w| w == ["-o", "ConnectTimeout=5"]),
+            "expected ConnectTimeout=5 in scp args: {args_str:?}"
+        );
+        // Port 22 should NOT add -P flag
+        assert!(
+            !args_str.contains(&"-P"),
+            "port 22 should not emit -P flag: {args_str:?}"
+        );
+        assert!(args_str.contains(&"/local/file"));
+        assert!(args_str.contains(&"user@host:/remote"));
+    }
+
+    #[test]
+    fn test_scp_args_custom_port() {
+        let worker = WorkerConfig {
+            host: "remote".to_string(),
+            user: "bob".to_string(),
+            key_env: "SMELT_SSH_KEY_NONEXISTENT_XYZ".to_string(),
+            port: 2222,
+        };
+
+        let args = SubprocessSshClient::build_scp_args(&worker, 10, &[]);
+        let args_str: Vec<&str> = args.iter().map(String::as_str).collect();
+
+        assert!(
+            args_str.windows(2).any(|w| w == ["-P", "2222"]),
+            "expected uppercase -P 2222 in scp args: {args_str:?}"
+        );
+        // Must NOT contain lowercase -p
+        assert!(
+            !args_str.contains(&"-p"),
+            "scp should use -P (uppercase), not -p: {args_str:?}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Mock-based unit tests for deliver_manifest and run_remote_job
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn test_deliver_manifest_mock() {
+        let client = MockSshClient::new().with_scp_result(Ok(()));
+        let worker = test_worker();
+        let job_id = JobId::new("job-1");
+        let local = std::path::Path::new("/tmp/test-manifest.toml");
+
+        let result = deliver_manifest(&client, &worker, 5, &job_id, local).await;
+        assert!(result.is_ok(), "deliver_manifest should succeed: {:?}", result.err());
+        assert_eq!(result.unwrap(), "/tmp/smelt-job-1.toml");
+    }
+
+    #[tokio::test]
+    async fn test_run_remote_job_mock_success() {
+        let client = MockSshClient::new().with_exec_result(Ok(SshOutput {
+            stdout: String::new(),
+            stderr: String::new(),
+            exit_code: 0,
+        }));
+        let worker = test_worker();
+
+        let result = run_remote_job(&client, &worker, 10, "/tmp/smelt-job-1.toml").await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_run_remote_job_mock_exit2() {
+        let client = MockSshClient::new().with_exec_result(Ok(SshOutput {
+            stdout: String::new(),
+            stderr: "some error".to_string(),
+            exit_code: 2,
+        }));
+        let worker = test_worker();
+
+        let result = run_remote_job(&client, &worker, 10, "/tmp/smelt-job-1.toml").await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 2);
     }
 
     // -----------------------------------------------------------------------

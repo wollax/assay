@@ -41,10 +41,8 @@ pub struct WorkerConfig {
     pub host: String,
     pub user: String,
     /// Name of the env var that holds the path to the SSH private key.
-    #[allow(dead_code)] // consumed by SshClient in T02
     pub key_env: String,
     #[serde(default = "default_ssh_port")]
-    #[allow(dead_code)] // consumed by SshClient in T02
     pub port: u16,
 }
 
@@ -84,7 +82,7 @@ pub struct ServerConfig {
     pub workers: Vec<WorkerConfig>,
     /// Timeout in seconds for SSH connection attempts to worker hosts.
     #[serde(default = "default_ssh_timeout_secs")]
-    #[allow(dead_code)] // consumed by SshClient in T02
+    #[allow(dead_code)] // consumed by dispatch routing in S04
     pub ssh_timeout_secs: u64,
 }
 

@@ -55,7 +55,7 @@ This milestone is complete only when all are true:
 - [x] **S01: WorkerConfig + SSH connection proof** `risk:high` `depends:[]`
   > After this: `[[workers]]` parses from `server.toml`; SSH connection to localhost (or a configurable test host) established; a test command executes and stdout is captured; offline-worker returns error within 3s — all proven by unit/integration tests.
 
-- [ ] **S02: Manifest delivery + remote smelt run execution** `risk:high` `depends:[S01]`
+- [x] **S02: Manifest delivery + remote smelt run execution** `risk:high` `depends:[S01]`
   > After this: given a manifest TOML path, the dispatcher scps it to `/tmp/smelt-<job_id>.toml` on the worker and SSHes `smelt run /tmp/smelt-<job_id>.toml`; exit code is captured and mapped to job success/failure; integration test with a real localhost SSH session proves the full delivery+exec path.
 
 - [ ] **S03: State sync back via scp** `risk:medium` `depends:[S02]`

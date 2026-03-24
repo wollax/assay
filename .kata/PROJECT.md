@@ -12,7 +12,7 @@ Automated infrastructure delivery: `smelt run manifest.toml` provisions → runs
 
 ## Current State
 
-**M008 in progress — S01 complete.** `WorkerConfig` and `SshClient` are implemented. `[[workers]]` entries parse from `server.toml`; `SshClient` trait and `SubprocessSshClient` via `tokio::process::Command` are in `serve/ssh.rs`. SSH subprocess approach (D111) proven. 155 workspace tests pass. S02 (manifest delivery via scp + remote `smelt run`) is next.
+**M008 in progress — S01+S02 complete.** `WorkerConfig`, `SshClient`, manifest delivery, and remote execution are implemented. `[[workers]]` entries parse from `server.toml`; `SshClient` trait with `exec`, `probe`, and `scp_to` methods is in `serve/ssh.rs`. `deliver_manifest()` scps manifests to `/tmp/smelt-<job_id>.toml` on workers; `run_remote_job()` SSHes `smelt run <path>` and captures exit codes. `MockSshClient` enables unit testing without real SSH. SSH subprocess approach (D111) proven for both ssh and scp. 270 workspace tests pass (0 failures). S03 (state sync back via scp) is next.
 
 **M007 complete.** `smelt serve` now survives restarts without losing queued work. Queue state is written atomically to `queue_dir/.smelt-queue-state.toml` on every enqueue/complete/cancel (S02) and loaded on startup via `ServerState::load_or_new()` (S03). Jobs that were Queued/Retrying/Running at crash time are automatically re-dispatched on restart with attempt counts preserved. R028 (persistent queue) validated. 52 smelt-cli tests pass.
 

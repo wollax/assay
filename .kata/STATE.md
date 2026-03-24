@@ -1,9 +1,8 @@
 # Kata State
 
 **Active Milestone:** M008 — SSH Worker Pools
-**Active Slice:** S02 — Manifest delivery + remote smelt run execution
-**Active Task:** None — planning S02
-**Phase:** Planning
+**Active Slice:** S03 — State sync back via scp
+**Phase:** Ready to plan
 
 ## Milestone Plan
 
@@ -14,7 +13,7 @@
 
 **M008 — SSH Worker Pools** (4 slices, in progress)
 - [x] S01: WorkerConfig + SSH connection proof ✅
-- [ ] S02: Manifest delivery + remote smelt run execution
+- [x] S02: Manifest delivery + remote smelt run execution ✅
 - [ ] S03: State sync back via scp
 - [ ] S04: Dispatch routing + round-robin + TUI/API worker field
 
@@ -32,4 +31,4 @@ None.
 
 ## Next Action
 
-S01 complete ✅. Start S02 planning: decompose "Manifest delivery + remote smelt run execution" into tasks — deliver_manifest() via scp, run_remote_job() via ssh, integration test with localhost SSH.
+Plan and execute S03: State sync back via scp — after `smelt run` completes on the worker, scp `.smelt/runs/<job>/` back to the dispatcher.

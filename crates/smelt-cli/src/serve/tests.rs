@@ -770,6 +770,79 @@ port = 18765
 }
 
 
+// ──────────────────────────────────────────────
+// S02 gated integration test — manifest delivery + remote exec
+// ──────────────────────────────────────────────
+
+#[tokio::test]
+#[ignore]
+async fn test_manifest_delivery_and_remote_exec() {
+    if std::env::var("SMELT_SSH_TEST").is_err() {
+        return;
+    }
+
+    use tempfile::NamedTempFile;
+    use std::io::Write;
+
+    use crate::serve::config::WorkerConfig;
+    use crate::serve::ssh::{SubprocessSshClient, SshClient, deliver_manifest};
+    use crate::serve::types::JobId;
+
+    let user = std::env::var("USER")
+        .or_else(|_| std::env::var("LOGNAME"))
+        .unwrap_or_else(|_| "root".to_string());
+
+    let worker = WorkerConfig {
+        host: "127.0.0.1".to_string(),
+        user,
+        key_env: "SMELT_SSH_KEY".to_string(),
+        port: 22,
+    };
+
+    // Write a valid manifest to a temp file.
+    let mut tmp = NamedTempFile::new().expect("create temp file");
+    write!(tmp, "{}", VALID_MANIFEST_TOML).expect("write manifest");
+    tmp.flush().expect("flush");
+
+    let client = SubprocessSshClient;
+    let job_id = JobId::new("integration-test-1");
+
+    // Deliver the manifest.
+    let remote_path = deliver_manifest(&client, &worker, 5, &job_id, tmp.path())
+        .await
+        .expect("deliver_manifest should succeed");
+    assert_eq!(remote_path, "/tmp/smelt-integration-test-1.toml");
+
+    // Verify the file exists on remote.
+    let check = client
+        .exec(&worker, 5, &format!("test -f {remote_path}"))
+        .await
+        .expect("exec test -f");
+    assert_eq!(check.exit_code, 0, "remote file should exist");
+
+    // Run with --dry-run to avoid needing Docker on the test host.
+    let dry_run_cmd = format!("smelt run --dry-run {remote_path}");
+    let run_output = client
+        .exec(&worker, 10, &dry_run_cmd)
+        .await
+        .expect("exec smelt run --dry-run");
+    assert_eq!(
+        run_output.exit_code, 0,
+        "smelt run --dry-run should exit 0, stderr: {}",
+        run_output.stderr.trim()
+    );
+    assert!(
+        !run_output.stderr.contains("not found"),
+        "stderr should not contain 'not found': {}",
+        run_output.stderr.trim()
+    );
+
+    // Clean up — best-effort.
+    let _ = client
+        .exec(&worker, 5, &format!("rm -f {remote_path}"))
+        .await;
+}
+
 #[test]
 fn test_tui_render_no_panic() {
     use ratatui::backend::TestBackend;
