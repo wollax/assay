@@ -224,8 +224,7 @@ async fn run() -> anyhow::Result<i32> {
 
     // Initialize tracing after argument parsing so MCP serve gets its own
     // config (warn level, no ANSI). The guard must live until process exit.
-    let _tracing_guard =
-        assay_core::telemetry::init_tracing(tracing_config_for(&cli.command));
+    let _tracing_guard = assay_core::telemetry::init_tracing(tracing_config_for(&cli.command));
 
     match cli.command {
         Some(Command::Init { name }) => commands::init::handle_init(name),
