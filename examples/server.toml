@@ -17,3 +17,13 @@ retry_backoff_secs = 5
 host = "127.0.0.1"
 # Port for the HTTP API
 port = 8765
+
+# SSH worker pool — optional. When present, smelt serve dispatches jobs to these
+# remote hosts instead of running them locally. Jobs are round-robined across
+# available workers; unreachable workers are skipped and the job is re-queued.
+#
+# [[workers]]
+# host = "worker1.example.com"
+# user = "smelt"
+# key_env = "WORKER_SSH_KEY"   # name of env var holding path to SSH private key
+# port = 22                    # optional, default 22

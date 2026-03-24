@@ -18,6 +18,36 @@ fn default_retry_backoff_secs() -> u64 {
     5
 }
 
+fn default_workers() -> Vec<WorkerConfig> {
+    vec![]
+}
+
+fn default_ssh_timeout_secs() -> u64 {
+    3
+}
+
+fn default_ssh_port() -> u16 {
+    22
+}
+
+/// Configuration for a single SSH worker host.
+///
+/// Each entry under `[[workers]]` in `server.toml` maps to one `WorkerConfig`.
+/// `key_env` stores the *name* of an environment variable that holds the path
+/// to the SSH private key — never the key value itself.
+#[derive(Debug, Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
+pub struct WorkerConfig {
+    pub host: String,
+    pub user: String,
+    /// Name of the env var that holds the path to the SSH private key.
+    #[allow(dead_code)] // consumed by SshClient in T02
+    pub key_env: String,
+    #[serde(default = "default_ssh_port")]
+    #[allow(dead_code)] // consumed by SshClient in T02
+    pub port: u16,
+}
+
 #[derive(Debug, Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct ServerNetworkConfig {
@@ -48,6 +78,14 @@ pub struct ServerConfig {
     pub retry_backoff_secs: u64,
     #[serde(default)]
     pub server: ServerNetworkConfig,
+    /// SSH worker pool. When present, `smelt serve` dispatches jobs to these
+    /// remote hosts instead of running them locally.
+    #[serde(default = "default_workers")]
+    pub workers: Vec<WorkerConfig>,
+    /// Timeout in seconds for SSH connection attempts to worker hosts.
+    #[serde(default = "default_ssh_timeout_secs")]
+    #[allow(dead_code)] // consumed by SshClient in T02
+    pub ssh_timeout_secs: u64,
 }
 
 impl ServerConfig {
@@ -74,6 +112,21 @@ impl ServerConfig {
         if self.server.port == 0 {
             anyhow::bail!("server.port must be non-zero");
         }
+
+        // Collect all worker validation errors before returning (D018).
+        let mut worker_errors: Vec<String> = Vec::new();
+        for (i, w) in self.workers.iter().enumerate() {
+            if w.host.trim().is_empty() {
+                worker_errors.push(format!("worker[{i}]: host must not be empty"));
+            }
+            if w.user.trim().is_empty() {
+                worker_errors.push(format!("worker[{i}]: user must not be empty"));
+            }
+        }
+        if !worker_errors.is_empty() {
+            anyhow::bail!("invalid worker configuration:\n  {}", worker_errors.join("\n  "));
+        }
+
         Ok(())
     }
 }

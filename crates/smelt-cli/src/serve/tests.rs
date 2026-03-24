@@ -526,6 +526,132 @@ async fn test_http_delete_running_job() {
 }
 
 // ──────────────────────────────────────────────
+// M008/S01/T01 WorkerConfig unit tests
+// ──────────────────────────────────────────────
+
+#[test]
+fn test_worker_config_roundtrip() {
+    use crate::serve::config::ServerConfig;
+
+    let toml = r#"
+queue_dir = "/tmp/smelt-queue"
+max_concurrent = 2
+
+[[workers]]
+host = "worker1.example.com"
+user = "smelt"
+key_env = "WORKER_SSH_KEY"
+port = 2222
+"#;
+    let config: ServerConfig = toml::from_str(toml).expect("valid TOML with workers should parse");
+    assert_eq!(config.workers.len(), 1);
+    let w = &config.workers[0];
+    assert_eq!(w.host, "worker1.example.com");
+    assert_eq!(w.user, "smelt");
+    assert_eq!(w.key_env, "WORKER_SSH_KEY");
+    assert_eq!(w.port, 2222);
+}
+
+#[test]
+fn test_worker_config_defaults() {
+    use crate::serve::config::ServerConfig;
+
+    let toml = r#"
+queue_dir = "/tmp/smelt-queue"
+max_concurrent = 2
+
+[[workers]]
+host = "worker1.example.com"
+user = "smelt"
+key_env = "WORKER_SSH_KEY"
+"#;
+    let config: ServerConfig = toml::from_str(toml).expect("worker without port should parse");
+    assert_eq!(config.workers.len(), 1);
+    assert_eq!(config.workers[0].port, 22, "default port should be 22");
+}
+
+#[test]
+fn test_server_config_no_workers_parses() {
+    use crate::serve::config::ServerConfig;
+
+    let toml = r#"
+queue_dir = "/tmp/smelt-queue"
+max_concurrent = 2
+"#;
+    let config: ServerConfig = toml::from_str(toml).expect("config without workers should parse");
+    assert!(config.workers.is_empty(), "workers should default to empty vec");
+    assert_eq!(config.ssh_timeout_secs, 3, "ssh_timeout_secs should default to 3");
+}
+
+#[test]
+fn test_worker_config_deny_unknown_fields() {
+    use crate::serve::config::ServerConfig;
+
+    let toml = r#"
+queue_dir = "/tmp/smelt-queue"
+max_concurrent = 2
+
+[[workers]]
+host = "worker1.example.com"
+user = "smelt"
+key_env = "WORKER_SSH_KEY"
+unknown_field = "should fail"
+"#;
+    let result: Result<ServerConfig, _> = toml::from_str(toml);
+    assert!(result.is_err(), "unknown field in [[workers]] should fail to parse");
+}
+
+#[test]
+fn test_worker_config_empty_host_fails_validation() {
+    use std::io::Write;
+    use tempfile::NamedTempFile;
+    use crate::serve::config::ServerConfig;
+
+    let mut f = NamedTempFile::new().unwrap();
+    writeln!(f, r#"queue_dir = "/tmp/smelt-queue""#).unwrap();
+    writeln!(f, "max_concurrent = 2").unwrap();
+    writeln!(f).unwrap();
+    writeln!(f, "[[workers]]").unwrap();
+    writeln!(f, r#"host = """#).unwrap();
+    writeln!(f, r#"user = "smelt""#).unwrap();
+    writeln!(f, r#"key_env = "WORKER_SSH_KEY""#).unwrap();
+    f.flush().unwrap();
+
+    let result = ServerConfig::load(f.path());
+    assert!(result.is_err(), "empty host should fail validation");
+    let err_msg = result.unwrap_err().to_string();
+    assert!(
+        err_msg.contains("host"),
+        "error should mention 'host', got: {err_msg}"
+    );
+}
+
+#[test]
+fn test_worker_config_empty_user_fails_validation() {
+    use std::io::Write;
+    use tempfile::NamedTempFile;
+    use crate::serve::config::ServerConfig;
+
+    let mut f = NamedTempFile::new().unwrap();
+    writeln!(f, r#"queue_dir = "/tmp/smelt-queue""#).unwrap();
+    writeln!(f, "max_concurrent = 2").unwrap();
+    writeln!(f).unwrap();
+    writeln!(f, "[[workers]]").unwrap();
+    writeln!(f, r#"host = "worker1.example.com""#).unwrap();
+    writeln!(f, r#"user = """#).unwrap();
+    writeln!(f, r#"key_env = "WORKER_SSH_KEY""#).unwrap();
+    f.flush().unwrap();
+
+    let result = ServerConfig::load(f.path());
+    assert!(result.is_err(), "empty user should fail validation");
+    let err_msg = result.unwrap_err().to_string();
+    assert!(
+        err_msg.contains("user"),
+        "error should mention 'user', got: {err_msg}"
+    );
+}
+
+// ──────────────────────────────────────────────
 // S03/T01 ServerConfig unit tests
 // ──────────────────────────────────────────────
 

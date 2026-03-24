@@ -52,7 +52,7 @@ This milestone is complete only when all are true:
 
 ## Slices
 
-- [ ] **S01: WorkerConfig + SSH connection proof** `risk:high` `depends:[]`
+- [x] **S01: WorkerConfig + SSH connection proof** `risk:high` `depends:[]`
   > After this: `[[workers]]` parses from `server.toml`; SSH connection to localhost (or a configurable test host) established; a test command executes and stdout is captured; offline-worker returns error within 3s — all proven by unit/integration tests.
 
 - [ ] **S02: Manifest delivery + remote smelt run execution** `risk:high` `depends:[S01]`
