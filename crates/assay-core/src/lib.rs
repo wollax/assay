@@ -60,6 +60,9 @@ pub mod pr;
 /// Guided authoring wizard: pure functions for creating milestones and specs.
 pub mod wizard;
 
+/// Centralized tracing subscriber initialization for all binaries.
+pub mod telemetry;
+
 /// Session dependency orchestration: DAG construction and validation.
 ///
 /// Gated behind the `orchestrate` Cargo feature.

@@ -51,7 +51,7 @@ fn pr_create_cmd(
     let config = match assay_core::config::load(&root) {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("Error: {e}");
+            tracing::error!(error = %e, "Failed to load config");
             return Ok(1);
         }
     };
@@ -75,7 +75,7 @@ fn pr_create_cmd(
             Ok(0)
         }
         Err(e) => {
-            eprintln!("Error: {e}");
+            tracing::error!(error = %e, "Failed to create PR");
             Ok(1)
         }
     }

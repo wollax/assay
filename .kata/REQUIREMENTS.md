@@ -347,14 +347,14 @@
 
 ### R027 — OpenTelemetry instrumentation
 - Class: quality-attribute
-- Status: deferred
+- Status: active
 - Description: OTel tracing spans and metrics across pipeline stages, session lifecycle, merge phases, and harness generation
 - Why it matters: Observability is critical for debugging multi-agent orchestration at scale — which session is slow, where merges fail, harness generation latency
 - Source: user
-- Primary owning slice: M004+ (provisional)
-- Supporting slices: none
+- Primary owning slice: M009/S03
+- Supporting slices: M009/S01, M009/S02, M009/S04, M009/S05
 - Validation: unmapped
-- Notes: Cross-cutting concern — better as a dedicated pass after orchestration and harness surfaces stabilize. M002 should identify span boundaries but not wire them.
+- Notes: Deferred since M002. Now activated for M009. Scoped to tracing only (metrics deferred to R067). Covers pipeline + orchestration span instrumentation, JSON file + OTLP export, and eprintln→tracing migration.
 
 ### R028 — Post-resolution validation
 - Class: quality-attribute
@@ -609,6 +609,96 @@
 - Validation: S04 — `compute_analytics()` aggregates failure frequency and milestone velocity; CLI with text tables and `--json`; 14 tests. S05 — TUI analytics screen with `a` key handler, draw_analytics renderer (failure frequency heatmap + velocity table), 6 integration tests; `just ready` green.
 - Notes: Aggregates from existing `.assay/history/` records. No new storage format needed. Both CLI and TUI surfaces validated.
 
+### R060 — Structured tracing foundation
+- Class: quality-attribute
+- Status: validated
+- Description: Replace `eprintln!` across the workspace with `tracing::warn/info/debug`. Set up `tracing-subscriber` with layered configuration (fmt layer + optional OTel layer). All crates emit structured events via the `tracing` facade.
+- Why it matters: `eprintln!` output is unstructured, unleveled, and invisible to any collection system. Structured tracing is the foundation for all observability features.
+- Source: user
+- Primary owning slice: M009/S01
+- Supporting slices: none
+- Validation: S01 — zero eprintln! in all 4 production crates (grep verified); init_tracing() with TracingConfig presets, EnvFilter, non-blocking stderr; 3 telemetry unit tests; cargo fmt/clippy/test all green; just ready passes
+- Notes: D125 superseded by D131 (assay-tui gains tracing dep). 3 interactive eprint! calls preserved (D133). Guard daemon file logging deferred to S04.
+
+### R061 — Pipeline span instrumentation
+- Class: core-capability
+- Status: active
+- Description: `#[instrument]` spans on pipeline stages: spec load, worktree create, agent launch, gate eval, merge propose. Each span carries stage name, spec slug, and timing.
+- Why it matters: The pipeline is the core value loop — when a gate eval is slow or an agent launch fails, the user needs to see exactly where time was spent and what failed.
+- Source: user
+- Primary owning slice: M009/S02
+- Supporting slices: M009/S01
+- Validation: unmapped
+- Notes: Spans should nest under a root `run_session` span. Consistent with D007 (sync core) — tracing works naturally with sync code.
+
+### R062 — Orchestration span instrumentation
+- Class: core-capability
+- Status: active
+- Description: Spans on DAG/Mesh/Gossip executors: per-session spans nested under orchestration root span. Merge runner phases, conflict resolution, and session state transitions all traced.
+- Why it matters: Multi-agent orchestration is where things go wrong invisibly — which session is blocking the DAG, which merge conflicted, which gossip coordinator stalled.
+- Source: user
+- Primary owning slice: M009/S03
+- Supporting slices: M009/S01, M009/S02
+- Validation: unmapped
+- Notes: DAG executor uses `std::thread::scope` (D017) — spans must cross thread boundaries correctly. Mesh/Gossip use background threads. tracing handles this natively.
+
+### R063 — JSON file trace export
+- Class: core-capability
+- Status: active
+- Description: Completed traces written to `.assay/traces/` as JSON files. CLI command `assay traces list` and `assay traces show <id>` for inspection without external tooling.
+- Why it matters: Not every user has Jaeger/Grafana. JSON file export provides zero-dependency trace inspection for local development and debugging.
+- Source: user
+- Primary owning slice: M009/S04
+- Supporting slices: M009/S01
+- Validation: unmapped
+- Notes: Use `tracing-subscriber` JSON layer writing to `.assay/traces/`. CLI commands are thin wrappers reading/formatting these files.
+
+### R064 — OTLP trace export
+- Class: core-capability
+- Status: active
+- Description: Feature-flagged OTLP exporter (`--features telemetry`) sends spans to a collector (Jaeger/Tempo). Scoped tokio runtime for the async export layer only. Configurable endpoint via `OTEL_EXPORTER_OTLP_ENDPOINT` env var or `.assay/config.toml`.
+- Why it matters: OTLP is the industry standard for distributed tracing. Teams using Jaeger/Grafana Tempo need native export without a sidecar.
+- Source: user
+- Primary owning slice: M009/S05
+- Supporting slices: M009/S01
+- Validation: unmapped
+- Notes: Feature-flagged to avoid pulling tokio + OTel deps into default builds. Scoped tokio runtime (D007 compatible) — only the exporter thread uses async. `opentelemetry-otlp` crate with `tonic` or `reqwest` transport.
+
+### R065 — Trace context propagation
+- Class: quality-attribute
+- Status: active
+- Description: Trace IDs propagated across subprocess boundaries (agent launch, gh CLI calls) via environment variables so child process spans can be correlated with parent orchestration traces.
+- Why it matters: Without propagation, agent subprocess traces are disconnected islands. Propagation enables the full picture: orchestrator → session → agent → gate eval as one trace.
+- Source: inferred
+- Primary owning slice: M009/S05
+- Supporting slices: M009/S02, M009/S03
+- Validation: unmapped
+- Notes: Standard W3C Trace Context via `TRACEPARENT` env var. Child processes that support OTel will pick it up automatically. Non-OTel children ignore it harmlessly.
+
+## Deferred
+
+### R066 — TUI trace viewer
+- Class: primary-user-loop
+- Status: deferred
+- Description: TUI screen showing recent orchestration traces with span tree, timing, and status. Accessible via a key from Dashboard.
+- Why it matters: The TUI is the primary surface — trace inspection should eventually be available without leaving the TUI.
+- Source: user
+- Primary owning slice: none (deferred to future milestone)
+- Supporting slices: none
+- Validation: unmapped
+- Notes: Deferred per user decision. Depends on R063 (JSON file export) for data source.
+
+### R067 — OTel metrics
+- Class: quality-attribute
+- Status: deferred
+- Description: OTel counters (sessions launched, gates evaluated, merges attempted) and histograms (gate eval latency, agent run duration) alongside tracing.
+- Why it matters: Metrics enable dashboards, alerting, and trend analysis that tracing alone cannot provide efficiently.
+- Source: user
+- Primary owning slice: none (deferred to future milestone)
+- Supporting slices: none
+- Validation: unmapped
+- Notes: Deferred per user decision. Tracing provides the most diagnostic value first.
+
 ## Out of Scope
 
 ### R030 — Trait objects for adapter dispatch
@@ -685,7 +775,7 @@
 | R024 | differentiator | validated | M002/S04 | M002/S05 | S04 |
 | R025 | quality-attribute | deferred | none | none | unmapped |
 | R026 | differentiator | validated | M003/S01 | M003/S02 | S01 |
-| R027 | quality-attribute | deferred | M004+ | none | unmapped |
+| R027 | quality-attribute | active | M009/S03 | M009/S01–S05 | unmapped |
 | R030 | anti-feature | out-of-scope | none | none | n/a |
 | R031 | anti-feature | out-of-scope | none | none | n/a |
 | R032 | anti-feature | out-of-scope | none | none | n/a |
@@ -719,11 +809,20 @@
 | R058 | primary-user-loop | validated | M008/S02 | M008/S01 | S01, S02 |
 | R059 | failure-visibility | validated | M008/S04 | M008/S05 | S04, S05 |
 
+| R060 | quality-attribute | validated | M009/S01 | none | S01 |
+| R061 | core-capability | active | M009/S02 | M009/S01 | unmapped |
+| R062 | core-capability | active | M009/S03 | M009/S01, M009/S02 | unmapped |
+| R063 | core-capability | active | M009/S04 | M009/S01 | unmapped |
+| R064 | core-capability | active | M009/S05 | M009/S01 | unmapped |
+| R065 | quality-attribute | active | M009/S05 | M009/S02, M009/S03 | unmapped |
+| R066 | primary-user-loop | deferred | none | none | unmapped |
+| R067 | quality-attribute | deferred | none | none | unmapped |
+
 ## Coverage Summary
 
-- Active requirements: 0
-- Mapped to slices: 0
-- Validated: 55 (R001–R029, R034–R059)
-- Deferred: 2 (R025, R027 — with rationale)
+- Active requirements: 6 (R027, R061–R065)
+- Mapped to slices: 6
+- Validated: 56 (R001–R029 except R025/R027, R034–R060)
+- Deferred: 3 (R025, R066, R067)
 - Out of scope: 4 (R030, R031, R032, R033)
 - Unmapped active requirements: 0

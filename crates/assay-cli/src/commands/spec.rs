@@ -227,7 +227,7 @@ fn handle_spec_list() -> anyhow::Result<i32> {
     let result = assay_core::spec::scan(&specs_dir)?;
 
     for err in &result.errors {
-        eprintln!("Warning: {err}");
+        tracing::warn!("{err}");
     }
 
     if result.entries.is_empty() {

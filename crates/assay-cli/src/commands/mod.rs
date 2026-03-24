@@ -107,6 +107,7 @@ pub(crate) fn format_fail(color: bool) -> &'static str {
 }
 
 /// Format "WARN" with optional yellow color.
+#[allow(dead_code)]
 pub(crate) fn format_warn(color: bool) -> &'static str {
     if color { "\x1b[33mWARN\x1b[0m" } else { "WARN" }
 }
