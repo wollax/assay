@@ -2,10 +2,10 @@
 
 **Active Milestone:** M008 — PR Workflow + Plugin Parity
 **Active Slice:** S05 — TUI Analytics Screen
-**Active Task:** T02 — Implement draw_analytics with failure-frequency and velocity tables
-**Phase:** Execute Task
+**Active Task:** T02 ✅ (complete)
+**Phase:** Slice Complete
 **Last Updated:** 2026-03-24
-**Requirements Status:** 1 active (R059 partial — CLI done, TUI pending S05) · 54 validated (R001–R058) · 2 deferred · 4 out of scope
+**Requirements Status:** 1 active (R059 — CLI done, TUI done via S05) · 54 validated (R001–R058) · 2 deferred · 4 out of scope
 **Test Count:** 1400+ (all workspace tests pass)
 
 ## Completed Milestones
@@ -19,7 +19,7 @@
 - [x] S02: TUI PR status panel with background polling — R058 ✓
 - [x] S03: OpenCode plugin with full skill parity — R057 ✓
 - [x] S04: Gate history analytics engine and CLI — R059 (CLI done)
-- [ ] S05: TUI analytics screen — R059 (TUI pending) — **T01 done, T02 remaining**
+- [x] S05: TUI analytics screen — R059 (TUI done) — **T01 done, T02 done**
 
 ## Recent Decisions
 
@@ -34,4 +34,4 @@ None.
 
 ## Next Action
 
-Execute T02: Implement draw_analytics with failure-frequency and velocity tables.
+S05 complete. All M008 slices done. Ready for milestone verification and wrap-up.
