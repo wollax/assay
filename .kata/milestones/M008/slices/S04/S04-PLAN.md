@@ -44,14 +44,14 @@
 
 ## Tasks
 
-- [ ] **T01: Create analytics module with types and test scaffold** `est:30m`
+- [x] **T01: Create analytics module with types and test scaffold** `est:30m`
   - Why: Establishes the analytics types, submodule structure, and integration test file with initially-failing tests that define the contract
   - Files: `crates/assay-core/src/history/analytics.rs`, `crates/assay-core/src/history/mod.rs`, `crates/assay-core/tests/analytics.rs`
   - Do: Create `analytics.rs` as a peer of `history/mod.rs`; define `AnalyticsReport`, `FailureFrequency`, `MilestoneVelocity` structs with Serialize/Deserialize; add `pub mod analytics` to `history/mod.rs`; write integration test file with test helpers for creating synthetic history records and milestones; write tests covering: empty results dir, single spec single run, multi-spec aggregation, corrupt record skipping, milestone velocity with zero elapsed days, milestones with no completed chunks filtered out. Stub the three compute functions to return empty/default results so the module compiles.
   - Verify: `cargo test -p assay-core -- analytics` — tests compile but some assertions fail (red state is expected for contract tests)
   - Done when: analytics submodule exists with types, re-exported from `assay_core::history::analytics`, integration test file compiles and runs (some tests may fail)
 
-- [ ] **T02: Implement compute functions** `est:45m`
+- [x] **T02: Implement compute functions** `est:45m`
   - Why: Core analytics logic — makes the contract tests from T01 pass
   - Files: `crates/assay-core/src/history/analytics.rs`
   - Do: Implement `compute_failure_frequency(assay_dir) -> Result<(Vec<FailureFrequency>, usize)>` — enumerate `results/` dir entries, for each spec call `history::list()` then `history::load()` wrapping each in a match to count/skip deserialization errors, aggregate by `(spec_name, criterion_name)` tracking fail_count and total_runs, separate required vs advisory. Implement `compute_milestone_velocity(assay_dir) -> Result<Vec<MilestoneVelocity>>` — call `milestone_scan()`, filter to milestones with completed_chunks > 0, compute days_elapsed from created_at to updated_at with `max(1, days)`, compute chunks_per_day. Implement `compute_analytics(assay_dir) -> Result<AnalyticsReport>` composing both. Guard `results/` dir with `is_dir()` check before iterating.

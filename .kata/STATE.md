@@ -2,7 +2,7 @@
 
 **Active Milestone:** M008 — PR Workflow + Plugin Parity
 **Active Slice:** S04 — Gate History Analytics Engine and CLI
-**Active Task:** T01 — Create analytics module with types and test scaffold
+**Active Task:** T03 — Add `assay history` CLI subcommand
 **Phase:** Executing
 **Last Updated:** 2026-03-24
 **Requirements Status:** 1 active (R059) mapped to M008 slices · 54 validated (R001–R058) · 2 deferred · 4 out of scope
@@ -34,4 +34,4 @@ None.
 
 ## Next Action
 
-Execute T01: Create analytics module with types and test scaffold (S04).
+Execute T03: Add `assay history` CLI subcommand (S04). Create `commands/history.rs` with structured text and JSON output for analytics data.
