@@ -120,8 +120,8 @@ fn test_analytics_report_populated() {
     assert!(app.analytics_report.is_none());
 
     app.handle_event(key(KeyCode::Char('a')));
-    // compute_analytics may return Ok (with empty data) or Err depending on
-    // fixture state. With a valid .assay/ dir it should succeed with empty data.
+    // The fixture has a valid .assay/results/ dir and one milestone with no completed
+    // chunks, so compute_analytics returns Ok with empty vecs, which .ok() makes Some.
     assert!(
         app.analytics_report.is_some(),
         "expected analytics_report to be Some after pressing 'a' with a valid project"
@@ -171,11 +171,9 @@ fn test_analytics_app_state_with_synthetic_report() {
     });
     app.screen = Screen::Analytics;
 
-    // Verify screen state is correct (proves data path setup doesn't panic).
-    assert!(
-        matches!(app.screen, Screen::Analytics),
-        "expected Screen::Analytics with synthetic data"
-    );
+    // Verify that App state can hold a synthetic report without panicking.
+    // Note: this does not exercise draw_analytics — rendering requires a
+    // terminal backend (see backlog for TestBackend render coverage).
     assert!(app.analytics_report.is_some());
     let report = app.analytics_report.as_ref().unwrap();
     assert_eq!(report.failure_frequency.len(), 3);

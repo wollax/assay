@@ -19,7 +19,7 @@ use assay_core::pr::PrStatusInfo;
 use assay_core::spec::{SpecEntry, load_spec_entry_with_diagnostics};
 use assay_core::wizard::create_from_inputs;
 use assay_types::{
-    Criterion, GateRunRecord, GatesSpec, HarnessProfile, Milestone, MilestoneStatus,
+    Criterion, Enforcement, GateRunRecord, GatesSpec, HarnessProfile, Milestone, MilestoneStatus,
     ProviderConfig, ProviderKind, SettingsOverride,
 };
 use crossterm::event::KeyCode;
@@ -172,7 +172,8 @@ pub struct App {
     pub agent_thread: Option<std::thread::JoinHandle<i32>>,
     /// Slash command overlay state. `Some` when overlay is open.
     pub slash_state: Option<SlashState>,
-    /// Cached analytics report, populated when the user presses `a` from Dashboard.
+    /// Analytics report computed when the user presses `a` from Dashboard.
+    /// Recomputed on every `a` key press; `None` until the user first navigates to Analytics.
     pub analytics_report: Option<AnalyticsReport>,
     /// Cached PR status info per milestone slug, populated by the background
     /// polling thread via `TuiEvent::PrStatusUpdate`.
@@ -1690,6 +1691,9 @@ fn draw_settings(
 }
 
 /// Render the analytics screen with failure frequency and milestone velocity tables.
+///
+/// If `report` is `None` or both result sets are empty, renders a centered
+/// "No analytics data available" message instead of the two-table layout.
 fn draw_analytics(frame: &mut ratatui::Frame, area: Rect, report: Option<&AnalyticsReport>) {
     let report = match report {
         Some(r) if !r.failure_frequency.is_empty() || !r.milestone_velocity.is_empty() => r,
@@ -1706,10 +1710,15 @@ fn draw_analytics(frame: &mut ratatui::Frame, area: Rect, report: Option<&Analyt
     };
 
     // Layout: title, failure frequency table, velocity table, hint line.
+    // Velocity table height = entries + 3 (header + top/bottom border), capped at 12 rows.
     let [title_area, freq_area, vel_area, hint_area] = Layout::vertical([
         Constraint::Length(1),
         Constraint::Fill(1),
-        Constraint::Length((report.milestone_velocity.len() as u16 + 3).min(12)),
+        Constraint::Length(
+            (report.milestone_velocity.len() as u16)
+                .saturating_add(3)
+                .min(12),
+        ),
         Constraint::Length(1),
     ])
     .areas(area);
@@ -1744,15 +1753,15 @@ fn draw_analytics(frame: &mut ratatui::Frame, area: Rect, report: Option<&Analyt
                     Color::Green
                 };
                 let enforcement_label = match f.enforcement {
-                    assay_types::Enforcement::Required => "Required",
-                    assay_types::Enforcement::Advisory => "Advisory",
+                    Enforcement::Required => "Required",
+                    Enforcement::Advisory => "Advisory",
                 };
                 Row::new(vec![
                     Cell::from(f.spec_name.as_str()),
                     Cell::from(f.criterion_name.as_str()),
                     Cell::from(f.fail_count.to_string()),
                     Cell::from(f.total_runs.to_string()),
-                    Cell::from(rate_str).style(Style::default().fg(rate_color)),
+                    Cell::from(rate_str).fg(rate_color),
                     Cell::from(enforcement_label),
                 ])
             })
@@ -1776,7 +1785,7 @@ fn draw_analytics(frame: &mut ratatui::Frame, area: Rect, report: Option<&Analyt
                     "Rate",
                     "Enforce",
                 ])
-                .style(Style::default().bold()),
+                .bold(),
             )
             .block(
                 Block::default()
@@ -1815,10 +1824,7 @@ fn draw_analytics(frame: &mut ratatui::Frame, area: Rect, report: Option<&Analyt
             Constraint::Length(10),
         ];
         let vel_table = Table::new(vel_rows, vel_widths)
-            .header(
-                Row::new(vec!["Milestone", "Chunks", "Days", "Velocity"])
-                    .style(Style::default().bold()),
-            )
+            .header(Row::new(vec!["Milestone", "Chunks", "Days", "Velocity"]).bold())
             .block(
                 Block::default()
                     .borders(Borders::ALL)
