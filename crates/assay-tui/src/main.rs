@@ -100,7 +100,7 @@ fn run(mut terminal: DefaultTerminal) -> color_eyre::Result<()> {
             });
         }
     } else {
-        eprintln!("Warning: gh CLI not found — PR status polling disabled");
+        tracing::warn!("gh CLI not found — PR status polling disabled");
     }
 
     loop {

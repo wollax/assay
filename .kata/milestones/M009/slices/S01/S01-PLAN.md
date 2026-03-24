@@ -72,7 +72,7 @@
   - Verify: `grep -rn 'eprintln!' crates/assay-cli/src/commands/run.rs crates/assay-cli/src/commands/gate.rs crates/assay-cli/src/commands/harness.rs` returns zero; `cargo test -p assay-cli` passes
   - Done when: Zero eprintln in all three files, 1 eprint! in gate.rs preserved, all tests pass
 
-- [ ] **T05: Migrate remaining assay-cli and assay-tui eprintln calls** `est:45m`
+- [x] **T05: Migrate remaining assay-cli and assay-tui eprintln calls** `est:45m`
   - Why: Finish the migration — 33 remaining eprintln calls across context.rs (8), worktree.rs (7), milestone.rs (4), history.rs (4), main.rs (3), pr.rs (2), init.rs (2), plan.rs (1), spec.rs (1), mcp.rs (1), plus 3 in assay-tui
   - Files: `crates/assay-cli/src/commands/context.rs`, `crates/assay-cli/src/commands/worktree.rs`, `crates/assay-cli/src/commands/milestone.rs`, `crates/assay-cli/src/commands/history.rs`, `crates/assay-cli/src/main.rs`, `crates/assay-cli/src/commands/pr.rs`, `crates/assay-cli/src/commands/init.rs`, `crates/assay-cli/src/commands/plan.rs`, `crates/assay-cli/src/commands/spec.rs`, `crates/assay-cli/src/commands/mcp.rs`, `crates/assay-tui/src/app.rs`, `crates/assay-tui/src/main.rs`
   - Do: Migrate all remaining eprintln calls. Guard daemon messages in context.rs → `info!`/`error!`. Worktree warnings → `warn!`. Keep 2 `eprint!` interactive prompts in worktree.rs. Milestone/history/pr/init/plan/spec errors → `error!`. main.rs errors → `error!`. mcp.rs tracing init failure → `error!` (bootstrapping issue — use stderr fallback if subscriber not yet initialized). assay-tui app.rs cycle status/config warnings → `warn!`. assay-tui main.rs gh-not-found → `warn!` (D131 supersedes D125).

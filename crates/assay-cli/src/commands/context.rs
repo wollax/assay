@@ -604,9 +604,9 @@ fn handle_guard_start(session: Option<&str>) -> anyhow::Result<i32> {
     // Validate guard config
     let errors = assay_core::guard::config::validate(&guard_config);
     if !errors.is_empty() {
-        eprintln!("Guard configuration errors:");
+        tracing::error!("Guard configuration errors:");
         for e in &errors {
-            eprintln!("  - {e}");
+            tracing::error!(error = %e, "  - {e}");
         }
         return Ok(1);
     }
@@ -631,12 +631,12 @@ fn handle_guard_start(session: Option<&str>) -> anyhow::Result<i32> {
     // The guard.log file is created but not actively written to until S04.
     let _ = &guard_dir; // keep guard_dir creation above for S04 file logging
 
-    eprintln!("[guard] Starting — watching {}", session_path.display());
-    eprintln!(
-        "[guard] Soft: {:.0}%, Hard: {:.0}%, Poll: {}s",
-        guard_config.soft_threshold * 100.0,
-        guard_config.hard_threshold * 100.0,
-        guard_config.poll_interval_secs,
+    tracing::info!(path = %session_path.display(), "[guard] Starting — watching");
+    tracing::info!(
+        soft_threshold = guard_config.soft_threshold * 100.0,
+        hard_threshold = guard_config.hard_threshold * 100.0,
+        poll_interval_secs = guard_config.poll_interval_secs,
+        "[guard] Configuration"
     );
 
     let rt = tokio::runtime::Runtime::new()?;
@@ -649,11 +649,11 @@ fn handle_guard_start(session: Option<&str>) -> anyhow::Result<i32> {
 
     match result {
         Ok(()) => {
-            eprintln!("[guard] Stopped cleanly.");
+            tracing::info!("[guard] Stopped cleanly.");
             Ok(0)
         }
         Err(ref e) if matches!(e, assay_core::AssayError::GuardCircuitBreakerTripped { .. }) => {
-            eprintln!("{e}");
+            tracing::error!(error = %e, "Guard circuit breaker tripped");
             Ok(2)
         }
         Err(e) => Err(e.into()),
@@ -662,7 +662,7 @@ fn handle_guard_start(session: Option<&str>) -> anyhow::Result<i32> {
 
 #[cfg(not(unix))]
 fn handle_guard_start(_session: Option<&str>) -> anyhow::Result<i32> {
-    eprintln!("Guard daemon is only supported on Unix platforms.");
+    tracing::error!("Guard daemon is only supported on Unix platforms.");
     Ok(1)
 }
 
@@ -687,7 +687,7 @@ fn handle_guard_stop() -> anyhow::Result<i32> {
 
 #[cfg(not(unix))]
 fn handle_guard_stop() -> anyhow::Result<i32> {
-    eprintln!("Guard daemon is only supported on Unix platforms.");
+    tracing::error!("Guard daemon is only supported on Unix platforms.");
     Ok(1)
 }
 

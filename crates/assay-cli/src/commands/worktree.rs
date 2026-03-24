@@ -172,7 +172,7 @@ fn handle_worktree_list(json: bool) -> anyhow::Result<i32> {
 
     let result = assay_core::worktree::list(&root).map_err(|e| anyhow::anyhow!("{e}"))?;
     for warning in &result.warnings {
-        eprintln!("Warning: {warning}");
+        tracing::warn!("{warning}");
     }
     let entries = result.entries;
 
@@ -369,7 +369,7 @@ fn handle_worktree_cleanup_all(
 ) -> anyhow::Result<i32> {
     let result = assay_core::worktree::list(root).map_err(|e| anyhow::anyhow!("{e}"))?;
     for warning in &result.warnings {
-        eprintln!("Warning: {warning}");
+        tracing::warn!("{warning}");
     }
     let entries = result.entries;
 
@@ -392,9 +392,10 @@ fn handle_worktree_cleanup_all(
                     Ok(s) => s.dirty,
                     Err(assay_core::error::AssayError::WorktreeNotFound { .. }) => false,
                     Err(err) => {
-                        eprintln!(
-                            "Warning: could not check status of '{}': {err}",
-                            e.spec_slug
+                        tracing::warn!(
+                            spec_slug = %e.spec_slug,
+                            error = %err,
+                            "Could not check worktree status"
                         );
                         false
                     }
@@ -413,23 +414,24 @@ fn handle_worktree_cleanup_all(
                 entries.len()
             );
         }
-        eprintln!("The following worktrees will be removed:");
+        tracing::info!("The following worktrees will be removed:");
         for entry in &entries {
             let dirty_marker = if dirty_slugs.contains(&entry.spec_slug.as_str()) {
                 " (dirty!)"
             } else {
                 ""
             };
-            eprintln!(
-                "  - {} ({}){dirty_marker}",
+            tracing::info!(
+                spec_slug = %entry.spec_slug,
+                path = %entry.path.display(),
+                "  - {}{dirty_marker}",
                 entry.spec_slug,
-                entry.path.display()
             );
         }
         if !dirty_slugs.is_empty() {
-            eprintln!(
-                "\nWarning: {} worktree(s) have uncommitted changes.",
-                dirty_slugs.len()
+            tracing::warn!(
+                count = dirty_slugs.len(),
+                "Worktree(s) have uncommitted changes"
             );
         }
         eprint!("Remove all? [y/N] ");
@@ -449,7 +451,9 @@ fn handle_worktree_cleanup_all(
         let entry_force = force || dirty_slugs.contains(&entry.spec_slug.as_str());
         match assay_core::worktree::cleanup(root, &path, &entry.spec_slug, entry_force) {
             Ok(()) => removed.push(entry.spec_slug.clone()),
-            Err(e) => eprintln!("Warning: failed to remove '{}': {e}", entry.spec_slug),
+            Err(e) => {
+                tracing::warn!(spec_slug = %entry.spec_slug, error = %e, "Failed to remove worktree")
+            }
         }
     }
 

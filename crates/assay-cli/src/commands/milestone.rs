@@ -69,13 +69,13 @@ fn milestone_status_cmd(json: bool) -> anyhow::Result<i32> {
             Ok(Some(status)) => match serde_json::to_string(&status) {
                 Ok(s) => println!("{s}"),
                 Err(e) => {
-                    eprintln!("Error serializing cycle status: {e}");
+                    tracing::error!(error = %e, "Error serializing cycle status");
                     return Ok(1);
                 }
             },
             Ok(None) => println!(r#"{{"active":false}}"#),
             Err(e) => {
-                eprintln!("Error: {e}");
+                tracing::error!(error = %e, "Failed to read cycle status");
                 return Ok(1);
             }
         }
@@ -124,7 +124,7 @@ fn milestone_advance_cmd(milestone_slug: Option<String>) -> anyhow::Result<i32> 
     let config = match assay_core::config::load(&root) {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("Error: {e}");
+            tracing::error!(error = %e, "Failed to load config");
             return Ok(1);
         }
     };
@@ -145,7 +145,7 @@ fn milestone_advance_cmd(milestone_slug: Option<String>) -> anyhow::Result<i32> 
             Ok(0)
         }
         Err(e) => {
-            eprintln!("Error: {e}");
+            tracing::error!(error = %e, "Failed to advance milestone");
             Ok(1)
         }
     }

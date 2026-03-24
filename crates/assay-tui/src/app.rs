@@ -201,7 +201,7 @@ impl App {
                     let slug = match cycle_status(&assay_dir) {
                         Ok(status) => status.map(|cs| cs.milestone_slug),
                         Err(e) => {
-                            eprintln!("Warning: could not read cycle status: {e}");
+                            tracing::warn!(error = %e, "Could not read cycle status");
                             None
                         }
                     };
@@ -233,7 +233,7 @@ impl App {
                     Err(e) => {
                         // Config file exists but is unreadable — surface as status-bar
                         // warning via eprintln (not silently swallowed).
-                        eprintln!("Warning: failed to load .assay/config.toml: {e}");
+                        tracing::warn!(error = %e, "Failed to load .assay/config.toml");
                         None
                     }
                 }

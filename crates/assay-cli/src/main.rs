@@ -248,9 +248,9 @@ async fn run() -> anyhow::Result<i32> {
                 commands::init::show_status(&root)?;
                 Ok(0)
             } else {
-                eprintln!("Not an Assay project. Run `assay init` to get started.");
+                tracing::error!("Not an Assay project. Run `assay init` to get started.");
                 if let Err(e) = Cli::command().print_help() {
-                    eprintln!("Error: could not print help: {e}");
+                    tracing::error!(error = %e, "Could not print help");
                 }
                 println!();
                 Ok(1)
@@ -264,7 +264,7 @@ async fn main() {
     let code = match run().await {
         Ok(code) => code,
         Err(e) => {
-            eprintln!("Error: {e:#}");
+            tracing::error!(error = format!("{e:#}"), "Fatal error");
             1
         }
     };
