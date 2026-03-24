@@ -600,14 +600,14 @@
 
 ### R059 — Gate history analytics
 - Class: failure-visibility
-- Status: active
+- Status: validated
 - Description: Assay tracks and surfaces gate failure trends across runs — which criteria fail most often, which chunks require the most retries, milestone completion velocity. Accessible from TUI analytics panel and `assay history --analytics` CLI command.
 - Why it matters: Identifying recurring failures helps developers improve their specs and find systemic quality issues before they reach PR
 - Source: user
 - Primary owning slice: M008/S04
 - Supporting slices: M008/S05
-- Validation: S04 — `compute_analytics()` aggregates failure frequency by (spec_name, criterion_name) and milestone velocity; `assay history analytics` CLI with text tables and `--json`; 14 tests (8 integration + 2 unit + 4 CLI); `just ready` green. TUI analytics screen pending S05.
-- Notes: Aggregates from existing `.assay/history/` records. No new storage format needed. CLI portion validated by S04; TUI portion requires S05.
+- Validation: S04 — `compute_analytics()` aggregates failure frequency and milestone velocity; CLI with text tables and `--json`; 14 tests. S05 — TUI analytics screen with `a` key handler, draw_analytics renderer (failure frequency heatmap + velocity table), 6 integration tests; `just ready` green.
+- Notes: Aggregates from existing `.assay/history/` records. No new storage format needed. Both CLI and TUI surfaces validated.
 
 ## Out of Scope
 
@@ -717,13 +717,13 @@
 | R056 | primary-user-loop | validated | M007/S03 | M007/S01 | S03 |
 | R057 | differentiator | validated | M008/S03 | none | S03 |
 | R058 | primary-user-loop | validated | M008/S02 | M008/S01 | S01, S02 |
-| R059 | failure-visibility | active | M008/S04 | M008/S05 | S04 (partial) |
+| R059 | failure-visibility | validated | M008/S04 | M008/S05 | S04, S05 |
 
 ## Coverage Summary
 
-- Active requirements: 1 (R059)
-- Mapped to slices: 1
-- Validated: 54 (R001–R029, R034–R058 including R057)
+- Active requirements: 0
+- Mapped to slices: 0
+- Validated: 55 (R001–R029, R034–R059)
 - Deferred: 2 (R025, R027 — with rationale)
 - Out of scope: 4 (R030, R031, R032, R033)
 - Unmapped active requirements: 0
