@@ -1,23 +1,30 @@
 # Kata State
 
-**Active Milestone:** none (M008 complete, no M009 planned)
-**Active Slice:** none
+**Active Milestone:** M009 — Observability
+**Active Slice:** none (planning complete, ready for S01)
 **Active Task:** none
-**Phase:** Idle — all milestones complete
+**Phase:** Ready for slice planning
 **Last Updated:** 2026-03-24
-**Requirements Status:** 0 active · 55 validated (R001–R059) · 2 deferred (R025, R027) · 4 out of scope
+**Requirements Status:** 7 active (R027, R060–R065) · 55 validated · 3 deferred (R025, R066, R067) · 4 out of scope
 **Test Count:** 1400+ (all workspace tests pass)
 
-## Completed Milestones
+## M009 Progress
 
-- [x] M001: Single-Agent Harness (19 requirements)
-- [x] M002: Multi-Agent Orchestration (24 requirements)
-- [x] M003: Conflict Resolution & Polish (27 requirements)
-- [x] M004: Coordination Modes (32 requirements)
-- [x] M005: Spec-Driven Development Core (43 requirements)
-- [x] M006: TUI as Primary Surface (47 requirements)
-- [x] M007: TUI Agent Harness (52 requirements)
-- [x] M008: PR Workflow + Plugin Parity (55 requirements)
+5 slices planned:
+- [ ] S01: Structured tracing foundation and eprintln migration — R060
+- [ ] S02: Pipeline span instrumentation — R061
+- [ ] S03: Orchestration span instrumentation — R062
+- [ ] S04: JSON file trace export and CLI — R063
+- [ ] S05: OTLP export and trace context propagation — R064, R065
+
+## Recent Decisions
+
+- D126: OTel tracing scope: spans only, no metrics (metrics deferred to R067)
+- D127: Scoped tokio runtime for OTLP export only
+- D128: Dual export: JSON files + OTLP
+- D129: Telemetry module in assay-core, not a new crate
+- D130: TRACEPARENT env var for subprocess context propagation
+- D131: D125 superseded — assay-tui gains tracing dep
 
 ## Blockers
 
@@ -25,4 +32,4 @@ None.
 
 ## Next Action
 
-All 8 milestones complete. All 55 requirements validated. Ready for new milestone planning or release.
+Plan and execute S01: structured tracing foundation and eprintln migration.

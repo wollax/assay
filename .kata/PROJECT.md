@@ -68,3 +68,4 @@ See `.kata/REQUIREMENTS.md` for the explicit capability contract, requirement st
 - [x] M006: TUI as Primary Surface — full Ratatui TUI: dashboard, wizard, spec browser, provider config, help overlay, status bar (complete, R049–R052 validated, 1371+ tests)
 - [x] M007: TUI Agent Harness — TUI spawns and controls AI agents, provider abstraction (Anthropic/OpenAI/Ollama), MCP management, slash commands (complete, R053/R055 validated, 1400+ tests)
 - [x] M008: PR Workflow + Plugin Parity — advanced PR automation, OpenCode plugin, history analytics (complete, R057–R059 validated, 1400+ tests)
+- [ ] M009: Observability — OpenTelemetry tracing spans on orchestration/pipeline/merge, JSON file + OTLP export, eprintln→tracing migration
