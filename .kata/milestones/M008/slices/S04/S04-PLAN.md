@@ -58,7 +58,7 @@
   - Verify: `cargo test -p assay-core -- analytics` — all tests green
   - Done when: All integration tests from T01 pass; `compute_analytics` returns correct aggregated data from synthetic records
 
-- [ ] **T03: Add `assay history` CLI subcommand** `est:45m`
+- [x] **T03: Add `assay history` CLI subcommand** `est:45m`
   - Why: Exposes analytics via the CLI — the user-facing surface for R059
   - Files: `crates/assay-cli/src/commands/mod.rs`, `crates/assay-cli/src/commands/history.rs`, `crates/assay-cli/src/main.rs`
   - Do: Create `commands/history.rs` with `HistoryCommand` enum (subcommand `Analytics` with `--json` flag); add `pub mod history` to `commands/mod.rs`; add `History` variant to `Command` enum in `main.rs` with dispatch to `commands::history::handle()`; implement structured text formatter (table-like output for failure frequency sorted by fail_count desc, velocity sorted by chunks_per_day desc); implement JSON output via `serde_json::to_string_pretty`; report unreadable_records count in text output when > 0. Add unit tests for the CLI command (structured text output shape, JSON output shape, no-project error).
