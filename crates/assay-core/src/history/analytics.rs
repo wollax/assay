@@ -15,6 +15,8 @@ use serde::{Deserialize, Serialize};
 
 use assay_types::Enforcement;
 
+use tracing::warn;
+
 use crate::error::Result;
 
 /// How often a specific criterion fails across all recorded gate runs.
@@ -100,7 +102,7 @@ pub fn compute_failure_frequency(assay_dir: &Path) -> Result<(Vec<FailureFrequen
         let spec_entry = match spec_entry {
             Ok(e) => e,
             Err(e) => {
-                eprintln!("Warning: skipping results entry: {e}");
+                warn!(error = %e, "Skipping unreadable results entry");
                 unreadable += 1;
                 continue;
             }
@@ -113,9 +115,10 @@ pub fn compute_failure_frequency(assay_dir: &Path) -> Result<(Vec<FailureFrequen
         let run_files = match std::fs::read_dir(&spec_path) {
             Ok(rd) => rd,
             Err(e) => {
-                eprintln!(
-                    "Warning: could not read spec dir {} — all history for this spec skipped: {e}",
-                    spec_path.display()
+                warn!(
+                    path = %spec_path.display(),
+                    error = %e,
+                    "Could not read spec directory — all history for this spec skipped"
                 );
                 unreadable += 1;
                 continue;
@@ -126,7 +129,7 @@ pub fn compute_failure_frequency(assay_dir: &Path) -> Result<(Vec<FailureFrequen
             let run_entry = match run_entry {
                 Ok(e) => e,
                 Err(e) => {
-                    eprintln!("Warning: skipping run entry: {e}");
+                    warn!(error = %e, "Skipping unreadable run entry");
                     unreadable += 1;
                     continue;
                 }
@@ -139,9 +142,10 @@ pub fn compute_failure_frequency(assay_dir: &Path) -> Result<(Vec<FailureFrequen
             let content = match std::fs::read_to_string(&run_path) {
                 Ok(c) => c,
                 Err(e) => {
-                    eprintln!(
-                        "Warning: unreadable history record {}: {e}",
-                        run_path.display()
+                    warn!(
+                        path = %run_path.display(),
+                        error = %e,
+                        "Unreadable history record"
                     );
                     unreadable += 1;
                     continue;
@@ -151,9 +155,10 @@ pub fn compute_failure_frequency(assay_dir: &Path) -> Result<(Vec<FailureFrequen
             let record: assay_types::GateRunRecord = match serde_json::from_str(&content) {
                 Ok(r) => r,
                 Err(e) => {
-                    eprintln!(
-                        "Warning: unreadable history record {}: {e}",
-                        run_path.display()
+                    warn!(
+                        path = %run_path.display(),
+                        error = %e,
+                        "Unreadable history record"
                     );
                     unreadable += 1;
                     continue;
@@ -221,9 +226,10 @@ pub fn compute_milestone_velocity(assay_dir: &Path) -> Result<Vec<MilestoneVeloc
                 return Ok(vec![]);
             }
             // Any other error (permission denied, corrupt TOML, etc.) is unexpected.
-            eprintln!(
-                "Warning: could not read milestones directory {}: {e}",
-                milestones_dir.display()
+            warn!(
+                path = %milestones_dir.display(),
+                error = %e,
+                "Could not read milestones directory"
             );
             return Ok(vec![]);
         }
@@ -237,10 +243,10 @@ pub fn compute_milestone_velocity(assay_dir: &Path) -> Result<Vec<MilestoneVeloc
             let total_chunks = m.chunks.len();
             let raw_days = (m.updated_at - m.created_at).num_seconds() as f64 / 86400.0;
             if raw_days < 0.0 {
-                eprintln!(
-                    "Warning: milestone '{}' has updated_at before created_at ({raw_days:.1} days) — \
-                     timestamps may be corrupt. Treating as 0 days elapsed.",
-                    m.slug
+                warn!(
+                    milestone_slug = %m.slug,
+                    days_elapsed = raw_days,
+                    "Milestone has updated_at before created_at — timestamps may be corrupt, treating as 0 days elapsed"
                 );
             }
             let days_elapsed = raw_days.max(0.0);

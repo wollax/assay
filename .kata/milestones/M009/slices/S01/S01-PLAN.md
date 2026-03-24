@@ -58,7 +58,7 @@
   - Verify: `cargo build -p assay-cli -p assay-tui` succeeds; `init_mcp_tracing` function removed; no `tracing_subscriber::fmt()` direct calls remain outside `telemetry.rs`
   - Done when: All three binaries call `init_tracing()`, zero ad-hoc subscriber inits remain, builds pass
 
-- [ ] **T03: Migrate assay-core eprintln calls to tracing macros** `est:30m`
+- [x] **T03: Migrate assay-core eprintln calls to tracing macros** `est:30m`
   - Why: assay-core has 9 eprintln calls (7 in analytics.rs, 2 in history/mod.rs) that must become structured tracing events
   - Files: `crates/assay-core/src/history/analytics.rs`, `crates/assay-core/src/history/mod.rs`
   - Do: Audit each eprintln in assay-core. Map analytics skip warnings → `tracing::warn!`, history load errors → `tracing::warn!` or `tracing::error!`. Add structured fields where useful (e.g. `spec_slug`, `file_path`). Verify no test captures stderr and asserts on exact eprintln strings.
