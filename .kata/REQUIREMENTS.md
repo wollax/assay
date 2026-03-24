@@ -604,10 +604,10 @@
 - Description: Assay tracks and surfaces gate failure trends across runs — which criteria fail most often, which chunks require the most retries, milestone completion velocity. Accessible from TUI analytics panel and `assay history --analytics` CLI command.
 - Why it matters: Identifying recurring failures helps developers improve their specs and find systemic quality issues before they reach PR
 - Source: user
-- Primary owning slice: M008/S03
-- Supporting slices: none
-- Validation: unmapped
-- Notes: Aggregates from existing `.assay/history/` records. No new storage format needed.
+- Primary owning slice: M008/S04
+- Supporting slices: M008/S05
+- Validation: S04 — `compute_analytics()` aggregates failure frequency by (spec_name, criterion_name) and milestone velocity; `assay history analytics` CLI with text tables and `--json`; 14 tests (8 integration + 2 unit + 4 CLI); `just ready` green. TUI analytics screen pending S05.
+- Notes: Aggregates from existing `.assay/history/` records. No new storage format needed. CLI portion validated by S04; TUI portion requires S05.
 
 ## Out of Scope
 
@@ -717,7 +717,7 @@
 | R056 | primary-user-loop | validated | M007/S03 | M007/S01 | S03 |
 | R057 | differentiator | validated | M008/S03 | none | S03 |
 | R058 | primary-user-loop | validated | M008/S02 | M008/S01 | S01, S02 |
-| R059 | failure-visibility | active | M008/S03 | none | mapped |
+| R059 | failure-visibility | active | M008/S04 | M008/S05 | S04 (partial) |
 
 ## Coverage Summary
 
