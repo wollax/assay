@@ -611,14 +611,14 @@
 
 ### R060 — Structured tracing foundation
 - Class: quality-attribute
-- Status: active
+- Status: validated
 - Description: Replace `eprintln!` across the workspace with `tracing::warn/info/debug`. Set up `tracing-subscriber` with layered configuration (fmt layer + optional OTel layer). All crates emit structured events via the `tracing` facade.
 - Why it matters: `eprintln!` output is unstructured, unleveled, and invisible to any collection system. Structured tracing is the foundation for all observability features.
 - Source: user
 - Primary owning slice: M009/S01
 - Supporting slices: none
-- Validation: unmapped
-- Notes: ~250 eprintln! calls across CLI + ~20 existing tracing:: calls in MCP. Migration must preserve existing stderr behavior for CLI users (fmt subscriber writes to stderr by default). assay-tui uses eprintln for gh-not-found warning (D125) — migrate these too.
+- Validation: S01 — zero eprintln! in all 4 production crates (grep verified); init_tracing() with TracingConfig presets, EnvFilter, non-blocking stderr; 3 telemetry unit tests; cargo fmt/clippy/test all green; just ready passes
+- Notes: D125 superseded by D131 (assay-tui gains tracing dep). 3 interactive eprint! calls preserved (D133). Guard daemon file logging deferred to S04.
 
 ### R061 — Pipeline span instrumentation
 - Class: core-capability
@@ -809,7 +809,7 @@
 | R058 | primary-user-loop | validated | M008/S02 | M008/S01 | S01, S02 |
 | R059 | failure-visibility | validated | M008/S04 | M008/S05 | S04, S05 |
 
-| R060 | quality-attribute | active | M009/S01 | none | unmapped |
+| R060 | quality-attribute | validated | M009/S01 | none | S01 |
 | R061 | core-capability | active | M009/S02 | M009/S01 | unmapped |
 | R062 | core-capability | active | M009/S03 | M009/S01, M009/S02 | unmapped |
 | R063 | core-capability | active | M009/S04 | M009/S01 | unmapped |
@@ -820,9 +820,9 @@
 
 ## Coverage Summary
 
-- Active requirements: 7 (R027, R060–R065)
-- Mapped to slices: 7
-- Validated: 55 (R001–R029 except R025/R027, R034–R059)
+- Active requirements: 6 (R027, R061–R065)
+- Mapped to slices: 6
+- Validated: 56 (R001–R029 except R025/R027, R034–R060)
 - Deferred: 3 (R025, R066, R067)
 - Out of scope: 4 (R030, R031, R032, R033)
 - Unmapped active requirements: 0

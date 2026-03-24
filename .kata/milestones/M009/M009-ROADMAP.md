@@ -58,7 +58,7 @@ This milestone is complete only when all are true:
 
 ## Slices
 
-- [ ] **S01: Structured tracing foundation and eprintln migration** `risk:medium` `depends:[]`
+- [x] **S01: Structured tracing foundation and eprintln migration** `risk:medium` `depends:[]`
   > After this: all crates emit structured `tracing::*` events instead of `eprintln!`. `RUST_LOG=debug assay gate run spec` produces leveled, structured output to stderr. Proven by grep confirming zero eprintln in production code + integration test exercising log output.
 
 - [ ] **S02: Pipeline span instrumentation** `risk:medium` `depends:[S01]`
