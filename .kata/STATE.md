@@ -2,8 +2,8 @@
 
 **Active Milestone:** M008 — PR Workflow + Plugin Parity
 **Active Slice:** S05 — TUI Analytics Screen
-**Active Task:** — (not yet planned)
-**Phase:** Plan Slice
+**Active Task:** T01 — Add Screen::Analytics variant, App field, integration tests, and wire `a` key handler
+**Phase:** Execute Task
 **Last Updated:** 2026-03-24
 **Requirements Status:** 1 active (R059 partial — CLI done, TUI pending S05) · 54 validated (R001–R058) · 2 deferred · 4 out of scope
 **Test Count:** 1400+ (all workspace tests pass)
@@ -19,7 +19,7 @@
 - [x] S02: TUI PR status panel with background polling — R058 ✓
 - [x] S03: OpenCode plugin with full skill parity — R057 ✓
 - [x] S04: Gate history analytics engine and CLI — R059 (CLI done)
-- [ ] S05: TUI analytics screen — R059 (TUI pending)
+- [ ] S05: TUI analytics screen — R059 (TUI pending) — **planned, 2 tasks (T01–T02)**
 
 ## Recent Decisions
 
@@ -34,4 +34,4 @@ None.
 
 ## Next Action
 
-Plan and execute S05 (TUI analytics screen). S05 consumes `compute_analytics()` and the analytics types from S04 to render a gate failure heatmap and milestone velocity summary in the TUI.
+Execute T01: Add Screen::Analytics variant, App field, integration tests, and wire `a` key handler.
