@@ -2,6 +2,7 @@ pub mod checkpoint;
 pub mod context;
 pub mod gate;
 pub mod harness;
+pub mod history;
 pub mod init;
 pub mod mcp;
 pub mod milestone;

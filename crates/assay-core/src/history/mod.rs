@@ -14,6 +14,8 @@ use tempfile::NamedTempFile;
 
 use assay_types::{GateRunRecord, GateRunSummary};
 
+pub mod analytics;
+
 use crate::error::{AssayError, Result};
 
 /// Validate that a string is safe to use as a single path component.

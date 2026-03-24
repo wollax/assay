@@ -59,7 +59,7 @@ This milestone is complete only when all are true:
 - [x] **S03: OpenCode plugin with full skill parity** `risk:low` `depends:[]`
   > After this: `plugins/opencode/` contains AGENTS.md + 5 skills (gate-check, spec-show, cycle-status, next-chunk, plan) matching Codex plugin structure. Proven by file existence and structural checks.
 
-- [ ] **S04: Gate history analytics engine and CLI** `risk:medium` `depends:[]`
+- [x] **S04: Gate history analytics engine and CLI** `risk:medium` `depends:[]`
   > After this: `assay history --analytics` outputs gate failure frequency (which criteria fail most) and milestone completion velocity (chunks per day). Proven by unit tests with synthetic history records.
 
 - [ ] **S05: TUI analytics screen** `risk:low` `depends:[S04]`

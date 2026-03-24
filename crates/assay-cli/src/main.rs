@@ -177,6 +177,18 @@ Examples:
     /// Run the guided authoring wizard to create a milestone and chunk specs.
     #[command(name = "plan", about = "Run the guided authoring wizard")]
     Plan,
+    /// Analyse gate run history and milestone velocity
+    #[command(after_long_help = "\
+Examples:
+  Show failure frequency and milestone velocity:
+    assay history analytics
+
+  Output analytics as JSON:
+    assay history analytics --json")]
+    History {
+        #[command(subcommand)]
+        command: commands::history::HistoryCommand,
+    },
     /// Create a GitHub PR for a milestone after all chunk gates pass
     #[command(after_long_help = "\
 Examples:
@@ -207,6 +219,7 @@ async fn run() -> anyhow::Result<i32> {
         Some(Command::Checkpoint { command }) => commands::checkpoint::handle(command),
         Some(Command::Milestone { command }) => commands::milestone::handle(command),
         Some(Command::Plan) => commands::plan::handle(),
+        Some(Command::History { command }) => commands::history::handle(command),
         Some(Command::Pr { command }) => commands::pr::handle(command),
         None => {
             // Note: project detection checks cwd only — no upward traversal.
