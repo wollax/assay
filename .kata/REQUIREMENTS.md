@@ -234,14 +234,14 @@ This file is the explicit capability and coverage contract for the project.
 
 ### R027 — SSH worker pools / remote dispatch
 - Class: integration
-- Status: active
+- Status: validated
 - Description: `smelt serve` dispatches jobs to remote machines over SSH — static `[[workers]]` in `server.toml`, manifest delivered via scp, `smelt run` executed on the remote, state synced back.
 - Why it matters: Multi-machine parallelism without cloud infrastructure; scales agentic workloads beyond a single host.
 - Source: user
 - Primary owning slice: M008/S04
 - Supporting slices: M008/S01, M008/S02, M008/S03
-- Validation: unmapped
-- Notes: Round-robin worker selection; offline-worker re-queue; scp manifest delivery; scp state sync back to dispatcher.
+- Validation: validated
+- Notes: Proven by M008: S01 (WorkerConfig + SshClient + probe timeout), S02 (deliver_manifest + run_remote_job with MockSshClient), S03 (sync_state_back + state round-trip), S04 (dispatch routing + round-robin + failover + worker_host in API/TUI; 155 workspace tests green). Live multi-host proof deferred to S04-UAT.md.
 
 ### R028 — Persistent queue across `smelt serve` restarts
 - Class: operability
@@ -282,14 +282,14 @@ This file is the explicit capability and coverage contract for the project.
 
 ### R027 — SSH worker pools / remote dispatch
 - Class: integration
-- Status: active
+- Status: validated
 - Description: `smelt serve` can distribute job execution to remote machines via SSH — static `[[workers]]` list in `server.toml`, manifest delivered via scp, `smelt run` executed on the remote, state synced back to dispatcher.
 - Why it matters: Remote dispatch enables multi-machine parallelism and resource isolation for large workloads without cloud infrastructure.
 - Source: user (inspired by Symphony SSH worker pools)
 - Primary owning slice: M008/S04
 - Supporting slices: M008/S01, M008/S02, M008/S03
-- Validation: unmapped
-- Notes: M006 proves local dispatch. M008 adds SSH routing: round-robin worker selection, offline-worker re-queue, scp manifest delivery, scp state sync back.
+- Validation: validated
+- Notes: Proven by M008 (all 4 slices complete). SSH subprocess approach (D111), MockSshClient integration tests, round-robin + failover + worker_host visibility. Live multi-host proof deferred to S04-UAT.md.
 
 ### R028 — Persistent queue across `smelt serve` restarts
 - Class: operability
@@ -366,7 +366,7 @@ This file is the explicit capability and coverage contract for the project.
 | R024 | integration          | validated   | M006/S02      | M006/S03             | validated |
 | R025 | failure-visibility   | validated   | M006/S03      | M006/S01             | validated |
 | R026 | integration          | deferred    | none          | none                 | unmapped  |
-| R027 | integration          | active      | M008/S04      | M008/S01,S02,S03     | unmapped  |
+| R027 | integration          | validated   | M008/S04      | M008/S01,S02,S03     | validated |
 | R028 | operability          | validated   | M007/S03      | M007/S01,S02         | validated |
 | R030 | anti-feature         | out-of-scope| none          | none                 | n/a       |
 | R031 | anti-feature         | out-of-scope| none          | none                 | n/a       |
@@ -374,7 +374,7 @@ This file is the explicit capability and coverage contract for the project.
 
 ## Coverage Summary
 
-- Active requirements: 1 (R027)
-- Mapped to slices: 1 (R027 → M008/S04)
-- Validated (all milestones + M007 complete): 20 (R001–R008, R010–R015, R020, R021, R023, R024, R025, R028)
+- Active requirements: 0
+- Mapped to slices: 0
+- Validated (all milestones through M008 complete): 21 (R001–R008, R010–R015, R020, R021, R023, R024, R025, R027, R028)
 - Unmapped active requirements: 0

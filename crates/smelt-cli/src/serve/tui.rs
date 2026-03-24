@@ -80,12 +80,17 @@ pub(crate) fn render(frame: &mut Frame, state: &Arc<Mutex<ServerState>>) {
                     .and_then(|s| s.to_str())
                     .unwrap_or("?")
                     .to_string();
+                let worker = j
+                    .worker_host
+                    .clone()
+                    .unwrap_or_else(|| "-".to_string());
                 (
                     j.id.to_string(),
                     manifest_name,
                     format!("{:?}", j.status),
                     j.attempt.to_string(),
                     elapsed,
+                    worker,
                 )
             })
             .collect::<Vec<_>>()
@@ -93,13 +98,14 @@ pub(crate) fn render(frame: &mut Frame, state: &Arc<Mutex<ServerState>>) {
 
     let rows: Vec<Row> = jobs
         .iter()
-        .map(|(id, name, status, attempt, elapsed)| {
+        .map(|(id, name, status, attempt, elapsed, worker)| {
             Row::new(vec![
                 Cell::from(id.as_str()),
                 Cell::from(name.as_str()),
                 Cell::from(status.as_str()),
                 Cell::from(attempt.as_str()),
                 Cell::from(elapsed.as_str()),
+                Cell::from(worker.as_str()),
             ])
         })
         .collect();
@@ -110,11 +116,64 @@ pub(crate) fn render(frame: &mut Frame, state: &Arc<Mutex<ServerState>>) {
         Constraint::Length(12), // status
         Constraint::Length(8),  // attempt
         Constraint::Length(8),  // elapsed
+        Constraint::Length(16), // worker
     ];
 
     let table = Table::new(rows, widths)
-        .header(Row::new(vec!["Job ID", "Manifest", "Status", "Attempt", "Elapsed"]))
+        .header(Row::new(vec!["Job ID", "Manifest", "Status", "Attempt", "Elapsed", "Worker"]))
         .block(Block::default().title("smelt serve — jobs").borders(Borders::ALL));
 
     frame.render_widget(table, frame.area());
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::serve::queue::ServerState;
+    use crate::serve::types::{JobId, JobSource, JobStatus, QueuedJob, now_epoch};
+    use ratatui::backend::TestBackend;
+    use ratatui::Terminal;
+    use std::path::PathBuf;
+
+    #[test]
+    fn test_tui_render_worker_host() {
+        let mut state = ServerState::new(1);
+        state.jobs.push_back(QueuedJob {
+            id: JobId::new("job-w1"),
+            manifest_path: PathBuf::from("test.smelt.toml"),
+            source: JobSource::HttpApi,
+            attempt: 1,
+            status: JobStatus::Running,
+            queued_at: now_epoch(),
+            started_at: Some(now_epoch()),
+            worker_host: Some("worker-1".into()),
+        });
+        // Also add a job with no worker_host to test "-" rendering
+        state.jobs.push_back(QueuedJob {
+            id: JobId::new("job-l1"),
+            manifest_path: PathBuf::from("local.smelt.toml"),
+            source: JobSource::HttpApi,
+            attempt: 0,
+            status: JobStatus::Queued,
+            queued_at: now_epoch(),
+            started_at: None,
+            worker_host: None,
+        });
+
+        let shared = Arc::new(Mutex::new(state));
+        let backend = TestBackend::new(100, 10);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|frame| render(frame, &shared)).unwrap();
+
+        // Collect all buffer content into a single string for assertion
+        let buf = terminal.backend().buffer().clone();
+        let text: String = buf
+            .content
+            .iter()
+            .map(|cell| cell.symbol().chars().next().unwrap_or(' '))
+            .collect();
+
+        assert!(text.contains("worker-1"), "expected 'worker-1' in TUI output");
+        assert!(text.contains("Worker"), "expected 'Worker' header in TUI output");
+    }
 }

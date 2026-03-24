@@ -82,7 +82,6 @@ pub struct ServerConfig {
     pub workers: Vec<WorkerConfig>,
     /// Timeout in seconds for SSH connection attempts to worker hosts.
     #[serde(default = "default_ssh_timeout_secs")]
-    #[allow(dead_code)] // consumed by dispatch routing in S04
     pub ssh_timeout_secs: u64,
 }
 

@@ -44,36 +44,42 @@ pub struct SshOutput {
 ///
 /// This trait is intentionally **not** object-safe (it uses `async fn`).  Use
 /// `impl SshClient` / `<C: SshClient>` at call sites rather than `dyn SshClient`.
-#[allow(async_fn_in_trait)]
+///
+/// All async methods return `Send` futures so they can be spawned on the tokio
+/// runtime via `tokio::spawn`.
 pub trait SshClient {
     /// Execute `cmd` on the remote host described by `worker`.
     ///
     /// Returns `SshOutput` on any successful subprocess invocation — callers
     /// should inspect `exit_code` to detect remote command failures.
-    async fn exec(
+    fn exec(
         &self,
         worker: &WorkerConfig,
         timeout_secs: u64,
         cmd: &str,
-    ) -> anyhow::Result<SshOutput>;
+    ) -> impl std::future::Future<Output = anyhow::Result<SshOutput>> + Send;
 
     /// Verify connectivity to `worker` by running `echo smelt-probe`.
     ///
     /// Returns `Ok(())` when the probe succeeds (exit_code == 0), or `Err`
     /// otherwise.  The error is returned within `timeout_secs + 1s` thanks to
     /// SSH's own `ConnectTimeout` option.
-    async fn probe(&self, worker: &WorkerConfig, timeout_secs: u64) -> anyhow::Result<()>;
+    fn probe(
+        &self,
+        worker: &WorkerConfig,
+        timeout_secs: u64,
+    ) -> impl std::future::Future<Output = anyhow::Result<()>> + Send;
 
     /// Copy a local file to a remote destination via `scp`.
     ///
     /// `remote_dest` is in `user@host:/path` format.
-    async fn scp_to(
+    fn scp_to(
         &self,
         worker: &WorkerConfig,
         timeout_secs: u64,
         local_path: &std::path::Path,
         remote_dest: &str,
-    ) -> anyhow::Result<()>;
+    ) -> impl std::future::Future<Output = anyhow::Result<()>> + Send;
 
     /// Copy a remote file or directory to a local destination.
     ///
@@ -82,13 +88,13 @@ pub trait SshClient {
     ///
     /// Note: `SubprocessSshClient` adds `-r` for recursive copy; other
     /// implementations may handle recursion differently.
-    async fn scp_from(
+    fn scp_from(
         &self,
         worker: &WorkerConfig,
         timeout_secs: u64,
         remote_src: &str,
         local_dest: &std::path::Path,
-    ) -> anyhow::Result<()>;
+    ) -> impl std::future::Future<Output = anyhow::Result<()>> + Send;
 }
 
 // ---------------------------------------------------------------------------
@@ -96,6 +102,7 @@ pub trait SshClient {
 // ---------------------------------------------------------------------------
 
 /// `SshClient` implementation that shells out to the system `ssh` binary.
+#[derive(Clone)]
 pub struct SubprocessSshClient;
 
 impl SubprocessSshClient {
@@ -482,7 +489,7 @@ pub async fn run_remote_job<C: SshClient>(
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use std::collections::VecDeque;
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
@@ -494,6 +501,7 @@ mod tests {
     // -----------------------------------------------------------------------
 
     /// Test double for `SshClient` with configurable pop-front results.
+    #[derive(Clone)]
     pub(crate) struct MockSshClient {
         exec_results: Arc<Mutex<VecDeque<anyhow::Result<SshOutput>>>>,
         probe_results: Arc<Mutex<VecDeque<anyhow::Result<()>>>>,

@@ -89,6 +89,8 @@ pub struct ServerState {
     pub running_count: usize,
     pub max_concurrent: usize,
     pub queue_dir: Option<PathBuf>,
+    /// Round-robin index for SSH worker selection. Volatile — not serialized.
+    pub round_robin_idx: usize,
 }
 
 impl ServerState {
@@ -98,6 +100,7 @@ impl ServerState {
             running_count: 0,
             max_concurrent,
             queue_dir: None,
+            round_robin_idx: 0,
         }
     }
 
@@ -135,6 +138,7 @@ impl ServerState {
             running_count: 0,
             max_concurrent,
             queue_dir: Some(queue_dir),
+            round_robin_idx: 0,
         }
     }
 
@@ -149,6 +153,7 @@ impl ServerState {
             status: JobStatus::Queued,
             queued_at: now_epoch(),
             started_at: None,
+            worker_host: None,
         });
         if let Some(ref dir) = self.queue_dir {
             write_queue_state(dir, &self.jobs);
@@ -244,6 +249,7 @@ mod tests {
             status,
             queued_at: 1_000_000,
             started_at,
+            worker_host: None,
         }
     }
 

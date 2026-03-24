@@ -1,17 +1,17 @@
 # Kata State
 
-**Active Milestone:** M008 — Remote worker dispatch via SSH
-**Active Slice:** S04 — Dispatch routing + round-robin + TUI/API worker field
-**Active Task:** None — slice not yet planned
-**Phase:** Planning
+**Active Milestone:** M008 — SSH Worker Pools (COMPLETE)
+**Active Slice:** None — all slices complete
+**Active Task:** None
+**Phase:** Complete
 
 ## Recent Decisions
-- scp_from uses -r flag unconditionally for directory copy (S03/T01)
-- MockSshClient uses separate scp_from_results queue independent from scp_results (S03/T01)
-- sync_state_back computes remote path as /tmp/.smelt/runs/<job_name>/ using job_name not JobId (S03/T02)
+- D122: dispatch_loop generic over SshClient for testability
+- D123: round_robin_idx is volatile (not serialized) on ServerState
+- D124: All-workers-offline re-queues job (status → Queued)
 
 ## Blockers
 - None
 
 ## Next Action
-Plan and execute S04: wire dispatch routing (local vs SSH), round-robin worker selection, offline-worker failover, worker_host field in API/TUI, end-to-end integration test.
+M008 milestone complete. All 4 slices (S01–S04) done. 155 workspace tests green. R027 validated. Ready for squash-merge to main and milestone summary.

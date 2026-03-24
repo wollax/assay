@@ -71,4 +71,9 @@ pub struct QueuedJob {
     pub status: JobStatus,
     pub queued_at: u64,
     pub started_at: Option<u64>,
+    /// Which worker host this job was dispatched to, if any.
+    /// `None` means locally dispatched. `#[serde(default)]` ensures backward
+    /// compatibility with state files written before this field existed.
+    #[serde(default)]
+    pub worker_host: Option<String>,
 }

@@ -29,6 +29,9 @@ pub(crate) struct JobStateResponse {
     /// Seconds elapsed since this job last started executing (age, not a Unix timestamp).
     /// `None` if the job has not yet been dispatched.
     elapsed_secs: Option<f64>,
+    /// Which worker host this job was dispatched to.
+    /// `None` means locally dispatched.
+    worker_host: Option<String>,
 }
 
 impl From<&QueuedJob> for JobStateResponse {
@@ -52,6 +55,7 @@ impl From<&QueuedJob> for JobStateResponse {
             attempt: job.attempt,
             queued_age_secs: elapsed_secs_since(job.queued_at) as u64,
             elapsed_secs: job.started_at.map(|t| elapsed_secs_since(t)),
+            worker_host: job.worker_host.clone(),
         }
     }
 }
@@ -144,5 +148,46 @@ async fn delete_job(
         JobStatus::Running | JobStatus::Dispatching => Err(StatusCode::CONFLICT),
         // Terminal states — nothing to cancel.
         _ => Err(StatusCode::NOT_FOUND),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::serve::types::{JobId, JobSource, JobStatus, QueuedJob, now_epoch};
+    use std::path::PathBuf;
+
+    #[test]
+    fn test_worker_host_in_api_response() {
+        let job = QueuedJob {
+            id: JobId::new("job-api-1"),
+            manifest_path: PathBuf::from("test.smelt.toml"),
+            source: JobSource::HttpApi,
+            attempt: 0,
+            status: JobStatus::Running,
+            queued_at: now_epoch(),
+            started_at: Some(now_epoch()),
+            worker_host: Some("remote-host-1".into()),
+        };
+        let resp = JobStateResponse::from(&job);
+        let json = serde_json::to_value(&resp).unwrap();
+        assert_eq!(json["worker_host"], "remote-host-1");
+    }
+
+    #[test]
+    fn test_worker_host_none_in_api_response() {
+        let job = QueuedJob {
+            id: JobId::new("job-api-2"),
+            manifest_path: PathBuf::from("local.smelt.toml"),
+            source: JobSource::HttpApi,
+            attempt: 0,
+            status: JobStatus::Queued,
+            queued_at: now_epoch(),
+            started_at: None,
+            worker_host: None,
+        };
+        let resp = JobStateResponse::from(&job);
+        let json = serde_json::to_value(&resp).unwrap();
+        assert!(json["worker_host"].is_null(), "expected null worker_host for local job");
     }
 }

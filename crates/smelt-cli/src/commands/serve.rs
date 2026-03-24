@@ -19,7 +19,7 @@ use clap::Parser;
 use tokio::net::TcpListener;
 use tokio_util::sync::CancellationToken;
 
-use crate::serve::{DirectoryWatcher, ServerConfig, ServerState, build_router, dispatch_loop, run_tui};
+use crate::serve::{DirectoryWatcher, ServerConfig, ServerState, SubprocessSshClient, build_router, dispatch_loop, run_tui};
 
 /// `smelt serve` command arguments.
 #[derive(Parser, Debug)]
@@ -64,6 +64,8 @@ pub async fn execute(args: &ServeArgs) -> anyhow::Result<i32> {
     let router = build_router(Arc::clone(&state));
     let watcher = DirectoryWatcher::new(config.queue_dir.clone(), Arc::clone(&state));
     let retry_attempts = config.retry_attempts;
+    let workers = config.workers.clone();
+    let ssh_timeout_secs = config.ssh_timeout_secs;
 
     // Spawn the TUI thread when TUI mode is active.
     let tui_handle: Option<std::thread::JoinHandle<()>> = if !args.no_tui {
@@ -77,7 +79,7 @@ pub async fn execute(args: &ServeArgs) -> anyhow::Result<i32> {
     let cancel_for_tui = cancel_token.clone();
 
     tokio::select! {
-        _ = dispatch_loop(Arc::clone(&state), cancel_token.clone(), retry_attempts) => {}
+        _ = dispatch_loop(Arc::clone(&state), cancel_token.clone(), retry_attempts, workers, SubprocessSshClient, ssh_timeout_secs) => {}
         _ = watcher.watch() => {}
         _ = axum::serve(listener, router) => {}
         _ = tokio::signal::ctrl_c() => {

@@ -61,7 +61,7 @@ This milestone is complete only when all are true:
 - [x] **S03: State sync back via scp** `risk:medium` `depends:[S02]`
   > After this: after `smelt run` completes on the worker, dispatcher scps `.smelt/runs/<job>/` back to its own filesystem; `smelt status <job>` on the dispatcher reads the synced state and shows correct phase; scp failure logs a warning but does not re-run the job.
 
-- [ ] **S04: Dispatch routing + round-robin + TUI/API worker field** `risk:medium` `depends:[S01,S02,S03]`
+- [x] **S04: Dispatch routing + round-robin + TUI/API worker field** `risk:medium` `depends:[S01,S02,S03]`
   > After this: `dispatch_loop` routes to SSH workers when `config.workers` is non-empty, falls back to local when empty; round-robin index tracked in `ServerState`; offline worker re-queues job; `worker_host` field in `JobStateResponse` and TUI; end-to-end integration test with 2 mock workers confirms round-robin and failover.
 
 ## Boundary Map
