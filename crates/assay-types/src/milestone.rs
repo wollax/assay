@@ -262,10 +262,7 @@ mod tests {
             pr_base: Some("main".to_string()),
             pr_number: None,
             pr_url: None,
-            pr_labels: Some(vec![
-                "ready-for-review".to_string(),
-                "feature".to_string(),
-            ]),
+            pr_labels: Some(vec!["ready-for-review".to_string(), "feature".to_string()]),
             pr_reviewers: Some(vec!["teammate".to_string()]),
             pr_body_template: Some(
                 "## {milestone_name}\n\nChunks:\n{chunk_list}\n\n{gate_summary}".to_string(),
@@ -281,9 +278,7 @@ mod tests {
         // Verify PR config fields present
         assert_eq!(
             roundtripped.pr_labels.as_deref(),
-            Some(
-                vec!["ready-for-review".to_string(), "feature".to_string()].as_slice()
-            )
+            Some(vec!["ready-for-review".to_string(), "feature".to_string()].as_slice())
         );
         assert_eq!(
             roundtripped.pr_reviewers.as_deref(),

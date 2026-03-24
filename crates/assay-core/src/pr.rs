@@ -172,6 +172,7 @@ pub fn pr_check_milestone_gates(
 ///   not found in `PATH`
 /// - `gh` non-zero exit — stderr is forwarded as the error message
 /// - JSON parse failure — `gh` stdout could not be decoded
+#[allow(clippy::too_many_arguments)]
 pub fn pr_create_if_gates_pass(
     assay_dir: &Path,
     specs_dir: &Path,
@@ -271,8 +272,7 @@ pub fn pr_create_if_gates_pass(
         ordered
             .iter()
             .filter_map(|chunk| {
-                let spec_entry =
-                    load_spec_entry_with_diagnostics(&chunk.slug, specs_dir).ok()?;
+                let spec_entry = load_spec_entry_with_diagnostics(&chunk.slug, specs_dir).ok()?;
                 let gates = match spec_entry {
                     SpecEntry::Directory { gates, .. } => gates,
                     SpecEntry::Legacy { .. } => return None,
@@ -303,9 +303,10 @@ pub fn pr_create_if_gates_pass(
     let effective_body: Option<String> = if body.is_some() {
         body.map(|b| b.to_string())
     } else {
-        initial_milestone.pr_body_template.as_ref().map(|tmpl| {
-            render_pr_body_template(tmpl, &initial_milestone, &gate_summaries)
-        })
+        initial_milestone
+            .pr_body_template
+            .as_ref()
+            .map(|tmpl| render_pr_body_template(tmpl, &initial_milestone, &gate_summaries))
     };
 
     if let Some(ref b) = effective_body {
@@ -451,8 +452,14 @@ mod tests {
             description: None,
             status: MilestoneStatus::Draft,
             chunks: vec![
-                ChunkRef { slug: "chunk-a".to_string(), order: 1 },
-                ChunkRef { slug: "chunk-b".to_string(), order: 2 },
+                ChunkRef {
+                    slug: "chunk-a".to_string(),
+                    order: 1,
+                },
+                ChunkRef {
+                    slug: "chunk-b".to_string(),
+                    order: 2,
+                },
             ],
             completed_chunks: vec![],
             depends_on: vec![],
@@ -472,18 +479,45 @@ mod tests {
     fn render_template_all_placeholders() {
         let ms = make_test_milestone();
         let summaries = vec![
-            ChunkGateSummary { slug: "chunk-a".to_string(), passed: 3, failed: 0 },
-            ChunkGateSummary { slug: "chunk-b".to_string(), passed: 2, failed: 1 },
+            ChunkGateSummary {
+                slug: "chunk-a".to_string(),
+                passed: 3,
+                failed: 0,
+            },
+            ChunkGateSummary {
+                slug: "chunk-b".to_string(),
+                passed: 2,
+                failed: 1,
+            },
         ];
-        let template = "## {milestone_name}\nSlug: {milestone_slug}\n\n{chunk_list}\n\n{gate_summary}";
+        let template =
+            "## {milestone_name}\nSlug: {milestone_slug}\n\n{chunk_list}\n\n{gate_summary}";
         let rendered = render_pr_body_template(template, &ms, &summaries);
 
-        assert!(rendered.contains("## Test Milestone"), "should contain milestone name");
-        assert!(rendered.contains("Slug: test-ms"), "should contain milestone slug");
-        assert!(rendered.contains("- chunk-a"), "should contain chunk-a in chunk list");
-        assert!(rendered.contains("- chunk-b"), "should contain chunk-b in chunk list");
-        assert!(rendered.contains("chunk-a: 3 passed, 0 failed"), "should contain gate summary for chunk-a");
-        assert!(rendered.contains("chunk-b: 2 passed, 1 failed"), "should contain gate summary for chunk-b");
+        assert!(
+            rendered.contains("## Test Milestone"),
+            "should contain milestone name"
+        );
+        assert!(
+            rendered.contains("Slug: test-ms"),
+            "should contain milestone slug"
+        );
+        assert!(
+            rendered.contains("- chunk-a"),
+            "should contain chunk-a in chunk list"
+        );
+        assert!(
+            rendered.contains("- chunk-b"),
+            "should contain chunk-b in chunk list"
+        );
+        assert!(
+            rendered.contains("chunk-a: 3 passed, 0 failed"),
+            "should contain gate summary for chunk-a"
+        );
+        assert!(
+            rendered.contains("chunk-b: 2 passed, 1 failed"),
+            "should contain gate summary for chunk-b"
+        );
     }
 
     #[test]
@@ -491,7 +525,10 @@ mod tests {
         let ms = make_test_milestone();
         let template = "Hello {unknown_placeholder} world";
         let rendered = render_pr_body_template(template, &ms, &[]);
-        assert_eq!(rendered, "Hello {unknown_placeholder} world", "unknown placeholders should pass through");
+        assert_eq!(
+            rendered, "Hello {unknown_placeholder} world",
+            "unknown placeholders should pass through"
+        );
     }
 
     #[test]

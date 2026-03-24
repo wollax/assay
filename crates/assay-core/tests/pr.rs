@@ -646,22 +646,26 @@ fn test_pr_create_passes_labels_and_reviewers() {
 
     // Check TOML label
     assert!(
-        args.windows(2).any(|w| w[0] == "--label" && w[1] == "ready-for-review"),
+        args.windows(2)
+            .any(|w| w[0] == "--label" && w[1] == "ready-for-review"),
         "expected --label ready-for-review in args, got: {args:?}"
     );
     // Check extra label
     assert!(
-        args.windows(2).any(|w| w[0] == "--label" && w[1] == "extra-label"),
+        args.windows(2)
+            .any(|w| w[0] == "--label" && w[1] == "extra-label"),
         "expected --label extra-label in args, got: {args:?}"
     );
     // Check TOML reviewer
     assert!(
-        args.windows(2).any(|w| w[0] == "--reviewer" && w[1] == "teammate"),
+        args.windows(2)
+            .any(|w| w[0] == "--reviewer" && w[1] == "teammate"),
         "expected --reviewer teammate in args, got: {args:?}"
     );
     // Check extra reviewer
     assert!(
-        args.windows(2).any(|w| w[0] == "--reviewer" && w[1] == "extra-reviewer"),
+        args.windows(2)
+            .any(|w| w[0] == "--reviewer" && w[1] == "extra-reviewer"),
         "expected --reviewer extra-reviewer in args, got: {args:?}"
     );
 }
@@ -722,7 +726,10 @@ fn test_pr_create_renders_body_template() {
     let args = read_captured_args(&args_file);
 
     // Find the --body arg and the value after it
-    let body_idx = args.iter().position(|a| a == "--body").expect("--body flag should be present");
+    let body_idx = args
+        .iter()
+        .position(|a| a == "--body")
+        .expect("--body flag should be present");
     let body_value = &args[body_idx + 1];
 
     assert!(
@@ -789,7 +796,10 @@ fn test_pr_create_caller_body_overrides_template() {
 
     let args = read_captured_args(&args_file);
 
-    let body_idx = args.iter().position(|a| a == "--body").expect("--body flag should be present");
+    let body_idx = args
+        .iter()
+        .position(|a| a == "--body")
+        .expect("--body flag should be present");
     let body_value = &args[body_idx + 1];
 
     assert_eq!(

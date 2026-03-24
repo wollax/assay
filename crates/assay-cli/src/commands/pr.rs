@@ -16,6 +16,12 @@ pub(crate) enum PrCommand {
         /// PR body text
         #[arg(long)]
         body: Option<String>,
+        /// Additional label to apply to the PR (repeatable)
+        #[arg(long = "label")]
+        labels: Vec<String>,
+        /// Additional reviewer to request on the PR (repeatable)
+        #[arg(long = "reviewer")]
+        reviewers: Vec<String>,
     },
 }
 
@@ -26,7 +32,9 @@ pub(crate) fn handle(command: PrCommand) -> anyhow::Result<i32> {
             milestone,
             title,
             body,
-        } => pr_create_cmd(milestone, title, body),
+            labels,
+            reviewers,
+        } => pr_create_cmd(milestone, title, body, labels, reviewers),
     }
 }
 
@@ -35,6 +43,8 @@ fn pr_create_cmd(
     milestone: String,
     title: Option<String>,
     body: Option<String>,
+    extra_labels: Vec<String>,
+    extra_reviewers: Vec<String>,
 ) -> anyhow::Result<i32> {
     let root = project_root()?;
     let assay_dir = assay_dir(&root);
@@ -57,8 +67,8 @@ fn pr_create_cmd(
         &milestone,
         &effective_title,
         body.as_deref(),
-        &[],
-        &[],
+        &extra_labels,
+        &extra_reviewers,
     ) {
         Ok(result) => {
             println!("PR created: #{} — {}", result.pr_number, result.pr_url);
@@ -74,7 +84,15 @@ fn pr_create_cmd(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use clap::Parser;
     use serial_test::serial;
+
+    /// Wrapper to test PrCommand parsing via clap.
+    #[derive(Parser)]
+    struct TestCli {
+        #[command(subcommand)]
+        command: PrCommand,
+    }
 
     #[test]
     #[serial]
@@ -86,6 +104,8 @@ mod tests {
             milestone: "x".to_string(),
             title: None,
             body: None,
+            labels: vec![],
+            reviewers: vec![],
         });
         assert!(result.is_ok(), "handle should not return Err: {result:?}");
         assert_eq!(result.unwrap(), 1, "exit code should be 1");
@@ -114,6 +134,8 @@ pr_url = "https://github.com/o/r/pull/42"
             milestone: "my-feature".to_string(),
             title: None,
             body: None,
+            labels: vec![],
+            reviewers: vec![],
         });
         assert!(result.is_ok(), "handle should not return Err: {result:?}");
         assert_eq!(
@@ -121,5 +143,50 @@ pr_url = "https://github.com/o/r/pull/42"
             1,
             "exit code should be 1 (PR already created)"
         );
+    }
+
+    #[test]
+    fn pr_create_parses_label_and_reviewer_flags() {
+        let cli = TestCli::try_parse_from([
+            "test",
+            "create",
+            "my-feature",
+            "--label",
+            "bug",
+            "--label",
+            "priority",
+            "--reviewer",
+            "alice",
+            "--reviewer",
+            "bob",
+        ])
+        .expect("should parse");
+
+        match cli.command {
+            PrCommand::Create {
+                milestone,
+                labels,
+                reviewers,
+                ..
+            } => {
+                assert_eq!(milestone, "my-feature");
+                assert_eq!(labels, vec!["bug", "priority"]);
+                assert_eq!(reviewers, vec!["alice", "bob"]);
+            }
+        }
+    }
+
+    #[test]
+    fn pr_create_label_and_reviewer_default_empty() {
+        let cli = TestCli::try_parse_from(["test", "create", "my-feature"]).expect("should parse");
+
+        match cli.command {
+            PrCommand::Create {
+                labels, reviewers, ..
+            } => {
+                assert!(labels.is_empty());
+                assert!(reviewers.is_empty());
+            }
+        }
     }
 }
