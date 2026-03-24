@@ -108,6 +108,21 @@ pub struct Milestone {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pr_url: Option<String>,
 
+    /// Labels to apply to the GitHub pull request (e.g. `["ready-for-review", "feature"]`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pr_labels: Option<Vec<String>>,
+
+    /// GitHub usernames to request as reviewers on the pull request.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pr_reviewers: Option<Vec<String>>,
+
+    /// Template for the PR body with placeholder substitution.
+    ///
+    /// Supported placeholders: `{milestone_name}`, `{milestone_slug}`,
+    /// `{chunk_list}` (bulleted chunk names), `{gate_summary}` (pass/fail per chunk).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pr_body_template: Option<String>,
+
     /// When this milestone record was first created.
     pub created_at: DateTime<Utc>,
 
@@ -155,6 +170,9 @@ mod tests {
             pr_base: Some("main".to_string()),
             pr_number: None,
             pr_url: None,
+            pr_labels: None,
+            pr_reviewers: None,
+            pr_body_template: None,
             created_at: now,
             updated_at: now,
         };
@@ -190,6 +208,9 @@ mod tests {
             pr_base: None,
             pr_number: None,
             pr_url: None,
+            pr_labels: None,
+            pr_reviewers: None,
+            pr_body_template: None,
             created_at: now,
             updated_at: now,
         };
@@ -204,17 +225,69 @@ mod tests {
         assert!(roundtripped.pr_base.is_none());
         assert!(roundtripped.pr_number.is_none());
         assert!(roundtripped.pr_url.is_none());
+        assert!(roundtripped.pr_labels.is_none());
+        assert!(roundtripped.pr_reviewers.is_none());
+        assert!(roundtripped.pr_body_template.is_none());
         assert!(roundtripped.chunks.is_empty());
         assert!(roundtripped.completed_chunks.is_empty());
         assert!(roundtripped.depends_on.is_empty());
         assert!(!toml_str.contains("description"));
         assert!(!toml_str.contains("pr_branch"));
+        assert!(!toml_str.contains("pr_labels"));
+        assert!(!toml_str.contains("pr_reviewers"));
+        assert!(!toml_str.contains("pr_body_template"));
         assert!(!toml_str.contains("depends_on"));
         // skip_serializing_if = "Vec::is_empty" — empty completed_chunks must not appear in TOML
         assert!(
             !toml_str.contains("completed_chunks"),
             "empty completed_chunks should be omitted from TOML, got: {toml_str}"
         );
+    }
+
+    #[test]
+    fn milestone_toml_roundtrip_with_pr_config() {
+        let now = make_now();
+        let milestone = Milestone {
+            slug: "with-pr-config".to_string(),
+            name: "With PR Config".to_string(),
+            description: None,
+            status: MilestoneStatus::InProgress,
+            chunks: vec![ChunkRef {
+                slug: "chunk-a".to_string(),
+                order: 1,
+            }],
+            completed_chunks: vec![],
+            depends_on: vec![],
+            pr_branch: Some("feat/with-pr-config".to_string()),
+            pr_base: Some("main".to_string()),
+            pr_number: None,
+            pr_url: None,
+            pr_labels: Some(vec!["ready-for-review".to_string(), "feature".to_string()]),
+            pr_reviewers: Some(vec!["teammate".to_string()]),
+            pr_body_template: Some(
+                "## {milestone_name}\n\nChunks:\n{chunk_list}\n\n{gate_summary}".to_string(),
+            ),
+            created_at: now,
+            updated_at: now,
+        };
+
+        let toml_str = toml::to_string(&milestone).expect("serialize to TOML");
+        let roundtripped: Milestone = toml::from_str(&toml_str).expect("deserialize from TOML");
+        assert_eq!(milestone, roundtripped);
+
+        // Verify PR config fields present
+        assert_eq!(
+            roundtripped.pr_labels.as_deref(),
+            Some(vec!["ready-for-review".to_string(), "feature".to_string()].as_slice())
+        );
+        assert_eq!(
+            roundtripped.pr_reviewers.as_deref(),
+            Some(vec!["teammate".to_string()].as_slice())
+        );
+        assert!(roundtripped.pr_body_template.is_some());
+        assert!(toml_str.contains("pr_labels"));
+        assert!(toml_str.contains("pr_reviewers"));
+        assert!(toml_str.contains("pr_body_template"));
     }
 
     #[test]

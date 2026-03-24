@@ -40,6 +40,9 @@ fn make_milestone_with_status(
         pr_base: Some("main".to_string()),
         pr_number: None,
         pr_url: None,
+        pr_labels: None,
+        pr_reviewers: None,
+        pr_body_template: None,
         created_at: now,
         updated_at: now,
     }
@@ -248,6 +251,8 @@ fn test_pr_create_already_created() {
         "already-created",
         "feat: already-created",
         None,
+        &[],
+        &[],
     );
     assert!(
         result.is_err(),
@@ -289,6 +294,8 @@ fn test_pr_create_gates_fail() {
         "gates-fail",
         "feat: gates-fail",
         None,
+        &[],
+        &[],
     );
     assert!(result.is_err(), "expected Err when gates fail, got Ok");
 
@@ -340,6 +347,8 @@ fn test_pr_create_gh_not_found() {
         "gh-not-found",
         "feat: gh-not-found",
         None,
+        &[],
+        &[],
     );
 
     unsafe { std::env::set_var("PATH", original_path) };
@@ -403,6 +412,8 @@ fn test_pr_create_success_mock_gh() {
             "pr-success",
             "feat: pr-success",
             None,
+            &[],
+            &[],
         )
     });
 
@@ -464,6 +475,8 @@ fn test_pr_create_parse_gh_missing_fields() {
             "missing-fields",
             "feat: missing-fields",
             None,
+            &[],
+            &[],
         )
     });
 
@@ -526,6 +539,8 @@ fn test_pr_create_verify_transitions_to_complete() {
             "verify-to-complete",
             "feat: verify-to-complete",
             None,
+            &[],
+            &[],
         )
         .expect("pr_create_if_gates_pass should succeed");
     });
@@ -543,5 +558,252 @@ fn test_pr_create_verify_transitions_to_complete() {
         reloaded.pr_number,
         Some(99),
         "pr_number should be 99 after successful PR creation"
+    );
+}
+
+// ── Test 10: Labels and reviewers passed to gh ───────────────────────────────
+
+/// Write a fake `gh` script that captures all args to a file using NUL separators
+/// and returns success JSON. Args are separated by NUL bytes so multiline values
+/// (like PR body templates with newlines) don't break parsing.
+fn write_arg_capturing_gh(dir: &Path, args_file: &Path) {
+    let script_path = dir.join("gh");
+    let script = format!(
+        r#"#!/bin/sh
+# Write all arguments to the capture file, NUL-separated
+for arg in "$@"; do
+    printf '%s\0' "$arg" >> "{args_file}"
+done
+echo '{{"number":77,"url":"https://github.com/owner/repo/pull/77"}}'
+exit 0
+"#,
+        args_file = args_file.display()
+    );
+    fs::write(&script_path, script).expect("write arg-capturing gh script");
+    let mut perms = fs::metadata(&script_path)
+        .expect("read script metadata")
+        .permissions();
+    perms.set_mode(0o755);
+    fs::set_permissions(&script_path, perms).expect("set executable permission");
+}
+
+/// Read captured args from a NUL-separated file.
+fn read_captured_args(args_file: &Path) -> Vec<String> {
+    let content = fs::read(args_file).expect("read captured args file");
+    content
+        .split(|&b| b == 0)
+        .filter(|s| !s.is_empty())
+        .map(|s| String::from_utf8_lossy(s).to_string())
+        .collect()
+}
+
+#[test]
+#[serial]
+fn test_pr_create_passes_labels_and_reviewers() {
+    let tmp = TempDir::new().expect("create temp dir");
+    let assay_dir = make_assay_dir(&tmp);
+    let bin_dir = tmp.path().join("mock-bin-labels");
+    fs::create_dir_all(&bin_dir).expect("create mock bin dir");
+    let args_file = tmp.path().join("captured_args.txt");
+
+    create_passing_spec(&assay_dir, "chunk-a");
+
+    let mut milestone = make_milestone_with_status(
+        "labels-test",
+        MilestoneStatus::Verify,
+        vec![ChunkRef {
+            slug: "chunk-a".to_string(),
+            order: 1,
+        }],
+    );
+    milestone.pr_labels = Some(vec!["ready-for-review".to_string()]);
+    milestone.pr_reviewers = Some(vec!["teammate".to_string()]);
+    milestone_save(&assay_dir, &milestone).expect("save milestone");
+
+    write_arg_capturing_gh(&bin_dir, &args_file);
+
+    let specs_dir = assay_dir.join("specs");
+    let working_dir = tmp.path().to_path_buf();
+
+    let result = with_mock_gh_path(&bin_dir, |_| {
+        pr_create_if_gates_pass(
+            &assay_dir,
+            &specs_dir,
+            &working_dir,
+            "labels-test",
+            "feat: labels-test",
+            None,
+            &["extra-label".to_string()],
+            &["extra-reviewer".to_string()],
+        )
+    });
+
+    let outcome = result.expect("pr_create_if_gates_pass should succeed");
+    assert_eq!(outcome.pr_number, 77);
+
+    // Verify the captured args contain --label and --reviewer flags
+    let args = read_captured_args(&args_file);
+
+    // Check TOML label
+    assert!(
+        args.windows(2)
+            .any(|w| w[0] == "--label" && w[1] == "ready-for-review"),
+        "expected --label ready-for-review in args, got: {args:?}"
+    );
+    // Check extra label
+    assert!(
+        args.windows(2)
+            .any(|w| w[0] == "--label" && w[1] == "extra-label"),
+        "expected --label extra-label in args, got: {args:?}"
+    );
+    // Check TOML reviewer
+    assert!(
+        args.windows(2)
+            .any(|w| w[0] == "--reviewer" && w[1] == "teammate"),
+        "expected --reviewer teammate in args, got: {args:?}"
+    );
+    // Check extra reviewer
+    assert!(
+        args.windows(2)
+            .any(|w| w[0] == "--reviewer" && w[1] == "extra-reviewer"),
+        "expected --reviewer extra-reviewer in args, got: {args:?}"
+    );
+}
+
+// ── Test 11: Body template rendered and passed to gh ─────────────────────────
+
+#[test]
+#[serial]
+fn test_pr_create_renders_body_template() {
+    let tmp = TempDir::new().expect("create temp dir");
+    let assay_dir = make_assay_dir(&tmp);
+    let bin_dir = tmp.path().join("mock-bin-template");
+    fs::create_dir_all(&bin_dir).expect("create mock bin dir");
+    let args_file = tmp.path().join("captured_args_template.txt");
+
+    create_passing_spec(&assay_dir, "chunk-a");
+    create_passing_spec(&assay_dir, "chunk-b");
+
+    let mut milestone = make_milestone_with_status(
+        "template-test",
+        MilestoneStatus::Verify,
+        vec![
+            ChunkRef {
+                slug: "chunk-a".to_string(),
+                order: 1,
+            },
+            ChunkRef {
+                slug: "chunk-b".to_string(),
+                order: 2,
+            },
+        ],
+    );
+    milestone.pr_body_template =
+        Some("PR for {milestone_name} ({milestone_slug})\n\nChunks:\n{chunk_list}\n\nGates:\n{gate_summary}".to_string());
+    milestone_save(&assay_dir, &milestone).expect("save milestone");
+
+    write_arg_capturing_gh(&bin_dir, &args_file);
+
+    let specs_dir = assay_dir.join("specs");
+    let working_dir = tmp.path().to_path_buf();
+
+    let result = with_mock_gh_path(&bin_dir, |_| {
+        pr_create_if_gates_pass(
+            &assay_dir,
+            &specs_dir,
+            &working_dir,
+            "template-test",
+            "feat: template-test",
+            None,
+            &[],
+            &[],
+        )
+    });
+
+    result.expect("pr_create_if_gates_pass should succeed");
+
+    // Verify the --body arg contains the rendered template
+    let args = read_captured_args(&args_file);
+
+    // Find the --body arg and the value after it
+    let body_idx = args
+        .iter()
+        .position(|a| a == "--body")
+        .expect("--body flag should be present");
+    let body_value = &args[body_idx + 1];
+
+    assert!(
+        body_value.contains("Milestone template-test"),
+        "body should contain milestone name, got: {body_value}"
+    );
+    assert!(
+        body_value.contains("template-test"),
+        "body should contain milestone slug, got: {body_value}"
+    );
+    assert!(
+        body_value.contains("chunk-a") && body_value.contains("chunk-b"),
+        "body should contain chunk slugs, got: {body_value}"
+    );
+    assert!(
+        body_value.contains("passed"),
+        "body should contain gate summary with 'passed', got: {body_value}"
+    );
+}
+
+// ── Test 12: Caller body takes precedence over template ──────────────────────
+
+#[test]
+#[serial]
+fn test_pr_create_caller_body_overrides_template() {
+    let tmp = TempDir::new().expect("create temp dir");
+    let assay_dir = make_assay_dir(&tmp);
+    let bin_dir = tmp.path().join("mock-bin-override");
+    fs::create_dir_all(&bin_dir).expect("create mock bin dir");
+    let args_file = tmp.path().join("captured_args_override.txt");
+
+    create_passing_spec(&assay_dir, "chunk-a");
+
+    let mut milestone = make_milestone_with_status(
+        "override-test",
+        MilestoneStatus::Verify,
+        vec![ChunkRef {
+            slug: "chunk-a".to_string(),
+            order: 1,
+        }],
+    );
+    milestone.pr_body_template = Some("TEMPLATE BODY".to_string());
+    milestone_save(&assay_dir, &milestone).expect("save milestone");
+
+    write_arg_capturing_gh(&bin_dir, &args_file);
+
+    let specs_dir = assay_dir.join("specs");
+    let working_dir = tmp.path().to_path_buf();
+
+    let result = with_mock_gh_path(&bin_dir, |_| {
+        pr_create_if_gates_pass(
+            &assay_dir,
+            &specs_dir,
+            &working_dir,
+            "override-test",
+            "feat: override-test",
+            Some("CALLER BODY"),
+            &[],
+            &[],
+        )
+    });
+
+    result.expect("pr_create_if_gates_pass should succeed");
+
+    let args = read_captured_args(&args_file);
+
+    let body_idx = args
+        .iter()
+        .position(|a| a == "--body")
+        .expect("--body flag should be present");
+    let body_value = &args[body_idx + 1];
+
+    assert_eq!(
+        body_value, "CALLER BODY",
+        "caller-provided body should take precedence over template, got: {body_value}"
     );
 }

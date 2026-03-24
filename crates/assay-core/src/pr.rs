@@ -13,7 +13,7 @@ use std::process::{Command, Stdio};
 
 use chrono::Utc;
 
-use assay_types::MilestoneStatus;
+use assay_types::{Milestone, MilestoneStatus};
 
 use crate::error::{AssayError, Result};
 use crate::gate::evaluate_all_gates;
@@ -38,6 +38,54 @@ pub struct PrCreateResult {
     pub pr_number: u64,
     /// The HTML URL of the new pull request.
     pub pr_url: String,
+}
+
+// ── PR body template rendering ────────────────────────────────────────────────
+
+/// Gate summary entry for a single chunk, used by [`render_pr_body_template`].
+#[derive(Debug)]
+pub struct ChunkGateSummary {
+    /// Chunk slug.
+    pub slug: String,
+    /// Number of criteria that passed.
+    pub passed: usize,
+    /// Number of criteria that failed.
+    pub failed: usize,
+}
+
+/// Render a PR body template by substituting supported placeholders.
+///
+/// Supported placeholders:
+/// - `{milestone_name}` — the milestone's human-readable name
+/// - `{milestone_slug}` — the milestone's slug identifier
+/// - `{chunk_list}` — bulleted list of chunk slugs (one per line, `- <slug>`)
+/// - `{gate_summary}` — pass/fail summary per chunk (`- <slug>: N passed, M failed`)
+///
+/// Unknown placeholders are passed through verbatim (not an error).
+/// Returns an empty string if `template` is empty.
+pub fn render_pr_body_template(
+    template: &str,
+    milestone: &Milestone,
+    gate_summaries: &[ChunkGateSummary],
+) -> String {
+    let chunk_list = milestone
+        .chunks
+        .iter()
+        .map(|c| format!("- {}", c.slug))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let gate_summary = gate_summaries
+        .iter()
+        .map(|g| format!("- {}: {} passed, {} failed", g.slug, g.passed, g.failed))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    template
+        .replace("{milestone_name}", &milestone.name)
+        .replace("{milestone_slug}", &milestone.slug)
+        .replace("{chunk_list}", &chunk_list)
+        .replace("{gate_summary}", &gate_summary)
 }
 
 // ── pr_check_milestone_gates ──────────────────────────────────────────────────
@@ -124,6 +172,7 @@ pub fn pr_check_milestone_gates(
 ///   not found in `PATH`
 /// - `gh` non-zero exit — stderr is forwarded as the error message
 /// - JSON parse failure — `gh` stdout could not be decoded
+#[allow(clippy::too_many_arguments)]
 pub fn pr_create_if_gates_pass(
     assay_dir: &Path,
     specs_dir: &Path,
@@ -131,6 +180,8 @@ pub fn pr_create_if_gates_pass(
     milestone_slug: &str,
     title: &str,
     body: Option<&str>,
+    extra_labels: &[String],
+    extra_reviewers: &[String],
 ) -> Result<PrCreateResult> {
     // ── Step 1: Load milestone + idempotency guard ────────────────────────
     let initial_milestone = milestone_load(assay_dir, milestone_slug)?;
@@ -214,6 +265,28 @@ pub fn pr_create_if_gates_pass(
         .unwrap_or("main")
         .to_string();
 
+    // ── Step 4b: Collect gate summaries for template rendering ────────────
+    let gate_summaries: Vec<ChunkGateSummary> = {
+        let mut ordered: Vec<_> = initial_milestone.chunks.iter().collect();
+        ordered.sort_by_key(|c| c.order);
+        ordered
+            .iter()
+            .filter_map(|chunk| {
+                let spec_entry = load_spec_entry_with_diagnostics(&chunk.slug, specs_dir).ok()?;
+                let gates = match spec_entry {
+                    SpecEntry::Directory { gates, .. } => gates,
+                    SpecEntry::Legacy { .. } => return None,
+                };
+                let summary = evaluate_all_gates(&gates, working_dir, None, None);
+                Some(ChunkGateSummary {
+                    slug: chunk.slug.clone(),
+                    passed: summary.passed,
+                    failed: summary.failed,
+                })
+            })
+            .collect()
+    };
+
     // ── Step 5: Build gh args ─────────────────────────────────────────────
     let mut args: Vec<String> = vec![
         "pr".to_string(),
@@ -226,9 +299,33 @@ pub fn pr_create_if_gates_pass(
         "number,url".to_string(),
     ];
 
-    if let Some(b) = body {
+    // Body: caller-provided body takes precedence over pr_body_template.
+    let effective_body: Option<String> = if body.is_some() {
+        body.map(|b| b.to_string())
+    } else {
+        initial_milestone
+            .pr_body_template
+            .as_ref()
+            .map(|tmpl| render_pr_body_template(tmpl, &initial_milestone, &gate_summaries))
+    };
+
+    if let Some(ref b) = effective_body {
         args.push("--body".to_string());
-        args.push(b.to_string());
+        args.push(b.clone());
+    }
+
+    // Labels: TOML pr_labels + extra_labels (extend semantics).
+    let toml_labels = initial_milestone.pr_labels.as_deref().unwrap_or(&[]);
+    for label in toml_labels.iter().chain(extra_labels.iter()) {
+        args.push("--label".to_string());
+        args.push(label.clone());
+    }
+
+    // Reviewers: TOML pr_reviewers + extra_reviewers (extend semantics).
+    let toml_reviewers = initial_milestone.pr_reviewers.as_deref().unwrap_or(&[]);
+    for reviewer in toml_reviewers.iter().chain(extra_reviewers.iter()) {
+        args.push("--reviewer".to_string());
+        args.push(reviewer.clone());
     }
 
     // ── Step 6: Run gh ────────────────────────────────────────────────────
@@ -339,4 +436,105 @@ fn parse_gh_output(stdout: &[u8], milestone_slug: &str) -> Result<(u64, String)>
         })?;
 
     Ok((pr_number, pr_url))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use assay_types::{ChunkRef, Milestone, MilestoneStatus};
+    use chrono::Utc;
+
+    fn make_test_milestone() -> Milestone {
+        let now = Utc::now();
+        Milestone {
+            slug: "test-ms".to_string(),
+            name: "Test Milestone".to_string(),
+            description: None,
+            status: MilestoneStatus::Draft,
+            chunks: vec![
+                ChunkRef {
+                    slug: "chunk-a".to_string(),
+                    order: 1,
+                },
+                ChunkRef {
+                    slug: "chunk-b".to_string(),
+                    order: 2,
+                },
+            ],
+            completed_chunks: vec![],
+            depends_on: vec![],
+            pr_branch: None,
+            pr_base: None,
+            pr_number: None,
+            pr_url: None,
+            pr_labels: None,
+            pr_reviewers: None,
+            pr_body_template: None,
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
+    #[test]
+    fn render_template_all_placeholders() {
+        let ms = make_test_milestone();
+        let summaries = vec![
+            ChunkGateSummary {
+                slug: "chunk-a".to_string(),
+                passed: 3,
+                failed: 0,
+            },
+            ChunkGateSummary {
+                slug: "chunk-b".to_string(),
+                passed: 2,
+                failed: 1,
+            },
+        ];
+        let template =
+            "## {milestone_name}\nSlug: {milestone_slug}\n\n{chunk_list}\n\n{gate_summary}";
+        let rendered = render_pr_body_template(template, &ms, &summaries);
+
+        assert!(
+            rendered.contains("## Test Milestone"),
+            "should contain milestone name"
+        );
+        assert!(
+            rendered.contains("Slug: test-ms"),
+            "should contain milestone slug"
+        );
+        assert!(
+            rendered.contains("- chunk-a"),
+            "should contain chunk-a in chunk list"
+        );
+        assert!(
+            rendered.contains("- chunk-b"),
+            "should contain chunk-b in chunk list"
+        );
+        assert!(
+            rendered.contains("chunk-a: 3 passed, 0 failed"),
+            "should contain gate summary for chunk-a"
+        );
+        assert!(
+            rendered.contains("chunk-b: 2 passed, 1 failed"),
+            "should contain gate summary for chunk-b"
+        );
+    }
+
+    #[test]
+    fn render_template_unknown_placeholder_passthrough() {
+        let ms = make_test_milestone();
+        let template = "Hello {unknown_placeholder} world";
+        let rendered = render_pr_body_template(template, &ms, &[]);
+        assert_eq!(
+            rendered, "Hello {unknown_placeholder} world",
+            "unknown placeholders should pass through"
+        );
+    }
+
+    #[test]
+    fn render_template_empty() {
+        let ms = make_test_milestone();
+        let rendered = render_pr_body_template("", &ms, &[]);
+        assert_eq!(rendered, "", "empty template should return empty string");
+    }
 }

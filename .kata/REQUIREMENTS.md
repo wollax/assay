@@ -595,7 +595,7 @@
 - Source: user
 - Primary owning slice: M008/S02
 - Supporting slices: M008/S01
-- Validation: unmapped
+- Validation: S01 — Milestone TOML extended with pr_labels/pr_reviewers/pr_body_template (backward-compatible); pr_create_if_gates_pass passes --label/--reviewer/--body to gh; CLI --label/--reviewer flags and MCP labels/reviewers params with extend semantics; 12 integration tests with mock gh binary; template rendering with 4 placeholders proven. TUI PR status panel remains for S02.
 - Notes: Extends the milestone TOML pr_settings field. PR status from `gh pr view --json`.
 
 ### R059 — Gate history analytics

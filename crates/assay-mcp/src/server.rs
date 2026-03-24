@@ -552,6 +552,12 @@ pub struct PrCreateParams {
     /// Optional PR body text.
     #[serde(default)]
     pub body: Option<String>,
+    /// Additional labels to apply to the PR (extends milestone TOML pr_labels).
+    #[serde(default)]
+    pub labels: Option<Vec<String>>,
+    /// Additional reviewers to request on the PR (extends milestone TOML pr_reviewers).
+    #[serde(default)]
+    pub reviewers: Option<Vec<String>>,
 }
 
 /// Parameters for the `cycle_status` tool.
@@ -3483,6 +3489,8 @@ impl AssayServer {
         let specs_dir = cwd.join(".assay").join(&config.specs_dir);
         let working_dir = resolve_working_dir(&cwd, &config);
         let p = params.0;
+        let extra_labels = p.labels.unwrap_or_default();
+        let extra_reviewers = p.reviewers.unwrap_or_default();
         let result = tokio::task::spawn_blocking(move || {
             assay_core::pr::pr_create_if_gates_pass(
                 &assay_dir,
@@ -3491,6 +3499,8 @@ impl AssayServer {
                 &p.milestone_slug,
                 &p.title,
                 p.body.as_deref(),
+                &extra_labels,
+                &extra_reviewers,
             )
         })
         .await
@@ -7887,6 +7897,33 @@ spec = "auth"
             tool_names.contains(&"pr_create"),
             "pr_create should be in tool list, got: {tool_names:?}"
         );
+    }
+
+    #[test]
+    fn pr_create_params_deserializes_labels_and_reviewers() {
+        // With labels and reviewers
+        let json = serde_json::json!({
+            "milestone_slug": "my-feature",
+            "title": "feat: my-feature",
+            "labels": ["bug", "priority"],
+            "reviewers": ["alice"]
+        });
+        let params: PrCreateParams = serde_json::from_value(json).unwrap();
+        assert_eq!(
+            params.labels,
+            Some(vec!["bug".to_string(), "priority".to_string()])
+        );
+        assert_eq!(params.reviewers, Some(vec!["alice".to_string()]));
+
+        // Without labels/reviewers (should default to None)
+        let json_minimal = serde_json::json!({
+            "milestone_slug": "my-feature",
+            "title": "feat: my-feature"
+        });
+        let params_min: PrCreateParams = serde_json::from_value(json_minimal).unwrap();
+        assert_eq!(params_min.labels, None);
+        assert_eq!(params_min.reviewers, None);
+        assert_eq!(params_min.body, None);
     }
 
     #[tokio::test]
