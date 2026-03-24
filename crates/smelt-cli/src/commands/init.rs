@@ -105,6 +105,7 @@ pub async fn execute(_args: &InitArgs) -> anyhow::Result<i32> {
 }
 
 #[cfg(test)]
+#[allow(clippy::await_holding_lock)] // CWD_LOCK guards process-global set_current_dir; these tests run serialized
 mod tests {
     use super::*;
     use std::sync::Mutex;

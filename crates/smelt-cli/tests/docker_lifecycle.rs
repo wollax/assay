@@ -172,7 +172,7 @@ fn inject_binary_to_container(
     let status = std::process::Command::new("docker")
         .args([
             "cp",
-            &host_path.to_string_lossy().to_string(),
+            host_path.to_string_lossy().as_ref(),
             &format!("{container_id}:{dest_path}"),
         ])
         .status();

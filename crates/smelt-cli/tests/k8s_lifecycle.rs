@@ -147,7 +147,7 @@ async fn test_k8s_provision_exec_teardown() {
     let handle = provider
         .exec(
             &container,
-            &["sh", "-c", "echo hello"].map(str::to_string).to_vec(),
+            ["sh", "-c", "echo hello"].map(str::to_string).as_ref(),
         )
         .await
         .expect("exec should succeed");
@@ -206,7 +206,7 @@ async fn test_k8s_exec_streaming_callback() {
     let handle = provider
         .exec_streaming(
             &container,
-            &["echo", "streaming-hello"].map(str::to_string).to_vec(),
+            ["echo", "streaming-hello"].map(str::to_string).as_ref(),
             move |s| {
                 chunks_clone.lock().unwrap().push(s.to_string());
             },
@@ -220,18 +220,20 @@ async fn test_k8s_exec_streaming_callback() {
         handle.exit_code
     );
 
-    let all_chunks = chunks.lock().unwrap();
-    assert!(
-        !all_chunks.is_empty(),
-        "callback should have received at least one chunk"
-    );
+    {
+        let all_chunks = chunks.lock().unwrap();
+        assert!(
+            !all_chunks.is_empty(),
+            "callback should have received at least one chunk"
+        );
 
-    let joined = all_chunks.join("");
-    assert!(
-        joined.contains("streaming-hello"),
-        "joined chunks should contain 'streaming-hello', got: {:?}",
-        joined
-    );
+        let joined = all_chunks.join("");
+        assert!(
+            joined.contains("streaming-hello"),
+            "joined chunks should contain 'streaming-hello', got: {:?}",
+            joined
+        );
+    }
 
     // Teardown
     provider
@@ -260,7 +262,7 @@ async fn test_k8s_ssh_file_permissions() {
     let handle = provider
         .exec(
             &container,
-            &["stat", "/root/.ssh/id_rsa"].map(str::to_string).to_vec(),
+            ["stat", "/root/.ssh/id_rsa"].map(str::to_string).as_ref(),
         )
         .await
         .expect("exec stat should succeed");
@@ -312,7 +314,7 @@ async fn test_k8s_readiness_confirmed() {
     let handle = provider
         .exec(
             &container,
-            &["sh", "-c", "echo ready"].map(str::to_string).to_vec(),
+            ["sh", "-c", "echo ready"].map(str::to_string).as_ref(),
         )
         .await
         .expect("exec immediately after provision should succeed — proves readiness");

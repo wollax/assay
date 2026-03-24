@@ -561,7 +561,7 @@ timeout = 300
             .as_array()
             .expect("spec must have a `criteria` array");
         assert!(
-            criteria.len() >= 1,
+            !criteria.is_empty(),
             "spec criteria must have at least one entry"
         );
         assert_eq!(
