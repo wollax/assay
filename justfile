@@ -32,6 +32,11 @@ deny:
 ready: fmt-check lint test deny check-plugin-version
     @echo "All checks passed."
 
+# Set up git hooks (run once after clone)
+setup:
+    git config core.hooksPath .githooks
+    @echo "Git hooks installed from .githooks/"
+
 # Watch for changes and rebuild
 dev:
     cargo watch -x 'build --workspace'
