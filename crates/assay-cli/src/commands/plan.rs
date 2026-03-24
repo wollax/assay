@@ -18,8 +18,8 @@ use super::{assay_dir, project_root};
 pub(crate) fn handle() -> anyhow::Result<i32> {
     // ── TTY guard ────────────────────────────────────────────────────────────
     if !std::io::stdin().is_terminal() {
-        eprintln!(
-            "assay plan requires an interactive terminal.\n\
+        tracing::error!(
+            "assay plan requires an interactive terminal. \
              For non-interactive authoring, use the milestone_create MCP tool."
         );
         return Ok(1);

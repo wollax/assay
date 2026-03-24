@@ -16,6 +16,8 @@ use assay_types::{GateRunRecord, GateRunSummary};
 
 pub mod analytics;
 
+use tracing::warn;
+
 use crate::error::{AssayError, Result};
 
 /// Validate that a string is safe to use as a single path component.
@@ -111,7 +113,7 @@ fn prune(assay_dir: &Path, spec_name: &str, max_count: usize) -> Result<usize> {
     for id in ids.iter().take(to_remove) {
         let path = spec_dir.join(format!("{id}.json"));
         if let Err(e) = std::fs::remove_file(&path) {
-            eprintln!("Warning: could not prune {}: {e}", path.display());
+            warn!(path = %path.display(), error = %e, "Could not prune history file");
         } else {
             removed += 1;
         }
@@ -236,7 +238,7 @@ pub fn list(assay_dir: &Path, spec_name: &str) -> Result<Vec<String>> {
         .filter_map(|entry| match entry {
             Ok(e) => Some(e),
             Err(e) => {
-                eprintln!("Warning: skipping history entry: {e}");
+                warn!(error = %e, "Skipping unreadable history entry");
                 None
             }
         })

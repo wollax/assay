@@ -1,23 +1,28 @@
 # Kata State
 
-**Active Milestone:** none (M008 complete, no M009 planned)
-**Active Slice:** none
-**Active Task:** none
-**Phase:** Idle — all milestones complete
+**Active Milestone:** M009 — Observability
+**Active Slice:** S02 — Pipeline span instrumentation (next)
+**Active Task:** None — S02 not yet planned
+**Phase:** Planning
 **Last Updated:** 2026-03-24
-**Requirements Status:** 0 active · 55 validated (R001–R059) · 2 deferred (R025, R027) · 4 out of scope
+**Requirements Status:** 6 active (R027, R061–R065) · 56 validated · 3 deferred (R025, R066, R067) · 4 out of scope
 **Test Count:** 1400+ (all workspace tests pass)
 
-## Completed Milestones
+## M009 Progress
 
-- [x] M001: Single-Agent Harness (19 requirements)
-- [x] M002: Multi-Agent Orchestration (24 requirements)
-- [x] M003: Conflict Resolution & Polish (27 requirements)
-- [x] M004: Coordination Modes (32 requirements)
-- [x] M005: Spec-Driven Development Core (43 requirements)
-- [x] M006: TUI as Primary Surface (47 requirements)
-- [x] M007: TUI Agent Harness (52 requirements)
-- [x] M008: PR Workflow + Plugin Parity (55 requirements)
+5 slices planned:
+- [x] S01: Structured tracing foundation and eprintln migration — R060 validated
+- [ ] S02: Pipeline span instrumentation — R061
+- [ ] S03: Orchestration span instrumentation — R062
+- [ ] S04: JSON file trace export and CLI — R063
+- [ ] S05: OTLP export and trace context propagation — R064, R065
+
+## Recent Decisions
+
+- D132: CLI default tracing level is `info`, MCP is `warn`
+- D133: Interactive eprint! prompts preserved, not migrated to tracing
+- D134: tracing-subscriber added to assay-core for init_tracing()
+- D131: D125 superseded — assay-tui gains tracing dep
 
 ## Blockers
 
@@ -25,4 +30,4 @@ None.
 
 ## Next Action
 
-All 8 milestones complete. All 55 requirements validated. Ready for new milestone planning or release.
+Plan S02 (pipeline span instrumentation): decompose into tasks, write S02-PLAN.md with must-haves.

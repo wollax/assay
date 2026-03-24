@@ -39,23 +39,24 @@ fn handle_analytics(json: bool) -> anyhow::Result<i32> {
     match std::fs::metadata(&ad) {
         Ok(m) if m.is_dir() => {} // proceed
         Ok(_) => {
-            eprintln!(
-                "Error: .assay exists but is not a directory (path: {})",
-                ad.display()
+            tracing::error!(
+                path = %ad.display(),
+                ".assay exists but is not a directory"
             );
             return Ok(1);
         }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            eprintln!("Error: not an Assay project (no .assay directory found)");
-            eprintln!(
-                "Run `assay init` to initialise a project, then run some gates to build history."
+            tracing::error!(
+                "Not an Assay project (no .assay directory found). \
+                 Run `assay init` to initialise a project, then run some gates to build history."
             );
             return Ok(1);
         }
         Err(e) => {
-            eprintln!(
-                "Error: cannot access .assay directory ({}): {e}",
-                ad.display()
+            tracing::error!(
+                path = %ad.display(),
+                error = %e,
+                "Cannot access .assay directory"
             );
             return Ok(1);
         }

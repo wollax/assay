@@ -10,7 +10,7 @@ A beginning developer installs Assay, describes a feature, and gets a structured
 
 ## Current State
 
-v0.8.0-dev. M001–M008 complete. ~24K lines of Rust across 6 crates. 1400+ tests passing. 55 requirements validated, 0 active. `assay-tui` is a full Ratatui application with dashboard, in-TUI authoring wizard, spec browser, provider configuration, agent spawning with live output streaming, slash command overlay, MCP server configuration panel, PR status badges with background polling, and gate history analytics screen.
+v0.9.0-dev. M001–M008 complete, M009 in progress (S01 done). ~24K lines of Rust across 6 crates. 1400+ tests passing. 56 requirements validated, 6 active. `assay-tui` is a full Ratatui application with dashboard, in-TUI authoring wizard, spec browser, provider configuration, agent spawning with live output streaming, slash command overlay, MCP server configuration panel, PR status badges with background polling, and gate history analytics screen.
 
 **M001 (complete):** Single-agent harness end-to-end — manifest → worktree → agent launch → gate evaluation → merge proposal. 19 requirements validated.
 
@@ -68,3 +68,4 @@ See `.kata/REQUIREMENTS.md` for the explicit capability contract, requirement st
 - [x] M006: TUI as Primary Surface — full Ratatui TUI: dashboard, wizard, spec browser, provider config, help overlay, status bar (complete, R049–R052 validated, 1371+ tests)
 - [x] M007: TUI Agent Harness — TUI spawns and controls AI agents, provider abstraction (Anthropic/OpenAI/Ollama), MCP management, slash commands (complete, R053/R055 validated, 1400+ tests)
 - [x] M008: PR Workflow + Plugin Parity — advanced PR automation, OpenCode plugin, history analytics (complete, R057–R059 validated, 1400+ tests)
+- [ ] M009: Observability — S01 complete (structured tracing foundation, zero eprintln!). Remaining: pipeline spans (S02), orchestration spans (S03), JSON file export (S04), OTLP export + context propagation (S05)

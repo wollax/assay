@@ -203,9 +203,28 @@ Examples:
     },
 }
 
+/// Determine the tracing config based on the subcommand.
+///
+/// MCP serve uses `TracingConfig::mcp()` (warn level, no ANSI) because
+/// stdout is reserved for JSON-RPC. All other subcommands use default (info).
+fn tracing_config_for(command: &Option<Command>) -> assay_core::telemetry::TracingConfig {
+    if let Some(Command::Mcp {
+        command: commands::mcp::McpCommand::Serve,
+    }) = command
+    {
+        assay_core::telemetry::TracingConfig::mcp()
+    } else {
+        assay_core::telemetry::TracingConfig::default()
+    }
+}
+
 /// Core CLI logic. Returns an exit code on success.
 async fn run() -> anyhow::Result<i32> {
     let cli = Cli::try_parse().unwrap_or_else(|e| e.exit());
+
+    // Initialize tracing after argument parsing so MCP serve gets its own
+    // config (warn level, no ANSI). The guard must live until process exit.
+    let _tracing_guard = assay_core::telemetry::init_tracing(tracing_config_for(&cli.command));
 
     match cli.command {
         Some(Command::Init { name }) => commands::init::handle_init(name),
@@ -229,9 +248,9 @@ async fn run() -> anyhow::Result<i32> {
                 commands::init::show_status(&root)?;
                 Ok(0)
             } else {
-                eprintln!("Not an Assay project. Run `assay init` to get started.");
+                tracing::error!("Not an Assay project. Run `assay init` to get started.");
                 if let Err(e) = Cli::command().print_help() {
-                    eprintln!("Error: could not print help: {e}");
+                    tracing::error!(error = %e, "Could not print help");
                 }
                 println!();
                 Ok(1)
@@ -245,6 +264,9 @@ async fn main() {
     let code = match run().await {
         Ok(code) => code,
         Err(e) => {
+            // eprintln! intentional: _tracing_guard dropped when run() returned,
+            // so the non-blocking writer channel is closed. Direct stderr is the
+            // only reliable output path here.
             eprintln!("Error: {e:#}");
             1
         }

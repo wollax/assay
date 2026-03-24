@@ -23,13 +23,13 @@ pub(crate) fn show_status(root: &std::path::Path) -> anyhow::Result<()> {
     let result = match assay_core::spec::scan(&specs_dir) {
         Ok(r) => r,
         Err(e) => {
-            eprintln!("Warning: could not scan specs: {e}");
+            tracing::warn!(error = %e, "Could not scan specs");
             return Ok(());
         }
     };
 
     for err in &result.errors {
-        eprintln!("Warning: {err}");
+        tracing::warn!("{err}");
     }
 
     if result.entries.is_empty() {

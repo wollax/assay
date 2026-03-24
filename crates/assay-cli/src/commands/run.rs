@@ -202,9 +202,9 @@ pub(crate) fn execute(cmd: &RunCommand) -> anyhow::Result<i32> {
     let worktree_base = assay_core::worktree::resolve_worktree_dir(None, &config, &root);
 
     // Load manifest
-    eprintln!("Loading manifest: {}", cmd.manifest.display());
+    tracing::info!(path = %cmd.manifest.display(), "Loading manifest");
     let manifest = assay_core::manifest::load(&cmd.manifest).map_err(|e| anyhow::anyhow!("{e}"))?;
-    eprintln!("Manifest loaded: {} session(s)", manifest.sessions.len());
+    tracing::info!(session_count = manifest.sessions.len(), "Manifest loaded");
 
     // Build pipeline config
     let pipeline_config = assay_core::pipeline::PipelineConfig {
@@ -273,9 +273,9 @@ fn execute_sequential(
                 let outcome_str = pr.outcome.to_string();
 
                 if !cmd.json {
-                    eprintln!("  [{}] {} — {}", pr.session_id, spec_name, outcome_str);
+                    tracing::info!(session_id = %pr.session_id, session_name = %spec_name, status = %outcome_str, "Session result");
                     for t in &timings {
-                        eprintln!("    {}: {:.1}s", t.stage, t.duration_secs);
+                        tracing::info!(stage = %t.stage, duration_secs = t.duration_secs, "Stage timing");
                     }
                 }
 
@@ -297,8 +297,8 @@ fn execute_sequential(
                 errored += 1;
 
                 if !cmd.json {
-                    eprintln!("  [ERROR] {} — [{}] {}", spec_name, pe.stage, pe.message);
-                    eprintln!("    Recovery: {}", pe.recovery);
+                    tracing::error!(session_name = %spec_name, stage = %pe.stage, error = %pe.message, "Session error");
+                    tracing::error!(recovery = %pe.recovery, "Recovery suggestion");
                 }
 
                 session_results.push(SessionResult {
@@ -333,10 +333,13 @@ fn execute_sequential(
         let json = serde_json::to_string_pretty(&response)?;
         println!("{json}");
     } else {
-        eprintln!();
-        eprintln!(
-            "Summary: {} total, {} succeeded, {} gate failures, {} merge conflicts, {} errors",
-            total, succeeded, gate_failed, merge_conflict, errored
+        tracing::info!(
+            total = total,
+            succeeded = succeeded,
+            gate_failed = gate_failed,
+            merge_conflict = merge_conflict,
+            errored = errored,
+            "Run summary"
         );
     }
 
@@ -363,9 +366,9 @@ fn execute_orchestrated(
         merge_completed_sessions,
     };
 
-    eprintln!(
-        "Multi-session manifest detected ({} sessions) — using orchestrated execution",
-        manifest.sessions.len()
+    tracing::info!(
+        session_count = manifest.sessions.len(),
+        "Multi-session manifest detected — using orchestrated execution"
     );
 
     // ── Phase 1: Orchestrated execution ──────────────────────────────
@@ -394,7 +397,7 @@ fn execute_orchestrated(
         assay_core::pipeline::run_session(session, pipe_cfg, &harness_writer)
     };
 
-    eprintln!("Phase 1: Executing sessions...");
+    tracing::info!("Phase 1: Executing sessions");
     let orch_result = assay_core::orchestrate::executor::run_orchestrated(
         manifest,
         orch_config,
@@ -403,10 +406,10 @@ fn execute_orchestrated(
     )
     .map_err(|e| anyhow::anyhow!("Orchestration failed: {e}"))?;
 
-    eprintln!(
-        "Phase 1 complete: {} outcomes in {:.1}s",
-        orch_result.outcomes.len(),
-        orch_result.duration.as_secs_f64()
+    tracing::info!(
+        outcome_count = orch_result.outcomes.len(),
+        duration_secs = format_args!("{:.1}", orch_result.duration.as_secs_f64()),
+        "Phase 1 complete"
     );
 
     // ── Phase 2: Checkout base branch ────────────────────────────────
@@ -429,7 +432,7 @@ fn execute_orchestrated(
         String::from_utf8_lossy(&output.stdout).trim().to_string()
     };
 
-    eprintln!("Phase 2: Checking out base branch '{base_branch}'...");
+    tracing::info!(base_branch = %base_branch, "Phase 2: Checking out base branch");
     let checkout_output = std::process::Command::new("git")
         .args(["checkout", &base_branch])
         .current_dir(&pipeline_config.project_root)
@@ -445,7 +448,7 @@ fn execute_orchestrated(
 
     // ── Phase 3: Sequential merge ────────────────────────────────────
 
-    eprintln!("Phase 3: Merging completed sessions...");
+    tracing::info!("Phase 3: Merging completed sessions");
     let completed = extract_completed_sessions(&orch_result.outcomes);
 
     let (merge_config, merge_report) = match cmd.conflict_resolution {
@@ -485,9 +488,11 @@ fn execute_orchestrated(
     };
     drop(merge_config);
 
-    eprintln!(
-        "Phase 3 complete: {} merged, {} conflict-skipped, {} aborted",
-        merge_report.sessions_merged, merge_report.conflict_skipped, merge_report.aborted
+    tracing::info!(
+        sessions_merged = merge_report.sessions_merged,
+        conflict_skipped = merge_report.conflict_skipped,
+        aborted = merge_report.aborted,
+        "Phase 3 complete"
     );
 
     // ── Format results ───────────────────────────────────────────────
@@ -502,7 +507,7 @@ fn execute_orchestrated(
             SessionOutcome::Completed { .. } => {
                 completed_count += 1;
                 if !cmd.json {
-                    eprintln!("  [✓] {name} — completed");
+                    tracing::info!(session_name = %name, status = "completed", "Session result");
                 }
                 session_results.push(OrchestrationSessionResult {
                     name: name.clone(),
@@ -514,7 +519,7 @@ fn execute_orchestrated(
             SessionOutcome::Failed { error, .. } => {
                 failed_count += 1;
                 if !cmd.json {
-                    eprintln!("  [✗] {name} — failed: {}", error.message);
+                    tracing::error!(session_name = %name, error = %error.message, "Session failed");
                 }
                 session_results.push(OrchestrationSessionResult {
                     name: name.clone(),
@@ -526,7 +531,7 @@ fn execute_orchestrated(
             SessionOutcome::Skipped { reason } => {
                 skipped_count += 1;
                 if !cmd.json {
-                    eprintln!("  [−] {name} — skipped: {reason}");
+                    tracing::info!(session_name = %name, reason = %reason, "Session skipped");
                 }
                 session_results.push(OrchestrationSessionResult {
                     name: name.clone(),
@@ -558,16 +563,14 @@ fn execute_orchestrated(
         let json = serde_json::to_string_pretty(&response)?;
         println!("{json}");
     } else {
-        eprintln!();
-        eprintln!(
-            "Summary: {} total, {} completed, {} failed, {} skipped | \
-             Merge: {} merged, {} conflicts",
-            total,
-            completed_count,
-            failed_count,
-            skipped_count,
-            merge_report.sessions_merged,
-            merge_report.conflict_skipped,
+        tracing::info!(
+            total = total,
+            completed = completed_count,
+            failed = failed_count,
+            skipped = skipped_count,
+            sessions_merged = merge_report.sessions_merged,
+            merge_conflicts = merge_report.conflict_skipped,
+            "Orchestration summary"
         );
     }
 
@@ -591,7 +594,7 @@ fn execute_mesh(
 ) -> anyhow::Result<i32> {
     use assay_core::orchestrate::executor::{OrchestratorConfig, SessionOutcome};
 
-    eprintln!("mode: mesh — {} session(s)", manifest.sessions.len());
+    tracing::info!(session_count = manifest.sessions.len(), "mode: mesh");
 
     let orch_config = OrchestratorConfig {
         max_concurrency: 8,
@@ -637,7 +640,7 @@ fn execute_mesh(
             SessionOutcome::Completed { .. } => {
                 completed_count += 1;
                 if !cmd.json {
-                    eprintln!("  [✓] {name} — completed");
+                    tracing::info!(session_name = %name, status = "completed", "Session result");
                 }
                 session_results.push(OrchestrationSessionResult {
                     name: name.clone(),
@@ -649,7 +652,7 @@ fn execute_mesh(
             SessionOutcome::Failed { error, .. } => {
                 failed_count += 1;
                 if !cmd.json {
-                    eprintln!("  [✗] {name} — failed: {}", error.message);
+                    tracing::error!(session_name = %name, error = %error.message, "Session failed");
                 }
                 session_results.push(OrchestrationSessionResult {
                     name: name.clone(),
@@ -661,7 +664,7 @@ fn execute_mesh(
             SessionOutcome::Skipped { reason } => {
                 skipped_count += 1;
                 if !cmd.json {
-                    eprintln!("  [−] {name} — skipped: {reason}");
+                    tracing::info!(session_name = %name, reason = %reason, "Session skipped");
                 }
                 session_results.push(OrchestrationSessionResult {
                     name: name.clone(),
@@ -706,10 +709,12 @@ fn execute_mesh(
         let json = serde_json::to_string_pretty(&response)?;
         println!("{json}");
     } else {
-        eprintln!();
-        eprintln!(
-            "Summary: {} total, {} completed, {} failed, {} skipped",
-            total, completed_count, failed_count, skipped_count,
+        tracing::info!(
+            total = total,
+            completed = completed_count,
+            failed = failed_count,
+            skipped = skipped_count,
+            "Mesh summary"
         );
     }
 
@@ -728,7 +733,7 @@ fn execute_gossip(
 ) -> anyhow::Result<i32> {
     use assay_core::orchestrate::executor::{OrchestratorConfig, SessionOutcome};
 
-    eprintln!("mode: gossip — {} session(s)", manifest.sessions.len());
+    tracing::info!(session_count = manifest.sessions.len(), "mode: gossip");
 
     let orch_config = OrchestratorConfig {
         max_concurrency: 8,
@@ -774,7 +779,7 @@ fn execute_gossip(
             SessionOutcome::Completed { .. } => {
                 completed_count += 1;
                 if !cmd.json {
-                    eprintln!("  [✓] {name} — completed");
+                    tracing::info!(session_name = %name, status = "completed", "Session result");
                 }
                 session_results.push(OrchestrationSessionResult {
                     name: name.clone(),
@@ -786,7 +791,7 @@ fn execute_gossip(
             SessionOutcome::Failed { error, .. } => {
                 failed_count += 1;
                 if !cmd.json {
-                    eprintln!("  [✗] {name} — failed: {}", error.message);
+                    tracing::error!(session_name = %name, error = %error.message, "Session failed");
                 }
                 session_results.push(OrchestrationSessionResult {
                     name: name.clone(),
@@ -798,7 +803,7 @@ fn execute_gossip(
             SessionOutcome::Skipped { reason } => {
                 skipped_count += 1;
                 if !cmd.json {
-                    eprintln!("  [−] {name} — skipped: {reason}");
+                    tracing::info!(session_name = %name, reason = %reason, "Session skipped");
                 }
                 session_results.push(OrchestrationSessionResult {
                     name: name.clone(),
@@ -843,10 +848,12 @@ fn execute_gossip(
         let json = serde_json::to_string_pretty(&response)?;
         println!("{json}");
     } else {
-        eprintln!();
-        eprintln!(
-            "Summary: {} total, {} completed, {} failed, {} skipped",
-            total, completed_count, failed_count, skipped_count,
+        tracing::info!(
+            total = total,
+            completed = completed_count,
+            failed = failed_count,
+            skipped = skipped_count,
+            "Gossip summary"
         );
     }
 
