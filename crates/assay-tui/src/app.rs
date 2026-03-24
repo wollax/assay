@@ -12,13 +12,14 @@ use std::sync::{Arc, Mutex};
 
 use assay_core::config::save as config_save;
 use assay_core::history;
+use assay_core::history::analytics::{AnalyticsReport, compute_analytics};
 use assay_core::milestone::{cycle_status, milestone_load, milestone_scan};
 use assay_core::pipeline::launch_agent_streaming;
 use assay_core::pr::PrStatusInfo;
 use assay_core::spec::{SpecEntry, load_spec_entry_with_diagnostics};
 use assay_core::wizard::create_from_inputs;
 use assay_types::{
-    Criterion, GateRunRecord, GatesSpec, HarnessProfile, Milestone, MilestoneStatus,
+    Criterion, Enforcement, GateRunRecord, GatesSpec, HarnessProfile, Milestone, MilestoneStatus,
     ProviderConfig, ProviderKind, SettingsOverride,
 };
 use crossterm::event::KeyCode;
@@ -118,6 +119,8 @@ pub enum Screen {
         /// Current run status.
         status: AgentRunStatus,
     },
+    /// Full-screen analytics view showing gate failure frequency and milestone velocity.
+    Analytics,
     /// MCP server configuration panel — add, delete, and persist servers.
     McpPanel {
         /// Loaded MCP server entries (sorted alphabetically by name).
@@ -169,6 +172,9 @@ pub struct App {
     pub agent_thread: Option<std::thread::JoinHandle<i32>>,
     /// Slash command overlay state. `Some` when overlay is open.
     pub slash_state: Option<SlashState>,
+    /// Analytics report computed when the user presses `a` from Dashboard.
+    /// Recomputed on every `a` key press; `None` until the user first navigates to Analytics.
+    pub analytics_report: Option<AnalyticsReport>,
     /// Cached PR status info per milestone slug, populated by the background
     /// polling thread via `TuiEvent::PrStatusUpdate`.
     pub pr_statuses: HashMap<String, PrStatusInfo>,
@@ -254,6 +260,7 @@ impl App {
             show_help: false,
             cycle_slug,
             config,
+            analytics_report: None,
             event_tx: None,
             agent_thread: None,
             slash_state: None,
@@ -531,6 +538,9 @@ impl App {
                     status,
                 );
             }
+            Screen::Analytics => {
+                draw_analytics(frame, content_area, self.analytics_report.as_ref());
+            }
             Screen::McpPanel {
                 servers,
                 selected,
@@ -725,6 +735,13 @@ impl App {
                                 add_form: None,
                                 error: load_error,
                             };
+                        }
+                    }
+                    KeyCode::Char('a') => {
+                        if let Some(ref root) = self.project_root {
+                            let assay_dir = root.join(".assay");
+                            self.analytics_report = compute_analytics(&assay_dir).ok();
+                            self.screen = Screen::Analytics;
                         }
                     }
                     KeyCode::Char('s') => {
@@ -1222,6 +1239,17 @@ impl App {
                 false
             }
 
+            Screen::Analytics => {
+                match key.code {
+                    KeyCode::Esc => {
+                        self.screen = Screen::Dashboard;
+                    }
+                    KeyCode::Char('q') => return true,
+                    _ => {}
+                }
+                false
+            }
+
             Screen::McpPanel { .. } => self.handle_mcp_panel_event(key),
         }
     }
@@ -1662,6 +1690,153 @@ fn draw_settings(
     frame.render_widget(hint, hint_area);
 }
 
+/// Render the analytics screen with failure frequency and milestone velocity tables.
+///
+/// If `report` is `None` or both result sets are empty, renders a centered
+/// "No analytics data available" message instead of the two-table layout.
+fn draw_analytics(frame: &mut ratatui::Frame, area: Rect, report: Option<&AnalyticsReport>) {
+    let report = match report {
+        Some(r) if !r.failure_frequency.is_empty() || !r.milestone_velocity.is_empty() => r,
+        _ => {
+            let msg = Paragraph::new(
+                Line::from("No analytics data available")
+                    .centered()
+                    .style(Style::default().dim()),
+            )
+            .block(Block::default().borders(Borders::ALL).title(" Analytics "));
+            frame.render_widget(msg, area);
+            return;
+        }
+    };
+
+    // Layout: title, failure frequency table, velocity table, hint line.
+    // Velocity table height = entries + 3 (header + top/bottom border), capped at 12 rows.
+    let [title_area, freq_area, vel_area, hint_area] = Layout::vertical([
+        Constraint::Length(1),
+        Constraint::Fill(1),
+        Constraint::Length(
+            (report.milestone_velocity.len() as u16)
+                .saturating_add(3)
+                .min(12),
+        ),
+        Constraint::Length(1),
+    ])
+    .areas(area);
+
+    let title = Paragraph::new(Line::from(" Analytics ").bold());
+    frame.render_widget(title, title_area);
+
+    // ── Failure Frequency Table ──────────────────────────────────────────
+    if report.failure_frequency.is_empty() {
+        let msg = Paragraph::new(Line::from("No gate run history found.").dim()).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(" Gate Failure Frequency "),
+        );
+        frame.render_widget(msg, freq_area);
+    } else {
+        let freq_rows: Vec<Row> = report
+            .failure_frequency
+            .iter()
+            .map(|f| {
+                let rate = if f.total_runs > 0 {
+                    f.fail_count as f64 / f.total_runs as f64 * 100.0
+                } else {
+                    0.0
+                };
+                let rate_str = format!("{rate:.1}%");
+                let rate_color = if rate > 50.0 {
+                    Color::Red
+                } else if rate > 0.0 {
+                    Color::Yellow
+                } else {
+                    Color::Green
+                };
+                let enforcement_label = match f.enforcement {
+                    Enforcement::Required => "Required",
+                    Enforcement::Advisory => "Advisory",
+                };
+                Row::new(vec![
+                    Cell::from(f.spec_name.as_str()),
+                    Cell::from(f.criterion_name.as_str()),
+                    Cell::from(f.fail_count.to_string()),
+                    Cell::from(f.total_runs.to_string()),
+                    Cell::from(rate_str).fg(rate_color),
+                    Cell::from(enforcement_label),
+                ])
+            })
+            .collect();
+
+        let freq_widths = [
+            Constraint::Length(20),
+            Constraint::Fill(1),
+            Constraint::Length(6),
+            Constraint::Length(6),
+            Constraint::Length(8),
+            Constraint::Length(10),
+        ];
+        let freq_table = Table::new(freq_rows, freq_widths)
+            .header(
+                Row::new(vec![
+                    "Spec",
+                    "Criterion",
+                    "Fails",
+                    "Runs",
+                    "Rate",
+                    "Enforce",
+                ])
+                .bold(),
+            )
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(" Gate Failure Frequency "),
+            );
+        frame.render_widget(freq_table, freq_area);
+    }
+
+    // ── Milestone Velocity Table ─────────────────────────────────────────
+    if report.milestone_velocity.is_empty() {
+        let msg = Paragraph::new(Line::from("No milestones with completed chunks.").dim()).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(" Milestone Velocity "),
+        );
+        frame.render_widget(msg, vel_area);
+    } else {
+        let vel_rows: Vec<Row> = report
+            .milestone_velocity
+            .iter()
+            .map(|v| {
+                Row::new(vec![
+                    Cell::from(v.milestone_name.as_str()),
+                    Cell::from(format!("{}/{}", v.chunks_completed, v.total_chunks)),
+                    Cell::from(format!("{:.1}", v.days_elapsed)),
+                    Cell::from(format!("{:.1}/day", v.chunks_per_day)),
+                ])
+            })
+            .collect();
+
+        let vel_widths = [
+            Constraint::Fill(1),
+            Constraint::Length(10),
+            Constraint::Length(8),
+            Constraint::Length(10),
+        ];
+        let vel_table = Table::new(vel_rows, vel_widths)
+            .header(Row::new(vec!["Milestone", "Chunks", "Days", "Velocity"]).bold())
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(" Milestone Velocity "),
+            );
+        frame.render_widget(vel_table, vel_area);
+    }
+
+    let hint = Paragraph::new(Line::from("Esc back  q quit").dim());
+    frame.render_widget(hint, hint_area);
+}
+
 /// Render the persistent one-line status bar showing project context.
 ///
 /// Shows: `<project_name>  ·  <cycle_slug>  ·  ? help  q quit` (dim hints).
@@ -1698,7 +1873,7 @@ fn draw_status_bar(
 /// content beneath the popup.
 fn draw_help_overlay(frame: &mut ratatui::Frame, area: Rect) {
     let w = area.width.min(62);
-    let h = 22;
+    let h = 23;
     let x = area.x + (area.width.saturating_sub(w)) / 2;
     let y = area.y + (area.height.saturating_sub(h)) / 2;
     let popup = Rect::new(x, y, w, h);
@@ -1732,6 +1907,7 @@ fn draw_help_overlay(frame: &mut ratatui::Frame, area: Rect) {
             Cell::from("  n"),
             Cell::from("New milestone (wizard)"),
         ]),
+        Row::new(vec![Cell::from("  a"), Cell::from("Analytics")]),
         Row::new(vec![Cell::from("  s"), Cell::from("Settings")]),
         Row::new(vec![
             Cell::from("Detail views").style(Style::default().bold()),

@@ -62,7 +62,7 @@ This milestone is complete only when all are true:
 - [x] **S04: Gate history analytics engine and CLI** `risk:medium` `depends:[]`
   > After this: `assay history --analytics` outputs gate failure frequency (which criteria fail most) and milestone completion velocity (chunks per day). Proven by unit tests with synthetic history records.
 
-- [ ] **S05: TUI analytics screen** `risk:low` `depends:[S04]`
+- [x] **S05: TUI analytics screen** `risk:low` `depends:[S04]`
   > After this: pressing `a` from Dashboard opens an analytics screen showing gate failure heatmap and milestone velocity. Proven by integration tests driving synthetic key events.
 
 ## Boundary Map
