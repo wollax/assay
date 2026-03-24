@@ -77,15 +77,20 @@ fn test_format_pr_section_shows_url() {
 /// When all status fields are populated, the section must contain their values.
 #[test]
 fn test_format_pr_section_shows_state_ci_reviews() {
-    let state = make_state_with_pr(
-        Some(PrState::Open),
-        Some(CiStatus::Pending),
-        Some(3),
-    );
+    let state = make_state_with_pr(Some(PrState::Open), Some(CiStatus::Pending), Some(3));
     let section = format_pr_section(&state).expect("expected Some");
-    assert!(section.contains("Open"), "should contain 'Open'; got:\n{section}");
-    assert!(section.contains("Pending"), "should contain 'Pending'; got:\n{section}");
-    assert!(section.contains('3'), "should contain '3' for reviews; got:\n{section}");
+    assert!(
+        section.contains("Open"),
+        "should contain 'Open'; got:\n{section}"
+    );
+    assert!(
+        section.contains("Pending"),
+        "should contain 'Pending'; got:\n{section}"
+    );
+    assert!(
+        section.contains('3'),
+        "should contain '3' for reviews; got:\n{section}"
+    );
 }
 
 /// When pr_url is set but all status fields are None, the section must
@@ -114,12 +119,27 @@ started_at = 1700000000
 updated_at = 1700000060
 pid = 42
 "#;
-    let state: RunState = toml::from_str(old_toml)
-        .expect("RunState must deserialize without the five new fields");
+    let state: RunState =
+        toml::from_str(old_toml).expect("RunState must deserialize without the five new fields");
 
-    assert!(state.pr_status.is_none(), "pr_status should default to None");
-    assert!(state.ci_status.is_none(), "ci_status should default to None");
-    assert!(state.review_count.is_none(), "review_count should default to None");
-    assert!(state.forge_repo.is_none(), "forge_repo should default to None");
-    assert!(state.forge_token_env.is_none(), "forge_token_env should default to None");
+    assert!(
+        state.pr_status.is_none(),
+        "pr_status should default to None"
+    );
+    assert!(
+        state.ci_status.is_none(),
+        "ci_status should default to None"
+    );
+    assert!(
+        state.review_count.is_none(),
+        "review_count should default to None"
+    );
+    assert!(
+        state.forge_repo.is_none(),
+        "forge_repo should default to None"
+    );
+    assert!(
+        state.forge_token_env.is_none(),
+        "forge_token_env should default to None"
+    );
 }

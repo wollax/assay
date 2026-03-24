@@ -77,9 +77,7 @@ impl SmeltConfig {
 
     /// Parse configuration from a TOML string.
     fn parse(content: &str, source: &Path) -> crate::Result<Self> {
-        toml::from_str(content).map_err(|e| {
-            SmeltError::config(source, format!("parse error: {e}"))
-        })
+        toml::from_str(content).map_err(|e| SmeltError::config(source, format!("parse error: {e}")))
     }
 
     /// The expected config file path for a given project root.

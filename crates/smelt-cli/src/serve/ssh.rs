@@ -556,11 +556,7 @@ pub(crate) mod tests {
                 .unwrap_or_else(|| Err(anyhow!("MockSshClient: no exec results configured")))
         }
 
-        async fn probe(
-            &self,
-            _worker: &WorkerConfig,
-            _timeout_secs: u64,
-        ) -> anyhow::Result<()> {
+        async fn probe(&self, _worker: &WorkerConfig, _timeout_secs: u64) -> anyhow::Result<()> {
             self.probe_results
                 .lock()
                 .unwrap()
@@ -635,9 +631,7 @@ pub(crate) mod tests {
             "expected StrictHostKeyChecking=accept-new in args: {args_str:?}"
         );
         assert!(
-            args_str
-                .windows(2)
-                .any(|w| w == ["-o", "ConnectTimeout=3"]),
+            args_str.windows(2).any(|w| w == ["-o", "ConnectTimeout=3"]),
             "expected ConnectTimeout=3 in args: {args_str:?}"
         );
 
@@ -680,7 +674,8 @@ pub(crate) mod tests {
     #[test]
     fn test_scp_args_build() {
         let worker = test_worker();
-        let args = SubprocessSshClient::build_scp_args(&worker, 5, &["/local/file", "user@host:/remote"]);
+        let args =
+            SubprocessSshClient::build_scp_args(&worker, 5, &["/local/file", "user@host:/remote"]);
         let args_str: Vec<&str> = args.iter().map(String::as_str).collect();
 
         assert!(
@@ -688,9 +683,7 @@ pub(crate) mod tests {
             "expected BatchMode=yes in scp args: {args_str:?}"
         );
         assert!(
-            args_str
-                .windows(2)
-                .any(|w| w == ["-o", "ConnectTimeout=5"]),
+            args_str.windows(2).any(|w| w == ["-o", "ConnectTimeout=5"]),
             "expected ConnectTimeout=5 in scp args: {args_str:?}"
         );
         // Port 22 should NOT add -P flag
@@ -737,7 +730,11 @@ pub(crate) mod tests {
         let local = std::path::Path::new("/tmp/test-manifest.toml");
 
         let result = deliver_manifest(&client, &worker, 5, &job_id, local).await;
-        assert!(result.is_ok(), "deliver_manifest should succeed: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "deliver_manifest should succeed: {:?}",
+            result.err()
+        );
         assert_eq!(result.unwrap(), "/tmp/smelt-job-1.toml");
     }
 
@@ -787,11 +784,8 @@ pub(crate) mod tests {
         };
         let remote_spec = "bob@remote:/home/bob/.smelt/runs/job-1";
         let local_dest = "/tmp/local-state";
-        let args = SubprocessSshClient::build_scp_args(
-            &worker,
-            5,
-            &["-r", remote_spec, local_dest],
-        );
+        let args =
+            SubprocessSshClient::build_scp_args(&worker, 5, &["-r", remote_spec, local_dest]);
         let args_str: Vec<&str> = args.iter().map(String::as_str).collect();
 
         // -r flag present
@@ -886,13 +880,15 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn test_sync_state_back_mock_failure() {
-        let client =
-            MockSshClient::new().with_scp_from_result(Err(anyhow!("scp failed")));
+        let client = MockSshClient::new().with_scp_from_result(Err(anyhow!("scp failed")));
         let worker = test_worker();
         let tmp = tempfile::TempDir::new().unwrap();
 
         let result = sync_state_back(&client, &worker, 5, "test-job", tmp.path()).await;
-        assert!(result.is_err(), "sync_state_back should propagate scp_from error");
+        assert!(
+            result.is_err(),
+            "sync_state_back should propagate scp_from error"
+        );
         let err_msg = result.unwrap_err().to_string();
         assert!(
             err_msg.contains("scp failed"),
@@ -935,7 +931,8 @@ pub(crate) mod tests {
             .expect("exec should not return an error");
 
         assert_eq!(
-            output.exit_code, 0,
+            output.exit_code,
+            0,
             "exit_code should be 0, got {} (stderr: {})",
             output.exit_code,
             output.stderr.trim()

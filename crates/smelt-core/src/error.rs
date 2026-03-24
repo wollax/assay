@@ -9,7 +9,6 @@ use thiserror::Error;
 #[non_exhaustive]
 pub enum SmeltError {
     // ── Git errors ──────────────────────────────────────────────
-
     /// `git` binary not found on `$PATH`.
     #[error("`git` not found on $PATH. Smelt requires git to be installed.")]
     GitNotFound,
@@ -37,7 +36,6 @@ pub enum SmeltError {
     },
 
     // ── Manifest errors ─────────────────────────────────────────
-
     /// Manifest parsing or validation error.
     #[error("manifest error ({field}): {message}")]
     Manifest {
@@ -48,7 +46,6 @@ pub enum SmeltError {
     },
 
     // ── Provider errors ─────────────────────────────────────────
-
     /// A runtime provider operation failed.
     #[error("provider {operation} failed: {message}")]
     Provider {
@@ -62,7 +59,6 @@ pub enum SmeltError {
     },
 
     // ── Forge errors ────────────────────────────────────────────
-
     /// A forge (GitHub/VCS API) operation failed.
     #[error("forge {operation} failed: {message}")]
     Forge {
@@ -73,7 +69,6 @@ pub enum SmeltError {
     },
 
     // ── Credential errors ───────────────────────────────────────
-
     /// Credential resolution or validation failed.
     #[error("credential error ({provider}): {message}")]
     Credential {
@@ -84,7 +79,6 @@ pub enum SmeltError {
     },
 
     // ── Config errors ───────────────────────────────────────────
-
     /// Configuration loading or parsing failed.
     #[error("config error at `{path}`: {message}")]
     Config {
@@ -95,7 +89,6 @@ pub enum SmeltError {
     },
 
     // ── I/O errors ──────────────────────────────────────────────
-
     /// An I/O operation failed with context.
     #[error("{operation} at `{path}`: {source}")]
     Io {

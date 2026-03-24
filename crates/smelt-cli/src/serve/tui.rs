@@ -4,10 +4,10 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use crossterm::event::{self, Event, KeyCode, KeyModifiers};
-use ratatui::layout::Constraint;
-use ratatui::widgets::{Block, Borders, Cell, Row, Table};
 use ratatui::DefaultTerminal;
 use ratatui::Frame;
+use ratatui::layout::Constraint;
+use ratatui::widgets::{Block, Borders, Cell, Row, Table};
 
 use crate::serve::queue::ServerState;
 use crate::serve::types::elapsed_secs_since;
@@ -43,21 +43,20 @@ fn tui_loop(
         terminal.draw(|frame| render(frame, &state))?;
         // Poll for key events without blocking (non-blocking check)
         if event::poll(Duration::from_millis(250))?
-            && let Event::Key(key) = event::read()? {
-                match key.code {
-                    KeyCode::Char('q') => {
-                        shutdown.store(true, Ordering::SeqCst);
-                        break;
-                    }
-                    KeyCode::Char('c')
-                        if key.modifiers.contains(KeyModifiers::CONTROL) =>
-                    {
-                        shutdown.store(true, Ordering::SeqCst);
-                        break;
-                    }
-                    _ => {}
+            && let Event::Key(key) = event::read()?
+        {
+            match key.code {
+                KeyCode::Char('q') => {
+                    shutdown.store(true, Ordering::SeqCst);
+                    break;
                 }
+                KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    shutdown.store(true, Ordering::SeqCst);
+                    break;
+                }
+                _ => {}
             }
+        }
     }
     Ok(())
 }
@@ -79,10 +78,7 @@ pub(crate) fn render(frame: &mut Frame, state: &Arc<Mutex<ServerState>>) {
                     .and_then(|s| s.to_str())
                     .unwrap_or("?")
                     .to_string();
-                let worker = j
-                    .worker_host
-                    .clone()
-                    .unwrap_or_else(|| "-".to_string());
+                let worker = j.worker_host.clone().unwrap_or_else(|| "-".to_string());
                 (
                     j.id.to_string(),
                     manifest_name,
@@ -119,8 +115,14 @@ pub(crate) fn render(frame: &mut Frame, state: &Arc<Mutex<ServerState>>) {
     ];
 
     let table = Table::new(rows, widths)
-        .header(Row::new(vec!["Job ID", "Manifest", "Status", "Attempt", "Elapsed", "Worker"]))
-        .block(Block::default().title("smelt serve — jobs").borders(Borders::ALL));
+        .header(Row::new(vec![
+            "Job ID", "Manifest", "Status", "Attempt", "Elapsed", "Worker",
+        ]))
+        .block(
+            Block::default()
+                .title("smelt serve — jobs")
+                .borders(Borders::ALL),
+        );
 
     frame.render_widget(table, frame.area());
 }
@@ -130,8 +132,8 @@ mod tests {
     use super::*;
     use crate::serve::queue::ServerState;
     use crate::serve::types::{JobId, JobSource, JobStatus, QueuedJob, now_epoch};
-    use ratatui::backend::TestBackend;
     use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
     use std::path::PathBuf;
 
     #[test]
@@ -172,7 +174,13 @@ mod tests {
             .map(|cell| cell.symbol().chars().next().unwrap_or(' '))
             .collect();
 
-        assert!(text.contains("worker-1"), "expected 'worker-1' in TUI output");
-        assert!(text.contains("Worker"), "expected 'Worker' header in TUI output");
+        assert!(
+            text.contains("worker-1"),
+            "expected 'worker-1' in TUI output"
+        );
+        assert!(
+            text.contains("Worker"),
+            "expected 'Worker' header in TUI output"
+        );
     }
 }

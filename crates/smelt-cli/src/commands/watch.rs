@@ -245,11 +245,7 @@ mod tests {
             unimplemented!("MockForge::create_pr not used in watch tests")
         }
 
-        async fn poll_pr_status(
-            &self,
-            _repo: &str,
-            _number: u64,
-        ) -> smelt_core::Result<PrStatus> {
+        async fn poll_pr_status(&self, _repo: &str, _number: u64) -> smelt_core::Result<PrStatus> {
             let mut q = self.responses.lock().unwrap();
             Ok(q.pop_front().unwrap_or_else(|| self.default.clone()))
         }

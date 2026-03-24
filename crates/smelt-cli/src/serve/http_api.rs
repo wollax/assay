@@ -11,7 +11,7 @@ use serde::Serialize;
 use smelt_core::manifest::JobManifest;
 
 use crate::serve::queue::ServerState;
-use crate::serve::types::{elapsed_secs_since, JobSource, JobStatus, QueuedJob};
+use crate::serve::types::{JobSource, JobStatus, QueuedJob, elapsed_secs_since};
 
 /// JSON-serialisable snapshot of a single job's state.
 ///
@@ -188,6 +188,9 @@ mod tests {
         };
         let resp = JobStateResponse::from(&job);
         let json = serde_json::to_value(&resp).unwrap();
-        assert!(json["worker_host"].is_null(), "expected null worker_host for local job");
+        assert!(
+            json["worker_host"].is_null(),
+            "expected null worker_host for local job"
+        );
     }
 }

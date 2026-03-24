@@ -254,7 +254,10 @@ impl JobManifest {
         // kubernetes block requires kubernetes runtime and vice versa
         if self.environment.runtime == "kubernetes" {
             match &self.kubernetes {
-                None => errors.push("kubernetes: `runtime = \"kubernetes\"` requires a `[kubernetes]` block".to_string()),
+                None => errors.push(
+                    "kubernetes: `runtime = \"kubernetes\"` requires a `[kubernetes]` block"
+                        .to_string(),
+                ),
                 Some(k) => {
                     if k.namespace.trim().is_empty() {
                         errors.push("kubernetes.namespace: must not be empty".to_string());
@@ -312,9 +315,7 @@ impl JobManifest {
                         sess.name
                     ));
                 } else if !all_names.contains(dep.as_str()) {
-                    errors.push(format!(
-                        "session[{i}].depends_on: unknown session `{dep}`"
-                    ));
+                    errors.push(format!("session[{i}].depends_on: unknown session `{dep}`"));
                 }
             }
         }
@@ -344,9 +345,7 @@ impl JobManifest {
         // merge.order entries must reference valid sessions
         for entry in &self.merge.order {
             if !all_names.contains(entry.as_str()) {
-                errors.push(format!(
-                    "merge.order: unknown session `{entry}`"
-                ));
+                errors.push(format!("merge.order: unknown session `{entry}`"));
             }
         }
 
@@ -409,9 +408,10 @@ impl JobManifest {
                         return Some(path.join(" -> "));
                     }
                     if state[dep_idx] == 0
-                        && let Some(cycle) = dfs(dep_idx, sessions, name_to_idx, state, path) {
-                            return Some(cycle);
-                        }
+                        && let Some(cycle) = dfs(dep_idx, sessions, name_to_idx, state, path)
+                    {
+                        return Some(cycle);
+                    }
                 }
             }
 
@@ -423,9 +423,10 @@ impl JobManifest {
         let mut path = Vec::new();
         for i in 0..sessions.len() {
             if state[i] == 0
-                && let Some(cycle) = dfs(i, sessions, &name_to_idx, &mut state, &mut path) {
-                    return Some(cycle);
-                }
+                && let Some(cycle) = dfs(i, sessions, &name_to_idx, &mut state, &mut path)
+            {
+                return Some(cycle);
+            }
         }
         None
     }
@@ -498,9 +499,7 @@ pub fn resolve_repo_path(repo: &str) -> crate::Result<PathBuf> {
         if repo.starts_with(prefix) {
             return Err(SmeltError::Manifest {
                 field: "job.repo".to_string(),
-                message: format!(
-                    "repo must be a local path, not a URL: {repo:?}"
-                ),
+                message: format!("repo must be a local path, not a URL: {repo:?}"),
             });
         }
     }
@@ -508,14 +507,13 @@ pub fn resolve_repo_path(repo: &str) -> crate::Result<PathBuf> {
     // Reject SCP-style SSH syntax: user@host:path
     if let Some(at_pos) = repo.find('@')
         && let Some(colon_pos) = repo.find(':')
-            && at_pos < colon_pos {
-                return Err(SmeltError::Manifest {
-                    field: "job.repo".to_string(),
-                    message: format!(
-                        "repo must be a local path, not a URL: {repo:?}"
-                    ),
-                });
-            }
+        && at_pos < colon_pos
+    {
+        return Err(SmeltError::Manifest {
+            field: "job.repo".to_string(),
+            message: format!("repo must be a local path, not a URL: {repo:?}"),
+        });
+    }
 
     // Canonicalize (resolves relative paths, symlinks, verifies existence)
     std::fs::canonicalize(repo).map_err(|e| SmeltError::Manifest {
@@ -637,7 +635,9 @@ image = "redis:7"
     #[test]
     fn validate_valid_manifest() {
         let manifest = load_from_str(VALID_MANIFEST).unwrap();
-        manifest.validate().expect("valid manifest should pass validation");
+        manifest
+            .validate()
+            .expect("valid manifest should pass validation");
     }
 
     #[test]
@@ -669,7 +669,10 @@ target = "main"
 "#;
         let err = load_from_str(bad).unwrap_err();
         let msg = err.to_string();
-        assert!(msg.contains("bogus_field") || msg.contains("unknown field"), "error should mention unknown field: {msg}");
+        assert!(
+            msg.contains("bogus_field") || msg.contains("unknown field"),
+            "error should mention unknown field: {msg}"
+        );
     }
 
     #[test]
@@ -701,7 +704,10 @@ target = "main"
 "#;
         let err = load_from_str(bad).unwrap_err();
         let msg = err.to_string();
-        assert!(msg.contains("extra_thing") || msg.contains("unknown field"), "error should mention unknown field: {msg}");
+        assert!(
+            msg.contains("extra_thing") || msg.contains("unknown field"),
+            "error should mention unknown field: {msg}"
+        );
     }
 
     #[test]
@@ -739,7 +745,10 @@ target = "main"
         let manifest = load_from_str(toml).unwrap();
         let err = manifest.validate().unwrap_err();
         let msg = err.to_string();
-        assert!(msg.contains("duplicate session name"), "should report duplicate: {msg}");
+        assert!(
+            msg.contains("duplicate session name"),
+            "should report duplicate: {msg}"
+        );
     }
 
     #[test]
@@ -771,7 +780,10 @@ target = "main"
         let manifest = load_from_str(toml).unwrap();
         let err = manifest.validate().unwrap_err();
         let msg = err.to_string();
-        assert!(msg.contains("session[0].timeout: must be > 0"), "should report zero timeout: {msg}");
+        assert!(
+            msg.contains("session[0].timeout: must be > 0"),
+            "should report zero timeout: {msg}"
+        );
     }
 
     #[test]
@@ -804,7 +816,10 @@ target = "main"
         let manifest = load_from_str(toml).unwrap();
         let err = manifest.validate().unwrap_err();
         let msg = err.to_string();
-        assert!(msg.contains("cannot depend on itself"), "should report self-dep: {msg}");
+        assert!(
+            msg.contains("cannot depend on itself"),
+            "should report self-dep: {msg}"
+        );
     }
 
     #[test]
@@ -837,7 +852,10 @@ target = "main"
         let manifest = load_from_str(toml).unwrap();
         let err = manifest.validate().unwrap_err();
         let msg = err.to_string();
-        assert!(msg.contains("unknown session `nonexistent`"), "should report unknown dep: {msg}");
+        assert!(
+            msg.contains("unknown session `nonexistent`"),
+            "should report unknown dep: {msg}"
+        );
     }
 
     #[test]
@@ -909,7 +927,10 @@ target = "main"
         let manifest = load_from_str(toml).unwrap();
         let err = manifest.validate().unwrap_err();
         let msg = err.to_string();
-        assert!(msg.contains("environment.image: must not be empty"), "should report empty image: {msg}");
+        assert!(
+            msg.contains("environment.image: must not be empty"),
+            "should report empty image: {msg}"
+        );
     }
 
     #[test]
@@ -941,7 +962,10 @@ target = ""
         let manifest = load_from_str(toml).unwrap();
         let err = manifest.validate().unwrap_err();
         let msg = err.to_string();
-        assert!(msg.contains("merge.target: must not be empty"), "should report empty target: {msg}");
+        assert!(
+            msg.contains("merge.target: must not be empty"),
+            "should report empty target: {msg}"
+        );
     }
 
     #[test]
@@ -974,7 +998,10 @@ target = "main"
         let manifest = load_from_str(toml).unwrap();
         let err = manifest.validate().unwrap_err();
         let msg = err.to_string();
-        assert!(msg.contains("merge.order: unknown session `nonexistent`"), "should report bad order: {msg}");
+        assert!(
+            msg.contains("merge.order: unknown session `nonexistent`"),
+            "should report bad order: {msg}"
+        );
     }
 
     #[test]
@@ -1001,7 +1028,10 @@ target = "main"
         // session is a required Vec. Let's test that it's caught.
         let err = load_from_str(toml).unwrap_err();
         let msg = err.to_string();
-        assert!(msg.contains("session"), "should mention missing session: {msg}");
+        assert!(
+            msg.contains("session"),
+            "should mention missing session: {msg}"
+        );
     }
 
     #[test]
@@ -1038,7 +1068,10 @@ target = "main"
     fn load_nonexistent_file() {
         let err = JobManifest::load(Path::new("/tmp/nonexistent-manifest-12345.toml")).unwrap_err();
         let msg = err.to_string();
-        assert!(msg.contains("cannot read"), "should report read error: {msg}");
+        assert!(
+            msg.contains("cannot read"),
+            "should report read error: {msg}"
+        );
     }
 
     #[test]
@@ -1073,9 +1106,15 @@ target = ""
         // Should report all four errors, not just the first
         assert!(msg.contains("job.name"), "should report empty name: {msg}");
         assert!(msg.contains("job.repo"), "should report empty repo: {msg}");
-        assert!(msg.contains("environment.image"), "should report empty image: {msg}");
+        assert!(
+            msg.contains("environment.image"),
+            "should report empty image: {msg}"
+        );
         assert!(msg.contains("timeout"), "should report zero timeout: {msg}");
-        assert!(msg.contains("merge.target"), "should report empty target: {msg}");
+        assert!(
+            msg.contains("merge.target"),
+            "should report empty target: {msg}"
+        );
     }
 
     // ── resolve_repo_path tests ─────────────────────────────────
@@ -1121,7 +1160,10 @@ target = ""
     fn resolve_repo_path_rejects_scp_style() {
         let err = resolve_repo_path("git@github.com:example/repo").unwrap_err();
         let msg = err.to_string();
-        assert!(msg.contains("not a URL"), "should reject SCP-style SSH: {msg}");
+        assert!(
+            msg.contains("not a URL"),
+            "should reject SCP-style SSH: {msg}"
+        );
     }
 
     #[test]
@@ -1136,7 +1178,10 @@ target = ""
     fn resolve_repo_path_nonexistent() {
         let err = resolve_repo_path("/tmp/smelt-nonexistent-path-12345xyz").unwrap_err();
         let msg = err.to_string();
-        assert!(msg.contains("cannot resolve repo path"), "should report nonexistent: {msg}");
+        assert!(
+            msg.contains("cannot resolve repo path"),
+            "should report nonexistent: {msg}"
+        );
     }
 
     #[test]
@@ -1193,7 +1238,10 @@ token_env = "GITHUB_TOKEN"
     #[test]
     fn test_parse_manifest_without_forge() {
         let manifest = load_from_str(VALID_MANIFEST).expect("should parse");
-        assert!(manifest.forge.is_none(), "forge should be None when no [forge] section");
+        assert!(
+            manifest.forge.is_none(),
+            "forge should be None when no [forge] section"
+        );
     }
 
     #[test]
@@ -1285,24 +1333,48 @@ token_env = ""
         assert_eq!(manifest.services[0].name, "postgres");
         assert_eq!(manifest.services[0].image, "postgres:16");
         // extra keys are present
-        assert!(manifest.services[0].extra.contains_key("port"), "extra should have 'port'");
-        assert!(manifest.services[0].extra.contains_key("restart"), "extra should have 'restart'");
-        assert!(manifest.services[0].extra.contains_key("command"), "extra should have 'command'");
-        assert!(manifest.services[0].extra.contains_key("tag"), "extra should have 'tag'");
+        assert!(
+            manifest.services[0].extra.contains_key("port"),
+            "extra should have 'port'"
+        );
+        assert!(
+            manifest.services[0].extra.contains_key("restart"),
+            "extra should have 'restart'"
+        );
+        assert!(
+            manifest.services[0].extra.contains_key("command"),
+            "extra should have 'command'"
+        );
+        assert!(
+            manifest.services[0].extra.contains_key("tag"),
+            "extra should have 'tag'"
+        );
         // serde flatten must NOT capture name/image into extra
-        assert!(!manifest.services[0].extra.contains_key("name"), "extra must not contain 'name'");
-        assert!(!manifest.services[0].extra.contains_key("image"), "extra must not contain 'image'");
+        assert!(
+            !manifest.services[0].extra.contains_key("name"),
+            "extra must not contain 'name'"
+        );
+        assert!(
+            !manifest.services[0].extra.contains_key("image"),
+            "extra must not contain 'image'"
+        );
         // second service is bare
         assert_eq!(manifest.services[1].name, "redis");
         assert_eq!(manifest.services[1].image, "redis:7");
-        assert!(manifest.services[1].extra.is_empty(), "redis extra should be empty");
+        assert!(
+            manifest.services[1].extra.is_empty(),
+            "redis extra should be empty"
+        );
     }
 
     #[test]
     fn test_compose_manifest_roundtrip_no_services() {
         // VALID_MANIFEST uses runtime = "docker" and has no [[services]] section
         let manifest = load_from_str(VALID_MANIFEST).expect("should parse");
-        assert!(manifest.services.is_empty(), "docker manifest should have no services");
+        assert!(
+            manifest.services.is_empty(),
+            "docker manifest should have no services"
+        );
     }
 
     #[test]
@@ -1338,8 +1410,14 @@ port = 5432
 "#;
         let manifest = load_from_str(toml).expect("should parse");
         let svc = &manifest.services[0];
-        assert!(!svc.extra.contains_key("name"), "serde flatten must exclude 'name' from extra");
-        assert!(!svc.extra.contains_key("image"), "serde flatten must exclude 'image' from extra");
+        assert!(
+            !svc.extra.contains_key("name"),
+            "serde flatten must exclude 'name' from extra"
+        );
+        assert!(
+            !svc.extra.contains_key("image"),
+            "serde flatten must exclude 'image' from extra"
+        );
         assert!(svc.extra.contains_key("port"), "extra should have 'port'");
     }
 
@@ -1350,15 +1428,24 @@ port = 5432
 
         // integer
         let port = svc.extra.get("port").expect("port must be present");
-        assert!(matches!(port, toml::Value::Integer(5432)), "port should be Integer(5432), got {port:?}");
+        assert!(
+            matches!(port, toml::Value::Integer(5432)),
+            "port should be Integer(5432), got {port:?}"
+        );
 
         // boolean
         let restart = svc.extra.get("restart").expect("restart must be present");
-        assert!(matches!(restart, toml::Value::Boolean(true)), "restart should be Boolean(true), got {restart:?}");
+        assert!(
+            matches!(restart, toml::Value::Boolean(true)),
+            "restart should be Boolean(true), got {restart:?}"
+        );
 
         // array
         let command = svc.extra.get("command").expect("command must be present");
-        assert!(matches!(command, toml::Value::Array(_)), "command should be Array, got {command:?}");
+        assert!(
+            matches!(command, toml::Value::Array(_)),
+            "command should be Array, got {command:?}"
+        );
         if let toml::Value::Array(arr) = command {
             assert_eq!(arr.len(), 3);
             assert_eq!(arr[0], toml::Value::String("pg_isready".to_string()));
@@ -1366,7 +1453,10 @@ port = 5432
 
         // string
         let tag = svc.extra.get("tag").expect("tag must be present");
-        assert!(matches!(tag, toml::Value::String(_)), "tag should be String, got {tag:?}");
+        assert!(
+            matches!(tag, toml::Value::String(_)),
+            "tag should be String, got {tag:?}"
+        );
     }
 
     #[test]
@@ -1402,7 +1492,10 @@ image = "img"
         let manifest = load_from_str(toml).expect("should parse");
         let err = manifest.validate().unwrap_err();
         let msg = err.to_string();
-        assert!(msg.contains("services[0].name"), "should report empty service name: {msg}");
+        assert!(
+            msg.contains("services[0].name"),
+            "should report empty service name: {msg}"
+        );
     }
 
     #[test]
@@ -1438,7 +1531,10 @@ image = ""
         let manifest = load_from_str(toml).expect("should parse");
         let err = manifest.validate().unwrap_err();
         let msg = err.to_string();
-        assert!(msg.contains("services[0].image"), "should report empty service image: {msg}");
+        assert!(
+            msg.contains("services[0].image"),
+            "should report empty service image: {msg}"
+        );
     }
 
     #[test]
@@ -1474,8 +1570,14 @@ image = "postgres:16"
         let manifest = load_from_str(toml).expect("should parse");
         let err = manifest.validate().unwrap_err();
         let msg = err.to_string();
-        assert!(msg.contains("services:"), "should report services error: {msg}");
-        assert!(msg.contains("compose"), "should mention compose runtime: {msg}");
+        assert!(
+            msg.contains("services:"),
+            "should report services error: {msg}"
+        );
+        assert!(
+            msg.contains("compose"),
+            "should mention compose runtime: {msg}"
+        );
     }
 
     #[test]
@@ -1506,7 +1608,9 @@ target = "main"
 "#;
         let manifest = load_from_str(toml).expect("should parse");
         assert!(manifest.services.is_empty());
-        manifest.validate().expect("compose with no services should be valid");
+        manifest
+            .validate()
+            .expect("compose with no services should be valid");
     }
 
     #[test]
@@ -1539,7 +1643,10 @@ target = "main"
         let manifest = load_from_str(toml).expect("should parse");
         let err = manifest.validate().unwrap_err();
         let msg = err.to_string();
-        assert!(msg.contains("environment.runtime"), "should report unknown runtime: {msg}");
+        assert!(
+            msg.contains("environment.runtime"),
+            "should report unknown runtime: {msg}"
+        );
     }
 
     // ── Kubernetes field tests ────────────────────────────────────────────────
@@ -1581,7 +1688,10 @@ memory_limit = "2Gi"
     #[test]
     fn test_kubernetes_roundtrip_present() {
         let manifest = load_from_str(KUBERNETES_MANIFEST).expect("should parse");
-        let kube = manifest.kubernetes.as_ref().expect("kubernetes should be Some");
+        let kube = manifest
+            .kubernetes
+            .as_ref()
+            .expect("kubernetes should be Some");
         assert_eq!(kube.namespace, "smelt-jobs");
         assert_eq!(kube.context.as_deref(), Some("my-cluster"));
         assert_eq!(kube.ssh_key_env, "SSH_PRIVATE_KEY");
@@ -1595,7 +1705,10 @@ memory_limit = "2Gi"
     fn test_kubernetes_roundtrip_absent() {
         // Standard docker-runtime manifest — kubernetes must be None
         let manifest = load_from_str(VALID_MANIFEST).expect("should parse");
-        assert!(manifest.kubernetes.is_none(), "kubernetes should be None when no [kubernetes] section");
+        assert!(
+            manifest.kubernetes.is_none(),
+            "kubernetes should be None when no [kubernetes] section"
+        );
     }
 
     #[test]
@@ -1628,7 +1741,10 @@ target = "main"
         let manifest = load_from_str(toml).expect("should parse");
         let err = manifest.validate().unwrap_err();
         let msg = err.to_string();
-        assert!(msg.contains("kubernetes"), "should report kubernetes error: {msg}");
+        assert!(
+            msg.contains("kubernetes"),
+            "should report kubernetes error: {msg}"
+        );
     }
 
     #[test]
@@ -1665,7 +1781,10 @@ ssh_key_env = "SSH_PRIVATE_KEY"
         let manifest = load_from_str(toml).expect("should parse");
         let err = manifest.validate().unwrap_err();
         let msg = err.to_string();
-        assert!(msg.contains("kubernetes"), "should report kubernetes error: {msg}");
+        assert!(
+            msg.contains("kubernetes"),
+            "should report kubernetes error: {msg}"
+        );
     }
 
     #[test]
@@ -1701,7 +1820,10 @@ ssh_key_env = "SSH_PRIVATE_KEY"
         let manifest = load_from_str(toml).expect("should parse");
         let err = manifest.validate().unwrap_err();
         let msg = err.to_string();
-        assert!(msg.contains("namespace"), "should report namespace error: {msg}");
+        assert!(
+            msg.contains("namespace"),
+            "should report namespace error: {msg}"
+        );
     }
 
     #[test]
@@ -1737,20 +1859,27 @@ ssh_key_env = ""
         let manifest = load_from_str(toml).expect("should parse");
         let err = manifest.validate().unwrap_err();
         let msg = err.to_string();
-        assert!(msg.contains("ssh_key_env"), "should report ssh_key_env error: {msg}");
+        assert!(
+            msg.contains("ssh_key_env"),
+            "should report ssh_key_env error: {msg}"
+        );
     }
 
     #[test]
     fn test_validate_kubernetes_valid() {
         let manifest = load_from_str(KUBERNETES_MANIFEST).expect("should parse");
-        manifest.validate().expect("fully valid kubernetes manifest should pass validation");
+        manifest
+            .validate()
+            .expect("fully valid kubernetes manifest should pass validation");
     }
 
     #[test]
     fn test_validate_runtime_compose_valid() {
         // compose runtime + services should pass validate()
         let manifest = load_from_str(VALID_COMPOSE_MANIFEST).expect("should parse");
-        manifest.validate().expect("compose manifest with services should be valid");
+        manifest
+            .validate()
+            .expect("compose manifest with services should be valid");
     }
 
     #[test]

@@ -243,10 +243,7 @@ mod tests {
         let new_head = head_hash(tmp.path());
 
         let collector = ResultCollector::new(cli, tmp.path().to_path_buf());
-        let result = collector
-            .collect(&base, "results/existing")
-            .await
-            .unwrap();
+        let result = collector.collect(&base, "results/existing").await.unwrap();
 
         assert!(!result.no_changes);
         assert_eq!(result.commit_count, 1);
@@ -324,17 +321,31 @@ mod tests {
         // Create a feature branch with one commit, then merge it back with --no-ff.
         // This mirrors Assay's behavior: Assay merges session branches to base inside the container.
         run(&["checkout", "-b", "feat"]);
-        add_commit(tmp.path(), "session-output.txt", "gate results", "session: gate passed");
-        run(&["checkout", "-"]);  // back to default branch
+        add_commit(
+            tmp.path(),
+            "session-output.txt",
+            "gate results",
+            "session: gate passed",
+        );
+        run(&["checkout", "-"]); // back to default branch
         run(&["merge", "--no-ff", "feat", "-m", "merge session results"]);
 
         let collector = ResultCollector::new(cli, tmp.path().to_path_buf());
-        let result = collector.collect(&base, "results/after-merge").await.unwrap();
+        let result = collector
+            .collect(&base, "results/after-merge")
+            .await
+            .unwrap();
 
-        assert!(!result.no_changes, "merge commit should be detected as new commits");
+        assert!(
+            !result.no_changes,
+            "merge commit should be detected as new commits"
+        );
         assert_eq!(result.commit_count, 2, "feat commit + merge commit = 2");
         assert_eq!(result.branch, "results/after-merge");
-        assert!(!result.files_changed.is_empty(), "merged files must appear in diff");
+        assert!(
+            !result.files_changed.is_empty(),
+            "merged files must appear in diff"
+        );
 
         // Branch should point at current HEAD (the merge commit).
         let current_head = head_hash(tmp.path());
@@ -346,6 +357,9 @@ mod tests {
                 .unwrap();
             String::from_utf8_lossy(&out.stdout).trim().to_string()
         };
-        assert_eq!(branch_hash, current_head, "target branch must point at merge commit HEAD");
+        assert_eq!(
+            branch_hash, current_head,
+            "target branch must point at merge commit HEAD"
+        );
     }
 }

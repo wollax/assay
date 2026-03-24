@@ -191,7 +191,10 @@ async fn test_compose_healthcheck_wait_postgres() {
             toml::Value::String("postgres".to_string()),
         ]),
     );
-    hc_table.insert("interval".to_string(), toml::Value::String("2s".to_string()));
+    hc_table.insert(
+        "interval".to_string(),
+        toml::Value::String("2s".to_string()),
+    );
     hc_table.insert("retries".to_string(), toml::Value::Integer(10));
 
     let mut env_table = toml::value::Table::new();
@@ -269,7 +272,10 @@ async fn test_compose_teardown_after_exec_error() {
         .await
         .unwrap();
 
-    assert_eq!(handle.exit_code, 1, "exit 1 command should return exit_code 1");
+    assert_eq!(
+        handle.exit_code, 1,
+        "exit 1 command should return exit_code 1"
+    );
 
     // Teardown must not panic or return an error even after exec failure.
     provider

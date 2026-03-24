@@ -18,14 +18,15 @@ use smelt_core::manifest::{
 };
 use smelt_core::provider::RuntimeProvider;
 
-
-
 /// Returns the workspace root directory (two levels up from this crate's manifest).
 ///
 /// `CARGO_MANIFEST_DIR` points to `crates/smelt-cli/`, so `../..` is the workspace root.
 fn workspace_root() -> std::path::PathBuf {
     let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    manifest_dir.join("../..").canonicalize().unwrap_or_else(|_| manifest_dir.join("../.."))
+    manifest_dir
+        .join("../..")
+        .canonicalize()
+        .unwrap_or_else(|_| manifest_dir.join("../.."))
 }
 
 /// Build the assay binary for Linux aarch64 inside a `rust:alpine` Docker container.
@@ -49,8 +50,13 @@ fn build_linux_assay_binary() -> Option<std::path::PathBuf> {
     // Cache miss — need to build from source; detect assay source directory
     let assay_src = if let Ok(dir) = std::env::var("ASSAY_SOURCE_DIR") {
         let p = std::path::PathBuf::from(dir);
-        if p.exists() { p } else {
-            eprintln!("Skipping: ASSAY_SOURCE_DIR set but does not exist: {}", p.display());
+        if p.exists() {
+            p
+        } else {
+            eprintln!(
+                "Skipping: ASSAY_SOURCE_DIR set but does not exist: {}",
+                p.display()
+            );
             return None;
         }
     } else {
@@ -59,7 +65,10 @@ fn build_linux_assay_binary() -> Option<std::path::PathBuf> {
         match sibling.canonicalize() {
             Ok(p) if p.exists() => p,
             _ => {
-                eprintln!("Skipping: assay source not found at {} (set ASSAY_SOURCE_DIR to override)", sibling.display());
+                eprintln!(
+                    "Skipping: assay source not found at {} (set ASSAY_SOURCE_DIR to override)",
+                    sibling.display()
+                );
                 return None;
             }
         }
@@ -68,7 +77,10 @@ fn build_linux_assay_binary() -> Option<std::path::PathBuf> {
     // Ensure cache directories exist
     let build_dir = cache_dir.join("assay-build");
     if let Err(e) = std::fs::create_dir_all(&build_dir) {
-        eprintln!("Failed to create cache build dir {}: {e}", build_dir.display());
+        eprintln!(
+            "Failed to create cache build dir {}: {e}",
+            build_dir.display()
+        );
         return None;
     }
 
@@ -80,19 +92,31 @@ fn build_linux_assay_binary() -> Option<std::path::PathBuf> {
     let build_dir_str = build_dir.to_string_lossy();
     let registry_mount = format!("{cargo_home}/registry:/usr/local/cargo/registry");
 
-    eprintln!("Building Linux aarch64 assay binary from {} ...", assay_src_str);
+    eprintln!(
+        "Building Linux aarch64 assay binary from {} ...",
+        assay_src_str
+    );
 
     let output = std::process::Command::new("docker")
         .args([
-            "run", "--rm",
-            "--platform", "linux/arm64",
-            "-v", &format!("{assay_src_str}:/assay:ro"),
-            "-v", &registry_mount,
-            "-v", &format!("{build_dir_str}:/build"),
-            "-e", "CARGO_TARGET_DIR=/build",
-            "-w", "/assay",
+            "run",
+            "--rm",
+            "--platform",
+            "linux/arm64",
+            "-v",
+            &format!("{assay_src_str}:/assay:ro"),
+            "-v",
+            &registry_mount,
+            "-v",
+            &format!("{build_dir_str}:/build"),
+            "-e",
+            "CARGO_TARGET_DIR=/build",
+            "-w",
+            "/assay",
             "rust:alpine",
-            "sh", "-c", "apk add --no-cache musl-dev && cargo build --bin assay 2>&1",
+            "sh",
+            "-c",
+            "apk add --no-cache musl-dev && cargo build --bin assay 2>&1",
         ])
         .output();
 
@@ -102,7 +126,10 @@ fn build_linux_assay_binary() -> Option<std::path::PathBuf> {
             return None;
         }
         Ok(out) if !out.status.success() => {
-            eprintln!("Docker build of Linux assay binary failed (exit {:?}):", out.status.code());
+            eprintln!(
+                "Docker build of Linux assay binary failed (exit {:?}):",
+                out.status.code()
+            );
             eprintln!("{}", String::from_utf8_lossy(&out.stdout));
             eprintln!("{}", String::from_utf8_lossy(&out.stderr));
             return None;
@@ -113,7 +140,10 @@ fn build_linux_assay_binary() -> Option<std::path::PathBuf> {
     // Copy the built binary to the cache path
     let built_binary = build_dir.join("debug/assay");
     if !built_binary.exists() {
-        eprintln!("Build succeeded but binary not found at {}", built_binary.display());
+        eprintln!(
+            "Build succeeded but binary not found at {}",
+            built_binary.display()
+        );
         return None;
     }
 
@@ -122,7 +152,10 @@ fn build_linux_assay_binary() -> Option<std::path::PathBuf> {
         return None;
     }
 
-    eprintln!("Cached Linux aarch64 assay binary at {}", cache_path.display());
+    eprintln!(
+        "Cached Linux aarch64 assay binary at {}",
+        cache_path.display()
+    );
     Some(cache_path)
 }
 
@@ -131,9 +164,17 @@ fn build_linux_assay_binary() -> Option<std::path::PathBuf> {
 /// Returns `true` iff the `docker cp` command exits successfully.
 /// This avoids the base64-exec approach, which is too slow/unreliable for large binaries.
 #[allow(dead_code)]
-fn inject_binary_to_container(container_id: &str, host_path: &std::path::Path, dest_path: &str) -> bool {
+fn inject_binary_to_container(
+    container_id: &str,
+    host_path: &std::path::Path,
+    dest_path: &str,
+) -> bool {
     let status = std::process::Command::new("docker")
-        .args(["cp", &host_path.to_string_lossy().to_string(), &format!("{container_id}:{dest_path}")])
+        .args([
+            "cp",
+            &host_path.to_string_lossy().to_string(),
+            &format!("{container_id}:{dest_path}"),
+        ])
         .status();
     match status {
         Ok(s) if s.success() => true,
@@ -221,11 +262,16 @@ async fn assert_container_removed(provider: &DockerProvider, container_id: &str)
 
 #[tokio::test]
 async fn test_provision_and_teardown() {
-    let Some(provider) = docker_provider_or_skip() else { return };
+    let Some(provider) = docker_provider_or_skip() else {
+        return;
+    };
     let manifest = test_manifest("provision-teardown");
 
     // Provision a container
-    let container = provider.provision(&manifest).await.expect("provision should succeed");
+    let container = provider
+        .provision(&manifest)
+        .await
+        .expect("provision should succeed");
     let container_id = container.as_str().to_string();
 
     // Verify the container exists
@@ -248,17 +294,19 @@ async fn test_provision_and_teardown() {
 
 #[tokio::test]
 async fn test_exec() {
-    let Some(provider) = docker_provider_or_skip() else { return };
+    let Some(provider) = docker_provider_or_skip() else {
+        return;
+    };
     let manifest = test_manifest("exec-hello");
 
     let container = provider.provision(&manifest).await.expect("provision");
 
     // Execute `echo "hello world"`
-    let cmd = vec![
-        "echo".to_string(),
-        "hello world".to_string(),
-    ];
-    let handle = provider.exec(&container, &cmd).await.expect("exec should succeed");
+    let cmd = vec!["echo".to_string(), "hello world".to_string()];
+    let handle = provider
+        .exec(&container, &cmd)
+        .await
+        .expect("exec should succeed");
     assert_eq!(handle.container, container);
     assert_eq!(handle.exit_code, 0, "echo should exit 0");
     assert!(
@@ -273,14 +321,19 @@ async fn test_exec() {
 
 #[tokio::test]
 async fn test_exec_nonzero_exit() {
-    let Some(provider) = docker_provider_or_skip() else { return };
+    let Some(provider) = docker_provider_or_skip() else {
+        return;
+    };
     let manifest = test_manifest("exec-nonzero");
 
     let container = provider.provision(&manifest).await.expect("provision");
 
     // Execute a command that exits with code 42
     let cmd = vec!["sh".to_string(), "-c".to_string(), "exit 42".to_string()];
-    let handle = provider.exec(&container, &cmd).await.expect("exec should succeed");
+    let handle = provider
+        .exec(&container, &cmd)
+        .await
+        .expect("exec should succeed");
     assert_eq!(handle.container, container);
     assert_eq!(handle.exit_code, 42, "should capture non-zero exit code");
 
@@ -290,7 +343,9 @@ async fn test_exec_nonzero_exit() {
 
 #[tokio::test]
 async fn test_exec_long_running() {
-    let Some(provider) = docker_provider_or_skip() else { return };
+    let Some(provider) = docker_provider_or_skip() else {
+        return;
+    };
     let manifest = test_manifest("exec-long-running");
 
     let container = provider.provision(&manifest).await.expect("provision");
@@ -301,7 +356,10 @@ async fn test_exec_long_running() {
         "-c".to_string(),
         "for i in 1 2 3; do echo step-$i; sleep 1; done".to_string(),
     ];
-    let handle = provider.exec(&container, &cmd).await.expect("exec should succeed");
+    let handle = provider
+        .exec(&container, &cmd)
+        .await
+        .expect("exec should succeed");
     assert_eq!(handle.exit_code, 0, "long-running command should exit 0");
     assert!(
         handle.stdout.contains("step-1"),
@@ -325,7 +383,9 @@ async fn test_exec_long_running() {
 
 #[tokio::test]
 async fn test_teardown_on_error() {
-    let Some(provider) = docker_provider_or_skip() else { return };
+    let Some(provider) = docker_provider_or_skip() else {
+        return;
+    };
     let manifest = test_manifest("teardown-on-error");
 
     let container = provider.provision(&manifest).await.expect("provision");
@@ -435,7 +495,13 @@ target = "main"
     // Verify no containers from THIS job remain (filter by job name to avoid
     // interference from concurrent tests running other smelt jobs)
     let ps = std::process::Command::new("docker")
-        .args(["ps", "-a", "--filter", "label=smelt.job=cli-lifecycle", "-q"])
+        .args([
+            "ps",
+            "-a",
+            "--filter",
+            "label=smelt.job=cli-lifecycle",
+            "-q",
+        ])
         .output()
         .expect("docker ps should work");
     let remaining = String::from_utf8_lossy(&ps.stdout);
@@ -449,7 +515,9 @@ target = "main"
 
 #[tokio::test]
 async fn test_bind_mount_read() {
-    let Some(provider) = docker_provider_or_skip() else { return };
+    let Some(provider) = docker_provider_or_skip() else {
+        return;
+    };
 
     // Create a temp dir with a test file
     let dir = tempfile::tempdir().unwrap();
@@ -474,7 +542,9 @@ async fn test_bind_mount_read() {
 
 #[tokio::test]
 async fn test_bind_mount_write() {
-    let Some(provider) = docker_provider_or_skip() else { return };
+    let Some(provider) = docker_provider_or_skip() else {
+        return;
+    };
 
     let dir = tempfile::tempdir().unwrap();
     let manifest = test_manifest_with_repo("mount-write", dir.path().to_str().unwrap());
@@ -490,8 +560,8 @@ async fn test_bind_mount_write() {
     assert_eq!(handle.exit_code, 0, "write should exit 0");
 
     // Verify the file exists on the host
-    let content = std::fs::read_to_string(dir.path().join("newfile.txt"))
-        .expect("file should exist on host");
+    let content =
+        std::fs::read_to_string(dir.path().join("newfile.txt")).expect("file should exist on host");
     assert!(
         content.contains("written by container"),
         "host file should have container content, got: {:?}",
@@ -504,7 +574,9 @@ async fn test_bind_mount_write() {
 
 #[tokio::test]
 async fn test_bind_mount_working_dir() {
-    let Some(provider) = docker_provider_or_skip() else { return };
+    let Some(provider) = docker_provider_or_skip() else {
+        return;
+    };
 
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("marker.txt"), "found it").unwrap();
@@ -538,7 +610,9 @@ async fn test_bind_mount_working_dir() {
 
 #[tokio::test]
 async fn test_repo_url_rejected() {
-    let Some(provider) = docker_provider_or_skip() else { return };
+    let Some(provider) = docker_provider_or_skip() else {
+        return;
+    };
 
     let manifest = test_manifest_with_repo("url-rejected", "https://github.com/example/repo");
     let err = provider.provision(&manifest).await.unwrap_err();
@@ -561,7 +635,9 @@ async fn test_repo_url_rejected() {
 /// 2. The manifest file is present and contains expected session data
 #[tokio::test]
 async fn test_assay_mock_execution() {
-    let Some(provider) = docker_provider_or_skip() else { return };
+    let Some(provider) = docker_provider_or_skip() else {
+        return;
+    };
 
     // Create a temp dir with a marker file as the "repo"
     let repo_dir = tempfile::tempdir().unwrap();
@@ -624,14 +700,27 @@ echo "MOCK_ASSAY: found $session_count sessions: $session_names"
             base64::engine::general_purpose::STANDARD.encode(mock_script.as_bytes())
         ),
     ];
-    let write_handle = provider.exec(&container, &write_script_cmd).await.expect("write mock script");
-    assert_eq!(write_handle.exit_code, 0, "writing mock script should succeed");
+    let write_handle = provider
+        .exec(&container, &write_script_cmd)
+        .await
+        .expect("write mock script");
+    assert_eq!(
+        write_handle.exit_code, 0,
+        "writing mock script should succeed"
+    );
 
     // Execute the mock assay script
     let run_cmd = vec!["sh".to_string(), "/tmp/mock-assay.sh".to_string()];
-    let handle = provider.exec(&container, &run_cmd).await.expect("exec mock assay");
+    let handle = provider
+        .exec(&container, &run_cmd)
+        .await
+        .expect("exec mock assay");
 
-    assert_eq!(handle.exit_code, 0, "mock assay should exit 0, stderr: {}", handle.stderr);
+    assert_eq!(
+        handle.exit_code, 0,
+        "mock assay should exit 0, stderr: {}",
+        handle.stderr
+    );
     assert!(
         handle.stdout.contains("MOCK_ASSAY: marker=smelt-test"),
         "should confirm marker file, got: {:?}",
@@ -660,7 +749,9 @@ echo "MOCK_ASSAY: found $session_count sessions: $session_names"
 /// Test that a non-zero assay exit code is surfaced correctly.
 #[tokio::test]
 async fn test_assay_mock_failure() {
-    let Some(provider) = docker_provider_or_skip() else { return };
+    let Some(provider) = docker_provider_or_skip() else {
+        return;
+    };
 
     let repo_dir = tempfile::tempdir().unwrap();
     let manifest = test_manifest_with_repo("assay-failure", repo_dir.path().to_str().unwrap());
@@ -687,12 +778,18 @@ exit 1
             base64::engine::general_purpose::STANDARD.encode(fail_script.as_bytes())
         ),
     ];
-    let wh = provider.exec(&container, &write_cmd).await.expect("write fail script");
+    let wh = provider
+        .exec(&container, &write_cmd)
+        .await
+        .expect("write fail script");
     assert_eq!(wh.exit_code, 0);
 
     // Execute the failing mock
     let run_cmd = vec!["sh".to_string(), "/tmp/mock-fail.sh".to_string()];
-    let handle = provider.exec(&container, &run_cmd).await.expect("exec mock fail");
+    let handle = provider
+        .exec(&container, &run_cmd)
+        .await
+        .expect("exec mock fail");
 
     assert_eq!(handle.exit_code, 1, "mock should exit with code 1");
     assert!(
@@ -737,7 +834,9 @@ async fn test_cli_run_invalid_manifest() {
 /// that `ResultCollector::collect()` creates the target branch on the host.
 #[tokio::test]
 async fn test_collect_creates_target_branch() {
-    let Some(provider) = docker_provider_or_skip() else { return };
+    let Some(provider) = docker_provider_or_skip() else {
+        return;
+    };
 
     // 1. Create a temp git repo with an initial commit
     let repo_dir = tempfile::tempdir().unwrap();
@@ -771,10 +870,7 @@ async fn test_collect_creates_target_branch() {
     };
 
     // 2. Build manifest pointing to the temp repo
-    let mut manifest = test_manifest_with_repo(
-        "collect-test",
-        repo_dir.path().to_str().unwrap(),
-    );
+    let mut manifest = test_manifest_with_repo("collect-test", repo_dir.path().to_str().unwrap());
     manifest.job.base_ref = base_ref.clone();
     manifest.merge.target = "smelt/result".to_string();
 
@@ -813,12 +909,18 @@ git commit -m "assay: add result"
             base64::engine::general_purpose::STANDARD.encode(mock_script.as_bytes())
         ),
     ];
-    let wh = provider.exec(&container, &write_cmd).await.expect("write mock script");
+    let wh = provider
+        .exec(&container, &write_cmd)
+        .await
+        .expect("write mock script");
     assert_eq!(wh.exit_code, 0, "writing mock script should succeed");
 
     // 5. Execute the mock script (creates a commit in the bind-mounted repo)
     let run_cmd = vec!["sh".to_string(), "/tmp/mock-assay.sh".to_string()];
-    let handle = provider.exec(&container, &run_cmd).await.expect("exec mock assay");
+    let handle = provider
+        .exec(&container, &run_cmd)
+        .await
+        .expect("exec mock assay");
     assert_eq!(
         handle.exit_code, 0,
         "mock assay should exit 0, stdout: {}, stderr: {}",
@@ -878,7 +980,9 @@ git commit -m "assay: add result"
 /// `ResultCollector::collect()` runs on the host repo to create the target branch.
 #[tokio::test]
 async fn test_full_e2e_pipeline() {
-    let Some(provider) = docker_provider_or_skip() else { return };
+    let Some(provider) = docker_provider_or_skip() else {
+        return;
+    };
 
     // 1. Create a temp git repo with an initial commit
     let repo_dir = tempfile::tempdir().unwrap();
@@ -930,7 +1034,11 @@ async fn test_full_e2e_pipeline() {
         )
         .await
         .expect("install git");
-    assert_eq!(install.exit_code, 0, "git install should succeed: {}", install.stderr);
+    assert_eq!(
+        install.exit_code, 0,
+        "git install should succeed: {}",
+        install.stderr
+    );
 
     // 5. Write mock assay binary to /usr/local/bin/assay (on PATH)
     //    The script reads the manifest, creates a file + commit in /workspace, and exits 0.
@@ -949,10 +1057,20 @@ exit 0
     let write_assay_cmd = vec![
         "sh".to_string(),
         "-c".to_string(),
-        format!("echo '{}' | base64 -d > /usr/local/bin/assay && chmod +x /usr/local/bin/assay", encoded),
+        format!(
+            "echo '{}' | base64 -d > /usr/local/bin/assay && chmod +x /usr/local/bin/assay",
+            encoded
+        ),
     ];
-    let write_handle = provider.exec(&container, &write_assay_cmd).await.expect("write assay binary");
-    assert_eq!(write_handle.exit_code, 0, "writing mock assay should succeed: {}", write_handle.stderr);
+    let write_handle = provider
+        .exec(&container, &write_assay_cmd)
+        .await
+        .expect("write assay binary");
+    assert_eq!(
+        write_handle.exit_code, 0,
+        "writing mock assay should succeed: {}",
+        write_handle.stderr
+    );
 
     // 6. Write smelt manifest into container via AssayInvoker
     let toml = smelt_core::AssayInvoker::build_run_manifest_toml(&manifest);
@@ -983,9 +1101,15 @@ exit 0
 
     // 10. Assertions
     assert!(!result.no_changes, "should have changes from mock assay");
-    assert!(result.commit_count >= 1, "should have at least 1 commit, got {}", result.commit_count);
     assert!(
-        result.files_changed.contains(&"assay-output.txt".to_string()),
+        result.commit_count >= 1,
+        "should have at least 1 commit, got {}",
+        result.commit_count
+    );
+    assert!(
+        result
+            .files_changed
+            .contains(&"assay-output.txt".to_string()),
         "expected assay-output.txt in files_changed, got: {:?}",
         result.files_changed
     );
@@ -1017,7 +1141,9 @@ exit 0
 /// 2-second timeout, then tears down the container.
 #[tokio::test]
 async fn test_timeout_triggers_teardown() {
-    let Some(provider) = docker_provider_or_skip() else { return };
+    let Some(provider) = docker_provider_or_skip() else {
+        return;
+    };
     let manifest = test_manifest("timeout-teardown");
 
     let container = provider.provision(&manifest).await.expect("provision");
@@ -1047,7 +1173,10 @@ async fn test_timeout_triggers_teardown() {
     );
 
     // Teardown must succeed after timeout
-    provider.teardown(&container).await.expect("teardown after timeout");
+    provider
+        .teardown(&container)
+        .await
+        .expect("teardown after timeout");
     assert_container_removed(&provider, &container_id).await;
 }
 
@@ -1057,7 +1186,9 @@ async fn test_timeout_triggers_teardown() {
 /// signal after 2 seconds, then tears down the container.
 #[tokio::test]
 async fn test_cancellation_triggers_teardown() {
-    let Some(provider) = docker_provider_or_skip() else { return };
+    let Some(provider) = docker_provider_or_skip() else {
+        return;
+    };
     let manifest = test_manifest("cancel-teardown");
 
     let container = provider.provision(&manifest).await.expect("provision");
@@ -1094,7 +1225,10 @@ async fn test_cancellation_triggers_teardown() {
     );
 
     // Teardown must succeed after cancellation
-    provider.teardown(&container).await.expect("teardown after cancel");
+    provider
+        .teardown(&container)
+        .await
+        .expect("teardown after cancel");
     assert_container_removed(&provider, &container_id).await;
 }
 
@@ -1105,7 +1239,9 @@ async fn test_cancellation_triggers_teardown() {
 /// `depends_on` relationship correctly, and that the mock assay sees the manifest.
 #[tokio::test]
 async fn test_multi_session_e2e() {
-    let Some(provider) = docker_provider_or_skip() else { return };
+    let Some(provider) = docker_provider_or_skip() else {
+        return;
+    };
 
     // Build manifest with two sessions, second depending on first
     let mut manifest = test_manifest("multi-session-e2e");
@@ -1145,8 +1281,15 @@ exit 0
             encoded
         ),
     ];
-    let wh = provider.exec(&container, &write_assay_cmd).await.expect("write assay binary");
-    assert_eq!(wh.exit_code, 0, "writing mock assay should succeed: {}", wh.stderr);
+    let wh = provider
+        .exec(&container, &write_assay_cmd)
+        .await
+        .expect("write assay binary");
+    assert_eq!(
+        wh.exit_code, 0,
+        "writing mock assay should succeed: {}",
+        wh.stderr
+    );
 
     // Write smelt manifest into container via AssayInvoker
     let toml = smelt_core::AssayInvoker::build_run_manifest_toml(&manifest);
@@ -1156,7 +1299,10 @@ exit 0
 
     // Read manifest back from container and verify contents
     let cat_cmd = vec!["cat".to_string(), "/tmp/smelt-manifest.toml".to_string()];
-    let cat_handle = provider.exec(&container, &cat_cmd).await.expect("cat manifest");
+    let cat_handle = provider
+        .exec(&container, &cat_cmd)
+        .await
+        .expect("cat manifest");
     assert_eq!(
         cat_handle.exit_code, 0,
         "cat manifest should succeed, stderr: {}",
@@ -1185,7 +1331,10 @@ exit 0
 
     // Execute assay via build_run_command — must exit 0
     let run_cmd = smelt_core::AssayInvoker::build_run_command(&manifest);
-    let handle = provider.exec(&container, &run_cmd).await.expect("exec assay");
+    let handle = provider
+        .exec(&container, &run_cmd)
+        .await
+        .expect("exec assay");
     assert_eq!(
         handle.exit_code, 0,
         "assay run should exit 0: stdout={} stderr={}",
@@ -1203,7 +1352,9 @@ exit 0
 /// This closes the error branch: assay non-zero exit → teardown → no orphans.
 #[tokio::test]
 async fn test_e2e_assay_failure_no_orphans() {
-    let Some(provider) = docker_provider_or_skip() else { return };
+    let Some(provider) = docker_provider_or_skip() else {
+        return;
+    };
 
     // Pre-clean any stale smelt containers to avoid false positives
     let stale = std::process::Command::new("docker")
@@ -1233,8 +1384,15 @@ async fn test_e2e_assay_failure_no_orphans() {
             encoded
         ),
     ];
-    let wh = provider.exec(&container, &write_cmd).await.expect("write failing assay");
-    assert_eq!(wh.exit_code, 0, "writing failing mock should succeed: {}", wh.stderr);
+    let wh = provider
+        .exec(&container, &write_cmd)
+        .await
+        .expect("write failing assay");
+    assert_eq!(
+        wh.exit_code, 0,
+        "writing failing mock should succeed: {}",
+        wh.stderr
+    );
 
     // Write smelt manifest into container
     let toml = smelt_core::AssayInvoker::build_run_manifest_toml(&manifest);
@@ -1244,7 +1402,10 @@ async fn test_e2e_assay_failure_no_orphans() {
 
     // Exec assay via build_run_command — must exit 1
     let run_cmd = smelt_core::AssayInvoker::build_run_command(&manifest);
-    let handle = provider.exec(&container, &run_cmd).await.expect("exec failing assay");
+    let handle = provider
+        .exec(&container, &run_cmd)
+        .await
+        .expect("exec failing assay");
     assert_eq!(
         handle.exit_code, 1,
         "failing assay should exit 1, got exit_code={}",
@@ -1263,7 +1424,12 @@ async fn test_e2e_assay_failure_no_orphans() {
     // No containers for THIS job should remain (filter by job-specific label value
     // to avoid false positives from other concurrent tests using the same label key).
     let ps = std::process::Command::new("docker")
-        .args(["ps", "-aq", "--filter", "label=smelt.job=failure-no-orphans"])
+        .args([
+            "ps",
+            "-aq",
+            "--filter",
+            "label=smelt.job=failure-no-orphans",
+        ])
         .output()
         .expect("docker ps should work");
     let remaining = String::from_utf8_lossy(&ps.stdout);
@@ -1276,7 +1442,9 @@ async fn test_e2e_assay_failure_no_orphans() {
 /// Test that double teardown is safe (existing 404 tolerance in DockerProvider).
 #[tokio::test]
 async fn test_double_teardown_safe() {
-    let Some(provider) = docker_provider_or_skip() else { return };
+    let Some(provider) = docker_provider_or_skip() else {
+        return;
+    };
     let manifest = test_manifest("double-teardown");
 
     let container = provider.provision(&manifest).await.expect("provision");
@@ -1284,7 +1452,10 @@ async fn test_double_teardown_safe() {
 
     provider.teardown(&container).await.expect("first teardown");
     // Second teardown should not error (404 tolerance)
-    provider.teardown(&container).await.expect("second teardown should be safe");
+    provider
+        .teardown(&container)
+        .await
+        .expect("second teardown should be safe");
     assert_container_removed(&provider, &container_id).await;
 }
 
@@ -1306,7 +1477,9 @@ async fn test_double_teardown_safe() {
 #[tokio::test]
 async fn test_real_assay_manifest_parsing() {
     // Step 1: Get Docker provider (skip if unavailable)
-    let Some(provider) = docker_provider_or_skip() else { return };
+    let Some(provider) = docker_provider_or_skip() else {
+        return;
+    };
 
     // Step 2: Build (or locate cached) Linux assay binary (skip if unavailable)
     let Some(binary_path) = build_linux_assay_binary() else {
@@ -1316,7 +1489,8 @@ async fn test_real_assay_manifest_parsing() {
 
     // Build a two-session manifest — alpha (no deps) and beta (depends on alpha)
     let repo_dir = tempfile::tempdir().unwrap();
-    let mut manifest = test_manifest_with_repo("real-assay-parse", repo_dir.path().to_str().unwrap());
+    let mut manifest =
+        test_manifest_with_repo("real-assay-parse", repo_dir.path().to_str().unwrap());
     manifest.job.base_ref = "main".to_string();
     manifest.session = vec![
         SessionDef {
@@ -1336,17 +1510,28 @@ async fn test_real_assay_manifest_parsing() {
     ];
 
     // Step 3: Provision container
-    let container = provider.provision(&manifest).await.expect("provision should succeed");
+    let container = provider
+        .provision(&manifest)
+        .await
+        .expect("provision should succeed");
 
     // Step 4: Inject real Linux assay binary into container and make it executable
-    let injected = inject_binary_to_container(container.as_str(), &binary_path, "/usr/local/bin/assay");
+    let injected =
+        inject_binary_to_container(container.as_str(), &binary_path, "/usr/local/bin/assay");
     if !injected {
         provider.teardown(&container).await.ok();
         panic!("inject_binary_to_container failed — cannot proceed with test");
     }
 
     let chmod_handle = provider
-        .exec(&container, &["chmod".to_string(), "+x".to_string(), "/usr/local/bin/assay".to_string()])
+        .exec(
+            &container,
+            &[
+                "chmod".to_string(),
+                "+x".to_string(),
+                "/usr/local/bin/assay".to_string(),
+            ],
+        )
         .await
         .expect("chmod exec should not error");
     assert_eq!(
@@ -1386,10 +1571,7 @@ async fn test_real_assay_manifest_parsing() {
         let spec_name = smelt_core::AssayInvoker::sanitize_session_name(&s.name);
         let spec_toml = smelt_core::AssayInvoker::build_spec_toml(s);
         let spec_handle = smelt_core::AssayInvoker::write_spec_file_to_container(
-            &provider,
-            &container,
-            &spec_name,
-            &spec_toml,
+            &provider, &container, &spec_name, &spec_toml,
         )
         .await
         .expect("write_spec_file_to_container should not error");
@@ -1419,7 +1601,10 @@ async fn test_real_assay_manifest_parsing() {
 
     // Teardown before asserting (ensures container is cleaned up on panic too,
     // since Rust tests run assertion panics after this point)
-    provider.teardown(&container).await.expect("teardown should succeed");
+    provider
+        .teardown(&container)
+        .await
+        .expect("teardown should succeed");
     assert_container_removed(&provider, container.as_str()).await;
 
     // Step 7: Assert parse phase succeeded
@@ -1473,7 +1658,9 @@ async fn test_real_assay_manifest_parsing() {
 /// - `handle.stdout` contains `"a"` (ExecHandle is populated)
 #[tokio::test]
 async fn test_exec_streaming_delivers_chunks_in_order() {
-    let Some(provider) = docker_provider_or_skip() else { return };
+    let Some(provider) = docker_provider_or_skip() else {
+        return;
+    };
     let manifest = test_manifest("exec-streaming-order");
 
     let container = provider.provision(&manifest).await.expect("provision");
@@ -1481,10 +1668,7 @@ async fn test_exec_streaming_delivers_chunks_in_order() {
     let chunks: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
     let chunks_cb = Arc::clone(&chunks);
 
-    let cmd = vec![
-        "printf".to_string(),
-        "a\\nb\\nc\\n".to_string(),
-    ];
+    let cmd = vec!["printf".to_string(), "a\\nb\\nc\\n".to_string()];
     let handle = provider
         .exec_streaming(&container, &cmd, move |chunk| {
             chunks_cb.lock().unwrap().push(chunk.to_string());
@@ -1505,8 +1689,14 @@ async fn test_exec_streaming_delivers_chunks_in_order() {
     }
     eprintln!("handle.stdout = {:?}", handle.stdout);
 
-    assert!(!collected.is_empty(), "streaming callback should have been invoked at least once");
-    assert_eq!(joined, "a\nb\nc\n", "joined chunks should equal 'a\\nb\\nc\\n', got: {joined:?}");
+    assert!(
+        !collected.is_empty(),
+        "streaming callback should have been invoked at least once"
+    );
+    assert_eq!(
+        joined, "a\nb\nc\n",
+        "joined chunks should equal 'a\\nb\\nc\\n', got: {joined:?}"
+    );
     assert!(
         handle.stdout.contains("a"),
         "ExecHandle.stdout should contain 'a', got: {:?}",
@@ -1529,22 +1719,27 @@ async fn test_build_linux_assay_binary_caches() {
     match result {
         None => {
             // Assay source or Docker unavailable — skip gracefully
-            eprintln!("test_build_linux_assay_binary_caches: skipped (assay source or Docker not available)");
+            eprintln!(
+                "test_build_linux_assay_binary_caches: skipped (assay source or Docker not available)"
+            );
             return;
         }
         Some(path) => {
             assert!(
                 path.exists(),
-                "cached binary should exist at {}", path.display()
+                "cached binary should exist at {}",
+                path.display()
             );
             let meta = path.metadata().expect("should be able to read metadata");
             assert!(
                 meta.len() > 0,
-                "cached binary should have non-zero size, got {} bytes", meta.len()
+                "cached binary should have non-zero size, got {} bytes",
+                meta.len()
             );
             assert!(
                 path.ends_with("assay-linux-aarch64"),
-                "cache path should end with 'assay-linux-aarch64', got: {}", path.display()
+                "cache path should end with 'assay-linux-aarch64', got: {}",
+                path.display()
             );
             eprintln!(
                 "test_build_linux_assay_binary_caches: PASS — binary at {} ({} bytes)",

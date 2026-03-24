@@ -114,8 +114,9 @@ impl ServerConfig {
     pub fn load(path: &std::path::Path) -> anyhow::Result<ServerConfig> {
         let content = std::fs::read_to_string(path)
             .map_err(|e| anyhow::anyhow!("failed to read config file {}: {}", path.display(), e))?;
-        let config: ServerConfig = toml::from_str(&content)
-            .map_err(|e| anyhow::anyhow!("failed to parse config file {}: {}", path.display(), e))?;
+        let config: ServerConfig = toml::from_str(&content).map_err(|e| {
+            anyhow::anyhow!("failed to parse config file {}: {}", path.display(), e)
+        })?;
         config.validate()?;
         Ok(config)
     }
@@ -139,7 +140,10 @@ impl ServerConfig {
             }
         }
         if !worker_errors.is_empty() {
-            anyhow::bail!("invalid worker configuration:\n  {}", worker_errors.join("\n  "));
+            anyhow::bail!(
+                "invalid worker configuration:\n  {}",
+                worker_errors.join("\n  ")
+            );
         }
 
         Ok(())

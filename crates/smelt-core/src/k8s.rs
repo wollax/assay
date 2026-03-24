@@ -5,13 +5,13 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use k8s_openapi::ByteString;
 use k8s_openapi::api::core::v1::{
     Container, EmptyDirVolumeSource, EnvVar, KeyToPath, Pod, PodSpec, ResourceRequirements, Secret,
     SecretVolumeSource, Volume, VolumeMount,
 };
 use k8s_openapi::apimachinery::pkg::api::resource::Quantity;
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta;
-use k8s_openapi::ByteString;
 use kube::api::{Api, AttachParams, DeleteParams, PostParams};
 use kube::config::KubeConfigOptions;
 use kube::{Client, Config};
@@ -130,7 +130,11 @@ pub fn generate_pod_spec(
         } else {
             Some(requests)
         },
-        limits: if limits.is_empty() { None } else { Some(limits) },
+        limits: if limits.is_empty() {
+            None
+        } else {
+            Some(limits)
+        },
         ..Default::default()
     };
 
@@ -227,15 +231,16 @@ impl KubernetesProvider {
                     context: Some(ctx.clone()),
                     ..Default::default()
                 };
-                let config = Config::from_kubeconfig(&opts)
-                    .await
-                    .map_err(|e| SmeltError::provider_with_source("k8s", "failed to build kube client", e))?;
-                Client::try_from(config)
-                    .map_err(|e| SmeltError::provider_with_source("k8s", "failed to build kube client", e))?
+                let config = Config::from_kubeconfig(&opts).await.map_err(|e| {
+                    SmeltError::provider_with_source("k8s", "failed to build kube client", e)
+                })?;
+                Client::try_from(config).map_err(|e| {
+                    SmeltError::provider_with_source("k8s", "failed to build kube client", e)
+                })?
             }
-            None => Client::try_default()
-                .await
-                .map_err(|e| SmeltError::provider_with_source("k8s", "failed to build kube client", e))?,
+            None => Client::try_default().await.map_err(|e| {
+                SmeltError::provider_with_source("k8s", "failed to build kube client", e)
+            })?,
         };
 
         Ok(Self {
@@ -275,10 +280,7 @@ impl RuntimeProvider for KubernetesProvider {
             .map_err(|_| {
                 SmeltError::provider(
                     "k8s",
-                    format!(
-                        "env var '{}' not set or not unicode",
-                        kube_cfg.ssh_key_env
-                    ),
+                    format!("env var '{}' not set or not unicode", kube_cfg.ssh_key_env),
                 )
             })?
             .into_bytes();
@@ -352,45 +354,42 @@ impl RuntimeProvider for KubernetesProvider {
 
             // Check init container (git-clone)
             if !init_done
-                && let Some(init_statuses) =
-                    status.and_then(|s| s.init_container_statuses.as_ref())
-                    && let Some(git_clone) =
-                        init_statuses.iter().find(|c| c.name == "git-clone")
-                        && let Some(state) = &git_clone.state
-                            && let Some(terminated) = &state.terminated {
-                                if terminated.exit_code == 0 {
-                                    init_done = true;
-                                } else {
-                                    return Err(SmeltError::provider(
-                                        "k8s",
-                                        format!(
-                                            "init container failed with exit code {}",
-                                            terminated.exit_code
-                                        ),
-                                    ));
-                                }
-                            }
+                && let Some(init_statuses) = status.and_then(|s| s.init_container_statuses.as_ref())
+                && let Some(git_clone) = init_statuses.iter().find(|c| c.name == "git-clone")
+                && let Some(state) = &git_clone.state
+                && let Some(terminated) = &state.terminated
+            {
+                if terminated.exit_code == 0 {
+                    init_done = true;
+                } else {
+                    return Err(SmeltError::provider(
+                        "k8s",
+                        format!(
+                            "init container failed with exit code {}",
+                            terminated.exit_code
+                        ),
+                    ));
+                }
+            }
 
             // Check main container (smelt-agent)
             if !main_running
-                && let Some(container_statuses) =
-                    status.and_then(|s| s.container_statuses.as_ref())
-                    && let Some(agent) =
-                        container_statuses.iter().find(|c| c.name == "smelt-agent")
-                        && let Some(state) = &agent.state {
-                            if state.running.is_some() {
-                                main_running = true;
-                            } else if let Some(waiting) = &state.waiting
-                                && let Some(reason) = &waiting.reason
-                                    && (reason == "ImagePullBackOff" || reason == "ErrImagePull") {
-                                        return Err(SmeltError::provider(
-                                            "k8s",
-                                            format!(
-                                                "image pull failed for Pod '{pod_name}': {reason}"
-                                            ),
-                                        ));
-                                    }
-                        }
+                && let Some(container_statuses) = status.and_then(|s| s.container_statuses.as_ref())
+                && let Some(agent) = container_statuses.iter().find(|c| c.name == "smelt-agent")
+                && let Some(state) = &agent.state
+            {
+                if state.running.is_some() {
+                    main_running = true;
+                } else if let Some(waiting) = &state.waiting
+                    && let Some(reason) = &waiting.reason
+                    && (reason == "ImagePullBackOff" || reason == "ErrImagePull")
+                {
+                    return Err(SmeltError::provider(
+                        "k8s",
+                        format!("image pull failed for Pod '{pod_name}': {reason}"),
+                    ));
+                }
+            }
 
             if init_done && main_running {
                 break;
@@ -425,11 +424,7 @@ impl RuntimeProvider for KubernetesProvider {
         Ok(container_id)
     }
 
-    async fn exec(
-        &self,
-        container: &ContainerId,
-        command: &[String],
-    ) -> crate::Result<ExecHandle> {
+    async fn exec(&self, container: &ContainerId, command: &[String]) -> crate::Result<ExecHandle> {
         let (ns, pod_name) = parse_container_id(container)?;
 
         let pods_api: Api<Pod> = Api::namespaced(self.client.clone(), &ns);
@@ -468,10 +463,9 @@ impl RuntimeProvider for KubernetesProvider {
         }
 
         // Wait for the WebSocket task to complete (AFTER streams are drained)
-        attached
-            .join()
-            .await
-            .map_err(|e| SmeltError::provider_with_source("k8s", "exec WebSocket task failed", e))?;
+        attached.join().await.map_err(|e| {
+            SmeltError::provider_with_source("k8s", "exec WebSocket task failed", e)
+        })?;
 
         let status = status_fut.await;
         let exit_code = status.as_ref().and_then(|s| s.code).unwrap_or(-1);
@@ -523,10 +517,9 @@ impl RuntimeProvider for KubernetesProvider {
         if let Some(mut out) = attached.stdout() {
             let mut buf = [0u8; BUF_SIZE];
             loop {
-                let n = out
-                    .read(&mut buf)
-                    .await
-                    .map_err(|e| SmeltError::provider_with_source("k8s", "failed to read stdout", e))?;
+                let n = out.read(&mut buf).await.map_err(|e| {
+                    SmeltError::provider_with_source("k8s", "failed to read stdout", e)
+                })?;
                 if n == 0 {
                     break;
                 }
@@ -539,10 +532,9 @@ impl RuntimeProvider for KubernetesProvider {
         if let Some(mut err) = attached.stderr() {
             let mut buf = [0u8; BUF_SIZE];
             loop {
-                let n = err
-                    .read(&mut buf)
-                    .await
-                    .map_err(|e| SmeltError::provider_with_source("k8s", "failed to read stderr", e))?;
+                let n = err.read(&mut buf).await.map_err(|e| {
+                    SmeltError::provider_with_source("k8s", "failed to read stderr", e)
+                })?;
                 if n == 0 {
                     break;
                 }
@@ -553,10 +545,9 @@ impl RuntimeProvider for KubernetesProvider {
         }
 
         // Wait for WebSocket task to complete (AFTER streams are drained)
-        attached
-            .join()
-            .await
-            .map_err(|e| SmeltError::provider_with_source("k8s", "exec_streaming WebSocket task failed", e))?;
+        attached.join().await.map_err(|e| {
+            SmeltError::provider_with_source("k8s", "exec_streaming WebSocket task failed", e)
+        })?;
 
         let status = status_fut.await;
         let exit_code = status.as_ref().and_then(|s| s.code).unwrap_or(-1);
@@ -595,10 +586,7 @@ impl RuntimeProvider for KubernetesProvider {
                 .map(|s| s.secret_name.clone())
                 .unwrap_or_else(|| {
                     // Fallback: derive from pod name convention
-                    format!(
-                        "smelt-ssh-{}",
-                        pod_name.trim_start_matches("smelt-")
-                    )
+                    format!("smelt-ssh-{}", pod_name.trim_start_matches("smelt-"))
                 })
         };
 
@@ -809,12 +797,14 @@ target = "main"
 
     #[test]
     fn test_generate_pod_spec_resource_limits() {
-        let manifest =
-            JobManifest::from_str(KUBERNETES_MANIFEST_WITH_RESOURCES_TOML, Path::new("test.toml"))
-                .expect("manifest should parse");
+        let manifest = JobManifest::from_str(
+            KUBERNETES_MANIFEST_WITH_RESOURCES_TOML,
+            Path::new("test.toml"),
+        )
+        .expect("manifest should parse");
 
-        let pod =
-            generate_pod_spec(&manifest, "resource-job", "fake-key").expect("pod spec should generate");
+        let pod = generate_pod_spec(&manifest, "resource-job", "fake-key")
+            .expect("pod spec should generate");
 
         let json = serde_json::to_string_pretty(&pod).expect("pod should serialize to JSON");
 

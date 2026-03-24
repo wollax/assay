@@ -110,11 +110,7 @@ pub trait GitOps {
     ) -> impl Future<Output = Result<()>> + Send;
 
     /// Remove a worktree. If `force` is true, removes even with uncommitted changes.
-    fn worktree_remove(
-        &self,
-        path: &Path,
-        force: bool,
-    ) -> impl Future<Output = Result<()>> + Send;
+    fn worktree_remove(&self, path: &Path, force: bool) -> impl Future<Output = Result<()>> + Send;
 
     /// List worktrees in porcelain format.
     fn worktree_list(&self) -> impl Future<Output = Result<Vec<GitWorktreeEntry>>> + Send;
@@ -148,7 +144,7 @@ pub trait GitOps {
     /// Create a commit in the given working directory with the provided message.
     /// Returns the short commit hash.
     fn commit(&self, work_dir: &Path, message: &str)
-        -> impl Future<Output = Result<String>> + Send;
+    -> impl Future<Output = Result<String>> + Send;
 
     /// Count commits on `branch` that are not on `base`. Returns the count.
     fn rev_list_count(
@@ -182,10 +178,7 @@ pub trait GitOps {
     ) -> impl Future<Output = Result<()>> + Send;
 
     /// List unmerged (conflicting) files in `work_dir`.
-    fn unmerged_files(
-        &self,
-        work_dir: &Path,
-    ) -> impl Future<Output = Result<Vec<String>>> + Send;
+    fn unmerged_files(&self, work_dir: &Path) -> impl Future<Output = Result<Vec<String>>> + Send;
 
     /// Hard reset HEAD in `work_dir` to `target_ref`.
     fn reset_hard(
@@ -202,11 +195,7 @@ pub trait GitOps {
     /// The refspec `+<branch>:<branch>` force-updates the local ref from the
     /// remote — the leading `+` is required for re-runs when the local branch
     /// already exists.
-    fn fetch_ref(
-        &self,
-        remote: &str,
-        refspec: &str,
-    ) -> impl Future<Output = Result<()>> + Send;
+    fn fetch_ref(&self, remote: &str, refspec: &str) -> impl Future<Output = Result<()>> + Send;
 
     /// List changed file paths between two refs.
     fn diff_name_only(
@@ -285,10 +274,7 @@ branch refs/heads/feature/auth
         assert_eq!(entries.len(), 2);
 
         assert_eq!(entries[0].path, PathBuf::from("/home/user/project"));
-        assert_eq!(
-            entries[0].head,
-            "abc1234567890abcdef1234567890abcdef123456"
-        );
+        assert_eq!(entries[0].head, "abc1234567890abcdef1234567890abcdef123456");
         assert_eq!(entries[0].branch.as_deref(), Some("main"));
         assert!(!entries[0].is_bare);
         assert!(!entries[0].is_locked);

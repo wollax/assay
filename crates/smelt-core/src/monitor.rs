@@ -101,7 +101,11 @@ impl JobMonitor {
     ///
     /// Records the current PID and timestamp. Does **not** write to disk yet —
     /// call [`write`](Self::write) or [`set_phase`](Self::set_phase) to persist.
-    pub fn new(job_name: impl Into<String>, sessions: Vec<String>, state_dir: impl Into<PathBuf>) -> Self {
+    pub fn new(
+        job_name: impl Into<String>,
+        sessions: Vec<String>,
+        state_dir: impl Into<PathBuf>,
+    ) -> Self {
         let now = unix_now();
         Self {
             state: RunState {
@@ -140,44 +144,34 @@ impl JobMonitor {
     ///
     /// Creates `state_dir` (and any parent directories) if it does not exist.
     pub fn write(&self) -> Result<()> {
-        fs::create_dir_all(&self.state_dir).map_err(|e| {
-            SmeltError::Io {
-                operation: "create state dir".into(),
-                path: self.state_dir.clone(),
-                source: e,
-            }
+        fs::create_dir_all(&self.state_dir).map_err(|e| SmeltError::Io {
+            operation: "create state dir".into(),
+            path: self.state_dir.clone(),
+            source: e,
         })?;
         let path = self.state_dir.join("state.toml");
-        let content = toml::to_string_pretty(&self.state).map_err(|e| {
-            SmeltError::Config {
-                path: path.clone(),
-                message: format!("serialize run state: {e}"),
-            }
+        let content = toml::to_string_pretty(&self.state).map_err(|e| SmeltError::Config {
+            path: path.clone(),
+            message: format!("serialize run state: {e}"),
         })?;
-        fs::write(&path, content).map_err(|e| {
-            SmeltError::Io {
-                operation: "write".into(),
-                path,
-                source: e,
-            }
+        fs::write(&path, content).map_err(|e| SmeltError::Io {
+            operation: "write".into(),
+            path,
+            source: e,
         })
     }
 
     /// Read and deserialize state from `{state_dir}/state.toml`.
     pub fn read(state_dir: &Path) -> Result<RunState> {
         let path = state_dir.join("state.toml");
-        let content = fs::read_to_string(&path).map_err(|e| {
-            SmeltError::Io {
-                operation: "read".into(),
-                path: path.clone(),
-                source: e,
-            }
+        let content = fs::read_to_string(&path).map_err(|e| SmeltError::Io {
+            operation: "read".into(),
+            path: path.clone(),
+            source: e,
         })?;
-        toml::from_str(&content).map_err(|e| {
-            SmeltError::Config {
-                path,
-                message: format!("parse run state: {e}"),
-            }
+        toml::from_str(&content).map_err(|e| SmeltError::Config {
+            path,
+            message: format!("parse run state: {e}"),
         })
     }
 
@@ -187,18 +181,14 @@ impl JobMonitor {
     /// job name — reads the flat state file written by versions prior to S04.
     pub fn read_legacy(base_dir: &Path) -> Result<RunState> {
         let path = base_dir.join("run-state.toml");
-        let content = fs::read_to_string(&path).map_err(|e| {
-            SmeltError::Io {
-                operation: "read".into(),
-                path: path.clone(),
-                source: e,
-            }
+        let content = fs::read_to_string(&path).map_err(|e| SmeltError::Io {
+            operation: "read".into(),
+            path: path.clone(),
+            source: e,
         })?;
-        toml::from_str(&content).map_err(|e| {
-            SmeltError::Config {
-                path,
-                message: format!("parse run state: {e}"),
-            }
+        toml::from_str(&content).map_err(|e| SmeltError::Config {
+            path,
+            message: format!("parse run state: {e}"),
         })
     }
 
@@ -237,11 +227,7 @@ mod tests {
     use tempfile::TempDir;
 
     fn make_monitor(dir: &Path) -> JobMonitor {
-        JobMonitor::new(
-            "test-job",
-            vec!["s1".into(), "s2".into()],
-            dir,
-        )
+        JobMonitor::new("test-job", vec!["s1".into(), "s2".into()], dir)
     }
 
     #[test]
@@ -492,9 +478,15 @@ target = "main"
         let dir = TempDir::new().unwrap();
         let mon = make_monitor(dir.path());
         mon.write().unwrap();
-        assert!(dir.path().join("state.toml").exists(), "state.toml must exist after write");
+        assert!(
+            dir.path().join("state.toml").exists(),
+            "state.toml must exist after write"
+        );
         mon.cleanup().unwrap();
-        assert!(!dir.path().join("state.toml").exists(), "state.toml must be removed after cleanup");
+        assert!(
+            !dir.path().join("state.toml").exists(),
+            "state.toml must be removed after cleanup"
+        );
     }
 
     #[test]
@@ -506,7 +498,9 @@ target = "main"
             phase: JobPhase,
         }
 
-        let input = Wrapper { phase: JobPhase::GatesFailed };
+        let input = Wrapper {
+            phase: JobPhase::GatesFailed,
+        };
 
         // Serialize → must produce "gates_failed" as the phase value
         let serialized = toml::to_string(&input).unwrap();
@@ -535,11 +529,14 @@ updated_at = 1700000060
 pid = 12345
 "#;
         let state: RunState = toml::from_str(old_toml).expect(
-            "RunState should deserialize without pr_url/pr_number fields (backward compat)"
+            "RunState should deserialize without pr_url/pr_number fields (backward compat)",
         );
         assert_eq!(state.job_name, "legacy-job");
         assert_eq!(state.phase, JobPhase::Complete);
         assert!(state.pr_url.is_none(), "pr_url should default to None");
-        assert!(state.pr_number.is_none(), "pr_number should default to None");
+        assert!(
+            state.pr_number.is_none(),
+            "pr_number should default to None"
+        );
     }
 }

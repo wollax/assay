@@ -290,7 +290,10 @@ impl AssayInvoker {
         let command = vec![
             "sh".to_string(),
             "-c".to_string(),
-            format!("echo '{}' | base64 -d > {}", encoded, CONTAINER_MANIFEST_PATH),
+            format!(
+                "echo '{}' | base64 -d > {}",
+                encoded, CONTAINER_MANIFEST_PATH
+            ),
         ];
 
         info!(
@@ -514,8 +517,7 @@ timeout = 300
         assert_eq!(parsed_typed.sessions.len(), 1);
 
         // Also check raw TOML: no harness or timeout in sessions[0]
-        let parsed_raw: toml::Value =
-            toml::from_str(&toml_str).expect("raw TOML must parse");
+        let parsed_raw: toml::Value = toml::from_str(&toml_str).expect("raw TOML must parse");
 
         assert!(
             parsed_raw["sessions"][0].get("harness").is_none(),
@@ -542,8 +544,7 @@ timeout = 300
         };
 
         let toml_str = AssayInvoker::build_spec_toml(&session);
-        let parsed: toml::Value =
-            toml::from_str(&toml_str).expect("spec TOML must be valid");
+        let parsed: toml::Value = toml::from_str(&toml_str).expect("spec TOML must be valid");
 
         assert_eq!(
             parsed["name"].as_str().unwrap(),
@@ -582,8 +583,8 @@ timeout = 300
         };
 
         let toml_str = AssayInvoker::build_spec_toml(&session);
-        let parsed: SmeltSpec =
-            toml::from_str(&toml_str).expect("SmeltSpec deny_unknown_fields roundtrip must succeed");
+        let parsed: SmeltSpec = toml::from_str(&toml_str)
+            .expect("SmeltSpec deny_unknown_fields roundtrip must succeed");
         assert_eq!(parsed.name, "auth");
         assert_eq!(parsed.criteria.len(), 1);
     }
@@ -594,14 +595,14 @@ timeout = 300
     #[test]
     fn test_sanitize_session_name() {
         let cases: Vec<(&str, &str)> = vec![
-            ("frontend", "frontend"),          // already clean
-            ("my/session", "my-session"),       // slash replaced
-            ("my session", "my-session"),       // space replaced
-            ("a/b/c", "a-b-c"),                 // multi-slash
-            ("trailing-", "trailing"),           // trailing dash trimmed
-            ("-leading", "leading"),             // leading dash trimmed
-            ("", "unnamed"),                     // empty → fallback
-            ("---", "unnamed"),                  // all dashes → fallback after trim
+            ("frontend", "frontend"),     // already clean
+            ("my/session", "my-session"), // slash replaced
+            ("my session", "my-session"), // space replaced
+            ("a/b/c", "a-b-c"),           // multi-slash
+            ("trailing-", "trailing"),    // trailing dash trimmed
+            ("-leading", "leading"),      // leading dash trimmed
+            ("", "unnamed"),              // empty → fallback
+            ("---", "unnamed"),           // all dashes → fallback after trim
         ];
 
         for (input, expected) in cases {
@@ -634,7 +635,8 @@ timeout = 300
             .position(|s| s == "--base-branch")
             .expect("build_run_command must include --base-branch");
         assert_eq!(
-            cmd[idx + 1], "main",
+            cmd[idx + 1],
+            "main",
             "--base-branch must be followed by base_ref value"
         );
     }
@@ -664,7 +666,8 @@ timeout = 900
             .position(|s| s == "--timeout")
             .expect("build_run_command must include --timeout");
         assert_eq!(
-            cmd[idx + 1], "900",
+            cmd[idx + 1],
+            "900",
             "--timeout must equal max session timeout"
         );
     }
@@ -729,8 +732,7 @@ depends_on = ["alpha", "beta"]
         );
 
         let toml_str = AssayInvoker::build_run_manifest_toml(&manifest);
-        let parsed: toml::Value =
-            toml::from_str(&toml_str).expect("run manifest must parse");
+        let parsed: toml::Value = toml::from_str(&toml_str).expect("run manifest must parse");
 
         // sessions[2] must have depends_on with expected values
         let depends_on = parsed["sessions"][2]["depends_on"]

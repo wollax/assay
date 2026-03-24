@@ -111,7 +111,11 @@ impl DirectoryWatcher {
                 }
 
                 // 5. Enqueue the job.
-                let job_id = self.state.lock().unwrap().enqueue(dest.clone(), JobSource::DirectoryWatch);
+                let job_id = self
+                    .state
+                    .lock()
+                    .unwrap()
+                    .enqueue(dest.clone(), JobSource::DirectoryWatch);
                 tracing::info!(job_id = %job_id, manifest = %dest.display(), "manifest enqueued via directory watch");
             }
         }

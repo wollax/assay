@@ -127,11 +127,16 @@ mod tests {
         assert_eq!(result, 0, "execute() should return 0 on success");
 
         let manifest_path = dir.path().join("job-manifest.toml");
-        assert!(manifest_path.exists(), "job-manifest.toml should be created");
+        assert!(
+            manifest_path.exists(),
+            "job-manifest.toml should be created"
+        );
 
         let manifest = smelt_core::manifest::JobManifest::load(&manifest_path)
             .expect("manifest should load without error");
-        manifest.validate().expect("manifest should pass validate()");
+        manifest
+            .validate()
+            .expect("manifest should pass validate()");
     }
 
     #[tokio::test]
@@ -143,7 +148,10 @@ mod tests {
         std::fs::write(dir.path().join("job-manifest.toml"), b"# existing").unwrap();
 
         let result = execute(&make_args()).await.unwrap();
-        assert_eq!(result, 1, "execute() should return 1 when file already exists");
+        assert_eq!(
+            result, 1,
+            "execute() should return 1 when file already exists"
+        );
     }
 
     #[test]

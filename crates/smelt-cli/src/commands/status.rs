@@ -74,9 +74,7 @@ fn is_pid_stale(pid: u32) -> bool {
     #[cfg(unix)]
     {
         use std::process::Command;
-        let output = Command::new("kill")
-            .args(["-0", &pid.to_string()])
-            .output();
+        let output = Command::new("kill").args(["-0", &pid.to_string()]).output();
         match output {
             Ok(o) => !o.status.success(),
             Err(_) => false, // can't determine — assume alive
@@ -228,7 +226,11 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let state = make_active_state();
         // Per-job path: .smelt/runs/integration-test/state.toml
-        let state_dir = dir.path().join(".smelt").join("runs").join("integration-test");
+        let state_dir = dir
+            .path()
+            .join(".smelt")
+            .join("runs")
+            .join("integration-test");
         write_state(&state_dir, &state);
 
         let args = StatusArgs {
@@ -244,7 +246,11 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let mut state = make_active_state();
         state.pid = 99_999_999; // extremely unlikely to be a real PID
-        let state_dir = dir.path().join(".smelt").join("runs").join("integration-test");
+        let state_dir = dir
+            .path()
+            .join(".smelt")
+            .join("runs")
+            .join("integration-test");
         write_state(&state_dir, &state);
 
         let args = StatusArgs {
@@ -271,7 +277,10 @@ mod tests {
         };
         let code = execute(&args).await.unwrap();
         // Complete phase → terminal → returns 1
-        assert_eq!(code, 1, "terminal phase should return 1 even via legacy path");
+        assert_eq!(
+            code, 1,
+            "terminal phase should return 1 even via legacy path"
+        );
     }
 
     #[test]

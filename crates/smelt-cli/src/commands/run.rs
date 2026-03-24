@@ -7,10 +7,10 @@ use anyhow::{Context, Result};
 use clap::Args;
 use tracing::{error, info};
 
+use smelt_core::config::SmeltConfig;
 use smelt_core::forge::ForgeConfig;
 use smelt_core::manifest::{self, CredentialStatus, JobManifest};
 use smelt_core::monitor::{JobMonitor, JobPhase, compute_job_timeout};
-use smelt_core::config::SmeltConfig;
 use smelt_core::{ForgeClient, GitHubForge};
 
 /// Run a job manifest.
@@ -165,9 +165,10 @@ where
 
     // Phase 3.5: Ensure .assay/ is in .gitignore for the repo
     if let Ok(repo_path) = manifest::resolve_repo_path(&manifest.job.repo)
-        && let Err(e) = ensure_gitignore_assay(&repo_path) {
-            eprintln!("[WARN] could not update .gitignore: {e:#}");
-        }
+        && let Err(e) = ensure_gitignore_assay(&repo_path)
+    {
+        eprintln!("[WARN] could not update .gitignore: {e:#}");
+    }
 
     // Compute state dir and timeout
     let state_dir = args
@@ -200,7 +201,9 @@ where
                 .with_context(|| "failed to connect to Kubernetes cluster")?,
         ),
         other => {
-            eprintln!("Error: unsupported runtime `{other}`. Supported: docker, compose, kubernetes.");
+            eprintln!(
+                "Error: unsupported runtime `{other}`. Supported: docker, compose, kubernetes."
+            );
             return Ok(1);
         }
     };
@@ -283,10 +286,7 @@ where
         let spec_toml = smelt_core::AssayInvoker::build_spec_toml(s);
         eprintln!("Writing spec: {spec_name}...");
         if let Err(e) = smelt_core::AssayInvoker::write_spec_file_to_container(
-            &provider,
-            &container,
-            &spec_name,
-            &spec_toml,
+            &provider, &container, &spec_name, &spec_toml,
         )
         .await
         {
@@ -307,12 +307,9 @@ where
         .map_err(|e| anyhow::anyhow!("{e}"))?;
     eprintln!("Writing manifest...");
     let toml_content = smelt_core::AssayInvoker::build_run_manifest_toml(&manifest);
-    let write_result = smelt_core::AssayInvoker::write_manifest_to_container(
-        &provider,
-        &container,
-        &toml_content,
-    )
-    .await;
+    let write_result =
+        smelt_core::AssayInvoker::write_manifest_to_container(&provider, &container, &toml_content)
+            .await;
 
     if let Err(e) = write_result {
         let _ = monitor.set_phase(JobPhase::Failed);
@@ -358,8 +355,8 @@ where
         eprintln!("Collecting results...");
         let repo_path = manifest::resolve_repo_path(&manifest.job.repo)
             .with_context(|| "failed to resolve repo path for collection")?;
-        let git_binary = which::which("git")
-            .with_context(|| "git not found on PATH during collection")?;
+        let git_binary =
+            which::which("git").with_context(|| "git not found on PATH during collection")?;
         let git = smelt_core::GitCli::new(git_binary, repo_path.clone());
 
         if manifest.environment.runtime == "kubernetes" {
@@ -388,7 +385,11 @@ where
         }
 
         // Phase 9: Create GitHub PR if forge is configured
-        if should_create_pr(args.no_pr, collect_result.no_changes, manifest.forge.as_ref()) {
+        if should_create_pr(
+            args.no_pr,
+            collect_result.no_changes,
+            manifest.forge.as_ref(),
+        ) {
             let forge_cfg = manifest.forge.as_ref().unwrap();
             let token = std::env::var(&forge_cfg.token_env).map_err(|_| {
                 anyhow::anyhow!(
@@ -402,9 +403,7 @@ where
             let head = &collect_result.branch;
             let base = &manifest.job.base_ref;
             let title = format!("[smelt] {} — {} → {}", job_name, head, base);
-            let body = format!(
-                "Automated results from smelt job '{job_name}'.\n\nBase: `{base}`"
-            );
+            let body = format!("Automated results from smelt job '{job_name}'.\n\nBase: `{base}`");
             eprintln!("Creating PR: {} → {}...", head, base);
             let pr = github
                 .create_pr(&forge_cfg.repo, head, base, &title, &body)
@@ -618,11 +617,22 @@ fn print_execution_plan(
     if let Some(ref kube) = manifest.kubernetes {
         println!("── Kubernetes ──");
         println!("  Namespace:   {}", kube.namespace);
-        println!("  Context:     {}", kube.context.as_deref().unwrap_or("ambient"));
-        if let Some(ref v) = kube.cpu_request    { println!("  CPU req:     {v}"); }
-        if let Some(ref v) = kube.memory_request  { println!("  Mem req:     {v}"); }
-        if let Some(ref v) = kube.cpu_limit       { println!("  CPU limit:   {v}"); }
-        if let Some(ref v) = kube.memory_limit    { println!("  Mem limit:   {v}"); }
+        println!(
+            "  Context:     {}",
+            kube.context.as_deref().unwrap_or("ambient")
+        );
+        if let Some(ref v) = kube.cpu_request {
+            println!("  CPU req:     {v}");
+        }
+        if let Some(ref v) = kube.memory_request {
+            println!("  Mem req:     {v}");
+        }
+        if let Some(ref v) = kube.cpu_limit {
+            println!("  CPU limit:   {v}");
+        }
+        if let Some(ref v) = kube.memory_limit {
+            println!("  Mem limit:   {v}");
+        }
         println!();
     }
 
@@ -662,7 +672,10 @@ mod tests {
         // No .gitignore exists — should create it
         ensure_gitignore_assay(tmp.path()).unwrap();
         let content = std::fs::read_to_string(tmp.path().join(".gitignore")).unwrap();
-        assert!(content.contains(".assay/"), "created .gitignore should contain .assay/");
+        assert!(
+            content.contains(".assay/"),
+            "created .gitignore should contain .assay/"
+        );
     }
 
     #[test]
@@ -719,20 +732,44 @@ mod tests {
         let cfg = forge_cfg();
 
         // forge=None → always false regardless of other flags
-        assert!(!should_create_pr(false, false, None), "forge=None should be false");
-        assert!(!should_create_pr(false, true, None), "forge=None+no_changes should be false");
-        assert!(!should_create_pr(true, false, None), "forge=None+no_pr should be false");
-        assert!(!should_create_pr(true, true, None), "forge=None+both flags should be false");
+        assert!(
+            !should_create_pr(false, false, None),
+            "forge=None should be false"
+        );
+        assert!(
+            !should_create_pr(false, true, None),
+            "forge=None+no_changes should be false"
+        );
+        assert!(
+            !should_create_pr(true, false, None),
+            "forge=None+no_pr should be false"
+        );
+        assert!(
+            !should_create_pr(true, true, None),
+            "forge=None+both flags should be false"
+        );
 
         // no_pr=true → always false
-        assert!(!should_create_pr(true, false, Some(&cfg)), "no_pr=true should be false");
-        assert!(!should_create_pr(true, true, Some(&cfg)), "no_pr=true+no_changes should be false");
+        assert!(
+            !should_create_pr(true, false, Some(&cfg)),
+            "no_pr=true should be false"
+        );
+        assert!(
+            !should_create_pr(true, true, Some(&cfg)),
+            "no_pr=true+no_changes should be false"
+        );
 
         // no_changes=true → false
-        assert!(!should_create_pr(false, true, Some(&cfg)), "no_changes=true should be false");
+        assert!(
+            !should_create_pr(false, true, Some(&cfg)),
+            "no_changes=true should be false"
+        );
 
         // all three conditions clear → true
-        assert!(should_create_pr(false, false, Some(&cfg)), "all clear should be true");
+        assert!(
+            should_create_pr(false, false, Some(&cfg)),
+            "all clear should be true"
+        );
     }
 
     #[test]

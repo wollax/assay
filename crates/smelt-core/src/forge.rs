@@ -124,8 +124,9 @@ impl GitHubForge {
 /// is absent.
 #[cfg(feature = "forge")]
 fn parse_repo(repo: &str) -> crate::Result<(&str, &str)> {
-    repo.split_once('/')
-        .ok_or_else(|| crate::SmeltError::forge("create_pr", "invalid repo: expected 'owner/repo' format"))
+    repo.split_once('/').ok_or_else(|| {
+        crate::SmeltError::forge("create_pr", "invalid repo: expected 'owner/repo' format")
+    })
 }
 
 #[cfg(feature = "forge")]
@@ -153,11 +154,7 @@ impl ForgeClient for GitHubForge {
         })
     }
 
-    async fn poll_pr_status(
-        &self,
-        repo: &str,
-        number: u64,
-    ) -> crate::Result<PrStatus> {
+    async fn poll_pr_status(&self, repo: &str, number: u64) -> crate::Result<PrStatus> {
         let (owner, repo_name) = parse_repo(repo)?;
 
         // 1. Fetch the PR model.
@@ -208,7 +205,11 @@ impl ForgeClient for GitHubForge {
         // 4. Derive review_count from inline diff comments (no extra API call).
         let review_count = pr.review_comments.unwrap_or(0) as u32;
 
-        Ok(PrStatus { state, ci_status, review_count })
+        Ok(PrStatus {
+            state,
+            ci_status,
+            review_count,
+        })
     }
 }
 

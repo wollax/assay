@@ -4,18 +4,18 @@
 
 use std::collections::HashMap;
 
+use bollard::Docker;
 use bollard::container::LogOutput;
 use bollard::exec::CreateExecOptions;
 use bollard::models::{ContainerCreateBody, HostConfig};
 use bollard::query_parameters::{
     CreateImageOptionsBuilder, RemoveContainerOptionsBuilder, StopContainerOptionsBuilder,
 };
-use bollard::Docker;
 use futures_util::{StreamExt, TryStreamExt};
 use tracing::{debug, info};
 
 use crate::error::SmeltError;
-use crate::manifest::{resolve_repo_path, JobManifest};
+use crate::manifest::{JobManifest, resolve_repo_path};
 use crate::provider::{CollectResult, ContainerId, ExecHandle, RuntimeProvider};
 
 /// Docker-backed runtime provider.
@@ -124,7 +124,10 @@ impl RuntimeProvider for DockerProvider {
 
         let response = self
             .client
-            .create_container(None::<bollard::query_parameters::CreateContainerOptions>, config)
+            .create_container(
+                None::<bollard::query_parameters::CreateContainerOptions>,
+                config,
+            )
             .await
             .map_err(|e| {
                 SmeltError::provider_with_source(
@@ -156,11 +159,7 @@ impl RuntimeProvider for DockerProvider {
         Ok(ContainerId::new(container_id))
     }
 
-    async fn exec(
-        &self,
-        container: &ContainerId,
-        command: &[String],
-    ) -> crate::Result<ExecHandle> {
+    async fn exec(&self, container: &ContainerId, command: &[String]) -> crate::Result<ExecHandle> {
         let container_id = container.as_str();
 
         // Create exec instance with working_dir set to /workspace
@@ -187,17 +186,13 @@ impl RuntimeProvider for DockerProvider {
         info!(exec_id = %exec_id, container_id = %container_id, "exec created");
 
         // Start exec (attached mode)
-        let start_result = self
-            .client
-            .start_exec(&exec_id, None)
-            .await
-            .map_err(|e| {
-                SmeltError::provider_with_source(
-                    "exec",
-                    format!("failed to start exec {exec_id}: {e}"),
-                    e,
-                )
-            })?;
+        let start_result = self.client.start_exec(&exec_id, None).await.map_err(|e| {
+            SmeltError::provider_with_source(
+                "exec",
+                format!("failed to start exec {exec_id}: {e}"),
+                e,
+            )
+        })?;
 
         info!(exec_id = %exec_id, "exec started");
 
@@ -239,17 +234,13 @@ impl RuntimeProvider for DockerProvider {
         }
 
         // Retrieve exit code via inspect_exec
-        let inspect = self
-            .client
-            .inspect_exec(&exec_id)
-            .await
-            .map_err(|e| {
-                SmeltError::provider_with_source(
-                    "exec",
-                    format!("failed to inspect exec {exec_id}: {e}"),
-                    e,
-                )
-            })?;
+        let inspect = self.client.inspect_exec(&exec_id).await.map_err(|e| {
+            SmeltError::provider_with_source(
+                "exec",
+                format!("failed to inspect exec {exec_id}: {e}"),
+                e,
+            )
+        })?;
 
         let exit_code = inspect.exit_code.unwrap_or(-1) as i32;
 
@@ -299,17 +290,13 @@ impl RuntimeProvider for DockerProvider {
         info!(exec_id = %exec_id, container_id = %container_id, "exec_streaming created");
 
         // Start exec (attached mode)
-        let start_result = self
-            .client
-            .start_exec(&exec_id, None)
-            .await
-            .map_err(|e| {
-                SmeltError::provider_with_source(
-                    "exec_streaming",
-                    format!("failed to start exec {exec_id}: {e}"),
-                    e,
-                )
-            })?;
+        let start_result = self.client.start_exec(&exec_id, None).await.map_err(|e| {
+            SmeltError::provider_with_source(
+                "exec_streaming",
+                format!("failed to start exec {exec_id}: {e}"),
+                e,
+            )
+        })?;
 
         info!(exec_id = %exec_id, "exec_streaming started");
 
@@ -353,17 +340,13 @@ impl RuntimeProvider for DockerProvider {
         }
 
         // Retrieve exit code via inspect_exec
-        let inspect = self
-            .client
-            .inspect_exec(&exec_id)
-            .await
-            .map_err(|e| {
-                SmeltError::provider_with_source(
-                    "exec_streaming",
-                    format!("failed to inspect exec {exec_id}: {e}"),
-                    e,
-                )
-            })?;
+        let inspect = self.client.inspect_exec(&exec_id).await.map_err(|e| {
+            SmeltError::provider_with_source(
+                "exec_streaming",
+                format!("failed to inspect exec {exec_id}: {e}"),
+                e,
+            )
+        })?;
 
         let exit_code = inspect.exit_code.unwrap_or(-1) as i32;
 
@@ -505,9 +488,9 @@ pub fn parse_cpu_nanocpus(s: &str) -> crate::Result<i64> {
         return Err(SmeltError::provider("parse_cpu", "empty CPU string"));
     }
 
-    let value: f64 = s.parse().map_err(|_| {
-        SmeltError::provider("parse_cpu", format!("invalid CPU value: {s:?}"))
-    })?;
+    let value: f64 = s
+        .parse()
+        .map_err(|_| SmeltError::provider("parse_cpu", format!("invalid CPU value: {s:?}")))?;
 
     if value <= 0.0 {
         return Err(SmeltError::provider(
@@ -550,12 +533,18 @@ mod tests {
 
     #[test]
     fn memory_fractional() {
-        assert_eq!(parse_memory_bytes("1.5G").unwrap(), (1.5 * 1024.0 * 1024.0 * 1024.0) as i64);
+        assert_eq!(
+            parse_memory_bytes("1.5G").unwrap(),
+            (1.5 * 1024.0 * 1024.0 * 1024.0) as i64
+        );
     }
 
     #[test]
     fn memory_with_whitespace() {
-        assert_eq!(parse_memory_bytes("  4G  ").unwrap(), 4 * 1024 * 1024 * 1024);
+        assert_eq!(
+            parse_memory_bytes("  4G  ").unwrap(),
+            4 * 1024 * 1024 * 1024
+        );
     }
 
     #[test]

@@ -133,7 +133,9 @@ fn dry_run_nonexistent_manifest_exits_with_error() {
         .args(["run", "nonexistent.toml", "--dry-run"])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("cannot read").or(predicate::str::contains("failed to load")));
+        .stderr(
+            predicate::str::contains("cannot read").or(predicate::str::contains("failed to load")),
+        );
 }
 
 // ── Without --dry-run ──────────────────────────────────────────
@@ -157,9 +159,7 @@ fn run_without_dry_run_attempts_docker() {
     // code — so this test still observes a failure. The test behavior is unchanged.
     //
     // The important invariant: the OLD "not implemented" stub message must NOT appear.
-    let assert = smelt()
-        .args(["run", "examples/job-manifest.toml"])
-        .assert();
+    let assert = smelt().args(["run", "examples/job-manifest.toml"]).assert();
 
     let output = assert.get_output().clone();
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -192,7 +192,12 @@ fn test_dry_run_with_forge_shows_forge_section() {
 fn test_dry_run_no_pr_flag_accepted() {
     // --no-pr only affects live runs; dry-run still shows the forge section.
     smelt()
-        .args(["run", "examples/job-manifest-forge.toml", "--dry-run", "--no-pr"])
+        .args([
+            "run",
+            "examples/job-manifest-forge.toml",
+            "--dry-run",
+            "--no-pr",
+        ])
         .assert()
         .success()
         .stdout(
@@ -234,8 +239,10 @@ fn test_init_then_dry_run_smoke() {
         .stdout(
             predicate::str::contains("═══ Execution Plan ═══")
                 .and(predicate::str::contains("my-job"))
-                .and(predicate::str::contains("═══ End Plan ═══")
-                    .or(predicate::str::contains("End Plan"))),
+                .and(
+                    predicate::str::contains("═══ End Plan ═══")
+                        .or(predicate::str::contains("End Plan")),
+                ),
         );
 }
 

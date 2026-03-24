@@ -23,10 +23,10 @@ use tempfile::TempDir;
 use tokio::process::Command;
 use tracing::{info, warn};
 
+use crate::Result;
 use crate::docker::DockerProvider;
 use crate::manifest::{JobManifest, resolve_repo_path};
 use crate::provider::{CollectResult, ContainerId, ExecHandle, RuntimeProvider};
-use crate::Result;
 
 // ── Internal state ────────────────────────────────────────────────────────────
 
@@ -77,9 +77,7 @@ impl RuntimeProvider for ComposeProvider {
             .credentials
             .env
             .iter()
-            .filter_map(|(key, env_var)| {
-                std::env::var(env_var).ok().map(|val| (key.clone(), val))
-            })
+            .filter_map(|(key, env_var)| std::env::var(env_var).ok().map(|val| (key.clone(), val)))
             .collect();
 
         // Generate compose YAML.
@@ -94,10 +92,7 @@ impl RuntimeProvider for ComposeProvider {
         })?;
         let compose_file_path = temp_dir.path().join("docker-compose.yml");
         std::fs::write(&compose_file_path, &yaml).map_err(|e| {
-            crate::SmeltError::provider(
-                "provision",
-                format!("failed to write compose file: {e}"),
-            )
+            crate::SmeltError::provider("provision", format!("failed to write compose file: {e}"))
         })?;
 
         // Print wait messages for non-agent services before starting the stack.
@@ -140,11 +135,8 @@ impl RuntimeProvider for ComposeProvider {
         let max_polls = 60usize;
         let poll_interval = std::time::Duration::from_secs(2);
 
-        let non_agent_services: Vec<&str> = manifest
-            .services
-            .iter()
-            .map(|s| s.name.as_str())
-            .collect();
+        let non_agent_services: Vec<&str> =
+            manifest.services.iter().map(|s| s.name.as_str()).collect();
 
         let mut agent_container_id: Option<String> = None;
 
@@ -213,9 +205,10 @@ impl RuntimeProvider for ComposeProvider {
 
                 // Capture agent container ID.
                 if service == "smelt-agent"
-                    && let Some(id) = val.get("ID").and_then(|v| v.as_str()) {
-                        agent_container_id = Some(id.to_string());
-                    }
+                    && let Some(id) = val.get("ID").and_then(|v| v.as_str())
+                {
+                    agent_container_id = Some(id.to_string());
+                }
 
                 // Readiness logic per the NDJSON strategy in the research doc.
                 //
@@ -223,8 +216,7 @@ impl RuntimeProvider for ComposeProvider {
                 // - healthcheck:    Health == "healthy"                   → ready
                 // - starting:       Health == "starting"                  → not ready yet
                 // - unhealthy:      Health == "unhealthy"                 → error
-                let is_ready = (health.is_empty() && state == "running")
-                    || health == "healthy";
+                let is_ready = (health.is_empty() && state == "running") || health == "healthy";
                 let is_unhealthy = health == "unhealthy";
 
                 if is_unhealthy && non_agent_services.contains(&service.as_str()) {
@@ -297,9 +289,10 @@ impl RuntimeProvider for ComposeProvider {
                 }
                 if let Ok(val) = serde_json::from_str::<serde_json::Value>(line)
                     && val.get("Service").and_then(|v| v.as_str()) == Some("smelt-agent")
-                        && let Some(id) = val.get("ID").and_then(|v| v.as_str()) {
-                            agent_container_id = Some(id.to_string());
-                        }
+                    && let Some(id) = val.get("ID").and_then(|v| v.as_str())
+                {
+                    agent_container_id = Some(id.to_string());
+                }
             }
         }
 
@@ -334,11 +327,7 @@ impl RuntimeProvider for ComposeProvider {
         Ok(container_id)
     }
 
-    async fn exec(
-        &self,
-        container: &ContainerId,
-        command: &[String],
-    ) -> crate::Result<ExecHandle> {
+    async fn exec(&self, container: &ContainerId, command: &[String]) -> crate::Result<ExecHandle> {
         self.docker.exec(container, command).await
     }
 
@@ -351,7 +340,9 @@ impl RuntimeProvider for ComposeProvider {
     where
         F: FnMut(&str) + Send + 'static,
     {
-        self.docker.exec_streaming(container, command, output_cb).await
+        self.docker
+            .exec_streaming(container, command, output_cb)
+            .await
     }
 
     async fn collect(
@@ -372,10 +363,7 @@ impl RuntimeProvider for ComposeProvider {
         let (project_name, compose_file_path) = {
             let map = self.state.lock().unwrap();
             match map.get(container) {
-                Some(state) => (
-                    state.project_name.clone(),
-                    state.compose_file_path.clone(),
-                ),
+                Some(state) => (state.project_name.clone(), state.compose_file_path.clone()),
                 None => {
                     warn!(
                         container = %container,
@@ -465,10 +453,7 @@ pub fn generate_compose_file(
             serde_yaml::Value::String(service.image.clone()),
         );
         for (k, v) in &service.extra {
-            svc_map.insert(
-                serde_yaml::Value::String(k.clone()),
-                toml_to_yaml(v),
-            );
+            svc_map.insert(serde_yaml::Value::String(k.clone()), toml_to_yaml(v));
         }
         services_map.insert(
             serde_yaml::Value::String(service.name.clone()),
@@ -564,12 +549,8 @@ pub fn generate_compose_file(
 fn toml_to_yaml(v: &toml::Value) -> serde_yaml::Value {
     match v {
         toml::Value::String(s) => serde_yaml::Value::String(s.clone()),
-        toml::Value::Integer(i) => {
-            serde_yaml::Value::Number(serde_yaml::Number::from(*i))
-        }
-        toml::Value::Float(f) => {
-            serde_yaml::Value::Number(serde_yaml::Number::from(*f))
-        }
+        toml::Value::Integer(i) => serde_yaml::Value::Number(serde_yaml::Number::from(*i)),
+        toml::Value::Float(f) => serde_yaml::Value::Number(serde_yaml::Number::from(*f)),
         toml::Value::Boolean(b) => serde_yaml::Value::Bool(*b),
         toml::Value::Array(arr) => {
             serde_yaml::Value::Sequence(arr.iter().map(toml_to_yaml).collect())
@@ -589,8 +570,8 @@ fn toml_to_yaml(v: &toml::Value) -> serde_yaml::Value {
 mod tests {
     use super::*;
     use crate::manifest::{
-        ComposeService, CredentialConfig, Environment, JobMeta, JobManifest,
-        MergeConfig, SessionDef,
+        ComposeService, CredentialConfig, Environment, JobManifest, JobMeta, MergeConfig,
+        SessionDef,
     };
     use indexmap::IndexMap;
 
@@ -825,7 +806,10 @@ services:
     #[test]
     fn test_generate_compose_nested_healthcheck() {
         let mut hc_table = toml::value::Table::new();
-        hc_table.insert("interval".to_string(), toml::Value::String("30s".to_string()));
+        hc_table.insert(
+            "interval".to_string(),
+            toml::Value::String("30s".to_string()),
+        );
         hc_table.insert("retries".to_string(), toml::Value::Integer(3));
         hc_table.insert(
             "test".to_string(),

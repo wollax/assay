@@ -184,10 +184,7 @@ pub(crate) async fn run_ssh_job_task<C: SshClient>(
     // Step 3: sync state back — parse job_name from manifest
     let job_name = match std::fs::read_to_string(&manifest_path) {
         Ok(content) => {
-            match smelt_core::manifest::JobManifest::from_str(
-                &content,
-                &manifest_path,
-            ) {
+            match smelt_core::manifest::JobManifest::from_str(&content, &manifest_path) {
                 Ok(m) => m.job.name,
                 Err(e) => {
                     warn!(
@@ -321,10 +318,7 @@ pub(crate) async fn dispatch_loop<C: SshClient + Clone + Send + Sync + 'static>(
     // tick (e.g. slow lock acquisition).
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
-    info!(
-        workers = workers.len(),
-        "dispatch_loop started"
-    );
+    info!(workers = workers.len(), "dispatch_loop started");
 
     loop {
         tokio::select! {
@@ -454,9 +448,9 @@ pub(crate) mod tests {
 
         // Mock: all probes succeed
         let client = MockSshClient::new()
-            .with_probe_result(Ok(()))   // worker-a
-            .with_probe_result(Ok(()))   // worker-b
-            .with_probe_result(Ok(()));  // worker-c
+            .with_probe_result(Ok(())) // worker-a
+            .with_probe_result(Ok(())) // worker-b
+            .with_probe_result(Ok(())); // worker-c
 
         // Start at idx 0 → selects worker-a, returns new idx 1
         let result = select_worker(&workers, &client, 3, 0).await;
@@ -483,10 +477,7 @@ pub(crate) mod tests {
     /// One worker offline — skip it, select the next online one.
     #[tokio::test]
     async fn test_select_worker_one_offline_skip() {
-        let workers = vec![
-            test_worker("worker-a"),
-            test_worker("worker-b"),
-        ];
+        let workers = vec![test_worker("worker-a"), test_worker("worker-b")];
 
         // worker-a probe fails, worker-b probe succeeds
         let client = MockSshClient::new()
@@ -503,17 +494,17 @@ pub(crate) mod tests {
     /// All workers offline — returns None.
     #[tokio::test]
     async fn test_select_worker_all_offline() {
-        let workers = vec![
-            test_worker("worker-a"),
-            test_worker("worker-b"),
-        ];
+        let workers = vec![test_worker("worker-a"), test_worker("worker-b")];
 
         let client = MockSshClient::new()
             .with_probe_result(Err(anyhow::anyhow!("offline")))
             .with_probe_result(Err(anyhow::anyhow!("offline")));
 
         let result = select_worker(&workers, &client, 3, 0).await;
-        assert!(result.is_none(), "should return None when all workers offline");
+        assert!(
+            result.is_none(),
+            "should return None when all workers offline"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -535,10 +526,7 @@ pub(crate) mod tests {
             s.enqueue(manifest, JobSource::HttpApi);
         }
 
-        let workers = vec![
-            test_worker("worker-a"),
-            test_worker("worker-b"),
-        ];
+        let workers = vec![test_worker("worker-a"), test_worker("worker-b")];
 
         // Both workers fail probe
         let client = MockSshClient::new()

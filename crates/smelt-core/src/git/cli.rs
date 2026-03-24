@@ -81,12 +81,7 @@ impl GitOps for GitCli {
         self.run(&["rev-parse", "--short", "HEAD"]).await
     }
 
-    async fn worktree_add(
-        &self,
-        path: &Path,
-        branch_name: &str,
-        start_point: &str,
-    ) -> Result<()> {
+    async fn worktree_add(&self, path: &Path, branch_name: &str, start_point: &str) -> Result<()> {
         let path_str = path.to_string_lossy();
         self.run(&["worktree", "add", "-b", branch_name, &path_str, start_point])
             .await?;
@@ -120,9 +115,7 @@ impl GitOps for GitCli {
             .args(["-C", &path_str, "status", "--porcelain"])
             .output()
             .await
-            .map_err(|e| {
-                SmeltError::io("running git status --porcelain", path, e)
-            })?;
+            .map_err(|e| SmeltError::io("running git status --porcelain", path, e))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -142,11 +135,7 @@ impl GitOps for GitCli {
         Ok(())
     }
 
-    async fn branch_is_merged(
-        &self,
-        branch_name: &str,
-        base_ref: &str,
-    ) -> Result<bool> {
+    async fn branch_is_merged(&self, branch_name: &str, base_ref: &str) -> Result<bool> {
         let output = self.run(&["branch", "--merged", base_ref]).await?;
         Ok(output.lines().any(|line| {
             let name = line.trim();
@@ -162,9 +151,7 @@ impl GitOps for GitCli {
             .current_dir(&self.repo_root)
             .output()
             .await
-            .map_err(|e| {
-                SmeltError::io("running git rev-parse --verify", &self.git_binary, e)
-            })?;
+            .map_err(|e| SmeltError::io("running git rev-parse --verify", &self.git_binary, e))?;
 
         Ok(output.status.success())
     }
@@ -180,7 +167,9 @@ impl GitOps for GitCli {
     async fn commit(&self, work_dir: &Path, message: &str) -> Result<String> {
         self.run_in(work_dir, &["commit", "-m", message]).await?;
         // Get the short hash of the commit we just created
-        let hash = self.run_in(work_dir, &["rev-parse", "--short", "HEAD"]).await?;
+        let hash = self
+            .run_in(work_dir, &["rev-parse", "--short", "HEAD"])
+            .await?;
         Ok(hash)
     }
 
@@ -204,11 +193,7 @@ impl GitOps for GitCli {
         Ok(())
     }
 
-    async fn merge_squash(
-        &self,
-        work_dir: &Path,
-        source_ref: &str,
-    ) -> Result<()> {
+    async fn merge_squash(&self, work_dir: &Path, source_ref: &str) -> Result<()> {
         let output = Command::new(&self.git_binary)
             .args(["merge", "--squash", source_ref])
             .current_dir(work_dir)
@@ -298,14 +283,20 @@ impl GitOps for GitCli {
     }
 
     async fn diff_name_only(&self, base_ref: &str, head_ref: &str) -> Result<Vec<String>> {
-        let output = self.run(&["diff", "--name-only", base_ref, head_ref]).await?;
+        let output = self
+            .run(&["diff", "--name-only", base_ref, head_ref])
+            .await?;
         if output.is_empty() {
             return Ok(Vec::new());
         }
         Ok(output.lines().map(|l| l.to_string()).collect())
     }
 
-    async fn diff_numstat(&self, from_ref: &str, to_ref: &str) -> Result<Vec<(usize, usize, String)>> {
+    async fn diff_numstat(
+        &self,
+        from_ref: &str,
+        to_ref: &str,
+    ) -> Result<Vec<(usize, usize, String)>> {
         let output = self.run(&["diff", "--numstat", from_ref, to_ref]).await?;
         if output.is_empty() {
             return Ok(Vec::new());
@@ -326,12 +317,7 @@ impl GitOps for GitCli {
             .collect())
     }
 
-    async fn show_index_stage(
-        &self,
-        work_dir: &Path,
-        stage: u8,
-        file: &str,
-    ) -> Result<String> {
+    async fn show_index_stage(&self, work_dir: &Path, stage: u8, file: &str) -> Result<String> {
         self.run_in(work_dir, &["show", &format!(":{stage}:{file}")])
             .await
     }
@@ -550,9 +536,7 @@ mod tests {
 
         // Create a file and commit it via the new methods
         std::fs::write(tmp.path().join("new_file.txt"), "hello\n").unwrap();
-        cli.add(tmp.path(), &["new_file.txt"])
-            .await
-            .expect("add");
+        cli.add(tmp.path(), &["new_file.txt"]).await.expect("add");
         let hash = cli
             .commit(tmp.path(), "add new file")
             .await
@@ -579,10 +563,7 @@ mod tests {
 
         std::fs::write(tmp.path().join("hash_test.txt"), "test\n").unwrap();
         cli.add(tmp.path(), &["hash_test.txt"]).await.expect("add");
-        let hash = cli
-            .commit(tmp.path(), "test hash")
-            .await
-            .expect("commit");
+        let hash = cli.commit(tmp.path(), "test hash").await.expect("commit");
 
         assert!(
             hash.len() >= 7 && hash.len() <= 12,
@@ -667,10 +648,7 @@ mod tests {
             .expect("commit");
 
         // The not_staged.txt should still be untracked
-        let dirty = cli
-            .worktree_is_dirty(tmp.path())
-            .await
-            .expect("is_dirty");
+        let dirty = cli.worktree_is_dirty(tmp.path()).await.expect("is_dirty");
         assert!(dirty, "not_staged.txt should still be untracked");
     }
 
@@ -686,7 +664,9 @@ mod tests {
 
         // Write, stage, and commit in the worktree
         std::fs::write(wt_path.join("wt_file.txt"), "worktree content\n").unwrap();
-        cli.add(&wt_path, &["wt_file.txt"]).await.expect("add in wt");
+        cli.add(&wt_path, &["wt_file.txt"])
+            .await
+            .expect("add in wt");
         let hash = cli
             .commit(&wt_path, "commit in worktree")
             .await
@@ -845,17 +825,27 @@ mod tests {
             .output()
             .expect("checkout default");
 
-        let merge_base = cli.merge_base("branch-a", "branch-b").await.expect("merge_base");
-        assert_eq!(merge_base, base_hash, "merge-base should be the common ancestor");
+        let merge_base = cli
+            .merge_base("branch-a", "branch-b")
+            .await
+            .expect("merge_base");
+        assert_eq!(
+            merge_base, base_hash,
+            "merge-base should be the common ancestor"
+        );
     }
 
     #[tokio::test]
     async fn test_branch_create() {
         let (_tmp, cli) = setup_test_repo();
 
-        cli.branch_create("new-branch", "HEAD").await.expect("branch_create");
+        cli.branch_create("new-branch", "HEAD")
+            .await
+            .expect("branch_create");
         assert!(
-            cli.branch_exists("new-branch").await.expect("branch_exists"),
+            cli.branch_exists("new-branch")
+                .await
+                .expect("branch_exists"),
             "newly created branch should exist"
         );
     }
@@ -892,7 +882,9 @@ mod tests {
             .expect("checkout default");
 
         // Create a target branch and worktree for the merge
-        cli.branch_create("merge-target", "HEAD").await.expect("branch_create");
+        cli.branch_create("merge-target", "HEAD")
+            .await
+            .expect("branch_create");
         let wt_path = tmp.path().parent().unwrap().join("smelt-test-squash-clean");
         cli.worktree_add_existing(&wt_path, "merge-target")
             .await
@@ -918,10 +910,15 @@ mod tests {
             .rev_list_count("merge-target", &default_branch)
             .await
             .expect("rev_list_count");
-        assert_eq!(count, 1, "merge-target should be 1 commit ahead after squash merge");
+        assert_eq!(
+            count, 1,
+            "merge-target should be 1 commit ahead after squash merge"
+        );
 
         // Cleanup
-        cli.worktree_remove(&wt_path, false).await.expect("worktree_remove");
+        cli.worktree_remove(&wt_path, false)
+            .await
+            .expect("worktree_remove");
         let _ = std::fs::remove_dir_all(&wt_path);
     }
 
@@ -981,11 +978,14 @@ mod tests {
 
         // Create target branch at branch-x HEAD (simulating first session already merged)
         // Then try to squash branch-y into it — conflict on README.md
-        cli.branch_create("conflict-target", "branch-x").await.expect("branch_create");
-        let wt_path = tmp.path().parent().unwrap().join(format!(
-            "smelt-test-squash-conflict-{}",
-            std::process::id()
-        ));
+        cli.branch_create("conflict-target", "branch-x")
+            .await
+            .expect("branch_create");
+        let wt_path = tmp
+            .path()
+            .parent()
+            .unwrap()
+            .join(format!("smelt-test-squash-conflict-{}", std::process::id()));
         cli.worktree_add_existing(&wt_path, "conflict-target")
             .await
             .expect("worktree_add_existing");
@@ -1007,7 +1007,9 @@ mod tests {
 
         // Cleanup: reset the worktree before removing
         cli.reset_hard(&wt_path, "HEAD").await.expect("reset_hard");
-        cli.worktree_remove(&wt_path, true).await.expect("worktree_remove");
+        cli.worktree_remove(&wt_path, true)
+            .await
+            .expect("worktree_remove");
         let _ = std::fs::remove_dir_all(&wt_path);
     }
 
@@ -1038,12 +1040,16 @@ mod tests {
         cli.reset_hard(&wt_path, "HEAD").await.expect("reset_hard");
 
         assert!(
-            !cli.worktree_is_dirty(&wt_path).await.expect("is_dirty after reset"),
+            !cli.worktree_is_dirty(&wt_path)
+                .await
+                .expect("is_dirty after reset"),
             "worktree should be clean after reset --hard"
         );
 
         // Cleanup
-        cli.worktree_remove(&wt_path, false).await.expect("worktree_remove");
+        cli.worktree_remove(&wt_path, false)
+            .await
+            .expect("worktree_remove");
         let _ = std::fs::remove_dir_all(&wt_path);
     }
 
@@ -1107,8 +1113,14 @@ mod tests {
     async fn test_unmerged_files_empty_when_clean() {
         let (tmp, cli) = setup_test_repo();
 
-        let files = cli.unmerged_files(tmp.path()).await.expect("unmerged_files");
-        assert!(files.is_empty(), "clean worktree should have no unmerged files");
+        let files = cli
+            .unmerged_files(tmp.path())
+            .await
+            .expect("unmerged_files");
+        assert!(
+            files.is_empty(),
+            "clean worktree should have no unmerged files"
+        );
     }
 
     #[tokio::test]
@@ -1138,10 +1150,15 @@ mod tests {
             .output()
             .expect("rev-parse in worktree");
         let branch = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        assert_eq!(branch, "existing-branch", "worktree should be on existing-branch");
+        assert_eq!(
+            branch, "existing-branch",
+            "worktree should be on existing-branch"
+        );
 
         // Cleanup
-        cli.worktree_remove(&wt_path, false).await.expect("worktree_remove");
+        cli.worktree_remove(&wt_path, false)
+            .await
+            .expect("worktree_remove");
         let _ = std::fs::remove_dir_all(&wt_path);
     }
 
@@ -1294,7 +1311,9 @@ mod tests {
             .current_dir(push_dir.path())
             .output()
             .expect("rev-parse HEAD");
-        let default_branch = String::from_utf8_lossy(&branch_output.stdout).trim().to_string();
+        let default_branch = String::from_utf8_lossy(&branch_output.stdout)
+            .trim()
+            .to_string();
         std::process::Command::new(&git_bin)
             .args(["push", "origin", &default_branch])
             .current_dir(push_dir.path())
@@ -1323,7 +1342,9 @@ mod tests {
 
         // The local branch "fetched-main" does not exist yet
         assert!(
-            !git.branch_exists("fetched-main").await.expect("branch_exists before fetch"),
+            !git.branch_exists("fetched-main")
+                .await
+                .expect("branch_exists before fetch"),
             "fetched-main should not exist before fetch_ref"
         );
 
@@ -1335,7 +1356,9 @@ mod tests {
 
         // After fetch_ref, the local branch exists
         assert!(
-            git.branch_exists("fetched-main").await.expect("branch_exists after fetch"),
+            git.branch_exists("fetched-main")
+                .await
+                .expect("branch_exists after fetch"),
             "fetched-main should exist after fetch_ref"
         );
     }

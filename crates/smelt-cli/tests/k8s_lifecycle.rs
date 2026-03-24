@@ -11,13 +11,13 @@ use std::collections::HashMap;
 use std::process::Command;
 use std::sync::{Arc, Mutex};
 
+use smelt_core::GitOps as _;
 use smelt_core::k8s::KubernetesProvider;
 use smelt_core::manifest::{
     CredentialConfig, Environment, JobManifest, JobMeta, KubernetesConfig, MergeConfig, SessionDef,
 };
 use smelt_core::provider::RuntimeProvider;
 use smelt_core::{GitCli, ResultCollector};
-use smelt_core::GitOps as _;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -147,14 +147,16 @@ async fn test_k8s_provision_exec_teardown() {
     let handle = provider
         .exec(
             &container,
-            &["sh", "-c", "echo hello"]
-                .map(str::to_string)
-                .to_vec(),
+            &["sh", "-c", "echo hello"].map(str::to_string).to_vec(),
         )
         .await
         .expect("exec should succeed");
 
-    assert_eq!(handle.exit_code, 0, "exit_code should be 0, got: {}", handle.exit_code);
+    assert_eq!(
+        handle.exit_code, 0,
+        "exit_code should be 0, got: {}",
+        handle.exit_code
+    );
     assert!(
         handle.stdout.contains("hello"),
         "stdout should contain 'hello', got: {:?}",
@@ -204,9 +206,7 @@ async fn test_k8s_exec_streaming_callback() {
     let handle = provider
         .exec_streaming(
             &container,
-            &["echo", "streaming-hello"]
-                .map(str::to_string)
-                .to_vec(),
+            &["echo", "streaming-hello"].map(str::to_string).to_vec(),
             move |s| {
                 chunks_clone.lock().unwrap().push(s.to_string());
             },
@@ -260,9 +260,7 @@ async fn test_k8s_ssh_file_permissions() {
     let handle = provider
         .exec(
             &container,
-            &["stat", "/root/.ssh/id_rsa"]
-                .map(str::to_string)
-                .to_vec(),
+            &["stat", "/root/.ssh/id_rsa"].map(str::to_string).to_vec(),
         )
         .await
         .expect("exec stat should succeed");
@@ -314,9 +312,7 @@ async fn test_k8s_readiness_confirmed() {
     let handle = provider
         .exec(
             &container,
-            &["sh", "-c", "echo ready"]
-                .map(str::to_string)
-                .to_vec(),
+            &["sh", "-c", "echo ready"].map(str::to_string).to_vec(),
         )
         .await
         .expect("exec immediately after provision should succeed — proves readiness");
@@ -443,10 +439,7 @@ GIT_SSH_COMMAND='ssh -o StrictHostKeyChecking=accept-new' git push "$SMELT_GIT_R
             &git_remote,
             tmp_path.to_str().expect("tempdir path is valid UTF-8"),
         ])
-        .env(
-            "GIT_SSH_COMMAND",
-            "ssh -o StrictHostKeyChecking=accept-new",
-        )
+        .env("GIT_SSH_COMMAND", "ssh -o StrictHostKeyChecking=accept-new")
         .status()
         .expect("git clone should run");
 
@@ -514,10 +507,7 @@ GIT_SSH_COMMAND='ssh -o StrictHostKeyChecking=accept-new' git push "$SMELT_GIT_R
     let _ = Command::new("git")
         .args(["push", "origin", "--delete", &push_branch])
         .current_dir(tmp_path)
-        .env(
-            "GIT_SSH_COMMAND",
-            "ssh -o StrictHostKeyChecking=accept-new",
-        )
+        .env("GIT_SSH_COMMAND", "ssh -o StrictHostKeyChecking=accept-new")
         .status();
 
     eprintln!("==> [S03] Done. push-from-pod result collection test passed.");

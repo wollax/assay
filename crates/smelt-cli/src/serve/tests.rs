@@ -66,14 +66,20 @@ fn test_queue_max_concurrent() {
 
     // Second dispatch should be blocked by the cap.
     let second = state.try_dispatch();
-    assert!(second.is_none(), "second dispatch should be blocked (max_concurrent=1)");
+    assert!(
+        second.is_none(),
+        "second dispatch should be blocked (max_concurrent=1)"
+    );
 
     // Complete the first job, then the second should dispatch.
     state.complete(&first.unwrap().id, true, 0, 3);
     assert_eq!(state.running_count, 0);
 
     let second = state.try_dispatch();
-    assert!(second.is_some(), "second job should dispatch after first completes");
+    assert!(
+        second.is_some(),
+        "second job should dispatch after first completes"
+    );
 }
 
 #[test]
@@ -90,11 +96,20 @@ fn test_queue_cancel_queued() {
     let id_waiting = state.enqueue(manifest(), JobSource::HttpApi);
 
     // Cancelling a Queued job should succeed.
-    assert!(state.cancel(&id_waiting), "cancel of Queued job should return true");
+    assert!(
+        state.cancel(&id_waiting),
+        "cancel of Queued job should return true"
+    );
 
     // Cancelling a Dispatching job should fail.
-    assert!(!state.cancel(&id_queued), "cancel of Dispatching job should return false");
-    assert!(!state.cancel(&id_dispatching), "cancel of Dispatching job should return false");
+    assert!(
+        !state.cancel(&id_queued),
+        "cancel of Dispatching job should return false"
+    );
+    assert!(
+        !state.cancel(&id_dispatching),
+        "cancel of Dispatching job should return false"
+    );
 }
 
 #[test]
@@ -118,9 +133,15 @@ fn test_queue_retry_eligible() {
 
     // retry_eligible should return true for that entry.
     if let Some(rid) = retrying_id {
-        assert!(state.retry_eligible(&rid, 3), "should be retry eligible (attempt < max)");
+        assert!(
+            state.retry_eligible(&rid, 3),
+            "should be retry eligible (attempt < max)"
+        );
         // Simulate reaching max_attempts.
-        assert!(!state.retry_eligible(&rid, 1), "should NOT be eligible if attempt >= max_attempts");
+        assert!(
+            !state.retry_eligible(&rid, 1),
+            "should NOT be eligible if attempt >= max_attempts"
+        );
     } else {
         panic!("expected a Retrying job after failure with remaining attempts");
     }
@@ -165,7 +186,15 @@ async fn test_dispatch_loop_two_jobs_concurrent() {
     let cancel2 = cancel.clone();
     let state2 = Arc::clone(&state);
     let handle = tokio::spawn(async move {
-        dispatch_loop(state2, cancel2, 1, vec![], crate::serve::SubprocessSshClient, 3).await;
+        dispatch_loop(
+            state2,
+            cancel2,
+            1,
+            vec![],
+            crate::serve::SubprocessSshClient,
+            3,
+        )
+        .await;
     });
 
     // Wait up to 60 s for both jobs to reach a terminal state.
@@ -174,9 +203,9 @@ async fn test_dispatch_loop_two_jobs_concurrent() {
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
         let done = {
             let s = state.lock().unwrap();
-            s.jobs.iter().all(|j| {
-                matches!(j.status, JobStatus::Complete | JobStatus::Failed)
-            })
+            s.jobs
+                .iter()
+                .all(|j| matches!(j.status, JobStatus::Complete | JobStatus::Failed))
         };
         if done {
             break;
@@ -260,11 +289,7 @@ async fn test_watcher_picks_up_manifest() {
 
     // Write a valid manifest TOML.
     let manifest_path = queue_dir.join("my-job.toml");
-    std::fs::write(
-        &manifest_path,
-        VALID_MANIFEST_TOML,
-    )
-    .unwrap();
+    std::fs::write(&manifest_path, VALID_MANIFEST_TOML).unwrap();
 
     let state = Arc::new(Mutex::new(ServerState::new(2)));
     let watcher = DirectoryWatcher::new(queue_dir.clone(), Arc::clone(&state));
@@ -296,11 +321,7 @@ async fn test_watcher_moves_to_dispatched() {
 
     // Write a valid manifest TOML.
     let manifest_path = queue_dir.join("move-test.toml");
-    std::fs::write(
-        &manifest_path,
-        VALID_MANIFEST_TOML,
-    )
-    .unwrap();
+    std::fs::write(&manifest_path, VALID_MANIFEST_TOML).unwrap();
 
     let state = Arc::new(Mutex::new(ServerState::new(2)));
     let watcher = DirectoryWatcher::new(queue_dir.clone(), Arc::clone(&state));
@@ -320,7 +341,10 @@ async fn test_watcher_moves_to_dispatched() {
 
     // dispatched/ should contain exactly 1 file matching *-move-test.toml.
     let dispatched_dir = queue_dir.join("dispatched");
-    assert!(dispatched_dir.exists(), "dispatched/ directory should exist");
+    assert!(
+        dispatched_dir.exists(),
+        "dispatched/ directory should exist"
+    );
 
     let dispatched_files: Vec<_> = std::fs::read_dir(&dispatched_dir)
         .unwrap()
@@ -396,7 +420,11 @@ async fn test_http_post_invalid_toml() {
     assert_eq!(resp.status(), 422, "POST invalid TOML should return 422");
 
     let s = state.lock().unwrap();
-    assert_eq!(s.jobs.len(), 0, "no job should be enqueued on parse failure");
+    assert_eq!(
+        s.jobs.len(),
+        0,
+        "no job should be enqueued on parse failure"
+    );
 }
 
 #[tokio::test]
@@ -579,8 +607,14 @@ queue_dir = "/tmp/smelt-queue"
 max_concurrent = 2
 "#;
     let config: ServerConfig = toml::from_str(toml).expect("config without workers should parse");
-    assert!(config.workers.is_empty(), "workers should default to empty vec");
-    assert_eq!(config.ssh_timeout_secs, 3, "ssh_timeout_secs should default to 3");
+    assert!(
+        config.workers.is_empty(),
+        "workers should default to empty vec"
+    );
+    assert_eq!(
+        config.ssh_timeout_secs, 3,
+        "ssh_timeout_secs should default to 3"
+    );
 }
 
 #[test]
@@ -598,14 +632,17 @@ key_env = "WORKER_SSH_KEY"
 unknown_field = "should fail"
 "#;
     let result: Result<ServerConfig, _> = toml::from_str(toml);
-    assert!(result.is_err(), "unknown field in [[workers]] should fail to parse");
+    assert!(
+        result.is_err(),
+        "unknown field in [[workers]] should fail to parse"
+    );
 }
 
 #[test]
 fn test_worker_config_empty_host_fails_validation() {
+    use crate::serve::config::ServerConfig;
     use std::io::Write;
     use tempfile::NamedTempFile;
-    use crate::serve::config::ServerConfig;
 
     let mut f = NamedTempFile::new().unwrap();
     writeln!(f, r#"queue_dir = "/tmp/smelt-queue""#).unwrap();
@@ -628,9 +665,9 @@ fn test_worker_config_empty_host_fails_validation() {
 
 #[test]
 fn test_worker_config_empty_user_fails_validation() {
+    use crate::serve::config::ServerConfig;
     use std::io::Write;
     use tempfile::NamedTempFile;
-    use crate::serve::config::ServerConfig;
 
     let mut f = NamedTempFile::new().unwrap();
     writeln!(f, r#"queue_dir = "/tmp/smelt-queue""#).unwrap();
@@ -668,7 +705,10 @@ host = "0.0.0.0"
 port = 9000
 "#;
     let config: ServerConfig = toml::from_str(toml).expect("valid TOML should parse");
-    assert_eq!(config.queue_dir, std::path::PathBuf::from("/tmp/smelt-queue"));
+    assert_eq!(
+        config.queue_dir,
+        std::path::PathBuf::from("/tmp/smelt-queue")
+    );
     assert_eq!(config.max_concurrent, 4);
     assert_eq!(config.retry_attempts, 5);
     assert_eq!(config.retry_backoff_secs, 10);
@@ -682,7 +722,10 @@ fn test_server_config_missing_queue_dir() {
 max_concurrent = 2
 "#;
     let result: Result<ServerConfig, _> = toml::from_str(toml);
-    assert!(result.is_err(), "missing required field queue_dir should fail");
+    assert!(
+        result.is_err(),
+        "missing required field queue_dir should fail"
+    );
 }
 
 #[test]
@@ -769,7 +812,6 @@ port = 18765
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 }
 
-
 // ──────────────────────────────────────────────
 // S02 gated integration test — manifest delivery + remote exec
 // ──────────────────────────────────────────────
@@ -781,11 +823,11 @@ async fn test_manifest_delivery_and_remote_exec() {
         return;
     }
 
-    use tempfile::NamedTempFile;
     use std::io::Write;
+    use tempfile::NamedTempFile;
 
     use crate::serve::config::WorkerConfig;
-    use crate::serve::ssh::{SubprocessSshClient, SshClient, deliver_manifest};
+    use crate::serve::ssh::{SshClient, SubprocessSshClient, deliver_manifest};
     use crate::serve::types::JobId;
 
     let user = std::env::var("USER")
@@ -827,7 +869,8 @@ async fn test_manifest_delivery_and_remote_exec() {
         .await
         .expect("exec smelt run --dry-run");
     assert_eq!(
-        run_output.exit_code, 0,
+        run_output.exit_code,
+        0,
         "smelt run --dry-run should exit 0, stderr: {}",
         run_output.stderr.trim()
     );
@@ -845,10 +888,10 @@ async fn test_manifest_delivery_and_remote_exec() {
 
 #[test]
 fn test_tui_render_no_panic() {
-    use ratatui::backend::TestBackend;
-    use ratatui::Terminal;
-    use crate::serve::tui::render;
     use crate::serve::queue::ServerState;
+    use crate::serve::tui::render;
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
     use std::sync::{Arc, Mutex};
 
     let backend = TestBackend::new(80, 24);
@@ -861,8 +904,8 @@ fn test_tui_render_no_panic() {
     // Add a mock job entry to state and render again
     // (directly mutate queue for test — no manifest file needed)
     {
+        use crate::serve::types::{JobId, JobSource, JobStatus, QueuedJob, now_epoch};
         use std::path::PathBuf;
-        use crate::serve::types::{JobSource, JobStatus, QueuedJob, JobId, now_epoch};
         let mut s = state.lock().unwrap();
         s.jobs.push_back(QueuedJob {
             id: JobId::new("job-1"),
@@ -896,8 +939,8 @@ async fn test_round_robin_two_workers() {
 
     use crate::serve::config::WorkerConfig;
     use crate::serve::dispatch::dispatch_loop;
-    use crate::serve::ssh::tests::MockSshClient;
     use crate::serve::ssh::SshOutput;
+    use crate::serve::ssh::tests::MockSshClient;
 
     let dir = TempDir::new().unwrap();
     let manifests: Vec<_> = (0..4)
@@ -1008,8 +1051,8 @@ async fn test_failover_one_offline() {
 
     use crate::serve::config::WorkerConfig;
     use crate::serve::dispatch::dispatch_loop;
-    use crate::serve::ssh::tests::MockSshClient;
     use crate::serve::ssh::SshOutput;
+    use crate::serve::ssh::tests::MockSshClient;
 
     let dir = TempDir::new().unwrap();
     let manifests: Vec<_> = (0..2)
@@ -1183,7 +1226,10 @@ async fn test_all_workers_offline_requeue() {
         s.jobs[0].worker_host.is_none(),
         "worker_host should be None after re-queue"
     );
-    assert_eq!(s.running_count, 0, "running_count should be 0 after re-queue");
+    assert_eq!(
+        s.running_count, 0,
+        "running_count should be 0 after re-queue"
+    );
 }
 
 /// Prove that worker_host survives TOML serialization round-trip.
@@ -1192,7 +1238,7 @@ fn test_worker_host_in_queue_state_roundtrip() {
     use tempfile::TempDir;
 
     use crate::serve::queue::{read_queue_state, write_queue_state};
-    use crate::serve::types::{now_epoch, JobId, QueuedJob};
+    use crate::serve::types::{JobId, QueuedJob, now_epoch};
 
     let dir = TempDir::new().unwrap();
 
@@ -1238,7 +1284,7 @@ async fn test_state_sync_round_trip() {
     use tempfile::TempDir;
 
     use crate::serve::config::WorkerConfig;
-    use crate::serve::ssh::{SubprocessSshClient, SshClient, sync_state_back};
+    use crate::serve::ssh::{SshClient, SubprocessSshClient, sync_state_back};
 
     let user = std::env::var("USER")
         .or_else(|_| std::env::var("LOGNAME"))
@@ -1279,7 +1325,8 @@ pid = 12345
         .await
         .expect("create remote state dir");
     assert_eq!(
-        create_out.exit_code, 0,
+        create_out.exit_code,
+        0,
         "remote mkdir+cat should succeed, stderr: {}",
         create_out.stderr.trim()
     );
@@ -1303,7 +1350,8 @@ pid = 12345
     );
 
     let content = std::fs::read_to_string(&local_state_path).expect("read local state.toml");
-    let parsed: toml::Value = toml::from_str(&content).expect("local state.toml should be valid TOML");
+    let parsed: toml::Value =
+        toml::from_str(&content).expect("local state.toml should be valid TOML");
     assert_eq!(
         parsed["job_name"].as_str().unwrap(),
         job_name,

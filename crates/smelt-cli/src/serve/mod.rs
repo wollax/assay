@@ -1,7 +1,7 @@
-/// Job data types: identifiers, status, source, and queue entries.
-pub mod types;
 /// Persistent job queue and concurrency controller.
 pub mod queue;
+/// Job data types: identifiers, status, source, and queue entries.
+pub mod types;
 pub(crate) use queue::ServerState;
 pub(crate) mod config;
 pub(crate) use config::ServerConfig;

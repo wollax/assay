@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use tracing::{info, warn};
 
-use crate::serve::types::{now_epoch, JobId, JobSource, JobStatus, QueuedJob};
+use crate::serve::types::{JobId, JobSource, JobStatus, QueuedJob, now_epoch};
 
 #[derive(serde::Serialize, serde::Deserialize)]
 struct QueueState {
@@ -221,19 +221,18 @@ impl ServerState {
         } else {
             false
         };
-        if cancelled
-            && let Some(ref dir) = self.queue_dir {
-                write_queue_state(dir, &self.jobs);
-            }
+        if cancelled && let Some(ref dir) = self.queue_dir {
+            write_queue_state(dir, &self.jobs);
+        }
         cancelled
     }
 
     /// Return `true` if the job exists, is in `Retrying` state, and has not
     /// exhausted `max_attempts`.
     pub fn retry_eligible(&self, id: &JobId, max_attempts: u32) -> bool {
-        self.jobs.iter().any(|j| {
-            &j.id == id && j.status == JobStatus::Retrying && j.attempt < max_attempts
-        })
+        self.jobs
+            .iter()
+            .any(|j| &j.id == id && j.status == JobStatus::Retrying && j.attempt < max_attempts)
     }
 }
 
@@ -275,7 +274,10 @@ mod tests {
         // Job 0 — all 7 fields
         assert_eq!(read_back[0].id, job0.id);
         assert_eq!(read_back[0].manifest_path, job0.manifest_path);
-        assert_eq!(format!("{:?}", read_back[0].source), format!("{:?}", job0.source));
+        assert_eq!(
+            format!("{:?}", read_back[0].source),
+            format!("{:?}", job0.source)
+        );
         assert_eq!(read_back[0].attempt, job0.attempt);
         assert_eq!(read_back[0].status, job0.status);
         assert_eq!(read_back[0].queued_at, job0.queued_at);
@@ -284,7 +286,10 @@ mod tests {
         // Job 1 — all 7 fields
         assert_eq!(read_back[1].id, job1.id);
         assert_eq!(read_back[1].manifest_path, job1.manifest_path);
-        assert_eq!(format!("{:?}", read_back[1].source), format!("{:?}", job1.source));
+        assert_eq!(
+            format!("{:?}", read_back[1].source),
+            format!("{:?}", job1.source)
+        );
         assert_eq!(read_back[1].attempt, job1.attempt);
         assert_eq!(read_back[1].status, job1.status);
         assert_eq!(read_back[1].queued_at, job1.queued_at);
