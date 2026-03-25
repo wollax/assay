@@ -61,7 +61,7 @@ This milestone is complete only when all are true:
 - [x] **S01: Structured tracing foundation and eprintln migration** `risk:medium` `depends:[]`
   > After this: all crates emit structured `tracing::*` events instead of `eprintln!`. `RUST_LOG=debug assay gate run spec` produces leveled, structured output to stderr. Proven by grep confirming zero eprintln in production code + integration test exercising log output.
 
-- [ ] **S02: Pipeline span instrumentation** `risk:medium` `depends:[S01]`
+- [x] **S02: Pipeline span instrumentation** `risk:medium` `depends:[S01]`
   > After this: a single-agent pipeline run produces named spans for each stage (spec_load, worktree_create, agent_launch, gate_eval, merge_propose) with timing and spec slug. Proven by integration test asserting span names in captured subscriber output.
 
 - [ ] **S03: Orchestration span instrumentation** `risk:high` `depends:[S01, S02]`
