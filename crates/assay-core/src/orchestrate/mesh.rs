@@ -22,6 +22,8 @@ use assay_types::orchestrate::{
 };
 use assay_types::{ManifestSession, PromptLayer, PromptLayerKind};
 
+use tracing::{Span, info, info_span};
+
 use crate::error::AssayError;
 use crate::orchestrate::executor::{OrchestratorConfig, OrchestratorResult, persist_state};
 use crate::pipeline::{PipelineConfig, PipelineError, PipelineResult};
@@ -43,6 +45,16 @@ pub fn run_mesh<F>(
 where
     F: Fn(&ManifestSession, &PipelineConfig) -> Result<PipelineResult, PipelineError> + Sync,
 {
+    let session_count = manifest.sessions.len();
+
+    let _root_span = info_span!(
+        "orchestrate::mesh",
+        session_count = session_count,
+        mode = "mesh"
+    )
+    .entered();
+    info!("starting Mesh orchestration");
+
     let run_id = Ulid::new().to_string();
     let started_at = Utc::now();
     let wall_start = Instant::now();
@@ -51,8 +63,6 @@ where
     let run_dir = pipeline_config.assay_dir.join("orchestrator").join(&run_id);
     std::fs::create_dir_all(&run_dir)
         .map_err(|e| AssayError::io("creating orchestrator run directory", &run_dir, e))?;
-
-    let session_count = manifest.sessions.len();
 
     // ── Per-session directory setup ──────────────────────────────────
 
@@ -195,14 +205,21 @@ where
 
     // ── thread::scope ────────────────────────────────────────────────
 
+    // Capture current span for cross-thread parenting.
+    let parent_span = Span::current();
+
     std::thread::scope(|scope| {
         // ── Routing thread ────────────────────────────────────────────
         let active_count_ref = &active_count;
         let name_to_inbox_ref = &name_to_inbox;
         let mesh_status_arc_ref = &mesh_status_arc;
         let session_dirs_ref = &session_dirs;
+        let routing_parent = parent_span.clone();
 
         scope.spawn(move || {
+            let _parent_guard = routing_parent.enter();
+            let _routing_span = info_span!("orchestrate::mesh::routing").entered();
+
             while active_count_ref.load(Ordering::Acquire) > 0 {
                 for (source_name, session_dir) in session_dirs_ref {
                     let outbox = session_dir.join("outbox");
@@ -251,8 +268,14 @@ where
             let run_id = &run_id;
             let started_at_run = started_at;
             let failure_policy = config.failure_policy;
+            let worker_parent = parent_span.clone();
 
             scope.spawn(move || {
+                // Re-enter the parent (orchestrate::mesh) span so session
+                // spans are properly parented across the thread boundary.
+                let _parent_guard = worker_parent.enter();
+                let _session_span =
+                    info_span!("orchestrate::mesh::session", session_name = %name).entered();
                 // Acquire semaphore slot (bounded concurrency).
                 {
                     let (lock, cvar) = &*semaphore;

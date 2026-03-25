@@ -56,7 +56,7 @@
   - Verify: `cargo test -p assay-core --test orchestrate_spans` — DAG and merge tests pass. `cargo test -p assay-core --lib` — all existing tests pass.
   - Done when: DAG root span, DAG session span, and merge runner span tests pass; zero regressions
 
-- [ ] **T03: Instrument Mesh and Gossip executors with tracing spans** `est:25m`
+- [x] **T03: Instrument Mesh and Gossip executors with tracing spans** `est:25m`
   - Why: Completes span coverage across all three orchestration modes
   - Files: `crates/assay-core/src/orchestrate/mesh.rs`, `crates/assay-core/src/orchestrate/gossip.rs`
   - Do: Add root `info_span!("orchestrate::mesh", session_count, mode = "mesh")` wrapping `run_mesh()` body. Capture `Span::current()` before `thread::scope`, clone into each worker, use `parent_span.in_scope(|| { ... })` inside `scope.spawn`. Add per-session `info_span!("orchestrate::mesh::session", session_name)` inside workers. Same pattern for `run_gossip()` with `orchestrate::gossip` / `orchestrate::gossip::session`. Routing thread in mesh and coordinator thread in gossip get their own spans (`orchestrate::mesh::routing`, `orchestrate::gossip::coordinator`).

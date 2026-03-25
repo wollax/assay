@@ -2,8 +2,8 @@
 
 **Active Milestone:** M009 — Observability
 **Active Slice:** S03 — Orchestration span instrumentation
-**Active Task:** T03 — Instrument Mesh and Gossip executors with tracing spans
-**Phase:** Executing
+**Active Task:** None — all T01-T03 complete
+**Phase:** Summarizing
 **Last Updated:** 2026-03-25
 **Requirements Status:** 5 active (R027, R062–R065) · 57 validated · 3 deferred (R025, R066, R067) · 4 out of scope
 **Test Count:** 1400+ (all workspace tests pass)
@@ -13,7 +13,7 @@
 5 slices planned:
 - [x] S01: Structured tracing foundation and eprintln migration — R060 validated
 - [x] S02: Pipeline span instrumentation — R061 validated (PR #182 merged)
-- [ ] S03: Orchestration span instrumentation — R062
+- [ ] S03: Orchestration span instrumentation — R062 (all tasks complete, pending slice summary)
 - [ ] S04: JSON file trace export and CLI — R063
 - [ ] S05: OTLP export and trace context propagation — R064, R065
 
@@ -30,4 +30,4 @@ None.
 
 ## Next Action
 
-Execute T03 — instrument `run_mesh()` and `run_gossip()` with orchestrate::mesh and orchestrate::gossip root + per-session spans. Mesh and gossip span tests should flip green.
+Write S03 slice summary — all 3 tasks complete. Then mark S03 done in roadmap and continue to S04.

@@ -25,6 +25,8 @@ use assay_types::orchestrate::{
 };
 use assay_types::{ManifestSession, PromptLayer, PromptLayerKind};
 
+use tracing::{Span, info, info_span};
+
 use crate::error::AssayError;
 use crate::orchestrate::executor::{
     OrchestratorConfig, OrchestratorResult, SessionOutcome, persist_state,
@@ -94,6 +96,16 @@ pub fn run_gossip<F>(
 where
     F: Fn(&ManifestSession, &PipelineConfig) -> Result<PipelineResult, PipelineError> + Sync,
 {
+    let session_count = manifest.sessions.len();
+
+    let _root_span = info_span!(
+        "orchestrate::gossip",
+        session_count = session_count,
+        mode = "gossip"
+    )
+    .entered();
+    info!("starting Gossip orchestration");
+
     let run_id = Ulid::new().to_string();
     let started_at = Utc::now();
     let wall_start = Instant::now();
@@ -106,8 +118,6 @@ where
         .map_err(|e| AssayError::io("creating gossip run directory", &gossip_dir, e))?;
 
     let knowledge_manifest_path: PathBuf = run_dir.join("gossip").join("knowledge.json");
-
-    let session_count = manifest.sessions.len();
 
     // ── Warn for depends_on (ignored in gossip mode) ─────────────────
 
@@ -215,6 +225,9 @@ where
 
     // ── thread::scope ────────────────────────────────────────────────
 
+    // Capture current span for cross-thread parenting.
+    let parent_span = Span::current();
+
     std::thread::scope(|scope| {
         // ── Coordinator thread ────────────────────────────────────────
         let gossip_status_arc_coord = Arc::clone(&gossip_status_arc);
@@ -224,8 +237,12 @@ where
         let gossip_dir_coord = &gossip_dir;
         let failure_policy = config.failure_policy;
         let started_at_run = started_at;
+        let coord_parent = parent_span.clone();
 
         scope.spawn(move || {
+            let _parent_guard = coord_parent.enter();
+            let _coord_span = info_span!("orchestrate::gossip::coordinator").entered();
+
             let mut knowledge_entries: Vec<KnowledgeEntry> = Vec::new();
 
             loop {
@@ -349,8 +366,14 @@ where
             let run_id = &run_id;
             let started_at_run = started_at;
             let failure_policy = config.failure_policy;
+            let worker_parent = parent_span.clone();
 
             scope.spawn(move || {
+                // Re-enter the parent (orchestrate::gossip) span so session
+                // spans are properly parented across the thread boundary.
+                let _parent_guard = worker_parent.enter();
+                let _session_span =
+                    info_span!("orchestrate::gossip::session", session_name = %name).entered();
                 // Acquire semaphore slot (bounded concurrency).
                 {
                     let (lock, cvar) = &*semaphore;
