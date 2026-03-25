@@ -48,7 +48,7 @@
   - Verify: `cargo test -p assay-core --test pipeline_spans` compiles but tests fail (expected span names not found)
   - Done when: test file exists, compiles, and fails with "span not found" (not compilation error)
 
-- [ ] **T02: Instrument pipeline functions with #[instrument] and stage-level spans** `est:30m`
+- [x] **T02: Instrument pipeline functions with #[instrument] and stage-level spans** `est:30m`
   - Why: Core implementation — adds the 5 function-level spans and 6 stage-level spans that make the T01 tests pass.
   - Files: `crates/assay-core/src/pipeline.rs`
   - Do: Add `#[instrument]` to 5 public functions per the research instrumentation plan (skip large params, add fields manually). Wrap each stage block in `tracing::info_span!("stage_name").in_scope(|| { ... })`. Add `tracing::info!("stage completed")` after each successful stage and `tracing::warn!` on error paths before returning PipelineError.

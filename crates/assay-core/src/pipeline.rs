@@ -25,6 +25,8 @@ use assay_types::{
     GateRunSummary, HarnessProfile, ManifestSession, MergeCheck, RunManifest, SettingsOverride,
 };
 
+use tracing::{info, info_span, instrument, warn};
+
 use crate::spec::SpecEntry;
 
 // ── Pipeline stage enum (R019) ───────────────────────────────────────
@@ -216,6 +218,7 @@ impl Default for PipelineConfig {
 ///
 /// Returns `PipelineError` at the `AgentLaunch` stage if the process
 /// cannot be spawned (e.g., binary not found).
+#[instrument(name = "pipeline::launch_agent", skip(cli_args, timeout), fields(working_dir = %working_dir.display()))]
 pub fn launch_agent(
     cli_args: &[String],
     working_dir: &Path,
@@ -477,6 +480,7 @@ pub type HarnessWriter = dyn Fn(&HarnessProfile, &Path) -> std::result::Result<V
 /// Returns a [`SetupResult`] containing all state needed by
 /// [`execute_session`]. On failure after session start, the session
 /// is abandoned (never left in `AgentRunning`).
+#[instrument(name = "pipeline::setup_session", skip(config), fields(spec = %manifest_session.spec))]
 pub fn setup_session(
     manifest_session: &ManifestSession,
     config: &PipelineConfig,
@@ -490,87 +494,100 @@ pub fn setup_session(
     };
 
     // ── Stage 1: SpecLoad ────────────────────────────────────────
-    let stage_start = Instant::now();
-    let spec_entry = crate::spec::load_spec_entry(&manifest_session.spec, &config.specs_dir)
-        .map_err(|e| {
-            let elapsed = stage_start.elapsed();
-            PipelineError {
-                stage: PipelineStage::SpecLoad,
-                message: format!("Failed to load spec '{}': {e}", manifest_session.spec),
-                recovery: format!(
-                    "Check that spec '{}' exists in specs directory '{}'",
-                    manifest_session.spec,
-                    config.specs_dir.display()
-                ),
-                elapsed,
-            }
-        })?;
-    stage_timings.push(StageTiming {
-        stage: PipelineStage::SpecLoad,
-        duration: stage_start.elapsed(),
-    });
+    let spec_entry = info_span!("spec_load", spec = %manifest_session.spec).in_scope(|| {
+        let stage_start = Instant::now();
+        let entry = crate::spec::load_spec_entry(&manifest_session.spec, &config.specs_dir)
+            .map_err(|e| {
+                let elapsed = stage_start.elapsed();
+                warn!(stage = "spec_load", error = %e, "stage failed");
+                PipelineError {
+                    stage: PipelineStage::SpecLoad,
+                    message: format!("Failed to load spec '{}': {e}", manifest_session.spec),
+                    recovery: format!(
+                        "Check that spec '{}' exists in specs directory '{}'",
+                        manifest_session.spec,
+                        config.specs_dir.display()
+                    ),
+                    elapsed,
+                }
+            })?;
+        let duration = stage_start.elapsed();
+        info!("stage completed");
+        stage_timings.push(StageTiming {
+            stage: PipelineStage::SpecLoad,
+            duration,
+        });
+        Ok::<_, PipelineError>(entry)
+    })?;
 
     let spec_name = spec_entry.name().to_string();
 
     // ── Stage 2: WorktreeCreate ──────────────────────────────────
-    let stage_start = Instant::now();
+    let (ws_id, worktree_info) = info_span!("worktree_create", spec = %manifest_session.spec).in_scope(|| {
+        let stage_start = Instant::now();
 
-    // Start a work session first to get the session ID.
-    let worktree_path = config.worktree_base.join(&manifest_session.spec);
-    let ws = crate::work_session::start_session(
-        &config.assay_dir,
-        &manifest_session.spec,
-        worktree_path.clone(),
-        "claude",
-        None,
-    )
-    .map_err(|e| {
-        let elapsed = stage_start.elapsed();
-        PipelineError {
+        // Start a work session first to get the session ID.
+        let worktree_path = config.worktree_base.join(&manifest_session.spec);
+        let ws = crate::work_session::start_session(
+            &config.assay_dir,
+            &manifest_session.spec,
+            worktree_path.clone(),
+            "claude",
+            None,
+        )
+        .map_err(|e| {
+            let elapsed = stage_start.elapsed();
+            warn!(stage = "worktree_create", error = %e, "stage failed");
+            PipelineError {
+                stage: PipelineStage::WorktreeCreate,
+                message: format!("Failed to start work session: {e}"),
+                recovery: format!(
+                    "Check .assay/sessions directory permissions at '{}'",
+                    config.assay_dir.display()
+                ),
+                elapsed,
+            }
+        })?;
+
+        let session_id = Some(ws.id.clone());
+
+        // Create the worktree, passing the session ID for metadata linkage.
+        let wt_info = crate::worktree::create(
+            &config.project_root,
+            &manifest_session.spec,
+            config.base_branch.as_deref(),
+            &config.worktree_base,
+            &config.specs_dir,
+            Some(&ws.id),
+        )
+        .map_err(|e| {
+            let elapsed = stage_start.elapsed();
+            abandon_if_started(&session_id, &config.assay_dir, &format!("WorktreeCreate failed: {e}"));
+            warn!(stage = "worktree_create", error = %e, "stage failed");
+            PipelineError {
+                stage: PipelineStage::WorktreeCreate,
+                message: format!(
+                    "Failed to create worktree for '{}': {e}",
+                    manifest_session.spec
+                ),
+                recovery: format!(
+                    "Inspect worktree base at '{}'. Check for stale branches with `git branch -a | grep assay/`",
+                    config.worktree_base.display()
+                ),
+                elapsed,
+            }
+        })?;
+        let duration = stage_start.elapsed();
+        info!("stage completed");
+        stage_timings.push(StageTiming {
             stage: PipelineStage::WorktreeCreate,
-            message: format!("Failed to start work session: {e}"),
-            recovery: format!(
-                "Check .assay/sessions directory permissions at '{}'",
-                config.assay_dir.display()
-            ),
-            elapsed,
-        }
+            duration,
+        });
+        Ok::<_, PipelineError>((ws.id, wt_info))
     })?;
-
-    let session_id = Some(ws.id.clone());
-
-    // Create the worktree, passing the session ID for metadata linkage.
-    let worktree_info = crate::worktree::create(
-        &config.project_root,
-        &manifest_session.spec,
-        config.base_branch.as_deref(),
-        &config.worktree_base,
-        &config.specs_dir,
-        Some(&ws.id),
-    )
-    .map_err(|e| {
-        let elapsed = stage_start.elapsed();
-        abandon_if_started(&session_id, &config.assay_dir, &format!("WorktreeCreate failed: {e}"));
-        PipelineError {
-            stage: PipelineStage::WorktreeCreate,
-            message: format!(
-                "Failed to create worktree for '{}': {e}",
-                manifest_session.spec
-            ),
-            recovery: format!(
-                "Inspect worktree base at '{}'. Check for stale branches with `git branch -a | grep assay/`",
-                config.worktree_base.display()
-            ),
-            elapsed,
-        }
-    })?;
-    stage_timings.push(StageTiming {
-        stage: PipelineStage::WorktreeCreate,
-        duration: stage_start.elapsed(),
-    });
 
     Ok(SetupResult {
-        session_id: ws.id,
+        session_id: ws_id,
         spec_name,
         spec_entry,
         worktree_info,
@@ -589,6 +606,7 @@ pub fn setup_session(
 /// Takes a [`SetupResult`] from [`setup_session`] containing the loaded
 /// spec and created worktree. On failure, the session is abandoned via
 /// the session_id from `SetupResult`.
+#[instrument(name = "pipeline::execute_session", skip(config, harness_writer, setup), fields(spec = %manifest_session.spec, session_id = %setup.session_id))]
 pub fn execute_session(
     manifest_session: &ManifestSession,
     config: &PipelineConfig,
@@ -609,129 +627,158 @@ pub fn execute_session(
     };
 
     // ── Stage 3: HarnessConfig ───────────────────────────────────
-    let stage_start = Instant::now();
-    let profile = build_harness_profile(manifest_session);
-    let cli_args = harness_writer(&profile, &worktree_info.path).map_err(|e| {
-        let elapsed = stage_start.elapsed();
-        abandon(&config.assay_dir, &format!("HarnessConfig failed: {e}"));
-        PipelineError {
+    let cli_args = info_span!("harness_config", spec = %manifest_session.spec).in_scope(|| {
+        let stage_start = Instant::now();
+        let profile = build_harness_profile(manifest_session);
+        let args = harness_writer(&profile, &worktree_info.path).map_err(|e| {
+            let elapsed = stage_start.elapsed();
+            abandon(&config.assay_dir, &format!("HarnessConfig failed: {e}"));
+            warn!(stage = "harness_config", error = %e, "stage failed");
+            PipelineError {
+                stage: PipelineStage::HarnessConfig,
+                message: format!("Failed to write harness config: {e}"),
+                recovery: format!(
+                    "Check worktree path '{}' is writable",
+                    worktree_info.path.display()
+                ),
+                elapsed,
+            }
+        })?;
+        let duration = stage_start.elapsed();
+        info!("stage completed");
+        stage_timings.push(StageTiming {
             stage: PipelineStage::HarnessConfig,
-            message: format!("Failed to write harness config: {e}"),
-            recovery: format!(
-                "Check worktree path '{}' is writable",
-                worktree_info.path.display()
-            ),
-            elapsed,
-        }
+            duration,
+        });
+        Ok::<_, PipelineError>(args)
     })?;
-    stage_timings.push(StageTiming {
-        stage: PipelineStage::HarnessConfig,
-        duration: stage_start.elapsed(),
-    });
 
     // ── Stage 4: AgentLaunch ─────────────────────────────────────
-    let stage_start = Instant::now();
-    let timeout = Duration::from_secs(config.timeout_secs);
-    let agent_output = launch_agent(&cli_args, &worktree_info.path, timeout).map_err(|mut e| {
-        abandon(
-            &config.assay_dir,
-            &format!("AgentLaunch failed: {}", e.message),
-        );
-        e.elapsed = stage_start.elapsed();
-        e
-    })?;
+    let agent_output =
+        info_span!("agent_launch", spec = %manifest_session.spec).in_scope(|| {
+            let stage_start = Instant::now();
+            let timeout = Duration::from_secs(config.timeout_secs);
+            let output =
+                launch_agent(&cli_args, &worktree_info.path, timeout).map_err(|mut e| {
+                    abandon(
+                        &config.assay_dir,
+                        &format!("AgentLaunch failed: {}", e.message),
+                    );
+                    warn!(stage = "agent_launch", error = %e.message, "stage failed");
+                    e.elapsed = stage_start.elapsed();
+                    e
+                })?;
 
-    if agent_output.timed_out {
-        let elapsed = stage_start.elapsed();
-        abandon(
-            &config.assay_dir,
-            &format!("Agent timed out after {}s", config.timeout_secs),
-        );
-        return Err(PipelineError {
-            stage: PipelineStage::AgentLaunch,
-            message: format!(
-                "Agent timed out after {}s for spec '{}'",
-                config.timeout_secs, manifest_session.spec
-            ),
-            recovery: format!(
-                "Agent timed out after {}s — increase timeout or reduce scope",
-                config.timeout_secs
-            ),
-            elapsed,
-        });
-    }
+            if output.timed_out {
+                let elapsed = stage_start.elapsed();
+                abandon(
+                    &config.assay_dir,
+                    &format!("Agent timed out after {}s", config.timeout_secs),
+                );
+                warn!(stage = "agent_launch", "agent timed out");
+                return Err(PipelineError {
+                    stage: PipelineStage::AgentLaunch,
+                    message: format!(
+                        "Agent timed out after {}s for spec '{}'",
+                        config.timeout_secs, manifest_session.spec
+                    ),
+                    recovery: format!(
+                        "Agent timed out after {}s — increase timeout or reduce scope",
+                        config.timeout_secs
+                    ),
+                    elapsed,
+                });
+            }
 
-    if agent_output.exit_code != Some(0) {
-        let elapsed = stage_start.elapsed();
-        let exit_info = agent_output
-            .exit_code
-            .map(|c| format!("exit code {c}"))
-            .unwrap_or_else(|| "killed by signal".to_string());
-        let stderr_excerpt = if agent_output.stderr.len() > 500 {
-            format!(
-                "...{}",
-                &agent_output.stderr[agent_output.stderr.len() - 500..]
-            )
-        } else {
-            agent_output.stderr.clone()
-        };
-        abandon(
-            &config.assay_dir,
-            &format!("Agent crashed with {exit_info}"),
-        );
-        return Err(PipelineError {
-            stage: PipelineStage::AgentLaunch,
-            message: format!(
-                "Agent crashed with {exit_info} for spec '{}': {}",
-                manifest_session.spec,
-                stderr_excerpt
-                    .lines()
-                    .take(3)
-                    .collect::<Vec<_>>()
-                    .join(" | ")
-            ),
-            recovery: format!(
-                "Inspect agent stderr. Check that Claude Code CLI is properly configured. \
-                 Working directory: '{}'",
-                worktree_info.path.display()
-            ),
-            elapsed,
-        });
-    }
-    stage_timings.push(StageTiming {
-        stage: PipelineStage::AgentLaunch,
-        duration: stage_start.elapsed(),
-    });
+            if output.exit_code != Some(0) {
+                let elapsed = stage_start.elapsed();
+                let exit_info = output
+                    .exit_code
+                    .map(|c| format!("exit code {c}"))
+                    .unwrap_or_else(|| "killed by signal".to_string());
+                let stderr_excerpt = if output.stderr.len() > 500 {
+                    format!("...{}", &output.stderr[output.stderr.len() - 500..])
+                } else {
+                    output.stderr.clone()
+                };
+                abandon(
+                    &config.assay_dir,
+                    &format!("Agent crashed with {exit_info}"),
+                );
+                warn!(stage = "agent_launch", %exit_info, "agent crashed");
+                return Err(PipelineError {
+                    stage: PipelineStage::AgentLaunch,
+                    message: format!(
+                        "Agent crashed with {exit_info} for spec '{}': {}",
+                        manifest_session.spec,
+                        stderr_excerpt
+                            .lines()
+                            .take(3)
+                            .collect::<Vec<_>>()
+                            .join(" | ")
+                    ),
+                    recovery: format!(
+                        "Inspect agent stderr. Check that Claude Code CLI is properly configured. \
+                     Working directory: '{}'",
+                        worktree_info.path.display()
+                    ),
+                    elapsed,
+                });
+            }
+            let duration = stage_start.elapsed();
+            info!("stage completed");
+            stage_timings.push(StageTiming {
+                stage: PipelineStage::AgentLaunch,
+                duration,
+            });
+            Ok::<_, PipelineError>(output)
+        })?;
+    // Suppress unused-variable warning; agent_output is consumed by value.
+    let _ = agent_output;
 
     // ── Stage 5: GateEvaluate ────────────────────────────────────
-    let stage_start = Instant::now();
-    let gate_summary = match &spec_entry {
-        SpecEntry::Legacy { spec, .. } => {
-            crate::gate::evaluate_all(spec, &worktree_info.path, None, None)
-        }
-        SpecEntry::Directory { gates, .. } => {
-            crate::gate::evaluate_all_gates(gates, &worktree_info.path, None, None)
-        }
-    };
+    let (gate_summary, gate_passed) =
+        info_span!("gate_evaluate", spec = %spec_name).in_scope(|| {
+            let stage_start = Instant::now();
+            let summary = match &spec_entry {
+                SpecEntry::Legacy { spec, .. } => {
+                    crate::gate::evaluate_all(spec, &worktree_info.path, None, None)
+                }
+                SpecEntry::Directory { gates, .. } => {
+                    crate::gate::evaluate_all_gates(gates, &worktree_info.path, None, None)
+                }
+            };
 
-    // Record gate result in the session. Use a synthetic run_id based on session.
-    let gate_run_id = format!("{}-gate", session_id);
-    let gate_passed = gate_summary.failed == 0;
-    let _ = crate::work_session::record_gate_result(
-        &config.assay_dir,
-        &session_id,
-        &gate_run_id,
-        "pipeline_gate_evaluate",
-        Some(if gate_passed {
-            "all gates passed"
-        } else {
-            "gate failures detected"
-        }),
-    );
-    stage_timings.push(StageTiming {
-        stage: PipelineStage::GateEvaluate,
-        duration: stage_start.elapsed(),
-    });
+            // Record gate result in the session. Use a synthetic run_id based on session.
+            let gate_run_id = format!("{}-gate", session_id);
+            let passed = summary.failed == 0;
+            let _ = crate::work_session::record_gate_result(
+                &config.assay_dir,
+                &session_id,
+                &gate_run_id,
+                "pipeline_gate_evaluate",
+                Some(if passed {
+                    "all gates passed"
+                } else {
+                    "gate failures detected"
+                }),
+            );
+            let duration = stage_start.elapsed();
+            if passed {
+                info!("stage completed");
+            } else {
+                warn!(
+                    stage = "gate_evaluate",
+                    failed = summary.failed,
+                    "gates failed"
+                );
+            }
+            stage_timings.push(StageTiming {
+                stage: PipelineStage::GateEvaluate,
+                duration,
+            });
+            (summary, passed)
+        });
 
     if !gate_passed {
         // Gates failed — session stays in GateEvaluated, outcome is GateFailed.
@@ -746,32 +793,38 @@ pub fn execute_session(
     }
 
     // ── Stage 6: MergeCheck ──────────────────────────────────────
-    let stage_start = Instant::now();
-    let base_branch = worktree_info.base_branch.as_deref().unwrap_or("main");
-    let merge_result = crate::merge::merge_check(
-        &config.project_root,
-        base_branch,
-        &worktree_info.branch,
-        None,
-    )
-    .map_err(|e| {
-        let elapsed = stage_start.elapsed();
-        PipelineError {
+    let merge_result = info_span!("merge_check", spec = %spec_name).in_scope(|| {
+        let stage_start = Instant::now();
+        let base_branch = worktree_info.base_branch.as_deref().unwrap_or("main");
+        let result = crate::merge::merge_check(
+            &config.project_root,
+            base_branch,
+            &worktree_info.branch,
+            None,
+        )
+        .map_err(|e| {
+            let elapsed = stage_start.elapsed();
+            warn!(stage = "merge_check", error = %e, "stage failed");
+            PipelineError {
+                stage: PipelineStage::MergeCheck,
+                message: format!("Merge check failed for '{}': {e}", manifest_session.spec),
+                recovery: format!(
+                    "Inspect worktree branch '{}' and base branch '{}' in '{}'",
+                    worktree_info.branch,
+                    base_branch,
+                    config.project_root.display()
+                ),
+                elapsed,
+            }
+        })?;
+        let duration = stage_start.elapsed();
+        info!("stage completed");
+        stage_timings.push(StageTiming {
             stage: PipelineStage::MergeCheck,
-            message: format!("Merge check failed for '{}': {e}", manifest_session.spec),
-            recovery: format!(
-                "Inspect worktree branch '{}' and base branch '{}' in '{}'",
-                worktree_info.branch,
-                base_branch,
-                config.project_root.display()
-            ),
-            elapsed,
-        }
+            duration,
+        });
+        Ok::<_, PipelineError>(result)
     })?;
-    stage_timings.push(StageTiming {
-        stage: PipelineStage::MergeCheck,
-        duration: stage_start.elapsed(),
-    });
 
     if merge_result.clean {
         // All good — complete the session.
@@ -814,6 +867,7 @@ pub fn execute_session(
 /// Thin composition of [`setup_session`] and [`execute_session`].
 /// On failure after session start, the session is abandoned (never left
 /// in `AgentRunning`).
+#[instrument(name = "pipeline::run_session", skip(config, harness_writer), fields(spec = %manifest_session.spec))]
 pub fn run_session(
     manifest_session: &ManifestSession,
     config: &PipelineConfig,
@@ -828,6 +882,7 @@ pub fn run_session(
 /// Iterates sessions sequentially, calling [`run_session`] for each.
 /// One session's failure does not block subsequent sessions —
 /// results are collected individually. Future-proof for M002 multi-session.
+#[instrument(name = "pipeline::run_manifest", skip(config, harness_writer, manifest), fields(session_count = manifest.sessions.len()))]
 pub fn run_manifest(
     manifest: &RunManifest,
     config: &PipelineConfig,
