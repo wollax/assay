@@ -282,36 +282,33 @@ impl JsonFileLayer {
     }
 
     /// Collect all spans belonging to the same trace tree as `root_id`.
+    ///
+    /// Uses BFS from `root_id` over a parent→children index so that spans at
+    /// any depth are correctly collected in O(n). The previous O(n²) walk was
+    /// also incorrect for depth > 2 because `root_id` is removed from the map
+    /// before the descendant search, breaking the parent-chain traversal for
+    /// grandchildren and deeper.
     fn collect_trace_spans(&self, root_id: u64, map: &mut HashMap<u64, SpanData>) -> Vec<SpanData> {
-        // Remove the root span.
-        let mut trace_spans = Vec::new();
-        if let Some(root) = map.remove(&root_id) {
-            trace_spans.push(root);
-        }
-
-        // Collect all spans whose parent chain leads to root_id.
-        let child_ids: Vec<u64> = map
-            .iter()
-            .filter(|(_, data)| {
-                let mut parent = data.parent_id;
-                while let Some(pid) = parent {
-                    if pid == root_id {
-                        return true;
-                    }
-                    parent = map.get(&pid).and_then(|p| p.parent_id);
-                }
-                false
-            })
-            .map(|(id, _)| *id)
-            .collect();
-
-        for id in child_ids {
-            if let Some(span) = map.remove(&id) {
-                trace_spans.push(span);
+        // Build a children index from the current map contents.
+        let mut children: HashMap<u64, Vec<u64>> = HashMap::new();
+        for (&id, span) in map.iter() {
+            if let Some(pid) = span.parent_id {
+                children.entry(pid).or_default().push(id);
             }
         }
 
-        trace_spans
+        // BFS from root_id — collects at all depths in O(n).
+        let mut result = Vec::new();
+        let mut queue = vec![root_id];
+        while let Some(id) = queue.pop() {
+            if let Some(span) = map.remove(&id) {
+                result.push(span);
+            }
+            if let Some(kids) = children.remove(&id) {
+                queue.extend(kids);
+            }
+        }
+        result
     }
 }
 
@@ -345,11 +342,12 @@ where
         };
         attrs.record(&mut visitor);
 
+        let numeric_id = id.into_non_zero_u64().get();
         let span_data = SpanData {
             name: metadata.name().to_string(),
             target: metadata.target().to_string(),
             level: format!("{}", metadata.level()),
-            span_id: id.into_non_zero_u64().get(),
+            span_id: numeric_id,
             parent_id,
             start_time: chrono::Utc::now().to_rfc3339(),
             end_time: None,
@@ -357,9 +355,13 @@ where
             fields,
         };
 
-        if let Ok(mut map) = self.spans.lock() {
-            map.insert(id.into_non_zero_u64().get(), span_data);
-        }
+        // Recover from a poisoned mutex — best-effort telemetry should not
+        // silently lose spans if another thread panicked while holding the lock.
+        let mut map = self.spans.lock().unwrap_or_else(|e| {
+            tracing::warn!("JsonFileLayer: span map poisoned in on_new_span; recovering");
+            e.into_inner()
+        });
+        map.insert(numeric_id, span_data);
     }
 
     fn on_record(
@@ -368,9 +370,12 @@ where
         values: &tracing::span::Record<'_>,
         _ctx: tracing_subscriber::layer::Context<'_, S>,
     ) {
-        if let Ok(mut map) = self.spans.lock()
-            && let Some(span_data) = map.get_mut(&id.into_non_zero_u64().get())
-        {
+        let numeric_id = id.into_non_zero_u64().get();
+        let mut map = self.spans.lock().unwrap_or_else(|e| {
+            tracing::warn!("JsonFileLayer: span map poisoned in on_record; recovering");
+            e.into_inner()
+        });
+        if let Some(span_data) = map.get_mut(&numeric_id) {
             let mut visitor = FieldVisitor {
                 fields: &mut span_data.fields,
             };
@@ -384,16 +389,34 @@ where
 
         let mut map = match self.spans.lock() {
             Ok(m) => m,
-            Err(_) => return,
+            Err(e) => {
+                tracing::warn!(
+                    span_id = numeric_id,
+                    "JsonFileLayer: span map poisoned in on_close; recovering — trace data may be incomplete"
+                );
+                e.into_inner()
+            }
         };
 
         // Update end time and duration for the closing span.
         if let Some(span_data) = map.get_mut(&numeric_id) {
             let end_str = now.to_rfc3339();
-            // Parse start_time to compute duration.
-            if let Ok(start) = chrono::DateTime::parse_from_rfc3339(&span_data.start_time) {
-                let duration = now.signed_duration_since(start);
-                span_data.duration_ms = Some(duration.num_milliseconds() as f64);
+            // Parse start_time to compute duration; warn if parsing fails so
+            // the caller knows why duration_ms is None rather than discovering
+            // silently-missing timing in the trace file.
+            match chrono::DateTime::parse_from_rfc3339(&span_data.start_time) {
+                Ok(start) => {
+                    let duration = now.signed_duration_since(start);
+                    span_data.duration_ms = Some(duration.num_milliseconds() as f64);
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        span_id = numeric_id,
+                        start_time = %span_data.start_time,
+                        error = %e,
+                        "failed to parse span start_time for duration calculation; duration_ms will be None"
+                    );
+                }
             }
             span_data.end_time = Some(end_str);
         }
