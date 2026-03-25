@@ -172,6 +172,282 @@ async fn test_http_delete_running_job() {
     );
 }
 
+// ─── Auth integration tests ────────────────────────────────────────────
+
+/// Helper: create a `ResolvedAuth` with both read and write tokens.
+fn auth_both_tokens() -> crate::serve::http_api::ResolvedAuth {
+    crate::serve::http_api::ResolvedAuth {
+        write_token: "write-secret".to_string(),
+        read_token: Some("read-secret".to_string()),
+    }
+}
+
+/// Helper: create a `ResolvedAuth` with only a write token (write-only mode).
+fn auth_write_only() -> crate::serve::http_api::ResolvedAuth {
+    crate::serve::http_api::ResolvedAuth {
+        write_token: "write-secret".to_string(),
+        read_token: None,
+    }
+}
+
+/// Helper: start an auth-enabled test server.
+async fn start_auth_server(
+    auth: crate::serve::http_api::ResolvedAuth,
+) -> (
+    String,
+    std::sync::Arc<std::sync::Mutex<super::super::queue::ServerState>>,
+) {
+    let state = std::sync::Arc::new(std::sync::Mutex::new(
+        super::super::queue::ServerState::new(4),
+    ));
+    let base = super::start_test_server_with_auth(state.clone(), Some(auth)).await;
+    (base, state)
+}
+
+/// Helper: seed a job so DELETE endpoints have something to target.
+async fn seed_job(client: &reqwest::Client, base: &str) -> String {
+    let resp = client
+        .post(format!("{base}/api/v1/jobs"))
+        .header("Authorization", "Bearer write-secret")
+        .body(super::VALID_MANIFEST_TOML)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    body["job_id"].as_str().unwrap().to_string()
+}
+
+#[tokio::test]
+async fn test_auth_missing_header_returns_401() {
+    let (base, _state) = start_auth_server(auth_both_tokens()).await;
+    let client = reqwest::Client::new();
+
+    // GET without Authorization → 401
+    let resp = client
+        .get(format!("{base}/api/v1/jobs"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 401);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert!(
+        body["error"].as_str().unwrap().contains("Authorization"),
+        "401 body should mention Authorization header"
+    );
+
+    // POST without Authorization → 401
+    let resp = client
+        .post(format!("{base}/api/v1/jobs"))
+        .body(VALID_MANIFEST_TOML)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 401);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert!(body["error"].is_string());
+
+    // DELETE without Authorization → 401
+    let resp = client
+        .delete(format!("{base}/api/v1/jobs/fake-id"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 401);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert!(body["error"].is_string());
+}
+
+#[tokio::test]
+async fn test_auth_invalid_token_returns_403() {
+    let (base, _state) = start_auth_server(auth_both_tokens()).await;
+    let client = reqwest::Client::new();
+
+    // GET with wrong token → 403 (token extracted but unrecognized)
+    let resp = client
+        .get(format!("{base}/api/v1/jobs"))
+        .header("Authorization", "Bearer wrong-token")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        resp.status(),
+        403,
+        "unrecognized token on GET should be 403"
+    );
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert!(
+        body["error"].as_str().unwrap().contains("read"),
+        "should mention read permission"
+    );
+
+    // POST with wrong token → 403
+    let resp = client
+        .post(format!("{base}/api/v1/jobs"))
+        .header("Authorization", "Bearer wrong-token")
+        .body(VALID_MANIFEST_TOML)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        resp.status(),
+        403,
+        "unrecognized token on POST should be 403"
+    );
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert!(
+        body["error"].as_str().unwrap().contains("write"),
+        "should mention write permission"
+    );
+
+    // Also test truly malformed header (no "Bearer " prefix) → 401
+    let resp = client
+        .get(format!("{base}/api/v1/jobs"))
+        .header("Authorization", "Token wrong-token")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 401, "malformed auth header should be 401");
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert!(body["error"].as_str().unwrap().contains("Authorization"));
+}
+
+#[tokio::test]
+async fn test_auth_read_token_permission_split() {
+    let (base, _state) = start_auth_server(auth_both_tokens()).await;
+    let client = reqwest::Client::new();
+
+    // Read token on GET → 200 (read permission)
+    let resp = client
+        .get(format!("{base}/api/v1/jobs"))
+        .header("Authorization", "Bearer read-secret")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200, "read token should allow GET");
+
+    // Read token on POST → 403 (needs write permission)
+    let resp = client
+        .post(format!("{base}/api/v1/jobs"))
+        .header("Authorization", "Bearer read-secret")
+        .body(VALID_MANIFEST_TOML)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 403, "read token should be denied on POST");
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert!(
+        body["error"].as_str().unwrap().contains("write"),
+        "403 body should mention write permission"
+    );
+
+    // Read token on DELETE → 403
+    let resp = client
+        .delete(format!("{base}/api/v1/jobs/fake-id"))
+        .header("Authorization", "Bearer read-secret")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 403, "read token should be denied on DELETE");
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert!(body["error"].as_str().unwrap().contains("write"));
+
+    // Write token on GET → 200
+    let resp = client
+        .get(format!("{base}/api/v1/jobs"))
+        .header("Authorization", "Bearer write-secret")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200, "write token should allow GET");
+
+    // Write token on POST → 200
+    let resp = client
+        .post(format!("{base}/api/v1/jobs"))
+        .header("Authorization", "Bearer write-secret")
+        .body(VALID_MANIFEST_TOML)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200, "write token should allow POST");
+
+    // Write token on DELETE → 200 (job exists from the POST above)
+    let job_id = {
+        let resp = client
+            .get(format!("{base}/api/v1/jobs"))
+            .header("Authorization", "Bearer write-secret")
+            .send()
+            .await
+            .unwrap();
+        let jobs: Vec<serde_json::Value> = resp.json().await.unwrap();
+        jobs[0]["id"].as_str().unwrap().to_string()
+    };
+    let resp = client
+        .delete(format!("{base}/api/v1/jobs/{job_id}"))
+        .header("Authorization", "Bearer write-secret")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200, "write token should allow DELETE");
+}
+
+#[tokio::test]
+async fn test_auth_write_only_mode() {
+    let (base, _state) = start_auth_server(auth_write_only()).await;
+    let client = reqwest::Client::new();
+
+    // Write token on GET → 200 (write token grants read access too)
+    let resp = client
+        .get(format!("{base}/api/v1/jobs"))
+        .header("Authorization", "Bearer write-secret")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        resp.status(),
+        200,
+        "write token should allow GET in write-only mode"
+    );
+
+    // Write token on POST → 200
+    let resp = client
+        .post(format!("{base}/api/v1/jobs"))
+        .header("Authorization", "Bearer write-secret")
+        .body(VALID_MANIFEST_TOML)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200, "write token should allow POST");
+
+    // Write token on DELETE → 200
+    let job_id = seed_job(&client, &base).await;
+    let resp = client
+        .delete(format!("{base}/api/v1/jobs/{job_id}"))
+        .header("Authorization", "Bearer write-secret")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200, "write token should allow DELETE");
+
+    // Some other token on GET → 403 (no read token configured, not the write token)
+    let resp = client
+        .get(format!("{base}/api/v1/jobs"))
+        .header("Authorization", "Bearer other-token")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        resp.status(),
+        403,
+        "unknown token should be rejected in write-only mode"
+    );
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert!(
+        body["error"].as_str().unwrap().contains("read"),
+        "should mention read permission"
+    );
+}
+
 /// Verify that `smelt serve --no-tui --config <tmpfile>` starts, the HTTP API
 /// responds with `[]` on GET /api/v1/jobs, and the task handle can be aborted
 /// cleanly (no panic, no zombie).

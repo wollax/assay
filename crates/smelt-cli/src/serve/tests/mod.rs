@@ -39,9 +39,17 @@ fn manifest() -> PathBuf {
 
 /// Helper: spin up an axum server on an OS-assigned port, return the base URL.
 async fn start_test_server(state: std::sync::Arc<std::sync::Mutex<ServerState>>) -> String {
+    start_test_server_with_auth(state, None).await
+}
+
+/// Helper: spin up an axum server with optional auth, return the base URL.
+async fn start_test_server_with_auth(
+    state: std::sync::Arc<std::sync::Mutex<ServerState>>,
+    auth: Option<crate::serve::http_api::ResolvedAuth>,
+) -> String {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
-    let router = crate::serve::http_api::build_router(state);
+    let router = crate::serve::http_api::build_router(state, auth);
     tokio::spawn(async move {
         axum::serve(listener, router).await.unwrap();
     });

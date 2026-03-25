@@ -21,7 +21,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::serve::{
     DirectoryWatcher, ServerConfig, ServerState, SubprocessSshClient, build_router, dispatch_loop,
-    run_tui,
+    http_api::resolve_auth, run_tui,
 };
 
 /// `smelt serve` command arguments.
@@ -67,7 +67,17 @@ pub async fn execute(args: &ServeArgs) -> anyhow::Result<i32> {
     let bound_addr = listener.local_addr()?;
     tracing::info!("smelt serve started on {}", bound_addr);
 
-    let router = build_router(Arc::clone(&state));
+    let resolved_auth = config.auth.as_ref().map(resolve_auth).transpose()?;
+
+    if let Some(ref auth_cfg) = config.auth {
+        tracing::info!(
+            write_token_env = %auth_cfg.write_token_env,
+            read_token_env = auth_cfg.read_token_env.as_deref().unwrap_or("<not configured>"),
+            "auth enabled"
+        );
+    }
+
+    let router = build_router(Arc::clone(&state), resolved_auth);
     let watcher = DirectoryWatcher::new(config.queue_dir.clone(), Arc::clone(&state));
     let retry_attempts = config.retry_attempts;
     let workers = config.workers.clone();

@@ -3,13 +3,15 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use axum::extract::{self, State};
-use axum::http::StatusCode;
+use axum::http::{Method, StatusCode};
+use axum::middleware::Next;
 use axum::response::IntoResponse;
 use axum::routing::{delete, get, post};
 use axum::{Json, Router};
 use serde::Serialize;
 use smelt_core::manifest::JobManifest;
 
+use crate::serve::config::AuthConfig;
 use crate::serve::queue::ServerState;
 use crate::serve::types::{JobSource, JobStatus, QueuedJob, elapsed_secs_since};
 
@@ -62,13 +64,130 @@ impl From<&QueuedJob> for JobStateResponse {
 
 type SharedState = Arc<Mutex<ServerState>>;
 
+/// Resolved bearer-token credentials ready for runtime use.
+///
+/// Created by [`resolve_auth`] from an [`AuthConfig`].  Token values come
+/// from environment variables — never from the config file directly.
+#[derive(Clone, Debug)]
+pub(crate) struct ResolvedAuth {
+    /// The read-write (full-access) token.
+    pub(crate) write_token: String,
+    /// An optional read-only token.  When `None`, only `write_token` grants
+    /// access.
+    pub(crate) read_token: Option<String>,
+}
+
+/// Resolve an [`AuthConfig`] into [`ResolvedAuth`] by reading environment
+/// variables.
+///
+/// Returns an error if any referenced env var is unset or empty, naming the
+/// offending variable in the message so operators can fix it quickly.
+pub(crate) fn resolve_auth(config: &AuthConfig) -> anyhow::Result<ResolvedAuth> {
+    let write_token = read_env_var(&config.write_token_env)?;
+    let read_token = config
+        .read_token_env
+        .as_deref()
+        .map(read_env_var)
+        .transpose()?;
+    Ok(ResolvedAuth {
+        write_token,
+        read_token,
+    })
+}
+
+/// Read a non-empty value from the environment variable named `var_name`.
+fn read_env_var(var_name: &str) -> anyhow::Result<String> {
+    match std::env::var(var_name) {
+        Ok(val) if val.is_empty() => {
+            anyhow::bail!("environment variable {var_name} is set but empty")
+        }
+        Ok(val) => Ok(val),
+        Err(_) => anyhow::bail!("environment variable {var_name} is not set"),
+    }
+}
+
+/// Axum middleware that enforces bearer-token authentication.
+///
+/// When `auth` is `None` (no `[auth]` config section), all requests pass
+/// through.  Otherwise the `Authorization: Bearer <token>` header is
+/// required:
+///
+/// * **Read operations** (`GET`, `HEAD`) accept the read token *or* the
+///   write token.
+/// * **Write operations** (all other methods) accept *only* the write token.
+///
+/// Returns `401 Unauthorized` for missing/malformed headers and
+/// `403 Forbidden` for valid tokens that lack the required permission.
+async fn auth_middleware(
+    State(auth): State<Option<ResolvedAuth>>,
+    request: axum::extract::Request,
+    next: Next,
+) -> Result<axum::response::Response, (StatusCode, Json<serde_json::Value>)> {
+    let auth = match auth {
+        Some(a) => a,
+        None => return Ok(next.run(request).await),
+    };
+
+    // Extract and validate the Authorization header.
+    let header_value = request
+        .headers()
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok());
+
+    let token = match header_value {
+        Some(v) if v.starts_with("Bearer ") => &v[7..],
+        _ => {
+            tracing::warn!(
+                method = %request.method(),
+                path = %request.uri().path(),
+                "auth: missing or malformed Authorization header"
+            );
+            return Err((
+                StatusCode::UNAUTHORIZED,
+                Json(
+                    serde_json::json!({"error": "missing or malformed Authorization: Bearer <token> header"}),
+                ),
+            ));
+        }
+    };
+
+    let is_read = matches!(*request.method(), Method::GET | Method::HEAD);
+
+    let authorized = if is_read {
+        // Read ops: accept read_token OR write_token.
+        token == auth.write_token || auth.read_token.as_deref().is_some_and(|rt| token == rt)
+    } else {
+        // Write ops: accept only write_token.
+        token == auth.write_token
+    };
+
+    if !authorized {
+        let kind = if is_read { "read" } else { "write" };
+        tracing::warn!(
+            method = %request.method(),
+            path = %request.uri().path(),
+            "auth: token lacks {kind} permission"
+        );
+        return Err((
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({"error": format!("token does not have {kind} permission")})),
+        ));
+    }
+
+    Ok(next.run(request).await)
+}
+
 /// Build the axum router for the smelt-serve HTTP API.
-pub(crate) fn build_router(state: SharedState) -> Router {
+///
+/// When `auth` is `Some`, bearer-token authentication is enforced on every
+/// request.  When `None`, the API is unauthenticated (backward-compatible).
+pub(crate) fn build_router(state: SharedState, auth: Option<ResolvedAuth>) -> Router {
     Router::new()
         .route("/api/v1/jobs", post(post_job))
         .route("/api/v1/jobs", get(list_jobs))
         .route("/api/v1/jobs/{id}", get(get_job))
         .route("/api/v1/jobs/{id}", delete(delete_job))
+        .layer(axum::middleware::from_fn_with_state(auth, auth_middleware))
         .with_state(state)
 }
 

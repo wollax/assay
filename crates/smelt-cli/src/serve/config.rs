@@ -69,6 +69,22 @@ impl Default for ServerNetworkConfig {
     }
 }
 
+/// Optional bearer-token authentication configuration.
+///
+/// When the `[auth]` section is present in `server.toml`, the HTTP API
+/// enforces bearer-token authentication with an optional read/write
+/// permission split.  Token values are **never** stored in config —
+/// only the names of environment variables that hold them.
+#[derive(Debug, Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
+pub struct AuthConfig {
+    /// Name of the env var holding the read-write (full access) token.
+    pub write_token_env: String,
+    /// Name of the env var holding the read-only token (optional).
+    /// When omitted, only the write token grants any access.
+    pub read_token_env: Option<String>,
+}
+
 /// Top-level server configuration loaded from `server.toml`.
 ///
 /// Controls concurrency limits, retry policy, network binding, SSH worker
@@ -101,6 +117,10 @@ pub struct ServerConfig {
     /// Timeout in seconds for SSH connection attempts to worker hosts.
     #[serde(default = "default_ssh_timeout_secs")]
     pub ssh_timeout_secs: u64,
+    /// Optional bearer-token authentication for the HTTP API.
+    /// When absent, the API is unauthenticated (backward-compatible).
+    #[serde(default)]
+    pub auth: Option<AuthConfig>,
 }
 
 impl ServerConfig {

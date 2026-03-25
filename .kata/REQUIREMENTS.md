@@ -298,6 +298,50 @@ This file is the explicit capability and coverage contract for the project.
 - Validation: validated
 - Notes: Proven by M009/S02: all 7 example files have field-level comments (22-47 comment lines each); agent-manifest.toml fixed from broken to valid; bad-manifest.toml documents all 7 intentional errors with VIOLATION comments; all parseable examples verified with --dry-run.
 
+### R050 — Bearer token authentication on smelt serve HTTP API
+- Class: compliance/security
+- Status: validated
+- Description: `smelt serve` HTTP API supports optional bearer token authentication. When `[auth]` is configured in `server.toml`, requests without a valid `Authorization: Bearer <token>` header are rejected with 401. Tokens are configured via env var names (not raw values).
+- Why it matters: Without authentication, any client on the network can enqueue arbitrary manifests, cancel jobs, or read job state. Required for deployment beyond localhost.
+- Source: user
+- Primary owning slice: M010/S01
+- Supporting slices: M010/S03
+- Validation: validated
+- Notes: Proven by M010/S01: 4 integration tests (test_auth_missing_header_returns_401, test_auth_invalid_token_returns_403, test_auth_read_token_permission_split, test_auth_write_only_mode). Startup fails fast on missing/empty env vars. 401 JSON error for missing/malformed header. Follows D014/D112 env var passthrough pattern. Auth is opt-in — no `[auth]` = current behavior. S03 documents config.
+
+### R051 — Read/write permission split for API tokens
+- Class: compliance/security
+- Status: validated
+- Description: Two token levels: read-only (GET endpoints only) and read-write (all endpoints). A read-only token receives 403 Forbidden on POST/DELETE. A read-write token has full access.
+- Why it matters: Monitoring systems and dashboards need read access without the ability to enqueue or cancel jobs.
+- Source: user
+- Primary owning slice: M010/S01
+- Supporting slices: M010/S03
+- Validation: validated
+- Notes: Proven by M010/S01: test_auth_read_token_permission_split (read token GET→200, POST→403, DELETE→403; write token all→200) and test_auth_write_only_mode (no read token configured, write token full access). Two env var fields in `[auth]`: `read_token_env` and `write_token_env`. Write token implicitly has read access.
+
+### R052 — Teardown error visibility
+- Class: failure-visibility
+- Status: active
+- Description: Container teardown failures produce visible `eprintln!` warnings instead of silent `let _ =` discards. Error chains are preserved via `.context()` instead of `anyhow!("{e}")`.
+- Why it matters: Silent teardown failures leave orphaned containers and corrupt monitor state with no indication to the user.
+- Source: execution (PR #33 review backlog)
+- Primary owning slice: M010/S02
+- Supporting slices: none
+- Validation: unmapped
+- Notes: 6× `let _ =` on teardown in phases.rs; 3× `anyhow!("{e}")` error chain loss.
+
+### R053 — SSH argument builder DRY cleanup
+- Class: quality-attribute
+- Status: active
+- Description: `build_ssh_args` and `build_scp_args` in the SSH client share a common helper instead of duplicating ~90% identical flag-building logic.
+- Why it matters: Duplicated logic means any SSH flag change must be made in two places, risking divergence.
+- Source: execution (PR #33 review backlog)
+- Primary owning slice: M010/S02
+- Supporting slices: none
+- Validation: unmapped
+- Notes: Only difference is port flag: `-p` for SSH vs `-P` for SCP.
+
 ---
 
 ## Deferred
@@ -421,10 +465,14 @@ This file is the explicit capability and coverage contract for the project.
 | R043 | quality-attribute    | validated   | M009/S01      | none                 | validated |
 | R044 | quality-attribute    | validated   | M009/S03      | none                 | validated |
 | R045 | launchability        | validated   | M009/S02      | none                 | validated |
+| R050 | compliance/security  | validated   | M010/S01      | M010/S03             | validated |
+| R051 | compliance/security  | validated   | M010/S01      | M010/S03             | validated |
+| R052 | failure-visibility   | active      | M010/S02      | none                 | mapped    |
+| R053 | quality-attribute    | active      | M010/S02      | none                 | mapped    |
 
 ## Coverage Summary
 
-- Active requirements: 0
-- Mapped to slices: 0
-- Validated (all milestones through M009): 27 (R001–R008, R010–R015, R020, R021, R023, R024, R025, R027, R028, R040, R041, R042, R043, R044, R045)
+- Active requirements: 2 (R052, R053)
+- Mapped to slices: 2
+- Validated (all milestones through M010/S01): 29 (R001–R008, R010–R015, R020, R021, R023, R024, R025, R027, R028, R040, R041, R042, R043, R044, R045, R050, R051)
 - Unmapped active requirements: 0
