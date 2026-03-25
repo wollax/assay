@@ -58,7 +58,7 @@ This milestone is complete only when all are true:
 - [x] **S01: Bearer token auth middleware with read/write split** `risk:high` `depends:[]`
   > After this: `smelt serve` with `[auth]` config enforces bearer tokens; read-only token can GET but not POST/DELETE; read-write token has full access; no config = no auth (backward compat); unit tests prove all token×permission combinations.
 
-- [ ] **S02: Teardown error handling + SSH DRY cleanup** `risk:low` `depends:[]`
+- [x] **S02: Teardown error handling + SSH DRY cleanup** `risk:low` `depends:[]`
   > After this: teardown failures produce visible warnings instead of silent `let _ =`; error chains preserved via `.context()`; SSH argument builders share a common helper; all existing tests still pass.
 
 - [ ] **S03: Documentation and final verification** `risk:low` `depends:[S01,S02]`

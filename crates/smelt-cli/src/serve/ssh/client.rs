@@ -24,21 +24,25 @@ impl SubprocessSshClient {
         which::which("ssh").map_err(|e| anyhow!("ssh binary not found in PATH: {}", e))
     }
 
-    /// Build the argument list for an SSH invocation.
+    /// Build the common argument list shared by SSH and SCP invocations.
     ///
     /// Common flags:
     /// - `-o BatchMode=yes` — never prompt for a password
     /// - `-o StrictHostKeyChecking=accept-new` — add new keys; reject changed keys
     /// - `-o ConnectTimeout=<N>` — fast-fail for offline workers
-    /// - `-p <port>` when `port != 22`
+    /// - `<port_flag> <port>` when `port != 22` (passed as `-p` for SSH, `-P` for SCP)
     /// - `-i <key_path>` when `key_env` resolves to a non-empty path; omitted
     ///   (with a WARN log) when the env var is unset
     ///
     /// `extra_args` are appended verbatim after the common flags (e.g.
     /// `["user@host", "echo hello"]`).
-    pub fn build_ssh_args(
+    ///
+    /// `tool_name` is used in tracing messages to distinguish SSH vs SCP.
+    fn build_common_ssh_args(
         worker: &WorkerConfig,
         timeout_secs: u64,
+        port_flag: &str,
+        tool_name: &str,
         extra_args: &[&str],
     ) -> Vec<String> {
         let mut args: Vec<String> = vec![
@@ -51,7 +55,7 @@ impl SubprocessSshClient {
         ];
 
         if worker.port != 22 {
-            args.push("-p".to_string());
+            args.push(port_flag.to_string());
             args.push(worker.port.to_string());
         }
 
@@ -60,7 +64,7 @@ impl SubprocessSshClient {
                 debug!(
                     key_path = %key_path,
                     key_env = %worker.key_env,
-                    "using SSH identity file"
+                    "using {} identity file", tool_name
                 );
                 args.push("-i".to_string());
                 args.push(key_path);
@@ -69,14 +73,14 @@ impl SubprocessSshClient {
                 warn!(
                     key_env = %worker.key_env,
                     host = %worker.host,
-                    "key_env is set but resolves to an empty path; SSH will use default keys"
+                    "key_env is set but resolves to an empty path; {} will use default keys", tool_name
                 );
             }
             Err(_) => {
                 warn!(
                     key_env = %worker.key_env,
                     host = %worker.host,
-                    "key_env is not set; SSH will use default keys"
+                    "key_env is not set; {} will use default keys", tool_name
                 );
             }
         }
@@ -86,6 +90,17 @@ impl SubprocessSshClient {
         }
 
         args
+    }
+
+    /// Build the argument list for an SSH invocation.
+    ///
+    /// SSH uses lowercase `-p` for port, per OpenSSH convention.
+    pub fn build_ssh_args(
+        worker: &WorkerConfig,
+        timeout_secs: u64,
+        extra_args: &[&str],
+    ) -> Vec<String> {
+        Self::build_common_ssh_args(worker, timeout_secs, "-p", "SSH", extra_args)
     }
 
     /// Resolve the path to the `scp` binary using [`which::which`].
@@ -95,58 +110,13 @@ impl SubprocessSshClient {
 
     /// Build the argument list for an SCP invocation.
     ///
-    /// Mirrors `build_ssh_args` but uses uppercase `-P` for port (SCP
-    /// convention) instead of lowercase `-p`.
+    /// SCP uses uppercase `-P` for port, unlike SSH's `-p`.
     pub fn build_scp_args(
         worker: &WorkerConfig,
         timeout_secs: u64,
         extra_args: &[&str],
     ) -> Vec<String> {
-        let mut args: Vec<String> = vec![
-            "-o".to_string(),
-            "BatchMode=yes".to_string(),
-            "-o".to_string(),
-            "StrictHostKeyChecking=accept-new".to_string(),
-            "-o".to_string(),
-            format!("ConnectTimeout={timeout_secs}"),
-        ];
-
-        if worker.port != 22 {
-            args.push("-P".to_string());
-            args.push(worker.port.to_string());
-        }
-
-        match std::env::var(&worker.key_env) {
-            Ok(key_path) if !key_path.is_empty() => {
-                debug!(
-                    key_path = %key_path,
-                    key_env = %worker.key_env,
-                    "using SCP identity file"
-                );
-                args.push("-i".to_string());
-                args.push(key_path);
-            }
-            Ok(_) => {
-                warn!(
-                    key_env = %worker.key_env,
-                    host = %worker.host,
-                    "key_env is set but resolves to an empty path; SCP will use default keys"
-                );
-            }
-            Err(_) => {
-                warn!(
-                    key_env = %worker.key_env,
-                    host = %worker.host,
-                    "key_env is not set; SCP will use default keys"
-                );
-            }
-        }
-
-        for arg in extra_args {
-            args.push(arg.to_string());
-        }
-
-        args
+        Self::build_common_ssh_args(worker, timeout_secs, "-P", "SCP", extra_args)
     }
 }
 

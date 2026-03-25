@@ -322,25 +322,25 @@ This file is the explicit capability and coverage contract for the project.
 
 ### R052 — Teardown error visibility
 - Class: failure-visibility
-- Status: active
+- Status: validated
 - Description: Container teardown failures produce visible `eprintln!` warnings instead of silent `let _ =` discards. Error chains are preserved via `.context()` instead of `anyhow!("{e}")`.
 - Why it matters: Silent teardown failures leave orphaned containers and corrupt monitor state with no indication to the user.
 - Source: execution (PR #33 review backlog)
 - Primary owning slice: M010/S02
 - Supporting slices: none
-- Validation: unmapped
-- Notes: 6× `let _ =` on teardown in phases.rs; 3× `anyhow!("{e}")` error chain loss.
+- Validation: validated
+- Notes: Proven by M010/S02: `warn_teardown()` helper replaces 6 duplicated teardown blocks; 5 `anyhow!("{e}")` replaced with `.context()`; `rg 'let _ = provider\.teardown' phases.rs` returns 0; `rg 'anyhow!.*\{e\}' phases.rs` returns 0; all 155+ tests pass.
 
 ### R053 — SSH argument builder DRY cleanup
 - Class: quality-attribute
-- Status: active
+- Status: validated
 - Description: `build_ssh_args` and `build_scp_args` in the SSH client share a common helper instead of duplicating ~90% identical flag-building logic.
 - Why it matters: Duplicated logic means any SSH flag change must be made in two places, risking divergence.
 - Source: execution (PR #33 review backlog)
 - Primary owning slice: M010/S02
 - Supporting slices: none
-- Validation: unmapped
-- Notes: Only difference is port flag: `-p` for SSH vs `-P` for SCP.
+- Validation: validated
+- Notes: Proven by M010/S02: `build_common_ssh_args()` private helper extracted; both public methods are single-line delegations; 4 existing SSH arg tests pass unchanged; `cargo clippy`/`cargo doc` clean.
 
 ---
 
@@ -467,12 +467,12 @@ This file is the explicit capability and coverage contract for the project.
 | R045 | launchability        | validated   | M009/S02      | none                 | validated |
 | R050 | compliance/security  | validated   | M010/S01      | M010/S03             | validated |
 | R051 | compliance/security  | validated   | M010/S01      | M010/S03             | validated |
-| R052 | failure-visibility   | active      | M010/S02      | none                 | mapped    |
-| R053 | quality-attribute    | active      | M010/S02      | none                 | mapped    |
+| R052 | failure-visibility   | validated   | M010/S02      | none                 | validated |
+| R053 | quality-attribute    | validated   | M010/S02      | none                 | validated |
 
 ## Coverage Summary
 
-- Active requirements: 2 (R052, R053)
-- Mapped to slices: 2
-- Validated (all milestones through M010/S01): 29 (R001–R008, R010–R015, R020, R021, R023, R024, R025, R027, R028, R040, R041, R042, R043, R044, R045, R050, R051)
+- Active requirements: 0
+- Mapped to slices: 0
+- Validated (all milestones through M010/S02): 31 (R001–R008, R010–R015, R020, R021, R023, R024, R025, R027, R028, R040, R041, R042, R043, R044, R045, R050, R051, R052, R053)
 - Unmapped active requirements: 0
