@@ -49,7 +49,7 @@
   - Verify: `cargo test -p assay-core trace_export` and `cargo test -p assay-core telemetry`
   - Done when: running a traced function produces a JSON file in the configured traces dir with correct span tree structure
 
-- [ ] **T02: CLI `assay traces list` and `assay traces show` subcommands** `est:30m`
+- [x] **T02: CLI `assay traces list` and `assay traces show` subcommands** `est:30m`
   - Why: User-facing inspection surface — without CLI commands, trace files are opaque JSON blobs
   - Files: `crates/assay-cli/src/commands/traces.rs`, `crates/assay-cli/src/commands/mod.rs`, `crates/assay-cli/src/main.rs`
   - Do: Create `traces.rs` command module with `list` and `show` subcommands. `list` scans `.assay/traces/`, reads each JSON file's root span name and timestamp, prints a table. `show <id>` loads the JSON file, builds a tree from parent_id references, renders indented span names with durations. Register `Traces` variant in main.rs `Command` enum and dispatch. Ensure `tracing_config_for()` returns config with `traces_dir: None` for the `Traces` subcommand.

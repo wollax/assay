@@ -201,6 +201,18 @@ Examples:
         #[command(subcommand)]
         command: commands::pr::PrCommand,
     },
+    /// Inspect JSON trace files written by instrumented runs
+    #[command(after_long_help = "\
+Examples:
+  List all trace files:
+    assay traces list
+
+  Show the span tree for a specific trace:
+    assay traces show 20240101T120000Z-abc123")]
+    Traces {
+        #[command(subcommand)]
+        command: commands::traces::TracesCommand,
+    },
 }
 
 /// Determine the tracing config based on the subcommand.
@@ -240,6 +252,7 @@ async fn run() -> anyhow::Result<i32> {
         Some(Command::Plan) => commands::plan::handle(),
         Some(Command::History { command }) => commands::history::handle(command),
         Some(Command::Pr { command }) => commands::pr::handle(command),
+        Some(Command::Traces { command }) => commands::traces::handle(command),
         None => {
             // Note: project detection checks cwd only — no upward traversal.
             // Running `assay` from a subdirectory of a project shows the hint.
