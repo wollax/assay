@@ -41,7 +41,7 @@
 
 ## Tasks
 
-- [ ] **T01: Add tracing-test dev-dependency and write span assertion integration tests** `est:20m`
+- [x] **T01: Add tracing-test dev-dependency and write span assertion integration tests** `est:20m`
   - Why: Test-first — define the contract (expected span names and fields) before instrumenting. Tests will fail initially (no spans emitted yet), proving the assertions are real.
   - Files: `Cargo.toml` (workspace), `crates/assay-core/Cargo.toml`, `crates/assay-core/tests/pipeline_spans.rs`
   - Do: Add `tracing-test = "0.2"` as workspace dev-dep and to assay-core dev-deps. Write integration test file with `#[traced_test]` tests that call `setup_session` and `run_session` with mock data (spec-not-found paths are fine — the function-level span is entered before error). Assert `logs_contain("pipeline::setup_session")` etc. Tests should fail (red) because no `#[instrument]` exists yet.
