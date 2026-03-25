@@ -2,8 +2,8 @@
 //!
 //! These tests use `tracing-test` to capture subscriber output and assert
 //! that expected span names appear when pipeline functions are called.
-//! They are expected to **fail** (red state) until `#[instrument]`
-//! annotations are added to the pipeline functions in subsequent tasks.
+//! Each test triggers an early `SpecLoad` failure to exercise the span
+//! entry path without requiring a real git repository or agent binary.
 
 use std::path::PathBuf;
 

@@ -480,7 +480,7 @@ pub type HarnessWriter = dyn Fn(&HarnessProfile, &Path) -> std::result::Result<V
 /// Returns a [`SetupResult`] containing all state needed by
 /// [`execute_session`]. On failure after session start, the session
 /// is abandoned (never left in `AgentRunning`).
-#[instrument(name = "pipeline::setup_session", skip(config), fields(spec = %manifest_session.spec))]
+#[instrument(name = "pipeline::setup_session", skip(manifest_session, config), fields(spec = %manifest_session.spec))]
 pub fn setup_session(
     manifest_session: &ManifestSession,
     config: &PipelineConfig,
@@ -606,7 +606,7 @@ pub fn setup_session(
 /// Takes a [`SetupResult`] from [`setup_session`] containing the loaded
 /// spec and created worktree. On failure, the session is abandoned via
 /// the session_id from `SetupResult`.
-#[instrument(name = "pipeline::execute_session", skip(config, harness_writer, setup), fields(spec = %manifest_session.spec, session_id = %setup.session_id))]
+#[instrument(name = "pipeline::execute_session", skip(manifest_session, config, harness_writer, setup), fields(spec = %manifest_session.spec, session_id = %setup.session_id))]
 pub fn execute_session(
     manifest_session: &ManifestSession,
     config: &PipelineConfig,
@@ -733,52 +733,53 @@ pub fn execute_session(
             });
             Ok::<_, PipelineError>(output)
         })?;
-    // Suppress unused-variable warning; agent_output is consumed by value.
-    let _ = agent_output;
+    // agent_output.stdout/stderr not used downstream — gate evaluation reads from the worktree filesystem.
+    drop(agent_output);
 
     // ── Stage 5: GateEvaluate ────────────────────────────────────
     let (gate_summary, gate_passed) =
-        info_span!("gate_evaluate", spec = %spec_name).in_scope(|| {
-            let stage_start = Instant::now();
-            let summary = match &spec_entry {
-                SpecEntry::Legacy { spec, .. } => {
-                    crate::gate::evaluate_all(spec, &worktree_info.path, None, None)
-                }
-                SpecEntry::Directory { gates, .. } => {
-                    crate::gate::evaluate_all_gates(gates, &worktree_info.path, None, None)
-                }
-            };
+        info_span!("gate_evaluate", spec = %manifest_session.spec, spec_name = %spec_name)
+            .in_scope(|| {
+                let stage_start = Instant::now();
+                let summary = match &spec_entry {
+                    SpecEntry::Legacy { spec, .. } => {
+                        crate::gate::evaluate_all(spec, &worktree_info.path, None, None)
+                    }
+                    SpecEntry::Directory { gates, .. } => {
+                        crate::gate::evaluate_all_gates(gates, &worktree_info.path, None, None)
+                    }
+                };
 
-            // Record gate result in the session. Use a synthetic run_id based on session.
-            let gate_run_id = format!("{}-gate", session_id);
-            let passed = summary.failed == 0;
-            let _ = crate::work_session::record_gate_result(
-                &config.assay_dir,
-                &session_id,
-                &gate_run_id,
-                "pipeline_gate_evaluate",
-                Some(if passed {
-                    "all gates passed"
-                } else {
-                    "gate failures detected"
-                }),
-            );
-            let duration = stage_start.elapsed();
-            if passed {
-                info!("stage completed");
-            } else {
-                warn!(
-                    stage = "gate_evaluate",
-                    failed = summary.failed,
-                    "gates failed"
+                // Record gate result in the session. Use a synthetic run_id based on session.
+                let gate_run_id = format!("{}-gate", session_id);
+                let passed = summary.failed == 0;
+                let _ = crate::work_session::record_gate_result(
+                    &config.assay_dir,
+                    &session_id,
+                    &gate_run_id,
+                    "pipeline_gate_evaluate",
+                    Some(if passed {
+                        "all gates passed"
+                    } else {
+                        "gate failures detected"
+                    }),
                 );
-            }
-            stage_timings.push(StageTiming {
-                stage: PipelineStage::GateEvaluate,
-                duration,
+                let duration = stage_start.elapsed();
+                if passed {
+                    info!("stage completed");
+                } else {
+                    warn!(
+                        stage = "gate_evaluate",
+                        failed = summary.failed,
+                        "gates failed"
+                    );
+                }
+                stage_timings.push(StageTiming {
+                    stage: PipelineStage::GateEvaluate,
+                    duration,
+                });
+                (summary, passed)
             });
-            (summary, passed)
-        });
 
     if !gate_passed {
         // Gates failed — session stays in GateEvaluated, outcome is GateFailed.
@@ -793,38 +794,41 @@ pub fn execute_session(
     }
 
     // ── Stage 6: MergeCheck ──────────────────────────────────────
-    let merge_result = info_span!("merge_check", spec = %spec_name).in_scope(|| {
-        let stage_start = Instant::now();
-        let base_branch = worktree_info.base_branch.as_deref().unwrap_or("main");
-        let result = crate::merge::merge_check(
-            &config.project_root,
-            base_branch,
-            &worktree_info.branch,
-            None,
-        )
-        .map_err(|e| {
-            let elapsed = stage_start.elapsed();
-            warn!(stage = "merge_check", error = %e, "stage failed");
-            PipelineError {
-                stage: PipelineStage::MergeCheck,
-                message: format!("Merge check failed for '{}': {e}", manifest_session.spec),
-                recovery: format!(
-                    "Inspect worktree branch '{}' and base branch '{}' in '{}'",
-                    worktree_info.branch,
+    let merge_result =
+        info_span!("merge_check", spec = %manifest_session.spec, spec_name = %spec_name).in_scope(
+            || {
+                let stage_start = Instant::now();
+                let base_branch = worktree_info.base_branch.as_deref().unwrap_or("main");
+                let result = crate::merge::merge_check(
+                    &config.project_root,
                     base_branch,
-                    config.project_root.display()
-                ),
-                elapsed,
-            }
-        })?;
-        let duration = stage_start.elapsed();
-        info!("stage completed");
-        stage_timings.push(StageTiming {
-            stage: PipelineStage::MergeCheck,
-            duration,
-        });
-        Ok::<_, PipelineError>(result)
-    })?;
+                    &worktree_info.branch,
+                    None,
+                )
+                .map_err(|e| {
+                    let elapsed = stage_start.elapsed();
+                    warn!(stage = "merge_check", error = %e, "stage failed");
+                    PipelineError {
+                        stage: PipelineStage::MergeCheck,
+                        message: format!("Merge check failed for '{}': {e}", manifest_session.spec),
+                        recovery: format!(
+                            "Inspect worktree branch '{}' and base branch '{}' in '{}'",
+                            worktree_info.branch,
+                            base_branch,
+                            config.project_root.display()
+                        ),
+                        elapsed,
+                    }
+                })?;
+                let duration = stage_start.elapsed();
+                info!("stage completed");
+                stage_timings.push(StageTiming {
+                    stage: PipelineStage::MergeCheck,
+                    duration,
+                });
+                Ok::<_, PipelineError>(result)
+            },
+        )?;
 
     if merge_result.clean {
         // All good — complete the session.
