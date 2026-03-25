@@ -407,6 +407,12 @@ where
                                 "unknown panic".to_string()
                             };
 
+                            tracing::error!(
+                                session = %session_name,
+                                panic_message = %panic_msg,
+                                "session worker panicked"
+                            );
+
                             let failed_name = graph.name_of(idx).to_string();
 
                             guard.failed.insert(idx);

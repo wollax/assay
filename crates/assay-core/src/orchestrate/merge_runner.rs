@@ -59,11 +59,33 @@ where
     let start = Instant::now();
     let project_root = &config.project_root;
 
-    // Root merge span — entered for the entire merge run.
-    // session_count is computed after ordering, but we need it here for
-    // the span field, so use input length as the count.
-    let _root_span = info_span!("merge::run", session_count = completed_sessions.len(), strategy = ?config.strategy).entered();
+    // Root merge span wraps the entire merge run, including pre-flight checks.
+    // Entered here so failures during pre-flight are still attributed to this span.
+    let _root_span = info_span!(
+        "merge::run",
+        session_count = completed_sessions.len(),
+        strategy = ?config.strategy,
+    )
+    .entered();
     info!("starting merge run");
+
+    // ── Handle empty input (before any git operations) ───────────────
+
+    if completed_sessions.is_empty() {
+        return Ok(MergeReport {
+            sessions_merged: 0,
+            sessions_skipped: 0,
+            conflict_skipped: 0,
+            aborted: 0,
+            plan: MergePlan {
+                strategy: config.strategy,
+                entries: Vec::new(),
+            },
+            results: Vec::new(),
+            duration_secs: start.elapsed().as_secs_f64(),
+            resolutions: vec![],
+        });
+    }
 
     // ── Pre-flight checks ────────────────────────────────────────────
 
@@ -103,24 +125,6 @@ where
             branch: String::new(),
             conflicting_files: Vec::new(),
             message: "a merge is already in progress (MERGE_HEAD exists)".to_string(),
-        });
-    }
-
-    // ── Handle empty input ───────────────────────────────────────────
-
-    if completed_sessions.is_empty() {
-        return Ok(MergeReport {
-            sessions_merged: 0,
-            sessions_skipped: 0,
-            conflict_skipped: 0,
-            aborted: 0,
-            plan: MergePlan {
-                strategy: config.strategy,
-                entries: Vec::new(),
-            },
-            results: Vec::new(),
-            duration_secs: start.elapsed().as_secs_f64(),
-            resolutions: vec![],
         });
     }
 
@@ -198,9 +202,12 @@ where
                     .into_iter()
                     .collect();
 
+                let _conflict_span =
+                    info_span!("merge::conflict_resolution", session_name = %session.session_name)
+                        .entered();
+
                 if config.conflict_resolution_enabled {
                     // Two-phase path: working tree is still conflicted.
-                    let _conflict_span = info_span!("merge::conflict_resolution", session_name = %session.session_name).entered();
 
                     // Wrap handler in catch_unwind for panic safety.
                     let handler_result =
@@ -236,6 +243,11 @@ where
                                 }
                                 _ => {
                                     // SHA verification failed — abort the merge
+                                    tracing::error!(
+                                        session = %session.session_name,
+                                        sha = %sha,
+                                        "conflict handler returned invalid or unverifiable SHA — aborting merge"
+                                    );
                                     let _ = git_raw(&["merge", "--abort"], project_root);
                                     results.push(MergeSessionResult {
                                         session_name: session.session_name.clone(),
@@ -287,16 +299,27 @@ where
                             aborted_count += 1;
                             abort_triggered = true;
                         }
-                        Err(_panic) => {
-                            // Handler panicked — no commit was made, always abort
+                        Err(panic_payload) => {
+                            // Handler panicked — extract message for diagnostics
+                            let panic_msg = if let Some(s) = panic_payload.downcast_ref::<String>()
+                            {
+                                s.clone()
+                            } else if let Some(s) = panic_payload.downcast_ref::<&str>() {
+                                (*s).to_string()
+                            } else {
+                                "unknown panic payload type".to_string()
+                            };
                             let _ = git_raw(&["merge", "--abort"], project_root);
+                            tracing::error!(
+                                session = %session.session_name,
+                                panic_message = %panic_msg,
+                                "conflict handler panicked — merge aborted"
+                            );
                             results.push(MergeSessionResult {
                                 session_name: session.session_name.clone(),
                                 status: MergeSessionStatus::ConflictSkipped,
                                 merge_sha: None,
-                                error: Some(
-                                    "conflict handler panicked — merge aborted".to_string(),
-                                ),
+                                error: Some(format!("conflict handler panicked: {panic_msg}")),
                             });
                             conflict_skipped += 1;
                         }
@@ -304,8 +327,6 @@ where
                 } else {
                     // Default path: merge was already aborted by merge_execute.
                     // Handler receives a post-abort scan (existing behavior).
-                    let _conflict_span = info_span!("merge::conflict_resolution", session_name = %session.session_name).entered();
-
                     let result = conflict_handler(
                         &session.session_name,
                         &conflicting_files,
@@ -353,7 +374,12 @@ where
                 }
             }
             Err(e) => {
-                // Infrastructure failure
+                // Infrastructure failure — emit within the active merge::session span
+                tracing::error!(
+                    session = %session.session_name,
+                    error = %e,
+                    "merge_execute infrastructure failure"
+                );
                 results.push(MergeSessionResult {
                     session_name: session.session_name.clone(),
                     status: MergeSessionStatus::Failed,

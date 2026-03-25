@@ -5,8 +5,9 @@
 //! Each test uses mock session runners (instant success closures) with minimal
 //! manifests — no real git repos or agent processes needed.
 //!
-//! All tests should compile and FAIL initially, proving the assertions are
-//! real before any instrumentation code is written.
+//! Span assertions use a `{` suffix (e.g. `"orchestrate::dag{"`) to match only
+//! named spans. Without it, `logs_contain("orchestrate::mesh")` would match
+//! module paths in tracing-test output, producing false positives (D137).
 
 #![cfg(feature = "orchestrate")]
 
@@ -36,23 +37,19 @@ fn mock_manifest(n: usize) -> RunManifest {
         .collect();
     RunManifest {
         sessions,
-        #[cfg(feature = "orchestrate")]
         mode: Default::default(),
-        #[cfg(feature = "orchestrate")]
         mesh_config: None,
-        #[cfg(feature = "orchestrate")]
         gossip_config: None,
     }
 }
 
-/// Build a `PipelineConfig` with tempdir paths (dirs are created by the
-/// orchestrators, so we just need plausible paths).
+/// Build a `PipelineConfig` backed by a tempdir. Creates `.assay` so
+/// orchestrators can write state files without pre-flight failures.
 fn mock_pipeline_config() -> (tempfile::TempDir, PipelineConfig) {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().expect("failed to create tempdir for mock_pipeline_config");
     let p = dir.path().to_path_buf();
 
-    // Create .assay directory so orchestrators can write state
-    std::fs::create_dir_all(p.join(".assay")).unwrap();
+    std::fs::create_dir_all(p.join(".assay")).expect("failed to create .assay dir in mock tempdir");
 
     let config = PipelineConfig {
         project_root: p.clone(),
@@ -144,11 +141,12 @@ fn test_merge_root_span_emitted() {
         conflict_resolution_enabled: false,
     };
 
-    // Empty vec → merge runner returns immediately (no sessions to merge),
-    // but the root span should still be entered.
-    let _ = merge_completed_sessions(vec![], &config, |_, _, _, _| {
+    // Empty vec triggers early return (no git operations, no sessions to merge),
+    // but the root span should still be entered and emitted.
+    let result = merge_completed_sessions(vec![], &config, |_, _, _, _| {
         unreachable!("no sessions to merge")
     });
+    assert!(result.is_ok(), "empty merge should succeed: {result:?}");
 
     assert!(logs_contain("merge::run{"));
 }

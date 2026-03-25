@@ -329,6 +329,11 @@ where
                         } else {
                             "panic: unknown".to_string()
                         };
+                        tracing::error!(
+                            session = %name,
+                            panic_message = %msg,
+                            "mesh session worker panicked"
+                        );
                         (MeshMemberState::Dead, SessionRunState::Failed, Some(msg))
                     }
                 };

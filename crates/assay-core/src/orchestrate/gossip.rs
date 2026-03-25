@@ -416,6 +416,11 @@ where
                         } else {
                             "panic: unknown".to_string()
                         };
+                        tracing::error!(
+                            session = %name,
+                            panic_message = %msg,
+                            "gossip session worker panicked"
+                        );
                         (SessionRunState::Failed, Some(msg), None)
                     }
                 };
