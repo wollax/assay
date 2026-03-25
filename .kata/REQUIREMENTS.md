@@ -622,14 +622,14 @@
 
 ### R061 — Pipeline span instrumentation
 - Class: core-capability
-- Status: active
+- Status: validated
 - Description: `#[instrument]` spans on pipeline stages: spec load, worktree create, agent launch, gate eval, merge propose. Each span carries stage name, spec slug, and timing.
 - Why it matters: The pipeline is the core value loop — when a gate eval is slow or an agent launch fails, the user needs to see exactly where time was spent and what failed.
 - Source: user
 - Primary owning slice: M009/S02
 - Supporting slices: M009/S01
-- Validation: unmapped
-- Notes: Spans should nest under a root `run_session` span. Consistent with D007 (sync core) — tracing works naturally with sync code.
+- Validation: S02 — `#[instrument]` on 5 public pipeline functions; `info_span!` on 6 stage blocks; span names verified by 4 integration tests using tracing-test subscriber capture; info/warn events at all stage boundaries; all existing pipeline tests green
+- Notes: Spans nest under `pipeline::run_session` and `pipeline::setup_session` root spans. Consistent with D007 (sync core). D135 (tracing-test), D136 (no-env-filter for cross-crate assertions).
 
 ### R062 — Orchestration span instrumentation
 - Class: core-capability
@@ -810,7 +810,7 @@
 | R059 | failure-visibility | validated | M008/S04 | M008/S05 | S04, S05 |
 
 | R060 | quality-attribute | validated | M009/S01 | none | S01 |
-| R061 | core-capability | active | M009/S02 | M009/S01 | unmapped |
+| R061 | core-capability | validated | M009/S02 | M009/S01 | S02 |
 | R062 | core-capability | active | M009/S03 | M009/S01, M009/S02 | unmapped |
 | R063 | core-capability | active | M009/S04 | M009/S01 | unmapped |
 | R064 | core-capability | active | M009/S05 | M009/S01 | unmapped |
@@ -820,9 +820,9 @@
 
 ## Coverage Summary
 
-- Active requirements: 6 (R027, R061–R065)
-- Mapped to slices: 6
-- Validated: 56 (R001–R029 except R025/R027, R034–R060)
+- Active requirements: 5 (R027, R062–R065)
+- Mapped to slices: 5
+- Validated: 57 (R001–R029 except R025/R027, R034–R061)
 - Deferred: 3 (R025, R066, R067)
 - Out of scope: 4 (R030, R031, R032, R033)
 - Unmapped active requirements: 0
