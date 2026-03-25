@@ -4,7 +4,7 @@
 **Active Slice:** S03 — Orchestration span instrumentation
 **Active Task:** None — S03 not yet started
 **Phase:** Planning
-**Last Updated:** 2026-03-24
+**Last Updated:** 2026-03-25
 **Requirements Status:** 5 active (R027, R062–R065) · 57 validated · 3 deferred (R025, R066, R067) · 4 out of scope
 **Test Count:** 1400+ (all workspace tests pass)
 
@@ -12,7 +12,7 @@
 
 5 slices planned:
 - [x] S01: Structured tracing foundation and eprintln migration — R060 validated
-- [x] S02: Pipeline span instrumentation — R061 validated
+- [x] S02: Pipeline span instrumentation — R061 validated (PR #182 merged)
 - [ ] S03: Orchestration span instrumentation — R062
 - [ ] S04: JSON file trace export and CLI — R063
 - [ ] S05: OTLP export and trace context propagation — R064, R065
