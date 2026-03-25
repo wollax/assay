@@ -58,7 +58,7 @@ This milestone is complete only when all are true:
 - [x] **S02: README + example manifest documentation** `risk:low` `depends:[]`
   > After this: workspace-level `README.md` with project overview, install, all subcommand usage, and example walkthrough; example manifests have inline field-level comments.
 
-- [ ] **S03: Large file decomposition** `risk:medium` `depends:[S01]`
+- [x] **S03: Large file decomposition** `risk:medium` `depends:[S01]`
   > After this: `run.rs` decomposed (phases extracted to modules); `ssh.rs` decomposed (trait, impl, free functions, mock in separate modules); serve `tests.rs` decomposed by feature area; all 286+ tests still pass.
 
 ## Boundary Map

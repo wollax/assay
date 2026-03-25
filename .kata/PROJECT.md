@@ -81,7 +81,7 @@ examples/
 | M006 | Parallel Dispatch Daemon | ✅ Complete (2026-03-23, pending live UAT) |
 | M007 | Persistent Queue | ✅ Complete (2026-03-23) |
 | M008 | SSH Worker Pools | ✅ Complete (2026-03-24, pending live UAT via S04-UAT.md) |
-| M009 | Documentation, Examples & Code Cleanup | 🔄 Active |
+| M009 | Documentation, Examples & Code Cleanup | ✅ Complete (2026-03-24) |
 
 ## Technology Decisions
 

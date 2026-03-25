@@ -1,17 +1,18 @@
 # Kata State
 
 **Active Milestone:** M009 — Documentation, Examples & Code Cleanup
-**Active Slice:** S03 — Large file decomposition
-**Active Task:** — (not started)
-**Phase:** Planning
+**Active Slice:** —
+**Active Task:** —
+**Phase:** Milestone complete
 
 ## Recent Decisions
-- D125: M009 is documentation/cleanup only — no behavior changes
-- D126: Large file threshold: 500 lines
-- D127: #![deny(missing_docs)] enforced on smelt-cli (matches smelt-core)
+- D128: File-to-directory module conversion with re-exports preserves API compatibility
+- D129: Tests distributed to the module containing the code they test
+- D130: SSH tests module re-exported via pub(crate) mod tests wrapper to preserve import paths
+- D131: test_manifest_delivery_and_remote_exec moved to ssh_dispatch.rs for feature coherence
 
 ## Blockers
 - None
 
 ## Next Action
-Plan S03 (large file decomposition): decompose run.rs, ssh.rs, and serve tests.rs into focused modules. Read the roadmap boundary map and S01 summary for context.
+M009 complete — all 3 slices done (S01: deny(missing_docs) + cargo doc zero-warning, S02: README + example docs, S03: large file decomposition). All milestone success criteria met. Squash-merge S03 branch to main.

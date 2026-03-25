@@ -278,14 +278,14 @@ This file is the explicit capability and coverage contract for the project.
 
 ### R044 — Large file decomposition
 - Class: quality-attribute
-- Status: active
+- Status: validated
 - Description: Files over 500 lines are decomposed into focused modules along natural seams. Targets: run.rs (755L), ssh.rs (978L), serve/tests.rs (1322L).
 - Why it matters: Large files are harder to navigate, review, and modify without merge conflicts.
 - Source: user
 - Primary owning slice: M009/S03
 - Supporting slices: none
-- Validation: unmapped
-- Notes: Decomposition must preserve all existing public API signatures and test coverage.
+- Validation: validated
+- Notes: Proven by M009/S03: run/mod.rs 116L (< 300), ssh/mod.rs 111L (< 400), tests/mod.rs 88L (< 500). All 286 tests pass. All public API signatures preserved via re-exports. deny(missing_docs) compiles clean.
 
 ### R045 — Example manifest documentation
 - Class: launchability
@@ -419,12 +419,12 @@ This file is the explicit capability and coverage contract for the project.
 | R041 | launchability        | validated   | M009/S02      | none                 | validated |
 | R042 | quality-attribute    | validated   | M009/S01      | none                 | validated |
 | R043 | quality-attribute    | validated   | M009/S01      | none                 | validated |
-| R044 | quality-attribute    | active      | M009/S03      | none                 | mapped    |
+| R044 | quality-attribute    | validated   | M009/S03      | none                 | validated |
 | R045 | launchability        | validated   | M009/S02      | none                 | validated |
 
 ## Coverage Summary
 
-- Active requirements: 1 (R044)
-- Mapped to slices: 1
-- Validated (all milestones through M008 + M009/S01, M009/S02): 26 (R001–R008, R010–R015, R020, R021, R023, R024, R025, R027, R028, R040, R041, R042, R043, R045)
+- Active requirements: 0
+- Mapped to slices: 0
+- Validated (all milestones through M009): 27 (R001–R008, R010–R015, R020, R021, R023, R024, R025, R027, R028, R040, R041, R042, R043, R044, R045)
 - Unmapped active requirements: 0
