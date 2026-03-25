@@ -2,7 +2,7 @@
 
 **Active Milestone:** M009 — Observability
 **Active Slice:** S03 — Orchestration span instrumentation
-**Active Task:** T02 — Instrument DAG executor and merge runner with tracing spans
+**Active Task:** T03 — Instrument Mesh and Gossip executors with tracing spans
 **Phase:** Executing
 **Last Updated:** 2026-03-25
 **Requirements Status:** 5 active (R027, R062–R065) · 57 validated · 3 deferred (R025, R066, R067) · 4 out of scope
@@ -30,4 +30,4 @@ None.
 
 ## Next Action
 
-Execute T02 — instrument `run_orchestrated()` and `merge_completed_sessions()` with root spans and per-session worker spans. DAG root + session + merge root span tests should flip green.
+Execute T03 — instrument `run_mesh()` and `run_gossip()` with orchestrate::mesh and orchestrate::gossip root + per-session spans. Mesh and gossip span tests should flip green.
