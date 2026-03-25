@@ -363,3 +363,54 @@ fn trace_export_end_to_end_write_read_render() {
     assert_eq!(session_children.len(), 1);
     assert_eq!(session_children[0].name, "gate_eval");
 }
+
+/// Verify that `on_record` merges fields added after span creation without
+/// overwriting fields that were set at creation time.
+///
+/// `span.record()` only works for fields declared in the span macro (either
+/// with a value or with `tracing::field::Empty` as a placeholder). Fields
+/// not declared in the macro are silently ignored by tracing.
+#[test]
+fn trace_export_on_record_merges_fields() {
+    let tmp = TempDir::new().unwrap();
+    let dir = tmp.path().to_path_buf();
+
+    with_json_layer(&dir, 50, || {
+        // Declare all fields upfront; use Empty as a placeholder for fields
+        // that will be recorded later via span.record().
+        let root = tracing::info_span!(
+            "pipeline_run",
+            initial_field = "set_at_creation",
+            added_later = tracing::field::Empty,
+            numeric_later = tracing::field::Empty,
+        );
+        let _guard = root.enter();
+        // Record the placeholder fields after span creation.
+        root.record("added_later", "recorded_value");
+        root.record("numeric_later", 42_i64);
+    });
+
+    let spans = read_single_trace(&dir);
+    let root = spans
+        .iter()
+        .find(|s| s.name == "pipeline_run")
+        .expect("root span missing");
+
+    // Field set at creation must survive.
+    assert_eq!(
+        root.fields.get("initial_field").and_then(|v| v.as_str()),
+        Some("set_at_creation"),
+        "on_record must not overwrite fields set at creation"
+    );
+    // Fields added via span.record() must be captured.
+    assert_eq!(
+        root.fields.get("added_later").and_then(|v| v.as_str()),
+        Some("recorded_value"),
+        "on_record must capture string fields added after creation"
+    );
+    assert_eq!(
+        root.fields.get("numeric_later").and_then(|v| v.as_i64()),
+        Some(42),
+        "on_record must capture integer fields added after creation"
+    );
+}

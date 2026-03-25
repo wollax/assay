@@ -74,7 +74,17 @@ fn handle_list() -> anyhow::Result<i32> {
     // Collect trace file entries.
     let mut entries: Vec<(String, PathBuf)> = std::fs::read_dir(&td)
         .with_context(|| format!("failed to read traces directory: {}", td.display()))?
-        .filter_map(|r| r.ok())
+        .filter_map(|r| match r {
+            Ok(e) => Some(e),
+            Err(e) => {
+                tracing::warn!(
+                    dir = %td.display(),
+                    error = %e,
+                    "failed to read directory entry during trace scan; skipping"
+                );
+                None
+            }
+        })
         .filter_map(|e| {
             let path = e.path();
             if path.extension()?.to_str()? == "json" {
@@ -282,6 +292,8 @@ mod tests {
     use assay_core::telemetry::SpanData;
     use tempfile::TempDir;
 
+    use super::load_trace;
+
     fn make_span(
         name: &str,
         span_id: u64,
@@ -441,25 +453,29 @@ mod tests {
     }
 
     #[test]
-    fn test_missing_trace_file_detected() {
+    fn test_load_trace_missing_file_returns_error() {
         let tmp = TempDir::new().unwrap();
-        let traces_dir = tmp.path().join(".assay").join("traces");
-        std::fs::create_dir_all(&traces_dir).unwrap();
-
-        let path = traces_dir.join("nonexistent.json");
-        assert!(!path.exists());
+        let path = tmp.path().join("nonexistent.json");
+        let result = load_trace(&path);
+        assert!(result.is_err(), "load_trace must fail on missing file");
+        let msg = result.unwrap_err().to_string();
+        assert!(
+            msg.contains("nonexistent.json"),
+            "error message should include the file path, got: {msg}"
+        );
     }
 
     #[test]
-    fn test_malformed_json_returns_error() {
+    fn test_load_trace_malformed_json_returns_error() {
         let tmp = TempDir::new().unwrap();
-        let traces_dir = tmp.path().join(".assay").join("traces");
-        std::fs::create_dir_all(&traces_dir).unwrap();
-
-        let path = traces_dir.join("bad.json");
+        let path = tmp.path().join("bad.json");
         std::fs::write(&path, "not valid json {{{").unwrap();
-
-        let result = serde_json::from_str::<Vec<SpanData>>("not valid json {{{");
-        assert!(result.is_err());
+        let result = load_trace(&path);
+        assert!(result.is_err(), "load_trace must fail on malformed JSON");
+        let msg = result.unwrap_err().to_string();
+        assert!(
+            msg.contains("bad.json"),
+            "error message should include the file path, got: {msg}"
+        );
     }
 }

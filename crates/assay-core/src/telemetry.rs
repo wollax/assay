@@ -234,7 +234,14 @@ impl JsonFileLayer {
                 }
             },
             Err(e) => {
-                tracing::warn!(error = %e, "failed to serialize trace data");
+                tracing::warn!(
+                    span_count,
+                    dir = %self.traces_dir.display(),
+                    error = %e,
+                    "failed to serialize trace data; trace will not be written"
+                );
+                // Do not prune — no new file was written.
+                return;
             }
         }
 
@@ -257,7 +264,17 @@ impl JsonFileLayer {
         };
 
         let mut files: Vec<PathBuf> = entries
-            .filter_map(|e| e.ok())
+            .filter_map(|e| match e {
+                Ok(entry) => Some(entry),
+                Err(err) => {
+                    tracing::warn!(
+                        dir = %self.traces_dir.display(),
+                        error = %err,
+                        "failed to read directory entry during trace pruning; skipping"
+                    );
+                    None
+                }
+            })
             .filter(|e| e.path().extension().is_some_and(|ext| ext == "json"))
             .map(|e| e.path())
             .collect();
@@ -480,15 +497,17 @@ pub fn init_tracing(config: TracingConfig) -> TracingGuard {
         .with_target(config.with_target);
 
     // Build optional JSON file layer.
-    let json_layer = config.traces_dir.map(|dir| {
-        // Create the traces directory if it does not exist.
+    // Use `and_then` so a directory-creation failure disables the layer entirely
+    // rather than registering it and flooding the log with per-span I/O errors.
+    let json_layer = config.traces_dir.and_then(|dir| {
         if let Err(e) = std::fs::create_dir_all(&dir) {
             eprintln!(
-                "[assay] warning: failed to create traces dir '{}': {e}",
+                "[assay] warning: failed to create traces dir '{}': {e}; trace file export disabled",
                 dir.display()
             );
+            return None;
         }
-        JsonFileLayer::new(dir, 50)
+        Some(JsonFileLayer::new(dir, 50))
     });
 
     // try_init: skips installation if a subscriber is already set — no panic,
