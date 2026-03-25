@@ -42,7 +42,7 @@
 
 ## Tasks
 
-- [ ] **T01: Custom tracing Layer and JSON file writer** `est:45m`
+- [x] **T01: Custom tracing Layer and JSON file writer** `est:45m`
   - Why: Core capability — the Layer captures span lifecycle events and writes structured JSON per trace. This is the foundation that makes trace files exist.
   - Files: `crates/assay-core/src/telemetry.rs`, `crates/assay-core/Cargo.toml`, `crates/assay-core/tests/trace_export.rs`
   - Do: Add `traces_dir: Option<PathBuf>` to `TracingConfig`. Implement `JsonFileLayer` as a `tracing_subscriber::Layer<S>` (where S: `Subscriber + for<'a> LookupSpan<'a>`) with in-memory `Mutex<HashMap<Id, SpanData>>`. `on_new_span` records name/target/level/parent/fields/start_time. `on_record` merges new fields. `on_close` computes duration, removes from map; if root span (no parent), writes all collected spans as JSON array to `<traces_dir>/<run_id>.json` using atomic NamedTempFile+persist pattern, then prunes old files (max 50). Wire into `init_tracing()` via `.with()` when `traces_dir` is Some. Create integration test file that installs subscriber with JsonFileLayer, creates spans, and asserts JSON file contents.
