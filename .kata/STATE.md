@@ -2,8 +2,8 @@
 
 **Active Milestone:** M009 — Observability
 **Active Slice:** S03 — Orchestration span instrumentation
-**Active Task:** None — S03 not yet started
-**Phase:** Planning
+**Active Task:** T01 — Create red-state orchestration span integration tests
+**Phase:** Executing
 **Last Updated:** 2026-03-25
 **Requirements Status:** 5 active (R027, R062–R065) · 57 validated · 3 deferred (R025, R066, R067) · 4 out of scope
 **Test Count:** 1400+ (all workspace tests pass)
@@ -30,4 +30,4 @@ None.
 
 ## Next Action
 
-Plan S03 (orchestration span instrumentation) — discuss/research if needed, then decompose into tasks.
+Execute T01 — create red-state integration tests in `crates/assay-core/tests/orchestrate_spans.rs` with 5 span assertion tests for DAG, Mesh, Gossip, and merge runner.
