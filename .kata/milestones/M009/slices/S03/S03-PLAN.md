@@ -42,7 +42,7 @@
 
 ## Tasks
 
-- [ ] **T01: Create red-state orchestration span integration tests** `est:25m`
+- [x] **T01: Create red-state orchestration span integration tests** `est:25m`
   - Why: Test-first — define the span contract before adding instrumentation. Tests fail initially (proving assertions are real).
   - Files: `crates/assay-core/tests/orchestrate_spans.rs`
   - Do: Create test file with 5 tests: DAG root span, DAG per-session span, Mesh root span, Gossip root span, merge runner root span. Each uses `#[traced_test]` + `logs_contain()`. DAG/Mesh/Gossip tests use 2-session manifests with instant mock runners. Merge test uses `merge_completed_sessions` with empty completed sessions.
