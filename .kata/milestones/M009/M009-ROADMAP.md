@@ -64,7 +64,7 @@ This milestone is complete only when all are true:
 - [x] **S02: Pipeline span instrumentation** `risk:medium` `depends:[S01]`
   > After this: a single-agent pipeline run produces named spans for each stage (spec_load, worktree_create, agent_launch, gate_eval, merge_propose) with timing and spec slug. Proven by integration test asserting span names in captured subscriber output.
 
-- [ ] **S03: Orchestration span instrumentation** `risk:high` `depends:[S01, S02]`
+- [x] **S03: Orchestration span instrumentation** `risk:high` `depends:[S01, S02]`
   > After this: a DAG/Mesh/Gossip orchestration run produces a nested span tree: orchestration root → per-session → pipeline stages. Merge runner phases and conflict resolution are instrumented. Proven by integration test with mock runners verifying span parent-child relationships across threads.
 
 - [ ] **S04: JSON file trace export and CLI** `risk:low` `depends:[S01]`

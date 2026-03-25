@@ -633,14 +633,14 @@
 
 ### R062 — Orchestration span instrumentation
 - Class: core-capability
-- Status: active
+- Status: validated
 - Description: Spans on DAG/Mesh/Gossip executors: per-session spans nested under orchestration root span. Merge runner phases, conflict resolution, and session state transitions all traced.
 - Why it matters: Multi-agent orchestration is where things go wrong invisibly — which session is blocking the DAG, which merge conflicted, which gossip coordinator stalled.
 - Source: user
 - Primary owning slice: M009/S03
 - Supporting slices: M009/S01, M009/S02
-- Validation: unmapped
-- Notes: DAG executor uses `std::thread::scope` (D017) — spans must cross thread boundaries correctly. Mesh/Gossip use background threads. tracing handles this natively.
+- Validation: S03 — 5 integration tests in orchestrate_spans.rs asserting span names for DAG root+session, Mesh root, Gossip root, merge root via tracing-test subscriber capture. Cross-thread span parenting in std::thread::scope workers via Span::current() capture+clone+enter pattern. All existing orchestration tests pass with zero regressions.
+- Notes: Cross-thread span parenting uses enter-guard pattern (D138). Span assertions use `{` suffix to prevent module-path false positives (D137). info!() events inside spans for tracing-test detectability (D139).
 
 ### R063 — JSON file trace export
 - Class: core-capability
