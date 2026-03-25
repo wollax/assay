@@ -262,6 +262,27 @@ Jobs can be submitted two ways:
 | `GET` | `/api/v1/jobs` | List all jobs with current status |
 | `DELETE` | `/api/v1/jobs/:id` | Cancel a queued or running job |
 
+### Authentication
+
+The HTTP API supports opt-in bearer-token authentication via the `[auth]` section in `server.toml`. When `[auth]` is absent, the API is fully open with no authentication required.
+
+**Configuration** — token values are never stored in config. Instead, you specify the *names* of environment variables that hold the tokens at runtime:
+
+```toml
+[auth]
+write_token_env = "SMELT_WRITE_TOKEN"   # required — env var holding the read-write token
+read_token_env  = "SMELT_READ_TOKEN"    # optional — env var holding the read-only token
+```
+
+**Permission model:**
+- **Read** operations (`GET`, `HEAD`) — accepted with either the read or write token.
+- **Write** operations (`POST`, `DELETE`, etc.) — require the write token.
+- When `read_token_env` is omitted, only the write token grants any access.
+
+**Error responses:**
+- `401 Unauthorized` — the `Authorization: Bearer <token>` header is missing or malformed.
+- `403 Forbidden` — the token does not match any configured token, or it matches the read-only token but the request requires write access.
+
 ### Queue Persistence
 
 Queue state is automatically persisted to `queue_dir/.smelt-queue-state.toml` after every enqueue, complete, and cancel. On restart, `smelt serve` reloads this file and re-dispatches any jobs that were queued, retrying, or running at shutdown time — no operator intervention required.
@@ -288,7 +309,7 @@ The [`examples/`](examples/) directory contains reference manifests:
 | [`job-manifest-k8s.toml`](examples/job-manifest-k8s.toml) | Kubernetes runtime targeting a remote cluster |
 | [`agent-manifest.toml`](examples/agent-manifest.toml) | Minimal agent-focused manifest |
 | [`bad-manifest.toml`](examples/bad-manifest.toml) | Intentionally invalid manifest for testing error handling |
-| [`server.toml`](examples/server.toml) | Server daemon configuration for `smelt serve` |
+| [`server.toml`](examples/server.toml) | Server daemon configuration for `smelt serve` (includes auth setup) |
 
 Use `--dry-run` to validate any example without running it:
 

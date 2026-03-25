@@ -55,3 +55,17 @@ port = 8765
 # user = "smelt"
 # key_env = "WORKER_SSH_KEY"
 # port = 22
+
+# [auth] — optional. Bearer-token authentication for the HTTP API.
+# When present, all HTTP endpoints require a valid `Authorization: Bearer <token>`
+# header. When absent, the API is unauthenticated (open access).
+#
+# Fields:
+#   write_token_env — env var name for the read-write (full access) token (required).
+#   read_token_env  — env var name for the read-only token (optional;
+#     when omitted, only the write token grants any access).
+#     GET and HEAD requests are "read"; all other methods require the write token.
+
+# [auth]
+# write_token_env = "SMELT_WRITE_TOKEN"
+# read_token_env = "SMELT_READ_TOKEN"

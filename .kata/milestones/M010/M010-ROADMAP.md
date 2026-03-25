@@ -61,7 +61,7 @@ This milestone is complete only when all are true:
 - [x] **S02: Teardown error handling + SSH DRY cleanup** `risk:low` `depends:[]`
   > After this: teardown failures produce visible warnings instead of silent `let _ =`; error chains preserved via `.context()`; SSH argument builders share a common helper; all existing tests still pass.
 
-- [ ] **S03: Documentation and final verification** `risk:low` `depends:[S01,S02]`
+- [x] **S03: Documentation and final verification** `risk:low` `depends:[S01,S02]`
   > After this: `examples/server.toml` documents `[auth]` section; README.md server mode updated with auth config; all milestone success criteria verified in one pass.
 
 ## Boundary Map
