@@ -13,6 +13,8 @@ use std::path::PathBuf;
 use std::sync::{Condvar, Mutex};
 use std::time::{Duration, Instant};
 
+use tracing::{Span, info, info_span};
+
 use chrono::Utc;
 use tempfile::NamedTempFile;
 use ulid::Ulid;
@@ -154,6 +156,15 @@ where
 {
     let graph = DependencyGraph::from_manifest(manifest)?;
     let session_count = graph.session_count();
+
+    let _root_span = info_span!(
+        "orchestrate::dag",
+        session_count = session_count,
+        mode = "dag"
+    )
+    .entered();
+    info!("starting DAG orchestration");
+
     let run_id = Ulid::new().to_string();
     let started_at = Utc::now();
     let wall_start = Instant::now();
@@ -204,6 +215,9 @@ where
     let pair = (Mutex::new(state), Condvar::new());
     let worktree_mutex = Mutex::new(());
     let effective_concurrency = config.max_concurrency.min(session_count);
+
+    // Capture current span for cross-thread parenting.
+    let parent_span = Span::current();
 
     // Dispatch loop inside thread::scope.
     std::thread::scope(|scope| {
@@ -292,8 +306,17 @@ where
                 let graph = &graph;
                 let failure_policy = config.failure_policy;
                 let started_at_run = started_at;
+                let parent_span = parent_span.clone();
 
                 scope.spawn(move || {
+                    // Re-enter the parent (orchestrate::dag) span so session
+                    // spans are properly parented across the thread boundary.
+                    let _parent_guard = parent_span.enter();
+                    let _session_span =
+                        info_span!("orchestrate::dag::session", session_name = %session_name)
+                            .entered();
+                    info!("running session");
+
                     let session_start = Instant::now();
 
                     // Wrap the entire worker body in catch_unwind for panic safety.

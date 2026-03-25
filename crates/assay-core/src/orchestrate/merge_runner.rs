@@ -7,6 +7,8 @@
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
+use tracing::{info, info_span};
+
 use assay_types::{
     ConflictAction, ConflictScan, MergePlan, MergeReport, MergeSessionResult, MergeSessionStatus,
     MergeStrategy,
@@ -56,6 +58,12 @@ where
 {
     let start = Instant::now();
     let project_root = &config.project_root;
+
+    // Root merge span — entered for the entire merge run.
+    // session_count is computed after ordering, but we need it here for
+    // the span field, so use input length as the count.
+    let _root_span = info_span!("merge::run", session_count = completed_sessions.len(), strategy = ?config.strategy).entered();
+    info!("starting merge run");
 
     // ── Pre-flight checks ────────────────────────────────────────────
 
@@ -130,6 +138,10 @@ where
     let mut abort_triggered = false;
 
     for session in &ordered {
+        let _session_span =
+            info_span!("merge::session", session_name = %session.session_name).entered();
+        info!("merging session");
+
         if abort_triggered {
             results.push(MergeSessionResult {
                 session_name: session.session_name.clone(),
@@ -188,6 +200,8 @@ where
 
                 if config.conflict_resolution_enabled {
                     // Two-phase path: working tree is still conflicted.
+                    let _conflict_span = info_span!("merge::conflict_resolution", session_name = %session.session_name).entered();
+
                     // Wrap handler in catch_unwind for panic safety.
                     let handler_result =
                         std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -290,6 +304,8 @@ where
                 } else {
                     // Default path: merge was already aborted by merge_execute.
                     // Handler receives a post-abort scan (existing behavior).
+                    let _conflict_span = info_span!("merge::conflict_resolution", session_name = %session.session_name).entered();
+
                     let result = conflict_handler(
                         &session.session_name,
                         &conflicting_files,

@@ -49,7 +49,7 @@
   - Verify: `cargo test -p assay-core --test orchestrate_spans` — compiles but all 5 tests fail (span names not yet emitted)
   - Done when: all 5 tests compile, execute, and fail with clear "assertion failed" on `logs_contain`
 
-- [ ] **T02: Instrument DAG executor and merge runner with tracing spans** `est:30m`
+- [x] **T02: Instrument DAG executor and merge runner with tracing spans** `est:30m`
   - Why: Core instrumentation — adds root spans and per-session worker spans to executor.rs and merge_runner.rs with cross-thread span parenting
   - Files: `crates/assay-core/src/orchestrate/executor.rs`, `crates/assay-core/src/orchestrate/merge_runner.rs`
   - Do: Add `use tracing::{info_span, Span}` to executor.rs. Add root `info_span!("orchestrate::dag", session_count, mode = "dag")` wrapping `run_orchestrated()` body. Capture `Span::current()` before `thread::scope`, clone into each worker, use `parent_span.in_scope(|| { ... })` inside `scope.spawn`. Add per-session `info_span!("orchestrate::dag::session", session_name)` inside each worker. Add root `info_span!("merge::run", strategy = %config.strategy, session_count)` wrapping `merge_completed_sessions()` body. Add per-session `info_span!("merge::session", session_name)` inside the merge loop. Add `info_span!("merge::conflict_resolution", session_name)` around conflict handler calls.
