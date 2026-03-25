@@ -35,6 +35,26 @@ fn read_single_trace(dir: &Path) -> Vec<SpanData> {
     serde_json::from_str(&contents).unwrap()
 }
 
+/// Collect all JSON trace files from `dir`, return sorted by filename.
+fn read_all_traces(dir: &Path) -> Vec<(String, Vec<SpanData>)> {
+    let mut files: Vec<_> = std::fs::read_dir(dir)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().extension().is_some_and(|ext| ext == "json"))
+        .map(|e| e.path())
+        .collect();
+    files.sort();
+    files
+        .into_iter()
+        .map(|p| {
+            let id = p.file_stem().unwrap().to_string_lossy().into_owned();
+            let contents = std::fs::read_to_string(&p).unwrap();
+            let spans: Vec<SpanData> = serde_json::from_str(&contents).unwrap();
+            (id, spans)
+        })
+        .collect()
+}
+
 /// Count JSON files in the directory.
 fn json_file_count(dir: &Path) -> usize {
     std::fs::read_dir(dir)
@@ -182,4 +202,164 @@ fn trace_export_multiple_root_spans_produce_multiple_files() {
         count, 2,
         "expected 2 trace files for 2 root spans, got {count}"
     );
+}
+
+/// End-to-end round-trip: write spans via JsonFileLayer, read back JSON file,
+/// verify tree structure matches expectations (write → read → render cycle).
+///
+/// This is the T03 integration test that proves the full loop:
+/// 1. JsonFileLayer writes JSON trace file with correct structure
+/// 2. SpanData can be deserialized back from JSON
+/// 3. Parent-child relationships are preserved for tree rendering
+/// 4. Trace ID (filename stem) is stable and readable
+#[test]
+fn trace_export_end_to_end_write_read_render() {
+    let tmp = TempDir::new().unwrap();
+    let dir = tmp.path().to_path_buf();
+
+    // Phase 1: Write — instrument a 3-level span tree via real subscriber.
+    with_json_layer(&dir, 50, || {
+        let root = tracing::info_span!("orchestration_run", run_id = "test-run-001");
+        let _root_guard = root.enter();
+
+        {
+            let session = tracing::info_span!("session", session_name = "auth-spec");
+            let _session_guard = session.enter();
+
+            {
+                let stage = tracing::info_span!("gate_eval", gate = "unit-tests");
+                let _stage_guard = stage.enter();
+                std::thread::sleep(std::time::Duration::from_millis(2));
+            }
+        }
+
+        {
+            let merge = tracing::info_span!("merge_propose", target_branch = "main");
+            let _merge_guard = merge.enter();
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+    });
+
+    // Phase 2: Read — verify exactly one JSON file was written.
+    let traces = read_all_traces(&dir);
+    assert_eq!(
+        traces.len(),
+        1,
+        "expected exactly 1 trace file after one root span"
+    );
+
+    let (trace_id, spans) = &traces[0];
+    // Trace ID must be non-empty and look like a timestamp-hex filename.
+    assert!(!trace_id.is_empty(), "trace ID must be non-empty");
+    assert!(
+        trace_id.contains('T') || trace_id.len() > 8,
+        "trace ID should be timestamp-based, got: {trace_id}"
+    );
+
+    // Phase 3: Verify tree structure — correct spans, parent-child, timing.
+    assert_eq!(
+        spans.len(),
+        4,
+        "expected 4 spans (root, session, gate_eval, merge_propose), got {}: {:?}",
+        spans.len(),
+        spans.iter().map(|s| &s.name).collect::<Vec<_>>()
+    );
+
+    // Root span checks.
+    let root = spans
+        .iter()
+        .find(|s| s.name == "orchestration_run")
+        .expect("root span missing");
+    assert!(root.parent_id.is_none(), "root must have no parent_id");
+    assert!(
+        root.duration_ms.unwrap_or(0.0) > 0.0,
+        "root duration must be > 0"
+    );
+    assert_eq!(
+        root.fields.get("run_id").and_then(|v| v.as_str()),
+        Some("test-run-001"),
+        "root span field 'run_id' must be captured"
+    );
+
+    // Session child.
+    let session = spans
+        .iter()
+        .find(|s| s.name == "session")
+        .expect("session span missing");
+    assert_eq!(
+        session.parent_id,
+        Some(root.span_id),
+        "session must be child of root"
+    );
+    assert_eq!(
+        session.fields.get("session_name").and_then(|v| v.as_str()),
+        Some("auth-spec")
+    );
+
+    // Gate eval grandchild (child of session).
+    let gate_eval = spans
+        .iter()
+        .find(|s| s.name == "gate_eval")
+        .expect("gate_eval span missing");
+    assert_eq!(
+        gate_eval.parent_id,
+        Some(session.span_id),
+        "gate_eval must be child of session"
+    );
+    assert_eq!(
+        gate_eval.fields.get("gate").and_then(|v| v.as_str()),
+        Some("unit-tests")
+    );
+    assert!(
+        gate_eval.duration_ms.unwrap_or(0.0) > 0.0,
+        "gate_eval must have positive duration"
+    );
+
+    // Merge propose child (child of root, sibling of session).
+    let merge = spans
+        .iter()
+        .find(|s| s.name == "merge_propose")
+        .expect("merge_propose missing");
+    assert_eq!(
+        merge.parent_id,
+        Some(root.span_id),
+        "merge_propose must be child of root"
+    );
+    assert_eq!(
+        merge.fields.get("target_branch").and_then(|v| v.as_str()),
+        Some("main")
+    );
+
+    // Phase 4: Render simulation — verify tree can be reconstructed for CLI show.
+    // Build adjacency map (same logic as assay-cli traces show).
+    let mut children: std::collections::HashMap<Option<u64>, Vec<&SpanData>> =
+        std::collections::HashMap::new();
+    for span in spans {
+        children.entry(span.parent_id).or_default().push(span);
+    }
+    // Root level should have: orchestration_run
+    let roots = children.get(&None).expect("must have root-level spans");
+    assert_eq!(roots.len(), 1, "exactly one root span for tree rendering");
+    assert_eq!(roots[0].name, "orchestration_run");
+
+    // Children of root: session + merge_propose
+    let root_children = children
+        .get(&Some(root.span_id))
+        .expect("root must have children");
+    assert_eq!(
+        root_children.len(),
+        2,
+        "root must have 2 children: session + merge_propose"
+    );
+    let child_names: std::collections::HashSet<&str> =
+        root_children.iter().map(|s| s.name.as_str()).collect();
+    assert!(child_names.contains("session"));
+    assert!(child_names.contains("merge_propose"));
+
+    // gate_eval is the only grandchild.
+    let session_children = children
+        .get(&Some(session.span_id))
+        .expect("session must have children");
+    assert_eq!(session_children.len(), 1);
+    assert_eq!(session_children[0].name, "gate_eval");
 }

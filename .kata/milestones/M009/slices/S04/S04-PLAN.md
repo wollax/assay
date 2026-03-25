@@ -56,7 +56,7 @@
   - Verify: `cargo test -p assay-cli traces` and `cargo build -p assay-cli`
   - Done when: `assay traces list` prints a table of trace files; `assay traces show <id>` renders an indented span tree with timing
 
-- [ ] **T03: Wire traces_dir into CLI and end-to-end integration test** `est:25m`
+- [x] **T03: Wire traces_dir into CLI and end-to-end integration test** `est:25m`
   - Why: Closes the loop — CLI commands that run pipelines produce trace files, and the traces CLI reads them. Also wires the traces_dir from CLI entry point to init_tracing.
   - Files: `crates/assay-cli/src/main.rs`, `crates/assay-core/tests/trace_export.rs`
   - Do: Update `tracing_config_for()` to set `traces_dir: Some(assay_dir.join("traces"))` for pipeline-running subcommands (Run, Gate, etc). Add end-to-end integration test that creates spans via a real subscriber, verifies JSON file, then reads it back and asserts tree structure matches. Verify `just ready` passes.

@@ -218,15 +218,33 @@ Examples:
 /// Determine the tracing config based on the subcommand.
 ///
 /// MCP serve uses `TracingConfig::mcp()` (warn level, no ANSI) because
-/// stdout is reserved for JSON-RPC. All other subcommands use default (info).
+/// stdout is reserved for JSON-RPC.
+///
+/// Pipeline-running subcommands (Run, Gate, Context) set `traces_dir` when
+/// the project's `.assay/` directory exists, enabling automatic trace file
+/// export.  Non-pipeline subcommands (Traces, Init, Spec, Milestone, etc.)
+/// keep `traces_dir: None` to avoid self-tracing loops and spurious writes.
 fn tracing_config_for(command: &Option<Command>) -> assay_core::telemetry::TracingConfig {
     if let Some(Command::Mcp {
         command: commands::mcp::McpCommand::Serve,
     }) = command
     {
-        assay_core::telemetry::TracingConfig::mcp()
-    } else {
-        assay_core::telemetry::TracingConfig::default()
+        return assay_core::telemetry::TracingConfig::mcp();
+    }
+
+    // Set traces_dir only for subcommands that run instrumented pipeline work
+    // and only when the project's .assay/ directory already exists.
+    let traces_dir = match command {
+        Some(Command::Run(_) | Command::Gate { .. } | Command::Context { .. }) => project_root()
+            .ok()
+            .filter(|r| assay_dir(r).is_dir())
+            .map(|r| assay_dir(&r).join("traces")),
+        _ => None,
+    };
+
+    assay_core::telemetry::TracingConfig {
+        traces_dir,
+        ..Default::default()
     }
 }
 
