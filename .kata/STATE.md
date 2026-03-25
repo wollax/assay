@@ -1,18 +1,18 @@
 # Kata State
 
-**Active Milestone:** M009 — Documentation, Examples & Code Cleanup
+**Active Milestone:** —
 **Active Slice:** —
 **Active Task:** —
-**Phase:** Milestone complete
+**Phase:** Between milestones
 
 ## Recent Decisions
-- D128: File-to-directory module conversion with re-exports preserves API compatibility
+- D125: M009 is documentation/cleanup only — no behavior changes
+- D127: deny(missing_docs) enforced on smelt-cli
+- D128: File-to-directory module conversion with re-exports
 - D129: Tests distributed to the module containing the code they test
-- D130: SSH tests module re-exported via pub(crate) mod tests wrapper to preserve import paths
-- D131: test_manifest_delivery_and_remote_exec moved to ssh_dispatch.rs for feature coherence
 
 ## Blockers
 - None
 
 ## Next Action
-M009 complete — all 3 slices done (S01: deny(missing_docs) + cargo doc zero-warning, S02: README + example docs, S03: large file decomposition). All milestone success criteria met. Squash-merge S03 branch to main.
+M009 complete. All 9 milestones (M001–M009) are done. 27 requirements validated, 2 deferred (R022, R026). Codebase is in a clean baseline state. Next milestone can be planned when ready.
