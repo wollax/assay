@@ -150,6 +150,7 @@ pub fn load(path: &Path) -> Result<RunManifest> {
 }
 
 #[cfg(test)]
+#[allow(clippy::needless_update)]
 mod tests {
     use super::*;
 
