@@ -141,6 +141,59 @@ pub trait StateBackend: Send + Sync {
 fn _assert_object_safe(_: std::sync::Arc<dyn StateBackend>) {}
 
 // ---------------------------------------------------------------------------
+// NoopBackend (test helper)
+// ---------------------------------------------------------------------------
+
+/// A no-op backend with all capabilities disabled.
+///
+/// All methods return `Ok(())` / `Ok(None)` / `Ok(vec![])` without performing
+/// any I/O. `capabilities()` returns [`CapabilitySet::none()`] so callers that
+/// check capabilities before calling optional methods will degrade gracefully
+/// rather than invoking any method at all.
+///
+/// This is a **test helper** — it proves degradation paths in isolation
+/// without requiring a real filesystem or remote backend.
+pub struct NoopBackend;
+
+impl StateBackend for NoopBackend {
+    fn capabilities(&self) -> CapabilitySet {
+        CapabilitySet::none()
+    }
+
+    fn push_session_event(
+        &self,
+        _run_dir: &Path,
+        _status: &OrchestratorStatus,
+    ) -> crate::Result<()> {
+        Ok(())
+    }
+
+    fn read_run_state(&self, _run_dir: &Path) -> crate::Result<Option<OrchestratorStatus>> {
+        Ok(None)
+    }
+
+    fn send_message(&self, _inbox_path: &Path, _name: &str, _contents: &[u8]) -> crate::Result<()> {
+        Ok(())
+    }
+
+    fn poll_inbox(&self, _inbox_path: &Path) -> crate::Result<Vec<(String, Vec<u8>)>> {
+        Ok(vec![])
+    }
+
+    fn annotate_run(&self, _run_dir: &Path, _manifest_path: &str) -> crate::Result<()> {
+        Ok(())
+    }
+
+    fn save_checkpoint_summary(
+        &self,
+        _assay_dir: &Path,
+        _checkpoint: &TeamCheckpoint,
+    ) -> crate::Result<()> {
+        Ok(())
+    }
+}
+
+// ---------------------------------------------------------------------------
 // LocalFsBackend
 // ---------------------------------------------------------------------------
 

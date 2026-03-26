@@ -129,6 +129,17 @@ where
         }
     }
 
+    // ── Capability check for gossip manifest ─────────────────────────
+    let gossip_manifest_supported = config.backend.capabilities().supports_gossip_manifest;
+    if !gossip_manifest_supported {
+        tracing::warn!(
+            "StateBackend does not support gossip manifest (supports_gossip_manifest = false); \
+             knowledge manifest PromptLayer injection and manifest writes are disabled — \
+             sessions will still execute in parallel but cross-session knowledge sharing \
+             is unavailable"
+        );
+    }
+
     // ── Build cloned sessions with gossip PromptLayer ────────────────
 
     let mut cloned_sessions: Vec<(String, ManifestSession)> = Vec::with_capacity(session_count);
@@ -137,32 +148,36 @@ where
         let name = session.name.as_deref().unwrap_or(&session.spec).to_string();
         let mut session_clone = session.clone();
 
-        let layer_content = format!(
-            "# Gossip Mode — Knowledge Manifest\n\
-             Knowledge manifest: {path}\n\
-             Read this file at any point during your session to discover what other sessions have already completed.\n\
-             The manifest is updated atomically as sessions finish.",
-            path = knowledge_manifest_path.display()
-        );
+        if gossip_manifest_supported {
+            let layer_content = format!(
+                "# Gossip Mode — Knowledge Manifest\n\
+                 Knowledge manifest: {path}\n\
+                 Read this file at any point during your session to discover what other sessions have already completed.\n\
+                 The manifest is updated atomically as sessions finish.",
+                path = knowledge_manifest_path.display()
+            );
 
-        session_clone.prompt_layers.push(PromptLayer {
-            kind: PromptLayerKind::System,
-            name: "gossip-knowledge-manifest".to_string(),
-            priority: -5,
-            content: layer_content,
-        });
+            session_clone.prompt_layers.push(PromptLayer {
+                kind: PromptLayerKind::System,
+                name: "gossip-knowledge-manifest".to_string(),
+                priority: -5,
+                content: layer_content,
+            });
+        }
 
         cloned_sessions.push((name, session_clone));
     }
 
     // ── Write initial empty knowledge manifest ───────────────────────
 
-    let initial_manifest = KnowledgeManifest {
-        run_id: run_id.clone(),
-        entries: vec![],
-        last_updated_at: Utc::now(),
-    };
-    persist_knowledge_manifest(&gossip_dir, &initial_manifest)?;
+    if gossip_manifest_supported {
+        let initial_manifest = KnowledgeManifest {
+            run_id: run_id.clone(),
+            entries: vec![],
+            last_updated_at: Utc::now(),
+        };
+        persist_knowledge_manifest(&gossip_dir, &initial_manifest)?;
+    }
 
     // ── Initialize status ────────────────────────────────────────────
 
@@ -259,13 +274,15 @@ where
                             completed_at: completion.completed_at,
                         });
 
-                        let updated_manifest = KnowledgeManifest {
-                            run_id: run_id_coord.clone(),
-                            entries: knowledge_entries.clone(),
-                            last_updated_at: Utc::now(),
-                        };
-                        if let Err(e) = persist_knowledge_manifest(gossip_dir_coord, &updated_manifest) {
-                            tracing::warn!(error = %e, "failed to persist knowledge manifest update");
+                        if gossip_manifest_supported {
+                            let updated_manifest = KnowledgeManifest {
+                                run_id: run_id_coord.clone(),
+                                entries: knowledge_entries.clone(),
+                                last_updated_at: Utc::now(),
+                            };
+                            if let Err(e) = persist_knowledge_manifest(gossip_dir_coord, &updated_manifest) {
+                                tracing::warn!(error = %e, "failed to persist knowledge manifest update");
+                            }
                         }
 
                         // Update gossip status.
@@ -347,18 +364,20 @@ where
                             gs.coordinator_rounds += 1;
                         }
 
-                        // Final manifest write.
-                        let final_manifest = KnowledgeManifest {
-                            run_id: run_id_coord.clone(),
-                            entries: knowledge_entries.clone(),
-                            last_updated_at: Utc::now(),
-                        };
-                        if let Err(e) = persist_knowledge_manifest(gossip_dir_coord, &final_manifest) {
-                            tracing::error!(
-                                gossip_dir = %gossip_dir_coord.display(),
-                                error = %e,
-                                "failed to persist final knowledge manifest — gossip results not durable"
-                            );
+                        // Final manifest write (only when gossip manifest is supported).
+                        if gossip_manifest_supported {
+                            let final_manifest = KnowledgeManifest {
+                                run_id: run_id_coord.clone(),
+                                entries: knowledge_entries.clone(),
+                                last_updated_at: Utc::now(),
+                            };
+                            if let Err(e) = persist_knowledge_manifest(gossip_dir_coord, &final_manifest) {
+                                tracing::error!(
+                                    gossip_dir = %gossip_dir_coord.display(),
+                                    error = %e,
+                                    "failed to persist final knowledge manifest — gossip results not durable"
+                                );
+                            }
                         }
 
                         break;

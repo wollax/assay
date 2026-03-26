@@ -13,9 +13,12 @@
 use std::path::Path;
 use std::time::Duration;
 
+use std::sync::Arc;
+
 use assay_core::orchestrate::executor::OrchestratorConfig;
 use assay_core::orchestrate::mesh::run_mesh;
 use assay_core::pipeline::{PipelineConfig, PipelineError, PipelineResult};
+use assay_core::state_backend::NoopBackend;
 use assay_types::orchestrate::{MeshMemberState, OrchestratorStatus};
 use assay_types::{ManifestSession, OrchestratorMode, RunManifest};
 
@@ -252,4 +255,56 @@ fn test_mesh_mode_completed_not_dead() {
             member.state
         );
     }
+}
+
+// ── Test 3: Graceful degradation when messaging is unsupported ────────────────
+
+/// Proves that `run_mesh()` completes successfully when the backend does not
+/// support messaging (`supports_messaging = false`).
+///
+/// With `NoopBackend`:
+/// - The routing thread is NOT spawned (capability check prevents it).
+/// - Sessions still execute in parallel via session workers.
+/// - `mesh_status.messages_routed` is 0 (no routing occurred).
+/// - No error is returned — graceful degradation, not a panic.
+/// - A `warn!` event is emitted (not asserted here, visible in test output).
+#[test]
+fn test_mesh_degrades_gracefully_without_messaging() {
+    let dir = setup_temp_dir();
+    let tmp = dir.path();
+    let pipeline_config = make_pipeline_config(tmp);
+    let manifest = make_mesh_manifest(&[("spec-a", "alpha"), ("spec-b", "beta")]);
+
+    // Use NoopBackend: supports_messaging = false, all methods no-op.
+    let config = OrchestratorConfig {
+        backend: Arc::new(NoopBackend),
+        ..OrchestratorConfig::default()
+    };
+
+    let result = run_mesh(&manifest, &config, &pipeline_config, &|session, _config| {
+        Ok(success_result(session))
+    });
+
+    assert!(
+        result.is_ok(),
+        "run_mesh() should succeed with NoopBackend — got: {:?}",
+        result.err()
+    );
+
+    use assay_core::orchestrate::executor::SessionOutcome;
+    let orch_result = result.unwrap();
+
+    // All sessions must complete (not fail or skip).
+    for (name, outcome) in &orch_result.outcomes {
+        assert!(
+            matches!(outcome, SessionOutcome::Completed { .. }),
+            "session '{}' should be Completed with NoopBackend, got: {:?}",
+            name,
+            outcome
+        );
+    }
+
+    // NoopBackend has no persistence — we cannot read state.json.
+    // Verify outcomes count directly from the result.
+    assert_eq!(orch_result.outcomes.len(), 2, "expected 2 session outcomes");
 }

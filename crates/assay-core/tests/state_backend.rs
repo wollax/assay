@@ -3,7 +3,7 @@
 
 #![cfg(feature = "orchestrate")]
 
-use assay_core::{CapabilitySet, LocalFsBackend, StateBackend};
+use assay_core::{CapabilitySet, LocalFsBackend, NoopBackend, StateBackend};
 use assay_types::{
     FailurePolicy, OrchestratorPhase, OrchestratorStatus, StateBackendConfig, TeamCheckpoint,
 };
@@ -261,4 +261,68 @@ fn test_local_fs_backend_send_and_poll_messages() {
     let (name, contents) = &messages[0];
     assert_eq!(name, "greeting");
     assert_eq!(contents, b"hello world");
+}
+
+/// Verifies that `NoopBackend` has all capabilities disabled.
+#[test]
+fn test_noop_backend_capabilities_all_false() {
+    let backend = NoopBackend;
+    let caps = backend.capabilities();
+    assert!(!caps.supports_messaging);
+    assert!(!caps.supports_gossip_manifest);
+    assert!(!caps.supports_annotations);
+    assert!(!caps.supports_checkpoints);
+}
+
+/// Verifies that `NoopBackend` can be used as a trait object via `Arc<dyn StateBackend>`.
+#[test]
+fn test_noop_backend_as_trait_object() {
+    use std::sync::Arc;
+    let backend: Arc<dyn StateBackend> = Arc::new(NoopBackend);
+    let caps = backend.capabilities();
+    assert!(
+        !caps.supports_messaging,
+        "NoopBackend should have no capabilities"
+    );
+}
+
+/// Verifies that `NoopBackend` methods all return Ok without panicking.
+#[test]
+fn test_noop_backend_all_methods_succeed() {
+    use std::path::PathBuf;
+    let backend = NoopBackend;
+    let dummy_dir = PathBuf::from("/tmp/nonexistent");
+
+    let status = OrchestratorStatus {
+        run_id: "test-noop".to_string(),
+        phase: OrchestratorPhase::Running,
+        failure_policy: FailurePolicy::SkipDependents,
+        sessions: vec![],
+        started_at: chrono::Utc::now(),
+        completed_at: None,
+        mesh_status: None,
+        gossip_status: None,
+    };
+
+    assert!(backend.push_session_event(&dummy_dir, &status).is_ok());
+    assert!(backend.read_run_state(&dummy_dir).unwrap().is_none());
+    assert!(backend.send_message(&dummy_dir, "test", b"data").is_ok());
+    assert!(backend.poll_inbox(&dummy_dir).unwrap().is_empty());
+    assert!(backend.annotate_run(&dummy_dir, "manifest/path").is_ok());
+
+    let checkpoint = TeamCheckpoint {
+        version: 1,
+        session_id: "noop-sess".to_string(),
+        project: "/tmp/test".to_string(),
+        timestamp: "2026-01-01T00:00:00Z".to_string(),
+        trigger: "test".to_string(),
+        agents: vec![],
+        tasks: vec![],
+        context_health: None,
+    };
+    assert!(
+        backend
+            .save_checkpoint_summary(&dummy_dir, &checkpoint)
+            .is_ok()
+    );
 }

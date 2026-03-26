@@ -710,24 +710,24 @@
 
 ### R074 — CapabilitySet and graceful degradation
 - Class: core-capability
-- Status: active
+- Status: validated
 - Description: Orchestrator checks `backend.capabilities().supports_messaging` before mesh peer routing and `supports_gossip_manifest` before knowledge manifest PromptLayer injection. If a capability is absent, the orchestrator emits a `warn!` event and continues without that feature rather than failing.
 - Why it matters: Not all backends support all operations. A LinearBackend that supports messaging but not sub-second heartbeats must degrade gracefully, not panic.
 - Source: user
 - Primary owning slice: M010/S03
 - Supporting slices: M010/S02
-- Validation: mapped
-- Notes: `NoopBackend` test helper (all capabilities false, all methods no-op) used to prove degradation paths in isolation.
+- Validation: S03 — run_mesh() checks supports_messaging before spawning routing thread; run_gossip() checks supports_gossip_manifest before PromptLayer injection and manifest writes; NoopBackend test helper (CapabilitySet::none()) proves degradation paths; test_mesh_degrades_gracefully_without_messaging and test_gossip_degrades_gracefully_without_manifest both pass; all existing integration tests pass unchanged; just ready green with 1488 tests
+- Notes: `NoopBackend` test helper (all capabilities false, all methods no-op) used to prove degradation paths in isolation. Both degradation paths emit `warn!` events.
 
 ### R075 — smelt-agent plugin
 - Class: differentiator
-- Status: active
+- Status: validated
 - Description: `plugins/smelt-agent/` directory with `AGENTS.md` system prompt and skills: `run-dispatch.md` (how to read a RunManifest, configure a backend, dispatch a run), `backend-status.md` (how to query `read_run_state`, interpret `OrchestratorStatus`), `peer-message.md` (how to use `send_message`/`poll_inbox` for agent-to-agent coordination across machines).
 - Why it matters: Smelt workers run as AI agents — they need a purpose-built prompt that teaches them the backend-aware API surface and coordination patterns
 - Source: user
 - Primary owning slice: M010/S04
 - Supporting slices: M010/S02
-- Validation: mapped
+- Validation: S04 — plugins/smelt-agent/AGENTS.md (27 lines, ≤60 cap) with skill table, MCP tool table, and workflow overview; skills/run-dispatch.md, skills/backend-status.md, skills/peer-message.md all exist with valid YAML frontmatter; MCP tool names (orchestrate_run, orchestrate_status, run_manifest) verified against server.rs; just ready green
 - Notes: Plugin follows the same format as `plugins/claude-code/` and `plugins/codex/`. Skills document the MCP tool signatures stabilised in S02.
 
 ## Deferred
@@ -875,14 +875,13 @@
 | R071 | core-capability | validated | M010/S01 | M010/S02 | S01 |
 | R072 | quality-attribute | validated | M010/S02 | none | S02 |
 | R073 | core-capability | validated | M010/S02 | M010/S03 | S02 |
-| R074 | core-capability | active | M010/S03 | M010/S02 | mapped |
-| R075 | differentiator | active | M010/S04 | M010/S02 | mapped |
+| R074 | core-capability | validated | M010/S03 | M010/S02 | S03 |
+| R075 | differentiator | validated | M010/S04 | M010/S02 | S04 |
 
 ## Coverage Summary
 
-- Active requirements: 2 (R074–R075)
-- Mapped to slices: 5
-- Validated: 65 (R001–R029 except R025, R034–R065)
+- Active requirements: 0
+- Validated: 67 (R001–R029 except R025, R034–R065, R071–R075)
 - Deferred: 3 (R025, R066, R067)
 - Out of scope: 4 (R030, R031, R032, R033)
 - Unmapped active requirements: 0
