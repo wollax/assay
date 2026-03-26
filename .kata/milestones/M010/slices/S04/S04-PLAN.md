@@ -49,7 +49,7 @@
 
 ## Tasks
 
-- [ ] **T01: AGENTS.md and all three skills** `est:25m`
+- [x] **T01: AGENTS.md and all three skills** `est:25m`
   - Why: S04 is pure markdown with confirmed MCP tool signatures from S01–S02 and established plugin conventions from codex/opencode plugins. All 4 files (AGENTS.md + 3 skills) fit comfortably in one context window with no compilation, no schema changes, and no inter-file dependencies that require ordering. Splitting would add overhead for zero benefit (same pattern as D082).
   - Files: `plugins/smelt-agent/AGENTS.md`, `plugins/smelt-agent/skills/run-dispatch.md`, `plugins/smelt-agent/skills/backend-status.md`, `plugins/smelt-agent/skills/peer-message.md`
   - Do: Create `plugins/smelt-agent/` directory. Write AGENTS.md following the codex plugin format (≤60 lines, skill table + MCP tool table + workflow summary). Write `run-dispatch.md` with YAML frontmatter and steps for RunManifest reading, StateBackendConfig setup, and orchestrate_run/run_manifest dispatch. Write `backend-status.md` with steps for orchestrate_status queries, OrchestratorStatus interpretation, and CapabilitySet degradation awareness. Write `peer-message.md` with steps for mesh send_message/poll_inbox, outbox/inbox convention, and roster PromptLayer parsing. Verify all tool names against server.rs grep. Verify all type names against assay-types grep. Run `just ready` to confirm no regressions.

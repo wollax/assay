@@ -1,18 +1,18 @@
 # Kata State
 
 **Active Milestone:** M010 — Pluggable State Backend
-**Active Slice:** S03 — CapabilitySet degradation paths
-**Active Task:** none (S02 complete, S03 not started)
-**Phase:** Executing
+**Active Slice:** S04 — smelt-agent plugin (complete)
+**Active Task:** T01 (complete)
+**Phase:** Completing slice
 
 ## Recent Decisions
 - D156: Arc<dyn StateBackend> in OrchestratorConfig (supersedes D151's Box)
 - D157: OrchestratorConfig Default uses placeholder path for LocalFsBackend
-- D158: persist_state removed from pub(crate) API after backend wiring
-- D159: Feature-gated RunManifest fields require split schema snapshot tests (orchestrate vs non-orchestrate)
+- D160: NoopBackend is a test helper, not production-grade
+- Followed codex plugin format (D082) for smelt-agent AGENTS.md
 
 ## Blockers
 - None
 
 ## Next Action
-Execute S03/T01: Create NoopBackend test helper and write degradation integration tests (red state). Then T02: Add capability guards to mesh.rs and gossip.rs to turn tests green.
+Complete S04: write slice summary, mark S04 done in roadmap, update milestone summary.
