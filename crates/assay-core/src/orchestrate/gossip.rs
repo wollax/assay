@@ -130,14 +130,13 @@ where
     }
 
     // ── Capability check: gossip manifest ────────────────────────────
-    let capabilities = config.backend.capabilities();
-    let supports_gossip_manifest = capabilities.supports_gossip_manifest;
+    let supports_gossip_manifest = config.backend.capabilities().supports_gossip_manifest;
 
     if !supports_gossip_manifest {
         tracing::warn!(
             capability = "gossip_manifest",
             mode = "gossip",
-            "backend does not support gossip manifest — skipping knowledge manifest injection"
+            "backend does not support gossip manifest — skipping PromptLayer injection and all manifest persistence"
         );
     }
 

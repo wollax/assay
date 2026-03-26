@@ -211,8 +211,7 @@ where
     let parent_span = Span::current();
 
     // ── Capability check: messaging ─────────────────────────────────
-    let capabilities = config.backend.capabilities();
-    let supports_messaging = capabilities.supports_messaging;
+    let supports_messaging = config.backend.capabilities().supports_messaging;
 
     if !supports_messaging {
         tracing::warn!(

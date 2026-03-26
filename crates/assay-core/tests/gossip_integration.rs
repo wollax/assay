@@ -334,15 +334,12 @@ fn test_gossip_mode_manifest_path_in_prompt_layer() {
 /// Proves that `run_gossip()` degrades gracefully when the backend has no
 /// gossip-manifest capability.
 ///
-/// With `NoopBackend` (all capabilities disabled), the gossip executor should:
-/// - Still run all sessions to completion (Ok result)
-/// - NOT inject a `"gossip-knowledge-manifest"` PromptLayer into sessions
+/// With `NoopBackend` (all capabilities disabled), the gossip executor:
+/// - Omits the `"gossip-knowledge-manifest"` PromptLayer from all sessions
+/// - Skips all three `persist_knowledge_manifest` callsites (initial, per-completion, final flush)
+/// - Still runs all sessions to completion (Ok result)
 /// - All sessions present in outcomes
-///
-/// This test is expected to FAIL until T02 adds production capability guards.
-/// The current implementation unconditionally injects the PromptLayer and
-/// calls `persist_knowledge_manifest`, which will error when the backend's
-/// gossip_manifest capability is false.
+/// - No error or panic from the absent manifest support
 #[test]
 fn test_gossip_degrades_gracefully_without_manifest() {
     let dir = setup_temp_dir();

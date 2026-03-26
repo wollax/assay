@@ -260,14 +260,11 @@ fn test_mesh_mode_completed_not_dead() {
 /// Proves that `run_mesh()` degrades gracefully when the backend has no
 /// messaging capability.
 ///
-/// With `NoopBackend` (all capabilities disabled), the mesh executor should:
-/// - Still run all sessions to completion (Ok result)
-/// - All sessions reach a terminal state
-/// - No state.json written (NoopBackend no-ops persistence)
-/// - Routing is effectively skipped (no real backend to route through)
-///
-/// This test is expected to FAIL until T02 adds production capability guards.
-/// The current implementation tries to route messages unconditionally.
+/// With `NoopBackend` (all capabilities disabled), the mesh executor:
+/// - Skips the routing thread entirely (supports_messaging is false — capability guard in run_mesh())
+/// - Still runs all sessions to completion (Ok result)
+/// - Writes no state.json (NoopBackend persistence is no-op, so messages_routed is never persisted)
+/// - No error or panic from the absent routing thread
 #[test]
 fn test_mesh_degrades_gracefully_without_messaging() {
     let dir = setup_temp_dir();
