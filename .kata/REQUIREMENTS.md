@@ -677,13 +677,13 @@
 
 ### R071 — StateBackend trait and CapabilitySet
 - Class: core-capability
-- Status: active
+- Status: validated
 - Description: `assay_core::state_backend::StateBackend` trait with sync methods: `capabilities()`, `push_session_event()`, `read_run_state()`, `send_message()`, `poll_inbox()`, `annotate_run()`, `save_checkpoint_summary()`. `CapabilitySet` flags struct declares which optional methods a backend implements. `StateBackendConfig` enum in `assay-types` with `LocalFs` and `Custom` variants.
 - Why it matters: The trait is the abstraction boundary — without it, every concrete backend (Linear, GitHub, SSH) has no stable interface to implement against
 - Source: user
 - Primary owning slice: M010/S01
 - Supporting slices: M010/S02
-- Validation: mapped
+- Validation: S01 — trait defined with 7 sync methods, object safety proven via `_assert_object_safe` compile guard, `CapabilitySet::all()`/`none()` constructors verified by 2 contract tests, `Box<dyn StateBackend>` construction proven by trait-object test, `StateBackendConfig` serde schema locked by JSON Schema snapshot, 1471 workspace tests pass, just ready green
 - Notes: Deliberate, scoped exception to D001 (zero-trait convention). Documented as D149.
 
 ### R072 — LocalFsBackend: zero regression
@@ -872,7 +872,7 @@
 | R065 | quality-attribute | validated | M009/S05 | M009/S02, M009/S03 | S05 |
 | R066 | primary-user-loop | deferred | none | none | unmapped |
 | R067 | quality-attribute | deferred | none | none | unmapped |
-| R071 | core-capability | active | M010/S01 | M010/S02 | mapped |
+| R071 | core-capability | validated | M010/S01 | M010/S02 | S01 |
 | R072 | quality-attribute | active | M010/S02 | none | mapped |
 | R073 | core-capability | active | M010/S02 | M010/S03 | mapped |
 | R074 | core-capability | active | M010/S03 | M010/S02 | mapped |
@@ -880,7 +880,7 @@
 
 ## Coverage Summary
 
-- Active requirements: 5 (R071–R075)
+- Active requirements: 4 (R072–R075)
 - Mapped to slices: 5
 - Validated: 65 (R001–R029 except R025, R034–R065)
 - Deferred: 3 (R025, R066, R067)

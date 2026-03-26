@@ -50,7 +50,7 @@ This milestone is complete only when all are true:
 
 ## Slices
 
-- [ ] **S01: StateBackend trait and CapabilitySet** `risk:high` `depends:[]`
+- [x] **S01: StateBackend trait and CapabilitySet** `risk:high` `depends:[]`
   > After this: `StateBackend` trait, `CapabilitySet` struct, `StateBackendConfig` enum, and `LocalFsBackend` skeleton exist in `assay-core`; contract tests prove the API surface; `just ready` green (no orchestrator wiring yet).
 
 - [ ] **S02: LocalFsBackend implementation and orchestrator wiring** `risk:high` `depends:[S01]`

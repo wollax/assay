@@ -1,9 +1,9 @@
 # Kata State
 
 **Active Milestone:** M010 — Pluggable State Backend
-**Active Slice:** S01 — StateBackend trait and CapabilitySet
-**Active Task:** T02 — DONE (slice S01 complete — both tasks done)
-**Phase:** Summarizing
+**Active Slice:** S02 — LocalFsBackend implementation and orchestrator wiring
+**Active Task:** (planning)
+**Phase:** Executing
 
 ## Recent Decisions
 - D149: StateBackend is the sole exception to D001 zero-trait convention
@@ -18,4 +18,4 @@
 - None
 
 ## Next Action
-T02 complete. Both T01 and T02 in S01 are done. Write S01-SUMMARY.md, S01-UAT.md, mark S01 done in M010-ROADMAP.md, squash-merge to main, and begin S02.
+S01 complete. PR created for `kata/root/M010/S01`. Begin S02: wire `LocalFsBackend` into `OrchestratorConfig`, implement real method bodies, add `RunManifest.state_backend` field, prove backward-compat round-trip.
