@@ -25,7 +25,7 @@ use assay_types::{ManifestSession, PromptLayer, PromptLayerKind};
 use tracing::{Span, info, info_span};
 
 use crate::error::AssayError;
-use crate::orchestrate::executor::{OrchestratorConfig, OrchestratorResult, persist_state};
+use crate::orchestrate::executor::{OrchestratorConfig, OrchestratorResult, SessionOutcome};
 use crate::pipeline::{PipelineConfig, PipelineError, PipelineResult};
 
 /// Run a mesh-mode multi-session execution.
@@ -181,7 +181,9 @@ where
         gossip_status: None,
     };
 
-    persist_state(&run_dir, &initial_status)?;
+    config
+        .backend
+        .push_session_event(&run_dir, &initial_status)?;
 
     // ── Shared state ─────────────────────────────────────────────────
 
@@ -268,6 +270,7 @@ where
             let run_id = &run_id;
             let started_at_run = started_at;
             let failure_policy = config.failure_policy;
+            let backend = Arc::clone(&config.backend);
             let worker_parent = parent_span.clone();
 
             scope.spawn(move || {
@@ -311,7 +314,14 @@ where
 
                 // Write completed sentinel regardless of outcome.
                 let session_dir = run_dir.join("mesh").join(&name);
-                let _ = std::fs::write(session_dir.join("completed"), b"");
+                if let Err(e) = std::fs::write(session_dir.join("completed"), b"") {
+                    tracing::error!(
+                        session = %name,
+                        path = %session_dir.join("completed").display(),
+                        error = %e,
+                        "failed to write mesh session completion sentinel — routing thread may stall"
+                    );
+                }
 
                 // Determine member state and session run state.
                 let (member_state, run_state, error_msg) = match &result {
@@ -372,7 +382,9 @@ where
                         mesh_status: Some(mesh),
                         gossip_status: None,
                     };
-                    let _ = persist_state(run_dir, &snapshot);
+                    if let Err(e) = backend.push_session_event(run_dir, &snapshot) {
+                        tracing::warn!(error = %e, "best-effort state snapshot failed — run status may be stale");
+                    }
                 }
 
                 // Decrement active count — routing thread exits when 0.
@@ -416,30 +428,34 @@ where
         mesh_status: Some(final_mesh),
         gossip_status: None,
     };
-    let _ = persist_state(&run_dir, &final_status);
+    if let Err(e) = config.backend.push_session_event(&run_dir, &final_status) {
+        tracing::error!(
+            run_id = %run_id,
+            error = %e,
+            "failed to persist final orchestrator state — run status is not durable"
+        );
+    }
 
     // Build outcomes vec.
-    let outcomes: Vec<(String, crate::orchestrate::executor::SessionOutcome)> = cloned_sessions
+    let outcomes: Vec<(String, SessionOutcome)> = cloned_sessions
         .iter()
         .zip(final_statuses.iter())
         .map(|((name, _session), status)| {
             let outcome = match status.state {
-                SessionRunState::Completed => {
-                    crate::orchestrate::executor::SessionOutcome::Completed {
-                        result: Box::new(PipelineResult {
-                            session_id: format!("mesh-{name}"),
-                            spec_name: status.spec.clone(),
-                            gate_summary: None,
-                            merge_check: None,
-                            stage_timings: vec![],
-                            outcome: crate::pipeline::PipelineOutcome::Success,
-                        }),
-                        worktree_path: PathBuf::new(),
-                        branch_name: String::new(),
-                        changed_files: vec![],
-                    }
-                }
-                _ => crate::orchestrate::executor::SessionOutcome::Failed {
+                SessionRunState::Completed => SessionOutcome::Completed {
+                    result: Box::new(PipelineResult {
+                        session_id: format!("mesh-{name}"),
+                        spec_name: status.spec.clone(),
+                        gate_summary: None,
+                        merge_check: None,
+                        stage_timings: vec![],
+                        outcome: crate::pipeline::PipelineOutcome::Success,
+                    }),
+                    worktree_path: PathBuf::new(),
+                    branch_name: String::new(),
+                    changed_files: vec![],
+                },
+                _ => SessionOutcome::Failed {
                     error: PipelineError {
                         stage: crate::pipeline::PipelineStage::AgentLaunch,
                         message: status
@@ -489,6 +505,7 @@ mod tests {
             mode: OrchestratorMode::Mesh,
             mesh_config: None,
             gossip_config: None,
+            state_backend: None,
         }
     }
 

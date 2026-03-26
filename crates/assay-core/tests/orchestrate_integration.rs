@@ -113,6 +113,7 @@ fn make_manifest(sessions: Vec<(&str, Option<&str>, Vec<&str>)>) -> RunManifest 
         mode: assay_types::OrchestratorMode::Dag,
         mesh_config: None,
         gossip_config: None,
+        state_backend: None,
     }
 }
 
@@ -202,6 +203,7 @@ fn three_session_dag_execute_merge_end_to_end() {
     let config = OrchestratorConfig {
         max_concurrency: 1, // serialize for deterministic git operations
         failure_policy: FailurePolicy::SkipDependents,
+        ..Default::default()
     };
 
     // Use a mutex to serialize git operations (mock runner does real git)
@@ -328,6 +330,7 @@ fn failure_propagation_a_fails_b_skipped_c_succeeds() {
     let config = OrchestratorConfig {
         max_concurrency: 1,
         failure_policy: FailurePolicy::SkipDependents,
+        ..Default::default()
     };
 
     let git_mutex = std::sync::Mutex::new(());
@@ -459,6 +462,7 @@ fn status_persistence_round_trip() {
     let config = OrchestratorConfig {
         max_concurrency: 1,
         failure_policy: FailurePolicy::SkipDependents,
+        ..Default::default()
     };
 
     let git_mutex = std::sync::Mutex::new(());

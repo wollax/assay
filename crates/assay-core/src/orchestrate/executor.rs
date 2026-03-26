@@ -7,16 +7,15 @@
 //! completion, and returns [`OrchestratorResult`].
 
 use std::collections::HashSet;
-use std::io::Write;
+use std::fmt;
 use std::panic::{self, AssertUnwindSafe};
 use std::path::PathBuf;
-use std::sync::{Condvar, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
 use tracing::{Span, info, info_span};
 
 use chrono::Utc;
-use tempfile::NamedTempFile;
 use ulid::Ulid;
 
 use assay_types::ManifestSession;
@@ -27,6 +26,7 @@ use assay_types::orchestrate::{
 use crate::error::AssayError;
 use crate::orchestrate::dag::DependencyGraph;
 use crate::pipeline::{PipelineConfig, PipelineError, PipelineResult, PipelineStage};
+use crate::state_backend::{LocalFsBackend, StateBackend};
 
 /// Outcome of a single orchestrated session.
 ///
@@ -60,20 +60,47 @@ pub enum SessionOutcome {
 }
 
 /// Configuration for an orchestrated run.
-#[derive(Debug, Clone)]
 pub struct OrchestratorConfig {
     /// Maximum number of concurrent sessions.
     /// Defaults to 8; effective concurrency is `min(max_concurrency, session_count)`.
     pub max_concurrency: usize,
     /// Failure policy for this run.
     pub failure_policy: FailurePolicy,
+    /// Pluggable state persistence backend.
+    pub backend: Arc<dyn StateBackend>,
+}
+
+impl Clone for OrchestratorConfig {
+    fn clone(&self) -> Self {
+        Self {
+            max_concurrency: self.max_concurrency,
+            failure_policy: self.failure_policy,
+            backend: Arc::clone(&self.backend),
+        }
+    }
+}
+
+impl fmt::Debug for OrchestratorConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("OrchestratorConfig")
+            .field("max_concurrency", &self.max_concurrency)
+            .field("failure_policy", &self.failure_policy)
+            // dyn StateBackend is not Debug; emit a type-level placeholder.
+            .field("backend", &"Arc<dyn StateBackend>")
+            .finish()
+    }
 }
 
 impl Default for OrchestratorConfig {
+    /// The `.assay` path here is a placeholder — all real construction sites
+    /// (CLI, MCP, integration tests with real directories) provide an explicit
+    /// backend. Tests that use `::default()` tolerate the relative path because
+    /// they exercise logic that doesn't depend on backend path resolution.
     fn default() -> Self {
         Self {
             max_concurrency: 8,
             failure_policy: FailurePolicy::default(),
+            backend: Arc::new(LocalFsBackend::new(PathBuf::from(".assay"))),
         }
     }
 }
@@ -102,37 +129,6 @@ struct ExecutorState {
     outcomes: Vec<(String, SessionOutcome)>,
     session_statuses: Vec<SessionStatus>,
     aborted: bool,
-}
-
-// ── State persistence ────────────────────────────────────────────────
-
-/// Persist an `OrchestratorStatus` snapshot to `state.json` using atomic
-/// tempfile-then-rename.
-pub(crate) fn persist_state(
-    run_dir: &std::path::Path,
-    status: &OrchestratorStatus,
-) -> Result<(), AssayError> {
-    let final_path = run_dir.join("state.json");
-    let json = serde_json::to_string_pretty(status)
-        .map_err(|e| AssayError::json("serializing orchestrator status", &final_path, e))?;
-
-    let mut tmpfile = NamedTempFile::new_in(run_dir)
-        .map_err(|e| AssayError::io("creating temp file for orchestrator state", run_dir, e))?;
-
-    tmpfile
-        .write_all(json.as_bytes())
-        .map_err(|e| AssayError::io("writing orchestrator state", &final_path, e))?;
-
-    tmpfile
-        .as_file()
-        .sync_all()
-        .map_err(|e| AssayError::io("syncing orchestrator state", &final_path, e))?;
-
-    tmpfile
-        .persist(&final_path)
-        .map_err(|e| AssayError::io("persisting orchestrator state", &final_path, e.error))?;
-
-    Ok(())
 }
 
 // ── Core executor ────────────────────────────────────────────────────
@@ -200,7 +196,9 @@ where
     };
 
     // Persist initial state.
-    persist_state(&run_dir, &initial_status)?;
+    config
+        .backend
+        .push_session_event(&run_dir, &initial_status)?;
 
     let state = ExecutorState {
         completed: HashSet::new(),
@@ -305,6 +303,7 @@ where
                 let run_id = &run_id;
                 let graph = &graph;
                 let failure_policy = config.failure_policy;
+                let backend = Arc::clone(&config.backend);
                 let started_at_run = started_at;
                 let parent_span = parent_span.clone();
 
@@ -475,7 +474,9 @@ where
                         gossip_status: None,
                     };
                     // Best-effort persistence — don't fail the whole run.
-                    let _ = persist_state(run_dir, &snapshot);
+                    if let Err(e) = backend.push_session_event(run_dir, &snapshot) {
+                        tracing::warn!(error = %e, "best-effort state snapshot failed — run status may be stale");
+                    }
 
                     // Wake the dispatch loop.
                     condvar.notify_all();
@@ -507,7 +508,13 @@ where
         mesh_status: None,
         gossip_status: None,
     };
-    let _ = persist_state(&run_dir, &final_status);
+    if let Err(e) = config.backend.push_session_event(&run_dir, &final_status) {
+        tracing::error!(
+            run_id = %run_id,
+            error = %e,
+            "failed to persist final orchestrator state — run status is not durable"
+        );
+    }
 
     let outcomes = std::mem::take(&mut guard.outcomes);
     drop(guard);
@@ -582,6 +589,7 @@ mod tests {
         let config = OrchestratorConfig {
             max_concurrency: 4,
             failure_policy: FailurePolicy::SkipDependents,
+            ..Default::default()
         };
         let pipeline_config = make_pipeline_config(tmp.path());
 
@@ -633,6 +641,7 @@ mod tests {
         let config = OrchestratorConfig {
             max_concurrency: 4,
             failure_policy: FailurePolicy::SkipDependents,
+            ..Default::default()
         };
         let pipeline_config = make_pipeline_config(tmp.path());
 
@@ -661,6 +670,7 @@ mod tests {
         let config = OrchestratorConfig {
             max_concurrency: 1, // serialize to make test deterministic
             failure_policy: FailurePolicy::SkipDependents,
+            ..Default::default()
         };
         let pipeline_config = make_pipeline_config(tmp.path());
 
@@ -728,6 +738,7 @@ mod tests {
         let config = OrchestratorConfig {
             max_concurrency: 4,
             failure_policy: FailurePolicy::SkipDependents,
+            ..Default::default()
         };
         let pipeline_config = make_pipeline_config(tmp.path());
 
@@ -791,6 +802,7 @@ mod tests {
         let config = OrchestratorConfig {
             max_concurrency: 2,
             failure_policy: FailurePolicy::SkipDependents,
+            ..Default::default()
         };
         let pipeline_config = make_pipeline_config(tmp.path());
 
@@ -872,6 +884,7 @@ mod tests {
         let config = OrchestratorConfig {
             max_concurrency: 1,
             failure_policy: FailurePolicy::Abort,
+            ..Default::default()
         };
         let pipeline_config = make_pipeline_config(tmp.path());
 
@@ -915,6 +928,7 @@ mod tests {
         let config = OrchestratorConfig {
             max_concurrency: 2,
             failure_policy: FailurePolicy::SkipDependents,
+            ..Default::default()
         };
         let pipeline_config = make_pipeline_config(tmp.path());
 
@@ -1007,6 +1021,7 @@ mod tests {
         let config = OrchestratorConfig {
             max_concurrency: 4,
             failure_policy: FailurePolicy::SkipDependents,
+            ..Default::default()
         };
         let pipeline_config = make_pipeline_config(tmp.path());
 
@@ -1055,6 +1070,7 @@ mod tests {
         let config = OrchestratorConfig {
             max_concurrency: 1,
             failure_policy: FailurePolicy::SkipDependents,
+            ..Default::default()
         };
         let pipeline_config = make_pipeline_config(tmp.path());
 
@@ -1122,6 +1138,7 @@ mod tests {
         let config = OrchestratorConfig {
             max_concurrency: 4,
             failure_policy: FailurePolicy::SkipDependents,
+            ..Default::default()
         };
         let pipeline_config = make_pipeline_config(tmp.path());
 

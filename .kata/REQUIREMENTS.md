@@ -688,25 +688,25 @@
 
 ### R072 — LocalFsBackend: zero regression
 - Class: quality-attribute
-- Status: active
+- Status: validated
 - Description: `LocalFsBackend` implements `StateBackend` by wrapping all existing persistence code. All orchestrate integration, mesh, and gossip tests pass unchanged. `RunManifest` without `state_backend` field defaults to `LocalFsBackend` (backward-compatible deserialization).
 - Why it matters: The abstraction must be invisible to existing users — no behavioral change, no test regression, no schema break
 - Source: user
 - Primary owning slice: M010/S02
 - Supporting slices: none
-- Validation: mapped
-- Notes: `RunManifest` must be checked for `deny_unknown_fields` before adding the field. D092 pattern applies.
+- Validation: S02 — backward-compat round-trip tests (manifest without field → None, manifest with LocalFs → round-trip), 16/16 LocalFsBackend contract tests, 5+2+2+5+3=17 integration tests all pass unchanged, just ready green with 1481 tests. Schema split (orchestrate/non-orchestrate) covers both feature flag states.
+- Notes: `RunManifest` confirmed no `deny_unknown_fields` — D092 pattern applied cleanly. Schema snapshot split (D159) handles feature-gated field without conflicts.
 
 ### R073 — Tier-2 event routing through backend
 - Class: core-capability
-- Status: active
+- Status: validated
 - Description: Orchestrator, mesh coordinator, gossip coordinator, and checkpoint persistence route Tier-2 events (session transitions, run phase, knowledge manifest notifications, checkpoint summaries) through `StateBackend` methods. Tier-1 (per-tick heartbeats, per-message mesh routing) stays file-backed inside `LocalFsBackend` — not exposed as a trait surface.
 - Why it matters: This is the actual payoff — smelt workers can push Tier-2 events to a remote backend without SCP; the controller reads from the backend instead of the filesystem
 - Source: user
 - Primary owning slice: M010/S02
 - Supporting slices: M010/S03
-- Validation: mapped
-- Notes: Tier-1 vs Tier-2 split is explicit: heartbeats and per-message routing are implementation details of LocalFsBackend, not trait methods.
+- Validation: S02 — zero `persist_state` references in `crates/assay-core/src/orchestrate/` (grep confirmed), all 11 callsites replaced by `config.backend.push_session_event()`, LocalFsBackend retains filesystem behavior, all integration tests pass.
+- Notes: Tier-1 vs Tier-2 split confirmed: heartbeats and per-message file routing are LocalFsBackend implementation details only.
 
 ### R074 — CapabilitySet and graceful degradation
 - Class: core-capability
@@ -873,14 +873,14 @@
 | R066 | primary-user-loop | deferred | none | none | unmapped |
 | R067 | quality-attribute | deferred | none | none | unmapped |
 | R071 | core-capability | validated | M010/S01 | M010/S02 | S01 |
-| R072 | quality-attribute | active | M010/S02 | none | mapped |
-| R073 | core-capability | active | M010/S02 | M010/S03 | mapped |
+| R072 | quality-attribute | validated | M010/S02 | none | S02 |
+| R073 | core-capability | validated | M010/S02 | M010/S03 | S02 |
 | R074 | core-capability | active | M010/S03 | M010/S02 | mapped |
 | R075 | differentiator | active | M010/S04 | M010/S02 | mapped |
 
 ## Coverage Summary
 
-- Active requirements: 4 (R072–R075)
+- Active requirements: 2 (R074–R075)
 - Mapped to slices: 5
 - Validated: 65 (R001–R029 except R025, R034–R065)
 - Deferred: 3 (R025, R066, R067)

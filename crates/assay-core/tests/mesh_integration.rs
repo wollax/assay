@@ -62,6 +62,7 @@ fn make_mesh_manifest(names: &[(&str, &str)]) -> RunManifest {
         mode: OrchestratorMode::Mesh,
         mesh_config: None,
         gossip_config: None,
+        state_backend: None,
     }
 }
 

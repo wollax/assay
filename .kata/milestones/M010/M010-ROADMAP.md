@@ -53,7 +53,7 @@ This milestone is complete only when all are true:
 - [x] **S01: StateBackend trait and CapabilitySet** `risk:high` `depends:[]`
   > After this: `StateBackend` trait, `CapabilitySet` struct, `StateBackendConfig` enum, and `LocalFsBackend` skeleton exist in `assay-core`; contract tests prove the API surface; `just ready` green (no orchestrator wiring yet).
 
-- [ ] **S02: LocalFsBackend implementation and orchestrator wiring** `risk:high` `depends:[S01]`
+- [x] **S02: LocalFsBackend implementation and orchestrator wiring** `risk:high` `depends:[S01]`
   > After this: all orchestrator, mesh, gossip, and checkpoint writes flow through `LocalFsBackend`; `RunManifest.state_backend` field added; existing orchestrate integration tests pass unchanged.
 
 - [ ] **S03: CapabilitySet degradation paths** `risk:medium` `depends:[S02]`
