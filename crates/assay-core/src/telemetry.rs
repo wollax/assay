@@ -384,7 +384,10 @@ impl Drop for TracingGuard {
         if let Some(ref provider) = self._tracer_provider
             && let Err(e) = provider.shutdown()
         {
-            eprintln!("[assay] warning: OTel tracer provider shutdown error: {e}");
+            eprintln!(
+                "[assay] ERROR: OTel tracer provider failed to flush pending spans on shutdown: {e}. \
+                 Some traces may not have been exported to the collector."
+            );
         }
     }
 }
@@ -506,13 +509,10 @@ where
         None => return (None, None),
     };
 
-    // Propagator must be set before subscriber init so incoming trace context
-    // is extracted correctly from the very first span.
-    opentelemetry::global::set_text_map_propagator(
-        opentelemetry_sdk::propagation::TraceContextPropagator::new(),
-    );
-
     // Build OTLP HTTP exporter → tracer provider → tracing layer.
+    // The global propagator and provider are only set on success — this
+    // prevents a partial-init state where extract_traceparent() would inject
+    // an empty/zeroed TRACEPARENT if the exporter build fails.
     let result = (|| -> Result<
         (
             tracing_opentelemetry::OpenTelemetryLayer<S, opentelemetry_sdk::trace::Tracer>,
@@ -529,6 +529,11 @@ where
             .with_batch_exporter(exporter)
             .build();
 
+        // Set globals only after both exporter and provider are successfully
+        // constructed, so callers never see a propagator without a live provider.
+        opentelemetry::global::set_text_map_propagator(
+            opentelemetry_sdk::propagation::TraceContextPropagator::new(),
+        );
         opentelemetry::global::set_tracer_provider(provider.clone());
 
         let tracer = provider.tracer("assay");
@@ -544,7 +549,10 @@ where
             tracing::warn!(
                 endpoint = %endpoint,
                 error = %e,
-                "OTLP exporter init failed; trace export disabled"
+                "OTLP exporter init failed; trace export disabled. \
+                 Verify OTEL_EXPORTER_OTLP_ENDPOINT is reachable \
+                 and a collector is running. \
+                 Set RUST_LOG=opentelemetry=debug for details."
             );
             (None, None)
         }
