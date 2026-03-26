@@ -2,7 +2,7 @@
 
 **Active Milestone:** M009 — Observability
 **Active Slice:** S05 — OTLP export and trace context propagation
-**Active Task:** T03 — Inject TRACEPARENT env var into subprocess spawns from active span context
+**Active Task:** T04 — Wire CLI endpoint config, verify feature-flag dep isolation, and run just ready
 **Phase:** Executing
 
 ## Recent Decisions
@@ -14,4 +14,4 @@
 - None
 
 ## Next Action
-Execute T03: Inject TRACEPARENT env var into subprocess spawns from the active OTel span context. This completes the trace context propagation contract (test_traceparent_injected_in_subprocess).
+Execute T04: Wire CLI endpoint config (read OTEL_EXPORTER_OTLP_ENDPOINT into TracingConfig::otlp_endpoint), add dep-isolation tests, and run `just ready` for full workspace green. This is the final task of S05.
