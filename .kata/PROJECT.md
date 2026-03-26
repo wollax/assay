@@ -10,7 +10,7 @@ A beginning developer installs Assay, describes a feature, and gets a structured
 
 ## Current State
 
-v0.9.0-dev. M001–M008 complete, M009 in progress (S01 done). ~24K lines of Rust across 6 crates. 1400+ tests passing. 56 requirements validated, 6 active. `assay-tui` is a full Ratatui application with dashboard, in-TUI authoring wizard, spec browser, provider configuration, agent spawning with live output streaming, slash command overlay, MCP server configuration panel, PR status badges with background polling, and gate history analytics screen.
+v0.9.0-dev. M001–M008 complete, M009 in progress (S01–S04 done). ~25K lines of Rust across 6 crates. 1400+ tests passing. 58 requirements validated, 4 active. `assay-tui` is a full Ratatui application with dashboard, in-TUI authoring wizard, spec browser, provider configuration, agent spawning with live output streaming, slash command overlay, MCP server configuration panel, PR status badges with background polling, and gate history analytics screen. JSON trace file export is now live: instrumented runs produce `.assay/traces/` JSON files inspectable via `assay traces list` and `assay traces show <id>`.
 
 **M001 (complete):** Single-agent harness end-to-end — manifest → worktree → agent launch → gate evaluation → merge proposal. 19 requirements validated.
 
