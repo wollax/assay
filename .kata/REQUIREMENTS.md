@@ -347,14 +347,14 @@
 
 ### R027 — OpenTelemetry instrumentation
 - Class: quality-attribute
-- Status: validated
-- Description: OTel tracing spans across pipeline stages, session lifecycle, merge phases. Structured tracing foundation, JSON file export, OTLP export, and trace context propagation.
+- Status: active
+- Description: OTel tracing spans and metrics across pipeline stages, session lifecycle, merge phases, and harness generation
 - Why it matters: Observability is critical for debugging multi-agent orchestration at scale — which session is slow, where merges fail, harness generation latency
 - Source: user
 - Primary owning slice: M009/S03
 - Supporting slices: M009/S01, M009/S02, M009/S04, M009/S05
-- Validation: S01 — zero eprintln, structured tracing foundation. S02 — pipeline stage spans with #[instrument]. S03 — orchestration spans with cross-thread parenting. S04 — JSON file trace export with CLI. S05 — OTLP exporter + TRACEPARENT propagation. All 5 slices complete with integration tests.
-- Notes: Metrics deferred to R067. Scoped to tracing only as planned.
+- Validation: unmapped
+- Notes: Deferred since M002. Now activated for M009. Scoped to tracing only (metrics deferred to R067). Covers pipeline + orchestration span instrumentation, JSON file + OTLP export, and eprintln→tracing migration.
 
 ### R028 — Post-resolution validation
 - Class: quality-attribute
@@ -650,8 +650,8 @@
 - Source: user
 - Primary owning slice: M009/S04
 - Supporting slices: M009/S01
-- Validation: S04 — Custom JsonFileLayer implements Layer<S> for span lifecycle capture (D140). Root span detection via no-parent heuristic (D141). `assay traces list` and `assay traces show <id>` CLI commands. Traces CLI does not enable trace file layer (D142). Integration tests with synthetic trace data.
-- Notes: Custom Layer (~100 lines) captures span open/close/fields. Root span closes trigger flush to `.assay/traces/<trace_id>.json`.
+- Validation: S04 — JsonFileLayer writes one JSON file per root span with correct parent-child tree, timing, and fields; atomic writes via NamedTempFile+persist; file pruning at 50 max; assay traces list prints table of traces; assay traces show <id> renders indented span tree; end-to-end write→read→render round-trip proven by integration test; just ready green
+- Notes: Custom Layer implementation (not built-in JSON formatter) to capture span open/close lifecycle. Trace files written only for pipeline-running subcommands (Run/Gate/Context); Traces subcommand uses traces_dir: None to prevent self-tracing.
 
 ### R064 — OTLP trace export
 - Class: core-capability
@@ -822,7 +822,7 @@
 
 - Active requirements: 0
 - Mapped to slices: 0
-- Validated: 62 (R001–R029 except R025, R034–R065)
+- Validated: 65 (R001–R029 except R025, R034–R065)
 - Deferred: 3 (R025, R066, R067)
 - Out of scope: 4 (R030, R031, R032, R033)
 - Unmapped active requirements: 0

@@ -201,12 +201,29 @@ Examples:
         #[command(subcommand)]
         command: commands::pr::PrCommand,
     },
+    /// Inspect JSON trace files written by instrumented runs
+    #[command(after_long_help = "\
+Examples:
+  List all trace files:
+    assay traces list
+
+  Show the span tree for a specific trace:
+    assay traces show 20240101T120000Z-abc123")]
+    Traces {
+        #[command(subcommand)]
+        command: commands::traces::TracesCommand,
+    },
 }
 
 /// Determine the tracing config based on the subcommand.
 ///
 /// MCP serve uses `TracingConfig::mcp()` (warn level, no ANSI) because
-/// stdout is reserved for JSON-RPC. All other subcommands use default (info).
+/// stdout is reserved for JSON-RPC.
+///
+/// Pipeline-running subcommands (Run, Gate, Context) set `traces_dir` when
+/// the project's `.assay/` directory exists, enabling automatic trace file
+/// export.  Non-pipeline subcommands (Traces, Init, Spec, Milestone, etc.)
+/// keep `traces_dir: None` to avoid self-tracing loops and spurious writes.
 fn tracing_config_for(command: &Option<Command>) -> assay_core::telemetry::TracingConfig {
     let mut config = if let Some(Command::Mcp {
         command: commands::mcp::McpCommand::Serve,
@@ -216,6 +233,17 @@ fn tracing_config_for(command: &Option<Command>) -> assay_core::telemetry::Traci
     } else {
         assay_core::telemetry::TracingConfig::default()
     };
+
+    // Set traces_dir only for subcommands that run instrumented pipeline work
+    // and only when the project's .assay/ directory already exists.
+    let traces_dir = match command {
+        Some(Command::Run(_) | Command::Gate { .. } | Command::Context { .. }) => project_root()
+            .ok()
+            .filter(|r| assay_dir(r).is_dir())
+            .map(|r| assay_dir(&r).join("traces")),
+        _ => None,
+    };
+    config.traces_dir = traces_dir;
 
     // Activate OTLP export when the standard env var is set.
     // Works for both default and MCP configs — traces from MCP serve are valuable.
@@ -248,6 +276,7 @@ async fn run() -> anyhow::Result<i32> {
         Some(Command::Plan) => commands::plan::handle(),
         Some(Command::History { command }) => commands::history::handle(command),
         Some(Command::Pr { command }) => commands::pr::handle(command),
+        Some(Command::Traces { command }) => commands::traces::handle(command),
         None => {
             // Note: project detection checks cwd only — no upward traversal.
             // Running `assay` from a subdirectory of a project shows the hint.

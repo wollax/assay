@@ -10,7 +10,7 @@ A beginning developer installs Assay, describes a feature, and gets a structured
 
 ## Current State
 
-v0.9.0-dev. M001–M009 complete. ~24K lines of Rust across 6 crates. 1400+ tests passing. 62 requirements validated, 0 active. `assay-tui` is a full Ratatui application with dashboard, in-TUI authoring wizard, spec browser, provider configuration, agent spawning with live output streaming, slash command overlay, MCP server configuration panel, PR status badges with background polling, and gate history analytics screen.
+v0.9.0-dev. M001–M009 complete. ~25K lines of Rust across 6 crates. 1400+ tests passing. 65 requirements validated, 0 active. `assay-tui` is a full Ratatui application with dashboard, in-TUI authoring wizard, spec browser, provider configuration, agent spawning with live output streaming, slash command overlay, MCP server configuration panel, PR status badges with background polling, and gate history analytics screen. Full OpenTelemetry tracing stack: structured leveled events (zero eprintln!), pipeline and orchestration spans, JSON file trace export under `.assay/traces/`, feature-flagged OTLP export, and W3C TRACEPARENT subprocess propagation.
 
 **M001 (complete):** Single-agent harness end-to-end — manifest → worktree → agent launch → gate evaluation → merge proposal. 19 requirements validated.
 
@@ -28,7 +28,7 @@ v0.9.0-dev. M001–M009 complete. ~24K lines of Rust across 6 crates. 1400+ test
 
 **M008 (complete):** PR Workflow + Plugin Parity — S01 delivered advanced PR creation with labels, reviewers, and body templates from milestone TOML. S02 delivered TUI PR status panel with background `gh` polling (60s interval) showing state/CI/review badges. S03 delivered OpenCode plugin with AGENTS.md + 5 skills matching Codex parity. S04 delivered gate history analytics engine (`compute_analytics`, `assay history analytics` CLI with text tables and `--json`). S05 delivered TUI analytics screen (`a` key from Dashboard, failure frequency heatmap with color-coded rates, milestone velocity table). R057, R058, R059 validated. 1400+ tests.
 
-**M009 (complete):** Observability — S01 replaced all eprintln! with structured tracing macros, established init_tracing()/TracingConfig/TracingGuard foundation. S02 added #[instrument] pipeline stage spans. S03 instrumented DAG/Mesh/Gossip orchestration with cross-thread span parenting. S04 built custom JsonFileLayer for `.assay/traces/` export + `assay traces list/show` CLI. S05 added feature-flagged OTLP exporter (http-proto transport) + W3C TRACEPARENT subprocess injection + CLI env-var activation. Default build has zero OTel deps. R027, R060–R065 validated. 1400+ tests.
+**M009 (complete):** Observability — S01 replaced all eprintln! with structured tracing macros, established init_tracing()/TracingConfig/TracingGuard layered subscriber foundation. S02 added #[instrument] on 5 pipeline functions and info_span! on 6 stage blocks. S03 instrumented DAG/Mesh/Gossip orchestration with root+session spans and cross-thread parenting in std::thread::scope workers. S04 built custom JsonFileLayer writing Vec<SpanData> JSON files to `.assay/traces/` plus `assay traces list` and `assay traces show <id>` CLI. S05 added feature-flagged OTLP exporter (telemetry feature, http-proto+hyper-client transport) with TracingGuard::drop() shutdown and W3C TRACEPARENT injection in both subprocess launch paths. Default build has zero OTel deps. R027, R060–R065 validated. 1400+ tests.
 
 Crates:
 

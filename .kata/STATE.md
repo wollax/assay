@@ -1,7 +1,7 @@
 # Kata State
 
-**Active Milestone:** M009 — Observability (COMPLETE)
-**Active Slice:** None — all slices complete
+**Active Milestone:** None — M009 complete
+**Active Slice:** None
 **Active Task:** None
 **Phase:** Complete
 
@@ -14,4 +14,4 @@
 - None
 
 ## Next Action
-M009 is complete. All 5 slices done. All milestone success criteria met. 62 requirements validated, 0 active. Ready for next milestone or release.
+M009 (Observability) is complete. All 5 slices done, all 7 requirements validated (R027, R060–R065). 65 requirements validated total, 0 active. Ready for the next milestone.
