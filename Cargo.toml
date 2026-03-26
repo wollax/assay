@@ -23,7 +23,11 @@ clap = { version = "4", features = ["derive"] }
 ratatui = "0.30"
 crossterm = "0.28"
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
+tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter", "registry"] }
+opentelemetry = { version = "0.31" }
+opentelemetry_sdk = { version = "0.31", features = ["rt-tokio"] }
+opentelemetry-otlp = { version = "0.31", default-features = false, features = ["http-proto", "hyper-client"] }
+tracing-opentelemetry = { version = "0.32" }
 chrono = { version = "0.4", features = ["serde"] }
 toml = "0.8"
 thiserror = "2"

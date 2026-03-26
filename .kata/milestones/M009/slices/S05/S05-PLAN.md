@@ -48,7 +48,7 @@
 
 ## Tasks
 
-- [ ] **T01: Add OTel workspace deps, feature flags, and red-state integration tests** `est:25m`
+- [x] **T01: Add OTel workspace deps, feature flags, and red-state integration tests** `est:25m`
   - Why: Establishes the dependency and feature-flag foundation; creates failing tests that define the contract before any OTel code is written
   - Files: `Cargo.toml`, `crates/assay-core/Cargo.toml`, `crates/assay-cli/Cargo.toml`, `crates/assay-core/tests/telemetry_otlp.rs`
   - Do: Add opentelemetry/opentelemetry_sdk/opentelemetry-otlp/tracing-opentelemetry as optional workspace deps. Add `registry` to tracing-subscriber features. Add `telemetry` feature to assay-core and assay-cli. Create red-state integration tests asserting: (1) OTel layer init compiles and returns TracingGuard, (2) TRACEPARENT env var appears in subprocess output, (3) default build dep tree has no opentelemetry. Respect deny.toml — use `http-proto` + `hyper-client` on opentelemetry-otlp to avoid reqwest conflict. Run `cargo deny check bans` to verify no new violations.
