@@ -55,7 +55,7 @@
   - Verify: `cargo test -p assay-core --test telemetry_otlp --features telemetry` compiles (tests may fail — red state); `cargo deny check bans` passes; `cargo build -p assay-cli` (default) still compiles
   - Done when: Feature flags defined on both crates, OTel deps are optional in workspace, test file exists and compiles with `--features telemetry`, `cargo deny check bans` clean
 
-- [ ] **T02: Implement OTel tracing layer in init_tracing() with feature-flagged TracingGuard shutdown** `est:30m`
+- [x] **T02: Implement OTel tracing layer in init_tracing() with feature-flagged TracingGuard shutdown** `est:30m`
   - Why: The core OTel integration — adds the OTLP exporter layer to the subscriber chain and ensures spans are flushed on process exit
   - Files: `crates/assay-core/src/telemetry.rs`
   - Do: Add `otlp_endpoint: Option<String>` to TracingConfig. Behind `#[cfg(feature = "telemetry")]`: set global text map propagator (TraceContextPropagator), build OTel pipeline with `opentelemetry_otlp` (http-proto + hyper-client transport, endpoint from config, rt-tokio runtime), create tracing-opentelemetry layer, add to registry().with() chain. On OTel init failure: emit tracing::warn! and continue without OTel layer. Add `shutdown_tracer_provider()` to TracingGuard::drop() behind cfg. Add `registry` feature to tracing-subscriber usage.
