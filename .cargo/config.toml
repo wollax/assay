@@ -1,0 +1,5 @@
+[profile.dev]
+# Disabled to prevent Cargo's incremental compilation cache from consuming
+# excessive disk space during the OTel/prost/tonic dependency additions in M009.
+# Remove after M009 is merged if disk pressure is no longer a concern.
+incremental = false
