@@ -10,6 +10,7 @@ pub mod plan;
 pub mod pr;
 pub mod run;
 pub mod spec;
+pub mod traces;
 pub mod worktree;
 
 use anyhow::Context;
