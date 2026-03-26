@@ -1,8 +1,8 @@
 # Kata State
 
 **Active Milestone:** M010 — Pluggable State Backend
-**Active Slice:** S02 — LocalFsBackend implementation and orchestrator wiring
-**Active Task:** T03 ✅ — Wire Arc<dyn StateBackend> into OrchestratorConfig and replace all persist_state callsites
+**Active Slice:** S02 — LocalFsBackend implementation and orchestrator wiring ✅
+**Active Task:** T04 ✅ — Update CLI, MCP, and TUI OrchestratorConfig construction sites and run just ready
 **Phase:** Executing
 
 ## Recent Decisions
@@ -16,4 +16,4 @@
 - None
 
 ## Next Action
-T03 complete. Proceed to T04 or next task in S02.
+S02 complete (all 4 tasks done). `just ready` green. Proceed to next slice in M010.
