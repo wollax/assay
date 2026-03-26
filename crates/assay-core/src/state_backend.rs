@@ -4,9 +4,11 @@
 //! and storage. All methods return `crate::Result<_>`, giving callers typed
 //! failure context via `AssayError` rather than raw strings or panics.
 
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use assay_types::{OrchestratorStatus, TeamCheckpoint};
+use tempfile::NamedTempFile;
 
 // ---------------------------------------------------------------------------
 // CapabilitySet
@@ -144,10 +146,9 @@ fn _assert_object_safe(_: std::sync::Arc<dyn StateBackend>) {}
 
 /// Local filesystem backend.
 ///
-/// Persists orchestrator state under `assay_dir` using atomic writes.
-/// All method bodies are stubs until S02 wires the real implementations.
-/// Any call to a stub emits a `tracing::warn!` so premature use is
-/// immediately visible in test output and operator logs.
+/// Persists orchestrator state under `assay_dir` using atomic writes
+/// (tempfile-rename pattern) for crash safety. Reads tolerate missing
+/// files gracefully, returning `Ok(None)` or `Ok(vec![])` as appropriate.
 pub struct LocalFsBackend {
     /// Root assay directory (`.assay/` or equivalent).
     assay_dir: PathBuf,
@@ -170,58 +171,136 @@ impl StateBackend for LocalFsBackend {
         CapabilitySet::all()
     }
 
-    fn push_session_event(
-        &self,
-        run_dir: &Path,
-        _status: &OrchestratorStatus,
-    ) -> crate::Result<()> {
-        tracing::warn!(
-            run_dir = %run_dir.display(),
-            assay_dir = %self.assay_dir.display(),
-            "LocalFsBackend::push_session_event is a stub — no state was persisted (S02)"
-        );
+    fn push_session_event(&self, run_dir: &Path, status: &OrchestratorStatus) -> crate::Result<()> {
+        std::fs::create_dir_all(run_dir)
+            .map_err(|e| crate::AssayError::io("creating run directory", run_dir, e))?;
+
+        let final_path = run_dir.join("state.json");
+        let json = serde_json::to_string_pretty(status).map_err(|e| {
+            crate::AssayError::json("serializing orchestrator status", &final_path, e)
+        })?;
+
+        let mut tmpfile = NamedTempFile::new_in(run_dir).map_err(|e| {
+            crate::AssayError::io("creating temp file for orchestrator state", run_dir, e)
+        })?;
+
+        tmpfile
+            .write_all(json.as_bytes())
+            .map_err(|e| crate::AssayError::io("writing orchestrator state", &final_path, e))?;
+
+        tmpfile
+            .as_file()
+            .sync_all()
+            .map_err(|e| crate::AssayError::io("syncing orchestrator state", &final_path, e))?;
+
+        tmpfile.persist(&final_path).map_err(|e| {
+            crate::AssayError::io("persisting orchestrator state", &final_path, e.error)
+        })?;
+
         Ok(())
     }
 
-    fn read_run_state(&self, _run_dir: &Path) -> crate::Result<Option<OrchestratorStatus>> {
-        Ok(None)
+    fn read_run_state(&self, run_dir: &Path) -> crate::Result<Option<OrchestratorStatus>> {
+        let state_path = run_dir.join("state.json");
+        match std::fs::read_to_string(&state_path) {
+            Ok(contents) => {
+                let status = serde_json::from_str(&contents)
+                    .map_err(|e| crate::AssayError::json("reading state.json", &state_path, e))?;
+                Ok(Some(status))
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(e) => Err(crate::AssayError::io("reading state.json", &state_path, e)),
+        }
     }
 
-    fn send_message(&self, inbox_path: &Path, name: &str, _contents: &[u8]) -> crate::Result<()> {
-        tracing::warn!(
-            inbox_path = %inbox_path.display(),
-            message_name = %name,
-            "LocalFsBackend::send_message is a stub — message was not delivered (S02)"
-        );
+    fn send_message(&self, inbox_path: &Path, name: &str, contents: &[u8]) -> crate::Result<()> {
+        std::fs::create_dir_all(inbox_path)
+            .map_err(|e| crate::AssayError::io("creating inbox directory", inbox_path, e))?;
+
+        let final_path = inbox_path.join(name);
+
+        let mut tmpfile = NamedTempFile::new_in(inbox_path)
+            .map_err(|e| crate::AssayError::io("creating temp file for message", inbox_path, e))?;
+
+        tmpfile
+            .write_all(contents)
+            .map_err(|e| crate::AssayError::io("writing message", &final_path, e))?;
+
+        tmpfile
+            .as_file()
+            .sync_all()
+            .map_err(|e| crate::AssayError::io("syncing message", &final_path, e))?;
+
+        tmpfile
+            .persist(&final_path)
+            .map_err(|e| crate::AssayError::io("persisting message", &final_path, e.error))?;
+
         Ok(())
     }
 
     fn poll_inbox(&self, inbox_path: &Path) -> crate::Result<Vec<(String, Vec<u8>)>> {
-        tracing::warn!(
-            inbox_path = %inbox_path.display(),
-            "LocalFsBackend::poll_inbox is a stub — returning empty inbox (S02)"
-        );
-        Ok(vec![])
+        let entries = match std::fs::read_dir(inbox_path) {
+            Ok(entries) => entries,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(vec![]),
+            Err(e) => {
+                return Err(crate::AssayError::io(
+                    "reading inbox directory",
+                    inbox_path,
+                    e,
+                ));
+            }
+        };
+
+        let mut messages = Vec::new();
+        for entry in entries {
+            let entry =
+                entry.map_err(|e| crate::AssayError::io("reading inbox entry", inbox_path, e))?;
+            let path = entry.path();
+            if !path.is_file() {
+                continue;
+            }
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let contents = std::fs::read(&path)
+                .map_err(|e| crate::AssayError::io("reading inbox message", &path, e))?;
+            std::fs::remove_file(&path)
+                .map_err(|e| crate::AssayError::io("removing inbox message", &path, e))?;
+            messages.push((name, contents));
+        }
+        Ok(messages)
     }
 
     fn annotate_run(&self, run_dir: &Path, manifest_path: &str) -> crate::Result<()> {
-        tracing::warn!(
-            run_dir = %run_dir.display(),
-            manifest_path = %manifest_path,
-            "LocalFsBackend::annotate_run is a stub — annotation was not persisted (S02)"
-        );
+        std::fs::create_dir_all(run_dir).map_err(|e| {
+            crate::AssayError::io("creating run directory for annotation", run_dir, e)
+        })?;
+
+        let final_path = run_dir.join("gossip_manifest_path.txt");
+
+        let mut tmpfile = NamedTempFile::new_in(run_dir)
+            .map_err(|e| crate::AssayError::io("creating temp file for annotation", run_dir, e))?;
+
+        tmpfile
+            .write_all(manifest_path.as_bytes())
+            .map_err(|e| crate::AssayError::io("writing annotation", &final_path, e))?;
+
+        tmpfile
+            .as_file()
+            .sync_all()
+            .map_err(|e| crate::AssayError::io("syncing annotation", &final_path, e))?;
+
+        tmpfile
+            .persist(&final_path)
+            .map_err(|e| crate::AssayError::io("persisting annotation", &final_path, e.error))?;
+
         Ok(())
     }
 
     fn save_checkpoint_summary(
         &self,
         assay_dir: &Path,
-        _checkpoint: &TeamCheckpoint,
+        checkpoint: &TeamCheckpoint,
     ) -> crate::Result<()> {
-        tracing::warn!(
-            assay_dir = %assay_dir.display(),
-            "LocalFsBackend::save_checkpoint_summary is a stub — checkpoint was not persisted (S02)"
-        );
+        crate::checkpoint::persistence::save_checkpoint(assay_dir, checkpoint)?;
         Ok(())
     }
 }

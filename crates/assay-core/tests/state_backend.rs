@@ -234,11 +234,11 @@ fn test_local_fs_backend_save_checkpoint_summary() {
         .save_checkpoint_summary(dir.path(), &checkpoint)
         .expect("save_checkpoint_summary should succeed");
 
-    // T02 will make this assertion pass by writing a real file.
-    let checkpoint_path = dir.path().join("checkpoint.json");
+    // save_checkpoint writes to checkpoints/latest.md (via checkpoint::persistence).
+    let checkpoint_path = dir.path().join("checkpoints").join("latest.md");
     assert!(
         checkpoint_path.exists(),
-        "save_checkpoint_summary should create checkpoint.json at {:?}",
+        "save_checkpoint_summary should create checkpoints/latest.md at {:?}",
         checkpoint_path
     );
 }

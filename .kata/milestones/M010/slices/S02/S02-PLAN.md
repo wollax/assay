@@ -57,7 +57,7 @@
   - Verify: `cargo test -p assay-types --test schema_snapshots run_manifest_schema_snapshot` passes; new contract tests compile but some may fail (red state for T02)
   - Done when: `RunManifest.state_backend` field exists, schema snapshot updated, round-trip test passes, integration tests written
 
-- [ ] **T02: Implement LocalFsBackend real method bodies** `est:30m`
+- [x] **T02: Implement LocalFsBackend real method bodies** `est:30m`
   - Why: Replaces stub implementations with real filesystem persistence — the core functionality that all callsite wiring depends on
   - Files: `crates/assay-core/src/state_backend.rs`
   - Do: Implement `push_session_event` using atomic tempfile-rename (same pattern as `persist_state`). Implement `read_run_state` using `serde_json::from_str`. Implement `save_checkpoint_summary` delegating to `checkpoint::persistence::save_checkpoint`. Implement `send_message` and `poll_inbox` with filesystem ops (write file to path, read+delete from dir). Implement `annotate_run` writing a manifest path to a file. Remove stub `tracing::warn!` messages.
