@@ -200,6 +200,45 @@ impl Default for PipelineConfig {
     }
 }
 
+// ── TRACEPARENT injection (R065) ─────────────────────────────────────
+
+/// Extract the W3C TRACEPARENT value from the current span context.
+///
+/// Uses the globally-registered OTel text map propagator to serialize the
+/// active span's trace context into a `TRACEPARENT` header value. Returns
+/// `None` when no active span exists, the span is disabled, or the
+/// propagator produces no `traceparent` entry.
+///
+/// Feature-gated: only compiled when `telemetry` is enabled.
+#[cfg(feature = "telemetry")]
+fn extract_traceparent() -> Option<String> {
+    use tracing_opentelemetry::OpenTelemetrySpanExt;
+
+    let span = tracing::Span::current();
+    if span.is_disabled() {
+        tracing::debug!("extract_traceparent: no active span; TRACEPARENT not injected");
+        return None;
+    }
+
+    let cx = span.context();
+    let mut carrier = std::collections::HashMap::new();
+    opentelemetry::global::get_text_map_propagator(|propagator| {
+        propagator.inject_context(&cx, &mut carrier);
+    });
+
+    carrier.remove("traceparent")
+}
+
+/// Inject TRACEPARENT env var into a `Command` from the current span context.
+///
+/// No-op when there is no active span or the propagator returns no value.
+#[cfg(feature = "telemetry")]
+fn inject_traceparent(cmd: &mut std::process::Command) {
+    if let Some(tp) = extract_traceparent() {
+        cmd.env("TRACEPARENT", &tp);
+    }
+}
+
 // ── Agent launcher ───────────────────────────────────────────────────
 
 /// Launch an agent subprocess with timeout enforcement.
@@ -226,18 +265,21 @@ pub fn launch_agent(
 ) -> std::result::Result<AgentOutput, PipelineError> {
     let start = Instant::now();
 
-    let mut child = std::process::Command::new("claude")
-        .args(cli_args)
+    let mut cmd = std::process::Command::new("claude");
+    cmd.args(cli_args)
         .current_dir(working_dir)
         .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .map_err(|e| PipelineError {
-            stage: PipelineStage::AgentLaunch,
-            message: format!("Failed to spawn claude subprocess: {e}"),
-            recovery: "Claude Code CLI not found — install from https://claude.ai/code".into(),
-            elapsed: start.elapsed(),
-        })?;
+        .stderr(std::process::Stdio::piped());
+
+    #[cfg(feature = "telemetry")]
+    inject_traceparent(&mut cmd);
+
+    let mut child = cmd.spawn().map_err(|e| PipelineError {
+        stage: PipelineStage::AgentLaunch,
+        message: format!("Failed to spawn claude subprocess: {e}"),
+        recovery: "Claude Code CLI not found — install from https://claude.ai/code".into(),
+        elapsed: start.elapsed(),
+    })?;
 
     // Thread-based timeout: spawn a thread to wait for the child,
     // use a channel with recv_timeout to enforce the deadline.
@@ -356,14 +398,24 @@ pub fn launch_agent_streaming(
     let args: Vec<String> = cli_args[1..].to_vec();
     let working_dir = working_dir.to_path_buf();
 
+    // Capture TRACEPARENT in the outer scope before spawning the thread,
+    // because the OTel span context is thread-local.
+    #[cfg(feature = "telemetry")]
+    let traceparent_value = extract_traceparent();
+
     std::thread::spawn(move || {
-        let mut child = match std::process::Command::new(&binary)
-            .args(&args)
+        let mut cmd = std::process::Command::new(&binary);
+        cmd.args(&args)
             .current_dir(&working_dir)
             .stdout(Stdio::piped())
-            .stderr(Stdio::inherit())
-            .spawn()
-        {
+            .stderr(Stdio::inherit());
+
+        #[cfg(feature = "telemetry")]
+        if let Some(ref tp) = traceparent_value {
+            cmd.env("TRACEPARENT", tp);
+        }
+
+        let mut child = match cmd.spawn() {
             Ok(c) => c,
             Err(_) => {
                 // Drop line_tx — signals EOF to receiver.
