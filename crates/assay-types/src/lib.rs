@@ -23,6 +23,7 @@ pub mod merge;
 pub mod milestone;
 pub mod schema_registry;
 pub mod session;
+pub mod state_backend;
 pub mod validation;
 pub mod work_session;
 pub mod worktree;
@@ -58,6 +59,7 @@ pub use merge::{
 };
 pub use milestone::{ChunkRef, Milestone, MilestoneStatus};
 pub use session::{AgentEvaluation, Confidence, EvaluatorRole, GateEvalContext};
+pub use state_backend::StateBackendConfig;
 pub use validation::{Diagnostic, DiagnosticSummary, Severity, ValidationResult};
 pub use work_session::{AgentInvocation, PhaseTransition, SessionPhase, WorkSession};
 pub use worktree::{WorktreeConfig, WorktreeInfo, WorktreeMetadata, WorktreeStatus};

@@ -458,3 +458,9 @@ fn provider_config_schema_snapshot() {
     let schema = schemars::schema_for!(assay_types::ProviderConfig);
     assert_json_snapshot!("provider-config-schema", schema.to_value());
 }
+
+#[test]
+fn state_backend_config_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::StateBackendConfig);
+    assert_json_snapshot!("state-backend-config-schema", schema.to_value());
+}

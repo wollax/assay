@@ -2,8 +2,8 @@
 
 **Active Milestone:** M010 — Pluggable State Backend
 **Active Slice:** S01 — StateBackend trait and CapabilitySet
-**Active Task:** T01 — Define StateBackendConfig enum in assay-types with schema snapshot
-**Phase:** Planning → Executing
+**Active Task:** T02 — Define StateBackend trait, CapabilitySet, and LocalFsBackend skeleton in assay-core
+**Phase:** Executing
 
 ## Recent Decisions
 - D149: StateBackend is the sole exception to D001 zero-trait convention
@@ -18,4 +18,4 @@
 - None
 
 ## Next Action
-Execute T01: create `crates/assay-types/src/state_backend.rs` with `StateBackendConfig` enum, register schema, add snapshot test, lock with `cargo insta review`.
+Execute T02: create `crates/assay-core/src/state_backend.rs` with `StateBackend` trait, `CapabilitySet`, and `LocalFsBackend` skeleton. Add 6 contract tests in `crates/assay-core/tests/state_backend.rs`. Run `cargo test -p assay-core state_backend` and `cargo test --workspace`.

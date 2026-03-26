@@ -42,7 +42,7 @@
 
 ## Tasks
 
-- [ ] **T01: Define StateBackendConfig enum in assay-types with schema snapshot** `est:45m`
+- [x] **T01: Define StateBackendConfig enum in assay-types with schema snapshot** `est:45m`
   - Why: `StateBackendConfig` belongs in `assay-types` (persisted type / config contract); it must be registered in the schema registry and have a locked snapshot before S02 adds it to `RunManifest`. This task establishes the type contract independently of the trait.
   - Files: `crates/assay-types/src/state_backend.rs` (new), `crates/assay-types/src/lib.rs`, `crates/assay-types/tests/schema_snapshots.rs`
   - Do:
