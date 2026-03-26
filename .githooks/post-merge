@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Sweep stale build artifacts after a merge.
+# Keeps artifacts touched in the last 14 days so the current build cache
+# stays warm. Runs in the background — does not block the merge.
+if command -v cargo-sweep >/dev/null 2>&1; then
+    cargo sweep --time 14 &
+fi
