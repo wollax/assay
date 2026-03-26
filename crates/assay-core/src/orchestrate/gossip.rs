@@ -28,9 +28,7 @@ use assay_types::{ManifestSession, PromptLayer, PromptLayerKind};
 use tracing::{Span, info, info_span};
 
 use crate::error::AssayError;
-use crate::orchestrate::executor::{
-    OrchestratorConfig, OrchestratorResult, SessionOutcome, persist_state,
-};
+use crate::orchestrate::executor::{OrchestratorConfig, OrchestratorResult, SessionOutcome};
 use crate::pipeline::{PipelineConfig, PipelineError, PipelineResult, PipelineStage};
 
 // ── Internal completion message ──────────────────────────────────────────────
@@ -48,7 +46,7 @@ struct GossipCompletion {
 // ── Knowledge manifest persistence ──────────────────────────────────────────
 
 /// Persist a `KnowledgeManifest` to `gossip_dir/knowledge.json` using atomic
-/// tempfile-then-rename (same pattern as `persist_state()`).
+/// tempfile-then-rename (same atomic tempfile-rename pattern used in `LocalFsBackend`).
 fn persist_knowledge_manifest(
     gossip_dir: &Path,
     manifest: &KnowledgeManifest,
@@ -199,7 +197,9 @@ where
         mesh_status: None,
         gossip_status: Some(gossip_status.clone()),
     };
-    persist_state(&run_dir, &initial_status)?;
+    config
+        .backend
+        .push_session_event(&run_dir, &initial_status)?;
 
     // ── Shared state ─────────────────────────────────────────────────
 
@@ -236,6 +236,7 @@ where
         let run_id_coord = &run_id;
         let gossip_dir_coord = &gossip_dir;
         let failure_policy = config.failure_policy;
+        let backend_coord = Arc::clone(&config.backend);
         let started_at_run = started_at;
         let coord_parent = parent_span.clone();
 
@@ -263,7 +264,9 @@ where
                             entries: knowledge_entries.clone(),
                             last_updated_at: Utc::now(),
                         };
-                        let _ = persist_knowledge_manifest(gossip_dir_coord, &updated_manifest);
+                        if let Err(e) = persist_knowledge_manifest(gossip_dir_coord, &updated_manifest) {
+                            tracing::warn!(error = %e, "failed to persist knowledge manifest update");
+                        }
 
                         // Update gossip status.
                         let (sessions_synthesized, coordinator_rounds) = {
@@ -292,7 +295,9 @@ where
                             mesh_status: None,
                             gossip_status: Some(gs_snap),
                         };
-                        let _ = persist_state(run_dir_coord, &snapshot);
+                        if let Err(e) = backend_coord.push_session_event(run_dir_coord, &snapshot) {
+                            tracing::warn!(error = %e, "best-effort state snapshot failed — run status may be stale");
+                        }
                     }
                     Err(mpsc::RecvTimeoutError::Timeout) => {
                         // Timeout: coordinator round with no completion.
@@ -322,7 +327,9 @@ where
                             mesh_status: None,
                             gossip_status: Some(gs_snap),
                         };
-                        let _ = persist_state(run_dir_coord, &snapshot);
+                        if let Err(e) = backend_coord.push_session_event(run_dir_coord, &snapshot) {
+                            tracing::warn!(error = %e, "best-effort state snapshot failed — run status may be stale");
+                        }
                     }
                     Err(mpsc::RecvTimeoutError::Disconnected) => {
                         // All senders dropped — drain any remaining messages, then exit.
@@ -346,7 +353,13 @@ where
                             entries: knowledge_entries.clone(),
                             last_updated_at: Utc::now(),
                         };
-                        let _ = persist_knowledge_manifest(gossip_dir_coord, &final_manifest);
+                        if let Err(e) = persist_knowledge_manifest(gossip_dir_coord, &final_manifest) {
+                            tracing::error!(
+                                gossip_dir = %gossip_dir_coord.display(),
+                                error = %e,
+                                "failed to persist final knowledge manifest — gossip results not durable"
+                            );
+                        }
 
                         break;
                     }
@@ -366,6 +379,7 @@ where
             let run_id = &run_id;
             let started_at_run = started_at;
             let failure_policy = config.failure_policy;
+            let backend_worker = Arc::clone(&config.backend);
             let worker_parent = parent_span.clone();
 
             scope.spawn(move || {
@@ -450,14 +464,20 @@ where
                 };
 
                 // Send completion to coordinator.
-                let _ = tx_worker.send(GossipCompletion {
+                if let Err(e) = tx_worker.send(GossipCompletion {
                     session_name: name.clone(),
                     spec,
                     gate_pass_count,
                     gate_fail_count,
                     changed_files,
                     completed_at,
-                });
+                }) {
+                    tracing::error!(
+                        session = %name,
+                        error = %e,
+                        "failed to send gossip completion to coordinator — knowledge manifest will be incomplete"
+                    );
+                }
                 drop(tx_worker);
 
                 // Update session status.
@@ -485,7 +505,9 @@ where
                         mesh_status: None,
                         gossip_status: Some(gs_snap),
                     };
-                    let _ = persist_state(run_dir, &snapshot);
+                    if let Err(e) = backend_worker.push_session_event(run_dir, &snapshot) {
+                        tracing::warn!(error = %e, "best-effort state snapshot failed — run status may be stale");
+                    }
                 }
 
                 // Decrement active count and release semaphore.
@@ -530,7 +552,13 @@ where
         mesh_status: None,
         gossip_status: Some(final_gossip),
     };
-    let _ = persist_state(&run_dir, &final_status);
+    if let Err(e) = config.backend.push_session_event(&run_dir, &final_status) {
+        tracing::error!(
+            run_id = %run_id,
+            error = %e,
+            "failed to persist final orchestrator state — run status is not durable"
+        );
+    }
 
     // Build outcomes vec (mirrors mesh.rs pattern).
     let outcomes: Vec<(String, SessionOutcome)> = cloned_sessions
@@ -601,6 +629,7 @@ mod tests {
             mode: OrchestratorMode::Gossip,
             mesh_config: None,
             gossip_config: None,
+            state_backend: None,
         }
     }
 

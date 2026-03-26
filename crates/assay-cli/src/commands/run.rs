@@ -1,8 +1,10 @@
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use clap::Parser;
 use serde::Serialize;
 
+use assay_core::state_backend::LocalFsBackend;
 use assay_types::OrchestratorMode;
 use assay_types::orchestrate::{FailurePolicy, MergeStrategy};
 
@@ -376,6 +378,7 @@ fn execute_orchestrated(
     let orch_config = OrchestratorConfig {
         max_concurrency: 8,
         failure_policy: cmd.failure_policy,
+        backend: Arc::new(LocalFsBackend::new(pipeline_config.assay_dir.clone())),
     };
 
     // Session runner closure: constructs HarnessWriter from plain function
@@ -599,6 +602,7 @@ fn execute_mesh(
     let orch_config = OrchestratorConfig {
         max_concurrency: 8,
         failure_policy: cmd.failure_policy,
+        backend: Arc::new(LocalFsBackend::new(pipeline_config.assay_dir.clone())),
     };
 
     // Session runner closure: constructs HarnessWriter from plain function
@@ -738,6 +742,7 @@ fn execute_gossip(
     let orch_config = OrchestratorConfig {
         max_concurrency: 8,
         failure_policy: cmd.failure_policy,
+        backend: Arc::new(LocalFsBackend::new(pipeline_config.assay_dir.clone())),
     };
 
     // Session runner closure: constructs HarnessWriter from plain function
@@ -1236,6 +1241,7 @@ mod tests {
             mode,
             mesh_config: None,
             gossip_config: None,
+            state_backend: None,
         }
     }
 

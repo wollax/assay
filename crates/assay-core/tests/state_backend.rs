@@ -4,7 +4,9 @@
 #![cfg(feature = "orchestrate")]
 
 use assay_core::{CapabilitySet, LocalFsBackend, StateBackend};
-use assay_types::{FailurePolicy, OrchestratorPhase, OrchestratorStatus};
+use assay_types::{
+    FailurePolicy, OrchestratorPhase, OrchestratorStatus, StateBackendConfig, TeamCheckpoint,
+};
 use tempfile::tempdir;
 
 #[test]
@@ -125,4 +127,138 @@ fn test_local_fs_backend_assay_dir_accessor() {
     let dir = tempdir().unwrap();
     let backend = LocalFsBackend::new(dir.path().to_path_buf());
     assert_eq!(backend.assay_dir(), dir.path());
+}
+
+// ── Backward-compatible deserialization (RunManifest.state_backend) ──
+
+#[test]
+fn backward_compat_manifest_without_state_backend_deserializes_to_none() {
+    use assay_types::RunManifest;
+    let toml_str = r#"
+[[sessions]]
+spec = "auth"
+"#;
+    let manifest: RunManifest = toml::from_str(toml_str).unwrap();
+    assert!(
+        manifest.state_backend.is_none(),
+        "manifest without state_backend should deserialize to None"
+    );
+}
+
+#[test]
+fn backward_compat_manifest_with_state_backend_round_trips() {
+    use assay_types::RunManifest;
+    let manifest = RunManifest {
+        sessions: vec![assay_types::ManifestSession {
+            spec: "auth".to_string(),
+            name: None,
+            settings: None,
+            hooks: vec![],
+            prompt_layers: vec![],
+            file_scope: vec![],
+            shared_files: vec![],
+            depends_on: vec![],
+        }],
+        mode: Default::default(),
+        mesh_config: None,
+        gossip_config: None,
+        state_backend: Some(StateBackendConfig::LocalFs),
+    };
+    let toml_out = toml::to_string(&manifest).unwrap();
+    let back: RunManifest = toml::from_str(&toml_out).unwrap();
+    assert_eq!(
+        back.state_backend,
+        Some(StateBackendConfig::LocalFs),
+        "state_backend should survive TOML round-trip"
+    );
+}
+
+// ── LocalFsBackend filesystem persistence ────────────────────────────
+
+/// Verifies that push_session_event persists to disk and read_run_state
+/// deserializes it back.
+#[test]
+fn test_local_fs_backend_push_and_read_state() {
+    let dir = tempdir().unwrap();
+    let backend = LocalFsBackend::new(dir.path().to_path_buf());
+    let status = OrchestratorStatus {
+        run_id: "integration-run".to_string(),
+        phase: OrchestratorPhase::Running,
+        failure_policy: FailurePolicy::SkipDependents,
+        sessions: vec![],
+        started_at: chrono::Utc::now(),
+        completed_at: None,
+        mesh_status: None,
+        gossip_status: None,
+    };
+
+    // Push state
+    backend
+        .push_session_event(dir.path(), &status)
+        .expect("push_session_event should succeed");
+
+    let read_back = backend
+        .read_run_state(dir.path())
+        .expect("read_run_state should succeed");
+
+    assert!(
+        read_back.is_some(),
+        "read_run_state should return the status that was just pushed"
+    );
+    let read_status = read_back.unwrap();
+    assert_eq!(read_status.run_id, "integration-run");
+    assert_eq!(read_status.phase, OrchestratorPhase::Running);
+}
+
+/// Verifies that save_checkpoint_summary writes checkpoints/latest.md to disk.
+#[test]
+fn test_local_fs_backend_save_checkpoint_summary() {
+    let dir = tempdir().unwrap();
+    let backend = LocalFsBackend::new(dir.path().to_path_buf());
+    let checkpoint = TeamCheckpoint {
+        version: 1,
+        session_id: "sess-checkpoint".to_string(),
+        project: dir.path().display().to_string(),
+        timestamp: "2026-01-01T00:00:00Z".to_string(),
+        trigger: "gate-pass".to_string(),
+        agents: vec![],
+        tasks: vec![],
+        context_health: None,
+    };
+
+    backend
+        .save_checkpoint_summary(dir.path(), &checkpoint)
+        .expect("save_checkpoint_summary should succeed");
+
+    // save_checkpoint writes to checkpoints/latest.md (via checkpoint::persistence).
+    let checkpoint_path = dir.path().join("checkpoints").join("latest.md");
+    assert!(
+        checkpoint_path.exists(),
+        "save_checkpoint_summary should create checkpoints/latest.md at {:?}",
+        checkpoint_path
+    );
+}
+
+/// Verifies that send_message writes a file and poll_inbox reads it back.
+#[test]
+fn test_local_fs_backend_send_and_poll_messages() {
+    let dir = tempdir().unwrap();
+    let backend = LocalFsBackend::new(dir.path().to_path_buf());
+    let inbox_path = dir.path().join("inbox");
+
+    backend
+        .send_message(&inbox_path, "greeting", b"hello world")
+        .expect("send_message should succeed");
+
+    let messages = backend
+        .poll_inbox(&inbox_path)
+        .expect("poll_inbox should succeed");
+
+    assert!(
+        !messages.is_empty(),
+        "poll_inbox should return the message that was just sent"
+    );
+    let (name, contents) = &messages[0];
+    assert_eq!(name, "greeting");
+    assert_eq!(contents, b"hello world");
 }

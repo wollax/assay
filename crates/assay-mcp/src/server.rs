@@ -35,6 +35,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
+use assay_core::state_backend::LocalFsBackend;
+
 use chrono::Utc;
 use rmcp::{
     ErrorData as McpError, ServerHandler, ServiceExt, handler::server::tool::ToolRouter,
@@ -2951,13 +2953,14 @@ impl AssayServer {
             }
         };
 
+        let assay_dir = cwd.join(".assay");
         let orch_config = assay_core::orchestrate::executor::OrchestratorConfig {
             max_concurrency: 8,
             failure_policy,
+            backend: Arc::new(LocalFsBackend::new(assay_dir.clone())),
         };
 
         let specs_dir = cwd.join(".assay").join(&config.specs_dir);
-        let assay_dir = cwd.join(".assay");
         let worktree_base = assay_core::worktree::resolve_worktree_dir(None, &config, &cwd);
         let timeout_secs = params
             .0
@@ -2996,6 +2999,7 @@ impl AssayServer {
                 let orch_config = assay_core::orchestrate::executor::OrchestratorConfig {
                     max_concurrency: 8,
                     failure_policy,
+                    backend: Arc::new(LocalFsBackend::new(assay_dir.clone())),
                 };
                 let manifest_clone = manifest.clone();
                 let pipeline_config_clone = pipeline_config.clone();
@@ -3044,6 +3048,7 @@ impl AssayServer {
                 let orch_config = assay_core::orchestrate::executor::OrchestratorConfig {
                     max_concurrency: 8,
                     failure_policy,
+                    backend: Arc::new(LocalFsBackend::new(assay_dir.clone())),
                 };
                 let manifest_clone = manifest.clone();
                 let pipeline_config_clone = pipeline_config.clone();

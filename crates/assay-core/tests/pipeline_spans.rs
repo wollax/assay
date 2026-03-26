@@ -82,6 +82,8 @@ fn test_run_manifest_emits_span() {
         mesh_config: None,
         #[cfg(feature = "orchestrate")]
         gossip_config: None,
+        #[cfg(feature = "orchestrate")]
+        state_backend: None,
     };
     let config = config_with_missing_specs();
 

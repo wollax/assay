@@ -10,6 +10,8 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "orchestrate")]
+use crate::StateBackendConfig;
 use crate::harness::{HookContract, PromptLayer, SettingsOverride};
 #[cfg(feature = "orchestrate")]
 use crate::orchestrate::{GossipConfig, MeshConfig, OrchestratorMode};
@@ -53,6 +55,14 @@ pub struct RunManifest {
     #[cfg(feature = "orchestrate")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub gossip_config: Option<GossipConfig>,
+
+    /// State persistence backend configuration.
+    /// `None` means the orchestrator uses its default `LocalFsBackend` at
+    /// `OrchestratorConfig` construction time. Set to `LocalFs` explicitly to
+    /// document intent; use `Custom` for third-party backends (M011+).
+    #[cfg(feature = "orchestrate")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub state_backend: Option<StateBackendConfig>,
 }
 
 inventory::submit! {
@@ -217,6 +227,7 @@ mod tests {
             mode: OrchestratorMode::Dag,
             mesh_config: None,
             gossip_config: None,
+            state_backend: None,
         };
         let toml_out = toml::to_string(&manifest).unwrap();
         let back: RunManifest = toml::from_str(&toml_out).unwrap();
@@ -240,6 +251,7 @@ mod tests {
             mode: OrchestratorMode::Mesh,
             mesh_config: None,
             gossip_config: None,
+            state_backend: None,
         };
         let toml_out = toml::to_string(&manifest).unwrap();
         assert!(!toml_out.contains("mesh_config"));
