@@ -11,6 +11,7 @@
 - D158: persist_state removed from pub(crate) API after backend wiring
 - D159: Feature-gated RunManifest fields require split schema snapshot tests
 - D160: NoopBackend is a test helper, not production-grade
+- D161: Capability guard pattern — capture bool before thread::scope, guard all feature-specific write sites by value
 - Followed codex plugin format (D082) for smelt-agent AGENTS.md
 
 ## Blockers

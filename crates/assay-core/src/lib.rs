@@ -75,4 +75,4 @@ pub mod orchestrate;
 #[cfg(feature = "orchestrate")]
 pub mod state_backend;
 #[cfg(feature = "orchestrate")]
-pub use state_backend::{CapabilitySet, LocalFsBackend, StateBackend};
+pub use state_backend::{CapabilitySet, LocalFsBackend, NoopBackend, StateBackend};

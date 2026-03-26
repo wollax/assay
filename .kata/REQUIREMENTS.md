@@ -716,8 +716,8 @@
 - Source: user
 - Primary owning slice: M010/S03
 - Supporting slices: M010/S02
-- Validation: S03 — `test_mesh_degrades_gracefully_without_messaging` and `test_gossip_degrades_gracefully_without_manifest` prove degradation paths; `NoopBackend` (all capabilities false, all methods no-op) used as test double; orchestrator emits `warn!` and no-ops rather than panicking; just ready green
-- Notes: `NoopBackend` test helper lives in `crates/assay-core/src/state_backend/noop.rs` or test module. CapabilitySet degradation awareness documented in smelt-agent plugin skills (S04).
+- Validation: S03 — `supports_messaging` guard in `run_mesh()` skips routing thread and emits `warn!(capability="messaging", mode="mesh")`; `supports_gossip_manifest` guard in `run_gossip()` skips PromptLayer injection and all three `persist_knowledge_manifest` callsites, emits `warn!(capability="gossip_manifest", mode="gossip")`. `NoopBackend` test helper (all capabilities false, all methods no-op) drives `test_mesh_degrades_gracefully_without_messaging` and `test_gossip_degrades_gracefully_without_manifest` — both pass. All existing mesh/gossip/orchestrate/state_backend tests pass unchanged. `just ready` green with 1486 tests.
+- Notes: `NoopBackend` is a reusable test helper exported from `assay_core` for future degradation testing. `supports_annotations` and `supports_checkpoints` flags exist in `CapabilitySet` but no production guards added yet — no callers use those methods directly in this milestone. CapabilitySet degradation awareness documented in smelt-agent plugin skills (S04).
 
 ### R075 — smelt-agent plugin
 - Class: differentiator
