@@ -2,8 +2,8 @@
 
 **Active Milestone:** M010 — Pluggable State Backend
 **Active Slice:** S01 — StateBackend trait and CapabilitySet
-**Active Task:** T02 — Define StateBackend trait, CapabilitySet, and LocalFsBackend skeleton in assay-core
-**Phase:** Executing
+**Active Task:** T02 — DONE (slice S01 complete — both tasks done)
+**Phase:** Summarizing
 
 ## Recent Decisions
 - D149: StateBackend is the sole exception to D001 zero-trait convention
@@ -18,4 +18,4 @@
 - None
 
 ## Next Action
-Execute T02: create `crates/assay-core/src/state_backend.rs` with `StateBackend` trait, `CapabilitySet`, and `LocalFsBackend` skeleton. Add 6 contract tests in `crates/assay-core/tests/state_backend.rs`. Run `cargo test -p assay-core state_backend` and `cargo test --workspace`.
+T02 complete. Both T01 and T02 in S01 are done. Write S01-SUMMARY.md, S01-UAT.md, mark S01 done in M010-ROADMAP.md, squash-merge to main, and begin S02.

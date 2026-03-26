@@ -54,7 +54,7 @@
   - Verify: `cargo test -p assay-types` passes; `state_backend_config_schema_snapshot` test present and green; no pending insta snapshots
   - Done when: `cargo test -p assay-types` all green; schema snapshot file exists at `crates/assay-types/src/snapshots/state-backend-config-schema.snap`
 
-- [ ] **T02: Define StateBackend trait, CapabilitySet, and LocalFsBackend skeleton in assay-core** `est:1h`
+- [x] **T02: Define StateBackend trait, CapabilitySet, and LocalFsBackend skeleton in assay-core** `est:1h`
   - Why: The trait and skeleton are the core deliverable of this slice — they lock the API surface S02 will wire. Object-safety must be proven at compile time. `LocalFsBackend` must instantiate so downstream code can write against a concrete type. Contract tests prove the trait and flags struct behave correctly.
   - Files: `crates/assay-core/src/state_backend.rs` (new), `crates/assay-core/src/lib.rs`, `crates/assay-core/tests/state_backend.rs` (new)
   - Do:

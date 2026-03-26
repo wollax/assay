@@ -68,3 +68,11 @@ pub mod telemetry;
 /// Gated behind the `orchestrate` Cargo feature.
 #[cfg(feature = "orchestrate")]
 pub mod orchestrate;
+
+/// StateBackend trait, CapabilitySet flags struct, and LocalFsBackend skeleton.
+///
+/// Gated behind the `orchestrate` Cargo feature.
+#[cfg(feature = "orchestrate")]
+pub mod state_backend;
+#[cfg(feature = "orchestrate")]
+pub use state_backend::{CapabilitySet, LocalFsBackend, StateBackend};
