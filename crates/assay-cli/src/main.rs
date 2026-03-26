@@ -208,14 +208,22 @@ Examples:
 /// MCP serve uses `TracingConfig::mcp()` (warn level, no ANSI) because
 /// stdout is reserved for JSON-RPC. All other subcommands use default (info).
 fn tracing_config_for(command: &Option<Command>) -> assay_core::telemetry::TracingConfig {
-    if let Some(Command::Mcp {
+    let mut config = if let Some(Command::Mcp {
         command: commands::mcp::McpCommand::Serve,
     }) = command
     {
         assay_core::telemetry::TracingConfig::mcp()
     } else {
         assay_core::telemetry::TracingConfig::default()
+    };
+
+    // Activate OTLP export when the standard env var is set.
+    // Works for both default and MCP configs — traces from MCP serve are valuable.
+    if let Ok(endpoint) = std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT") {
+        config.otlp_endpoint = Some(endpoint);
     }
+
+    config
 }
 
 /// Core CLI logic. Returns an exit code on success.

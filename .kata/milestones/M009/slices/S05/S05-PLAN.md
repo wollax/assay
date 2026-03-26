@@ -69,7 +69,7 @@
   - Verify: `cargo test -p assay-core --test telemetry_otlp --features telemetry` — TRACEPARENT test passes
   - Done when: Both launch functions inject TRACEPARENT when feature enabled and span active; integration test proves the value appears in subprocess env
 
-- [ ] **T04: Wire CLI endpoint config, verify feature-flag dep isolation, and run just ready** `est:15m`
+- [x] **T04: Wire CLI endpoint config, verify feature-flag dep isolation, and run just ready** `est:15m`
   - Why: Closes the integration loop — CLI reads the env var and populates TracingConfig; dep isolation verified by cargo tree; full workspace green
   - Files: `crates/assay-cli/src/main.rs`, `crates/assay-core/tests/telemetry_otlp.rs`
   - Do: In tracing_config_for(), read `OTEL_EXPORTER_OTLP_ENDPOINT` env var and set TracingConfig::otlp_endpoint when present. Add dep-isolation test: `cargo tree -p assay-cli | grep opentelemetry` must return empty. Add feature-enabled dep test: `cargo tree -p assay-cli --features telemetry | grep opentelemetry` must return non-empty. Run `just ready` to verify full workspace green.

@@ -1,9 +1,9 @@
 # Kata State
 
 **Active Milestone:** M009 — Observability
-**Active Slice:** S05 — OTLP export and trace context propagation
-**Active Task:** T04 — Wire CLI endpoint config, verify feature-flag dep isolation, and run just ready
-**Phase:** Executing
+**Active Slice:** S05 — OTLP export and trace context propagation (all tasks complete)
+**Active Task:** None — S05 complete
+**Phase:** Summarizing
 
 ## Recent Decisions
 - D143: D127 superseded — use rt-tokio with existing runtime, no scoped runtime
@@ -14,4 +14,4 @@
 - None
 
 ## Next Action
-Execute T04: Wire CLI endpoint config (read OTEL_EXPORTER_OTLP_ENDPOINT into TracingConfig::otlp_endpoint), add dep-isolation tests, and run `just ready` for full workspace green. This is the final task of S05.
+Write S05 slice summary and UAT. Mark S05 done in M009 roadmap. S05 is the final slice of M009 — after summarizing, complete the milestone.
