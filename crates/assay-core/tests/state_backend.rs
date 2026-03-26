@@ -1,8 +1,5 @@
-//! Contract tests for `StateBackend`, `CapabilitySet`, and `LocalFsBackend`.
-//!
-//! These tests verify the API surface locked in S01. All `LocalFsBackend`
-//! method bodies are stubs in S01 — the tests confirm construction, capability
-//! reporting, object-safety, and stub behavior only. Real I/O is tested in S02.
+//! Contract tests verifying `StateBackend` object safety, `CapabilitySet`
+//! constructor invariants, and `LocalFsBackend` trait conformance.
 
 #![cfg(feature = "orchestrate")]
 
@@ -42,7 +39,10 @@ fn test_local_fs_backend_capabilities_all_true() {
 #[test]
 fn test_local_fs_backend_as_trait_object() {
     let dir = tempdir().unwrap();
-    let backend: Box<dyn StateBackend> = Box::new(LocalFsBackend::new(dir.path().to_path_buf()));
+    // Arc (not Box) matches the ownership model used in OrchestratorConfig,
+    // which derives Clone. Box<dyn StateBackend> is not Clone; Arc<dyn StateBackend> is.
+    let backend: std::sync::Arc<dyn StateBackend> =
+        std::sync::Arc::new(LocalFsBackend::new(dir.path().to_path_buf()));
     let caps = backend.capabilities();
     assert!(caps.supports_messaging);
 }
@@ -51,6 +51,7 @@ fn test_local_fs_backend_as_trait_object() {
 fn test_local_fs_backend_push_session_event_noop() {
     let dir = tempdir().unwrap();
     let backend = LocalFsBackend::new(dir.path().to_path_buf());
+    // Explicit field construction — OrchestratorStatus does not implement Default.
     let status = OrchestratorStatus {
         run_id: "test-run".to_string(),
         phase: OrchestratorPhase::Running,
@@ -61,14 +62,67 @@ fn test_local_fs_backend_push_session_event_noop() {
         mesh_status: None,
         gossip_status: None,
     };
-    let result = backend.push_session_event(dir.path(), &status);
-    assert!(result.is_ok());
+    assert!(backend.push_session_event(dir.path(), &status).is_ok());
 }
 
 #[test]
 fn test_local_fs_backend_read_run_state_returns_none() {
     let dir = tempdir().unwrap();
     let backend = LocalFsBackend::new(dir.path().to_path_buf());
-    let result = backend.read_run_state(dir.path());
-    assert!(matches!(result, Ok(None)));
+    assert!(matches!(backend.read_run_state(dir.path()), Ok(None)));
+}
+
+#[test]
+fn test_local_fs_backend_send_message_noop() {
+    let dir = tempdir().unwrap();
+    let backend = LocalFsBackend::new(dir.path().to_path_buf());
+    assert!(
+        backend
+            .send_message(dir.path(), "test-msg", b"hello")
+            .is_ok()
+    );
+}
+
+#[test]
+fn test_local_fs_backend_poll_inbox_returns_empty() {
+    let dir = tempdir().unwrap();
+    let backend = LocalFsBackend::new(dir.path().to_path_buf());
+    let result = backend.poll_inbox(dir.path());
+    assert!(matches!(result, Ok(v) if v.is_empty()));
+}
+
+#[test]
+fn test_local_fs_backend_annotate_run_noop() {
+    let dir = tempdir().unwrap();
+    let backend = LocalFsBackend::new(dir.path().to_path_buf());
+    assert!(backend.annotate_run(dir.path(), "knowledge.json").is_ok());
+}
+
+#[test]
+fn test_local_fs_backend_save_checkpoint_summary_noop() {
+    use assay_types::TeamCheckpoint;
+    let dir = tempdir().unwrap();
+    let backend = LocalFsBackend::new(dir.path().to_path_buf());
+    let checkpoint = TeamCheckpoint {
+        version: 1,
+        session_id: "sess-1".to_string(),
+        project: dir.path().display().to_string(),
+        timestamp: "2026-01-01T00:00:00Z".to_string(),
+        trigger: "test".to_string(),
+        agents: vec![],
+        tasks: vec![],
+        context_health: None,
+    };
+    assert!(
+        backend
+            .save_checkpoint_summary(dir.path(), &checkpoint)
+            .is_ok()
+    );
+}
+
+#[test]
+fn test_local_fs_backend_assay_dir_accessor() {
+    let dir = tempdir().unwrap();
+    let backend = LocalFsBackend::new(dir.path().to_path_buf());
+    assert_eq!(backend.assay_dir(), dir.path());
 }
