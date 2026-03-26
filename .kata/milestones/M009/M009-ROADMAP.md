@@ -67,7 +67,7 @@ This milestone is complete only when all are true:
 - [x] **S03: Orchestration span instrumentation** `risk:high` `depends:[S01, S02]`
   > After this: a DAG/Mesh/Gossip orchestration run produces a nested span tree: orchestration root → per-session → pipeline stages. Merge runner phases and conflict resolution are instrumented. Proven by integration test with mock runners verifying span parent-child relationships across threads.
 
-- [ ] **S04: JSON file trace export and CLI** `risk:low` `depends:[S01]`
+- [x] **S04: JSON file trace export and CLI** `risk:low` `depends:[S01]`
   > After this: instrumented runs write JSON trace files to `.assay/traces/`. `assay traces list` shows recent traces; `assay traces show <id>` renders a span tree with timing. Proven by integration tests with synthetic trace data + CLI output assertions.
 
 - [x] **S05: OTLP export and trace context propagation** `risk:high` `depends:[S01, S02, S03]`

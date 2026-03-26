@@ -32,6 +32,14 @@ deny:
 ready: fmt-check lint test deny check-plugin-version
     @echo "All checks passed."
 
+# Remove build artifacts older than 14 days (requires cargo-sweep)
+sweep:
+    cargo sweep -t 14
+
+# Install cargo-sweep if not present
+install-sweep:
+    cargo install cargo-sweep
+
 # Set up git hooks (run once after clone)
 setup:
     git config core.hooksPath .githooks

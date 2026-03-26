@@ -644,14 +644,14 @@
 
 ### R063 — JSON file trace export
 - Class: core-capability
-- Status: active
+- Status: validated
 - Description: Completed traces written to `.assay/traces/` as JSON files. CLI command `assay traces list` and `assay traces show <id>` for inspection without external tooling.
 - Why it matters: Not every user has Jaeger/Grafana. JSON file export provides zero-dependency trace inspection for local development and debugging.
 - Source: user
 - Primary owning slice: M009/S04
 - Supporting slices: M009/S01
-- Validation: unmapped
-- Notes: Use `tracing-subscriber` JSON layer writing to `.assay/traces/`. CLI commands are thin wrappers reading/formatting these files.
+- Validation: S04 — JsonFileLayer writes one JSON file per root span with correct parent-child tree, timing, and fields; atomic writes via NamedTempFile+persist; file pruning at 50 max; assay traces list prints table of traces; assay traces show <id> renders indented span tree; end-to-end write→read→render round-trip proven by integration test; just ready green
+- Notes: Custom Layer implementation (not built-in JSON formatter) to capture span open/close lifecycle. Trace files written only for pipeline-running subcommands (Run/Gate/Context); Traces subcommand uses traces_dir: None to prevent self-tracing.
 
 ### R064 — OTLP trace export
 - Class: core-capability
@@ -812,7 +812,7 @@
 | R060 | quality-attribute | validated | M009/S01 | none | S01 |
 | R061 | core-capability | validated | M009/S02 | M009/S01 | S02 |
 | R062 | core-capability | active | M009/S03 | M009/S01, M009/S02 | unmapped |
-| R063 | core-capability | active | M009/S04 | M009/S01 | unmapped |
+| R063 | core-capability | validated | M009/S04 | M009/S01 | S04 |
 | R064 | core-capability | active | M009/S05 | M009/S01 | unmapped |
 | R065 | quality-attribute | active | M009/S05 | M009/S02, M009/S03 | unmapped |
 | R066 | primary-user-loop | deferred | none | none | unmapped |
@@ -820,9 +820,9 @@
 
 ## Coverage Summary
 
-- Active requirements: 5 (R027, R062–R065)
-- Mapped to slices: 5
-- Validated: 57 (R001–R029 except R025/R027, R034–R061)
+- Active requirements: 4 (R027, R062, R064, R065)
+- Mapped to slices: 4
+- Validated: 58 (R001–R029 except R025/R027, R034–R063)
 - Deferred: 3 (R025, R066, R067)
 - Out of scope: 4 (R030, R031, R032, R033)
 - Unmapped active requirements: 0
