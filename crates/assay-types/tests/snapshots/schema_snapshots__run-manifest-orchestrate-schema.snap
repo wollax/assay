@@ -357,7 +357,7 @@ expression: schema.to_value()
           "type": "null"
         }
       ],
-      "description": "State persistence backend configuration.\nDefaults to `None`, which uses the built-in local filesystem backend."
+      "description": "State persistence backend configuration.\n`None` means the orchestrator uses its default `LocalFsBackend` at\n`OrchestratorConfig` construction time. Set to `LocalFs` explicitly to\ndocument intent; use `Custom` for third-party backends (M011+)."
     }
   },
   "required": [

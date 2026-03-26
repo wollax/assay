@@ -133,9 +133,9 @@ pub trait StateBackend: Send + Sync {
 /// parameter or `-> Self` return), this function will fail to compile, catching
 /// the violation at the definition site rather than at every construction point.
 ///
-/// Uses `Arc` (not `Box`) to match the ownership model S02 will use in
-/// `OrchestratorConfig`, which derives `Clone` — `Box<dyn Trait>` is not
-/// `Clone`, but `Arc<dyn Trait>` is. Both require identical object-safety rules.
+/// Uses `Arc` (not `Box`) to match the ownership model used in
+/// `OrchestratorConfig`, which implements `Clone` via `Arc::clone` —
+/// `Box<dyn Trait>` is not `Clone`, but `Arc<dyn Trait>` is.
 // Intentionally never called; existence is the proof.
 #[allow(dead_code)]
 fn _assert_object_safe(_: std::sync::Arc<dyn StateBackend>) {}
@@ -214,6 +214,25 @@ impl StateBackend for LocalFsBackend {
     }
 
     fn send_message(&self, inbox_path: &Path, name: &str, contents: &[u8]) -> crate::Result<()> {
+        // Validate name to prevent path traversal.
+        if name.is_empty()
+            || name.contains('/')
+            || name.contains('\\')
+            || name == "."
+            || name == ".."
+        {
+            return Err(crate::AssayError::io(
+                "send_message name validation",
+                inbox_path,
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    format!(
+                        "name {name:?} must be non-empty and must not contain path separators or reserved components"
+                    ),
+                ),
+            ));
+        }
+
         std::fs::create_dir_all(inbox_path)
             .map_err(|e| crate::AssayError::io("creating inbox directory", inbox_path, e))?;
 
@@ -251,7 +270,8 @@ impl StateBackend for LocalFsBackend {
             }
         };
 
-        let mut messages = Vec::new();
+        // Phase 1: read all messages.
+        let mut read_messages = Vec::new();
         for entry in entries {
             let entry =
                 entry.map_err(|e| crate::AssayError::io("reading inbox entry", inbox_path, e))?;
@@ -262,17 +282,27 @@ impl StateBackend for LocalFsBackend {
             let name = entry.file_name().to_string_lossy().into_owned();
             let contents = std::fs::read(&path)
                 .map_err(|e| crate::AssayError::io("reading inbox message", &path, e))?;
-            std::fs::remove_file(&path)
-                .map_err(|e| crate::AssayError::io("removing inbox message", &path, e))?;
+            read_messages.push((path, name, contents));
+        }
+
+        // Phase 2: delete after all reads succeed, warn on individual failures.
+        let mut messages = Vec::with_capacity(read_messages.len());
+        for (path, name, contents) in read_messages {
+            if let Err(e) = std::fs::remove_file(&path) {
+                tracing::warn!(
+                    path = %path.display(),
+                    error = %e,
+                    "failed to remove inbox message after read — may be delivered twice"
+                );
+            }
             messages.push((name, contents));
         }
         Ok(messages)
     }
 
     fn annotate_run(&self, run_dir: &Path, manifest_path: &str) -> crate::Result<()> {
-        std::fs::create_dir_all(run_dir).map_err(|e| {
-            crate::AssayError::io("creating run directory for annotation", run_dir, e)
-        })?;
+        std::fs::create_dir_all(run_dir)
+            .map_err(|e| crate::AssayError::io("creating run directory", run_dir, e))?;
 
         let final_path = run_dir.join("gossip_manifest_path.txt");
 
@@ -300,7 +330,6 @@ impl StateBackend for LocalFsBackend {
         assay_dir: &Path,
         checkpoint: &TeamCheckpoint,
     ) -> crate::Result<()> {
-        crate::checkpoint::persistence::save_checkpoint(assay_dir, checkpoint)?;
-        Ok(())
+        crate::checkpoint::persistence::save_checkpoint(assay_dir, checkpoint).map(|_| ())
     }
 }

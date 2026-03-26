@@ -46,7 +46,7 @@ struct GossipCompletion {
 // ── Knowledge manifest persistence ──────────────────────────────────────────
 
 /// Persist a `KnowledgeManifest` to `gossip_dir/knowledge.json` using atomic
-/// tempfile-then-rename (same pattern as `StateBackend::push_session_event()`).
+/// tempfile-then-rename (same atomic tempfile-rename pattern used in `LocalFsBackend`).
 fn persist_knowledge_manifest(
     gossip_dir: &Path,
     manifest: &KnowledgeManifest,
@@ -264,7 +264,9 @@ where
                             entries: knowledge_entries.clone(),
                             last_updated_at: Utc::now(),
                         };
-                        let _ = persist_knowledge_manifest(gossip_dir_coord, &updated_manifest);
+                        if let Err(e) = persist_knowledge_manifest(gossip_dir_coord, &updated_manifest) {
+                            tracing::warn!(error = %e, "failed to persist knowledge manifest update");
+                        }
 
                         // Update gossip status.
                         let (sessions_synthesized, coordinator_rounds) = {
@@ -293,7 +295,9 @@ where
                             mesh_status: None,
                             gossip_status: Some(gs_snap),
                         };
-                        let _ = backend_coord.push_session_event(run_dir_coord, &snapshot);
+                        if let Err(e) = backend_coord.push_session_event(run_dir_coord, &snapshot) {
+                            tracing::warn!(error = %e, "best-effort state snapshot failed — run status may be stale");
+                        }
                     }
                     Err(mpsc::RecvTimeoutError::Timeout) => {
                         // Timeout: coordinator round with no completion.
@@ -323,7 +327,9 @@ where
                             mesh_status: None,
                             gossip_status: Some(gs_snap),
                         };
-                        let _ = backend_coord.push_session_event(run_dir_coord, &snapshot);
+                        if let Err(e) = backend_coord.push_session_event(run_dir_coord, &snapshot) {
+                            tracing::warn!(error = %e, "best-effort state snapshot failed — run status may be stale");
+                        }
                     }
                     Err(mpsc::RecvTimeoutError::Disconnected) => {
                         // All senders dropped — drain any remaining messages, then exit.
@@ -347,7 +353,13 @@ where
                             entries: knowledge_entries.clone(),
                             last_updated_at: Utc::now(),
                         };
-                        let _ = persist_knowledge_manifest(gossip_dir_coord, &final_manifest);
+                        if let Err(e) = persist_knowledge_manifest(gossip_dir_coord, &final_manifest) {
+                            tracing::error!(
+                                gossip_dir = %gossip_dir_coord.display(),
+                                error = %e,
+                                "failed to persist final knowledge manifest — gossip results not durable"
+                            );
+                        }
 
                         break;
                     }
@@ -452,14 +464,20 @@ where
                 };
 
                 // Send completion to coordinator.
-                let _ = tx_worker.send(GossipCompletion {
+                if let Err(e) = tx_worker.send(GossipCompletion {
                     session_name: name.clone(),
                     spec,
                     gate_pass_count,
                     gate_fail_count,
                     changed_files,
                     completed_at,
-                });
+                }) {
+                    tracing::error!(
+                        session = %name,
+                        error = %e,
+                        "failed to send gossip completion to coordinator — knowledge manifest will be incomplete"
+                    );
+                }
                 drop(tx_worker);
 
                 // Update session status.
@@ -487,7 +505,9 @@ where
                         mesh_status: None,
                         gossip_status: Some(gs_snap),
                     };
-                    let _ = backend_worker.push_session_event(run_dir, &snapshot);
+                    if let Err(e) = backend_worker.push_session_event(run_dir, &snapshot) {
+                        tracing::warn!(error = %e, "best-effort state snapshot failed — run status may be stale");
+                    }
                 }
 
                 // Decrement active count and release semaphore.
@@ -532,7 +552,13 @@ where
         mesh_status: None,
         gossip_status: Some(final_gossip),
     };
-    let _ = config.backend.push_session_event(&run_dir, &final_status);
+    if let Err(e) = config.backend.push_session_event(&run_dir, &final_status) {
+        tracing::error!(
+            run_id = %run_id,
+            error = %e,
+            "failed to persist final orchestrator state — run status is not durable"
+        );
+    }
 
     // Build outcomes vec (mirrors mesh.rs pattern).
     let outcomes: Vec<(String, SessionOutcome)> = cloned_sessions

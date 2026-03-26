@@ -129,7 +129,7 @@ fn test_local_fs_backend_assay_dir_accessor() {
     assert_eq!(backend.assay_dir(), dir.path());
 }
 
-// ── Backward-compat round-trip tests (T01/S02) ──────────────────────
+// ── Backward-compatible deserialization (RunManifest.state_backend) ──
 
 #[test]
 fn backward_compat_manifest_without_state_backend_deserializes_to_none() {
@@ -173,10 +173,10 @@ fn backward_compat_manifest_with_state_backend_round_trips() {
     );
 }
 
-// ── Integration tests for LocalFsBackend real method bodies (T01/S02) ─
+// ── LocalFsBackend filesystem persistence ────────────────────────────
 
-/// Red-state test: push_session_event should write state, read_run_state should
-/// return it. Currently stubs — T02 makes this green.
+/// Verifies that push_session_event persists to disk and read_run_state
+/// deserializes it back.
 #[test]
 fn test_local_fs_backend_push_and_read_state() {
     let dir = tempdir().unwrap();
@@ -197,13 +197,10 @@ fn test_local_fs_backend_push_and_read_state() {
         .push_session_event(dir.path(), &status)
         .expect("push_session_event should succeed");
 
-    // Read it back — once implemented, this should return Some(status)
     let read_back = backend
         .read_run_state(dir.path())
         .expect("read_run_state should succeed");
 
-    // T02 will make this assertion pass by implementing real persistence.
-    // For now the stub returns None, so this test is expected to fail.
     assert!(
         read_back.is_some(),
         "read_run_state should return the status that was just pushed"
@@ -213,8 +210,7 @@ fn test_local_fs_backend_push_and_read_state() {
     assert_eq!(read_status.phase, OrchestratorPhase::Running);
 }
 
-/// Red-state test: save_checkpoint_summary should write a checkpoint file to disk.
-/// Currently a stub — T02 makes this green.
+/// Verifies that save_checkpoint_summary writes checkpoints/latest.md to disk.
 #[test]
 fn test_local_fs_backend_save_checkpoint_summary() {
     let dir = tempdir().unwrap();
@@ -243,8 +239,7 @@ fn test_local_fs_backend_save_checkpoint_summary() {
     );
 }
 
-/// Red-state test: send_message then poll_inbox should return the message.
-/// Currently stubs — T02 makes this green.
+/// Verifies that send_message writes a file and poll_inbox reads it back.
 #[test]
 fn test_local_fs_backend_send_and_poll_messages() {
     let dir = tempdir().unwrap();
@@ -259,7 +254,6 @@ fn test_local_fs_backend_send_and_poll_messages() {
         .poll_inbox(&inbox_path)
         .expect("poll_inbox should succeed");
 
-    // T02 will make this assertion pass by implementing real messaging.
     assert!(
         !messages.is_empty(),
         "poll_inbox should return the message that was just sent"

@@ -313,6 +313,9 @@ fn orchestrator_status_schema_snapshot() {
     assert_json_snapshot!("orchestrator-status-schema", schema.to_value());
 }
 
+// Separate snapshot for the orchestrate feature variant — RunManifest's schema
+// changes shape (adds state_backend) when compiled with --features orchestrate.
+// See DECISIONS.md D159 for rationale.
 #[cfg(feature = "orchestrate")]
 #[test]
 fn run_manifest_orchestrate_schema_snapshot() {

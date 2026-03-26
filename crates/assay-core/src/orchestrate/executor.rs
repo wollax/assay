@@ -85,12 +85,17 @@ impl fmt::Debug for OrchestratorConfig {
         f.debug_struct("OrchestratorConfig")
             .field("max_concurrency", &self.max_concurrency)
             .field("failure_policy", &self.failure_policy)
+            // dyn StateBackend is not Debug; emit a type-level placeholder.
             .field("backend", &"Arc<dyn StateBackend>")
             .finish()
     }
 }
 
 impl Default for OrchestratorConfig {
+    /// The `.assay` path here is a placeholder — all real construction sites
+    /// (CLI, MCP, integration tests with real directories) provide an explicit
+    /// backend. Tests that use `::default()` tolerate the relative path because
+    /// they exercise logic that doesn't depend on backend path resolution.
     fn default() -> Self {
         Self {
             max_concurrency: 8,
@@ -469,7 +474,9 @@ where
                         gossip_status: None,
                     };
                     // Best-effort persistence — don't fail the whole run.
-                    let _ = backend.push_session_event(run_dir, &snapshot);
+                    if let Err(e) = backend.push_session_event(run_dir, &snapshot) {
+                        tracing::warn!(error = %e, "best-effort state snapshot failed — run status may be stale");
+                    }
 
                     // Wake the dispatch loop.
                     condvar.notify_all();
@@ -501,7 +508,13 @@ where
         mesh_status: None,
         gossip_status: None,
     };
-    let _ = config.backend.push_session_event(&run_dir, &final_status);
+    if let Err(e) = config.backend.push_session_event(&run_dir, &final_status) {
+        tracing::error!(
+            run_id = %run_id,
+            error = %e,
+            "failed to persist final orchestrator state — run status is not durable"
+        );
+    }
 
     let outcomes = std::mem::take(&mut guard.outcomes);
     drop(guard);

@@ -57,7 +57,9 @@ pub struct RunManifest {
     pub gossip_config: Option<GossipConfig>,
 
     /// State persistence backend configuration.
-    /// Defaults to `None`, which uses the built-in local filesystem backend.
+    /// `None` means the orchestrator uses its default `LocalFsBackend` at
+    /// `OrchestratorConfig` construction time. Set to `LocalFs` explicitly to
+    /// document intent; use `Custom` for third-party backends (M011+).
     #[cfg(feature = "orchestrate")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub state_backend: Option<StateBackendConfig>,
