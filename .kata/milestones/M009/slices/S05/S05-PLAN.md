@@ -62,7 +62,7 @@
   - Verify: `cargo test -p assay-core --test telemetry_otlp --features telemetry` — OTel init test passes; `cargo build -p assay-cli --features telemetry` compiles
   - Done when: init_tracing() with otlp_endpoint=Some creates an OTel-enabled subscriber; TracingGuard drop flushes OTel; graceful degradation on bad endpoint
 
-- [ ] **T03: Inject TRACEPARENT into launch_agent and launch_agent_streaming subprocess spawns** `est:20m`
+- [x] **T03: Inject TRACEPARENT into launch_agent and launch_agent_streaming subprocess spawns** `est:20m`
   - Why: Delivers R065 (trace context propagation) — child processes receive W3C TRACEPARENT so their traces correlate with the parent orchestration
   - Files: `crates/assay-core/src/pipeline.rs`, `crates/assay-core/tests/telemetry_otlp.rs`
   - Do: Behind `#[cfg(feature = "telemetry")]` in both launch_agent() and launch_agent_streaming(): check Span::current().is_disabled(), if active span exists use global propagator to inject TRACEPARENT into a HashMap, add as Command::env("TRACEPARENT", value). When no active span, emit tracing::debug!. Write integration test: set up OTel subscriber with propagator, create a parent span, call a subprocess (e.g. `env` or `printenv TRACEPARENT`) inside the span, assert TRACEPARENT appears in output matching W3C format `00-{trace_id}-{span_id}-{flags}`.

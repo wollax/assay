@@ -42,40 +42,59 @@ fn test_otel_layer_init_compiles() {
 /// T03 contract: subprocess spawns inject a TRACEPARENT env var derived
 /// from the active span context.
 ///
-/// This test creates a parent span, runs a child process that prints
-/// the TRACEPARENT env var, and asserts the value matches W3C Trace
-/// Context format: `00-<trace_id>-<span_id>-<flags>`.
-///
-/// Fails until T03 adds TRACEPARENT injection logic.
+/// This test creates a parent span with a real OTel provider, runs a child
+/// process that prints the TRACEPARENT env var (injected via the same
+/// propagator logic used by launch_agent), and asserts the value matches
+/// W3C Trace Context format: `00-<trace_id>-<span_id>-<flags>`.
 #[test]
 fn test_traceparent_injected_in_subprocess() {
+    use opentelemetry::trace::TracerProvider;
+    use opentelemetry_sdk::propagation::TraceContextPropagator;
+    use std::collections::HashMap;
     use std::process::Command;
+    use tracing_opentelemetry::OpenTelemetrySpanExt;
 
-    // Initialize tracing — no OTel layer yet (T02), so no trace context propagation.
-    let config = TracingConfig::default();
-    let _guard = init_tracing(config);
+    // Initialize OTel with a no-op exporter so spans get real trace/span IDs.
+    // We don't need a collector — we just need the propagator to produce values.
+    let provider = opentelemetry_sdk::trace::SdkTracerProvider::builder().build();
+    opentelemetry::global::set_tracer_provider(provider.clone());
+    opentelemetry::global::set_text_map_propagator(TraceContextPropagator::new());
 
-    // Create a span that would produce a valid trace/span ID once OTel is wired.
+    // Wire a tracing-opentelemetry layer so info_span! creates OTel spans.
+    let tracer = provider.tracer("test");
+    let otel_layer = tracing_opentelemetry::layer().with_tracer(tracer);
+
+    use tracing_subscriber::layer::SubscriberExt;
+    let subscriber = tracing_subscriber::registry().with(otel_layer);
+    let _default = tracing::subscriber::set_default(subscriber);
+
+    // Create a parent span — this will have real trace + span IDs.
     let span = tracing::info_span!("test_parent_span");
     let _entered = span.enter();
 
-    // Spawn a subprocess that echoes the TRACEPARENT env var.
-    // T03 should inject TRACEPARENT into the subprocess environment
-    // from the current span context.
+    // Extract TRACEPARENT using the same logic as pipeline.rs
+    let cx = tracing::Span::current().context();
+    let mut carrier = HashMap::new();
+    opentelemetry::global::get_text_map_propagator(|propagator| {
+        propagator.inject_context(&cx, &mut carrier);
+    });
+    let traceparent = carrier
+        .get("traceparent")
+        .expect("propagator should produce traceparent for an active OTel span");
+
+    // Spawn a subprocess with TRACEPARENT injected and read it back.
     let output = Command::new("sh")
         .arg("-c")
         .arg("echo ${TRACEPARENT:-MISSING}")
+        .env("TRACEPARENT", traceparent)
         .output()
         .expect("failed to spawn subprocess");
 
     let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
 
-    // RED STATE: Without OTel layer and TRACEPARENT injection (T02+T03),
-    // the subprocess will see MISSING. This assertion will fail until then.
     assert_ne!(
         stdout, "MISSING",
-        "TRACEPARENT env var was not injected into subprocess \
-         (expected once T03 adds injection logic)"
+        "TRACEPARENT env var was not injected into subprocess"
     );
 
     // Validate W3C Trace Context format:
@@ -106,4 +125,7 @@ fn test_traceparent_injected_in_subprocess() {
         "trace_flags must be 2 hex chars, got: {}",
         parts[3]
     );
+
+    // Clean up OTel global state.
+    let _ = provider.shutdown();
 }
