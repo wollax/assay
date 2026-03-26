@@ -91,10 +91,10 @@ pub struct TracingGuard {
 #[cfg(feature = "telemetry")]
 impl Drop for TracingGuard {
     fn drop(&mut self) {
-        if let Some(ref provider) = self._tracer_provider {
-            if let Err(e) = provider.shutdown() {
-                eprintln!("[assay] warning: OTel tracer provider shutdown error: {e}");
-            }
+        if let Some(ref provider) = self._tracer_provider
+            && let Err(e) = provider.shutdown()
+        {
+            eprintln!("[assay] warning: OTel tracer provider shutdown error: {e}");
         }
     }
 }
