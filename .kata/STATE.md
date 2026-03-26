@@ -2,7 +2,7 @@
 
 **Active Milestone:** M009 — Observability
 **Active Slice:** S05 — OTLP export and trace context propagation
-**Active Task:** T02 — Implement OTel tracing layer in init_tracing() with feature-flagged TracingGuard shutdown
+**Active Task:** T03 — Inject TRACEPARENT env var into subprocess spawns from active span context
 **Phase:** Executing
 
 ## Recent Decisions
@@ -14,4 +14,4 @@
 - None
 
 ## Next Action
-Execute T02: Add `otlp_endpoint: Option<String>` to TracingConfig, wire OTel tracing layer behind `#[cfg(feature = "telemetry")]` in init_tracing(), add TracingGuard shutdown, graceful degradation on init failure.
+Execute T03: Inject TRACEPARENT env var into subprocess spawns from the active OTel span context. This completes the trace context propagation contract (test_traceparent_injected_in_subprocess).
