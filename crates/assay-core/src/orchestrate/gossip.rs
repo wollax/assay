@@ -28,9 +28,7 @@ use assay_types::{ManifestSession, PromptLayer, PromptLayerKind};
 use tracing::{Span, info, info_span};
 
 use crate::error::AssayError;
-use crate::orchestrate::executor::{
-    OrchestratorConfig, OrchestratorResult, SessionOutcome, persist_state,
-};
+use crate::orchestrate::executor::{OrchestratorConfig, OrchestratorResult, SessionOutcome};
 use crate::pipeline::{PipelineConfig, PipelineError, PipelineResult, PipelineStage};
 
 // ── Internal completion message ──────────────────────────────────────────────
@@ -48,7 +46,7 @@ struct GossipCompletion {
 // ── Knowledge manifest persistence ──────────────────────────────────────────
 
 /// Persist a `KnowledgeManifest` to `gossip_dir/knowledge.json` using atomic
-/// tempfile-then-rename (same pattern as `persist_state()`).
+/// tempfile-then-rename (same pattern as `StateBackend::push_session_event()`).
 fn persist_knowledge_manifest(
     gossip_dir: &Path,
     manifest: &KnowledgeManifest,
@@ -199,7 +197,9 @@ where
         mesh_status: None,
         gossip_status: Some(gossip_status.clone()),
     };
-    persist_state(&run_dir, &initial_status)?;
+    config
+        .backend
+        .push_session_event(&run_dir, &initial_status)?;
 
     // ── Shared state ─────────────────────────────────────────────────
 
@@ -236,6 +236,7 @@ where
         let run_id_coord = &run_id;
         let gossip_dir_coord = &gossip_dir;
         let failure_policy = config.failure_policy;
+        let backend_coord = Arc::clone(&config.backend);
         let started_at_run = started_at;
         let coord_parent = parent_span.clone();
 
@@ -292,7 +293,7 @@ where
                             mesh_status: None,
                             gossip_status: Some(gs_snap),
                         };
-                        let _ = persist_state(run_dir_coord, &snapshot);
+                        let _ = backend_coord.push_session_event(run_dir_coord, &snapshot);
                     }
                     Err(mpsc::RecvTimeoutError::Timeout) => {
                         // Timeout: coordinator round with no completion.
@@ -322,7 +323,7 @@ where
                             mesh_status: None,
                             gossip_status: Some(gs_snap),
                         };
-                        let _ = persist_state(run_dir_coord, &snapshot);
+                        let _ = backend_coord.push_session_event(run_dir_coord, &snapshot);
                     }
                     Err(mpsc::RecvTimeoutError::Disconnected) => {
                         // All senders dropped — drain any remaining messages, then exit.
@@ -366,6 +367,7 @@ where
             let run_id = &run_id;
             let started_at_run = started_at;
             let failure_policy = config.failure_policy;
+            let backend_worker = Arc::clone(&config.backend);
             let worker_parent = parent_span.clone();
 
             scope.spawn(move || {
@@ -485,7 +487,7 @@ where
                         mesh_status: None,
                         gossip_status: Some(gs_snap),
                     };
-                    let _ = persist_state(run_dir, &snapshot);
+                    let _ = backend_worker.push_session_event(run_dir, &snapshot);
                 }
 
                 // Decrement active count and release semaphore.
@@ -530,7 +532,7 @@ where
         mesh_status: None,
         gossip_status: Some(final_gossip),
     };
-    let _ = persist_state(&run_dir, &final_status);
+    let _ = config.backend.push_session_event(&run_dir, &final_status);
 
     // Build outcomes vec (mirrors mesh.rs pattern).
     let outcomes: Vec<(String, SessionOutcome)> = cloned_sessions

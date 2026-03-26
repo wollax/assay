@@ -376,6 +376,7 @@ fn execute_orchestrated(
     let orch_config = OrchestratorConfig {
         max_concurrency: 8,
         failure_policy: cmd.failure_policy,
+        ..Default::default()
     };
 
     // Session runner closure: constructs HarnessWriter from plain function
@@ -599,6 +600,7 @@ fn execute_mesh(
     let orch_config = OrchestratorConfig {
         max_concurrency: 8,
         failure_policy: cmd.failure_policy,
+        ..Default::default()
     };
 
     // Session runner closure: constructs HarnessWriter from plain function
@@ -738,6 +740,7 @@ fn execute_gossip(
     let orch_config = OrchestratorConfig {
         max_concurrency: 8,
         failure_policy: cmd.failure_policy,
+        ..Default::default()
     };
 
     // Session runner closure: constructs HarnessWriter from plain function

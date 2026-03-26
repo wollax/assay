@@ -2954,6 +2954,7 @@ impl AssayServer {
         let orch_config = assay_core::orchestrate::executor::OrchestratorConfig {
             max_concurrency: 8,
             failure_policy,
+            ..Default::default()
         };
 
         let specs_dir = cwd.join(".assay").join(&config.specs_dir);
@@ -2996,6 +2997,7 @@ impl AssayServer {
                 let orch_config = assay_core::orchestrate::executor::OrchestratorConfig {
                     max_concurrency: 8,
                     failure_policy,
+                    ..Default::default()
                 };
                 let manifest_clone = manifest.clone();
                 let pipeline_config_clone = pipeline_config.clone();
@@ -3044,6 +3046,7 @@ impl AssayServer {
                 let orch_config = assay_core::orchestrate::executor::OrchestratorConfig {
                     max_concurrency: 8,
                     failure_policy,
+                    ..Default::default()
                 };
                 let manifest_clone = manifest.clone();
                 let pipeline_config_clone = pipeline_config.clone();

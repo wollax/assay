@@ -64,7 +64,7 @@
   - Verify: `cargo test -p assay-core --features orchestrate --test state_backend` — all contract tests pass (green)
   - Done when: All 7 `LocalFsBackend` methods have real implementations; contract tests pass
 
-- [ ] **T03: Wire Arc<dyn StateBackend> into OrchestratorConfig and replace all persist_state callsites** `est:45m`
+- [x] **T03: Wire Arc<dyn StateBackend> into OrchestratorConfig and replace all persist_state callsites** `est:45m`
   - Why: The central wiring task — connects the backend to all three executors, replacing 15 direct `persist_state()` calls with `backend.push_session_event()`
   - Files: `crates/assay-core/src/orchestrate/executor.rs`, `crates/assay-core/src/orchestrate/mesh.rs`, `crates/assay-core/src/orchestrate/gossip.rs`
   - Do: Add `backend: Arc<dyn StateBackend>` to `OrchestratorConfig`. Remove `#[derive(Clone)]`, add manual `Clone` impl using `Arc::clone`. Replace `Default` impl to use a `LocalFsBackend::new` with a default temp path (or remove `Default` and fix all callsites). Replace all 15 `persist_state()` callsites with `config.backend.push_session_event()`. Make `persist_state` function private or remove it. Ensure `Arc` is cloned into `thread::scope` workers (gossip coordinator thread, mesh routing thread).

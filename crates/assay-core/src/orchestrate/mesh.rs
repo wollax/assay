@@ -25,7 +25,7 @@ use assay_types::{ManifestSession, PromptLayer, PromptLayerKind};
 use tracing::{Span, info, info_span};
 
 use crate::error::AssayError;
-use crate::orchestrate::executor::{OrchestratorConfig, OrchestratorResult, persist_state};
+use crate::orchestrate::executor::{OrchestratorConfig, OrchestratorResult};
 use crate::pipeline::{PipelineConfig, PipelineError, PipelineResult};
 
 /// Run a mesh-mode multi-session execution.
@@ -181,7 +181,9 @@ where
         gossip_status: None,
     };
 
-    persist_state(&run_dir, &initial_status)?;
+    config
+        .backend
+        .push_session_event(&run_dir, &initial_status)?;
 
     // ── Shared state ─────────────────────────────────────────────────
 
@@ -268,6 +270,7 @@ where
             let run_id = &run_id;
             let started_at_run = started_at;
             let failure_policy = config.failure_policy;
+            let backend = Arc::clone(&config.backend);
             let worker_parent = parent_span.clone();
 
             scope.spawn(move || {
@@ -372,7 +375,7 @@ where
                         mesh_status: Some(mesh),
                         gossip_status: None,
                     };
-                    let _ = persist_state(run_dir, &snapshot);
+                    let _ = backend.push_session_event(run_dir, &snapshot);
                 }
 
                 // Decrement active count — routing thread exits when 0.
@@ -416,7 +419,7 @@ where
         mesh_status: Some(final_mesh),
         gossip_status: None,
     };
-    let _ = persist_state(&run_dir, &final_status);
+    let _ = config.backend.push_session_event(&run_dir, &final_status);
 
     // Build outcomes vec.
     let outcomes: Vec<(String, crate::orchestrate::executor::SessionOutcome)> = cloned_sessions
