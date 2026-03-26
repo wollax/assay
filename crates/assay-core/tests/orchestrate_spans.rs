@@ -40,6 +40,7 @@ fn mock_manifest(n: usize) -> RunManifest {
         mode: Default::default(),
         mesh_config: None,
         gossip_config: None,
+        state_backend: None,
     }
 }
 

@@ -63,6 +63,7 @@ fn make_gossip_manifest(names: &[(&str, &str)]) -> RunManifest {
         mode: OrchestratorMode::Gossip,
         mesh_config: None,
         gossip_config: None,
+        state_backend: None,
     }
 }
 

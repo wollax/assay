@@ -113,6 +113,7 @@ fn make_manifest(sessions: Vec<(&str, Option<&str>, Vec<&str>)>) -> RunManifest 
         mode: assay_types::OrchestratorMode::Dag,
         mesh_config: None,
         gossip_config: None,
+        state_backend: None,
     }
 }
 

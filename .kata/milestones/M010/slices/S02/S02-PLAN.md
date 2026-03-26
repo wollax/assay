@@ -50,7 +50,7 @@
 
 ## Tasks
 
-- [ ] **T01: Add RunManifest.state_backend field and write integration test contracts** `est:30m`
+- [x] **T01: Add RunManifest.state_backend field and write integration test contracts** `est:30m`
   - Why: Establishes the backward-compat round-trip contract and the `OrchestratorConfig` shape with `Arc<dyn StateBackend>` — the test-first contract that all subsequent tasks must satisfy
   - Files: `crates/assay-types/src/manifest.rs`, `crates/assay-core/tests/state_backend.rs`, `crates/assay-types/tests/snapshots/schema_snapshots__run-manifest-schema.snap`
   - Do: Add `state_backend: Option<StateBackendConfig>` to `RunManifest` behind `orchestrate` feature with `serde(default, skip_serializing_if)`. Add backward-compat round-trip test (manifest without field deserializes). Update `run_manifest_schema_snapshot`. Add integration test proving `LocalFsBackend::push_session_event` writes a readable `state.json`, `read_run_state` reads it back, and `save_checkpoint_summary` delegates to existing persistence.

@@ -1236,6 +1236,7 @@ mod tests {
             mode,
             mesh_config: None,
             gossip_config: None,
+            state_backend: None,
         }
     }
 

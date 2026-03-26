@@ -203,6 +203,7 @@ fn hook_event_schema_snapshot() {
     assert_json_snapshot!("hook-event-schema", schema.to_value());
 }
 
+#[cfg(not(feature = "orchestrate"))]
 #[test]
 fn run_manifest_schema_snapshot() {
     let schema = schemars::schema_for!(assay_types::RunManifest);
@@ -310,6 +311,13 @@ fn session_status_schema_snapshot() {
 fn orchestrator_status_schema_snapshot() {
     let schema = schemars::schema_for!(assay_types::OrchestratorStatus);
     assert_json_snapshot!("orchestrator-status-schema", schema.to_value());
+}
+
+#[cfg(feature = "orchestrate")]
+#[test]
+fn run_manifest_orchestrate_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::RunManifest);
+    assert_json_snapshot!("run-manifest-orchestrate-schema", schema.to_value());
 }
 
 // ── Merge ordering & runner types ────────────────────────────────────

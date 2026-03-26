@@ -712,5 +712,6 @@ fn run_manifest_with_scoped_sessions_validates() {
         mode: assay_types::orchestrate::OrchestratorMode::Dag,
         mesh_config: None,
         gossip_config: None,
+        state_backend: None,
     });
 }
