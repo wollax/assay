@@ -2,7 +2,7 @@
 
 **Active Milestone:** M009 — Observability
 **Active Slice:** S05 — OTLP export and trace context propagation
-**Active Task:** T01 — Add OTel workspace deps, feature flags, and red-state integration tests
+**Active Task:** T02 — Implement OTel tracing layer in init_tracing() with feature-flagged TracingGuard shutdown
 **Phase:** Executing
 
 ## Recent Decisions
@@ -14,4 +14,4 @@
 - None
 
 ## Next Action
-Execute T01: Add OTel workspace deps (opentelemetry 0.31, opentelemetry_sdk 0.31, opentelemetry-otlp 0.31, tracing-opentelemetry 0.32) as optional workspace deps; add `telemetry` feature to assay-core and assay-cli; add `registry` to tracing-subscriber features; create red-state integration tests in `crates/assay-core/tests/telemetry_otlp.rs`; verify `cargo deny check bans` passes.
+Execute T02: Add `otlp_endpoint: Option<String>` to TracingConfig, wire OTel tracing layer behind `#[cfg(feature = "telemetry")]` in init_tracing(), add TracingGuard shutdown, graceful degradation on init failure.
