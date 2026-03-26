@@ -2,7 +2,7 @@
 
 **Active Milestone:** M010 — Pluggable State Backend
 **Active Slice:** S02 — LocalFsBackend implementation and orchestrator wiring
-**Active Task:** T03 — Wire Arc<dyn StateBackend> into OrchestratorConfig and replace all persist_state callsites
+**Active Task:** T03 ✅ — Wire Arc<dyn StateBackend> into OrchestratorConfig and replace all persist_state callsites
 **Phase:** Executing
 
 ## Recent Decisions
@@ -16,4 +16,4 @@
 - None
 
 ## Next Action
-Execute T03: Wire Arc<dyn StateBackend> into OrchestratorConfig and replace all persist_state() callsites with backend.push_session_event().
+T03 complete. Proceed to T04 or next task in S02.
