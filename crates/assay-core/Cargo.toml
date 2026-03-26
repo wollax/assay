@@ -26,6 +26,10 @@ tracing-appender.workspace = true
 tracing-subscriber.workspace = true
 which.workspace = true
 ulid.workspace = true
+opentelemetry = { workspace = true, optional = true }
+opentelemetry_sdk = { workspace = true, optional = true }
+opentelemetry-otlp = { workspace = true, optional = true }
+tracing-opentelemetry = { workspace = true, optional = true }
 
 [target.'cfg(unix)'.dependencies]
 libc.workspace = true
@@ -36,6 +40,12 @@ tracing-test.workspace = true
 
 [features]
 orchestrate = ["assay-types/orchestrate"]
+telemetry = [
+    "dep:opentelemetry",
+    "dep:opentelemetry_sdk",
+    "dep:opentelemetry-otlp",
+    "dep:tracing-opentelemetry",
+]
 
 [lints]
 workspace = true

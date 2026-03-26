@@ -25,6 +25,9 @@ tracing.workspace = true
 anyhow.workspace = true
 dialoguer.workspace = true
 
+[features]
+telemetry = ["assay-core/telemetry"]
+
 [dev-dependencies]
 serial_test.workspace = true
 tempfile.workspace = true
