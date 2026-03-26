@@ -1,0 +1,42 @@
+---
+source: crates/assay-types/tests/schema_snapshots.rs
+expression: schema.to_value()
+---
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Backend configuration for state persistence.\n\nSerializes with `snake_case` tag keys: `LocalFs` → `\"local_fs\"`,\n`Custom` → `{\"custom\": {...}}`.",
+  "oneOf": [
+    {
+      "const": "local_fs",
+      "description": "Local filesystem backend (default). No additional config needed.",
+      "type": "string"
+    },
+    {
+      "additionalProperties": false,
+      "description": "Custom third-party backend identified by name.",
+      "properties": {
+        "custom": {
+          "properties": {
+            "config": {
+              "description": "Backend-specific configuration payload."
+            },
+            "name": {
+              "description": "Identifier for the backend implementation.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "config"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "custom"
+      ],
+      "type": "object"
+    }
+  ],
+  "title": "StateBackendConfig"
+}

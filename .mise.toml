@@ -3,6 +3,7 @@ rust = "stable"
 just = "latest"
 node = "24"
 "cargo:cargo-deny" = "latest"
+"cargo:cargo-nextest" = "latest"
 go = "latest"
 
 [env]
