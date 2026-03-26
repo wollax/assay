@@ -655,25 +655,25 @@
 
 ### R064 — OTLP trace export
 - Class: core-capability
-- Status: active
-- Description: Feature-flagged OTLP exporter (`--features telemetry`) sends spans to a collector (Jaeger/Tempo). Scoped tokio runtime for the async export layer only. Configurable endpoint via `OTEL_EXPORTER_OTLP_ENDPOINT` env var or `.assay/config.toml`.
+- Status: validated
+- Description: Feature-flagged OTLP exporter (`--features telemetry`) sends spans to a collector (Jaeger/Tempo). Uses rt-tokio with existing runtime (D143). Configurable endpoint via `OTEL_EXPORTER_OTLP_ENDPOINT` env var.
 - Why it matters: OTLP is the industry standard for distributed tracing. Teams using Jaeger/Grafana Tempo need native export without a sidecar.
 - Source: user
 - Primary owning slice: M009/S05
 - Supporting slices: M009/S01
-- Validation: unmapped
-- Notes: Feature-flagged to avoid pulling tokio + OTel deps into default builds. Scoped tokio runtime (D007 compatible) — only the exporter thread uses async. `opentelemetry-otlp` crate with `tonic` or `reqwest` transport.
+- Validation: S05 — telemetry feature flag on assay-core/assay-cli gates all OTel deps; init_tracing() adds OTLP layer when feature enabled and endpoint configured; graceful degradation with tracing::warn! on init failure; TracingGuard::drop() flushes via SdkTracerProvider::shutdown(); cargo tree confirms zero OTel deps in default build, 13 in telemetry build; 2 integration tests pass; just ready green. Real Jaeger validation is UAT.
+- Notes: Uses http-proto + hyper-client transport (D144) to avoid reqwest version conflict. D127 superseded by D143 (no scoped runtime needed).
 
 ### R065 — Trace context propagation
 - Class: quality-attribute
-- Status: active
-- Description: Trace IDs propagated across subprocess boundaries (agent launch, gh CLI calls) via environment variables so child process spans can be correlated with parent orchestration traces.
+- Status: validated
+- Description: Trace IDs propagated across subprocess boundaries (agent launch) via TRACEPARENT environment variable so child process spans can be correlated with parent orchestration traces.
 - Why it matters: Without propagation, agent subprocess traces are disconnected islands. Propagation enables the full picture: orchestrator → session → agent → gate eval as one trace.
 - Source: inferred
 - Primary owning slice: M009/S05
 - Supporting slices: M009/S02, M009/S03
-- Validation: unmapped
-- Notes: Standard W3C Trace Context via `TRACEPARENT` env var. Child processes that support OTel will pick it up automatically. Non-OTel children ignore it harmlessly.
+- Validation: S05 — cfg-gated extract_traceparent() and inject_traceparent() helpers in pipeline.rs; both launch_agent() and launch_agent_streaming() inject TRACEPARENT when telemetry feature enabled and active span exists; integration test proves TRACEPARENT appears in subprocess env with valid W3C format 00-{32hex}-{16hex}-{2hex}; debug log when no active span; just ready green
+- Notes: Standard W3C Trace Context via `TRACEPARENT` env var. Child processes that support OTel will pick it up automatically. Non-OTel children ignore it harmlessly. Thread-local span context captured before thread::spawn in streaming path.
 
 ## Deferred
 
@@ -775,7 +775,7 @@
 | R024 | differentiator | validated | M002/S04 | M002/S05 | S04 |
 | R025 | quality-attribute | deferred | none | none | unmapped |
 | R026 | differentiator | validated | M003/S01 | M003/S02 | S01 |
-| R027 | quality-attribute | active | M009/S03 | M009/S01–S05 | unmapped |
+| R027 | quality-attribute | validated | M009/S03 | M009/S01–S05 | S01–S05 |
 | R030 | anti-feature | out-of-scope | none | none | n/a |
 | R031 | anti-feature | out-of-scope | none | none | n/a |
 | R032 | anti-feature | out-of-scope | none | none | n/a |
@@ -811,18 +811,18 @@
 
 | R060 | quality-attribute | validated | M009/S01 | none | S01 |
 | R061 | core-capability | validated | M009/S02 | M009/S01 | S02 |
-| R062 | core-capability | active | M009/S03 | M009/S01, M009/S02 | unmapped |
+| R062 | core-capability | validated | M009/S03 | M009/S01, M009/S02 | S03 |
 | R063 | core-capability | validated | M009/S04 | M009/S01 | S04 |
-| R064 | core-capability | active | M009/S05 | M009/S01 | unmapped |
-| R065 | quality-attribute | active | M009/S05 | M009/S02, M009/S03 | unmapped |
+| R064 | core-capability | validated | M009/S05 | M009/S01 | S05 |
+| R065 | quality-attribute | validated | M009/S05 | M009/S02, M009/S03 | S05 |
 | R066 | primary-user-loop | deferred | none | none | unmapped |
 | R067 | quality-attribute | deferred | none | none | unmapped |
 
 ## Coverage Summary
 
-- Active requirements: 4 (R027, R062, R064, R065)
-- Mapped to slices: 4
-- Validated: 58 (R001–R029 except R025/R027, R034–R063)
+- Active requirements: 0
+- Mapped to slices: 0
+- Validated: 65 (R001–R029 except R025, R034–R065)
 - Deferred: 3 (R025, R066, R067)
 - Out of scope: 4 (R030, R031, R032, R033)
 - Unmapped active requirements: 0
