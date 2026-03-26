@@ -226,17 +226,53 @@ fn extract_traceparent() -> Option<String> {
         propagator.inject_context(&cx, &mut carrier);
     });
 
-    carrier.remove("traceparent")
+    let tp = carrier.remove("traceparent");
+    if tp.is_none() {
+        tracing::debug!(
+            "extract_traceparent: span exists but propagator produced no traceparent value; \
+             TRACEPARENT not injected. Is the global TraceContextPropagator registered? \
+             Ensure init_tracing() is called with otlp_endpoint set."
+        );
+    }
+    tp
 }
 
 /// Inject TRACEPARENT env var into a `Command` from the current span context.
 ///
-/// No-op when there is no active span or the propagator returns no value.
+/// No-op when there is no active span, the span has no OTel context (e.g.
+/// the global propagator was not set), or the propagator returns no value.
+///
+/// Note: in `launch_agent_streaming`, the TRACEPARENT value is captured
+/// *before* `thread::spawn` and injected inline — this helper cannot be
+/// called inside the spawned thread because OTel span context is thread-local
+/// and the active span will not be visible there.
 #[cfg(feature = "telemetry")]
 fn inject_traceparent(cmd: &mut std::process::Command) {
     if let Some(tp) = extract_traceparent() {
         cmd.env("TRACEPARENT", &tp);
     }
+}
+
+/// Test-visible wrapper exposing `inject_traceparent` to integration tests.
+///
+/// Allows tests to call the production injection path rather than
+/// re-implementing the propagator logic inline.
+///
+/// Only compiled with the `telemetry` feature; dead-code lint suppressed
+/// because this is intentionally a test surface, not production callsite.
+#[cfg(feature = "telemetry")]
+#[allow(dead_code)]
+pub fn inject_traceparent_for_test(cmd: &mut std::process::Command) {
+    inject_traceparent(cmd);
+}
+
+/// Test-visible wrapper exposing `extract_traceparent` to integration tests.
+///
+/// Allows tests to verify the no-span guard without calling internal functions.
+#[cfg(feature = "telemetry")]
+#[allow(dead_code)]
+pub fn extract_traceparent_for_test() -> Option<String> {
+    extract_traceparent()
 }
 
 // ── Agent launcher ───────────────────────────────────────────────────
@@ -308,7 +344,9 @@ pub fn launch_agent(
                 .map(|mut h| {
                     let mut buf = String::new();
                     use std::io::Read;
-                    let _ = h.read_to_string(&mut buf);
+                    if let Err(e) = h.read_to_string(&mut buf) {
+                        tracing::warn!(error = %e, "Failed to read agent stdout; output may be truncated");
+                    }
                     buf
                 })
                 .unwrap_or_default();
@@ -317,7 +355,9 @@ pub fn launch_agent(
                 .map(|mut h| {
                     let mut buf = String::new();
                     use std::io::Read;
-                    let _ = h.read_to_string(&mut buf);
+                    if let Err(e) = h.read_to_string(&mut buf) {
+                        tracing::warn!(error = %e, "Failed to read agent stderr; output may be truncated");
+                    }
                     buf
                 })
                 .unwrap_or_default();
@@ -417,7 +457,14 @@ pub fn launch_agent_streaming(
 
         let mut child = match cmd.spawn() {
             Ok(c) => c,
-            Err(_) => {
+            Err(e) => {
+                tracing::error!(
+                    binary = %binary,
+                    working_dir = %working_dir.display(),
+                    error = %e,
+                    "Failed to spawn agent subprocess in streaming mode; \
+                     ensure the agent binary is installed and the working directory exists"
+                );
                 // Drop line_tx — signals EOF to receiver.
                 drop(line_tx);
                 return -1;
@@ -439,7 +486,10 @@ pub fn launch_agent_streaming(
                             receiver_alive = false;
                         }
                     }
-                    Err(_) => break,
+                    Err(e) => {
+                        tracing::warn!(error = %e, "Error reading agent stdout line; stream may be truncated");
+                        break;
+                    }
                 }
             }
         }
