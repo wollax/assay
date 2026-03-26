@@ -71,7 +71,7 @@
   - Verify: `cargo test -p assay-core --features orchestrate --test orchestrate_integration` + `mesh_integration` + `gossip_integration` + `orchestrate_spans` + `integration_modes` all pass
   - Done when: Zero `persist_state()` calls remain in executor/mesh/gossip; all integration tests pass
 
-- [ ] **T04: Update CLI, MCP, and TUI OrchestratorConfig construction sites and run just ready** `est:30m`
+- [x] **T04: Update CLI, MCP, and TUI OrchestratorConfig construction sites and run just ready** `est:30m`
   - Why: Completes the wiring by updating all external construction sites (CLI, MCP, TUI, embedded tests) and proves the full workspace compiles and passes
   - Files: `crates/assay-cli/src/commands/run.rs`, `crates/assay-mcp/src/server.rs`, `crates/assay-tui/src/app.rs` (if any)
   - Do: Update 3 `OrchestratorConfig` construction sites in CLI, 3 in MCP server to pass `backend: Arc::new(LocalFsBackend::new(assay_dir.clone()))`. Update any remaining test files that construct `OrchestratorConfig` with struct literals or `::default()`. Run `INSTA_UPDATE=always cargo test` to accept any snapshot changes. Run `just ready` for final green.
