@@ -31,7 +31,7 @@ blocker_discovered: false
 
 ## What Happened
 
-Created `plugins/smelt-agent/` directory with four files following the codex plugin format (D082). AGENTS.md (45 lines) provides the smelt worker role description, a skills table listing all three skills, an MCP tools table with 10 tools, a workflow section explaining the receive→configure→dispatch→monitor→report lifecycle, and a CapabilitySet awareness section explaining graceful degradation.
+Created `plugins/smelt-agent/` directory with four files following the codex plugin format (D082). AGENTS.md (45 lines) provides the smelt worker role description, a skills table listing all three skills, an MCP tools table with 9 tools, a workflow section explaining the receive→configure→dispatch→monitor→report lifecycle, and a CapabilitySet awareness section explaining graceful degradation.
 
 Three skills were written with YAML frontmatter and step-by-step instructions:
 - `run-dispatch.md` — covers RunManifest TOML format (`[[sessions]]`, `mode`, `state_backend`), StateBackendConfig variants (LocalFs/Custom), single-session dispatch via `run_manifest`, and multi-session orchestration via `orchestrate_run` with all parameters (failure_policy, merge_strategy, conflict_resolution)

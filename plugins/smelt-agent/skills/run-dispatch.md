@@ -46,6 +46,6 @@ Launch spec sessions from a RunManifest TOML file.
    - `merge_strategy` (optional) — `"completion_time"` (default) orders merge by finish time; `"file_overlap"` picks sessions with least file overlap
    - `conflict_resolution` (optional) — `"skip"` (default) or `"auto"`
 
-   Note: DAG mode requires multiple sessions or dependency edges. Mesh and gossip modes allow single sessions.
+   Note: When using `orchestrate_run` in DAG mode, the manifest must contain either multiple sessions or at least one `depends_on` edge. For single-session work, use `run_manifest` instead.
 
 5. **Capture the `run_id` from the response.** The `orchestrate_run` response includes a `run_id` (ULID string). Save this — you need it for `orchestrate_status` queries to monitor progress and get final results.

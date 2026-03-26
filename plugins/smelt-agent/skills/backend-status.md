@@ -17,25 +17,31 @@ Query orchestrator status and interpret the results.
    orchestrate_status({ run_id: "<ULID>" })
    ```
 
-2. **Interpret the `OrchestratorStatus` response.** Key fields:
+2. **Interpret the response envelope.** The `orchestrate_status` tool returns a JSON object with two top-level fields:
+   - `status` — the `OrchestratorStatus` object (described below)
+   - `merge_report` — present if a merge phase was attempted (may be null)
+
+   Access run status via `status.phase`, `status.sessions`, etc. — not at the top level.
+
+3. **Read the `OrchestratorStatus` fields** inside the `status` object:
 
    - `run_id` — unique identifier for the run
-   - `phase` — current run phase:
-     - `Running` — sessions are still being dispatched or executing
-     - `Completed` — all sessions finished successfully
-     - `PartialFailure` — at least one session failed; others may have completed or been skipped
-     - `Aborted` — run was stopped due to `abort` failure policy or external signal
+   - `phase` — current run phase (JSON wire values are snake_case):
+     - `"running"` — sessions are still being dispatched or executing
+     - `"completed"` — all sessions finished successfully
+     - `"partial_failure"` — at least one session failed; others may have completed or been skipped
+     - `"aborted"` — run was stopped due to `abort` failure policy or external signal
    - `failure_policy` — the policy in effect (`skip_dependents` or `abort`)
    - `sessions` — array of `SessionStatus` entries, each with:
      - `name` — session identifier
      - `spec` — spec path or name
-     - `state` — one of `Pending`, `Running`, `Completed`, `Failed`, `Skipped`
+     - `state` — one of `"pending"`, `"running"`, `"completed"`, `"failed"`, `"skipped"` (snake_case in JSON)
      - `started_at`, `completed_at`, `duration_secs` — timing (null if not applicable)
      - `error` — error message if the session failed
      - `skip_reason` — reason if the session was skipped (e.g. "upstream 'auth' failed")
    - `started_at`, `completed_at` — run-level timestamps
 
-3. **Check mode-specific status fields:**
+4. **Check mode-specific status fields:**
 
    - `mesh_status` (present when `mode = "mesh"`):
      - `members` — per-member status snapshots
@@ -46,14 +52,12 @@ Query orchestrator status and interpret the results.
      - `knowledge_manifest_path` — absolute path to `knowledge.json` on disk
      - `coordinator_rounds` — number of coordinator synthesis rounds completed
 
-4. **Understand CapabilitySet degradation.** The state backend's `CapabilitySet` determines what features are active:
+5. **Understand CapabilitySet degradation.** The state backend's `CapabilitySet` determines what features are active:
    - If `supports_messaging: false`, the mesh routing thread does not run. `mesh_status.messages_routed` will be zero — this is expected degradation, not a failure. Sessions still execute in parallel but cannot exchange messages.
    - If `supports_gossip_manifest: false`, the gossip knowledge manifest may not persist between coordinator rounds. Check `gossip_status.sessions_synthesized` to see if synthesis is working.
    - If `supports_checkpoints: false`, team checkpoint state is not persisted across restarts.
 
-5. **Handle errors.** If `orchestrate_status` returns an error:
-   - The `run_id` may be invalid or mistyped
-   - The run may not have persisted state yet (e.g. it was just started)
+6. **Handle errors.** If `orchestrate_status` returns an error:
+   - Verify the `run_id` matches exactly what `orchestrate_run` returned
+   - The state file is written before sessions start, so timing is not normally a factor when using the run_id from a completed `orchestrate_run` call
    - The orchestrator state directory may have been cleaned up
-   
-   Retry after a short delay if the run was recently dispatched. If the error persists, the run_id is likely invalid.

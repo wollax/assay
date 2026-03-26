@@ -41,7 +41,7 @@ completed_at: 2025-07-27T12:00:00Z
 
 Created `plugins/smelt-agent/` directory as a single task (T01) following the codex plugin format established in D082. All four files (AGENTS.md + 3 skills) were written in one context window with no inter-file ordering dependencies.
 
-**AGENTS.md** (45 lines, ≤60 limit): Describes the smelt-agent role as an AI worker agent that orchestrates Assay runs on behalf of a smelt controller. Contains a skills table (3 skills), MCP tools table (10 tools: spec_list, spec_get, gate_run, run_manifest, orchestrate_run, orchestrate_status, milestone_list, milestone_get, cycle_status, cycle_advance), a workflow section covering the receive→configure→dispatch→monitor→report lifecycle, and a CapabilitySet awareness section explaining graceful degradation when backends don't support messaging or gossip manifest.
+**AGENTS.md** (45 lines, ≤60 limit): Describes the smelt-agent role as an AI worker agent that orchestrates Assay runs on behalf of a smelt controller. Contains a skills table (3 skills), MCP tools table (9 tools: run_manifest, orchestrate_run, orchestrate_status, spec_list, spec_get, gate_run, cycle_status, cycle_advance, chunk_status), a workflow section covering the receive→configure→dispatch→monitor→report lifecycle, and a CapabilitySet awareness section explaining graceful degradation when backends don't support messaging or gossip manifest.
 
 **run-dispatch.md**: Covers RunManifest TOML format (`[[sessions]]` array, `mode` field, `state_backend` field), StateBackendConfig variants (LocalFs and Custom), single-session dispatch via `run_manifest` MCP tool, and multi-session orchestration via `orchestrate_run` with failure_policy, merge_strategy, and conflict_resolution parameters.
 
