@@ -59,7 +59,7 @@ This milestone is complete only when all are true:
 - [x] **S03: CapabilitySet degradation paths** `risk:medium` `depends:[S02]`
   > After this: orchestrator checks `supports_messaging` before mesh routing and degrades gracefully; `supports_gossip` guards knowledge manifest writes; each degradation path has a test proving it produces a clear warning and not a panic.
 
-- [ ] **S04: smelt-agent plugin** `risk:low` `depends:[S02]`
+- [x] **S04: smelt-agent plugin** `risk:low` `depends:[S02]`
   > After this: `plugins/smelt-agent/AGENTS.md` and skills covering run dispatch, backend status queries, and agent-to-agent messaging exist; a human can read them and understand how to use the backend-aware API surface from a smelt worker.
 
 ## Boundary Map
