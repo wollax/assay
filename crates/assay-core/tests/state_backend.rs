@@ -3,7 +3,7 @@
 
 #![cfg(feature = "orchestrate")]
 
-use assay_core::{CapabilitySet, LocalFsBackend, StateBackend};
+use assay_core::{CapabilitySet, LocalFsBackend, NoopBackend, StateBackend};
 use assay_types::{
     FailurePolicy, OrchestratorPhase, OrchestratorStatus, StateBackendConfig, TeamCheckpoint,
 };
@@ -261,4 +261,81 @@ fn test_local_fs_backend_send_and_poll_messages() {
     let (name, contents) = &messages[0];
     assert_eq!(name, "greeting");
     assert_eq!(contents, b"hello world");
+}
+
+// ── NoopBackend contract tests ────────────────────────────────────────────────
+
+/// Verifies that `NoopBackend` reports all capabilities as disabled.
+#[test]
+fn test_noop_backend_capabilities() {
+    let backend = NoopBackend;
+    let caps = backend.capabilities();
+    assert_eq!(caps, CapabilitySet::none());
+    assert!(!caps.supports_messaging);
+    assert!(!caps.supports_gossip_manifest);
+    assert!(!caps.supports_annotations);
+    assert!(!caps.supports_checkpoints);
+}
+
+/// Verifies that all `NoopBackend` methods return success values.
+#[test]
+fn test_noop_backend_methods_return_ok() {
+    let backend = NoopBackend;
+    let dir = tempdir().unwrap();
+
+    // push_session_event → Ok(())
+    let status = OrchestratorStatus {
+        run_id: "noop-run".to_string(),
+        phase: OrchestratorPhase::Running,
+        failure_policy: FailurePolicy::SkipDependents,
+        sessions: vec![],
+        started_at: chrono::Utc::now(),
+        completed_at: None,
+        mesh_status: None,
+        gossip_status: None,
+    };
+    assert!(backend.push_session_event(dir.path(), &status).is_ok());
+
+    // read_run_state → Ok(None)
+    let state = backend.read_run_state(dir.path()).unwrap();
+    assert!(state.is_none());
+
+    // send_message → Ok(())
+    assert!(
+        backend
+            .send_message(dir.path(), "test-msg", b"payload")
+            .is_ok()
+    );
+
+    // poll_inbox → Ok(vec![])
+    let msgs = backend.poll_inbox(dir.path()).unwrap();
+    assert!(msgs.is_empty());
+
+    // annotate_run → Ok(())
+    assert!(backend.annotate_run(dir.path(), "some/path").is_ok());
+
+    // save_checkpoint_summary → Ok(())
+    let checkpoint = TeamCheckpoint {
+        version: 1,
+        session_id: "noop-sess".to_string(),
+        project: "noop-project".to_string(),
+        timestamp: "2026-01-01T00:00:00Z".to_string(),
+        trigger: "test".to_string(),
+        agents: vec![],
+        tasks: vec![],
+        context_health: None,
+    };
+    assert!(
+        backend
+            .save_checkpoint_summary(dir.path(), &checkpoint)
+            .is_ok()
+    );
+}
+
+/// Verifies that `NoopBackend` can be used as `Arc<dyn StateBackend>`.
+#[test]
+fn test_noop_backend_as_trait_object() {
+    let backend: std::sync::Arc<dyn StateBackend> = std::sync::Arc::new(NoopBackend);
+    let caps = backend.capabilities();
+    assert_eq!(caps, CapabilitySet::none());
 }
