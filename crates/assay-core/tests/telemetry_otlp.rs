@@ -1,28 +1,34 @@
-//! Red-state integration tests for OTLP export and trace context propagation.
+//! Integration tests for OTLP export and trace context propagation.
 //!
-//! These tests define the contract for the `telemetry` feature before the
-//! implementation exists. They compile with `--features telemetry` but fail
-//! at runtime until T02/T03 add the actual OTel wiring.
+//! Verifies the `telemetry` feature flag contract:
+//! - `init_tracing` accepts an OTLP endpoint and does not panic.
+//! - Subprocess spawns receive a valid W3C TRACEPARENT env var derived from
+//!   the active span context.
+//! - `inject_traceparent` directly injects the env var into a `Command`.
+//! - Default build has zero OTel deps.
 //!
 //! Run with: `cargo test -p assay-core --test telemetry_otlp --features telemetry`
+//!
+//! Tests that mutate OTel globals (set_tracer_provider, set_text_map_propagator)
+//! are serialized via `serial_test` to prevent interference in parallel runs.
 
 #![cfg(feature = "telemetry")]
 
 use assay_core::telemetry::{TracingConfig, init_tracing};
+use serial_test::serial;
 
-/// Verifies that `TracingConfig` has an `otlp_endpoint` field and that
-/// `init_tracing` wires an OTel layer when endpoint is configured.
+/// Verifies that:
+/// - `TracingConfig` has an `otlp_endpoint` field.
+/// - `init_tracing` with a configured endpoint does not panic.
+/// - OTel crate types are linkable under the `telemetry` feature.
 ///
-/// Note: without a running OTLP collector, the exporter will silently
-/// drop spans in the background — but the layer init itself succeeds
-/// because the batch exporter defers connection until first export.
+/// Note: This test cannot verify the OTel layer is actually added to the
+/// subscriber chain because the batch exporter defers connection — whether
+/// init succeeded or gracefully degraded, `init_tracing` returns normally.
+/// Real end-to-end verification requires a live collector (see S05-UAT.md).
 #[test]
+#[serial]
 fn test_otel_layer_init_compiles() {
-    assert!(
-        cfg!(feature = "telemetry"),
-        "telemetry feature must be enabled"
-    );
-
     // Construct config with an endpoint — uses a bogus port so no real
     // collector is needed. The OTLP HTTP exporter builds successfully
     // (connection is deferred to first batch export).
@@ -39,20 +45,20 @@ fn test_otel_layer_init_compiles() {
     assert!(TracingConfig::default().otlp_endpoint.is_none());
 }
 
-/// T03 contract: subprocess spawns inject a TRACEPARENT env var derived
-/// from the active span context.
+/// Verifies that subprocess spawns receive a valid W3C TRACEPARENT env var.
 ///
-/// This test creates a parent span with a real OTel provider, runs a child
-/// process that prints the TRACEPARENT env var (injected via the same
-/// propagator logic used by launch_agent), and asserts the value matches
-/// W3C Trace Context format: `00-<trace_id>-<span_id>-<flags>`.
+/// Creates a parent span with a real OTel provider+propagator, calls
+/// `inject_traceparent` (the actual production helper from pipeline.rs),
+/// then reads the env var back from a child process.
+///
+/// W3C Trace Context format: `00-<32hex trace_id>-<16hex parent_id>-<2hex flags>`
+/// Both trace_id and parent_id must be non-zero (non-invalid span context).
 #[test]
+#[serial]
 fn test_traceparent_injected_in_subprocess() {
     use opentelemetry::trace::TracerProvider;
     use opentelemetry_sdk::propagation::TraceContextPropagator;
-    use std::collections::HashMap;
     use std::process::Command;
-    use tracing_opentelemetry::OpenTelemetrySpanExt;
 
     // Initialize OTel with a no-op exporter so spans get real trace/span IDs.
     // We don't need a collector — we just need the propagator to produce values.
@@ -72,24 +78,14 @@ fn test_traceparent_injected_in_subprocess() {
     let span = tracing::info_span!("test_parent_span");
     let _entered = span.enter();
 
-    // Extract TRACEPARENT using the same logic as pipeline.rs
-    let cx = tracing::Span::current().context();
-    let mut carrier = HashMap::new();
-    opentelemetry::global::get_text_map_propagator(|propagator| {
-        propagator.inject_context(&cx, &mut carrier);
-    });
-    let traceparent = carrier
-        .get("traceparent")
-        .expect("propagator should produce traceparent for an active OTel span");
+    // Build the subprocess command using the actual inject_traceparent helper
+    // from pipeline.rs via its test-visible wrapper. This validates that the
+    // production injection path — not a manually re-implemented version — works.
+    let mut cmd = Command::new("sh");
+    cmd.arg("-c").arg("echo ${TRACEPARENT:-MISSING}");
+    assay_core::pipeline::inject_traceparent_for_test(&mut cmd);
 
-    // Spawn a subprocess with TRACEPARENT injected and read it back.
-    let output = Command::new("sh")
-        .arg("-c")
-        .arg("echo ${TRACEPARENT:-MISSING}")
-        .env("TRACEPARENT", traceparent)
-        .output()
-        .expect("failed to spawn subprocess");
-
+    let output = cmd.output().expect("failed to spawn subprocess");
     let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
 
     assert_ne!(
@@ -126,6 +122,43 @@ fn test_traceparent_injected_in_subprocess() {
         parts[3]
     );
 
+    // Validate values are non-zero — a zeroed trace_id/parent_id indicates
+    // a broken or sampled-out span context that collectors would reject.
+    assert_ne!(
+        parts[1], "00000000000000000000000000000000",
+        "trace_id must not be all zeros (invalid span context)"
+    );
+    assert_ne!(
+        parts[2], "0000000000000000",
+        "parent_id must not be all zeros (invalid span context)"
+    );
+
     // Clean up OTel global state.
     let _ = provider.shutdown();
+}
+
+/// Verifies that `extract_traceparent` returns None when called outside any span.
+///
+/// The no-span guard in `extract_traceparent` is a safety rail: if broken,
+/// code outside any span could inject a garbage/zeroed TRACEPARENT into
+/// subprocesses.
+#[test]
+#[serial]
+fn test_extract_traceparent_returns_none_outside_span() {
+    use opentelemetry_sdk::propagation::TraceContextPropagator;
+
+    // Set up a propagator so extract_traceparent has something to call.
+    opentelemetry::global::set_text_map_propagator(TraceContextPropagator::new());
+
+    // No span entered — use a bare registry (no OTel layer) so Span::current()
+    // is disabled.
+    let sub = tracing_subscriber::registry();
+    let _default = tracing::subscriber::set_default(sub);
+
+    // Call the test-visible wrapper; must return None, not Some.
+    let tp = assay_core::pipeline::extract_traceparent_for_test();
+    assert!(
+        tp.is_none(),
+        "TRACEPARENT must not be injected outside any span, got: {tp:?}"
+    );
 }
