@@ -71,3 +71,4 @@ See `.kata/REQUIREMENTS.md` for the explicit capability contract, requirement st
 - [x] M007: TUI Agent Harness — TUI spawns and controls AI agents, provider abstraction (Anthropic/OpenAI/Ollama), MCP management, slash commands (complete, R053/R055 validated, 1400+ tests)
 - [x] M008: PR Workflow + Plugin Parity — advanced PR automation, OpenCode plugin, history analytics (complete, R057–R059 validated, 1400+ tests)
 - [x] M009: Observability — structured tracing foundation, pipeline + orchestration span instrumentation, JSON file trace export, OTLP export + TRACEPARENT context propagation (complete, R027/R060–R065 validated, 1400+ tests)
+- [ ] M010: Pluggable State Backend — S01 complete (StateBackend trait, CapabilitySet, LocalFsBackend skeleton, StateBackendConfig schema locked, R071 validated, 1471 tests). S02–S04 in progress.

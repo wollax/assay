@@ -367,7 +367,10 @@ cmd = "echo ok"
 // ── Error path tests ────────────────────────────────────────────────
 
 #[tokio::test]
+#[serial]
 async fn gate_finalize_invalid_session_returns_error() {
+    let dir = create_project(r#"project_name = "finalize-test""#);
+    std::env::set_current_dir(dir.path()).unwrap();
     let server = AssayServer::new();
     let result = server
         .gate_finalize(Parameters(GateFinalizeParams {
@@ -424,7 +427,10 @@ async fn gate_report_not_found_returns_recovery_hint() {
 }
 
 #[tokio::test]
+#[serial]
 async fn gate_finalize_not_found_returns_recovery_hint() {
+    let dir = create_project(r#"project_name = "finalize-test""#);
+    std::env::set_current_dir(dir.path()).unwrap();
     let server = AssayServer::new();
     let result = server
         .gate_finalize(Parameters(GateFinalizeParams {
@@ -453,7 +459,10 @@ async fn gate_finalize_not_found_returns_recovery_hint() {
 }
 
 #[tokio::test]
+#[serial]
 async fn gate_report_and_finalize_not_found_errors_are_consistent() {
+    let dir = create_project(r#"project_name = "finalize-test""#);
+    std::env::set_current_dir(dir.path()).unwrap();
     let server = AssayServer::new();
     let session_id = "same-fabricated-id-42";
 

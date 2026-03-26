@@ -675,6 +675,61 @@
 - Validation: S05 — cfg-gated extract_traceparent() and inject_traceparent() helpers in pipeline.rs; both launch_agent() and launch_agent_streaming() inject TRACEPARENT when telemetry feature enabled and active span exists; integration test proves TRACEPARENT appears in subprocess env with valid W3C format 00-{32hex}-{16hex}-{2hex}; debug log when no active span; just ready green
 - Notes: Standard W3C Trace Context via `TRACEPARENT` env var. Child processes that support OTel will pick it up automatically. Non-OTel children ignore it harmlessly. Thread-local span context captured before thread::spawn in streaming path.
 
+### R071 — StateBackend trait and CapabilitySet
+- Class: core-capability
+- Status: validated
+- Description: `assay_core::state_backend::StateBackend` trait with sync methods: `capabilities()`, `push_session_event()`, `read_run_state()`, `send_message()`, `poll_inbox()`, `annotate_run()`, `save_checkpoint_summary()`. `CapabilitySet` flags struct declares which optional methods a backend implements. `StateBackendConfig` enum in `assay-types` with `LocalFs` and `Custom` variants.
+- Why it matters: The trait is the abstraction boundary — without it, every concrete backend (Linear, GitHub, SSH) has no stable interface to implement against
+- Source: user
+- Primary owning slice: M010/S01
+- Supporting slices: M010/S02
+- Validation: S01 — trait defined with 7 sync methods, object safety proven via `_assert_object_safe` compile guard, `CapabilitySet::all()`/`none()` constructors verified by 2 contract tests, `Box<dyn StateBackend>` construction proven by trait-object test, `StateBackendConfig` serde schema locked by JSON Schema snapshot, 1471 workspace tests pass, just ready green
+- Notes: Deliberate, scoped exception to D001 (zero-trait convention). Documented as D149.
+
+### R072 — LocalFsBackend: zero regression
+- Class: quality-attribute
+- Status: active
+- Description: `LocalFsBackend` implements `StateBackend` by wrapping all existing persistence code. All orchestrate integration, mesh, and gossip tests pass unchanged. `RunManifest` without `state_backend` field defaults to `LocalFsBackend` (backward-compatible deserialization).
+- Why it matters: The abstraction must be invisible to existing users — no behavioral change, no test regression, no schema break
+- Source: user
+- Primary owning slice: M010/S02
+- Supporting slices: none
+- Validation: mapped
+- Notes: `RunManifest` must be checked for `deny_unknown_fields` before adding the field. D092 pattern applies.
+
+### R073 — Tier-2 event routing through backend
+- Class: core-capability
+- Status: active
+- Description: Orchestrator, mesh coordinator, gossip coordinator, and checkpoint persistence route Tier-2 events (session transitions, run phase, knowledge manifest notifications, checkpoint summaries) through `StateBackend` methods. Tier-1 (per-tick heartbeats, per-message mesh routing) stays file-backed inside `LocalFsBackend` — not exposed as a trait surface.
+- Why it matters: This is the actual payoff — smelt workers can push Tier-2 events to a remote backend without SCP; the controller reads from the backend instead of the filesystem
+- Source: user
+- Primary owning slice: M010/S02
+- Supporting slices: M010/S03
+- Validation: mapped
+- Notes: Tier-1 vs Tier-2 split is explicit: heartbeats and per-message routing are implementation details of LocalFsBackend, not trait methods.
+
+### R074 — CapabilitySet and graceful degradation
+- Class: core-capability
+- Status: active
+- Description: Orchestrator checks `backend.capabilities().supports_messaging` before mesh peer routing and `supports_gossip_manifest` before knowledge manifest PromptLayer injection. If a capability is absent, the orchestrator emits a `warn!` event and continues without that feature rather than failing.
+- Why it matters: Not all backends support all operations. A LinearBackend that supports messaging but not sub-second heartbeats must degrade gracefully, not panic.
+- Source: user
+- Primary owning slice: M010/S03
+- Supporting slices: M010/S02
+- Validation: mapped
+- Notes: `NoopBackend` test helper (all capabilities false, all methods no-op) used to prove degradation paths in isolation.
+
+### R075 — smelt-agent plugin
+- Class: differentiator
+- Status: active
+- Description: `plugins/smelt-agent/` directory with `AGENTS.md` system prompt and skills: `run-dispatch.md` (how to read a RunManifest, configure a backend, dispatch a run), `backend-status.md` (how to query `read_run_state`, interpret `OrchestratorStatus`), `peer-message.md` (how to use `send_message`/`poll_inbox` for agent-to-agent coordination across machines).
+- Why it matters: Smelt workers run as AI agents — they need a purpose-built prompt that teaches them the backend-aware API surface and coordination patterns
+- Source: user
+- Primary owning slice: M010/S04
+- Supporting slices: M010/S02
+- Validation: mapped
+- Notes: Plugin follows the same format as `plugins/claude-code/` and `plugins/codex/`. Skills document the MCP tool signatures stabilised in S02.
+
 ## Deferred
 
 ### R066 — TUI trace viewer
@@ -817,11 +872,16 @@
 | R065 | quality-attribute | validated | M009/S05 | M009/S02, M009/S03 | S05 |
 | R066 | primary-user-loop | deferred | none | none | unmapped |
 | R067 | quality-attribute | deferred | none | none | unmapped |
+| R071 | core-capability | validated | M010/S01 | M010/S02 | S01 |
+| R072 | quality-attribute | active | M010/S02 | none | mapped |
+| R073 | core-capability | active | M010/S02 | M010/S03 | mapped |
+| R074 | core-capability | active | M010/S03 | M010/S02 | mapped |
+| R075 | differentiator | active | M010/S04 | M010/S02 | mapped |
 
 ## Coverage Summary
 
-- Active requirements: 0
-- Mapped to slices: 0
+- Active requirements: 4 (R072–R075)
+- Mapped to slices: 5
 - Validated: 65 (R001–R029 except R025, R034–R065)
 - Deferred: 3 (R025, R066, R067)
 - Out of scope: 4 (R030, R031, R032, R033)

@@ -1,0 +1,12 @@
+# Per-test timeout: warn at 60s, kill at 120s.
+# Most tests complete in <5s; integration tests that spawn subprocesses
+# typically finish in <30s. 120s leaves headroom for slow CI machines
+# while preventing a single hung test from blocking the whole suite.
+[profile.default.slow-timeout]
+period = "60s"
+terminate-after = 2
+
+# Tighter limits for CI: warn at 30s, kill at 60s.
+[profile.ci.slow-timeout]
+period = "30s"
+terminate-after = 2
