@@ -2,8 +2,8 @@
 
 **Active Milestone:** M010 — Pluggable State Backend
 **Active Slice:** S03 — CapabilitySet degradation paths
-**Active Task:** T02 — Capability guards in mesh and gossip executors
-**Phase:** Executing
+**Active Task:** — (all tasks complete)
+**Phase:** Summarizing
 
 ## Recent Decisions
 - D156: Arc<dyn StateBackend> in OrchestratorConfig (supersedes D151's Box)
@@ -15,4 +15,4 @@
 - None
 
 ## Next Action
-Execute S03/T02: Add capability guards to `run_mesh()` and `run_gossip()` that check `backend.capabilities()` before exercising messaging and gossip-manifest features. This will turn T01's red gossip degradation test green.
+Write S03 slice summary and UAT, mark S03 done in M010 ROADMAP, advance to S04.
