@@ -10,7 +10,7 @@ A beginning developer installs Assay, describes a feature, and gets a structured
 
 ## Current State
 
-v0.9.0-dev. M001–M008 complete, M009 in progress (S01 done). ~24K lines of Rust across 6 crates. 1400+ tests passing. 56 requirements validated, 6 active. `assay-tui` is a full Ratatui application with dashboard, in-TUI authoring wizard, spec browser, provider configuration, agent spawning with live output streaming, slash command overlay, MCP server configuration panel, PR status badges with background polling, and gate history analytics screen.
+v0.9.0-dev. M001–M009 complete. ~24K lines of Rust across 6 crates. 1400+ tests passing. 62 requirements validated, 0 active. `assay-tui` is a full Ratatui application with dashboard, in-TUI authoring wizard, spec browser, provider configuration, agent spawning with live output streaming, slash command overlay, MCP server configuration panel, PR status badges with background polling, and gate history analytics screen.
 
 **M001 (complete):** Single-agent harness end-to-end — manifest → worktree → agent launch → gate evaluation → merge proposal. 19 requirements validated.
 
@@ -27,6 +27,8 @@ v0.9.0-dev. M001–M008 complete, M009 in progress (S01 done). ~24K lines of Rus
 **M007 (complete):** TUI agent harness — S01 delivered channel-based event loop (`TuiEvent`), `launch_agent_streaming`, `Screen::AgentRun` with `r` key spawning agents. S02 delivered provider dispatch (`provider_harness_writer` routing Anthropic/Ollama/OpenAI), Settings screen model input fields. S03 delivered slash command overlay (`/` key, tab completion, `/gate-check`/`/status`/`/next-chunk`/`/pr-create` commands). S04 delivered MCP server configuration panel (`m` key, add/delete/save servers to `.assay/mcp.json`). R053, R055 validated. 1400+ tests.
 
 **M008 (complete):** PR Workflow + Plugin Parity — S01 delivered advanced PR creation with labels, reviewers, and body templates from milestone TOML. S02 delivered TUI PR status panel with background `gh` polling (60s interval) showing state/CI/review badges. S03 delivered OpenCode plugin with AGENTS.md + 5 skills matching Codex parity. S04 delivered gate history analytics engine (`compute_analytics`, `assay history analytics` CLI with text tables and `--json`). S05 delivered TUI analytics screen (`a` key from Dashboard, failure frequency heatmap with color-coded rates, milestone velocity table). R057, R058, R059 validated. 1400+ tests.
+
+**M009 (complete):** Observability — S01 replaced all eprintln! with structured tracing macros, established init_tracing()/TracingConfig/TracingGuard foundation. S02 added #[instrument] pipeline stage spans. S03 instrumented DAG/Mesh/Gossip orchestration with cross-thread span parenting. S04 built custom JsonFileLayer for `.assay/traces/` export + `assay traces list/show` CLI. S05 added feature-flagged OTLP exporter (http-proto transport) + W3C TRACEPARENT subprocess injection + CLI env-var activation. Default build has zero OTel deps. R027, R060–R065 validated. 1400+ tests.
 
 Crates:
 
@@ -68,4 +70,4 @@ See `.kata/REQUIREMENTS.md` for the explicit capability contract, requirement st
 - [x] M006: TUI as Primary Surface — full Ratatui TUI: dashboard, wizard, spec browser, provider config, help overlay, status bar (complete, R049–R052 validated, 1371+ tests)
 - [x] M007: TUI Agent Harness — TUI spawns and controls AI agents, provider abstraction (Anthropic/OpenAI/Ollama), MCP management, slash commands (complete, R053/R055 validated, 1400+ tests)
 - [x] M008: PR Workflow + Plugin Parity — advanced PR automation, OpenCode plugin, history analytics (complete, R057–R059 validated, 1400+ tests)
-- [ ] M009: Observability — S01 complete (structured tracing foundation, zero eprintln!). Remaining: pipeline spans (S02), orchestration spans (S03), JSON file export (S04), OTLP export + context propagation (S05)
+- [x] M009: Observability — structured tracing foundation, pipeline + orchestration span instrumentation, JSON file trace export, OTLP export + TRACEPARENT context propagation (complete, R027/R060–R065 validated, 1400+ tests)
