@@ -1,9 +1,9 @@
 # Kata State
 
-**Active Milestone:** M009 — Observability
-**Active Slice:** S05 — OTLP export and trace context propagation (all tasks complete)
-**Active Task:** None — S05 complete
-**Phase:** Summarizing
+**Active Milestone:** None — M009 complete
+**Active Slice:** None
+**Active Task:** None
+**Phase:** Complete
 
 ## Recent Decisions
 - D143: D127 superseded — use rt-tokio with existing runtime, no scoped runtime
@@ -14,4 +14,4 @@
 - None
 
 ## Next Action
-Write S05 slice summary and UAT. Mark S05 done in M009 roadmap. S05 is the final slice of M009 — after summarizing, complete the milestone.
+M009 (Observability) is complete. All 5 slices done, all 7 requirements validated (R027, R060–R065). 65 requirements validated total, 0 active. Ready for the next milestone.
