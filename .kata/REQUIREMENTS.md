@@ -710,14 +710,14 @@
 
 ### R074 — CapabilitySet and graceful degradation
 - Class: core-capability
-- Status: active
+- Status: validated
 - Description: Orchestrator checks `backend.capabilities().supports_messaging` before mesh peer routing and `supports_gossip_manifest` before knowledge manifest PromptLayer injection. If a capability is absent, the orchestrator emits a `warn!` event and continues without that feature rather than failing.
 - Why it matters: Not all backends support all operations. A LinearBackend that supports messaging but not sub-second heartbeats must degrade gracefully, not panic.
 - Source: user
 - Primary owning slice: M010/S03
 - Supporting slices: M010/S02
-- Validation: mapped
-- Notes: `NoopBackend` test helper (all capabilities false, all methods no-op) used to prove degradation paths in isolation.
+- Validation: S03 — `supports_messaging` guard in `run_mesh()` skips routing thread and emits `warn!(capability="messaging", mode="mesh")`; `supports_gossip_manifest` guard in `run_gossip()` skips PromptLayer injection and all three `persist_knowledge_manifest` callsites, emits `warn!(capability="gossip_manifest", mode="gossip")`. `NoopBackend` test helper (all capabilities false, all methods no-op) drives `test_mesh_degrades_gracefully_without_messaging` and `test_gossip_degrades_gracefully_without_manifest` — both pass. All existing mesh/gossip/orchestrate/state_backend tests pass unchanged. `just ready` green with 1486 tests.
+- Notes: `NoopBackend` is a reusable test helper exported from `assay_core` for future degradation testing. `supports_annotations` and `supports_checkpoints` flags exist in `CapabilitySet` but no production guards added yet — no callers use those methods directly in this milestone.
 
 ### R075 — smelt-agent plugin
 - Class: differentiator
@@ -875,14 +875,14 @@
 | R071 | core-capability | validated | M010/S01 | M010/S02 | S01 |
 | R072 | quality-attribute | validated | M010/S02 | none | S02 |
 | R073 | core-capability | validated | M010/S02 | M010/S03 | S02 |
-| R074 | core-capability | active | M010/S03 | M010/S02 | mapped |
+| R074 | core-capability | validated | M010/S03 | M010/S02 | S03 |
 | R075 | differentiator | active | M010/S04 | M010/S02 | mapped |
 
 ## Coverage Summary
 
-- Active requirements: 2 (R074–R075)
+- Active requirements: 1 (R075)
 - Mapped to slices: 5
-- Validated: 65 (R001–R029 except R025, R034–R065)
+- Validated: 66 (R001–R029 except R025, R034–R065, R071–R074)
 - Deferred: 3 (R025, R066, R067)
 - Out of scope: 4 (R030, R031, R032, R033)
 - Unmapped active requirements: 0

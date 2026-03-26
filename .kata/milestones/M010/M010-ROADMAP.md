@@ -56,7 +56,7 @@ This milestone is complete only when all are true:
 - [x] **S02: LocalFsBackend implementation and orchestrator wiring** `risk:high` `depends:[S01]`
   > After this: all orchestrator, mesh, gossip, and checkpoint writes flow through `LocalFsBackend`; `RunManifest.state_backend` field added; existing orchestrate integration tests pass unchanged.
 
-- [ ] **S03: CapabilitySet degradation paths** `risk:medium` `depends:[S02]`
+- [x] **S03: CapabilitySet degradation paths** `risk:medium` `depends:[S02]`
   > After this: orchestrator checks `supports_messaging` before mesh routing and degrades gracefully; `supports_gossip` guards knowledge manifest writes; each degradation path has a test proving it produces a clear warning and not a panic.
 
 - [ ] **S04: smelt-agent plugin** `risk:low` `depends:[S02]`

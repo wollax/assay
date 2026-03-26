@@ -210,54 +210,67 @@ where
     // Capture current span for cross-thread parenting.
     let parent_span = Span::current();
 
+    // ── Capability check: messaging ─────────────────────────────────
+    let supports_messaging = config.backend.capabilities().supports_messaging;
+
+    if !supports_messaging {
+        tracing::warn!(
+            capability = "messaging",
+            mode = "mesh",
+            "backend does not support messaging — skipping mesh routing thread"
+        );
+    }
+
     std::thread::scope(|scope| {
-        // ── Routing thread ────────────────────────────────────────────
-        let active_count_ref = &active_count;
-        let name_to_inbox_ref = &name_to_inbox;
-        let mesh_status_arc_ref = &mesh_status_arc;
-        let session_dirs_ref = &session_dirs;
-        let routing_parent = parent_span.clone();
+        // ── Routing thread (only if messaging is supported) ───────────
+        if supports_messaging {
+            let active_count_ref = &active_count;
+            let name_to_inbox_ref = &name_to_inbox;
+            let mesh_status_arc_ref = &mesh_status_arc;
+            let session_dirs_ref = &session_dirs;
+            let routing_parent = parent_span.clone();
 
-        scope.spawn(move || {
-            let _parent_guard = routing_parent.enter();
-            let _routing_span = info_span!("orchestrate::mesh::routing").entered();
+            scope.spawn(move || {
+                let _parent_guard = routing_parent.enter();
+                let _routing_span = info_span!("orchestrate::mesh::routing").entered();
 
-            while active_count_ref.load(Ordering::Acquire) > 0 {
-                for (source_name, session_dir) in session_dirs_ref {
-                    let outbox = session_dir.join("outbox");
-                    if let Ok(targets) = std::fs::read_dir(&outbox) {
-                        for target_entry in targets.flatten() {
-                            let target_name =
-                                target_entry.file_name().to_string_lossy().to_string();
-                            if let Some(inbox) = name_to_inbox_ref.get(&target_name) {
-                                if let Ok(msgs) = std::fs::read_dir(target_entry.path()) {
-                                    for msg in msgs.flatten() {
-                                        let dst = inbox.join(msg.file_name());
-                                        if std::fs::rename(msg.path(), &dst).is_ok() {
-                                            let mut ms = mesh_status_arc_ref.lock().unwrap();
-                                            ms.messages_routed += 1;
-                                            tracing::debug!(
-                                                from = %source_name,
-                                                to = %target_name,
-                                                file = ?msg.file_name(),
-                                                "routed message"
-                                            );
+                while active_count_ref.load(Ordering::Acquire) > 0 {
+                    for (source_name, session_dir) in session_dirs_ref {
+                        let outbox = session_dir.join("outbox");
+                        if let Ok(targets) = std::fs::read_dir(&outbox) {
+                            for target_entry in targets.flatten() {
+                                let target_name =
+                                    target_entry.file_name().to_string_lossy().to_string();
+                                if let Some(inbox) = name_to_inbox_ref.get(&target_name) {
+                                    if let Ok(msgs) = std::fs::read_dir(target_entry.path()) {
+                                        for msg in msgs.flatten() {
+                                            let dst = inbox.join(msg.file_name());
+                                            if std::fs::rename(msg.path(), &dst).is_ok() {
+                                                let mut ms = mesh_status_arc_ref.lock().unwrap();
+                                                ms.messages_routed += 1;
+                                                tracing::debug!(
+                                                    from = %source_name,
+                                                    to = %target_name,
+                                                    file = ?msg.file_name(),
+                                                    "routed message"
+                                                );
+                                            }
                                         }
                                     }
+                                } else {
+                                    tracing::warn!(
+                                        target = %target_name,
+                                        source = %source_name,
+                                        "unknown outbox target — leaving file in place"
+                                    );
                                 }
-                            } else {
-                                tracing::warn!(
-                                    target = %target_name,
-                                    source = %source_name,
-                                    "unknown outbox target — leaving file in place"
-                                );
                             }
                         }
                     }
+                    std::thread::sleep(Duration::from_millis(50));
                 }
-                std::thread::sleep(Duration::from_millis(50));
-            }
-        });
+            });
+        }
 
         // ── Session workers ───────────────────────────────────────────
         for (name, session_clone) in &cloned_sessions {
