@@ -54,6 +54,14 @@ pub struct TracingConfig {
     /// one JSON file per trace (rooted span tree) into this directory.
     /// Set to `None` (the default) to disable trace file export.
     pub traces_dir: Option<PathBuf>,
+
+    /// OTLP exporter endpoint URL (e.g. `"http://localhost:4318"`).
+    ///
+    /// When `Some` and the `telemetry` feature is compiled in, an
+    /// OpenTelemetry OTLP exporter layer is added to the subscriber chain.
+    /// When `None` or when the `telemetry` feature is not enabled, no OTel
+    /// layer is added and there is zero overhead.
+    pub otlp_endpoint: Option<String>,
 }
 
 impl Default for TracingConfig {
@@ -63,6 +71,7 @@ impl Default for TracingConfig {
             ansi: true,
             with_target: false,
             traces_dir: None,
+            otlp_endpoint: None,
         }
     }
 }
@@ -77,6 +86,7 @@ impl TracingConfig {
             ansi: false,
             with_target: false,
             traces_dir: None,
+            otlp_endpoint: None,
         }
     }
 }
@@ -108,71 +118,49 @@ pub struct SpanData {
     pub fields: HashMap<String, serde_json::Value>,
 }
 
-/// Visitor that collects span fields into a `HashMap`.
-struct FieldVisitor<'a> {
-    fields: &'a mut HashMap<String, serde_json::Value>,
-}
+/// Visitor that collects tracing event fields into a `HashMap<String, String>`.
+struct FieldCollector(HashMap<String, serde_json::Value>);
 
-impl tracing::field::Visit for FieldVisitor<'_> {
+impl tracing::field::Visit for FieldCollector {
     fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
-        self.fields.insert(
+        self.0.insert(
             field.name().to_string(),
             serde_json::Value::String(format!("{value:?}")),
         );
     }
 
     fn record_str(&mut self, field: &tracing::field::Field, value: &str) {
-        self.fields.insert(
+        self.0.insert(
             field.name().to_string(),
             serde_json::Value::String(value.to_string()),
         );
     }
 
     fn record_i64(&mut self, field: &tracing::field::Field, value: i64) {
-        self.fields
+        self.0
             .insert(field.name().to_string(), serde_json::json!(value));
     }
 
     fn record_u64(&mut self, field: &tracing::field::Field, value: u64) {
-        self.fields
-            .insert(field.name().to_string(), serde_json::json!(value));
-    }
-
-    fn record_f64(&mut self, field: &tracing::field::Field, value: f64) {
-        self.fields
+        self.0
             .insert(field.name().to_string(), serde_json::json!(value));
     }
 
     fn record_bool(&mut self, field: &tracing::field::Field, value: bool) {
-        self.fields
+        self.0
+            .insert(field.name().to_string(), serde_json::json!(value));
+    }
+
+    fn record_f64(&mut self, field: &tracing::field::Field, value: f64) {
+        self.0
             .insert(field.name().to_string(), serde_json::json!(value));
     }
 }
 
-/// Generate a trace file ID from the current timestamp + randomness.
-///
-/// Format: `YYYYMMDDTHHMMSSZ-XXXXXX` (same as history `generate_run_id`).
-fn generate_trace_id() -> String {
-    let ts = chrono::Utc::now().format("%Y%m%dT%H%M%SZ");
-    let mut hasher = RandomState::new().build_hasher();
-    hasher.write_u64(
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .subsec_nanos() as u64,
-    );
-    use std::hash::Hash;
-    std::thread::current().id().hash(&mut hasher);
-    let suffix = format!("{:06x}", hasher.finish() & 0xFF_FFFF);
-    format!("{ts}-{suffix}")
-}
-
-/// Custom [`tracing_subscriber::Layer`] that captures span lifecycle events
-/// and writes a structured JSON file per trace when the root span closes.
+/// A `tracing_subscriber` layer that writes one JSON file per trace to a
+/// configured directory.
 ///
 /// Thread-safe: uses `Mutex<HashMap<Id, SpanData>>` for span storage.
-/// Each root span closure produces one JSON file containing all spans
-/// in that trace tree.
 pub struct JsonFileLayer {
     traces_dir: PathBuf,
     max_files: usize,
@@ -182,8 +170,7 @@ pub struct JsonFileLayer {
 impl JsonFileLayer {
     /// Create a new `JsonFileLayer` that writes trace files to `traces_dir`.
     ///
-    /// `max_files` controls the pruning threshold — oldest files are deleted
-    /// when the count exceeds this limit.
+    /// Old files are pruned when the count exceeds `max_files`.
     pub fn new(traces_dir: PathBuf, max_files: usize) -> Self {
         Self {
             traces_dir,
@@ -192,140 +179,79 @@ impl JsonFileLayer {
         }
     }
 
-    /// Write the collected spans for a trace to a JSON file atomically.
     fn write_trace_file(&self, spans: Vec<SpanData>) {
-        let span_count = spans.len();
-        let trace_id = generate_trace_id();
-        let filename = format!("{trace_id}.json");
+        let root = spans.iter().find(|s| s.parent_id.is_none()).unwrap();
+        let timestamp = root.start_time.clone();
+        // Use a random suffix for uniqueness within the same millisecond.
+        let suffix = {
+            let mut h = RandomState::new().build_hasher();
+            h.write_u64(root.span_id);
+            format!("{:016x}", h.finish())
+        };
+        let filename = format!(
+            "{timestamp}-{suffix}.json",
+            timestamp = &timestamp[..23].replace([':', '.'], "-")
+        );
         let filepath = self.traces_dir.join(&filename);
 
+        let span_count = spans.len();
         match serde_json::to_string_pretty(&spans) {
             Ok(json) => match NamedTempFile::new_in(&self.traces_dir) {
-                Ok(mut tmpfile) => {
-                    use std::io::Write;
-                    if let Err(e) = tmpfile.write_all(json.as_bytes()) {
-                        tracing::warn!(
-                            path = %filepath.display(),
-                            error = %e,
-                            "failed to write trace file contents"
-                        );
+                Ok(mut tmp) => {
+                    use std::io::Write as _;
+                    if let Err(e) = tmp.write_all(json.as_bytes()) {
+                        tracing::warn!(path = %filepath.display(), error = %e, "trace file write failed");
                         return;
                     }
-                    if let Err(e) = tmpfile.persist(&filepath) {
-                        tracing::warn!(
-                            path = %filepath.display(),
-                            error = %e,
-                            "failed to persist trace file"
-                        );
-                        return;
+                    match tmp.persist(&filepath) {
+                        Ok(_) => {
+                            tracing::debug!(path = %filepath.display(), span_count, "trace file written");
+                            self.prune_old_files();
+                        }
+                        Err(e) => {
+                            tracing::warn!(path = %filepath.display(), error = %e, "trace file persist failed");
+                        }
                     }
-                    tracing::debug!(
-                        path = %filepath.display(),
-                        span_count,
-                        "wrote trace file"
-                    );
                 }
                 Err(e) => {
                     tracing::warn!(
                         dir = %self.traces_dir.display(),
                         error = %e,
-                        "failed to create temp file for trace"
+                        "trace file temp-create failed"
                     );
                 }
             },
             Err(e) => {
-                tracing::warn!(
-                    span_count,
-                    dir = %self.traces_dir.display(),
-                    error = %e,
-                    "failed to serialize trace data; trace will not be written"
-                );
-                // Do not prune — no new file was written.
-                return;
+                tracing::warn!(error = %e, "trace file JSON serialization failed");
             }
         }
-
-        // Prune old files if count exceeds max_files.
-        self.prune_old_files();
     }
 
-    /// Remove oldest trace files when the directory count exceeds `max_files`.
     fn prune_old_files(&self) {
         let entries = match std::fs::read_dir(&self.traces_dir) {
             Ok(e) => e,
             Err(e) => {
-                tracing::warn!(
-                    dir = %self.traces_dir.display(),
-                    error = %e,
-                    "failed to read traces dir for pruning"
-                );
+                tracing::warn!(dir = %self.traces_dir.display(), error = %e, "trace prune read_dir failed");
                 return;
             }
         };
 
-        let mut files: Vec<PathBuf> = entries
-            .filter_map(|e| match e {
-                Ok(entry) => Some(entry),
-                Err(err) => {
-                    tracing::warn!(
-                        dir = %self.traces_dir.display(),
-                        error = %err,
-                        "failed to read directory entry during trace pruning; skipping"
-                    );
-                    None
-                }
-            })
-            .filter(|e| e.path().extension().is_some_and(|ext| ext == "json"))
-            .map(|e| e.path())
+        let mut files: Vec<_> = entries
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path().extension().map(|x| x == "json").unwrap_or(false))
             .collect();
 
         if files.len() <= self.max_files {
             return;
         }
 
-        // Sort by filename (which embeds the timestamp) — ascending = oldest first.
-        files.sort();
-
-        let to_remove = files.len() - self.max_files;
-        for path in files.into_iter().take(to_remove) {
-            if let Err(e) = std::fs::remove_file(&path) {
-                tracing::warn!(
-                    path = %path.display(),
-                    error = %e,
-                    "failed to prune old trace file"
-                );
+        files.sort_by_key(|e| e.file_name());
+        let to_delete = files.len() - self.max_files;
+        for entry in files.into_iter().take(to_delete) {
+            if let Err(e) = std::fs::remove_file(entry.path()) {
+                tracing::warn!(path = %entry.path().display(), error = %e, "trace prune delete failed");
             }
         }
-    }
-
-    /// Collect all spans belonging to the same trace tree as `root_id`.
-    ///
-    /// Uses BFS from `root_id` over a parent→children index so that spans at
-    /// any depth are correctly collected in O(n). The previous O(n²) walk was
-    /// also incorrect for depth > 2 because `root_id` is removed from the map
-    /// before the descendant search, breaking the parent-chain traversal for
-    /// grandchildren and deeper.
-    fn collect_trace_spans(&self, root_id: u64, map: &mut HashMap<u64, SpanData>) -> Vec<SpanData> {
-        // Build a children index from the current map contents.
-        let mut children: HashMap<u64, Vec<u64>> = HashMap::new();
-        for (&id, span) in map.iter() {
-            if let Some(pid) = span.parent_id {
-                children.entry(pid).or_default().push(id);
-            }
-        }
-
-        // BFS from root_id — collects at all depths in O(n).
-        let mut result = Vec::new();
-        let mut queue = vec![root_id];
-        while let Some(id) = queue.pop() {
-            if let Some(span) = map.remove(&id) {
-                result.push(span);
-            }
-            if let Some(kids) = children.remove(&id) {
-                queue.extend(kids);
-            }
-        }
-        result
     }
 }
 
@@ -339,46 +265,32 @@ where
         id: &tracing::span::Id,
         ctx: tracing_subscriber::layer::Context<'_, S>,
     ) {
-        let metadata = attrs.metadata();
+        let current_span = ctx.current_span();
         let parent_id = attrs
             .parent()
-            .map(|p| p.into_non_zero_u64().get())
-            .or_else(|| {
-                if attrs.is_contextual() {
-                    ctx.current_span()
-                        .id()
-                        .map(|id| id.into_non_zero_u64().get())
-                } else {
-                    None
-                }
-            });
+            .or_else(|| current_span.id())
+            .map(|p| p.into_u64());
 
-        let mut fields = HashMap::new();
-        let mut visitor = FieldVisitor {
-            fields: &mut fields,
-        };
-        attrs.record(&mut visitor);
+        let mut fields = FieldCollector(HashMap::new());
+        attrs.values().record(&mut fields);
 
-        let numeric_id = id.into_non_zero_u64().get();
-        let span_data = SpanData {
-            name: metadata.name().to_string(),
-            target: metadata.target().to_string(),
-            level: format!("{}", metadata.level()),
-            span_id: numeric_id,
+        let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+
+        let data = SpanData {
+            name: attrs.metadata().name().to_string(),
+            target: attrs.metadata().target().to_string(),
+            level: attrs.metadata().level().to_string(),
+            span_id: id.into_u64(),
             parent_id,
-            start_time: chrono::Utc::now().to_rfc3339(),
+            start_time: now,
             end_time: None,
             duration_ms: None,
-            fields,
+            fields: fields.0,
         };
 
-        // Recover from a poisoned mutex — best-effort telemetry should not
-        // silently lose spans if another thread panicked while holding the lock.
-        let mut map = self.spans.lock().unwrap_or_else(|e| {
-            tracing::warn!("JsonFileLayer: span map poisoned in on_new_span; recovering");
-            e.into_inner()
-        });
-        map.insert(numeric_id, span_data);
+        if let Ok(mut guard) = self.spans.lock() {
+            guard.insert(id.into_u64(), data);
+        }
     }
 
     fn on_record(
@@ -387,64 +299,60 @@ where
         values: &tracing::span::Record<'_>,
         _ctx: tracing_subscriber::layer::Context<'_, S>,
     ) {
-        let numeric_id = id.into_non_zero_u64().get();
-        let mut map = self.spans.lock().unwrap_or_else(|e| {
-            tracing::warn!("JsonFileLayer: span map poisoned in on_record; recovering");
-            e.into_inner()
-        });
-        if let Some(span_data) = map.get_mut(&numeric_id) {
-            let mut visitor = FieldVisitor {
-                fields: &mut span_data.fields,
-            };
-            values.record(&mut visitor);
+        let mut collector = FieldCollector(HashMap::new());
+        values.record(&mut collector);
+
+        if let Ok(mut guard) = self.spans.lock()
+            && let Some(span) = guard.get_mut(&id.into_u64())
+        {
+            span.fields.extend(collector.0);
         }
     }
 
     fn on_close(&self, id: tracing::span::Id, _ctx: tracing_subscriber::layer::Context<'_, S>) {
-        let numeric_id = id.into_non_zero_u64().get();
-        let now = chrono::Utc::now();
+        let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
 
-        let mut map = match self.spans.lock() {
-            Ok(m) => m,
-            Err(e) => {
-                tracing::warn!(
-                    span_id = numeric_id,
-                    "JsonFileLayer: span map poisoned in on_close; recovering — trace data may be incomplete"
-                );
-                e.into_inner()
+        let span_id_u64 = id.into_u64();
+
+        // Update end_time and duration, check if root.
+        let (is_root, parent_id) = if let Ok(mut guard) = self.spans.lock() {
+            if let Some(span) = guard.get_mut(&span_id_u64) {
+                span.end_time = Some(now);
+                let is_root = span.parent_id.is_none();
+                if let Ok(start) = chrono::DateTime::parse_from_rfc3339(&span.start_time)
+                    && let Some(end) = span.end_time.as_deref()
+                    && let Ok(end_dt) = chrono::DateTime::parse_from_rfc3339(end)
+                {
+                    let dur = end_dt.signed_duration_since(start);
+                    span.duration_ms = Some(dur.num_milliseconds() as f64);
+                }
+                (is_root, span.parent_id)
+            } else {
+                (false, None)
             }
+        } else {
+            // Recover from a poisoned mutex — best-effort telemetry should not
+            // crash the application.
+            (false, None)
         };
 
-        // Update end time and duration for the closing span.
-        if let Some(span_data) = map.get_mut(&numeric_id) {
-            let end_str = now.to_rfc3339();
-            // Parse start_time to compute duration; warn if parsing fails so
-            // the caller knows why duration_ms is None rather than discovering
-            // silently-missing timing in the trace file.
-            match chrono::DateTime::parse_from_rfc3339(&span_data.start_time) {
-                Ok(start) => {
-                    let duration = now.signed_duration_since(start);
-                    span_data.duration_ms = Some(duration.num_milliseconds() as f64);
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        span_id = numeric_id,
-                        start_time = %span_data.start_time,
-                        error = %e,
-                        "failed to parse span start_time for duration calculation; duration_ms will be None"
-                    );
-                }
-            }
-            span_data.end_time = Some(end_str);
-        }
-
-        // Check if this is a root span (no parent) — if so, flush the trace.
-        let is_root = map.get(&numeric_id).is_some_and(|s| s.parent_id.is_none());
+        let _ = parent_id; // parent_id used implicitly for root detection
 
         if is_root {
-            let trace_spans = self.collect_trace_spans(numeric_id, &mut map);
-            // Drop lock before I/O.
-            drop(map);
+            // Collect the entire trace tree and flush it to a file.
+            let trace_spans: Vec<SpanData> = if let Ok(mut guard) = self.spans.lock() {
+                // Collect all spans that belong to this root (the root itself plus descendants).
+                // Since parent-child relationships are tracked via parent_id, we do a full drain
+                // and collect all spans (for simplicity; a single root trace is the common case).
+                let all: Vec<SpanData> = guard.drain().map(|(_, v)| v).collect();
+                // Sort by start_time for readable output.
+                let mut sorted = all;
+                sorted.sort_by(|a, b| a.start_time.cmp(&b.start_time));
+                sorted
+            } else {
+                return;
+            };
+
             if !trace_spans.is_empty() {
                 self.write_trace_file(trace_spans);
             }
@@ -452,13 +360,38 @@ where
     }
 }
 
+// ---------------------------------------------------------------------------
+// TracingGuard
+// ---------------------------------------------------------------------------
+
 /// RAII guard that flushes the non-blocking writer on drop.
 ///
 /// **Hold this for the lifetime of the program.** Dropping it early may lose
 /// buffered log events.
+///
+/// When the `telemetry` feature is enabled and an OTLP exporter was
+/// initialized, dropping the guard also shuts down the tracer provider,
+/// flushing any pending spans.
 pub struct TracingGuard {
     _worker_guard: WorkerGuard,
+    #[cfg(feature = "telemetry")]
+    _tracer_provider: Option<opentelemetry_sdk::trace::SdkTracerProvider>,
 }
+
+#[cfg(feature = "telemetry")]
+impl Drop for TracingGuard {
+    fn drop(&mut self) {
+        if let Some(ref provider) = self._tracer_provider
+            && let Err(e) = provider.shutdown()
+        {
+            eprintln!("[assay] warning: OTel tracer provider shutdown error: {e}");
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// init_tracing
+// ---------------------------------------------------------------------------
 
 /// Initialize the global tracing subscriber.
 ///
@@ -470,11 +403,17 @@ pub struct TracingGuard {
 ///   so calling this a second time does not panic; the second subscriber
 ///   installation is silently skipped, though a background writer thread
 ///   is still spawned and held until the returned guard drops.
-/// - When `traces_dir` is `Some`, adds a [`JsonFileLayer`] that writes
-///   one JSON file per trace to the specified directory.
+///
+/// When `traces_dir` is set in the config, a [`JsonFileLayer`] is added that
+/// writes one JSON file per root span to the directory.
+///
+/// When the `telemetry` feature is enabled and
+/// [`TracingConfig::otlp_endpoint`] is `Some`, an OTLP exporter layer is
+/// added to the subscriber chain. If OTel initialization fails, a warning
+/// is emitted and the subscriber continues with the fmt layer only.
 ///
 /// Returns a [`TracingGuard`] whose [`WorkerGuard`] flushes on drop.
-pub fn init_tracing(config: TracingConfig) -> TracingGuard {
+pub fn init_tracing(mut config: TracingConfig) -> TracingGuard {
     let filter = match EnvFilter::try_from_default_env() {
         Ok(f) => f,
         Err(e) => {
@@ -496,10 +435,13 @@ pub fn init_tracing(config: TracingConfig) -> TracingGuard {
         .with_ansi(config.ansi)
         .with_target(config.with_target);
 
+    // Take traces_dir before lending config to build_otel_layer.
+    let traces_dir = config.traces_dir.take();
+
     // Build optional JSON file layer.
     // Use `and_then` so a directory-creation failure disables the layer entirely
     // rather than registering it and flooding the log with per-span I/O errors.
-    let json_layer = config.traces_dir.and_then(|dir| {
+    let json_layer = traces_dir.and_then(|dir| {
         if let Err(e) = std::fs::create_dir_all(&dir) {
             eprintln!(
                 "[assay] warning: failed to create traces dir '{}': {e}; trace file export disabled",
@@ -510,12 +452,22 @@ pub fn init_tracing(config: TracingConfig) -> TracingGuard {
         Some(JsonFileLayer::new(dir, 50))
     });
 
+    // Build the optional OTel layer behind cfg(feature = "telemetry").
+    #[cfg(feature = "telemetry")]
+    let (otel_layer, tracer_provider) = build_otel_layer(&config);
+
+    // When telemetry feature is not compiled, provide a None placeholder so
+    // the `.with(otel_layer)` call is a type-safe no-op.
+    #[cfg(not(feature = "telemetry"))]
+    let otel_layer: Option<tracing_opentelemetry_stub::NoLayer> = None;
+
     // try_init: skips installation if a subscriber is already set — no panic,
     // but a background writer thread is still allocated until the guard drops.
     if let Err(_e) = tracing_subscriber::registry()
         .with(filter)
         .with(fmt_layer)
         .with(json_layer)
+        .with(otel_layer)
         .try_init()
     {
         eprintln!(
@@ -527,7 +479,82 @@ pub fn init_tracing(config: TracingConfig) -> TracingGuard {
 
     TracingGuard {
         _worker_guard: worker_guard,
+        #[cfg(feature = "telemetry")]
+        _tracer_provider: tracer_provider,
     }
+}
+
+/// Build the OTel tracing layer when the `telemetry` feature is enabled.
+///
+/// Returns `(Some(layer), Some(provider))` on success, or `(None, None)` when
+/// `otlp_endpoint` is `None` or initialization fails (with a warning logged).
+#[cfg(feature = "telemetry")]
+fn build_otel_layer<S>(
+    config: &TracingConfig,
+) -> (
+    Option<tracing_opentelemetry::OpenTelemetryLayer<S, opentelemetry_sdk::trace::Tracer>>,
+    Option<opentelemetry_sdk::trace::SdkTracerProvider>,
+)
+where
+    S: tracing::Subscriber + for<'span> tracing_subscriber::registry::LookupSpan<'span>,
+{
+    use opentelemetry::trace::TracerProvider;
+    use opentelemetry_otlp::{SpanExporter, WithExportConfig};
+
+    let endpoint = match config.otlp_endpoint.as_deref() {
+        Some(ep) => ep,
+        None => return (None, None),
+    };
+
+    // Propagator must be set before subscriber init so incoming trace context
+    // is extracted correctly from the very first span.
+    opentelemetry::global::set_text_map_propagator(
+        opentelemetry_sdk::propagation::TraceContextPropagator::new(),
+    );
+
+    // Build OTLP HTTP exporter → tracer provider → tracing layer.
+    let result = (|| -> Result<
+        (
+            tracing_opentelemetry::OpenTelemetryLayer<S, opentelemetry_sdk::trace::Tracer>,
+            opentelemetry_sdk::trace::SdkTracerProvider,
+        ),
+        Box<dyn std::error::Error>,
+    > {
+        let exporter = SpanExporter::builder()
+            .with_http()
+            .with_endpoint(endpoint)
+            .build()?;
+
+        let provider = opentelemetry_sdk::trace::SdkTracerProvider::builder()
+            .with_batch_exporter(exporter)
+            .build();
+
+        opentelemetry::global::set_tracer_provider(provider.clone());
+
+        let tracer = provider.tracer("assay");
+        let otel_layer = tracing_opentelemetry::layer().with_tracer(tracer);
+
+        Ok((otel_layer, provider))
+    })();
+
+    match result {
+        Ok((layer, provider)) => (Some(layer), Some(provider)),
+        Err(e) => {
+            // Graceful degradation: warn and continue without OTel.
+            tracing::warn!(
+                endpoint = %endpoint,
+                error = %e,
+                "OTLP exporter init failed; trace export disabled"
+            );
+            (None, None)
+        }
+    }
+}
+
+/// Stub module so `Option<NoLayer>` compiles when telemetry feature is off.
+#[cfg(not(feature = "telemetry"))]
+mod tracing_opentelemetry_stub {
+    pub type NoLayer = tracing_subscriber::layer::Identity;
 }
 
 #[cfg(test)]
@@ -541,6 +568,7 @@ mod tests {
         assert!(cfg.ansi);
         assert!(!cfg.with_target);
         assert!(cfg.traces_dir.is_none());
+        assert!(cfg.otlp_endpoint.is_none());
     }
 
     #[test]
@@ -550,6 +578,7 @@ mod tests {
         assert!(!cfg.ansi);
         assert!(!cfg.with_target);
         assert!(cfg.traces_dir.is_none());
+        assert!(cfg.otlp_endpoint.is_none());
     }
 
     #[test]

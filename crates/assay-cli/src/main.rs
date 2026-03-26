@@ -225,12 +225,14 @@ Examples:
 /// export.  Non-pipeline subcommands (Traces, Init, Spec, Milestone, etc.)
 /// keep `traces_dir: None` to avoid self-tracing loops and spurious writes.
 fn tracing_config_for(command: &Option<Command>) -> assay_core::telemetry::TracingConfig {
-    if let Some(Command::Mcp {
+    let mut config = if let Some(Command::Mcp {
         command: commands::mcp::McpCommand::Serve,
     }) = command
     {
-        return assay_core::telemetry::TracingConfig::mcp();
-    }
+        assay_core::telemetry::TracingConfig::mcp()
+    } else {
+        assay_core::telemetry::TracingConfig::default()
+    };
 
     // Set traces_dir only for subcommands that run instrumented pipeline work
     // and only when the project's .assay/ directory already exists.
@@ -241,11 +243,15 @@ fn tracing_config_for(command: &Option<Command>) -> assay_core::telemetry::Traci
             .map(|r| assay_dir(&r).join("traces")),
         _ => None,
     };
+    config.traces_dir = traces_dir;
 
-    assay_core::telemetry::TracingConfig {
-        traces_dir,
-        ..Default::default()
+    // Activate OTLP export when the standard env var is set.
+    // Works for both default and MCP configs — traces from MCP serve are valuable.
+    if let Ok(endpoint) = std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT") {
+        config.otlp_endpoint = Some(endpoint);
     }
+
+    config
 }
 
 /// Core CLI logic. Returns an exit code on success.
