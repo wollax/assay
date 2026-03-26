@@ -8,9 +8,9 @@ default:
 build:
     cargo build --workspace
 
-# Run all tests
+# Run all tests (with per-test timeout via cargo-nextest)
 test:
-    cargo test --workspace
+    cargo nextest run --workspace
 
 # Run clippy lints
 lint:
