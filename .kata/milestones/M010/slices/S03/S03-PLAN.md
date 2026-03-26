@@ -44,7 +44,7 @@
 
 ## Tasks
 
-- [ ] **T01: NoopBackend and capability guard tests (red state)** `est:20m`
+- [x] **T01: NoopBackend and capability guard tests (red state)** `est:20m`
   - Why: Establishes the test contracts that define correct degradation behavior before modifying production code. `NoopBackend` is also the reusable test helper for any future backend-degradation testing.
   - Files: `crates/assay-core/src/state_backend.rs`, `crates/assay-core/tests/state_backend.rs`, `crates/assay-core/tests/mesh_integration.rs`, `crates/assay-core/tests/gossip_integration.rs`
   - Do: Add `NoopBackend` struct (all capabilities false, all methods no-op) to `state_backend.rs`. Write `test_noop_backend_capabilities` contract test. Write `test_mesh_degrades_gracefully_without_messaging` in `mesh_integration.rs` that runs `run_mesh()` with a `NoopBackend` config and asserts sessions complete, `messages_routed == 0`, no error. Write `test_gossip_degrades_gracefully_without_manifest` in `gossip_integration.rs` that runs `run_gossip()` with a `NoopBackend` config and asserts sessions complete, no "gossip-knowledge-manifest" PromptLayer in cloned sessions, no error. Tests will fail (red state) because production code doesn't guard capabilities yet.

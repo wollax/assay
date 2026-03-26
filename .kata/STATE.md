@@ -2,7 +2,7 @@
 
 **Active Milestone:** M010 — Pluggable State Backend
 **Active Slice:** S03 — CapabilitySet degradation paths
-**Active Task:** none (S02 complete, S03 not started)
+**Active Task:** T02 — Capability guards in mesh and gossip executors
 **Phase:** Executing
 
 ## Recent Decisions
@@ -15,4 +15,4 @@
 - None
 
 ## Next Action
-Execute S03/T01: Create NoopBackend test helper and write degradation integration tests (red state). Then T02: Add capability guards to mesh.rs and gossip.rs to turn tests green.
+Execute S03/T02: Add capability guards to `run_mesh()` and `run_gossip()` that check `backend.capabilities()` before exercising messaging and gossip-manifest features. This will turn T01's red gossip degradation test green.

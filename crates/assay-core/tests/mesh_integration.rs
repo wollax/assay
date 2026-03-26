@@ -13,6 +13,7 @@
 use std::path::Path;
 use std::time::Duration;
 
+use assay_core::NoopBackend;
 use assay_core::orchestrate::executor::OrchestratorConfig;
 use assay_core::orchestrate::mesh::run_mesh;
 use assay_core::pipeline::{PipelineConfig, PipelineError, PipelineResult};
@@ -252,4 +253,74 @@ fn test_mesh_mode_completed_not_dead() {
             member.state
         );
     }
+}
+
+// ── Test 3: Capability degradation with NoopBackend ──────────────────────────
+
+/// Proves that `run_mesh()` degrades gracefully when the backend has no
+/// messaging capability.
+///
+/// With `NoopBackend` (all capabilities disabled), the mesh executor should:
+/// - Still run all sessions to completion (Ok result)
+/// - All sessions reach a terminal state
+/// - No state.json written (NoopBackend no-ops persistence)
+/// - Routing is effectively skipped (no real backend to route through)
+///
+/// This test is expected to FAIL until T02 adds production capability guards.
+/// The current implementation tries to route messages unconditionally.
+#[test]
+fn test_mesh_degrades_gracefully_without_messaging() {
+    let dir = setup_temp_dir();
+    let tmp = dir.path();
+    let pipeline_config = make_pipeline_config(tmp);
+
+    let manifest = make_mesh_manifest(&[("spec-writer", "writer"), ("spec-reader", "reader")]);
+
+    let config = OrchestratorConfig {
+        backend: std::sync::Arc::new(NoopBackend),
+        ..OrchestratorConfig::default()
+    };
+
+    // Simple runner: return success immediately — no message writing.
+    let runner = |session: &ManifestSession, _config: &PipelineConfig| {
+        Ok::<PipelineResult, PipelineError>(success_result(session))
+    };
+
+    let result = run_mesh(&manifest, &config, &pipeline_config, &runner);
+
+    // The run should complete without error.
+    assert!(
+        result.is_ok(),
+        "run_mesh with NoopBackend should succeed, got: {:?}",
+        result.err()
+    );
+
+    let result = result.unwrap();
+
+    // All sessions should be present in the outcomes.
+    assert_eq!(
+        result.outcomes.len(),
+        2,
+        "expected 2 session outcomes, got {}",
+        result.outcomes.len()
+    );
+
+    // The run_id should be a valid non-empty string.
+    assert!(
+        !result.run_id.is_empty(),
+        "run_id should be set even with NoopBackend"
+    );
+
+    // NoopBackend doesn't persist state, so no state.json should exist.
+    // If the executor wrote state.json via the backend, it silently succeeded
+    // but NoopBackend's push_session_event is a no-op — no file on disk.
+    let state_path = pipeline_config
+        .assay_dir
+        .join("orchestrator")
+        .join(&result.run_id)
+        .join("state.json");
+    assert!(
+        !state_path.exists(),
+        "state.json should NOT exist when using NoopBackend — persistence is no-op"
+    );
 }

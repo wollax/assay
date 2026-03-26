@@ -14,6 +14,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use assay_core::NoopBackend;
 use assay_core::orchestrate::executor::OrchestratorConfig;
 use assay_core::orchestrate::gossip::run_gossip;
 use assay_core::pipeline::{PipelineConfig, PipelineError, PipelineResult};
@@ -326,4 +327,90 @@ fn test_gossip_mode_manifest_path_in_prompt_layer() {
 
     // Final check: assay_dir capture still valid (temp dir not dropped early).
     let _ = result.unwrap();
+}
+
+// ── Test 3: Capability degradation with NoopBackend ──────────────────────────
+
+/// Proves that `run_gossip()` degrades gracefully when the backend has no
+/// gossip-manifest capability.
+///
+/// With `NoopBackend` (all capabilities disabled), the gossip executor should:
+/// - Still run all sessions to completion (Ok result)
+/// - NOT inject a `"gossip-knowledge-manifest"` PromptLayer into sessions
+/// - All sessions present in outcomes
+///
+/// This test is expected to FAIL until T02 adds production capability guards.
+/// The current implementation unconditionally injects the PromptLayer and
+/// calls `persist_knowledge_manifest`, which will error when the backend's
+/// gossip_manifest capability is false.
+#[test]
+fn test_gossip_degrades_gracefully_without_manifest() {
+    let dir = setup_temp_dir();
+    let tmp = dir.path();
+    let pipeline_config = make_pipeline_config(tmp);
+
+    let manifest = make_gossip_manifest(&[("spec-alpha", "alpha"), ("spec-beta", "beta")]);
+
+    let config = OrchestratorConfig {
+        backend: std::sync::Arc::new(NoopBackend),
+        ..OrchestratorConfig::default()
+    };
+
+    // Track whether any session receives a gossip-knowledge-manifest PromptLayer.
+    let got_gossip_layer: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let got_gossip_layer_runner = Arc::clone(&got_gossip_layer);
+
+    let runner = move |session: &ManifestSession, _config: &PipelineConfig| {
+        let name = session.name.as_deref().unwrap_or(&session.spec);
+
+        // Check if the gossip-knowledge-manifest layer was injected.
+        let has_gossip_layer = session
+            .prompt_layers
+            .iter()
+            .any(|l| l.name == "gossip-knowledge-manifest");
+
+        if has_gossip_layer {
+            got_gossip_layer_runner
+                .lock()
+                .unwrap()
+                .push(name.to_string());
+        }
+
+        Ok::<PipelineResult, PipelineError>(success_result(session))
+    };
+
+    let result = run_gossip(&manifest, &config, &pipeline_config, &runner);
+
+    // The run should complete without error.
+    assert!(
+        result.is_ok(),
+        "run_gossip with NoopBackend should succeed, got: {:?}",
+        result.err()
+    );
+
+    let result = result.unwrap();
+
+    // No session should have received the gossip-knowledge-manifest layer
+    // when the backend doesn't support gossip manifest.
+    let sessions_with_layer = got_gossip_layer.lock().unwrap();
+    assert!(
+        sessions_with_layer.is_empty(),
+        "no session should receive 'gossip-knowledge-manifest' PromptLayer \
+         when gossip_manifest capability is disabled, but these did: {:?}",
+        *sessions_with_layer
+    );
+
+    // All sessions should be present in the outcomes.
+    assert_eq!(
+        result.outcomes.len(),
+        2,
+        "expected 2 session outcomes, got {}",
+        result.outcomes.len()
+    );
+
+    // The run_id should be a valid non-empty string.
+    assert!(
+        !result.run_id.is_empty(),
+        "run_id should be set even with NoopBackend"
+    );
 }
