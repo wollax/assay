@@ -46,14 +46,14 @@
 
 ## Tasks
 
-- [ ] **T01: Create SpyBackend and red-state contract tests** `est:30m`
+- [x] **T01: Create SpyBackend and red-state contract tests** `est:30m`
   - Why: Test-first — contract tests define the expected behavior before implementation changes. SpyBackend is the verification tool that records `save_checkpoint_summary` calls.
   - Files: `crates/assay-core/src/guard/daemon.rs` (test module additions)
   - Do: Add `SpyBackend` struct (implements `StateBackend`, records calls via `Arc<Mutex<Vec<TeamCheckpoint>>>`). Add `contract_backend_called_when_supports_checkpoints` test that constructs a daemon with SpyBackend (supports_checkpoints=true), calls `try_save_checkpoint`, asserts spy recorded the call. Add `contract_backend_not_called_when_no_checkpoint_capability` test with NoopBackend (supports_checkpoints=false), calls `try_save_checkpoint`, asserts local checkpoint path runs. Both tests will fail to compile because `GuardDaemon::new` doesn't accept backend yet — that's correct (red state).
   - Verify: `cargo test -p assay-core --features orchestrate -- guard::daemon::tests::contract_` fails to compile (expected red state)
   - Done when: Two contract test functions exist with correct assertions; SpyBackend compiles standalone
 
-- [ ] **T02: Add backend field to GuardDaemon and wire try_save_checkpoint routing** `est:45m`
+- [x] **T02: Add backend field to GuardDaemon and wire try_save_checkpoint routing** `est:45m`
   - Why: Core implementation — adds the `backend` field behind `#[cfg(feature = "orchestrate")]`, updates constructors, and routes `try_save_checkpoint` through the backend when capability is present.
   - Files: `crates/assay-core/src/guard/daemon.rs`, `crates/assay-core/src/guard/mod.rs`
   - Do: (1) Add `#[cfg(feature = "orchestrate")] backend: Arc<dyn StateBackend>` field to `GuardDaemon`. (2) Feature-gate `use crate::state_backend::*` imports. (3) Provide two `new()` signatures via `cfg` — one with backend param (orchestrate), one without. (4) In `try_save_checkpoint`, add conditional: when orchestrate feature on, check `self.backend.capabilities().supports_checkpoints`; if true, call `self.backend.save_checkpoint_summary(&self.assay_dir, &checkpoint)` with appropriate logging; if false, fall through to existing `save_checkpoint` call. (5) Update `start_guard()` in `mod.rs` to accept `backend: Arc<dyn StateBackend>` behind cfg, pass through to `GuardDaemon::new()`. (6) Update `make_daemon()` test helper to pass `Arc::new(NoopBackend)` when orchestrate on. (7) Per D167, capture `supports_checkpoints` bool once in `try_save_checkpoint`, not per call site.

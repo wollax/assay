@@ -2,7 +2,7 @@
 
 **Active Milestone:** M012 — Checkpoint Persistence on Remote Backends
 **Active Slice:** S01 — GuardDaemon backend plumbing and contract tests
-**Active Task:** T01 — Create SpyBackend and red-state contract tests
+**Active Task:** T03 — Wire CLI handle_guard_start and run just ready
 **Phase:** Executing
 
 ## Recent Decisions
@@ -14,7 +14,8 @@
 
 ## Progress
 - M011 ✅ COMPLETE (R076–R079 validated, 1526 tests with all features)
-- M012/S01 — planned (3 tasks: T01 SpyBackend+contract tests, T02 backend field+routing, T03 CLI wiring+just ready)
+- M012/S01/T01 ✅ SpyBackend + contract tests (red state)
+- M012/S01/T02 ✅ Backend field, dual constructors, checkpoint routing, start_guard dual sigs — 11 tests green (9 existing + 2 contract)
 
 ## Next Action
-Execute T01: Create SpyBackend test helper and red-state contract tests in daemon.rs.
+Execute T03: Wire CLI handle_guard_start with LocalFsBackend and run just ready.

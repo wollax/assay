@@ -4,6 +4,11 @@ use std::path::Path;
 
 use assay_types::GuardConfig;
 
+#[cfg(feature = "orchestrate")]
+use crate::state_backend::StateBackend;
+#[cfg(feature = "orchestrate")]
+use std::sync::Arc;
+
 pub mod circuit_breaker;
 pub mod config;
 pub mod daemon;
@@ -12,7 +17,26 @@ pub mod thresholds;
 pub mod watcher;
 
 /// Start the guard daemon. Blocks until shutdown or circuit breaker trip.
-#[cfg(unix)]
+#[cfg(all(unix, feature = "orchestrate"))]
+pub async fn start_guard(
+    session_path: &Path,
+    assay_dir: &Path,
+    project_dir: &Path,
+    config: GuardConfig,
+    backend: Arc<dyn StateBackend>,
+) -> crate::Result<()> {
+    let mut d = daemon::GuardDaemon::new(
+        session_path.to_path_buf(),
+        assay_dir.to_path_buf(),
+        project_dir.to_path_buf(),
+        config,
+        backend,
+    );
+    d.run().await
+}
+
+/// Start the guard daemon. Blocks until shutdown or circuit breaker trip.
+#[cfg(all(unix, not(feature = "orchestrate")))]
 pub async fn start_guard(
     session_path: &Path,
     assay_dir: &Path,
