@@ -1,9 +1,9 @@
 # Kata State
 
 **Active Milestone:** M013 — Tech Debt & Deferred Features
-**Active Slice:** none (planning complete, ready to execute S01)
-**Active Task:** none
-**Phase:** Planning
+**Active Slice:** S01 — GitHubBackend correctness fixes (Q001–Q004)
+**Active Task:** T01 — Write contract tests for Q001–Q004
+**Phase:** Executing
 
 ## Recent Decisions
 - D177: GitHubBackend repo validation is warn-not-error at construction
