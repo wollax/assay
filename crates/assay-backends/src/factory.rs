@@ -23,11 +23,35 @@ pub fn backend_from_config(
 ) -> Arc<dyn StateBackend> {
     match config {
         StateBackendConfig::LocalFs => Arc::new(LocalFsBackend::new(assay_dir)),
+        #[cfg(feature = "linear")]
+        StateBackendConfig::Linear {
+            team_id,
+            project_id,
+        } => match std::env::var("LINEAR_API_KEY") {
+            Ok(api_key) => {
+                let backend = crate::linear::LinearBackend::new(
+                    api_key,
+                    "https://api.linear.app".to_string(),
+                    team_id.clone(),
+                    project_id.clone(),
+                );
+                Arc::new(backend)
+            }
+            Err(_) => {
+                tracing::warn!(
+                    backend = "linear",
+                    "LINEAR_API_KEY not set — falling back to NoopBackend; \
+                         all state writes will be discarded"
+                );
+                Arc::new(NoopBackend)
+            }
+        },
+        #[cfg(not(feature = "linear"))]
         StateBackendConfig::Linear { .. } => {
             tracing::warn!(
                 backend = "linear",
-                "LinearBackend is not yet implemented — falling back to NoopBackend; \
-                 all state writes will be discarded (stub pending M011/S02)"
+                "LinearBackend requires the `linear` feature — falling back to NoopBackend; \
+                 all state writes will be discarded"
             );
             Arc::new(NoopBackend)
         }
@@ -73,14 +97,37 @@ mod tests {
     }
 
     #[test]
-    fn factory_linear_returns_noop() {
+    fn factory_linear_capabilities() {
         let dir = tempfile::tempdir().unwrap();
         let config = StateBackendConfig::Linear {
             team_id: "TEAM".into(),
             project_id: Some("PROJ".into()),
         };
         let backend = backend_from_config(&config, dir.path().to_path_buf());
-        assert_eq!(backend.capabilities(), CapabilitySet::none());
+
+        #[cfg(feature = "linear")]
+        {
+            if std::env::var("LINEAR_API_KEY").is_ok() {
+                // D164 flags: messaging=false, gossip_manifest=false, annotations=true, checkpoints=false
+                let caps = backend.capabilities();
+                assert_eq!(
+                    caps,
+                    CapabilitySet {
+                        supports_messaging: false,
+                        supports_gossip_manifest: false,
+                        supports_annotations: true,
+                        supports_checkpoints: false,
+                    }
+                );
+            } else {
+                // Falls back to NoopBackend when LINEAR_API_KEY is absent.
+                assert_eq!(backend.capabilities(), CapabilitySet::none());
+            }
+        }
+        #[cfg(not(feature = "linear"))]
+        {
+            assert_eq!(backend.capabilities(), CapabilitySet::none());
+        }
     }
 
     #[test]

@@ -4,14 +4,14 @@
 
 ### R076 — LinearBackend
 - Class: core-capability
-- Status: active
+- Status: validated
 - Description: `assay_backends::linear::LinearBackend` implements `StateBackend`. `push_session_event` creates a Linear issue on first call (title = run_id, description = session list) and appends a comment on subsequent calls with the full `OrchestratorStatus` JSON. `read_run_state` fetches the latest comment and deserializes it back. API key from `LINEAR_API_KEY` env var. `capabilities()` returns messaging:false, gossip_manifest:false, annotations:true, checkpoints:false.
 - Why it matters: Teams using Linear for project tracking get run observability without any extra tooling — session transitions appear as issue comments in the same place where work is planned.
 - Source: user
 - Primary owning slice: M011/S02
 - Supporting slices: M011/S01
-- Validation: unmapped
-- Notes: Requires `LINEAR_API_KEY`. Uses reqwest async client wrapped in a scoped tokio runtime (D150 pattern). Real API validation is UAT only.
+- Validation: S02 — LinearBackend implements all 7 StateBackend methods; push_session_event creates issue on first call and comments on subsequent; read_run_state deserializes latest comment; annotate_run posts [assay:manifest] tagged comment; capabilities()=D164 flags; 8 mockito contract tests pass; backend_from_config dispatches Linear→LinearBackend; just ready green with 1501 tests
+- Notes: Requires `LINEAR_API_KEY`. Uses reqwest::blocking (D168 — supersedes D161 scoped async runtime). Real API validation is UAT only.
 
 ### R077 — GitHubBackend
 - Class: core-capability
@@ -921,15 +921,15 @@
 | R073 | core-capability | validated | M010/S02 | M010/S03 | S02 |
 | R074 | core-capability | validated | M010/S03 | M010/S02 | S03 |
 | R075 | differentiator | validated | M010/S04 | M010/S02 | S04 |
-| R076 | core-capability | active | M011/S02 | M011/S01 | unmapped |
+| R076 | core-capability | validated | M011/S02 | M011/S01 | S02 |
 | R077 | core-capability | active | M011/S03 | M011/S01 | unmapped |
 | R078 | core-capability | active | M011/S04 | M011/S01 | unmapped |
 | R079 | core-capability | validated | M011/S01 | M011/S04 | S01 |
 
 ## Coverage Summary
 
-- Active requirements: 3 (R076–R078)
-- Validated: 68 (R001–R029 except R025, R034–R065, R071–R075, R079)
+- Active requirements: 2 (R077–R078)
+- Validated: 69 (R001–R029 except R025, R034–R065, R071–R076, R079)
 - Unmapped active requirements: 0
 - Deferred: 3 (R025, R066, R067)
 - Out of scope: 4 (R030, R031, R032, R033)

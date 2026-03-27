@@ -2,3 +2,6 @@
 //! to concrete [`StateBackend`] implementations.
 
 pub mod factory;
+
+#[cfg(feature = "linear")]
+pub mod linear;
