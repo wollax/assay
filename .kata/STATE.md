@@ -2,7 +2,7 @@
 
 **Active Milestone:** M011 — Concrete Remote Backends
 **Active Slice:** S01 — assay-backends crate scaffold and StateBackendConfig variants
-**Active Task:** T01 — Add StateBackendConfig variants and create assay-backends crate
+**Active Task:** T02 — Write tests, regenerate schema snapshots, and pass `just ready`
 **Phase:** Executing
 
 ## Recent Decisions
@@ -17,4 +17,4 @@
 - None
 
 ## Next Action
-Execute M011/S01/T01: Add Linear/GitHub/Ssh variants to StateBackendConfig, create assay-backends crate with factory fn.
+Execute M011/S01/T02: Write serde round-trip tests, factory dispatch tests, regenerate schema snapshots, pass `just ready`.

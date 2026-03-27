@@ -44,7 +44,7 @@
 
 ## Tasks
 
-- [ ] **T01: Add StateBackendConfig variants and create assay-backends crate** `est:45m`
+- [x] **T01: Add StateBackendConfig variants and create assay-backends crate** `est:45m`
   - Why: Creates the foundational types and crate structure that all other tasks and slices depend on
   - Files: `crates/assay-types/src/state_backend.rs`, `crates/assay-backends/Cargo.toml`, `crates/assay-backends/src/lib.rs`, `crates/assay-backends/src/factory.rs`
   - Do: Add `Linear`, `GitHub`, `Ssh` struct variants to `StateBackendConfig` with `#[serde(rename = "github")]` on GitHub variant. Create `crates/assay-backends/` with Cargo.toml (workspace deps: `assay-core`, `assay-types`, `serde`, `serde_json`; features: `linear`, `github`, `ssh`). Implement `backend_from_config()` dispatching `LocalFs` → `LocalFsBackend`, others → `NoopBackend`. Add `assay-backends` to workspace deps in root Cargo.toml.

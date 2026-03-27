@@ -1,0 +1,20 @@
+[package]
+name = "assay-backends"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+assay-core = { workspace = true, features = ["orchestrate"] }
+assay-types = { workspace = true, features = ["orchestrate"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[features]
+linear = []
+github = []
+ssh = []
