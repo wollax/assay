@@ -77,3 +77,4 @@ See `.kata/REQUIREMENTS.md` for the explicit capability contract, requirement st
 - [x] M009: Observability — structured tracing foundation, pipeline + orchestration span instrumentation, JSON file trace export, OTLP export + TRACEPARENT context propagation (complete, R027/R060–R065 validated, 1400+ tests)
 - [x] M010: Pluggable State Backend — StateBackend trait, CapabilitySet, LocalFsBackend with all Tier-2 writes, CapabilitySet degradation paths in Mesh/Gossip, smelt-agent plugin (complete, R071–R075 validated, 1488 tests)
 - [x] M011: Concrete Remote Backends — assay-backends crate with LinearBackend/GitHubBackend/SshSyncBackend + backend_from_config() factory fn wired into all CLI/MCP callsites (complete, R076–R079 validated, 1526 tests with all features)
+- [ ] M012: Checkpoint Persistence on Remote Backends — route GuardDaemon checkpoint writes through Arc<dyn StateBackend>; start_guard() API update; CLI default to LocalFsBackend; contract tests
