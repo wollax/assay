@@ -56,7 +56,7 @@ This milestone is complete only when all are true:
 
 ## Slices
 
-- [ ] **S01: assay-backends crate scaffold and StateBackendConfig variants** `risk:high` `depends:[]`
+- [x] **S01: assay-backends crate scaffold and StateBackendConfig variants** `risk:high` `depends:[]`
   > After this: `assay-backends` crate exists in workspace; `StateBackendConfig` has `Linear`, `GitHub`, `Ssh` named variants; schema snapshots updated; `backend_from_config()` factory fn compiles and dispatches all four variants to stub backends; `just ready` green.
 
 - [ ] **S02: LinearBackend** `risk:high` `depends:[S01]`

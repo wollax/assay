@@ -1,9 +1,9 @@
 # Kata State
 
 **Active Milestone:** M011 — Concrete Remote Backends
-**Active Slice:** S01 — assay-backends crate scaffold and StateBackendConfig variants
-**Active Task:** T02 ✅ — Write tests, regenerate schema snapshots, and pass `just ready`
-**Phase:** Executing
+**Active Slice:** S02 — LinearBackend
+**Active Task:** —
+**Phase:** Planning
 
 ## Recent Decisions
 - D160: assay-backends as new leaf crate (linear/github/ssh feature flags)
@@ -17,8 +17,9 @@
 - None
 
 ## Progress
-- S01/T01 ✅ — Added Linear/GitHub/Ssh variants to StateBackendConfig, created assay-backends crate
-- S01/T02 ✅ — Added serde round-trip + factory dispatch tests, regenerated schema snapshots, just ready green (1497 tests)
+- S01 ✅ — assay-backends crate scaffold and StateBackendConfig variants complete (1497 tests green)
+  - S01/T01 ✅ — Added Linear/GitHub/Ssh variants to StateBackendConfig, created assay-backends crate
+  - S01/T02 ✅ — Added serde round-trip + factory dispatch tests, regenerated schema snapshots, just ready green
 
 ## Next Action
-S01 complete — all tasks done. Proceed to slice verification and close-out.
+S02: Implement LinearBackend with reqwest async wrapped in scoped new_current_thread runtime; mock HTTP contract tests; update backend_from_config() Linear arm.

@@ -37,14 +37,14 @@
 
 ### R079 — assay-backends crate and backend factory function
 - Class: core-capability
-- Status: active
+- Status: validated
 - Description: New `assay-backends` leaf crate with `linear`, `github`, `ssh` feature flags. `StateBackendConfig` gains `Linear`, `GitHub`, `Ssh` named variants (schema-snapshot-locked). `backend_from_config(config: &StateBackendConfig, assay_dir: PathBuf) -> Arc<dyn StateBackend>` factory function resolves any variant to the appropriate backend. CLI/MCP construction sites use the factory fn instead of hardcoded `LocalFsBackend::new(...)` at manifest-dispatch call sites.
 - Why it matters: The factory function is the bridge between the declarative `RunManifest.state_backend` config and the runtime `Arc<dyn StateBackend>` used by `OrchestratorConfig`. Without it, CLI/MCP callers must duplicate dispatch logic and import each backend directly.
 - Source: inferred
 - Primary owning slice: M011/S01
 - Supporting slices: M011/S04
-- Validation: unmapped
-- Notes: `assay-backends` depends on `assay-core` + `assay-types` (not vice versa, consistent with D003 dep-graph direction). Factory fn lives in `assay_backends::factory`. Feature flags gate each backend's deps — `reqwest` only in the binary when `linear` or `github` features are enabled.
+- Validation: S01 — `assay-backends` crate compiles; `StateBackendConfig` has `Linear`, `GitHub`, `Ssh` variants with schema snapshots committed; `backend_from_config()` dispatches all 5 variants (LocalFs→LocalFsBackend, others→NoopBackend stubs); serde round-trip tests pass for all variants; `just ready` green with 1497 tests. CLI/MCP wiring deferred to S04.
+- Notes: `assay-backends` depends on `assay-core` + `assay-types` (not vice versa, consistent with D003 dep-graph direction). Factory fn lives in `assay_backends::factory`. Feature flags gate each backend's deps — `reqwest` only in the binary when `linear` or `github` features are enabled. CLI/MCP construction site wiring (replacing hardcoded `LocalFsBackend::new`) is S04 work.
 
 ### R034 — OrchestratorMode selection
 - Class: core-capability
@@ -924,12 +924,12 @@
 | R076 | core-capability | active | M011/S02 | M011/S01 | unmapped |
 | R077 | core-capability | active | M011/S03 | M011/S01 | unmapped |
 | R078 | core-capability | active | M011/S04 | M011/S01 | unmapped |
-| R079 | core-capability | active | M011/S01 | M011/S04 | unmapped |
+| R079 | core-capability | validated | M011/S01 | M011/S04 | S01 |
 
 ## Coverage Summary
 
-- Active requirements: 4 (R076–R079)
-- Validated: 67 (R001–R029 except R025, R034–R065, R071–R075)
+- Active requirements: 3 (R076–R078)
+- Validated: 68 (R001–R029 except R025, R034–R065, R071–R075, R079)
 - Unmapped active requirements: 0
 - Deferred: 3 (R025, R066, R067)
 - Out of scope: 4 (R030, R031, R032, R033)
