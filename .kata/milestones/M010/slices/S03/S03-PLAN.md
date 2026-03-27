@@ -44,14 +44,14 @@
 
 ## Tasks
 
-- [ ] **T01: NoopBackend and capability guard tests (red state)** `est:20m`
+- [x] **T01: NoopBackend and capability guard tests (red state)** `est:20m`
   - Why: Establishes the test contracts that define correct degradation behavior before modifying production code. `NoopBackend` is also the reusable test helper for any future backend-degradation testing.
   - Files: `crates/assay-core/src/state_backend.rs`, `crates/assay-core/tests/state_backend.rs`, `crates/assay-core/tests/mesh_integration.rs`, `crates/assay-core/tests/gossip_integration.rs`
   - Do: Add `NoopBackend` struct (all capabilities false, all methods no-op) to `state_backend.rs`. Write `test_noop_backend_capabilities` contract test. Write `test_mesh_degrades_gracefully_without_messaging` in `mesh_integration.rs` that runs `run_mesh()` with a `NoopBackend` config and asserts sessions complete, `messages_routed == 0`, no error. Write `test_gossip_degrades_gracefully_without_manifest` in `gossip_integration.rs` that runs `run_gossip()` with a `NoopBackend` config and asserts sessions complete, no "gossip-knowledge-manifest" PromptLayer in cloned sessions, no error. Tests will fail (red state) because production code doesn't guard capabilities yet.
   - Verify: `cargo test -p assay-core --features orchestrate --test state_backend test_noop` — passes (NoopBackend contract); mesh/gossip degradation tests compile but fail (expected red state)
   - Done when: `NoopBackend` type exists, 3 new tests compile, NoopBackend contract test passes, mesh/gossip tests fail with expected behavior (routing thread panics or PromptLayer is injected when it shouldn't be)
 
-- [ ] **T02: Capability guards in mesh routing and gossip manifest injection** `est:20m`
+- [x] **T02: Capability guards in mesh routing and gossip manifest injection** `est:20m`
   - Why: Implements the actual degradation behavior — capability checks in `run_mesh()` and `run_gossip()` that skip messaging/manifest features when the backend doesn't support them. Turns T01's red tests green.
   - Files: `crates/assay-core/src/orchestrate/mesh.rs`, `crates/assay-core/src/orchestrate/gossip.rs`
   - Do: In `run_mesh()`, before the `thread::scope` block where the routing thread is spawned, check `config.backend.capabilities().supports_messaging`. If false, emit `warn!(capability = "messaging", mode = "mesh", "backend does not support messaging — skipping mesh routing thread")` and skip spawning the routing thread. The session workers still launch and execute normally. Inbox/outbox directories are still created (sessions may reference them in their roster, and directory absence would cause errors). In `run_gossip()`, before the PromptLayer injection loop, check `config.backend.capabilities().supports_gossip_manifest`. If false, emit `warn!(capability = "gossip_manifest", mode = "gossip", "backend does not support gossip manifest — skipping knowledge manifest injection")` and skip: (1) the PromptLayer push, (2) the `persist_knowledge_manifest` calls (initial write, coordinator updates, final write). Sessions still launch and run. The coordinator thread still processes completions for status tracking; it just skips manifest writes.

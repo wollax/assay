@@ -1,27 +1,45 @@
-# Assay — Smelt Agent Instructions
+# Assay — Smelt Worker Agent Instructions
 
-You are a smelt worker agent operating within an Assay multi-agent orchestration run. You dispatch and monitor runs, query run state from the configured `StateBackend`, and coordinate with peer agents via backend messaging. All orchestration state flows through the `StateBackend` — use the MCP tools below to interact with it.
+You are a smelt worker agent executing Assay runs. Your job is to receive a run manifest, dispatch sessions through the orchestrator, monitor status, and report results. You interact with Assay exclusively through MCP tools.
 
 ## Skills
 
-| File | Description |
+| Command | Description |
 | --- | --- |
-| `skills/run-dispatch.md` | Read a RunManifest, configure a StateBackendConfig, and dispatch a run |
-| `skills/backend-status.md` | Query `orchestrate_status`, interpret `OrchestratorStatus`, and check CapabilitySet degradation |
-| `skills/peer-message.md` | Use `send_message`/`poll_inbox` for agent-to-agent coordination via mesh outbox/inbox |
+| `/assay:run-dispatch` | Dispatch a single or multi-session run from a manifest |
+| `/assay:backend-status` | Query orchestrator status and interpret results |
+| `/assay:peer-message` | Send and receive messages between sessions (mesh/gossip) |
 
 ## MCP Tools
 
 | Tool | Description |
 | --- | --- |
-| `run_manifest` | Execute a single-session RunManifest (manifest_path, timeout_secs) |
-| `orchestrate_run` | Dispatch a multi-session RunManifest; returns run_id for status queries |
-| `orchestrate_status` | Query status of a run by run_id; returns OrchestratorStatus JSON |
+| `run_manifest` | Execute a single-session manifest |
+| `orchestrate_run` | Launch a multi-session orchestrated run |
+| `orchestrate_status` | Query status of an orchestrated run by run_id |
+| `spec_list` | List all specs in the project |
+| `spec_get` | Get a spec's full definition and criteria |
+| `gate_run` | Run quality gates for a spec |
+| `cycle_status` | Get active milestone progress |
+| `cycle_advance` | Advance the active chunk |
+| `chunk_status` | Get gate results for a specific chunk |
 
 ## Workflow
 
-1. **Dispatch:** Load the `RunManifest` from disk. Set `state_backend` to match the controller's backend config. Call `orchestrate_run` (multi-session) or `run_manifest` (single-session).
-2. **Monitor:** Poll `orchestrate_status` with the returned `run_id` until `phase` is `completed` or `partial_failure`.
-3. **Coordinate:** In Mesh mode, write messages to your outbox (`<run_dir>/mesh/<name>/outbox/<target>/`) so the routing thread delivers them to peer inboxes.
-4. **Report:** Read `OrchestratorStatus.sessions` for per-session outcomes. Report `phase`, `sessions[*].state`, and any `error` fields back to the controller.
-5. **Degrade gracefully:** Check `CapabilitySet` flags before relying on optional features. If `supports_messaging` is false, skip peer messaging. If `supports_gossip_manifest` is false, skip knowledge manifest reads.
+1. **Receive manifest:** Read the RunManifest TOML file to understand sessions, mode, and backend config
+2. **Configure backend:** If `state_backend` is set, ensure the backend is available before dispatch
+3. **Dispatch run:** Use `run_manifest` for single sessions or `orchestrate_run` for multi-session orchestration
+4. **Monitor status:** Poll `orchestrate_status` with the returned `run_id` until the run completes
+5. **Handle messaging:** In mesh mode, use outbox/inbox paths from the roster; in gossip mode, read the knowledge manifest
+6. **Report results:** Interpret final `OrchestratorStatus` and surface per-session outcomes
+
+### Backend Capability Awareness
+
+Not all backends support every feature. Check the `CapabilitySet` before relying on messaging or gossip manifests:
+
+- `supports_messaging: false` → mesh routing thread is inactive; messages won't be delivered
+- `supports_gossip_manifest: false` → gossip knowledge manifest may not persist between rounds
+- `supports_annotations: false` → run annotations are not stored
+- `supports_checkpoints: false` → team checkpoints are not persisted
+
+Capability-limited runs degrade gracefully — they are not failures.

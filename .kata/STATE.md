@@ -17,7 +17,8 @@
 - None
 
 ## Progress
-- S01 ✅ — assay-backends crate scaffold and StateBackendConfig variants complete (1497 tests green)
+- M010 ✅ — Pluggable State Backend complete (all 4 slices, 1488+ tests)
+- M011/S01 ✅ — assay-backends crate scaffold and StateBackendConfig variants complete (1499 tests green)
   - S01/T01 ✅ — Added Linear/GitHub/Ssh variants to StateBackendConfig, created assay-backends crate
   - S01/T02 ✅ — Added serde round-trip + factory dispatch tests, regenerated schema snapshots, just ready green
 

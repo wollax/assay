@@ -1,84 +1,63 @@
 ---
 name: peer-message
-description: Use send_message/poll_inbox conventions for agent-to-agent coordination in Mesh mode. Covers the outbox/inbox file convention and mesh roster PromptLayer format. Use when a smelt worker needs to communicate with peer agents during a Mesh run.
+description: >
+  Send and receive messages between sessions in mesh mode, or read the
+  knowledge manifest in gossip mode. Use when coordinating between
+  concurrent sessions during an orchestrated run.
 ---
 
-# Skill: Peer Message
+# Peer Messaging
 
-## Overview
+Communicate between sessions in mesh and gossip orchestration modes.
 
-In Mesh mode, sessions communicate by writing files to an outbox directory. The Assay routing thread polls outboxes and delivers files to the target session's inbox. This is a file-based message-passing protocol — no sockets or channels.
+## Mesh Mode — Direct Messaging
 
-## Directory Convention
+In mesh mode, each session receives a `mesh-roster` PromptLayer listing peers and file paths for messaging.
 
-For a run with `run_id = "01HXY..."` and a session named `"worker-a"`:
+### Sending Messages
 
-```
-.assay/orchestrator/01HXY.../mesh/
-  worker-a/
-    inbox/          ← receive messages here
-    outbox/
-      worker-b/     ← send messages to worker-b by writing here
-      worker-c/     ← send messages to worker-c by writing here
-```
+1. **Parse the mesh roster.** The roster is injected as a system prompt layer named `mesh-roster`. It contains:
+   ```
+   # Mesh Roster for session: <your-name>
+   Outbox: /path/to/.assay/orchestrator/<run_id>/mesh/<your-name>/outbox
+   
+   # Peers
+   Peer: <peer-name>  Inbox: /path/to/.assay/orchestrator/<run_id>/mesh/<peer-name>/inbox
+   ```
 
-The routing thread polls all `outbox/<target>/` subdirectories and moves files to the named target session's `inbox/`.
+2. **To send a message to a peer:** Write a file to your outbox under a subdirectory named after the target peer:
+   ```
+   <outbox>/<target-name>/<filename>
+   ```
+   The background routing thread polls your outbox and moves the file to the target's inbox automatically.
 
-## Step 1 — Find your outbox path from the roster PromptLayer
+3. **Message format is freeform.** Use plain text, JSON, or any format your peer can parse. File names should be descriptive (e.g. `findings.json`, `request-01.txt`).
 
-Your session receives a `"mesh-roster"` system PromptLayer at launch. Parse it to find your outbox path:
+### Receiving Messages
 
-```
-# Mesh Roster for session: worker-a
-Outbox: /path/to/.assay/orchestrator/01HXY.../mesh/worker-a/outbox
+4. **Read files from your inbox directory.** The routing thread delivers messages from other sessions into your inbox. Poll the directory to check for new files.
 
-# Peers
-Peer: worker-b  Inbox: /path/to/.assay/orchestrator/01HXY.../mesh/worker-b/inbox
-Peer: worker-c  Inbox: /path/to/.assay/orchestrator/01HXY.../mesh/worker-c/inbox
-```
+### Capability Guard
 
-Scan for the line starting with `"Outbox: "` to get your outbox path. Peer inboxes are listed for reference but you should write to your **own outbox subdirectory** — not directly to peer inboxes.
+5. **Check `supports_messaging` before relying on messaging.** If the state backend has `supports_messaging: false` in its `CapabilitySet`, the routing thread is not running. Messages written to outboxes will not be delivered. Sessions still execute in parallel, but without inter-session communication.
 
-## Step 2 — Send a message
+   To check: query `orchestrate_status` and look at `mesh_status.messages_routed`. If the value stays at zero despite sessions writing to outboxes, messaging is likely disabled by the backend.
 
-To send a message to `worker-b`, write a file to `<your_outbox>/worker-b/<message_name>`:
+## Gossip Mode — Knowledge Manifest
 
-```python
-# Example: write a message file
-import os
-outbox_dir = "/path/to/.assay/orchestrator/01HXY.../mesh/worker-a/outbox/worker-b"
-os.makedirs(outbox_dir, exist_ok=True)
-with open(os.path.join(outbox_dir, "status-update"), "wb") as f:
-    f.write(b"gate-check complete: 3 pass, 0 fail")
-```
+In gossip mode, there is no direct messaging between sessions. Instead, a coordinator synthesizes completed session results into a shared knowledge manifest.
 
-The routing thread picks this up (polling every 50ms) and moves it to `worker-b/inbox/status-update`.
+### Reading the Knowledge Manifest
 
-## Step 3 — Receive messages
+6. **Find the manifest path.** Each session receives a `gossip-knowledge-manifest` PromptLayer containing the absolute path to `knowledge.json`:
+   ```
+   /path/to/.assay/orchestrator/<run_id>/gossip/knowledge.json
+   ```
 
-Poll your inbox directory for new files:
+7. **Read the manifest file.** It contains a JSON array of `KnowledgeEntry` objects, one per completed session. Each entry records what that session produced and discovered.
 
-```python
-inbox_dir = "/path/to/.assay/orchestrator/01HXY.../mesh/worker-a/inbox"
-for filename in os.listdir(inbox_dir):
-    path = os.path.join(inbox_dir, filename)
-    with open(path, "rb") as f:
-        contents = f.read()
-    os.remove(path)  # consume the message
-    process(filename, contents)
-```
+8. **The manifest updates incrementally.** After each session completes, the coordinator synthesizes its results and atomically updates `knowledge.json`. Read the file periodically to discover new entries from peers.
 
-Messages are delivered as files. Read and delete them to avoid re-processing. The routing thread uses atomic rename, so partially-written messages are never visible in the inbox.
+### Capability Guard
 
-## Step 4 — Check capability before messaging
-
-Before relying on peer messaging, verify the capability is present. In Mesh mode with `LocalFsBackend`, messaging is always supported. With custom backends, it may not be.
-
-Indicator that messaging is degraded: `mesh_status.messages_routed` stays 0 in `orchestrate_status` despite send attempts. In this case, skip peer coordination and proceed independently.
-
-## Notes
-
-- Message names must be non-empty and must not contain `/`, `\`, `.`, or `..`
-- Files are delivered at-least-once (delete-after-read failure may cause re-delivery)
-- The routing thread exits when all sessions have completed — do not send messages after your session finishes
-- For knowledge manifest sharing in Gossip mode, read the file at the path in the `"gossip-knowledge-manifest"` PromptLayer instead of using the outbox/inbox mechanism
+9. **Check `supports_gossip_manifest` before relying on the manifest.** If the backend has `supports_gossip_manifest: false`, the knowledge manifest may not persist between coordinator rounds. Check `gossip_status.sessions_synthesized` via `orchestrate_status` — if it stays at zero despite sessions completing, manifest persistence is disabled.
