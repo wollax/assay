@@ -14,10 +14,10 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use assay_core::NoopBackend;
-use assay_core::orchestrate::executor::OrchestratorConfig;
+use assay_core::orchestrate::executor::{OrchestratorConfig, SessionOutcome};
 use assay_core::orchestrate::gossip::run_gossip;
 use assay_core::pipeline::{PipelineConfig, PipelineError, PipelineResult};
+use assay_core::state_backend::NoopBackend;
 use assay_types::orchestrate::{GossipStatus, KnowledgeManifest, OrchestratorStatus};
 use assay_types::{ManifestSession, OrchestratorMode, RunManifest};
 
@@ -329,85 +329,96 @@ fn test_gossip_mode_manifest_path_in_prompt_layer() {
     let _ = result.unwrap();
 }
 
-// ── Test 3: Capability degradation with NoopBackend ──────────────────────────
+// ── Test 3: Graceful degradation when gossip manifest is unsupported ──────────
 
-/// Proves that `run_gossip()` degrades gracefully when the backend has no
-/// gossip-manifest capability.
+/// Proves that `run_gossip()` completes successfully when the backend does not
+/// support the gossip manifest (`supports_gossip_manifest = false`).
 ///
-/// With `NoopBackend` (all capabilities disabled), the gossip executor:
-/// - Omits the `"gossip-knowledge-manifest"` PromptLayer from all sessions
-/// - Skips all three `persist_knowledge_manifest` callsites (initial, per-completion, final flush)
-/// - Still runs all sessions to completion (Ok result)
-/// - All sessions present in outcomes
-/// - No error or panic from the absent manifest support
+/// With `NoopBackend`:
+/// - No `gossip-knowledge-manifest` PromptLayer is injected into sessions.
+/// - No `knowledge.json` is written (manifest writes are skipped).
+/// - Sessions still execute in parallel via session workers.
+/// - No error is returned — graceful degradation, not a panic.
+/// - A `warn!` event is emitted (not asserted here, visible in test output).
 #[test]
 fn test_gossip_degrades_gracefully_without_manifest() {
     let dir = setup_temp_dir();
     let tmp = dir.path();
     let pipeline_config = make_pipeline_config(tmp);
+    let manifest = make_gossip_manifest(&[("spec-a", "alpha"), ("spec-b", "beta")]);
 
-    let manifest = make_gossip_manifest(&[("spec-alpha", "alpha"), ("spec-beta", "beta")]);
+    // Track which sessions received a "gossip-knowledge-manifest" prompt layer.
+    let manifest_layers_seen = Arc::new(Mutex::new(Vec::<String>::new()));
+    let manifest_layers_seen_ref = Arc::clone(&manifest_layers_seen);
 
+    // Use NoopBackend: supports_gossip_manifest = false, all methods no-op.
     let config = OrchestratorConfig {
-        backend: std::sync::Arc::new(NoopBackend),
+        backend: Arc::new(NoopBackend),
         ..OrchestratorConfig::default()
     };
 
-    // Track whether any session receives a gossip-knowledge-manifest PromptLayer.
-    let got_gossip_layer: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
-    let got_gossip_layer_runner = Arc::clone(&got_gossip_layer);
-
-    let runner = move |session: &ManifestSession, _config: &PipelineConfig| {
-        let name = session.name.as_deref().unwrap_or(&session.spec);
-
-        // Check if the gossip-knowledge-manifest layer was injected.
-        let has_gossip_layer = session
+    let result = run_gossip(&manifest, &config, &pipeline_config, &|session, _config| {
+        // Check if the session received a "gossip-knowledge-manifest" layer.
+        let has_manifest_layer = session
             .prompt_layers
             .iter()
             .any(|l| l.name == "gossip-knowledge-manifest");
-
-        if has_gossip_layer {
-            got_gossip_layer_runner
-                .lock()
-                .unwrap()
-                .push(name.to_string());
+        if has_manifest_layer {
+            let name = session.name.clone().unwrap_or_else(|| session.spec.clone());
+            manifest_layers_seen_ref.lock().unwrap().push(name);
         }
+        Ok(success_result(session))
+    });
 
-        Ok::<PipelineResult, PipelineError>(success_result(session))
-    };
-
-    let result = run_gossip(&manifest, &config, &pipeline_config, &runner);
-
-    // The run should complete without error.
     assert!(
         result.is_ok(),
-        "run_gossip with NoopBackend should succeed, got: {:?}",
+        "run_gossip() should succeed with NoopBackend — got: {:?}",
         result.err()
     );
 
-    let result = result.unwrap();
-
-    // No session should have received the gossip-knowledge-manifest layer
-    // when the backend doesn't support gossip manifest.
-    let sessions_with_layer = got_gossip_layer.lock().unwrap();
+    // No sessions should have received the manifest PromptLayer.
+    let seen = manifest_layers_seen.lock().unwrap().clone();
     assert!(
-        sessions_with_layer.is_empty(),
-        "no session should receive 'gossip-knowledge-manifest' PromptLayer \
-         when gossip_manifest capability is disabled, but these did: {:?}",
-        *sessions_with_layer
+        seen.is_empty(),
+        "no sessions should receive gossip-knowledge-manifest layer when manifest unsupported, \
+         but these sessions got it: {:?}",
+        seen
     );
 
-    // All sessions should be present in the outcomes.
-    assert_eq!(
-        result.outcomes.len(),
-        2,
-        "expected 2 session outcomes, got {}",
-        result.outcomes.len()
-    );
-
-    // The run_id should be a valid non-empty string.
+    // No knowledge.json should exist (NoopBackend skips manifest writes).
+    let knowledge_path = tmp.join(".assay/orchestrator");
+    let knowledge_files: Vec<_> = walkdir_json(&knowledge_path, "knowledge.json");
     assert!(
-        !result.run_id.is_empty(),
-        "run_id should be set even with NoopBackend"
+        knowledge_files.is_empty(),
+        "no knowledge.json should be written with NoopBackend, found: {:?}",
+        knowledge_files
     );
+
+    // All sessions should still complete.
+    let orch_result = result.unwrap();
+    for (name, outcome) in &orch_result.outcomes {
+        assert!(
+            matches!(outcome, SessionOutcome::Completed { .. }),
+            "session '{}' should be Completed with NoopBackend, got: {:?}",
+            name,
+            outcome
+        );
+    }
+}
+
+/// Helper: collect all files with a given name under a directory tree.
+fn walkdir_json(dir: &std::path::Path, filename: &str) -> Vec<std::path::PathBuf> {
+    let mut found = Vec::new();
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return found;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            found.extend(walkdir_json(&path, filename));
+        } else if path.file_name().and_then(|n| n.to_str()) == Some(filename) {
+            found.push(path);
+        }
+    }
+    found
 }

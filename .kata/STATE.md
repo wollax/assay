@@ -1,21 +1,26 @@
 # Kata State
 
-**Active Milestone:** M010 — Pluggable State Backend (COMPLETE)
-**Active Slice:** S04 — smelt-agent plugin (COMPLETE)
+**Active Milestone:** M011 — Concrete Remote Backends
+**Active Slice:** S02 — LinearBackend
 **Active Task:** —
-**Phase:** Milestone complete — ready to merge
+**Phase:** Planning
 
 ## Recent Decisions
-- D156: Arc<dyn StateBackend> in OrchestratorConfig (supersedes D151's Box)
-- D157: OrchestratorConfig Default uses placeholder path for LocalFsBackend
-- D158: persist_state removed from pub(crate) API after backend wiring
-- D159: Feature-gated RunManifest fields require split schema snapshot tests
-- D160: NoopBackend is a test helper, not production-grade
-- D161: Capability guard pattern — capture bool before thread::scope, guard all feature-specific write sites by value
-- Followed codex plugin format (D082) for smelt-agent AGENTS.md
+- D160: assay-backends as new leaf crate (linear/github/ssh feature flags)
+- D161: reqwest async wrapped in scoped new_current_thread runtime per method
+- D162: GitHubBackend uses gh CLI for all operations
+- D163: SshSyncBackend uses scp via Command::arg() chaining
+- D164: LinearBackend capabilities — messaging=false, annotations=true, checkpoints=false
+- D165: backend_from_config factory fn in assay_backends::factory
 
 ## Blockers
 - None
 
+## Progress
+- M010 ✅ — Pluggable State Backend complete (all 4 slices, 1488+ tests)
+- M011/S01 ✅ — assay-backends crate scaffold and StateBackendConfig variants complete (1499 tests green)
+  - S01/T01 ✅ — Added Linear/GitHub/Ssh variants to StateBackendConfig, created assay-backends crate
+  - S01/T02 ✅ — Added serde round-trip + factory dispatch tests, regenerated schema snapshots, just ready green
+
 ## Next Action
-M010 is fully complete — all 4 slices done, all success criteria met, `just ready` green, 1481+ tests passing. Begin planning M011 (concrete remote backends: LinearBackend, GitHubBackend, SshSyncBackend).
+S02: Implement LinearBackend with reqwest async wrapped in scoped new_current_thread runtime; mock HTTP contract tests; update backend_from_config() Linear arm.
