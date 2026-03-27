@@ -46,7 +46,7 @@
 
 ## Tasks
 
-- [ ] **T01: Contract tests for GitHubBackend (red state)** `est:25m`
+- [x] **T01: Contract tests for GitHubBackend (red state)** `est:25m`
   - Why: Test-first — define the contract before implementation. Tests will fail to compile (red state) until T02 implements `GitHubBackend`.
   - Files: `crates/assay-backends/tests/github_backend.rs`, `crates/assay-backends/Cargo.toml`
   - Do: Add `serial_test` to dev-deps. Create test file behind `cfg(feature = "github")` with 8 contract tests using mock `gh` binary (multi-subcommand dispatcher script). Tests: capabilities returns none, first push creates issue (verify args + parse issue number from URL), subsequent push comments (verify `--body-file -` stdin pipe), read_run_state deserializes latest comment, read_run_state returns None without issue file, send_message returns Err, gh-not-found returns Err, gh-auth-error returns Err. Each test uses `write_mock_gh()` helper (dispatching script that inspects `$1 $2`) and `with_mock_gh_path()` helper with `#[serial]`.
