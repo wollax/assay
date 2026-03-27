@@ -59,7 +59,7 @@ This milestone is complete only when all are true:
 - [x] **S01: assay-backends crate scaffold and StateBackendConfig variants** `risk:high` `depends:[]`
   > After this: `assay-backends` crate exists in workspace; `StateBackendConfig` has `Linear`, `GitHub`, `Ssh` named variants; schema snapshots updated; `backend_from_config()` factory fn compiles and dispatches all four variants to stub backends; `just ready` green.
 
-- [ ] **S02: LinearBackend** `risk:high` `depends:[S01]`
+- [x] **S02: LinearBackend** `risk:high` `depends:[S01]`
   > After this: `LinearBackend` implements all 7 `StateBackend` methods; `push_session_event` creates/comments on a Linear issue; `read_run_state` fetches latest comment back; contract tests with mock HTTP pass; `capabilities()` returns messaging:false, checkpoints:false, annotations:true, gossip_manifest:false; `just ready` green.
 
 - [ ] **S03: GitHubBackend** `risk:medium` `depends:[S01]`
