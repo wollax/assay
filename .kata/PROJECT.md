@@ -10,7 +10,7 @@ A beginning developer installs Assay, describes a feature, and gets a structured
 
 ## Current State
 
-v0.9.0-dev. M001–M010 complete. ~25K lines of Rust across 6 crates. 1488 tests passing. 67 requirements validated, 0 active. `assay-tui` is a full Ratatui application with dashboard, in-TUI authoring wizard, spec browser, provider configuration, agent spawning with live output streaming, slash command overlay, MCP server configuration panel, PR status badges with background polling, and gate history analytics screen. Full OpenTelemetry tracing stack: structured leveled events (zero eprintln!), pipeline and orchestration spans, JSON file trace export under `.assay/traces/`, feature-flagged OTLP export, and W3C TRACEPARENT subprocess propagation.
+v0.9.0-dev. M001–M010 complete, M011 planned. ~25K lines of Rust across 6 crates. 1488 tests passing. 67 requirements validated, 4 active (R076–R079). `assay-tui` is a full Ratatui application with dashboard, in-TUI authoring wizard, spec browser, provider configuration, agent spawning with live output streaming, slash command overlay, MCP server configuration panel, PR status badges with background polling, and gate history analytics screen. Full OpenTelemetry tracing stack: structured leveled events (zero eprintln!), pipeline and orchestration spans, JSON file trace export under `.assay/traces/`, feature-flagged OTLP export, and W3C TRACEPARENT subprocess propagation.
 
 **M001 (complete):** Single-agent harness end-to-end — manifest → worktree → agent launch → gate evaluation → merge proposal. 19 requirements validated.
 
@@ -74,3 +74,4 @@ See `.kata/REQUIREMENTS.md` for the explicit capability contract, requirement st
 - [x] M008: PR Workflow + Plugin Parity — advanced PR automation, OpenCode plugin, history analytics (complete, R057–R059 validated, 1400+ tests)
 - [x] M009: Observability — structured tracing foundation, pipeline + orchestration span instrumentation, JSON file trace export, OTLP export + TRACEPARENT context propagation (complete, R027/R060–R065 validated, 1400+ tests)
 - [x] M010: Pluggable State Backend — StateBackend trait, CapabilitySet, LocalFsBackend with all Tier-2 writes, CapabilitySet degradation paths in Mesh/Gossip, smelt-agent plugin (complete, R071–R075 validated, 1488 tests)
+- [ ] M011: Concrete Remote Backends — LinearBackend, GitHubBackend, SshSyncBackend in new assay-backends crate; backend factory fn; StateBackendConfig named variants (planned)

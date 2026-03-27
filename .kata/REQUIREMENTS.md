@@ -2,6 +2,50 @@
 
 ## Active
 
+### R076 — LinearBackend
+- Class: core-capability
+- Status: active
+- Description: `assay_backends::linear::LinearBackend` implements `StateBackend`. `push_session_event` creates a Linear issue on first call (title = run_id, description = session list) and appends a comment on subsequent calls with the full `OrchestratorStatus` JSON. `read_run_state` fetches the latest comment and deserializes it back. API key from `LINEAR_API_KEY` env var. `capabilities()` returns messaging:false, gossip_manifest:false, annotations:true, checkpoints:false.
+- Why it matters: Teams using Linear for project tracking get run observability without any extra tooling — session transitions appear as issue comments in the same place where work is planned.
+- Source: user
+- Primary owning slice: M011/S02
+- Supporting slices: M011/S01
+- Validation: unmapped
+- Notes: Requires `LINEAR_API_KEY`. Uses reqwest async client wrapped in a scoped tokio runtime (D150 pattern). Real API validation is UAT only.
+
+### R077 — GitHubBackend
+- Class: core-capability
+- Status: active
+- Description: `assay_backends::github::GitHubBackend` implements `StateBackend`. `push_session_event` shells out to `gh issue create` (first call) or `gh issue comment` (subsequent calls). `read_run_state` shells out to `gh issue view --json body`. `capabilities()` returns messaging:false, gossip_manifest:false, annotations:false, checkpoints:false.
+- Why it matters: Open-source or CI-first teams using GitHub Issues get run observability integrated directly into their repo's issue tracker, with zero extra tooling beyond the `gh` CLI they already use for PRs.
+- Source: user
+- Primary owning slice: M011/S03
+- Supporting slices: M011/S01
+- Validation: unmapped
+- Notes: Requires `gh` CLI installed and authenticated. Follows D008 (CLI-first), D065 (gh-first), D077 (--json for stable output) conventions. Messaging capability is false — GitHub Issues have no inbox/outbox semantics.
+
+### R078 — SshSyncBackend
+- Class: core-capability
+- Status: active
+- Description: `assay_backends::ssh::SshSyncBackend` implements all 7 `StateBackend` methods by shelling out to `scp` to push/pull files from a remote host. `CapabilitySet::all()` returned — the remote host mirrors the local filesystem layout. Config: `host`, `remote_assay_dir`, optional `user`, optional `port`.
+- Why it matters: Smelt workers running on remote machines can push state back to the controller via SSH — the same transport smelt already uses — without SCP being managed outside Assay. Encapsulates the existing smelt SCP pattern inside the trait.
+- Source: user
+- Primary owning slice: M011/S04
+- Supporting slices: M011/S01
+- Validation: unmapped
+- Notes: Uses `std::process::Command::arg()` chaining (never shell string interpolation) to prevent injection. All capabilities true because the remote mirrors local filesystem semantics. Real multi-machine validation is UAT only.
+
+### R079 — assay-backends crate and backend factory function
+- Class: core-capability
+- Status: active
+- Description: New `assay-backends` leaf crate with `linear`, `github`, `ssh` feature flags. `StateBackendConfig` gains `Linear`, `GitHub`, `Ssh` named variants (schema-snapshot-locked). `backend_from_config(config: &StateBackendConfig, assay_dir: PathBuf) -> Arc<dyn StateBackend>` factory function resolves any variant to the appropriate backend. CLI/MCP construction sites use the factory fn instead of hardcoded `LocalFsBackend::new(...)` at manifest-dispatch call sites.
+- Why it matters: The factory function is the bridge between the declarative `RunManifest.state_backend` config and the runtime `Arc<dyn StateBackend>` used by `OrchestratorConfig`. Without it, CLI/MCP callers must duplicate dispatch logic and import each backend directly.
+- Source: inferred
+- Primary owning slice: M011/S01
+- Supporting slices: M011/S04
+- Validation: unmapped
+- Notes: `assay-backends` depends on `assay-core` + `assay-types` (not vice versa, consistent with D003 dep-graph direction). Factory fn lives in `assay_backends::factory`. Feature flags gate each backend's deps — `reqwest` only in the binary when `linear` or `github` features are enabled.
+
 ### R034 — OrchestratorMode selection
 - Class: core-capability
 - Status: validated
@@ -877,11 +921,16 @@
 | R073 | core-capability | validated | M010/S02 | M010/S03 | S02 |
 | R074 | core-capability | validated | M010/S03 | M010/S02 | S03 |
 | R075 | differentiator | validated | M010/S04 | M010/S02 | S04 |
+| R076 | core-capability | active | M011/S02 | M011/S01 | unmapped |
+| R077 | core-capability | active | M011/S03 | M011/S01 | unmapped |
+| R078 | core-capability | active | M011/S04 | M011/S01 | unmapped |
+| R079 | core-capability | active | M011/S01 | M011/S04 | unmapped |
 
 ## Coverage Summary
 
-- Active requirements: 0
+- Active requirements: 4 (R076–R079)
 - Validated: 67 (R001–R029 except R025, R034–R065, R071–R075)
+- Unmapped active requirements: 0
 - Deferred: 3 (R025, R066, R067)
 - Out of scope: 4 (R030, R031, R032, R033)
 - Unmapped active requirements: 0
