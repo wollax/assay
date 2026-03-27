@@ -50,7 +50,7 @@ This milestone is complete only when all are true:
 
 ## Slices
 
-- [ ] **S01: GuardDaemon backend plumbing and contract tests** `risk:high` `depends:[]`
+- [x] **S01: GuardDaemon backend plumbing and contract tests** `risk:high` `depends:[]`
   > After this: `GuardDaemon` accepts `Arc<dyn StateBackend>`; `try_save_checkpoint` routes through it; `start_guard()` API updated; CLI wired; contract tests proving routing with spy backend; `just ready` green with 1526+ tests.
 
 ## Boundary Map

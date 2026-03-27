@@ -1,8 +1,8 @@
 # Kata State
 
-**Active Milestone:** M012 — Checkpoint Persistence on Remote Backends
-**Active Slice:** S01 — GuardDaemon backend plumbing and contract tests ✅
-**Active Task:** None — S01 complete
+**Active Milestone:** None — M012 complete
+**Active Slice:** None
+**Active Task:** None
 **Phase:** Done
 
 ## Recent Decisions
@@ -13,11 +13,12 @@
 - None
 
 ## Progress
-- M011 ✅ COMPLETE (R076–R079 validated, 1526 tests with all features)
+- M011 ✅ COMPLETE (R076–R079 validated, 1503 tests with all features)
 - M012/S01/T01 ✅ SpyBackend + contract tests (red state)
 - M012/S01/T02 ✅ Backend field, dual constructors, checkpoint routing, start_guard dual sigs
-- M012/S01/T03 ✅ CLI wiring verified, just ready green (1501 tests, 0 failures), R080 validated
+- M012/S01/T03 ✅ CLI wiring verified, just ready green (1503 tests, 0 failures), R080 validated
 - M012/S01 ✅ COMPLETE — all 3 tasks done, all slice verification checks pass
+- M012 ✅ COMPLETE — only slice (S01) done; R080 validated; 72/72 active requirements validated
 
 ## Next Action
-Slice S01 complete. M012 has one slice — milestone complete. Await next milestone.
+All milestones complete. Await next milestone definition.
