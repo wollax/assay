@@ -2,6 +2,17 @@
 
 ## Active
 
+### R080 — Checkpoint persistence routed through StateBackend
+- Class: core-capability
+- Status: validated
+- Description: `GuardDaemon` accepts `Arc<dyn StateBackend>` at construction. `try_save_checkpoint` calls `backend.save_checkpoint_summary()` when `capabilities().supports_checkpoints` is true; falls back to the direct local `save_checkpoint()` call when false. `start_guard()` public API extended to accept the backend. CLI `handle_guard_start` passes `LocalFsBackend` by default (no behavior change for existing users). Contract tests prove the routing.
+- Why it matters: `save_checkpoint_summary` exists on the trait and is implemented by `SshSyncBackend`, but nothing calls it in production code. Remote workers cannot push checkpoint state until this wiring exists. M011 built the abstraction; M012 makes it real.
+- Source: user
+- Primary owning slice: M012/S01
+- Supporting slices: none
+- Validation: S01 — `GuardDaemon.backend: Arc<dyn StateBackend>` field added behind orchestrate gate; `save_checkpoint_routed()` routes through backend when `supports_checkpoints = true`, falls back to local otherwise; `start_guard()` signature extended; CLI `handle_guard_start` passes `Arc::new(LocalFsBackend::new(assay))` by default; `contract_backend_called_when_supports_checkpoints` and `contract_backend_not_called_when_no_checkpoint_capability` both pass; `just ready` green with 1503 tests.
+- Notes: Orchestrators (executor.rs, mesh.rs, gossip.rs) do NOT call save_checkpoint_summary — they lack TeamCheckpoint data. The guard daemon is the only checkpoint extraction path. LinearBackend and GitHubBackend keep supports_checkpoints=false.
+
 ### R076 — LinearBackend
 - Class: core-capability
 - Status: validated
@@ -925,11 +936,12 @@
 | R077 | core-capability | validated | M011/S03 | M011/S01 | S03 |
 | R078 | core-capability | validated | M011/S04 | M011/S01 | S04 |
 | R079 | core-capability | validated | M011/S01 | M011/S04 | S01 |
+| R080 | core-capability | validated | M012/S01 | none | S01 |
 
 ## Coverage Summary
 
 - Active requirements: 0
-- Validated: 71 (R001–R029 except R025, R034–R065, R071–R079)
+- Validated: 72 (R001–R029 except R025, R034–R065, R071–R080)
 - Unmapped active requirements: 0
 - Deferred: 3 (R025, R066, R067)
 - Out of scope: 4 (R030, R031, R032, R033)

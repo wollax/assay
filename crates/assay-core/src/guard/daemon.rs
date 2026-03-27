@@ -10,6 +10,11 @@ use assay_types::GuardConfig;
 use assay_types::context::PrescriptionTier;
 use tracing::{error, info, warn};
 
+#[cfg(feature = "orchestrate")]
+use crate::state_backend::StateBackend;
+#[cfg(feature = "orchestrate")]
+use std::sync::Arc;
+
 use super::circuit_breaker::CircuitBreaker;
 use super::pid;
 use super::thresholds::{ThresholdLevel, evaluate_thresholds};
@@ -25,10 +30,34 @@ pub struct GuardDaemon {
     breaker: CircuitBreaker,
     /// Debounce: timestamp of last threshold check.
     last_check: Option<Instant>,
+    #[cfg(feature = "orchestrate")]
+    backend: Arc<dyn StateBackend>,
 }
 
 impl GuardDaemon {
     /// Create a new guard daemon.
+    #[cfg(feature = "orchestrate")]
+    pub fn new(
+        session_path: PathBuf,
+        assay_dir: PathBuf,
+        project_dir: PathBuf,
+        config: GuardConfig,
+        backend: Arc<dyn StateBackend>,
+    ) -> Self {
+        let breaker = CircuitBreaker::new(config.max_recoveries, config.recovery_window_secs);
+        Self {
+            session_path,
+            assay_dir,
+            project_dir,
+            config,
+            breaker,
+            last_check: None,
+            backend,
+        }
+    }
+
+    /// Create a new guard daemon.
+    #[cfg(not(feature = "orchestrate"))]
     pub fn new(
         session_path: PathBuf,
         assay_dir: PathBuf,
@@ -307,20 +336,52 @@ impl GuardDaemon {
     }
 
     /// Attempt to save a checkpoint. Logs errors but does not propagate them.
+    ///
+    /// Extracts team state from the project directory, then routes the
+    /// checkpoint via [`save_checkpoint_routed`](Self::save_checkpoint_routed).
     fn try_save_checkpoint(&self, trigger: &str) {
         match crate::checkpoint::extract_team_state(&self.project_dir, None, trigger) {
             Ok(checkpoint) => {
-                match crate::checkpoint::save_checkpoint(&self.assay_dir, &checkpoint) {
-                    Ok(path) => {
-                        info!("[guard] Checkpoint saved: {}", path.display());
-                    }
-                    Err(e) => {
-                        warn!("[guard] Checkpoint save failed: {e}");
-                    }
-                }
+                self.save_checkpoint_routed(&checkpoint);
             }
             Err(e) => {
                 warn!("[guard] Checkpoint extraction failed: {e}");
+            }
+        }
+    }
+
+    /// Route a checkpoint to the backend or local storage.
+    ///
+    /// When the `orchestrate` feature is enabled and the backend advertises
+    /// `supports_checkpoints`, routes through `backend.save_checkpoint_summary()`.
+    /// Otherwise falls back to the local `save_checkpoint()` path.
+    fn save_checkpoint_routed(&self, checkpoint: &assay_types::TeamCheckpoint) {
+        #[cfg(feature = "orchestrate")]
+        {
+            let supports_checkpoints = self.backend.capabilities().supports_checkpoints;
+            if supports_checkpoints {
+                match self
+                    .backend
+                    .save_checkpoint_summary(&self.assay_dir, checkpoint)
+                {
+                    Ok(()) => {
+                        info!("[guard] Checkpoint saved via backend");
+                    }
+                    Err(e) => {
+                        warn!("[guard] Backend checkpoint save failed: {e}");
+                    }
+                }
+                return;
+            }
+        }
+
+        // Non-orchestrate path, or orchestrate with supports_checkpoints=false
+        match crate::checkpoint::save_checkpoint(&self.assay_dir, checkpoint) {
+            Ok(path) => {
+                info!("[guard] Checkpoint saved: {}", path.display());
+            }
+            Err(e) => {
+                warn!("[guard] Checkpoint save failed: {e}");
             }
         }
     }
@@ -339,6 +400,180 @@ impl GuardDaemon {
 mod tests {
     use super::*;
 
+    #[cfg(feature = "orchestrate")]
+    use crate::state_backend::*;
+    #[cfg(feature = "orchestrate")]
+    use assay_types::TeamCheckpoint;
+    #[cfg(feature = "orchestrate")]
+    use std::sync::{Arc, Mutex};
+
+    // -----------------------------------------------------------------------
+    // SpyBackend — recording test double for StateBackend
+    // -----------------------------------------------------------------------
+
+    #[cfg(feature = "orchestrate")]
+    struct SpyBackend {
+        calls: Arc<Mutex<Vec<TeamCheckpoint>>>,
+    }
+
+    #[cfg(feature = "orchestrate")]
+    impl SpyBackend {
+        fn new() -> (Self, Arc<Mutex<Vec<TeamCheckpoint>>>) {
+            let calls = Arc::new(Mutex::new(Vec::new()));
+            (
+                Self {
+                    calls: Arc::clone(&calls),
+                },
+                calls,
+            )
+        }
+    }
+
+    #[cfg(feature = "orchestrate")]
+    impl StateBackend for SpyBackend {
+        fn capabilities(&self) -> CapabilitySet {
+            CapabilitySet {
+                supports_checkpoints: true,
+                ..CapabilitySet::none()
+            }
+        }
+
+        fn push_session_event(
+            &self,
+            _run_dir: &std::path::Path,
+            _status: &assay_types::OrchestratorStatus,
+        ) -> crate::Result<()> {
+            Ok(())
+        }
+
+        fn read_run_state(
+            &self,
+            _run_dir: &std::path::Path,
+        ) -> crate::Result<Option<assay_types::OrchestratorStatus>> {
+            Ok(None)
+        }
+
+        fn send_message(
+            &self,
+            _inbox_path: &std::path::Path,
+            _name: &str,
+            _contents: &[u8],
+        ) -> crate::Result<()> {
+            Ok(())
+        }
+
+        fn poll_inbox(
+            &self,
+            _inbox_path: &std::path::Path,
+        ) -> crate::Result<Vec<(String, Vec<u8>)>> {
+            Ok(vec![])
+        }
+
+        fn annotate_run(
+            &self,
+            _run_dir: &std::path::Path,
+            _manifest_path: &str,
+        ) -> crate::Result<()> {
+            Ok(())
+        }
+
+        fn save_checkpoint_summary(
+            &self,
+            _assay_dir: &std::path::Path,
+            checkpoint: &TeamCheckpoint,
+        ) -> crate::Result<()> {
+            self.calls.lock().unwrap().push(checkpoint.clone());
+            Ok(())
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Contract tests — backend routing (red state until T02 wires backend)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    #[cfg(feature = "orchestrate")]
+    fn contract_backend_called_when_supports_checkpoints() {
+        let dir = tempfile::tempdir().unwrap();
+        let project_dir = dir.path().to_path_buf();
+        let assay_dir = project_dir.join(".assay");
+        std::fs::create_dir_all(&assay_dir).unwrap();
+
+        let (spy, calls) = SpyBackend::new();
+        let session_path = project_dir.join("session.jsonl");
+
+        let daemon = GuardDaemon::new(
+            session_path,
+            assay_dir,
+            project_dir,
+            default_config(),
+            Arc::new(spy),
+        );
+
+        // Build a minimal checkpoint to test routing directly
+        let checkpoint = TeamCheckpoint {
+            version: 1,
+            session_id: "test-session".into(),
+            trigger: "test".into(),
+            timestamp: "2025-01-01T00:00:00Z".into(),
+            agents: vec![],
+            tasks: vec![],
+            context_health: None,
+            project: "test-project".into(),
+        };
+
+        daemon.save_checkpoint_routed(&checkpoint);
+        assert_eq!(
+            calls.lock().unwrap().len(),
+            1,
+            "spy backend should have recorded exactly one checkpoint"
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "orchestrate")]
+    fn contract_backend_not_called_when_no_checkpoint_capability() {
+        let dir = tempfile::tempdir().unwrap();
+        let project_dir = dir.path().to_path_buf();
+        let assay_dir = project_dir.join(".assay");
+        std::fs::create_dir_all(&assay_dir).unwrap();
+
+        let noop = NoopBackend; // supports_checkpoints = false
+        let session_path = project_dir.join("session.jsonl");
+
+        let daemon = GuardDaemon::new(
+            session_path,
+            assay_dir.clone(),
+            project_dir,
+            default_config(),
+            Arc::new(noop),
+        );
+
+        // Build a minimal checkpoint to test routing directly
+        let checkpoint = TeamCheckpoint {
+            version: 1,
+            session_id: "test-session".into(),
+            trigger: "test".into(),
+            timestamp: "2025-01-01T00:00:00Z".into(),
+            agents: vec![],
+            tasks: vec![],
+            context_health: None,
+            project: "test-project".into(),
+        };
+
+        daemon.save_checkpoint_routed(&checkpoint);
+
+        // Local checkpoint path should have been used instead of backend.
+        // The local save creates files under assay_dir/checkpoints/.
+        // The key contract: NoopBackend.save_checkpoint_summary was NOT called
+        // (it would be a logic error since supports_checkpoints=false).
+        let checkpoints_dir = assay_dir.join("checkpoints");
+        assert!(
+            checkpoints_dir.exists(),
+            "local checkpoint path should have been used when backend lacks checkpoint capability"
+        );
+    }
+
     fn default_config() -> GuardConfig {
         serde_json::from_str("{}").unwrap()
     }
@@ -350,6 +585,22 @@ mod tests {
         .unwrap()
     }
 
+    #[cfg(feature = "orchestrate")]
+    fn make_daemon(session_path: PathBuf, assay_dir: PathBuf, config: GuardConfig) -> GuardDaemon {
+        let project_dir = assay_dir
+            .parent()
+            .map(|p| p.to_path_buf())
+            .unwrap_or_else(|| assay_dir.clone());
+        GuardDaemon::new(
+            session_path,
+            assay_dir,
+            project_dir,
+            config,
+            Arc::new(crate::state_backend::NoopBackend),
+        )
+    }
+
+    #[cfg(not(feature = "orchestrate"))]
     fn make_daemon(session_path: PathBuf, assay_dir: PathBuf, config: GuardConfig) -> GuardDaemon {
         let project_dir = assay_dir
             .parent()
@@ -359,6 +610,25 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "orchestrate")]
+    fn guard_daemon_new_creates_valid_struct() {
+        let daemon = GuardDaemon::new(
+            PathBuf::from("/tmp/session.jsonl"),
+            PathBuf::from("/tmp/.assay"),
+            PathBuf::from("/tmp"),
+            default_config(),
+            Arc::new(crate::state_backend::NoopBackend),
+        );
+
+        assert_eq!(daemon.session_path, PathBuf::from("/tmp/session.jsonl"));
+        assert_eq!(daemon.assay_dir, PathBuf::from("/tmp/.assay"));
+        assert_eq!(daemon.project_dir, PathBuf::from("/tmp"));
+        assert!(daemon.last_check.is_none());
+        assert!(!daemon.breaker.is_tripped());
+    }
+
+    #[test]
+    #[cfg(not(feature = "orchestrate"))]
     fn guard_daemon_new_creates_valid_struct() {
         let daemon = GuardDaemon::new(
             PathBuf::from("/tmp/session.jsonl"),
