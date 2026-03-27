@@ -2,7 +2,7 @@
 
 **Active Milestone:** M011 — Concrete Remote Backends
 **Active Slice:** S01 — assay-backends crate scaffold and StateBackendConfig variants
-**Active Task:** T02 — Write tests, regenerate schema snapshots, and pass `just ready`
+**Active Task:** T02 ✅ — Write tests, regenerate schema snapshots, and pass `just ready`
 **Phase:** Executing
 
 ## Recent Decisions
@@ -16,5 +16,9 @@
 ## Blockers
 - None
 
+## Progress
+- S01/T01 ✅ — Added Linear/GitHub/Ssh variants to StateBackendConfig, created assay-backends crate
+- S01/T02 ✅ — Added serde round-trip + factory dispatch tests, regenerated schema snapshots, just ready green (1497 tests)
+
 ## Next Action
-Execute M011/S01/T02: Write serde round-trip tests, factory dispatch tests, regenerate schema snapshots, pass `just ready`.
+S01 complete — all tasks done. Proceed to slice verification and close-out.
