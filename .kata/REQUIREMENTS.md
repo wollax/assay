@@ -15,14 +15,14 @@
 
 ### R077 — GitHubBackend
 - Class: core-capability
-- Status: active
+- Status: validated
 - Description: `assay_backends::github::GitHubBackend` implements `StateBackend`. `push_session_event` shells out to `gh issue create` (first call) or `gh issue comment` (subsequent calls). `read_run_state` shells out to `gh issue view --json body`. `capabilities()` returns messaging:false, gossip_manifest:false, annotations:false, checkpoints:false.
 - Why it matters: Open-source or CI-first teams using GitHub Issues get run observability integrated directly into their repo's issue tracker, with zero extra tooling beyond the `gh` CLI they already use for PRs.
 - Source: user
 - Primary owning slice: M011/S03
 - Supporting slices: M011/S01
-- Validation: unmapped
-- Notes: Requires `gh` CLI installed and authenticated. Follows D008 (CLI-first), D065 (gh-first), D077 (--json for stable output) conventions. Messaging capability is false — GitHub Issues have no inbox/outbox semantics.
+- Validation: S03 — `GitHubBackend` implements all 7 `StateBackend` methods; `push_session_event` creates issue on first call and comments on subsequent via `--body-file -` stdin pipe; `read_run_state` deserializes latest comment (falls back to issue body if no comments); `capabilities()` returns `CapabilitySet::none()` (all-false); 8 mock-subprocess contract tests pass; `backend_from_config()` dispatches `GitHub → GitHubBackend`; `just ready` green with 1501 tests. Real `gh` CLI validation is UAT only.
+- Notes: Requires `gh` CLI installed and authenticated. Follows D008 (CLI-first), D065 (gh-first), D077 (--json for stable output) conventions. Messaging capability is false — GitHub Issues have no inbox/outbox semantics. Body passed via `--body-file -` with `Stdio::piped()` to avoid ARG_MAX and shell quoting issues.
 
 ### R078 — SshSyncBackend
 - Class: core-capability
@@ -922,14 +922,14 @@
 | R074 | core-capability | validated | M010/S03 | M010/S02 | S03 |
 | R075 | differentiator | validated | M010/S04 | M010/S02 | S04 |
 | R076 | core-capability | validated | M011/S02 | M011/S01 | S02 |
-| R077 | core-capability | active | M011/S03 | M011/S01 | unmapped |
+| R077 | core-capability | validated | M011/S03 | M011/S01 | S03 |
 | R078 | core-capability | active | M011/S04 | M011/S01 | unmapped |
 | R079 | core-capability | validated | M011/S01 | M011/S04 | S01 |
 
 ## Coverage Summary
 
-- Active requirements: 2 (R077–R078)
-- Validated: 69 (R001–R029 except R025, R034–R065, R071–R076, R079)
+- Active requirements: 1 (R078)
+- Validated: 70 (R001–R029 except R025, R034–R065, R071–R077, R079)
 - Unmapped active requirements: 0
 - Deferred: 3 (R025, R066, R067)
 - Out of scope: 4 (R030, R031, R032, R033)
