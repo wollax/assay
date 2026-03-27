@@ -8,14 +8,17 @@ repository.workspace = true
 [dependencies]
 assay-core = { workspace = true, features = ["orchestrate"] }
 assay-types = { workspace = true, features = ["orchestrate"] }
+reqwest = { version = "0.13", features = ["blocking", "json"], optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
+chrono = { workspace = true }
+mockito = "1"
 tempfile = { workspace = true }
 
 [features]
-linear = []
+linear = ["reqwest"]
 github = []
 ssh = []
