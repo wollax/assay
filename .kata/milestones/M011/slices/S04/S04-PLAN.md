@@ -44,7 +44,7 @@
 
 ## Tasks
 
-- [ ] **T01: Write contract tests for SshSyncBackend (red state)** `est:45m`
+- [x] **T01: Write contract tests for SshSyncBackend (red state)** `est:45m`
   - Why: test-first discipline (D079 pattern) — tests define the contract before implementation, catching any API mismatch immediately at compile time when T02 ships
   - Files: `crates/assay-backends/tests/ssh_backend.rs`
   - Do: Create `tests/ssh_backend.rs` with `#![cfg(feature = "ssh")]`. Write `write_mock_scp(dir, handlers)` helper (same pattern as `write_mock_gh` in `github_backend.rs`) that produces a shell script dispatching on the last two position-significant args (push: local→remote; pull: remote→local). Write `write_mock_ssh(dir, handlers)` helper for `ssh` commands (`mkdir -p`, `ls`, `rm`). Write `with_mock_path(dir, f)` helper that prepends `dir` to `PATH` (same pattern as `with_mock_gh_path`). Write 9 tests all annotated `#[serial]`: (1) `capabilities_returns_all()`, (2) `push_session_event_first_call_creates_remote_dir_and_pushes_state()`, (3) `push_session_event_second_call_pushes_updated_state()`, (4) `read_run_state_returns_deserialized_status()`, (5) `read_run_state_returns_none_when_file_missing()`, (6) `send_message_pushes_to_remote_inbox()`, (7) `poll_inbox_pulls_and_removes_remote_files()`, (8) `annotate_run_pushes_annotation_file()`, (9) `injection_safety_spaces_in_remote_path_do_not_cause_shell_split()`. Reference `assay_backends::ssh::SshSyncBackend` — compile will fail until T02. The mock scp script for pull tests must write predefined content to the destination path argument. The injection safety test uses `remote_assay_dir = "/remote/assay dir with spaces"` and verifies `push_session_event` returns `Ok(())` without shell splitting the path.
