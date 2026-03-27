@@ -27,7 +27,7 @@ async fn test_current_branch() {
 async fn test_head_short() {
     let (_tmp, cli) = setup_test_repo();
     let hash = cli.head_short().await.expect("head_short");
-    // Short hash is typically 7-12 hex characters
+    // Short hash is at least 7 hex characters (length varies with repo size and git config)
     assert!(
         hash.len() >= 7 && hash.chars().all(|c| c.is_ascii_hexdigit()),
         "expected short hex hash, got: {hash}",

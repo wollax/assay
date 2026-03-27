@@ -1,6 +1,7 @@
 use super::setup_test_repo;
 use crate::error::SmeltError;
 use crate::git::GitOps;
+use crate::git::cli::GitCli;
 
 #[tokio::test]
 async fn test_merge_squash_clean() {
@@ -293,7 +294,7 @@ async fn test_fetch_ref_creates_local_branch() {
             .expect("git config");
     }
 
-    let git = crate::git::cli::GitCli::new(git_bin.clone(), work_dir.path().to_path_buf());
+    let git = GitCli::new(git_bin.clone(), work_dir.path().to_path_buf());
 
     // The local branch "fetched-main" does not exist yet
     assert!(

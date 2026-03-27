@@ -160,7 +160,8 @@ pub(super) fn validate_manifest(manifest: &JobManifest) -> crate::Result<()> {
         }
     }
 
-    // forge section validation (structural only — D018)
+    // Validate forge structure but not token value or repo existence
+    // (those are runtime concerns, resolved at execution time).
     if let Some(ref forge) = manifest.forge {
         if forge.token_env.trim().is_empty() {
             errors.push("forge.token_env: must not be empty".to_string());
