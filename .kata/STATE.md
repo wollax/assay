@@ -17,7 +17,7 @@
 - M011/S01 ✅ — assay-backends crate scaffold and StateBackendConfig variants complete (1499 tests green)
 - M011/S02 ✅ — LinearBackend complete (8 contract tests + factory dispatch — 1501 total tests green)
 - M011/S03 ✅ — GitHubBackend complete (8 contract tests + factory dispatch — 1501 total tests green)
-- M011/S04 🔵 — SshSyncBackend + CLI/MCP factory wiring (T01 ✅, T02 ✅, T03 next)
+- M011/S04 🔵 — SshSyncBackend + CLI/MCP factory wiring (T01 ✅, T02 ✅, T03 ✅ — all tasks complete)
 
 ## Next Action
-S04/T03: Wire backend_from_config() into CLI/MCP construction sites
+S04 slice verification and completion
