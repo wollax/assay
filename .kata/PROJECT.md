@@ -12,6 +12,12 @@ Automated infrastructure delivery: `smelt run manifest.toml` provisions → runs
 
 ## Current State
 
+**M011/S01 complete.** `manifest.rs` (1924L) and `git/cli.rs` (1365L) decomposed into 14 focused modules under 500 lines each (max 337L). All 290 workspace tests pass unchanged. R060 validated.
+
+**M010 complete.** HTTP API authentication and code quality. S01 delivered bearer token auth for `smelt serve`: opt-in `[auth]` config with env var resolution, read/write permission split middleware (GET/HEAD = read, POST/DELETE = write), 401/403 JSON error responses, and 4 integration tests covering all token×permission combinations. S02 cleaned up two PR review debt items: extracted `warn_teardown()` replacing 6 silent `let _ =` blocks with logged warnings, replaced 5 `anyhow!("{e}")` with `.context()`, and extracted `build_common_ssh_args()` eliminating SSH/SCP flag duplication. S03 documented the `[auth]` section in `examples/server.toml` and README.md, then verified all milestone success criteria (290 tests, clippy clean, doc clean). R050–R053 validated.
+
+**M009 complete.** Documentation, examples, and code cleanup. S01 enforced `#![deny(missing_docs)]` on smelt-cli, audited stale `#[allow]` annotations, fixed cargo doc warnings. S02 wrote comprehensive README.md and annotated all example manifests. S03 decomposed three large files (run.rs, ssh.rs, serve/tests.rs) into focused modules. 286 tests green.
+
 **M008 complete.** SSH worker pools — `smelt serve` dispatches jobs to remote machines via SSH. S01 delivered `WorkerConfig` + `SshClient` trait + probe timeout. S02 added `deliver_manifest()` + `run_remote_job()` with MockSshClient. S03 added `sync_state_back()` for recursive remote-to-local state sync. S04 wired everything into `dispatch_loop`: round-robin worker selection with probe-based offline skip, all-workers-offline re-queue, `worker_host` visible in `GET /api/v1/jobs` and TUI Worker column. 286 workspace tests green (81 smelt-cli + 155 smelt-core + integration + doctests), 0 failures. R027 validated. Live multi-host proof deferred to S04-UAT.md.
 
 **M007 complete.** `smelt serve` now survives restarts without losing queued work. Queue state is written atomically to `queue_dir/.smelt-queue-state.toml` on every enqueue/complete/cancel (S02) and loaded on startup via `ServerState::load_or_new()` (S03). Jobs that were Queued/Retrying/Running at crash time are automatically re-dispatched on restart with attempt counts preserved. R028 (persistent queue) validated. 52 smelt-cli tests pass.
@@ -83,6 +89,7 @@ examples/
 | M008 | SSH Worker Pools | ✅ Complete (2026-03-24, pending live UAT via S04-UAT.md) |
 | M009 | Documentation, Examples & Code Cleanup | ✅ Complete (2026-03-24) |
 | M010 | HTTP API Authentication & Code Quality | ✅ Complete (2026-03-24) |
+| M011 | Code Quality III & Operational Hardening | 🔄 Active (S01 ✅) |
 
 ## Technology Decisions
 

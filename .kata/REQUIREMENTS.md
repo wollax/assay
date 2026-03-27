@@ -92,6 +92,50 @@ This file is the explicit capability and coverage contract for the project.
 - Validation: validated
 - Notes: Proven by M003/S04: test_ensure_gitignore_creates, test_ensure_gitignore_appends, test_ensure_gitignore_idempotent, test_ensure_gitignore_trailing_newline. ensure_gitignore_assay() placed after Phase 3 (D066); non-fatal on error.
 
+### R060 — Large file decomposition round 2
+- Class: quality-attribute
+- Status: validated
+- Description: Files over 500 lines are decomposed into focused modules. Targets: manifest.rs (1924L), git/cli.rs (1365L).
+- Why it matters: M009 decomposed three files but missed the two largest. Large files are harder to navigate, review, and modify.
+- Source: execution (M009 forward intelligence)
+- Primary owning slice: M011/S01
+- Supporting slices: none
+- Validation: validated
+- Notes: Proven by M011/S01: both manifest.rs (1924L→307L mod.rs) and git/cli.rs (1365L→332L mod.rs) decomposed into directory modules; all 14 new files under 500L (max 337L); all 290 workspace tests pass unchanged; `cargo clippy` and `cargo doc` clean. Follows D126, D128, D129, D141, D142, D143.
+
+### R061 — Flaky test fix (test_cli_run_invalid_manifest)
+- Class: quality-attribute
+- Status: active
+- Description: `test_cli_run_invalid_manifest` uses a 10s subprocess timeout that's too short when cargo needs to link, causing intermittent failures.
+- Why it matters: Flaky tests erode trust in the test suite and block CI.
+- Source: execution (M010 forward intelligence)
+- Primary owning slice: M011/S02
+- Supporting slices: none
+- Validation: unmapped
+- Notes: Pre-existing issue confirmed at M009 completion commit. Needs increased timeout or restructured test approach.
+
+### R062 — Full tracing migration
+- Class: quality-attribute
+- Status: active
+- Description: All `eprintln!` calls in smelt-cli are replaced with structured `tracing` events. User-facing output remains clean and readable at default log level.
+- Why it matters: `eprintln!` output cannot be filtered, structured, or redirected. Tracing enables operators to control verbosity via `SMELT_LOG` and get structured diagnostic output.
+- Source: user
+- Primary owning slice: M011/S02
+- Supporting slices: none
+- Validation: unmapped
+- Notes: ~50 eprintln! calls across phases.rs (33), watch.rs (10), status.rs (3), and others. main.rs error handler excluded.
+
+### R063 — Health check endpoint
+- Class: operability
+- Status: active
+- Description: `smelt serve` exposes `GET /health` that returns 200 with `{"status": "ok"}` without requiring authentication.
+- Why it matters: Load balancers and monitoring systems need to probe service health without credentials.
+- Source: user
+- Primary owning slice: M011/S03
+- Supporting slices: none
+- Validation: unmapped
+- Notes: Must bypass auth middleware even when `[auth]` is configured. Simple liveness check — no detailed status.
+
 ---
 
 ## Validated
@@ -469,10 +513,14 @@ This file is the explicit capability and coverage contract for the project.
 | R051 | compliance/security  | validated   | M010/S01      | M010/S03             | validated |
 | R052 | failure-visibility   | validated   | M010/S02      | none                 | validated |
 | R053 | quality-attribute    | validated   | M010/S02      | none                 | validated |
+| R060 | quality-attribute    | validated   | M011/S01      | none                 | validated |
+| R061 | quality-attribute    | active      | M011/S02      | none                 | mapped    |
+| R062 | quality-attribute    | active      | M011/S02      | none                 | mapped    |
+| R063 | operability          | active      | M011/S03      | none                 | mapped    |
 
 ## Coverage Summary
 
-- Active requirements: 0
-- Mapped to slices: 0
-- Validated (all milestones through M010/S02): 31 (R001–R008, R010–R015, R020, R021, R023, R024, R025, R027, R028, R040, R041, R042, R043, R044, R045, R050, R051, R052, R053)
+- Active requirements: 4 (R060, R061, R062, R063)
+- Mapped to slices: 4
+- Validated (all milestones through M010): 31 (R001–R008, R010–R015, R020, R021, R023, R024, R025, R027, R028, R040–R045, R050–R053)
 - Unmapped active requirements: 0

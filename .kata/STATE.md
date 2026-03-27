@@ -1,15 +1,19 @@
 # Kata State
 
-**Active Milestone:** M010 — HTTP API Authentication & Code Quality
-**Active Slice:** — (all slices complete)
+**Active Milestone:** M011 — Code Quality III & Operational Hardening
+**Active Slice:** — (S01 complete; advancing to S02)
 **Active Task:** —
-**Phase:** Milestone complete
+**Phase:** Executing
 
 ## Recent Decisions
-- D132–D138: Auth decisions from S01
+- D139: Full tracing migration (replace all eprintln with tracing)
+- D140: Health endpoint unauthenticated
+- D141: `ValidationErrors` co-located in `validation.rs`
+- D142: `minimal_toml()` helper reduces test boilerplate
+- D143: `git mv` for file-to-directory conversion; `git/mod.rs` needs zero changes
 
 ## Blockers
 - None
 
 ## Next Action
-M010 is complete. All 3 slices done: S01 (bearer auth middleware), S02 (teardown + SSH DRY), S03 (documentation + final verification). 290 tests, clippy clean, doc clean. All success criteria met. Ready for next milestone or project completion.
+Begin S02: Full tracing migration + flaky test fix.
