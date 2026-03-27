@@ -2,8 +2,8 @@
 
 **Active Milestone:** M011 — Concrete Remote Backends
 **Active Slice:** S01 — assay-backends crate scaffold and StateBackendConfig variants
-**Active Task:** none (planning complete, S01 not started)
-**Phase:** Planning
+**Active Task:** T01 — Add StateBackendConfig variants and create assay-backends crate
+**Phase:** Executing
 
 ## Recent Decisions
 - D160: assay-backends as new leaf crate (linear/github/ssh feature flags)
@@ -17,4 +17,4 @@
 - None
 
 ## Next Action
-Execute M011/S01: create `crates/assay-backends/` crate, add Linear/GitHub/Ssh variants to `StateBackendConfig`, regenerate schema snapshots, implement `backend_from_config()` stub factory, run `just ready`.
+Execute M011/S01/T01: Add Linear/GitHub/Ssh variants to StateBackendConfig, create assay-backends crate with factory fn.
