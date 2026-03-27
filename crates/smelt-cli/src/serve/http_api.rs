@@ -177,18 +177,41 @@ async fn auth_middleware(
     Ok(next.run(request).await)
 }
 
+/// Health check endpoint that returns `{"status": "ok"}` with a 200 status code.
+///
+/// This endpoint is served on a separate, stateless router merged into the
+/// main router via `Router::merge()`, placing it structurally outside the
+/// auth middleware layer.  See [`build_router`].  Do not move this route
+/// into the API router chain — doing so would subject it to auth enforcement.
+///
+/// Load balancers, orchestrators, and monitoring probes can reach this
+/// endpoint without credentials regardless of whether `[auth]` is configured.
+async fn health_check() -> Json<serde_json::Value> {
+    Json(serde_json::json!({"status": "ok"}))
+}
+
 /// Build the axum router for the smelt-serve HTTP API.
 ///
-/// When `auth` is `Some`, bearer-token authentication is enforced on every
-/// request.  When `None`, the API is unauthenticated (backward-compatible).
+/// The `/health` endpoint is always unauthenticated regardless of the `auth`
+/// value — load balancers and probes can reach it without credentials.
+///
+/// When `auth` is `Some`, bearer-token authentication is enforced on all
+/// `/api/v1/*` routes.  When `auth` is `None`, those routes are also
+/// unauthenticated (preserving the pre-auth behaviour).
 pub(crate) fn build_router(state: SharedState, auth: Option<ResolvedAuth>) -> Router {
-    Router::new()
+    // API routes — auth middleware enforced when auth is Some, passthrough when None.
+    let api_routes = Router::new()
         .route("/api/v1/jobs", post(post_job))
         .route("/api/v1/jobs", get(list_jobs))
         .route("/api/v1/jobs/{id}", get(get_job))
         .route("/api/v1/jobs/{id}", delete(delete_job))
         .layer(axum::middleware::from_fn_with_state(auth, auth_middleware))
-        .with_state(state)
+        .with_state(state);
+
+    // Health routes — no auth, no shared state needed.
+    let health_routes = Router::new().route("/health", get(health_check));
+
+    api_routes.merge(health_routes)
 }
 
 /// POST /api/v1/jobs — accept raw TOML body, parse, validate, enqueue.

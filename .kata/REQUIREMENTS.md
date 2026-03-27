@@ -127,14 +127,14 @@ This file is the explicit capability and coverage contract for the project.
 
 ### R063 — Health check endpoint
 - Class: operability
-- Status: active
+- Status: validated
 - Description: `smelt serve` exposes `GET /health` that returns 200 with `{"status": "ok"}` without requiring authentication.
 - Why it matters: Load balancers and monitoring systems need to probe service health without credentials.
 - Source: user
 - Primary owning slice: M011/S03
 - Supporting slices: none
-- Validation: unmapped
-- Notes: Must bypass auth middleware even when `[auth]` is configured. Simple liveness check — no detailed status.
+- Validation: validated
+- Notes: Proven by M011/S03: `GET /health` route added via `Router::merge()` outside auth middleware; `test_health_endpoint_bypasses_auth` passes with auth configured and no token; README documents endpoint. Follows D140.
 
 ---
 
@@ -516,11 +516,11 @@ This file is the explicit capability and coverage contract for the project.
 | R060 | quality-attribute    | validated   | M011/S01      | none                 | validated |
 | R061 | quality-attribute    | active      | M011/S02      | none                 | mapped    |
 | R062 | quality-attribute    | active      | M011/S02      | none                 | mapped    |
-| R063 | operability          | active      | M011/S03      | none                 | mapped    |
+| R063 | operability          | validated   | M011/S03      | none                 | validated |
 
 ## Coverage Summary
 
-- Active requirements: 4 (R060, R061, R062, R063)
-- Mapped to slices: 4
-- Validated (all milestones through M010): 31 (R001–R008, R010–R015, R020, R021, R023, R024, R025, R027, R028, R040–R045, R050–R053)
+- Active requirements: 2 (R061, R062)
+- Mapped to slices: 2
+- Validated (all milestones through M011 partial): 33 (R001–R008, R010–R015, R020, R021, R023, R024, R025, R027, R028, R040–R045, R050–R053, R060, R063)
 - Unmapped active requirements: 0

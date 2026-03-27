@@ -59,7 +59,7 @@ This milestone is complete only when all are true:
 - [x] **S02: Full tracing migration + flaky test fix** `risk:high` `depends:[]`
   > After this: all `eprintln!` in smelt-cli replaced with tracing events; `smelt run --dry-run` output is clean and readable; `test_cli_run_invalid_manifest` passes reliably; `cargo test --workspace` 0 failures.
 
-- [ ] **S03: Health endpoint + final verification** `risk:low` `depends:[S01,S02]`
+- [x] **S03: Health endpoint + final verification** `risk:low` `depends:[S01,S02]`
   > After this: `GET /health` returns 200 without auth even when `[auth]` is configured; README updated; all milestone success criteria verified in one pass.
 
 ## Boundary Map

@@ -158,6 +158,17 @@ smelt serve --config server.toml --no-tui
 
 See [Server Mode](#server-mode) below for configuration details.
 
+#### Health Check
+
+The server exposes `GET /health` for load-balancer probes and uptime monitors. This endpoint is **unauthenticated** — it responds even when `[auth]` is configured, so external health checks don't need a token.
+
+```bash
+curl http://localhost:3000/health
+# {"status":"ok"}
+```
+
+A `200` response means the server is running and accepting connections. Any other status (or a connection refusal) indicates the server is down or not yet ready.
+
 ---
 
 ### `smelt status`

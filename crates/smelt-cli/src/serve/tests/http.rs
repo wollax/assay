@@ -172,6 +172,59 @@ async fn test_http_delete_running_job() {
     );
 }
 
+// ─── Health endpoint tests ─────────────────────────────────────────────
+
+#[tokio::test]
+async fn test_health_endpoint_bypasses_auth() {
+    let auth = crate::serve::http_api::ResolvedAuth {
+        write_token: "secret-write".to_string(),
+        read_token: Some("secret-read".to_string()),
+    };
+    let state = std::sync::Arc::new(std::sync::Mutex::new(ServerState::new(4)));
+    let base = super::start_test_server_with_auth(state, Some(auth)).await;
+
+    let client = reqwest::Client::new();
+
+    let resp = client
+        .get(format!("{base}/health"))
+        .send()
+        .await
+        .expect("GET /health request should succeed: server failed to respond");
+
+    assert_eq!(
+        resp.status(),
+        200,
+        "GET /health should return 200 even with auth configured and no token sent"
+    );
+
+    let body: serde_json::Value = resp
+        .json()
+        .await
+        .expect("GET /health response body should be valid JSON");
+    assert_eq!(
+        body["status"], "ok",
+        "health response body should contain status: ok"
+    );
+}
+
+#[tokio::test]
+async fn test_health_endpoint_no_auth_configured() {
+    let state = std::sync::Arc::new(std::sync::Mutex::new(ServerState::new(4)));
+    let base = super::start_test_server_with_auth(state, None).await;
+
+    let resp = reqwest::Client::new()
+        .get(format!("{base}/health"))
+        .send()
+        .await
+        .expect("GET /health should succeed when no auth is configured");
+
+    assert_eq!(
+        resp.status(),
+        200,
+        "GET /health should return 200 with no auth configured"
+    );
+}
+
 // ─── Auth integration tests ────────────────────────────────────────────
 
 /// Helper: create a `ResolvedAuth` with both read and write tokens.
