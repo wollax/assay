@@ -2,7 +2,7 @@
 
 **Active Milestone:** M011 — Concrete Remote Backends
 **Active Slice:** S02 — LinearBackend
-**Active Task:** T01
+**Active Task:** T02
 **Phase:** Executing
 
 ## Recent Decisions
@@ -19,7 +19,7 @@
 ## Progress
 - M010 ✅ — Pluggable State Backend complete (all 4 slices, 1488+ tests)
 - M011/S01 ✅ — assay-backends crate scaffold and StateBackendConfig variants complete (1499 tests green)
-- M011/S02 🔄 — LinearBackend (planned, 2 tasks: T01 contract tests, T02 implementation)
+- M011/S02 🔄 — LinearBackend (T01 ✅ contract tests red state, T02 pending)
 
 ## Next Action
-T01: Create LinearBackend contract tests (red state) — add reqwest/mockito deps, write 8 contract tests covering all StateBackend methods on LinearBackend
+T02: Implement LinearClient and LinearBackend — core implementation to make all 8 contract tests pass
