@@ -65,7 +65,7 @@ This milestone is complete only when all are true:
 - [x] **S03: GitHubBackend** `risk:medium` `depends:[S01]`
   > After this: `GitHubBackend` implements all 7 `StateBackend` methods; `push_session_event` shells out to `gh issue create`/`comment`; `read_run_state` shells out to `gh issue view`; contract tests with mock `gh` binary pass; `capabilities()` returns all-false except annotations where it returns true (or false — see plan); `just ready` green.
 
-- [ ] **S04: SshSyncBackend and CLI/MCP factory wiring** `risk:medium` `depends:[S01]`
+- [x] **S04: SshSyncBackend and CLI/MCP factory wiring** `risk:medium` `depends:[S01]`
   > After this: `SshSyncBackend` implements all 7 methods via `scp`; arg construction verified against injection; `CapabilitySet::all()` returned; `backend_from_config()` wired into all `assay-cli` and `assay-mcp` construction sites that receive a `RunManifest`; `just ready` green with 1488+ tests passing.
 
 ## Boundary Map
