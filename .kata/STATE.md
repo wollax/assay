@@ -2,7 +2,7 @@
 
 **Active Milestone:** M011 — Concrete Remote Backends
 **Active Slice:** S03 — GitHubBackend
-**Active Task:** T01
+**Active Task:** T02
 **Phase:** Executing
 
 ## Recent Decisions
@@ -22,8 +22,8 @@
 - M010 ✅ — Pluggable State Backend complete (all 4 slices, 1488+ tests)
 - M011/S01 ✅ — assay-backends crate scaffold and StateBackendConfig variants complete (1499 tests green)
 - M011/S02 ✅ — LinearBackend complete (8 contract tests + factory dispatch — 1501 total tests green)
-- M011/S03 🔵 — GitHubBackend — planned (T01: contract tests, T02: implementation + factory wiring)
+- M011/S03 🔵 — GitHubBackend — in progress (T01 ✅ contract tests red state, T02: implementation + factory wiring)
 - M011/S04 ⬜ — SshSyncBackend + CLI/MCP factory wiring
 
 ## Next Action
-T01: Create contract tests for GitHubBackend (red state — mock gh binary + 8 tests)
+T02: Implement GitHubBackend and wire factory dispatch (make all 8 contract tests green)
