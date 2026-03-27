@@ -1,24 +1,22 @@
 # Kata State
 
-**Active Milestone:** None — M012 complete
-**Active Slice:** None
-**Active Task:** None
-**Phase:** Done
+**Active Milestone:** M013 — Tech Debt & Deferred Features
+**Active Slice:** none (planning complete, ready to execute S01)
+**Active Task:** none
+**Phase:** Planning
 
 ## Recent Decisions
-- D175: GuardDaemon accepts Arc<dyn StateBackend>; CLI defaults to LocalFsBackend
-- D176: save_checkpoint_summary called synchronously inside async GuardDaemon run loop — accepted risk
+- D177: GitHubBackend repo validation is warn-not-error at construction
+- D178: Wizard cmd field is optional and per-criterion; empty input skips cmd
+- D179: OTel MeterProvider stored in TracingGuard alongside SdkTracerProvider
+- D180: TUI trace viewer reads top-20 most-recent trace files sorted by mtime
 
 ## Blockers
 - None
 
 ## Progress
-- M011 ✅ COMPLETE (R076–R079 validated, 1503 tests with all features)
-- M012/S01/T01 ✅ SpyBackend + contract tests (red state)
-- M012/S01/T02 ✅ Backend field, dual constructors, checkpoint routing, start_guard dual sigs
-- M012/S01/T03 ✅ CLI wiring verified, just ready green (1503 tests, 0 failures), R080 validated
-- M012/S01 ✅ COMPLETE — all 3 tasks done, all slice verification checks pass
-- M012 ✅ COMPLETE — only slice (S01) done; R080 validated; 72/72 active requirements validated
+- M012 ✅ COMPLETE (R080 validated, 1529 tests with all features)
+- M013: planning complete — 4 slices, all independent
 
 ## Next Action
-All milestones complete. Await next milestone definition.
+Begin M013/S01: GitHubBackend correctness fixes (Q001–Q004). Create branch `kata/M013/S01`, implement validation warn + issue-0 rejection + GhRunner error helper + factory doc cleanup, write contract tests, `just ready` green.
