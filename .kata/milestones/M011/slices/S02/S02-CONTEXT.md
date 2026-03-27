@@ -8,70 +8,67 @@ status: ready
 
 ## Goal
 
-Implement `LinearBackend` in `assay_backends::linear` behind the `linear` feature flag, with all 7 `StateBackend` methods, mock HTTP contract tests, and `backend_from_config()` updated to dispatch the `Linear` variant to a real backend.
+Implement `LinearBackend` — a `StateBackend` that creates a Linear issue on first `push_session_event` and appends comments on subsequent calls — so assay orchestrated runs produce visible state in Linear without SCP.
 
 ## Why this Slice
 
-S01 scaffolded the crate and variant types but all three remote backends fall back to `NoopBackend` with a warning. S02 makes the first remote backend real, proving the async-in-sync runtime pattern (D161) and the Linear GraphQL API integration. It unblocks S03/S04 by establishing the testing patterns (mock HTTP server, `new_current_thread` runtime scoping) that those slices replicate.
+S02 proves the `StateBackend` abstraction delivers real value: an actual remote write path that a user with `LINEAR_API_KEY` can observe. It also retires the highest-risk M011 unknowns (async-in-sync runtime pattern, Linear GraphQL API shape) before the lower-risk S03 and S04.
 
 ## Scope
 
 ### In Scope
 
-- `assay_backends::linear::LinearBackend` implementing all 7 `StateBackend` methods
-- `LinearBackend::new(api_key: String, team_id: String, project_id: Option<String>) -> Self`
-- `LinearClient` internal module: `create_issue`, `create_comment`, `get_latest_comment`
-- `push_session_event` behavior: first call creates a Linear issue (title `"Assay run <run_id>"`), subsequent calls append a comment — issue id tracked in `.assay/orchestrator/<run_id>/linear_issue_id`
-- `read_run_state` behavior: fetch the latest comment on the tracked issue, deserialize its fenced JSON block back to `OrchestratorStatus`
-- Comment format: full `OrchestratorStatus` JSON as a fenced code block (machine-readable; `read_run_state` deserializes it directly)
-- API key sourced from `LinearBackend` constructor (caller reads `LINEAR_API_KEY` env var — not the backend's responsibility)
-- Error handling: API errors and missing-key scenarios return `Err` — fail the orchestration run, no silent degradation
-- `annotate_run`: no-op returning `Ok(())` — `supports_gossip_manifest = false` so orchestrator won't call it in gossip mode
-- `send_message` / `poll_inbox`: no-op returning `Ok(())` / `Ok(vec![])` — `supports_messaging = false`
-- `save_checkpoint_summary`: no-op returning `Ok(())` — `supports_checkpoints = false`
-- `capabilities()`: `messaging=false, gossip_manifest=false, annotations=true, checkpoints=false`
-- `reqwest` added to `assay-backends` Cargo.toml behind `linear` feature flag
-- Mock HTTP contract tests proving first-call issue creation and subsequent-call comment appending
-- `backend_from_config()` Linear arm updated: `StateBackendConfig::Linear { .. }` → `Arc::new(LinearBackend::new(...))`; still logs a warn when `linear` feature is not enabled (falls back to NoopBackend)
-- `just ready` green with 1499+ tests
+- `LinearBackend` struct in `assay-backends::linear` behind `cfg(feature = "linear")`
+- `LinearBackend::new(api_key: String, team_id: String, project_id: Option<String>) -> Self` — reads `LINEAR_API_KEY` from environment and fails at construction time if not set; `Err` propagates through `backend_from_config()`
+- `push_session_event(run_dir, status)`:
+  - First call for a given `run_dir`: creates a Linear issue with title `"assay run: <run_dir_stem>"`; writes the returned Linear issue ID to `.linear-issue-id` under `run_dir`
+  - Subsequent calls: reads `.linear-issue-id` from `run_dir`, appends a comment with the serialized status
+  - API failure returns `Err` (hard fail — not silent degrade)
+- `read_run_state(run_dir)`: reads `.linear-issue-id`, fetches the latest comment, deserializes as `OrchestratorStatus`; returns `Ok(None)` if no issue file exists
+- `annotate_run(run_dir, manifest_path)`: reads `.linear-issue-id`, posts a comment with body starting with `"[assay:manifest] <manifest_path>"`
+- `capabilities()`: messaging=false, gossip_manifest=false, annotations=true, checkpoints=false (D164)
+- `send_message` / `poll_inbox` / `save_checkpoint_summary`: return `Ok(...)` no-ops (capabilities advertise false)
+- `LinearClient` internal module: `create_issue(title, description) -> String`, `create_comment(issue_id, body)`, `get_latest_comment(issue_id) -> Option<String>` — all using `reqwest` + hand-rolled GraphQL against `api.linear.app/graphql`
+- `reqwest` added to `assay-backends/Cargo.toml` behind `linear` feature flag
+- Mock HTTP contract tests: `push_session_event` first-call creates issue + writes `.linear-issue-id`; subsequent call reads file + creates comment; `read_run_state` fetches latest comment; `annotate_run` posts tagged comment
+- `backend_from_config()` updated: `Linear` variant → `Arc::new(LinearBackend::new(api_key, team_id, project_id))`
+- `just ready` green with 1497+ tests
 
 ### Out of Scope
 
-- `annotate_run` writing anything meaningful to Linear (capability is false; no-op only)
-- Inbox/outbox semantics via Linear custom issue types (messaging deferred to M012+)
-- `save_checkpoint_summary` persisting to Linear (TeamCheckpoint format doesn't map to Linear structures; deferred)
-- Token refresh or OAuth — personal API key (`LINEAR_API_KEY`) only
-- CLI/MCP construction site wiring to use `backend_from_config()` — that is S04
-- Real Linear API validation in automated tests — UAT only
+- `send_message` / `poll_inbox` implementation (messaging capability is false; Linear has no inbox/outbox)
+- `save_checkpoint_summary` implementation (checkpoints capability is false)
+- Token refresh / OAuth — personal API key only via `LINEAR_API_KEY` env var
+- Real Linear API calls in automated tests — contract tests use mock HTTP; real API is UAT only
+- Error recovery or retry logic on API failure — fail fast and return `Err`
 
 ## Constraints
 
-- D161: async HTTP wrapped in `tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap().block_on(...)` scoped per method body. Do NOT use `tokio::runtime::Handle::current()` — tests may not run under a tokio runtime.
-- D150: all trait methods are sync; async is internalized. No async fn on `StateBackend`.
-- D149: `StateBackend` is the deliberate sole exception to D001 (zero-trait convention).
-- D160: `assay-backends` is a leaf crate; `reqwest` behind the `linear` feature flag only — must not leak into `assay-core`.
-- Issue ID persistence uses the existing run-dir file layout (`.assay/orchestrator/<run_id>/linear_issue_id`) — no new I/O abstractions.
-- No secrets in artifacts on disk — API key is passed via constructor, never written to `.assay/`.
+- D161: async HTTP calls use `tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap().block_on(...)` scoped to each method body. Never `tokio::runtime::Handle::current()` — tests may not run under a tokio runtime.
+- D164: capabilities() shape is locked — messaging=false, gossip_manifest=false, annotations=true, checkpoints=false
+- `LINEAR_API_KEY` must be read from environment at construction time, not stored in TOML/JSON on disk
+- `reqwest` must be behind the `linear` feature flag in `assay-backends/Cargo.toml` — must not leak into binaries built without the feature
+- `assay-core` dep in `assay-backends/Cargo.toml` already has `orchestrate` feature — do not remove it when adding `reqwest`
+- Hard-fail semantics: API errors return `Err`; callers surface them as run failures
 
 ## Integration Points
 
 ### Consumes
 
-- `assay_core::state_backend::{StateBackend, CapabilitySet}` — trait to implement
-- `assay_types::orchestrate::OrchestratorStatus` — the data shape serialized into issue comments
-- `assay_types::StateBackendConfig::Linear { team_id, project_id }` — config variant (from S01)
-- `assay_backends::factory::backend_from_config` stub — the `Linear` arm to replace
-- Linear GraphQL API at `https://api.linear.app/graphql` — `createIssue`, `createComment`, `issueComments` operations
+- `assay-backends::factory::backend_from_config` (from S01) — the `Linear` arm currently dispatches to `NoopBackend`; S02 replaces it
+- `StateBackendConfig::Linear { team_id, project_id }` (from S01) — field shapes locked
+- `assay-core::StateBackend` trait — all 7 methods to implement
+- `assay-core::OrchestratorStatus` — serialized as comment body on `push_session_event`; deserialized on `read_run_state`
 
 ### Produces
 
-- `crates/assay-backends/src/linear.rs` — `LinearBackend` + `LinearClient` internal module
-- `LINEAR_API_KEY`-driven issue creation: one issue per run_id, comments per `push_session_event` call
-- `.assay/orchestrator/<run_id>/linear_issue_id` — persisted issue ID for comment routing
-- Mock HTTP contract tests for `push_session_event` and `read_run_state`
-- Updated `backend_from_config()` Linear arm
+- `crates/assay-backends/src/linear.rs` — `LinearBackend` struct + `LinearClient` internal module
+- Updated `crates/assay-backends/Cargo.toml` — `reqwest` dep behind `linear` feature
+- Updated `crates/assay-backends/src/factory.rs` — `Linear` arm wired to real `LinearBackend`
+- `.linear-issue-id` file written under `run_dir` on first `push_session_event` (runtime artifact, not a source file)
+- Mock HTTP contract tests in `crates/assay-backends/tests/` or inline
 
 ## Open Questions
 
-- Linear GraphQL query shape for `issueComments` — specifically which fields are needed to fetch the latest comment body. Must validate against Linear's public schema during research. Current thinking: use `issue(id: $id) { comments(first: 50, orderBy: createdAt) { nodes { body } } }` and take the last node.
-- Whether `new_current_thread` runtime creation panics when tests are run under `cargo nextest` with concurrency. Current thinking: mock the HTTP layer so no real runtime is needed in tests — contract tests use a mock server or a stub that returns pre-canned JSON without requiring async dispatch at all.
+- **GraphQL query shape for `get_latest_comment`** — Linear's GraphQL schema uses `IssueCommentConnection`; exact field names (`comments { nodes { body } }`) need validation against Linear's public schema during research. This is the highest-risk unknown for S02.
+- **reqwest version** — workspace has `reqwest 0.13` (via jsonschema dep). The `linear` feature flag in `assay-backends` should specify a version compatible with the workspace. Need to confirm no version conflict during planning.
