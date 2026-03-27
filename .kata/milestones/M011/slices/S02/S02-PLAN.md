@@ -59,7 +59,7 @@
   - Verify: `cargo test -p assay-backends --features linear` fails to compile (LinearBackend doesn't exist yet) — this is correct
   - Done when: Test file exists with 8+ test functions covering all contract points; `Cargo.toml` has reqwest and mockito deps behind linear feature
 
-- [ ] **T02: Implement LinearClient and LinearBackend** `est:35m`
+- [x] **T02: Implement LinearClient and LinearBackend** `est:35m`
   - Why: Core implementation — the LinearClient wraps GraphQL HTTP calls; LinearBackend implements StateBackend using it
   - Files: `crates/assay-backends/src/linear.rs`, `crates/assay-backends/src/lib.rs`, `crates/assay-backends/src/factory.rs`
   - Do: Create `linear.rs` behind `cfg(feature = "linear")` with `LinearClient` (configurable base_url, `reqwest::blocking::Client`, create_issue/create_comment/get_latest_comment methods using validated GraphQL shapes) and `LinearBackend` struct implementing all 7 `StateBackend` methods. Update `factory.rs` to dispatch `Linear` → `LinearBackend`. Wire module in `lib.rs`.
