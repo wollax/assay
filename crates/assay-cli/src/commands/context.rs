@@ -637,12 +637,17 @@ fn handle_guard_start(session: Option<&str>) -> anyhow::Result<i32> {
         "[guard] Configuration"
     );
 
+    let backend = std::sync::Arc::new(assay_core::state_backend::LocalFsBackend::new(
+        assay.clone(),
+    ));
+
     let rt = tokio::runtime::Runtime::new()?;
     let result = rt.block_on(assay_core::guard::start_guard(
         &session_path,
         &assay,
         &root,
         guard_config,
+        backend,
     ));
 
     match result {
