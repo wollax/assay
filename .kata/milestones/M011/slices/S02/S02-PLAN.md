@@ -52,7 +52,7 @@
 
 ## Tasks
 
-- [ ] **T01: Create LinearBackend contract tests (red state)** `est:25m`
+- [x] **T01: Create LinearBackend contract tests (red state)** `est:25m`
   - Why: Test-first — define the contract before implementation so all subsequent work has an unambiguous target
   - Files: `crates/assay-backends/tests/linear_backend.rs`, `crates/assay-backends/Cargo.toml`
   - Do: Add `mockito` and `reqwest` (with `blocking` + `json` features) as deps behind `linear` feature. Write contract tests: capabilities check, push first event creates issue, push subsequent event creates comment, read_run_state deserializes, read_run_state returns None when no issue, annotate_run posts tagged comment, construction fails without API key. Tests will not compile yet (red state).
