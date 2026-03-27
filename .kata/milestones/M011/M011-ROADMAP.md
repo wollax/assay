@@ -56,7 +56,7 @@ This milestone is complete only when all are true:
 - [x] **S01: Decompose manifest.rs and git/cli.rs** `risk:medium` `depends:[]`
   > After this: `manifest.rs` and `git/cli.rs` are each below 500 lines; all public API signatures preserved via re-exports; all existing tests pass unchanged.
 
-- [ ] **S02: Full tracing migration + flaky test fix** `risk:high` `depends:[]`
+- [x] **S02: Full tracing migration + flaky test fix** `risk:high` `depends:[]`
   > After this: all `eprintln!` in smelt-cli replaced with tracing events; `smelt run --dry-run` output is clean and readable; `test_cli_run_invalid_manifest` passes reliably; `cargo test --workspace` 0 failures.
 
 - [ ] **S03: Health endpoint + final verification** `risk:low` `depends:[S01,S02]`
