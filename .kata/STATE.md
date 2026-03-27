@@ -29,4 +29,4 @@
 - [x] D160–D174 decisions documented in DECISIONS.md
 
 ## Next Action
-Begin M012 planning or await user direction
+M011-SUMMARY.md written and committed. M011 complete. Await user direction for M012.
