@@ -2,8 +2,8 @@
 
 **Active Milestone:** M011 — Concrete Remote Backends
 **Active Slice:** S02 — LinearBackend
-**Active Task:** T02
-**Phase:** Executing
+**Active Task:** Complete
+**Phase:** Verifying
 
 ## Recent Decisions
 - D160: assay-backends as new leaf crate (linear/github/ssh feature flags)
@@ -19,7 +19,7 @@
 ## Progress
 - M010 ✅ — Pluggable State Backend complete (all 4 slices, 1488+ tests)
 - M011/S01 ✅ — assay-backends crate scaffold and StateBackendConfig variants complete (1499 tests green)
-- M011/S02 🔄 — LinearBackend (T01 ✅ contract tests red state, T02 pending)
+- M011/S02 ✅ — LinearBackend complete (T01 contract tests, T02 implementation — all 8 tests pass, 1499 total)
 
 ## Next Action
-T02: Implement LinearClient and LinearBackend — core implementation to make all 8 contract tests pass
+S02 complete — all tasks done, all slice verification checks pass, `just ready` green with 1499 tests.
