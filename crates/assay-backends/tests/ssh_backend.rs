@@ -50,21 +50,31 @@ fn sample_status() -> OrchestratorStatus {
 fn write_mock_scp(dir: &Path, on_push: &str, on_pull: &str) {
     let script = format!(
         r#"#!/bin/sh
-# Collect non-flag arguments
-ARGS=""
+# Collect non-flag arguments into positional params
+# We rebuild the positional params to skip flags.
+i=0
 for arg in "$@"; do
     case "$arg" in
         -*) ;;
-        *) ARGS="$ARGS $arg" ;;
+        *)
+            i=$((i + 1))
+            eval "POSARG_$i=\"$arg\""
+            ;;
     esac
 done
 
 # Get the last two positional (non-flag) arguments
 LAST=""
 SECOND_LAST=""
-for arg in $ARGS; do
-    SECOND_LAST="$LAST"
-    LAST="$arg"
+j=0
+for arg in "$@"; do
+    case "$arg" in
+        -*) ;;
+        *)
+            SECOND_LAST="$LAST"
+            LAST="$arg"
+            ;;
+    esac
 done
 
 # If last arg contains ':' -> push (local to remote)
