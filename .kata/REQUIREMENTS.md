@@ -26,14 +26,14 @@
 
 ### R078 — SshSyncBackend
 - Class: core-capability
-- Status: active
+- Status: validated
 - Description: `assay_backends::ssh::SshSyncBackend` implements all 7 `StateBackend` methods by shelling out to `scp` to push/pull files from a remote host. `CapabilitySet::all()` returned — the remote host mirrors the local filesystem layout. Config: `host`, `remote_assay_dir`, optional `user`, optional `port`.
 - Why it matters: Smelt workers running on remote machines can push state back to the controller via SSH — the same transport smelt already uses — without SCP being managed outside Assay. Encapsulates the existing smelt SCP pattern inside the trait.
 - Source: user
 - Primary owning slice: M011/S04
 - Supporting slices: M011/S01
-- Validation: unmapped
-- Notes: Uses `std::process::Command::arg()` chaining (never shell string interpolation) to prevent injection. All capabilities true because the remote mirrors local filesystem semantics. Real multi-machine validation is UAT only.
+- Validation: S04 — `SshSyncBackend` implements all 7 `StateBackend` methods via `Command::arg()` chaining (D163); `CapabilitySet::all()` returned; 9 contract tests with mock scp/ssh binaries (PATH override + `#[serial]`) cover all methods, injection safety (path with spaces), and first-access `Ok(None)` semantics; `backend_from_config()` dispatches `Ssh → SshSyncBackend` behind `#[cfg(feature = "ssh")]`; `just ready` green with 1499 tests. Real multi-machine validation is UAT only.
+- Notes: Uses `std::process::Command::arg()` chaining (never shell string interpolation) for scp paths (D163). Remote ssh commands use `shell_quote()` for paths (D173). `read_run_state` returns `Ok(None)` on scp pull failure (D174). Real multi-machine validation is UAT only.
 
 ### R079 — assay-backends crate and backend factory function
 - Class: core-capability
@@ -923,13 +923,13 @@
 | R075 | differentiator | validated | M010/S04 | M010/S02 | S04 |
 | R076 | core-capability | validated | M011/S02 | M011/S01 | S02 |
 | R077 | core-capability | validated | M011/S03 | M011/S01 | S03 |
-| R078 | core-capability | active | M011/S04 | M011/S01 | unmapped |
+| R078 | core-capability | validated | M011/S04 | M011/S01 | S04 |
 | R079 | core-capability | validated | M011/S01 | M011/S04 | S01 |
 
 ## Coverage Summary
 
-- Active requirements: 1 (R078)
-- Validated: 70 (R001–R029 except R025, R034–R065, R071–R077, R079)
+- Active requirements: 0
+- Validated: 71 (R001–R029 except R025, R034–R065, R071–R079)
 - Unmapped active requirements: 0
 - Deferred: 3 (R025, R066, R067)
 - Out of scope: 4 (R030, R031, R032, R033)

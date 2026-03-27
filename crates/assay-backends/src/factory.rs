@@ -69,11 +69,25 @@ pub fn backend_from_config(
             );
             Arc::new(NoopBackend)
         }
+        #[cfg(feature = "ssh")]
+        StateBackendConfig::Ssh {
+            host,
+            remote_assay_dir,
+            user,
+            port,
+        } => Arc::new(crate::ssh::SshSyncBackend::new(
+            host.clone(),
+            remote_assay_dir.clone(),
+            user.clone(),
+            *port,
+            assay_dir,
+        )),
+        #[cfg(not(feature = "ssh"))]
         StateBackendConfig::Ssh { .. } => {
             tracing::warn!(
                 backend = "ssh",
-                "SshSyncBackend is not yet implemented — falling back to NoopBackend; \
-                 all state writes will be discarded (stub pending M011/S04)"
+                "SshSyncBackend requires the `ssh` feature — falling back to NoopBackend; \
+                 all state writes will be discarded"
             );
             Arc::new(NoopBackend)
         }
@@ -151,7 +165,7 @@ mod tests {
     }
 
     #[test]
-    fn factory_ssh_returns_noop() {
+    fn factory_ssh_capabilities() {
         let dir = tempfile::tempdir().unwrap();
         let config = StateBackendConfig::Ssh {
             host: "server.example.com".into(),
@@ -160,6 +174,9 @@ mod tests {
             port: Some(2222),
         };
         let backend = backend_from_config(&config, dir.path().to_path_buf());
+        #[cfg(feature = "ssh")]
+        assert_eq!(backend.capabilities(), CapabilitySet::all());
+        #[cfg(not(feature = "ssh"))]
         assert_eq!(backend.capabilities(), CapabilitySet::none());
     }
 

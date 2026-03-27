@@ -1,11 +1,11 @@
 use std::path::PathBuf;
-use std::sync::Arc;
 
 use clap::Parser;
 use serde::Serialize;
 
-use assay_core::state_backend::LocalFsBackend;
+use assay_backends::factory::backend_from_config;
 use assay_types::OrchestratorMode;
+use assay_types::StateBackendConfig;
 use assay_types::orchestrate::{FailurePolicy, MergeStrategy};
 
 use super::{assay_dir, project_root};
@@ -378,7 +378,13 @@ fn execute_orchestrated(
     let orch_config = OrchestratorConfig {
         max_concurrency: 8,
         failure_policy: cmd.failure_policy,
-        backend: Arc::new(LocalFsBackend::new(pipeline_config.assay_dir.clone())),
+        backend: backend_from_config(
+            manifest
+                .state_backend
+                .as_ref()
+                .unwrap_or(&StateBackendConfig::LocalFs),
+            pipeline_config.assay_dir.clone(),
+        ),
     };
 
     // Session runner closure: constructs HarnessWriter from plain function
@@ -602,7 +608,13 @@ fn execute_mesh(
     let orch_config = OrchestratorConfig {
         max_concurrency: 8,
         failure_policy: cmd.failure_policy,
-        backend: Arc::new(LocalFsBackend::new(pipeline_config.assay_dir.clone())),
+        backend: backend_from_config(
+            manifest
+                .state_backend
+                .as_ref()
+                .unwrap_or(&StateBackendConfig::LocalFs),
+            pipeline_config.assay_dir.clone(),
+        ),
     };
 
     // Session runner closure: constructs HarnessWriter from plain function
@@ -742,7 +754,13 @@ fn execute_gossip(
     let orch_config = OrchestratorConfig {
         max_concurrency: 8,
         failure_policy: cmd.failure_policy,
-        backend: Arc::new(LocalFsBackend::new(pipeline_config.assay_dir.clone())),
+        backend: backend_from_config(
+            manifest
+                .state_backend
+                .as_ref()
+                .unwrap_or(&StateBackendConfig::LocalFs),
+            pipeline_config.assay_dir.clone(),
+        ),
     };
 
     // Session runner closure: constructs HarnessWriter from plain function

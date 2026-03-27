@@ -8,3 +8,6 @@ pub mod github;
 
 #[cfg(feature = "linear")]
 pub mod linear;
+
+#[cfg(feature = "ssh")]
+pub mod ssh;
