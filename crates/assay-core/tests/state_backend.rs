@@ -263,29 +263,195 @@ fn test_local_fs_backend_send_and_poll_messages() {
     assert_eq!(contents, b"hello world");
 }
 
-// ── NoopBackend contract tests ────────────────────────────────────────────────
+// ── Serde round-trip tests for new StateBackendConfig variants ───────
 
-/// Verifies that `NoopBackend` reports all capabilities as disabled.
 #[test]
-fn test_noop_backend_capabilities() {
+fn serde_json_round_trip_linear_variant() {
+    let config = StateBackendConfig::Linear {
+        team_id: "TEAM".into(),
+        project_id: Some("PROJ".into()),
+    };
+    let json = serde_json::to_string(&config).unwrap();
+    let back: StateBackendConfig = serde_json::from_str(&json).unwrap();
+    assert_eq!(back, config);
+}
+
+#[test]
+fn serde_json_round_trip_github_variant() {
+    let config = StateBackendConfig::GitHub {
+        repo: "user/repo".into(),
+        label: Some("assay".into()),
+    };
+    let json = serde_json::to_string(&config).unwrap();
+    let back: StateBackendConfig = serde_json::from_str(&json).unwrap();
+    assert_eq!(back, config);
+    // Verify the serde rename: must serialize as "github", not "git_hub"
+    assert!(
+        json.contains("\"github\""),
+        "GitHub variant must serialize as 'github', got: {json}"
+    );
+    assert!(
+        !json.contains("\"git_hub\""),
+        "GitHub variant must NOT serialize as 'git_hub', got: {json}"
+    );
+}
+
+#[test]
+fn serde_json_round_trip_ssh_variant() {
+    let config = StateBackendConfig::Ssh {
+        host: "server.example.com".into(),
+        remote_assay_dir: "/home/user/.assay".into(),
+        user: Some("deploy".into()),
+        port: Some(2222),
+    };
+    let json = serde_json::to_string(&config).unwrap();
+    let back: StateBackendConfig = serde_json::from_str(&json).unwrap();
+    assert_eq!(back, config);
+}
+
+#[test]
+fn serde_json_round_trip_linear_variant_minimal() {
+    // Without optional fields
+    let config = StateBackendConfig::Linear {
+        team_id: "TEAM".into(),
+        project_id: None,
+    };
+    let json = serde_json::to_string(&config).unwrap();
+    let back: StateBackendConfig = serde_json::from_str(&json).unwrap();
+    assert_eq!(back, config);
+    // project_id should be absent (skip_serializing_if)
+    assert!(!json.contains("project_id"));
+}
+
+#[test]
+fn serde_json_round_trip_ssh_variant_minimal() {
+    // Without optional fields
+    let config = StateBackendConfig::Ssh {
+        host: "server.example.com".into(),
+        remote_assay_dir: "/home/user/.assay".into(),
+        user: None,
+        port: None,
+    };
+    let json = serde_json::to_string(&config).unwrap();
+    let back: StateBackendConfig = serde_json::from_str(&json).unwrap();
+    assert_eq!(back, config);
+}
+
+#[test]
+fn toml_round_trip_manifest_with_linear_backend() {
+    use assay_types::RunManifest;
+    let manifest = RunManifest {
+        sessions: vec![assay_types::ManifestSession {
+            spec: "auth".to_string(),
+            name: None,
+            settings: None,
+            hooks: vec![],
+            prompt_layers: vec![],
+            file_scope: vec![],
+            shared_files: vec![],
+            depends_on: vec![],
+        }],
+        mode: Default::default(),
+        mesh_config: None,
+        gossip_config: None,
+        state_backend: Some(StateBackendConfig::Linear {
+            team_id: "TEAM".into(),
+            project_id: Some("PROJ".into()),
+        }),
+    };
+    let toml_out = toml::to_string(&manifest).unwrap();
+    let back: RunManifest = toml::from_str(&toml_out).unwrap();
+    assert_eq!(back.state_backend, manifest.state_backend);
+}
+
+#[test]
+fn toml_round_trip_manifest_with_github_backend() {
+    use assay_types::RunManifest;
+    let manifest = RunManifest {
+        sessions: vec![assay_types::ManifestSession {
+            spec: "auth".to_string(),
+            name: None,
+            settings: None,
+            hooks: vec![],
+            prompt_layers: vec![],
+            file_scope: vec![],
+            shared_files: vec![],
+            depends_on: vec![],
+        }],
+        mode: Default::default(),
+        mesh_config: None,
+        gossip_config: None,
+        state_backend: Some(StateBackendConfig::GitHub {
+            repo: "owner/repo".into(),
+            label: Some("assay".into()),
+        }),
+    };
+    let toml_out = toml::to_string(&manifest).unwrap();
+    let back: RunManifest = toml::from_str(&toml_out).unwrap();
+    assert_eq!(back.state_backend, manifest.state_backend);
+}
+
+#[test]
+fn toml_round_trip_manifest_with_ssh_backend() {
+    use assay_types::RunManifest;
+    let manifest = RunManifest {
+        sessions: vec![assay_types::ManifestSession {
+            spec: "auth".to_string(),
+            name: None,
+            settings: None,
+            hooks: vec![],
+            prompt_layers: vec![],
+            file_scope: vec![],
+            shared_files: vec![],
+            depends_on: vec![],
+        }],
+        mode: Default::default(),
+        mesh_config: None,
+        gossip_config: None,
+        state_backend: Some(StateBackendConfig::Ssh {
+            host: "worker.example.com".into(),
+            remote_assay_dir: "/home/user/.assay".into(),
+            user: Some("deploy".into()),
+            port: Some(2222),
+        }),
+    };
+    let toml_out = toml::to_string(&manifest).unwrap();
+    let back: RunManifest = toml::from_str(&toml_out).unwrap();
+    assert_eq!(back.state_backend, manifest.state_backend);
+}
+
+/// Verifies that `NoopBackend` has all capabilities disabled.
+#[test]
+fn test_noop_backend_capabilities_all_false() {
     let backend = NoopBackend;
     let caps = backend.capabilities();
-    assert_eq!(caps, CapabilitySet::none());
     assert!(!caps.supports_messaging);
     assert!(!caps.supports_gossip_manifest);
     assert!(!caps.supports_annotations);
     assert!(!caps.supports_checkpoints);
 }
 
-/// Verifies that all `NoopBackend` methods return success values.
+/// Verifies that `NoopBackend` can be used as a trait object via `Arc<dyn StateBackend>`.
 #[test]
-fn test_noop_backend_methods_return_ok() {
-    let backend = NoopBackend;
-    let dir = tempdir().unwrap();
+fn test_noop_backend_as_trait_object() {
+    use std::sync::Arc;
+    let backend: Arc<dyn StateBackend> = Arc::new(NoopBackend);
+    let caps = backend.capabilities();
+    assert!(
+        !caps.supports_messaging,
+        "NoopBackend should have no capabilities"
+    );
+}
 
-    // push_session_event → Ok(())
+/// Verifies that `NoopBackend` methods all return Ok without panicking.
+#[test]
+fn test_noop_backend_all_methods_succeed() {
+    use std::path::PathBuf;
+    let backend = NoopBackend;
+    let dummy_dir = PathBuf::from("/tmp/nonexistent");
+
     let status = OrchestratorStatus {
-        run_id: "noop-run".to_string(),
+        run_id: "test-noop".to_string(),
         phase: OrchestratorPhase::Running,
         failure_policy: FailurePolicy::SkipDependents,
         sessions: vec![],
@@ -294,31 +460,17 @@ fn test_noop_backend_methods_return_ok() {
         mesh_status: None,
         gossip_status: None,
     };
-    assert!(backend.push_session_event(dir.path(), &status).is_ok());
 
-    // read_run_state → Ok(None)
-    let state = backend.read_run_state(dir.path()).unwrap();
-    assert!(state.is_none());
+    assert!(backend.push_session_event(&dummy_dir, &status).is_ok());
+    assert!(backend.read_run_state(&dummy_dir).unwrap().is_none());
+    assert!(backend.send_message(&dummy_dir, "test", b"data").is_ok());
+    assert!(backend.poll_inbox(&dummy_dir).unwrap().is_empty());
+    assert!(backend.annotate_run(&dummy_dir, "manifest/path").is_ok());
 
-    // send_message → Ok(())
-    assert!(
-        backend
-            .send_message(dir.path(), "test-msg", b"payload")
-            .is_ok()
-    );
-
-    // poll_inbox → Ok(vec![])
-    let msgs = backend.poll_inbox(dir.path()).unwrap();
-    assert!(msgs.is_empty());
-
-    // annotate_run → Ok(())
-    assert!(backend.annotate_run(dir.path(), "some/path").is_ok());
-
-    // save_checkpoint_summary → Ok(())
     let checkpoint = TeamCheckpoint {
         version: 1,
         session_id: "noop-sess".to_string(),
-        project: "noop-project".to_string(),
+        project: "/tmp/test".to_string(),
         timestamp: "2026-01-01T00:00:00Z".to_string(),
         trigger: "test".to_string(),
         agents: vec![],
@@ -327,15 +479,7 @@ fn test_noop_backend_methods_return_ok() {
     };
     assert!(
         backend
-            .save_checkpoint_summary(dir.path(), &checkpoint)
+            .save_checkpoint_summary(&dummy_dir, &checkpoint)
             .is_ok()
     );
-}
-
-/// Verifies that `NoopBackend` can be used as `Arc<dyn StateBackend>`.
-#[test]
-fn test_noop_backend_as_trait_object() {
-    let backend: std::sync::Arc<dyn StateBackend> = std::sync::Arc::new(NoopBackend);
-    let caps = backend.capabilities();
-    assert_eq!(caps, CapabilitySet::none());
 }

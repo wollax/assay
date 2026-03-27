@@ -2,6 +2,50 @@
 
 ## Active
 
+### R076 — LinearBackend
+- Class: core-capability
+- Status: active
+- Description: `assay_backends::linear::LinearBackend` implements `StateBackend`. `push_session_event` creates a Linear issue on first call (title = run_id, description = session list) and appends a comment on subsequent calls with the full `OrchestratorStatus` JSON. `read_run_state` fetches the latest comment and deserializes it back. API key from `LINEAR_API_KEY` env var. `capabilities()` returns messaging:false, gossip_manifest:false, annotations:true, checkpoints:false.
+- Why it matters: Teams using Linear for project tracking get run observability without any extra tooling — session transitions appear as issue comments in the same place where work is planned.
+- Source: user
+- Primary owning slice: M011/S02
+- Supporting slices: M011/S01
+- Validation: unmapped
+- Notes: Requires `LINEAR_API_KEY`. Uses reqwest async client wrapped in a scoped tokio runtime (D150 pattern). Real API validation is UAT only.
+
+### R077 — GitHubBackend
+- Class: core-capability
+- Status: active
+- Description: `assay_backends::github::GitHubBackend` implements `StateBackend`. `push_session_event` shells out to `gh issue create` (first call) or `gh issue comment` (subsequent calls). `read_run_state` shells out to `gh issue view --json body`. `capabilities()` returns messaging:false, gossip_manifest:false, annotations:false, checkpoints:false.
+- Why it matters: Open-source or CI-first teams using GitHub Issues get run observability integrated directly into their repo's issue tracker, with zero extra tooling beyond the `gh` CLI they already use for PRs.
+- Source: user
+- Primary owning slice: M011/S03
+- Supporting slices: M011/S01
+- Validation: unmapped
+- Notes: Requires `gh` CLI installed and authenticated. Follows D008 (CLI-first), D065 (gh-first), D077 (--json for stable output) conventions. Messaging capability is false — GitHub Issues have no inbox/outbox semantics.
+
+### R078 — SshSyncBackend
+- Class: core-capability
+- Status: active
+- Description: `assay_backends::ssh::SshSyncBackend` implements all 7 `StateBackend` methods by shelling out to `scp` to push/pull files from a remote host. `CapabilitySet::all()` returned — the remote host mirrors the local filesystem layout. Config: `host`, `remote_assay_dir`, optional `user`, optional `port`.
+- Why it matters: Smelt workers running on remote machines can push state back to the controller via SSH — the same transport smelt already uses — without SCP being managed outside Assay. Encapsulates the existing smelt SCP pattern inside the trait.
+- Source: user
+- Primary owning slice: M011/S04
+- Supporting slices: M011/S01
+- Validation: unmapped
+- Notes: Uses `std::process::Command::arg()` chaining (never shell string interpolation) to prevent injection. All capabilities true because the remote mirrors local filesystem semantics. Real multi-machine validation is UAT only.
+
+### R079 — assay-backends crate and backend factory function
+- Class: core-capability
+- Status: validated
+- Description: New `assay-backends` leaf crate with `linear`, `github`, `ssh` feature flags. `StateBackendConfig` gains `Linear`, `GitHub`, `Ssh` named variants (schema-snapshot-locked). `backend_from_config(config: &StateBackendConfig, assay_dir: PathBuf) -> Arc<dyn StateBackend>` factory function resolves any variant to the appropriate backend. CLI/MCP construction sites use the factory fn instead of hardcoded `LocalFsBackend::new(...)` at manifest-dispatch call sites.
+- Why it matters: The factory function is the bridge between the declarative `RunManifest.state_backend` config and the runtime `Arc<dyn StateBackend>` used by `OrchestratorConfig`. Without it, CLI/MCP callers must duplicate dispatch logic and import each backend directly.
+- Source: inferred
+- Primary owning slice: M011/S01
+- Supporting slices: M011/S04
+- Validation: S01 — `assay-backends` crate compiles; `StateBackendConfig` has `Linear`, `GitHub`, `Ssh` variants with schema snapshots committed; `backend_from_config()` dispatches all 5 variants (LocalFs→LocalFsBackend, others→NoopBackend stubs); serde round-trip tests pass for all variants; `just ready` green with 1497 tests. CLI/MCP wiring deferred to S04.
+- Notes: `assay-backends` depends on `assay-core` + `assay-types` (not vice versa, consistent with D003 dep-graph direction). Factory fn lives in `assay_backends::factory`. Feature flags gate each backend's deps — `reqwest` only in the binary when `linear` or `github` features are enabled. CLI/MCP construction site wiring (replacing hardcoded `LocalFsBackend::new`) is S04 work.
+
 ### R034 — OrchestratorMode selection
 - Class: core-capability
 - Status: validated
@@ -716,19 +760,19 @@
 - Source: user
 - Primary owning slice: M010/S03
 - Supporting slices: M010/S02
-- Validation: S03 — `supports_messaging` guard in `run_mesh()` skips routing thread and emits `warn!(capability="messaging", mode="mesh")`; `supports_gossip_manifest` guard in `run_gossip()` skips PromptLayer injection and all three `persist_knowledge_manifest` callsites, emits `warn!(capability="gossip_manifest", mode="gossip")`. `NoopBackend` test helper (all capabilities false, all methods no-op) drives `test_mesh_degrades_gracefully_without_messaging` and `test_gossip_degrades_gracefully_without_manifest` — both pass. All existing mesh/gossip/orchestrate/state_backend tests pass unchanged. `just ready` green with 1486 tests.
-- Notes: `NoopBackend` is a reusable test helper exported from `assay_core` for future degradation testing. `supports_annotations` and `supports_checkpoints` flags exist in `CapabilitySet` but no production guards added yet — no callers use those methods directly in this milestone. CapabilitySet degradation awareness documented in smelt-agent plugin skills (S04).
+- Validation: S03 — run_mesh() checks supports_messaging before spawning routing thread; run_gossip() checks supports_gossip_manifest before PromptLayer injection and manifest writes; NoopBackend test helper (CapabilitySet::none()) proves degradation paths; test_mesh_degrades_gracefully_without_messaging and test_gossip_degrades_gracefully_without_manifest both pass; all existing integration tests pass unchanged; just ready green with 1488 tests
+- Notes: `NoopBackend` test helper (all capabilities false, all methods no-op) used to prove degradation paths in isolation. Both degradation paths emit `warn!` events.
 
 ### R075 — smelt-agent plugin
 - Class: differentiator
 - Status: validated
-- Description: `plugins/smelt-agent/` directory with `AGENTS.md` system prompt and skills: `run-dispatch.md` (how to read a RunManifest, configure a backend, dispatch a run), `backend-status.md` (how to query `orchestrate_status`, interpret `OrchestratorStatus`), `peer-message.md` (how to use the file-based outbox/inbox convention for agent-to-agent coordination in mesh mode, and gossip knowledge manifest reading in gossip mode).
+- Description: `plugins/smelt-agent/` directory with `AGENTS.md` system prompt and skills: `run-dispatch.md` (how to read a RunManifest, configure a backend, dispatch a run), `backend-status.md` (how to query `read_run_state`, interpret `OrchestratorStatus`), `peer-message.md` (how to use `send_message`/`poll_inbox` for agent-to-agent coordination across machines).
 - Why it matters: Smelt workers run as AI agents — they need a purpose-built prompt that teaches them the backend-aware API surface and coordination patterns
 - Source: user
 - Primary owning slice: M010/S04
 - Supporting slices: M010/S02
-- Validation: S04 — AGENTS.md (45 lines, ≤60 cap) with skills table and 10 MCP tools listed; 3 skills with YAML frontmatter covering run dispatch, backend status, and peer messaging; all tool names verified against server.rs; all type names verified against assay-types; just ready green
-- Notes: Plugin follows the same format as `plugins/claude-code/` and `plugins/codex/` (flat .md skill files, D082 pattern). Peer messaging described as file-based outbox/inbox convention (not MCP tools, which don't exist for send_message/poll_inbox).
+- Validation: S04 — plugins/smelt-agent/AGENTS.md (27 lines, ≤60 cap) with skill table, MCP tool table, and workflow overview; skills/run-dispatch.md, skills/backend-status.md, skills/peer-message.md all exist with valid YAML frontmatter; MCP tool names (orchestrate_run, orchestrate_status, run_manifest) verified against server.rs; just ready green
+- Notes: Plugin follows the same format as `plugins/claude-code/` and `plugins/codex/`. Skills document the MCP tool signatures stabilised in S02.
 
 ## Deferred
 
@@ -877,12 +921,16 @@
 | R073 | core-capability | validated | M010/S02 | M010/S03 | S02 |
 | R074 | core-capability | validated | M010/S03 | M010/S02 | S03 |
 | R075 | differentiator | validated | M010/S04 | M010/S02 | S04 |
+| R076 | core-capability | active | M011/S02 | M011/S01 | unmapped |
+| R077 | core-capability | active | M011/S03 | M011/S01 | unmapped |
+| R078 | core-capability | active | M011/S04 | M011/S01 | unmapped |
+| R079 | core-capability | validated | M011/S01 | M011/S04 | S01 |
 
 ## Coverage Summary
 
-- Active requirements: 0
-- Mapped to slices: 5
-- Validated: 67 (R001–R029 except R025, R034–R065, R071–R075)
+- Active requirements: 3 (R076–R078)
+- Validated: 68 (R001–R029 except R025, R034–R065, R071–R075, R079)
+- Unmapped active requirements: 0
 - Deferred: 3 (R025, R066, R067)
 - Out of scope: 4 (R030, R031, R032, R033)
 - Unmapped active requirements: 0

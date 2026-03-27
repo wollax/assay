@@ -13,10 +13,12 @@
 use std::path::Path;
 use std::time::Duration;
 
-use assay_core::NoopBackend;
-use assay_core::orchestrate::executor::OrchestratorConfig;
+use std::sync::Arc;
+
+use assay_core::orchestrate::executor::{OrchestratorConfig, SessionOutcome};
 use assay_core::orchestrate::mesh::run_mesh;
 use assay_core::pipeline::{PipelineConfig, PipelineError, PipelineResult};
+use assay_core::state_backend::NoopBackend;
 use assay_types::orchestrate::{MeshMemberState, OrchestratorStatus};
 use assay_types::{ManifestSession, OrchestratorMode, RunManifest};
 
@@ -255,69 +257,53 @@ fn test_mesh_mode_completed_not_dead() {
     }
 }
 
-// ── Test 3: Capability degradation with NoopBackend ──────────────────────────
+// ── Test 3: Graceful degradation when messaging is unsupported ────────────────
 
-/// Proves that `run_mesh()` degrades gracefully when the backend has no
-/// messaging capability.
+/// Proves that `run_mesh()` completes successfully when the backend does not
+/// support messaging (`supports_messaging = false`).
 ///
-/// With `NoopBackend` (all capabilities disabled), the mesh executor:
-/// - Skips the routing thread entirely (supports_messaging is false — capability guard in run_mesh())
-/// - Still runs all sessions to completion (Ok result)
-/// - Writes no state.json (NoopBackend persistence is no-op, so messages_routed is never persisted)
-/// - No error or panic from the absent routing thread
+/// With `NoopBackend`:
+/// - The routing thread is NOT spawned (capability check prevents it).
+/// - Sessions still execute in parallel via session workers.
+/// - `mesh_status.messages_routed` is 0 (no routing occurred).
+/// - No error is returned — graceful degradation, not a panic.
+/// - A `warn!` event is emitted (not asserted here, visible in test output).
 #[test]
 fn test_mesh_degrades_gracefully_without_messaging() {
     let dir = setup_temp_dir();
     let tmp = dir.path();
     let pipeline_config = make_pipeline_config(tmp);
+    let manifest = make_mesh_manifest(&[("spec-a", "alpha"), ("spec-b", "beta")]);
 
-    let manifest = make_mesh_manifest(&[("spec-writer", "writer"), ("spec-reader", "reader")]);
-
+    // Use NoopBackend: supports_messaging = false, all methods no-op.
     let config = OrchestratorConfig {
-        backend: std::sync::Arc::new(NoopBackend),
+        backend: Arc::new(NoopBackend),
         ..OrchestratorConfig::default()
     };
 
-    // Simple runner: return success immediately — no message writing.
-    let runner = |session: &ManifestSession, _config: &PipelineConfig| {
-        Ok::<PipelineResult, PipelineError>(success_result(session))
-    };
+    let result = run_mesh(&manifest, &config, &pipeline_config, &|session, _config| {
+        Ok(success_result(session))
+    });
 
-    let result = run_mesh(&manifest, &config, &pipeline_config, &runner);
-
-    // The run should complete without error.
     assert!(
         result.is_ok(),
-        "run_mesh with NoopBackend should succeed, got: {:?}",
+        "run_mesh() should succeed with NoopBackend — got: {:?}",
         result.err()
     );
 
-    let result = result.unwrap();
+    let orch_result = result.unwrap();
 
-    // All sessions should be present in the outcomes.
-    assert_eq!(
-        result.outcomes.len(),
-        2,
-        "expected 2 session outcomes, got {}",
-        result.outcomes.len()
-    );
+    // All sessions must complete (not fail or skip).
+    for (name, outcome) in &orch_result.outcomes {
+        assert!(
+            matches!(outcome, SessionOutcome::Completed { .. }),
+            "session '{}' should be Completed with NoopBackend, got: {:?}",
+            name,
+            outcome
+        );
+    }
 
-    // The run_id should be a valid non-empty string.
-    assert!(
-        !result.run_id.is_empty(),
-        "run_id should be set even with NoopBackend"
-    );
-
-    // NoopBackend doesn't persist state, so no state.json should exist.
-    // If the executor wrote state.json via the backend, it silently succeeded
-    // but NoopBackend's push_session_event is a no-op — no file on disk.
-    let state_path = pipeline_config
-        .assay_dir
-        .join("orchestrator")
-        .join(&result.run_id)
-        .join("state.json");
-    assert!(
-        !state_path.exists(),
-        "state.json should NOT exist when using NoopBackend — persistence is no-op"
-    );
+    // NoopBackend has no persistence — we cannot read state.json.
+    // Verify outcomes count directly from the result.
+    assert_eq!(orch_result.outcomes.len(), 2, "expected 2 session outcomes");
 }

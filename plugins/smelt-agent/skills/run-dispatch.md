@@ -1,51 +1,83 @@
 ---
 name: run-dispatch
-description: >
-  Dispatch an Assay run from a manifest file. Use when you need to execute
-  specs — either a single session via run_manifest or a multi-session
-  orchestrated run via orchestrate_run. Covers manifest format, backend
-  configuration, and capturing the run_id for status queries.
+description: Read a RunManifest, configure a StateBackendConfig, and dispatch a run via Assay MCP tools. Use when a smelt worker needs to start an orchestrated run on a remote or local machine.
 ---
 
-# Run Dispatch
+# Skill: Run Dispatch
 
-Launch spec sessions from a RunManifest TOML file.
+## Overview
 
-## Steps
+Dispatching a run means providing a `RunManifest` to Assay and receiving a `run_id` to track progress. The `RunManifest` optionally carries a `state_backend` field that overrides where orchestrator state is persisted.
 
-1. **Read the RunManifest TOML file.** The manifest has these key fields:
-   - `[[sessions]]` — array of session entries, each with `spec` (path or name), optional `name`, optional `depends_on` (list of session names for DAG ordering)
-   - `mode` — coordination mode: `"dag"` (default, sequential with dependency edges), `"mesh"` (parallel with peer messaging), or `"gossip"` (parallel with knowledge synthesis)
-   - `state_backend` — optional backend config (defaults to `LocalFs` if omitted)
+## Step 1 — Locate the RunManifest
 
-2. **Check the `state_backend` field.** If present:
-   - `"local_fs"` — default filesystem backend, no extra setup needed
-   - `{ custom = { name = "...", config = {...} } }` — a third-party backend; ensure the named backend is available and properly configured before dispatch. The `config` value is backend-specific JSON.
+The manifest is a TOML file (`run.toml` or as specified by the controller). Required fields:
 
-   If `state_backend` is omitted, the orchestrator defaults to `LocalFs`.
+```toml
+[[sessions]]
+spec = "my-spec"
+name = "session-a"
 
-3. **For single-session work, use `run_manifest`:**
-   ```
-   run_manifest({ manifest_path: "path/to/manifest.toml" })
-   ```
-   Optional parameter: `timeout_secs` (default: 600 seconds per session).
+# Optional: override state backend
+[state_backend]
+type = "local_fs"
+```
 
-4. **For multi-session orchestration, use `orchestrate_run`:**
-   ```
-   orchestrate_run({
-     manifest_path: "path/to/manifest.toml",
-     failure_policy: "skip_dependents",
-     merge_strategy: "completion_time",
-     conflict_resolution: "skip"
-   })
-   ```
-   Parameters:
-   - `manifest_path` (required) — path to the manifest TOML file
-   - `timeout_secs` (optional) — max seconds per agent subprocess (default: 600)
-   - `failure_policy` (optional) — `"skip_dependents"` (default) skips downstream sessions on failure; `"abort"` stops all dispatch on first failure
-   - `merge_strategy` (optional) — `"completion_time"` (default) orders merge by finish time; `"file_overlap"` picks sessions with least file overlap
-   - `conflict_resolution` (optional) — `"skip"` (default) or `"auto"`
+## Step 2 — Configure the StateBackendConfig (optional)
 
-   Note: When using `orchestrate_run` in DAG mode, the manifest must contain either multiple sessions or at least one `depends_on` edge. For single-session work, use `run_manifest` instead.
+If the controller wants state on a remote backend, set the `state_backend` field. Supported variants:
 
-5. **Capture the `run_id` from the response.** The `orchestrate_run` response includes a `run_id` (ULID string). Save this — you need it for `orchestrate_status` queries to monitor progress and get final results.
+- `{ type = "local_fs" }` — filesystem under `.assay/orchestrator/<run_id>/` (default)
+- `{ type = "linear", team_id = "TEAM123" }` — Linear project tracking; requires `LINEAR_API_KEY` env var; `project_id` is optional (M011/S02)
+- `{ type = "github", repo = "owner/repo" }` — GitHub Issues via `gh` CLI; requires `gh` installed and authenticated; `label` is optional (M011/S03)
+- `{ type = "ssh", host = "worker.example.com", remote_assay_dir = "/home/user/.assay" }` — SCP sync to remote host; `user` and `port` are optional (M011/S04)
+- `{ type = "custom", name = "my-backend", config = { ... } }` — custom third-party backend (falls back to no-op)
+
+**Note:** `linear`, `github`, and `ssh` backends are stub implementations in the current release — configuring them logs a warning and falls back to a no-op backend that discards all state writes. Full implementations land in M011/S02–S04.
+
+For local smelt workers, omit `state_backend` (defaults to `LocalFs`).
+
+## Step 3 — Choose the right dispatch tool
+
+| Scenario | Tool | Key params |
+| --- | --- | --- |
+| Single session | `run_manifest` | `manifest_path`, `timeout_secs` |
+| Multi-session DAG/Mesh/Gossip | `orchestrate_run` | `manifest_path`, `failure_policy`, `merge_strategy` |
+
+## Step 4 — Dispatch with `orchestrate_run`
+
+```json
+{
+  "tool": "orchestrate_run",
+  "arguments": {
+    "manifest_path": "/path/to/run.toml",
+    "failure_policy": "skip_dependents",
+    "merge_strategy": "completion_time"
+  }
+}
+```
+
+Returns: `{ "run_id": "01HXY...", "sessions": [...], "summary": { ... } }`
+
+Save `run_id` — it is required for status queries.
+
+## Step 5 — Dispatch with `run_manifest` (single session)
+
+```json
+{
+  "tool": "run_manifest",
+  "arguments": {
+    "manifest_path": "/path/to/run.toml",
+    "timeout_secs": 300
+  }
+}
+```
+
+Returns: `{ "sessions": [...], "summary": { ... } }`
+
+## Notes
+
+- `failure_policy` options: `"skip_dependents"` (default) | `"abort"`
+- `merge_strategy` options: `"completion_time"` (default) | `"file_overlap"`
+- `mode` in the manifest controls execution: `"dag"` | `"mesh"` | `"gossip"`
+- A missing `state_backend` field defaults to `LocalFs` — no config change needed for single-machine runs

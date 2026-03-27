@@ -129,14 +129,15 @@ where
         }
     }
 
-    // ── Capability check: gossip manifest ────────────────────────────
-    let supports_gossip_manifest = config.backend.capabilities().supports_gossip_manifest;
-
-    if !supports_gossip_manifest {
+    // ── Capability check for gossip manifest ─────────────────────────
+    let gossip_manifest_supported = config.backend.capabilities().supports_gossip_manifest;
+    if !gossip_manifest_supported {
         tracing::warn!(
             capability = "gossip_manifest",
             mode = "gossip",
-            "backend does not support gossip manifest — skipping PromptLayer injection and all manifest persistence"
+            "backend does not support gossip manifest — knowledge manifest injection and \
+             writes are disabled; sessions execute in parallel but cross-session knowledge \
+             sharing is unavailable"
         );
     }
 
@@ -148,7 +149,7 @@ where
         let name = session.name.as_deref().unwrap_or(&session.spec).to_string();
         let mut session_clone = session.clone();
 
-        if supports_gossip_manifest {
+        if gossip_manifest_supported {
             let layer_content = format!(
                 "# Gossip Mode — Knowledge Manifest\n\
                  Knowledge manifest: {path}\n\
@@ -168,9 +169,9 @@ where
         cloned_sessions.push((name, session_clone));
     }
 
-    // ── Write initial empty knowledge manifest (only if supported) ───
+    // ── Write initial empty knowledge manifest ───────────────────────
 
-    if supports_gossip_manifest {
+    if gossip_manifest_supported {
         let initial_manifest = KnowledgeManifest {
             run_id: run_id.clone(),
             entries: vec![],
@@ -265,6 +266,7 @@ where
                 match rx.recv_timeout(coordinator_interval) {
                     Ok(completion) => {
                         // A session completed — synthesize it into the manifest.
+                        let session_name = completion.session_name.clone();
                         knowledge_entries.push(KnowledgeEntry {
                             session_name: completion.session_name,
                             spec: completion.spec,
@@ -274,14 +276,20 @@ where
                             completed_at: completion.completed_at,
                         });
 
-                        if supports_gossip_manifest {
+                        if gossip_manifest_supported {
                             let updated_manifest = KnowledgeManifest {
                                 run_id: run_id_coord.clone(),
                                 entries: knowledge_entries.clone(),
                                 last_updated_at: Utc::now(),
                             };
                             if let Err(e) = persist_knowledge_manifest(gossip_dir_coord, &updated_manifest) {
-                                tracing::warn!(error = %e, "failed to persist knowledge manifest update");
+                                tracing::error!(
+                                    session = %session_name,
+                                    error = %e,
+                                    "failed to persist knowledge manifest update — \
+                                     cross-session knowledge sharing may be stale from this point forward; \
+                                     gossip results not durable"
+                                );
                             }
                         }
 
@@ -364,8 +372,7 @@ where
                             gs.coordinator_rounds += 1;
                         }
 
-                        // Final manifest write (only if supported).
-                        if supports_gossip_manifest {
+                        if gossip_manifest_supported {
                             let final_manifest = KnowledgeManifest {
                                 run_id: run_id_coord.clone(),
                                 entries: knowledge_entries.clone(),
