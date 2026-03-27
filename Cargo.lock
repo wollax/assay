@@ -132,6 +132,7 @@ name = "assay-cli"
 version = "0.5.0"
 dependencies = [
  "anyhow",
+ "assay-backends",
  "assay-core",
  "assay-harness",
  "assay-mcp",
@@ -198,6 +199,7 @@ dependencies = [
 name = "assay-mcp"
 version = "0.5.0"
 dependencies = [
+ "assay-backends",
  "assay-core",
  "assay-harness",
  "assay-mcp",

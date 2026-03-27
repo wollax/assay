@@ -35,7 +35,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use assay_core::state_backend::LocalFsBackend;
+use assay_backends::factory::backend_from_config;
+use assay_types::StateBackendConfig;
 
 use chrono::Utc;
 use rmcp::{
@@ -2957,7 +2958,13 @@ impl AssayServer {
         let orch_config = assay_core::orchestrate::executor::OrchestratorConfig {
             max_concurrency: 8,
             failure_policy,
-            backend: Arc::new(LocalFsBackend::new(assay_dir.clone())),
+            backend: backend_from_config(
+                manifest
+                    .state_backend
+                    .as_ref()
+                    .unwrap_or(&StateBackendConfig::LocalFs),
+                assay_dir.clone(),
+            ),
         };
 
         let specs_dir = cwd.join(".assay").join(&config.specs_dir);
@@ -2999,7 +3006,13 @@ impl AssayServer {
                 let orch_config = assay_core::orchestrate::executor::OrchestratorConfig {
                     max_concurrency: 8,
                     failure_policy,
-                    backend: Arc::new(LocalFsBackend::new(assay_dir.clone())),
+                    backend: backend_from_config(
+                        manifest
+                            .state_backend
+                            .as_ref()
+                            .unwrap_or(&StateBackendConfig::LocalFs),
+                        assay_dir.clone(),
+                    ),
                 };
                 let manifest_clone = manifest.clone();
                 let pipeline_config_clone = pipeline_config.clone();
@@ -3048,7 +3061,13 @@ impl AssayServer {
                 let orch_config = assay_core::orchestrate::executor::OrchestratorConfig {
                     max_concurrency: 8,
                     failure_policy,
-                    backend: Arc::new(LocalFsBackend::new(assay_dir.clone())),
+                    backend: backend_from_config(
+                        manifest
+                            .state_backend
+                            .as_ref()
+                            .unwrap_or(&StateBackendConfig::LocalFs),
+                        assay_dir.clone(),
+                    ),
                 };
                 let manifest_clone = manifest.clone();
                 let pipeline_config_clone = pipeline_config.clone();

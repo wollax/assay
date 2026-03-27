@@ -10,6 +10,7 @@ description = "MCP server library for Assay"
 testing = []
 
 [dependencies]
+assay-backends = { workspace = true }
 assay-core = { workspace = true, features = ["orchestrate"] }
 assay-harness.workspace = true
 assay-types = { workspace = true, features = ["orchestrate"] }

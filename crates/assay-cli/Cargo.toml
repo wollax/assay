@@ -11,6 +11,7 @@ name = "assay"
 path = "src/main.rs"
 
 [dependencies]
+assay-backends = { workspace = true }
 assay-core = { workspace = true, features = ["orchestrate"] }
 assay-harness.workspace = true
 assay-types.workspace = true
