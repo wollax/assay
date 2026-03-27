@@ -122,6 +122,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
+ "serial_test",
  "tempfile",
  "tracing",
 ]
