@@ -364,6 +364,62 @@ fn toml_round_trip_manifest_with_linear_backend() {
     assert_eq!(back.state_backend, manifest.state_backend);
 }
 
+#[test]
+fn toml_round_trip_manifest_with_github_backend() {
+    use assay_types::RunManifest;
+    let manifest = RunManifest {
+        sessions: vec![assay_types::ManifestSession {
+            spec: "auth".to_string(),
+            name: None,
+            settings: None,
+            hooks: vec![],
+            prompt_layers: vec![],
+            file_scope: vec![],
+            shared_files: vec![],
+            depends_on: vec![],
+        }],
+        mode: Default::default(),
+        mesh_config: None,
+        gossip_config: None,
+        state_backend: Some(StateBackendConfig::GitHub {
+            repo: "owner/repo".into(),
+            label: Some("assay".into()),
+        }),
+    };
+    let toml_out = toml::to_string(&manifest).unwrap();
+    let back: RunManifest = toml::from_str(&toml_out).unwrap();
+    assert_eq!(back.state_backend, manifest.state_backend);
+}
+
+#[test]
+fn toml_round_trip_manifest_with_ssh_backend() {
+    use assay_types::RunManifest;
+    let manifest = RunManifest {
+        sessions: vec![assay_types::ManifestSession {
+            spec: "auth".to_string(),
+            name: None,
+            settings: None,
+            hooks: vec![],
+            prompt_layers: vec![],
+            file_scope: vec![],
+            shared_files: vec![],
+            depends_on: vec![],
+        }],
+        mode: Default::default(),
+        mesh_config: None,
+        gossip_config: None,
+        state_backend: Some(StateBackendConfig::Ssh {
+            host: "worker.example.com".into(),
+            remote_assay_dir: "/home/user/.assay".into(),
+            user: Some("deploy".into()),
+            port: Some(2222),
+        }),
+    };
+    let toml_out = toml::to_string(&manifest).unwrap();
+    let back: RunManifest = toml::from_str(&toml_out).unwrap();
+    assert_eq!(back.state_backend, manifest.state_backend);
+}
+
 /// Verifies that `NoopBackend` has all capabilities disabled.
 #[test]
 fn test_noop_backend_capabilities_all_false() {

@@ -6,8 +6,14 @@ use serde::{Deserialize, Serialize};
 
 /// Backend configuration for state persistence.
 ///
-/// Serializes with `snake_case` tag keys: `LocalFs` → `"local_fs"`,
-/// `Custom` → `{"custom": {...}}`.
+/// Serializes with `snake_case` tag keys:
+/// - `LocalFs` → `"local_fs"`
+/// - `Linear` → `{"linear": {...}}`
+/// - `GitHub` → `{"github": {...}}` — note: `rename_all = "snake_case"` would
+///   produce `"git_hub"`, so the `GitHub` variant carries an explicit
+///   `#[serde(rename = "github")]` attribute to override this
+/// - `Ssh` → `{"ssh": {...}}`
+/// - `Custom` → `{"custom": {...}}`
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum StateBackendConfig {

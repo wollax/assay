@@ -10,18 +10,52 @@ use assay_types::StateBackendConfig;
 /// Create a [`StateBackend`] from the given configuration.
 ///
 /// - `LocalFs` → [`LocalFsBackend`] rooted at `assay_dir`.
-/// - `Linear`, `GitHub`, `Ssh`, `Custom` → [`NoopBackend`] (stub — real
-///   implementations are added by later slices behind feature flags).
+/// - `Linear` → `LinearBackend` when the `linear` feature is enabled (M011/S02);
+///   falls back to [`NoopBackend`] otherwise — all state writes are discarded.
+/// - `GitHub` → `GitHubBackend` when the `github` feature is enabled (M011/S03);
+///   falls back to [`NoopBackend`] otherwise — all state writes are discarded.
+/// - `Ssh` → `SshSyncBackend` when the `ssh` feature is enabled (M011/S04);
+///   falls back to [`NoopBackend`] otherwise — all state writes are discarded.
+/// - `Custom` → [`NoopBackend`] (no built-in implementation; all state writes are discarded).
 pub fn backend_from_config(
     config: &StateBackendConfig,
     assay_dir: PathBuf,
 ) -> Arc<dyn StateBackend> {
     match config {
         StateBackendConfig::LocalFs => Arc::new(LocalFsBackend::new(assay_dir)),
-        StateBackendConfig::Linear { .. }
-        | StateBackendConfig::GitHub { .. }
-        | StateBackendConfig::Ssh { .. }
-        | StateBackendConfig::Custom { .. } => Arc::new(NoopBackend),
+        StateBackendConfig::Linear { .. } => {
+            tracing::warn!(
+                backend = "linear",
+                "LinearBackend is not yet implemented — falling back to NoopBackend; \
+                 all state writes will be discarded (stub pending M011/S02)"
+            );
+            Arc::new(NoopBackend)
+        }
+        StateBackendConfig::GitHub { .. } => {
+            tracing::warn!(
+                backend = "github",
+                "GitHubBackend is not yet implemented — falling back to NoopBackend; \
+                 all state writes will be discarded (stub pending M011/S03)"
+            );
+            Arc::new(NoopBackend)
+        }
+        StateBackendConfig::Ssh { .. } => {
+            tracing::warn!(
+                backend = "ssh",
+                "SshSyncBackend is not yet implemented — falling back to NoopBackend; \
+                 all state writes will be discarded (stub pending M011/S04)"
+            );
+            Arc::new(NoopBackend)
+        }
+        StateBackendConfig::Custom { name, .. } => {
+            tracing::warn!(
+                backend = %name,
+                "Custom backend '{}' has no built-in implementation — falling back to NoopBackend; \
+                 all state writes will be discarded",
+                name
+            );
+            Arc::new(NoopBackend)
+        }
     }
 }
 

@@ -10,6 +10,7 @@ assay-core = { workspace = true, features = ["orchestrate"] }
 assay-types = { workspace = true, features = ["orchestrate"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
+tracing = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

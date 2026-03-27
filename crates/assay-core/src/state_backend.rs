@@ -151,8 +151,22 @@ fn _assert_object_safe(_: std::sync::Arc<dyn StateBackend>) {}
 /// check capabilities before calling optional methods will degrade gracefully
 /// rather than invoking any method at all.
 ///
-/// This is a **test helper** — it proves degradation paths in isolation
-/// without requiring a real filesystem or remote backend.
+/// # Deliberate contract exception
+///
+/// [`StateBackend`]'s documented contract says implementations with a capability
+/// flag `false` *should return an error* when that optional method is called.
+/// `NoopBackend` intentionally breaks this — all methods succeed silently.
+/// This is safe only because the orchestrator always checks [`CapabilitySet`]
+/// before calling optional methods; `NoopBackend` is only valid when used with
+/// a caller that honours that check (which all production paths do).
+///
+/// # Test helper
+///
+/// This is a **test helper** — it proves degradation paths in isolation without
+/// requiring a real filesystem or remote backend. There is no enforcement
+/// preventing production use, but do not use `NoopBackend` in production code:
+/// all state writes will be silently discarded.
+#[doc(hidden)]
 pub struct NoopBackend;
 
 impl StateBackend for NoopBackend {

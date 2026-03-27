@@ -214,9 +214,10 @@ where
     let messaging_supported = config.backend.capabilities().supports_messaging;
     if !messaging_supported {
         tracing::warn!(
-            "StateBackend does not support messaging (supports_messaging = false); \
-             mesh message routing is disabled — sessions will still execute in parallel \
-             but peer-to-peer message passing is unavailable"
+            capability = "messaging",
+            mode = "mesh",
+            "backend does not support messaging — mesh routing thread will not be spawned; \
+             sessions execute in parallel but peer-to-peer message passing is unavailable"
         );
     }
 
@@ -236,33 +237,65 @@ where
                 while active_count_ref.load(Ordering::Acquire) > 0 {
                     for (source_name, session_dir) in session_dirs_ref {
                         let outbox = session_dir.join("outbox");
-                        if let Ok(targets) = std::fs::read_dir(&outbox) {
-                            for target_entry in targets.flatten() {
-                                let target_name =
-                                    target_entry.file_name().to_string_lossy().to_string();
-                                if let Some(inbox) = name_to_inbox_ref.get(&target_name) {
-                                    if let Ok(msgs) = std::fs::read_dir(target_entry.path()) {
-                                        for msg in msgs.flatten() {
-                                            let dst = inbox.join(msg.file_name());
-                                            if std::fs::rename(msg.path(), &dst).is_ok() {
-                                                let mut ms = mesh_status_arc_ref.lock().unwrap();
-                                                ms.messages_routed += 1;
-                                                tracing::debug!(
-                                                    from = %source_name,
-                                                    to = %target_name,
-                                                    file = ?msg.file_name(),
-                                                    "routed message"
-                                                );
-                                            }
+                        let targets = match std::fs::read_dir(&outbox) {
+                            Ok(rd) => rd,
+                            Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
+                            Err(e) => {
+                                tracing::warn!(
+                                    session = %source_name,
+                                    outbox = %outbox.display(),
+                                    error = %e,
+                                    "failed to read outbox directory — messages from this session may not be routed"
+                                );
+                                continue;
+                            }
+                        };
+                        for target_entry in targets.flatten() {
+                            let target_name =
+                                target_entry.file_name().to_string_lossy().to_string();
+                            if let Some(inbox) = name_to_inbox_ref.get(&target_name) {
+                                let msgs = match std::fs::read_dir(target_entry.path()) {
+                                    Ok(rd) => rd,
+                                    Err(e) => {
+                                        tracing::warn!(
+                                            source = %source_name,
+                                            target = %target_name,
+                                            error = %e,
+                                            "failed to read target outbox subdirectory — messages may be lost"
+                                        );
+                                        continue;
+                                    }
+                                };
+                                for msg in msgs.flatten() {
+                                    let dst = inbox.join(msg.file_name());
+                                    match std::fs::rename(msg.path(), &dst) {
+                                        Ok(()) => {
+                                            let mut ms = mesh_status_arc_ref.lock().unwrap();
+                                            ms.messages_routed += 1;
+                                            tracing::debug!(
+                                                from = %source_name,
+                                                to = %target_name,
+                                                file = ?msg.file_name(),
+                                                "routed message"
+                                            );
+                                        }
+                                        Err(e) => {
+                                            tracing::warn!(
+                                                from = %source_name,
+                                                to = %target_name,
+                                                file = ?msg.file_name(),
+                                                error = %e,
+                                                "failed to route mesh message — message left in outbox"
+                                            );
                                         }
                                     }
-                                } else {
-                                    tracing::warn!(
-                                        target = %target_name,
-                                        source = %source_name,
-                                        "unknown outbox target — leaving file in place"
-                                    );
                                 }
+                            } else {
+                                tracing::warn!(
+                                    target = %target_name,
+                                    source = %source_name,
+                                    "unknown outbox target — leaving file in place"
+                                );
                             }
                         }
                     }

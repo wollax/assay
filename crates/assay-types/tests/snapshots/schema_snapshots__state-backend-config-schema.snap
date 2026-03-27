@@ -4,7 +4,7 @@ expression: schema.to_value()
 ---
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "description": "Backend configuration for state persistence.\n\nSerializes with `snake_case` tag keys: `LocalFs` → `\"local_fs\"`,\n`Custom` → `{\"custom\": {...}}`.",
+  "description": "Backend configuration for state persistence.\n\nSerializes with `snake_case` tag keys:\n- `LocalFs` → `\"local_fs\"`\n- `Linear` → `{\"linear\": {...}}`\n- `GitHub` → `{\"github\": {...}}` — note: `rename_all = \"snake_case\"` would\n  produce `\"git_hub\"`, so the `GitHub` variant carries an explicit\n  `#[serde(rename = \"github\")]` attribute to override this\n- `Ssh` → `{\"ssh\": {...}}`\n- `Custom` → `{\"custom\": {...}}`",
   "oneOf": [
     {
       "const": "local_fs",

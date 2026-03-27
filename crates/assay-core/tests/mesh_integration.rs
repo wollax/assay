@@ -15,7 +15,7 @@ use std::time::Duration;
 
 use std::sync::Arc;
 
-use assay_core::orchestrate::executor::OrchestratorConfig;
+use assay_core::orchestrate::executor::{OrchestratorConfig, SessionOutcome};
 use assay_core::orchestrate::mesh::run_mesh;
 use assay_core::pipeline::{PipelineConfig, PipelineError, PipelineResult};
 use assay_core::state_backend::NoopBackend;
@@ -291,7 +291,6 @@ fn test_mesh_degrades_gracefully_without_messaging() {
         result.err()
     );
 
-    use assay_core::orchestrate::executor::SessionOutcome;
     let orch_result = result.unwrap();
 
     // All sessions must complete (not fail or skip).

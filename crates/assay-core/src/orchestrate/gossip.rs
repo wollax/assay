@@ -133,10 +133,11 @@ where
     let gossip_manifest_supported = config.backend.capabilities().supports_gossip_manifest;
     if !gossip_manifest_supported {
         tracing::warn!(
-            "StateBackend does not support gossip manifest (supports_gossip_manifest = false); \
-             knowledge manifest PromptLayer injection and manifest writes are disabled — \
-             sessions will still execute in parallel but cross-session knowledge sharing \
-             is unavailable"
+            capability = "gossip_manifest",
+            mode = "gossip",
+            "backend does not support gossip manifest — knowledge manifest injection and \
+             writes are disabled; sessions execute in parallel but cross-session knowledge \
+             sharing is unavailable"
         );
     }
 
@@ -265,6 +266,7 @@ where
                 match rx.recv_timeout(coordinator_interval) {
                     Ok(completion) => {
                         // A session completed — synthesize it into the manifest.
+                        let session_name = completion.session_name.clone();
                         knowledge_entries.push(KnowledgeEntry {
                             session_name: completion.session_name,
                             spec: completion.spec,
@@ -281,7 +283,13 @@ where
                                 last_updated_at: Utc::now(),
                             };
                             if let Err(e) = persist_knowledge_manifest(gossip_dir_coord, &updated_manifest) {
-                                tracing::warn!(error = %e, "failed to persist knowledge manifest update");
+                                tracing::error!(
+                                    session = %session_name,
+                                    error = %e,
+                                    "failed to persist knowledge manifest update — \
+                                     cross-session knowledge sharing may be stale from this point forward; \
+                                     gossip results not durable"
+                                );
                             }
                         }
 
@@ -364,7 +372,6 @@ where
                             gs.coordinator_rounds += 1;
                         }
 
-                        // Final manifest write (only when gossip manifest is supported).
                         if gossip_manifest_supported {
                             let final_manifest = KnowledgeManifest {
                                 run_id: run_id_coord.clone(),

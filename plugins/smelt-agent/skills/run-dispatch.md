@@ -25,10 +25,15 @@ type = "local_fs"
 
 ## Step 2 — Configure the StateBackendConfig (optional)
 
-If the controller wants state on a remote backend, set the `state_backend` field. Currently supported variants:
+If the controller wants state on a remote backend, set the `state_backend` field. Supported variants:
 
 - `{ type = "local_fs" }` — filesystem under `.assay/orchestrator/<run_id>/` (default)
-- `{ type = "custom", name = "my-backend", config = { ... } }` — custom third-party backend
+- `{ type = "linear", team_id = "TEAM123" }` — Linear project tracking; requires `LINEAR_API_KEY` env var; `project_id` is optional (M011/S02)
+- `{ type = "github", repo = "owner/repo" }` — GitHub Issues via `gh` CLI; requires `gh` installed and authenticated; `label` is optional (M011/S03)
+- `{ type = "ssh", host = "worker.example.com", remote_assay_dir = "/home/user/.assay" }` — SCP sync to remote host; `user` and `port` are optional (M011/S04)
+- `{ type = "custom", name = "my-backend", config = { ... } }` — custom third-party backend (falls back to no-op)
+
+**Note:** `linear`, `github`, and `ssh` backends are stub implementations in the current release — configuring them logs a warning and falls back to a no-op backend that discards all state writes. Full implementations land in M011/S02–S04.
 
 For local smelt workers, omit `state_backend` (defaults to `LocalFs`).
 
