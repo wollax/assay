@@ -5,13 +5,9 @@
 **Phase:** Planning
 
 ## Recent Decisions
-- D160: assay-backends as new leaf crate (linear/github/ssh feature flags)
-- D164: LinearBackend capabilities — messaging=false, annotations=true, checkpoints=false
-- D165: backend_from_config factory fn in assay_backends::factory
-- D168: LinearBackend uses reqwest::blocking, not scoped async runtime (supersedes D161)
-- D170: GitHubBackend capabilities all-false (CapabilitySet::none())
-- D171: GitHubBackend uses --body-file - with stdin pipe for body content
 - D172: GitHubBackend factory dispatch has no env-var gate (unlike LinearBackend)
+- D173: SshSyncBackend uses ssh_run() with shell_quote() for remote commands; scp paths use Command::arg()
+- D174: SshSyncBackend read_run_state returns Ok(None) on scp pull failure (file not found = normal)
 
 ## Blockers
 - None
@@ -21,7 +17,7 @@
 - M011/S01 ✅ — assay-backends crate scaffold and StateBackendConfig variants complete (1499 tests green)
 - M011/S02 ✅ — LinearBackend complete (8 contract tests + factory dispatch — 1501 total tests green)
 - M011/S03 ✅ — GitHubBackend complete (8 contract tests + factory dispatch — 1501 total tests green)
-- M011/S04 ⬜ — SshSyncBackend + CLI/MCP factory wiring
+- M011/S04 🔵 — SshSyncBackend + CLI/MCP factory wiring (planning complete)
 
 ## Next Action
-S04: SshSyncBackend implementation via scp Command::arg() chaining + CLI/MCP construction site wiring to backend_from_config()
+S04/T01: Write contract tests for SshSyncBackend (red state) in crates/assay-backends/tests/ssh_backend.rs
