@@ -51,7 +51,7 @@
   - Verify: `cargo build -p assay-backends` compiles; `cargo test -p assay-backends` passes
   - Done when: Crate compiles, factory fn exists and dispatches all five variants
 
-- [ ] **T02: Write tests, regenerate schema snapshots, and pass `just ready`** `est:30m`
+- [x] **T02: Write tests, regenerate schema snapshots, and pass `just ready`** `est:30m`
   - Why: Locks the new variant shapes via schema snapshots and proves serde round-trips; ensures zero regression across all 1488+ tests
   - Files: `crates/assay-core/tests/state_backend.rs`, `crates/assay-backends/src/factory.rs` (tests), `crates/assay-types/tests/snapshots/` (updated snapshots)
   - Do: Add serde round-trip tests for all five `StateBackendConfig` variants (JSON and TOML) in `state_backend.rs`. Add factory dispatch tests in `assay-backends` (verify `LocalFs` returns `CapabilitySet::all()`, others return `CapabilitySet::none()`). Run `cargo insta review` for both feature-flag states to accept updated snapshots. Run `just ready`.

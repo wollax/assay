@@ -13,6 +13,108 @@ expression: schema.to_value()
     },
     {
       "additionalProperties": false,
+      "description": "Linear backend for syncing state to Linear projects.",
+      "properties": {
+        "linear": {
+          "properties": {
+            "project_id": {
+              "description": "Optional Linear project to scope state within.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "team_id": {
+              "description": "Linear team identifier.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "team_id"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "linear"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "description": "GitHub backend for syncing state to GitHub issues/projects.",
+      "properties": {
+        "github": {
+          "properties": {
+            "label": {
+              "description": "Optional label to scope state issues.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "repo": {
+              "description": "GitHub repository in `owner/repo` format.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "repo"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "github"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "description": "SSH backend for syncing state to a remote host.",
+      "properties": {
+        "ssh": {
+          "properties": {
+            "host": {
+              "description": "Remote host to connect to.",
+              "type": "string"
+            },
+            "port": {
+              "description": "SSH port (defaults to 22 if omitted).",
+              "format": "uint16",
+              "maximum": 65535,
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "remote_assay_dir": {
+              "description": "Path to the assay directory on the remote host.",
+              "type": "string"
+            },
+            "user": {
+              "description": "SSH user (defaults to current user if omitted).",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "host",
+            "remote_assay_dir"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "ssh"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
       "description": "Custom third-party backend identified by name.",
       "properties": {
         "custom": {

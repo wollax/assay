@@ -263,6 +263,107 @@ fn test_local_fs_backend_send_and_poll_messages() {
     assert_eq!(contents, b"hello world");
 }
 
+// ── Serde round-trip tests for new StateBackendConfig variants ───────
+
+#[test]
+fn serde_json_round_trip_linear_variant() {
+    let config = StateBackendConfig::Linear {
+        team_id: "TEAM".into(),
+        project_id: Some("PROJ".into()),
+    };
+    let json = serde_json::to_string(&config).unwrap();
+    let back: StateBackendConfig = serde_json::from_str(&json).unwrap();
+    assert_eq!(back, config);
+}
+
+#[test]
+fn serde_json_round_trip_github_variant() {
+    let config = StateBackendConfig::GitHub {
+        repo: "user/repo".into(),
+        label: Some("assay".into()),
+    };
+    let json = serde_json::to_string(&config).unwrap();
+    let back: StateBackendConfig = serde_json::from_str(&json).unwrap();
+    assert_eq!(back, config);
+    // Verify the serde rename: must serialize as "github", not "git_hub"
+    assert!(
+        json.contains("\"github\""),
+        "GitHub variant must serialize as 'github', got: {json}"
+    );
+    assert!(
+        !json.contains("\"git_hub\""),
+        "GitHub variant must NOT serialize as 'git_hub', got: {json}"
+    );
+}
+
+#[test]
+fn serde_json_round_trip_ssh_variant() {
+    let config = StateBackendConfig::Ssh {
+        host: "server.example.com".into(),
+        remote_assay_dir: "/home/user/.assay".into(),
+        user: Some("deploy".into()),
+        port: Some(2222),
+    };
+    let json = serde_json::to_string(&config).unwrap();
+    let back: StateBackendConfig = serde_json::from_str(&json).unwrap();
+    assert_eq!(back, config);
+}
+
+#[test]
+fn serde_json_round_trip_linear_variant_minimal() {
+    // Without optional fields
+    let config = StateBackendConfig::Linear {
+        team_id: "TEAM".into(),
+        project_id: None,
+    };
+    let json = serde_json::to_string(&config).unwrap();
+    let back: StateBackendConfig = serde_json::from_str(&json).unwrap();
+    assert_eq!(back, config);
+    // project_id should be absent (skip_serializing_if)
+    assert!(!json.contains("project_id"));
+}
+
+#[test]
+fn serde_json_round_trip_ssh_variant_minimal() {
+    // Without optional fields
+    let config = StateBackendConfig::Ssh {
+        host: "server.example.com".into(),
+        remote_assay_dir: "/home/user/.assay".into(),
+        user: None,
+        port: None,
+    };
+    let json = serde_json::to_string(&config).unwrap();
+    let back: StateBackendConfig = serde_json::from_str(&json).unwrap();
+    assert_eq!(back, config);
+}
+
+#[test]
+fn toml_round_trip_manifest_with_linear_backend() {
+    use assay_types::RunManifest;
+    let manifest = RunManifest {
+        sessions: vec![assay_types::ManifestSession {
+            spec: "auth".to_string(),
+            name: None,
+            settings: None,
+            hooks: vec![],
+            prompt_layers: vec![],
+            file_scope: vec![],
+            shared_files: vec![],
+            depends_on: vec![],
+        }],
+        mode: Default::default(),
+        mesh_config: None,
+        gossip_config: None,
+        state_backend: Some(StateBackendConfig::Linear {
+            team_id: "TEAM".into(),
+            project_id: Some("PROJ".into()),
+        }),
+    };
+    let toml_out = toml::to_string(&manifest).unwrap();
+    let back: RunManifest = toml::from_str(&toml_out).unwrap();
+    assert_eq!(back.state_backend, manifest.state_backend);
+}
+
 /// Verifies that `NoopBackend` has all capabilities disabled.
 #[test]
 fn test_noop_backend_capabilities_all_false() {

@@ -24,3 +24,63 @@ pub fn backend_from_config(
         | StateBackendConfig::Custom { .. } => Arc::new(NoopBackend),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use assay_core::CapabilitySet;
+
+    #[test]
+    fn factory_local_fs_returns_full_capabilities() {
+        let dir = tempfile::tempdir().unwrap();
+        let backend = backend_from_config(&StateBackendConfig::LocalFs, dir.path().to_path_buf());
+        let caps = backend.capabilities();
+        assert_eq!(caps, CapabilitySet::all());
+    }
+
+    #[test]
+    fn factory_linear_returns_noop() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = StateBackendConfig::Linear {
+            team_id: "TEAM".into(),
+            project_id: Some("PROJ".into()),
+        };
+        let backend = backend_from_config(&config, dir.path().to_path_buf());
+        assert_eq!(backend.capabilities(), CapabilitySet::none());
+    }
+
+    #[test]
+    fn factory_github_returns_noop() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = StateBackendConfig::GitHub {
+            repo: "user/repo".into(),
+            label: Some("assay".into()),
+        };
+        let backend = backend_from_config(&config, dir.path().to_path_buf());
+        assert_eq!(backend.capabilities(), CapabilitySet::none());
+    }
+
+    #[test]
+    fn factory_ssh_returns_noop() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = StateBackendConfig::Ssh {
+            host: "server.example.com".into(),
+            remote_assay_dir: "/home/user/.assay".into(),
+            user: Some("deploy".into()),
+            port: Some(2222),
+        };
+        let backend = backend_from_config(&config, dir.path().to_path_buf());
+        assert_eq!(backend.capabilities(), CapabilitySet::none());
+    }
+
+    #[test]
+    fn factory_custom_returns_noop() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = StateBackendConfig::Custom {
+            name: "my-backend".into(),
+            config: serde_json::json!({"key": "value"}),
+        };
+        let backend = backend_from_config(&config, dir.path().to_path_buf());
+        assert_eq!(backend.capabilities(), CapabilitySet::none());
+    }
+}
