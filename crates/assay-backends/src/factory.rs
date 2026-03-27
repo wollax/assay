@@ -55,11 +55,17 @@ pub fn backend_from_config(
             );
             Arc::new(NoopBackend)
         }
+        #[cfg(feature = "github")]
+        StateBackendConfig::GitHub { repo, label } => {
+            let backend = crate::github::GitHubBackend::new(repo.clone(), label.clone());
+            Arc::new(backend)
+        }
+        #[cfg(not(feature = "github"))]
         StateBackendConfig::GitHub { .. } => {
             tracing::warn!(
                 backend = "github",
-                "GitHubBackend is not yet implemented — falling back to NoopBackend; \
-                 all state writes will be discarded (stub pending M011/S03)"
+                "GitHubBackend requires the `github` feature — falling back to NoopBackend; \
+                 all state writes will be discarded"
             );
             Arc::new(NoopBackend)
         }
@@ -131,13 +137,16 @@ mod tests {
     }
 
     #[test]
-    fn factory_github_returns_noop() {
+    fn factory_github_capabilities() {
         let dir = tempfile::tempdir().unwrap();
         let config = StateBackendConfig::GitHub {
             repo: "user/repo".into(),
             label: Some("assay".into()),
         };
         let backend = backend_from_config(&config, dir.path().to_path_buf());
+        // GitHubBackend has all-false capabilities (same as NoopBackend).
+        // With the `github` feature enabled, the real GitHubBackend is used;
+        // without it, NoopBackend is returned. Either way, capabilities are none().
         assert_eq!(backend.capabilities(), CapabilitySet::none());
     }
 

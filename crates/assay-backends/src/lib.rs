@@ -3,5 +3,8 @@
 
 pub mod factory;
 
+#[cfg(feature = "github")]
+pub mod github;
+
 #[cfg(feature = "linear")]
 pub mod linear;

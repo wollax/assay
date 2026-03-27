@@ -53,7 +53,7 @@
   - Verify: `cargo test -p assay-backends --features github` — tests compile but fail (GitHubBackend not defined yet)
   - Done when: All 8 test functions exist, reference `crate::github::GitHubBackend`, and compile to red state
 
-- [ ] **T02: Implement GitHubBackend and wire factory dispatch** `est:30m`
+- [x] **T02: Implement GitHubBackend and wire factory dispatch** `est:30m`
   - Why: Make all T01 tests pass by implementing the real `GitHubBackend` struct and updating factory dispatch.
   - Files: `crates/assay-backends/src/github.rs`, `crates/assay-backends/src/lib.rs`, `crates/assay-backends/src/factory.rs`
   - Do: Create `github.rs` with `GhRunner` (wraps `Command` calls: `create_issue` parses URL for issue number, `create_comment` uses `--body-file -` with stdin pipe, `get_issue_json` returns parsed JSON). `GitHubBackend` struct holds `repo: String`, `label: Option<String>`. Implements all 7 `StateBackend` methods. `.github-issue-number` file tracking. Update `lib.rs` with `#[cfg(feature = "github")] pub mod github`. Update `factory.rs` with `#[cfg(feature = "github")]` / `#[cfg(not(feature = "github"))]` dual-arm pattern. Update factory test for GitHub to check real capabilities when feature enabled.
