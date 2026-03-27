@@ -48,7 +48,7 @@ This milestone is complete only when all are true:
 
 ## Slices
 
-- [x] **S01: GitHubBackend correctness fixes (Q001–Q004)** `risk:low` `depends:[]`
+- [ ] **S01: GitHubBackend correctness fixes (Q001–Q004)** `risk:low` `depends:[]`
   > After this: `GitHubBackend` warns on malformed repo, rejects issue `0`, has extracted GhRunner error helper, and factory.rs doc is clean — all proven by unit tests.
 
 - [ ] **S02: TUI trace viewer** `risk:medium` `depends:[]`

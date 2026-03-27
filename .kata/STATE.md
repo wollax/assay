@@ -1,9 +1,9 @@
 # Kata State
 
 **Active Milestone:** M013 — Tech Debt & Deferred Features
-**Active Slice:** S02 — TUI trace viewer (next)
-**Active Task:** —
-**Phase:** S01 complete; S02/S03/S04 pending (all independent)
+**Active Slice:** none (planning complete, ready to execute S01)
+**Active Task:** none
+**Phase:** Planning
 
 ## Recent Decisions
 - D177: GitHubBackend repo validation is warn-not-error at construction
@@ -15,8 +15,8 @@
 - None
 
 ## Progress
-- M012 ✅ COMPLETE (R080 validated, 1503 tests)
-- M013: S01 ✅ complete (R081 validated, 1501 tests); S02/S03/S04 pending
+- M012 ✅ COMPLETE (R080 validated, 1529 tests with all features)
+- M013: planning complete — 4 slices, all independent
 
 ## Next Action
-Begin S02 (TUI trace viewer) — independent of S01/S03/S04. Reads `.assay/traces/*.json` written by JsonFileLayer. `t` key from Dashboard opens trace list screen.
+Begin M013/S01: GitHubBackend correctness fixes (Q001–Q004). Create branch `kata/M013/S01`, implement validation warn + issue-0 rejection + GhRunner error helper + factory doc cleanup, write contract tests, `just ready` green.
