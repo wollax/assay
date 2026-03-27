@@ -60,7 +60,7 @@
   - Verify: `cargo test -p assay-core --features orchestrate -- guard::daemon::tests` — all 9 existing tests pass + 2 contract tests pass; `cargo test -p assay-core -- guard::daemon::tests` — non-orchestrate build passes
   - Done when: Contract tests green; all existing tests green; both feature-flag states compile
 
-- [ ] **T03: Wire CLI handle_guard_start and run just ready** `est:30m`
+- [x] **T03: Wire CLI handle_guard_start and run just ready** `est:30m`
   - Why: Completes the call-site chain — CLI passes `Arc::new(LocalFsBackend::new(assay.clone()))` to `start_guard()`, preserving existing behavior. Validates full workspace green.
   - Files: `crates/assay-cli/src/commands/context.rs`
   - Do: (1) Add `use std::sync::Arc;` and `use assay_core::LocalFsBackend;` imports (already available since assay-cli enables orchestrate). (2) In `handle_guard_start`, construct `Arc::new(LocalFsBackend::new(assay.clone()))` and pass as the backend parameter to `start_guard()`. (3) Run `just ready` to confirm full workspace green with 1526+ tests. (4) Verify the non-unix stub `handle_guard_start` compiles (it doesn't call `start_guard`, so no change needed).
