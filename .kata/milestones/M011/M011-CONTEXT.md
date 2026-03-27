@@ -39,7 +39,7 @@ To call this milestone complete, we must prove:
 - `cargo test --workspace` passes with 0 failures (no flaky tests)
 - No production source file exceeds 500 lines
 - `GET /health` returns 200 without auth when `[auth]` is configured
-- All `eprintln!` calls in smelt-cli are replaced with tracing events (except `main.rs` error handler)
+- All `eprintln!` calls in smelt-cli are replaced with tracing events (except `main.rs` error handler and `serve/tui.rs` post-restore error — see S02-RESEARCH.md)
 - `cargo clippy --workspace` clean, `cargo doc --workspace --no-deps` zero warnings
 
 ## Risks and Unknowns

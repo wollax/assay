@@ -14,6 +14,7 @@ Automated infrastructure delivery: `smelt run manifest.toml` provisions → runs
 
 **M011/S01 complete.** `manifest.rs` (1924L) and `git/cli.rs` (1365L) decomposed into 14 focused modules under 500 lines each (max 337L). All 290 workspace tests pass unchanged. R060 validated.
 
+
 **M010 complete.** HTTP API authentication and code quality. S01 delivered bearer token auth for `smelt serve`: opt-in `[auth]` config with env var resolution, read/write permission split middleware (GET/HEAD = read, POST/DELETE = write), 401/403 JSON error responses, and 4 integration tests covering all token×permission combinations. S02 cleaned up two PR review debt items: extracted `warn_teardown()` replacing 6 silent `let _ =` blocks with logged warnings, replaced 5 `anyhow!("{e}")` with `.context()`, and extracted `build_common_ssh_args()` eliminating SSH/SCP flag duplication. S03 documented the `[auth]` section in `examples/server.toml` and README.md, then verified all milestone success criteria (290 tests, clippy clean, doc clean). R050–R053 validated.
 
 **M009 complete.** Documentation, examples, and code cleanup. S01 enforced `#![deny(missing_docs)]` on smelt-cli, audited stale `#[allow]` annotations, fixed cargo doc warnings. S02 wrote comprehensive README.md and annotated all example manifests. S03 decomposed three large files (run.rs, ssh.rs, serve/tests.rs) into focused modules. 286 tests green.

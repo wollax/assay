@@ -17,6 +17,7 @@
 ## Key Risks / Unknowns
 
 - **Tracing output format for user-facing messages** — `eprintln!("Provisioning container...")` must become a tracing event that still looks clean to users at default log level. Risk: tracing default format includes timestamps, levels, and targets which are noisy for progress messages. Mitigation: use a minimal formatter or `tracing::event!` with a custom layer.
+- **Default log filter level hides info! messages** — Current default filter is `warn`. After migration, progress messages become `tracing::info!` which would be silently hidden at `warn` level — breaking both user-visible output and integration tests that assert on stderr substrings. Mitigation: change default filter to target-scoped `smelt_cli=info,smelt_core=info,warn` so progress messages appear while dependency crate noise stays suppressed.
 
 ## Proof Strategy
 
@@ -55,7 +56,7 @@ This milestone is complete only when all are true:
 - [x] **S01: Decompose manifest.rs and git/cli.rs** `risk:medium` `depends:[]`
   > After this: `manifest.rs` and `git/cli.rs` are each below 500 lines; all public API signatures preserved via re-exports; all existing tests pass unchanged.
 
-- [ ] **S02: Full tracing migration + flaky test fix** `risk:medium` `depends:[]`
+- [ ] **S02: Full tracing migration + flaky test fix** `risk:high` `depends:[]`
   > After this: all `eprintln!` in smelt-cli replaced with tracing events; `smelt run --dry-run` output is clean and readable; `test_cli_run_invalid_manifest` passes reliably; `cargo test --workspace` 0 failures.
 
 - [ ] **S03: Health endpoint + final verification** `risk:low` `depends:[S01,S02]`
