@@ -185,3 +185,57 @@ so future readers don't need to consult the decisions register:
 /// match (same pattern as `handle_mcp_panel_event` — extracting to a `&mut self` method
 /// lets us re-borrow `self.screen` mutably after reading mode from it, D098).
 ```
+
+## [Q013] OTel metrics: expose metric name strings as pub const
+
+**Queued:** 2026-03-28
+**Source:** PR #199 review (suggestion #8)
+**Scope:** `crates/assay-core/src/telemetry.rs` — `init_metric_handles`
+
+Metric instrument names (`assay.sessions.launched`, etc.) are string literals
+buried inside `init_metric_handles`. A typo or rename would silently break
+dashboards/alerts with no test catching it. Extract as `pub const` values so
+they can be tested, referenced by documentation, and used by future attribute/
+label configuration without duplicating the strings.
+
+---
+
+## [Q014] OTel metrics: test that agent_run_duration is NOT recorded on failure
+
+**Queued:** 2026-03-28
+**Source:** PR #199 review (suggestion)
+**Scope:** `crates/assay-core/tests/otel_metrics.rs` or pipeline tests
+
+The histogram only records on successful agent runs (the `?` propagates errors
+before the recording call). This is an intentional behavioral contract per
+T03-SUMMARY, but no test verifies it. A future refactor moving the recording
+call inside the closure could silently change behavior. Add a test asserting
+agent duration is NOT incremented when the agent stage fails.
+
+---
+
+## [Q015] OTel metrics: test build_otel_metrics returns None when endpoint is absent
+
+**Queued:** 2026-03-28
+**Source:** PR #199 review (suggestion)
+**Scope:** `crates/assay-core/tests/otel_metrics.rs` or `telemetry.rs` unit tests
+
+`build_otel_metrics` with `otlp_endpoint: None` is the most common path (default
+config) but is not directly tested. The existing `test_init_tracing_returns_guard`
+covers `TracingConfig::default()` but does not assert `_meter_provider` is `None`.
+Add an indirect check (e.g. verify `SESSIONS_LAUNCHED.get()` returns `None` after
+`init_tracing(TracingConfig::default())`).
+
+---
+
+## [Q016] OTel metrics: reduce dual-cfg recording function repetition
+
+**Queued:** 2026-03-28
+**Source:** PR #199 review (suggestion)
+**Scope:** `crates/assay-core/src/telemetry.rs`
+
+Each of the five recording functions is written twice (real + stub), totaling
+10 function definitions. Any signature change must be made in two places. Consider
+a declarative macro or a `mod metrics_impl` with `pub use metrics_impl::*` pattern
+to eliminate duplication. Low-urgency but worth addressing before more metrics are
+added.
