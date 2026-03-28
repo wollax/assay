@@ -91,6 +91,19 @@ pub fn backend_from_config(
             );
             Arc::new(NoopBackend)
         }
+        #[cfg(feature = "smelt")]
+        StateBackendConfig::Smelt { url, job_id, token } => Arc::new(
+            crate::smelt::SmeltBackend::new(url.clone(), job_id.clone(), token.clone()),
+        ),
+        #[cfg(not(feature = "smelt"))]
+        StateBackendConfig::Smelt { .. } => {
+            tracing::warn!(
+                backend = "smelt",
+                "SmeltBackend requires the `smelt` feature — falling back to NoopBackend; \
+                 all state writes will be discarded"
+            );
+            Arc::new(NoopBackend)
+        }
         StateBackendConfig::Custom { name, .. } => {
             tracing::warn!(
                 backend = %name,
@@ -113,7 +126,17 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let backend = backend_from_config(&StateBackendConfig::LocalFs, dir.path().to_path_buf());
         let caps = backend.capabilities();
-        assert_eq!(caps, CapabilitySet::all());
+        // LocalFs supports everything except signals.
+        assert_eq!(
+            caps,
+            CapabilitySet {
+                supports_messaging: true,
+                supports_gossip_manifest: true,
+                supports_annotations: true,
+                supports_checkpoints: true,
+                supports_signals: false,
+            }
+        );
     }
 
     #[test]
@@ -137,6 +160,7 @@ mod tests {
                         supports_gossip_manifest: false,
                         supports_annotations: true,
                         supports_checkpoints: false,
+                        supports_signals: false,
                     }
                 );
             } else {
@@ -175,7 +199,16 @@ mod tests {
         };
         let backend = backend_from_config(&config, dir.path().to_path_buf());
         #[cfg(feature = "ssh")]
-        assert_eq!(backend.capabilities(), CapabilitySet::all());
+        assert_eq!(
+            backend.capabilities(),
+            CapabilitySet {
+                supports_messaging: true,
+                supports_gossip_manifest: true,
+                supports_annotations: true,
+                supports_checkpoints: true,
+                supports_signals: false,
+            }
+        );
         #[cfg(not(feature = "ssh"))]
         assert_eq!(backend.capabilities(), CapabilitySet::none());
     }
