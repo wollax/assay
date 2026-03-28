@@ -125,6 +125,7 @@ dependencies = [
  "serial_test",
  "tempfile",
  "tracing",
+ "tracing-test",
 ]
 
 [[package]]

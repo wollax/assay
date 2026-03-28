@@ -40,7 +40,7 @@
 
 ## Tasks
 
-- [ ] **T01: Write contract tests for Q001–Q004** `est:30m`
+- [x] **T01: Write contract tests for Q001–Q004** `est:30m`
   - Why: Test-first — define the contracts before implementing. Tests should fail/not compile initially.
   - Files: `crates/assay-backends/tests/github_backend.rs`, `crates/assay-backends/Cargo.toml`
   - Do: Add `tracing-test` dev-dep to assay-backends. Write 4 new tests: (1) Q001 warn on empty repo via `#[traced_test]` + `logs_contain`, (2) Q001 warn on repo missing `/`, (3) Q002 `read_issue_number` rejects `0`, (4) Q003 assert `gh_error` is used (tested indirectly via existing error tests). Add a Q004 `grep` assertion to verification. Keep `#[serial]` on PATH-mutating tests; Q001/Q002/Q004 tests don't need `#[serial]`.

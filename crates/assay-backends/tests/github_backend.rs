@@ -16,6 +16,7 @@ use std::path::Path;
 
 use serial_test::serial;
 use tempfile::TempDir;
+use tracing_test::traced_test;
 
 use assay_core::{CapabilitySet, StateBackend};
 use assay_types::{FailurePolicy, OrchestratorPhase, OrchestratorStatus};
@@ -303,5 +304,68 @@ fn test_gh_nonzero_exit_returns_error() {
     assert!(
         err_msg.contains("Bad credentials") || err_msg.contains("401"),
         "error should include stderr content: {err_msg}"
+    );
+}
+
+// ── Q001: warn on malformed repo ─────────────────────────────────────────────
+
+/// Q001: `GitHubBackend::new` should emit a `tracing::warn!` when repo is empty.
+///
+/// Currently fails (no warn emitted) — contract test for the fix in T02.
+#[test]
+#[traced_test]
+fn test_new_warns_on_empty_repo() {
+    let _backend = GitHubBackend::new("".to_string(), None);
+    assert!(
+        logs_contain("malformed"),
+        "expected warn log containing 'malformed' for empty repo string"
+    );
+}
+
+/// Q001: `GitHubBackend::new` should emit a `tracing::warn!` when repo has no slash.
+///
+/// A valid GitHub repo identifier must be `owner/repo`. A bare name like
+/// `"noslash"` indicates a misconfiguration.
+/// Currently fails (no warn emitted) — contract test for the fix in T02.
+#[test]
+#[traced_test]
+fn test_new_warns_on_repo_missing_slash() {
+    let _backend = GitHubBackend::new("noslash".to_string(), None);
+    assert!(
+        logs_contain("malformed"),
+        "expected warn log containing 'malformed' for repo without '/'"
+    );
+}
+
+// ── Q002: reject issue number 0 ──────────────────────────────────────────────
+
+/// Q002: `read_issue_number` (called via `read_run_state`) should return `Err`
+/// when `.github-issue-number` contains `"0"`.
+///
+/// Issue number 0 is invalid in the GitHub API. Accepting it silently causes
+/// confusing downstream failures. The fix (T02) makes the parse return `Err`
+/// with a message including "0".
+/// Currently fails (0 is parsed as a valid `u64`) — contract test for the fix in T02.
+#[test]
+fn test_read_issue_number_rejects_zero() {
+    let tmp = TempDir::new().unwrap();
+    let run_dir = tmp.path().join("run");
+    fs::create_dir_all(&run_dir).unwrap();
+
+    // Write "0" to the issue-number file.
+    fs::write(run_dir.join(".github-issue-number"), "0").unwrap();
+
+    let backend = make_backend();
+    // `read_run_state` calls `read_issue_number` internally; the error propagates.
+    let result = backend.read_run_state(&run_dir);
+
+    assert!(
+        result.is_err(),
+        "read_run_state should return Err when issue number is 0, got: {result:?}"
+    );
+    let err_msg = format!("{}", result.unwrap_err());
+    assert!(
+        err_msg.contains('0'),
+        "error message should mention the invalid value '0': {err_msg}"
     );
 }
