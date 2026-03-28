@@ -309,6 +309,45 @@ pub struct MergeCheckParams {
     pub max_conflicts: Option<u32>,
 }
 
+/// Parameters for the `merge_propose` tool.
+#[derive(Deserialize, JsonSchema)]
+pub struct MergeProposeParams {
+    /// Spec name to gather gate evidence for.
+    #[schemars(
+        description = "Spec name (slug, e.g. 'auth-flow'). Gate evidence is loaded from the latest (or specified) run of this spec."
+    )]
+    pub spec_name: String,
+
+    /// Branch to push and create PR from. Defaults to current branch if omitted.
+    #[schemars(
+        description = "Branch to push to origin and create PR from. Defaults to the current git branch."
+    )]
+    #[serde(default)]
+    pub branch: Option<String>,
+
+    /// Target base branch for the PR (e.g. "main"). Defaults to "main".
+    #[schemars(description = "Target base branch for the PR (default: \"main\").")]
+    #[serde(default)]
+    pub base_branch: Option<String>,
+
+    /// PR title. Defaults to "Assay: <spec_name> gate evidence".
+    #[schemars(description = "PR title. Defaults to a spec-name-based title.")]
+    #[serde(default)]
+    pub title: Option<String>,
+
+    /// Specific run ID to use for gate evidence. Defaults to the latest run.
+    #[schemars(description = "Gate run ID to use for evidence. Defaults to latest.")]
+    #[serde(default)]
+    pub run_id: Option<String>,
+
+    /// If true, preview the proposal without pushing or creating a PR.
+    #[schemars(
+        description = "Dry run: preview branch, title, and gate summary without pushing or creating a PR. Returns the same MergeProposal shape with dry_run: true."
+    )]
+    #[serde(default)]
+    pub dry_run: Option<bool>,
+}
+
 /// Parameters for the `session_create` tool.
 #[derive(Deserialize, JsonSchema)]
 pub struct SessionCreateParams {
@@ -2566,6 +2605,89 @@ impl AssayServer {
         Ok(CallToolResult::success(vec![Content::text(json)]))
     }
 
+    /// Push branch to remote and create a GitHub PR with gate evidence.
+    #[tool(
+        description = "Push branch to remote and create a GitHub PR with gate evidence. \
+            Set dry_run: true to preview without side effects. \
+            Sets ASSAY_BRANCH, ASSAY_SPEC, ASSAY_GATE_REPORT_PATH env vars on the gh invocation."
+    )]
+    pub async fn merge_propose(
+        &self,
+        params: Parameters<MergeProposeParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let cwd = resolve_cwd()?;
+        // Validate that we're in an Assay project (config must load).
+        let _config = match load_config(&cwd) {
+            Ok(c) => c,
+            Err(err_result) => return Ok(err_result),
+        };
+
+        let assay_dir = cwd.join(".assay");
+
+        // Resolve branch: use provided or detect from git
+        let branch = match &params.0.branch {
+            Some(b) => b.clone(),
+            None => {
+                let output = std::process::Command::new("git")
+                    .args(["rev-parse", "--abbrev-ref", "HEAD"])
+                    .current_dir(&cwd)
+                    .output()
+                    .map_err(|e| {
+                        McpError::internal_error(
+                            format!("failed to detect current branch: {e}"),
+                            None,
+                        )
+                    })?;
+                if !output.status.success() {
+                    return Ok(CallToolResult::error(vec![Content::text(
+                        "Failed to detect current git branch. Provide the 'branch' parameter explicitly.",
+                    )]));
+                }
+                String::from_utf8_lossy(&output.stdout).trim().to_string()
+            }
+        };
+
+        let base_branch = params
+            .0
+            .base_branch
+            .clone()
+            .unwrap_or_else(|| "main".to_string());
+        let title = params
+            .0
+            .title
+            .clone()
+            .unwrap_or_else(|| format!("Assay: {} gate evidence", params.0.spec_name));
+        let dry_run = params.0.dry_run.unwrap_or(false);
+
+        let propose_config = assay_types::MergeProposeConfig {
+            spec_name: params.0.spec_name.clone(),
+            run_id: params.0.run_id.clone(),
+            branch,
+            base_branch,
+            title,
+            working_dir: cwd.clone(),
+            assay_dir,
+            dry_run,
+        };
+
+        let result =
+            tokio::task::spawn_blocking(move || assay_core::merge::merge_propose(&propose_config))
+                .await
+                .map_err(|e| {
+                    McpError::internal_error(format!("spawn_blocking failed: {e}"), None)
+                })?;
+
+        match result {
+            Ok(proposal) => {
+                let json = serde_json::to_string(&proposal).map_err(|e| {
+                    McpError::internal_error(format!("serialization failed: {e}"), None)
+                })?;
+                Ok(CallToolResult::success(vec![Content::text(json)]))
+            }
+            Err(e) => Ok(domain_error(&e)),
+        }
+    }
+
     // ── Session tools ────────────────────────────────────────────────
 
     /// Create a new work session for a spec.
@@ -4117,7 +4239,8 @@ pub async fn serve() -> Result<(), Box<dyn std::error::Error>> {
 mod tests {
     use super::*;
     use assay_types::{
-        CriterionResult, Enforcement, EnforcementSummary, GateKind, GateResult, GateRunSummary,
+        CriterionResult, Enforcement, EnforcementSummary, GateKind, GateResult, GateRunRecord,
+        GateRunSummary,
     };
     use chrono::Utc;
     use serial_test::serial;
@@ -8295,5 +8418,206 @@ spec = "auth"
         assert!(inputs[0].cmd.is_none());
         assert_eq!(inputs[1].name, "with-cmd");
         assert_eq!(inputs[1].cmd.as_deref(), Some("echo hi"));
+    }
+
+    // ── merge_propose tests ─────────────────────────────────────────
+
+    #[tokio::test]
+    #[serial]
+    async fn merge_propose_tool_in_router() {
+        let server = AssayServer::new();
+        let tools = server.tool_router.list_all();
+        let tool_names: Vec<&str> = tools.iter().map(|t| t.name.as_ref()).collect();
+        assert!(
+            tool_names.contains(&"merge_propose"),
+            "merge_propose should be in tool list, got: {tool_names:?}"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn merge_propose_schema_has_required_and_optional_params() {
+        let server = AssayServer::new();
+        let tools = server.tool_router.list_all();
+        let tool = tools
+            .iter()
+            .find(|t| t.name == "merge_propose")
+            .expect("merge_propose tool should exist");
+
+        let schema = serde_json::to_value(&tool.input_schema).unwrap();
+
+        // spec_name should be required
+        let required = schema["required"].as_array().expect("required array");
+        let required_names: Vec<&str> = required.iter().filter_map(|v| v.as_str()).collect();
+        assert!(
+            required_names.contains(&"spec_name"),
+            "spec_name should be required, got: {required_names:?}"
+        );
+
+        // dry_run should be in properties but not required
+        let properties = schema["properties"].as_object().expect("properties object");
+        assert!(
+            properties.contains_key("dry_run"),
+            "dry_run should be in properties"
+        );
+        assert!(
+            !required_names.contains(&"dry_run"),
+            "dry_run should NOT be required"
+        );
+
+        // branch should be optional
+        assert!(
+            properties.contains_key("branch"),
+            "branch should be in properties"
+        );
+        assert!(
+            !required_names.contains(&"branch"),
+            "branch should NOT be required"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn merge_propose_description_mentions_env_vars() {
+        let server = AssayServer::new();
+        let tools = server.tool_router.list_all();
+        let tool = tools
+            .iter()
+            .find(|t| t.name == "merge_propose")
+            .expect("merge_propose tool should exist");
+
+        let desc = tool.description.as_deref().unwrap_or("");
+        assert!(
+            desc.contains("ASSAY_BRANCH"),
+            "description should mention ASSAY_BRANCH"
+        );
+        assert!(
+            desc.contains("ASSAY_SPEC"),
+            "description should mention ASSAY_SPEC"
+        );
+        assert!(
+            desc.contains("ASSAY_GATE_REPORT_PATH"),
+            "description should mention ASSAY_GATE_REPORT_PATH"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn merge_propose_dry_run_returns_proposal() {
+        // Set up a project with gate history
+        let dir = create_project(r#"project_name = "merge-test""#);
+        create_spec(
+            dir.path(),
+            "specs",
+            "test-spec.toml",
+            r#"name = "test-spec"
+[[criteria]]
+name = "build"
+cmd = "echo ok"
+"#,
+        );
+
+        // Create a fake gate run record
+        let spec_name = "test-spec";
+        let run_id = "20260328T120000Z-abc123";
+        let results_dir = dir.path().join(".assay").join("results").join(spec_name);
+        std::fs::create_dir_all(&results_dir).unwrap();
+
+        let record = GateRunRecord {
+            run_id: run_id.to_string(),
+            assay_version: "0.5.0".to_string(),
+            timestamp: Utc::now(),
+            working_dir: None,
+            summary: sample_summary(),
+            diff_truncation: None,
+        };
+        let json = serde_json::to_string_pretty(&record).unwrap();
+        std::fs::write(results_dir.join(format!("{run_id}.json")), json).unwrap();
+
+        // Create a fake gh script on PATH so preflight succeeds
+        let bin_dir = dir.path().join("bin");
+        std::fs::create_dir_all(&bin_dir).unwrap();
+        let gh_script = "#!/bin/sh\necho 'gh version 2.50.0'\nexit 0\n";
+        let gh_path = bin_dir.join("gh");
+        std::fs::write(&gh_path, gh_script).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = std::fs::metadata(&gh_path).unwrap().permissions();
+            perms.set_mode(0o755);
+            std::fs::set_permissions(&gh_path, perms).unwrap();
+        }
+
+        let original_path = std::env::var("PATH").unwrap_or_default();
+        let new_path = format!("{}:{}", bin_dir.display(), original_path);
+        unsafe { std::env::set_var("PATH", &new_path) };
+
+        std::env::set_current_dir(dir.path()).unwrap();
+
+        let server = AssayServer::new();
+        let result = server
+            .merge_propose(Parameters(MergeProposeParams {
+                spec_name: "test-spec".to_string(),
+                branch: Some("feat/test".to_string()),
+                base_branch: Some("main".to_string()),
+                title: Some("Test PR".to_string()),
+                run_id: None,
+                dry_run: Some(true),
+            }))
+            .await
+            .unwrap();
+
+        unsafe { std::env::set_var("PATH", original_path) };
+
+        assert!(
+            !result.is_error.unwrap_or(false),
+            "dry_run should succeed, got error: {:?}",
+            result.content
+        );
+
+        // Parse the response JSON and verify MergeProposal shape
+        let text = result
+            .content
+            .iter()
+            .filter_map(|c| match &c.raw {
+                RawContent::Text(t) => Some(t.text.as_str()),
+                _ => None,
+            })
+            .next()
+            .expect("should have text content");
+        let proposal: assay_types::MergeProposal =
+            serde_json::from_str(text).expect("should parse as MergeProposal");
+        assert!(proposal.dry_run, "dry_run should be true");
+        assert!(proposal.pr_url.is_none(), "pr_url should be None");
+        assert!(proposal.pr_number.is_none(), "pr_number should be None");
+        assert!(
+            !proposal.gate_summary.is_empty(),
+            "gate_summary should not be empty"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn merge_propose_missing_project_returns_error() {
+        let dir = tempfile::tempdir().unwrap();
+        std::env::set_current_dir(dir.path()).unwrap();
+
+        let server = AssayServer::new();
+        let result = server
+            .merge_propose(Parameters(MergeProposeParams {
+                spec_name: "test-spec".to_string(),
+                branch: Some("feat/test".to_string()),
+                base_branch: None,
+                title: None,
+                run_id: None,
+                dry_run: Some(true),
+            }))
+            .await
+            .unwrap();
+
+        assert!(
+            result.is_error.unwrap_or(false),
+            "should fail when not in an Assay project"
+        );
     }
 }

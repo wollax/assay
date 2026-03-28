@@ -16,7 +16,10 @@ models:
 skill_discovery: suggest
 auto_supervisor: {}
 workflow:
-  mode: file
+  mode: linear
+linear:
+  teamKey: WOL
+  projectId: b6ff6491-d7f3-428c-854d-6ee116899fe5
 ---
 
 # Kata Skill Preferences

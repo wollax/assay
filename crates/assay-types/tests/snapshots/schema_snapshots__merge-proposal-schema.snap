@@ -1,0 +1,42 @@
+---
+source: crates/assay-types/tests/schema_snapshots.rs
+assertion_line: 284
+expression: schema.to_value()
+---
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Result of a merge proposal (push branch + create PR).\n\nReturned by `merge_propose()` in `assay-core`. When `dry_run` is true,\n`pr_url` and `pr_number` are `None` and no side effects occur.",
+  "properties": {
+    "dry_run": {
+      "description": "Whether this was a dry run (no side effects).",
+      "type": "boolean"
+    },
+    "gate_summary": {
+      "description": "Formatted gate evidence used as the PR body.",
+      "type": "string"
+    },
+    "pr_number": {
+      "description": "Number of the created pull request (absent in dry-run mode).",
+      "format": "uint64",
+      "minimum": 0,
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "pr_url": {
+      "description": "URL of the created pull request (absent in dry-run mode).",
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "gate_summary",
+    "dry_run"
+  ],
+  "title": "MergeProposal",
+  "type": "object"
+}
