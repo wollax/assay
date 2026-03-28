@@ -2,7 +2,7 @@
 
 **Active Milestone:** M013 — Tech Debt & Deferred Features
 **Active Slice:** S03 — OTel metrics
-**Active Task:** T01 — Contract tests and workspace dep setup
+**Active Task:** T02 — build_otel_metrics, init_metric_handles, and TracingGuard integration
 **Phase:** Executing
 
 ## Recent Decisions
@@ -20,8 +20,8 @@
 - M013:
   - S01 ✅ complete (R081 validated, 1501 tests)
   - S02 ✅ complete (R066 validated, 7 integration tests, `just ready` green)
-  - S03: OTel metrics — planned (3 tasks: T01 dep setup + tests, T02 metrics infra, T03 instrumentation)
+  - S03: OTel metrics — T01 done (workspace deps + contract tests), T02 next
   - S04: Wizard runnable criteria — not started
 
 ## Next Action
-Execute T01: Add `metrics` feature to workspace OTel deps, write red-state contract tests in `otel_metrics.rs`.
+Execute T02: Implement `build_otel_metrics`, `init_metric_handles`, recording functions, and `TracingGuard` meter provider integration in `telemetry.rs`.
