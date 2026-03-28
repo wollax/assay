@@ -131,6 +131,36 @@ pub fn load_traces(assay_dir: &Path) -> Vec<TraceEntry> {
     result
 }
 
+/// Load all spans from a single trace file by its ID.
+///
+/// Reads `<assay_dir>/traces/<trace_id>.json` and parses it as a `Vec<SpanData>`.
+/// Returns an empty `Vec` on any error (with `tracing::warn!`).
+pub fn load_trace_spans(assay_dir: &Path, trace_id: &str) -> Vec<SpanData> {
+    let path = assay_dir.join("traces").join(format!("{trace_id}.json"));
+    let raw = match std::fs::read_to_string(&path) {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::warn!(
+                path = %path.display(),
+                error = %e,
+                "failed to read trace file for span expansion"
+            );
+            return Vec::new();
+        }
+    };
+    match serde_json::from_str(&raw) {
+        Ok(spans) => spans,
+        Err(e) => {
+            tracing::warn!(
+                path = %path.display(),
+                error = %e,
+                "failed to parse trace file for span expansion"
+            );
+            Vec::new()
+        }
+    }
+}
+
 /// Flatten a span tree into [`SpanLine`] entries for rendering.
 ///
 /// Builds an adjacency map from `parent_id` → children. Orphan spans (whose

@@ -121,11 +121,22 @@ fn test_t_key_transitions_to_trace_viewer() {
     assert!(matches!(app.screen, Screen::Dashboard));
 
     app.handle_event(key(KeyCode::Char('t')));
-    assert!(
-        matches!(app.screen, Screen::TraceViewer { .. }),
-        "expected Screen::TraceViewer after pressing 't', got {:?}",
-        screen_name(&app.screen)
-    );
+    match &app.screen {
+        Screen::TraceViewer {
+            traces,
+            trace_list_state,
+            selected_trace,
+            ..
+        } => {
+            assert_eq!(traces.len(), 1);
+            assert_eq!(trace_list_state.selected(), Some(0));
+            assert!(selected_trace.is_none(), "should start in trace list mode");
+        }
+        _ => panic!(
+            "expected Screen::TraceViewer after pressing 't', got {:?}",
+            screen_name(&app.screen)
+        ),
+    }
 }
 
 #[test]
@@ -152,16 +163,216 @@ fn test_empty_traces_dir_shows_trace_viewer() {
 
     app.handle_event(key(KeyCode::Char('t')));
     match &app.screen {
-        Screen::TraceViewer { traces, .. } => {
+        Screen::TraceViewer {
+            traces,
+            trace_list_state,
+            ..
+        } => {
             assert!(
                 traces.is_empty(),
                 "expected empty traces vec when no traces dir exists"
+            );
+            assert_eq!(
+                trace_list_state.selected(),
+                None,
+                "selection should be None when traces is empty"
             );
         }
         _ => panic!(
             "expected Screen::TraceViewer, got {:?}",
             screen_name(&app.screen)
         ),
+    }
+}
+
+#[test]
+fn test_enter_expands_span_tree_and_esc_returns() {
+    let tmp = TempDir::new().unwrap();
+    let root = setup_project(&tmp);
+    let traces_dir = root.join(".assay").join("traces");
+
+    let spans = vec![
+        make_span("pipeline", 1, None, "2024-01-01T12:00:00Z", Some(100.0)),
+        make_span("gate-run", 2, Some(1), "2024-01-01T12:00:01Z", Some(50.0)),
+    ];
+    write_trace_file(&traces_dir, "test-trace", &spans);
+
+    let mut app = App::with_project_root(Some(root)).unwrap();
+    app.handle_event(key(KeyCode::Char('t')));
+
+    // Press Enter to expand span tree.
+    app.handle_event(key(KeyCode::Enter));
+    match &app.screen {
+        Screen::TraceViewer {
+            selected_trace,
+            span_lines,
+            span_list_state,
+            ..
+        } => {
+            assert_eq!(*selected_trace, Some(0), "should be in span tree mode");
+            assert_eq!(span_lines.len(), 2, "should have 2 span lines");
+            assert_eq!(span_lines[0].name, "pipeline");
+            assert_eq!(span_lines[1].name, "gate-run");
+            assert_eq!(span_list_state.selected(), Some(0));
+        }
+        _ => panic!("expected TraceViewer in span mode"),
+    }
+
+    // Press Esc to return to trace list.
+    app.handle_event(key(KeyCode::Esc));
+    match &app.screen {
+        Screen::TraceViewer {
+            selected_trace,
+            span_lines,
+            ..
+        } => {
+            assert!(
+                selected_trace.is_none(),
+                "should be back in trace list mode"
+            );
+            assert!(span_lines.is_empty(), "span_lines should be cleared");
+        }
+        _ => panic!("expected TraceViewer in list mode"),
+    }
+
+    // Press Esc again to return to Dashboard.
+    app.handle_event(key(KeyCode::Esc));
+    assert!(
+        matches!(app.screen, Screen::Dashboard),
+        "expected Dashboard after second Esc"
+    );
+}
+
+#[test]
+fn test_up_down_navigation_in_trace_list() {
+    let tmp = TempDir::new().unwrap();
+    let root = setup_project(&tmp);
+    let traces_dir = root.join(".assay").join("traces");
+
+    // Write two trace files with different mtimes.
+    let spans1 = vec![make_span(
+        "first",
+        1,
+        None,
+        "2024-01-01T10:00:00Z",
+        Some(10.0),
+    )];
+    write_trace_file(&traces_dir, "trace-a", &spans1);
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    let spans2 = vec![make_span(
+        "second",
+        2,
+        None,
+        "2024-01-02T10:00:00Z",
+        Some(20.0),
+    )];
+    write_trace_file(&traces_dir, "trace-b", &spans2);
+
+    let mut app = App::with_project_root(Some(root)).unwrap();
+    app.handle_event(key(KeyCode::Char('t')));
+
+    // Initially selected at 0.
+    if let Screen::TraceViewer {
+        trace_list_state, ..
+    } = &app.screen
+    {
+        assert_eq!(trace_list_state.selected(), Some(0));
+    }
+
+    // Down → 1.
+    app.handle_event(key(KeyCode::Down));
+    if let Screen::TraceViewer {
+        trace_list_state, ..
+    } = &app.screen
+    {
+        assert_eq!(trace_list_state.selected(), Some(1));
+    }
+
+    // Down again → still 1 (clamped).
+    app.handle_event(key(KeyCode::Down));
+    if let Screen::TraceViewer {
+        trace_list_state, ..
+    } = &app.screen
+    {
+        assert_eq!(trace_list_state.selected(), Some(1));
+    }
+
+    // Up → 0.
+    app.handle_event(key(KeyCode::Up));
+    if let Screen::TraceViewer {
+        trace_list_state, ..
+    } = &app.screen
+    {
+        assert_eq!(trace_list_state.selected(), Some(0));
+    }
+
+    // Up again → still 0 (clamped).
+    app.handle_event(key(KeyCode::Up));
+    if let Screen::TraceViewer {
+        trace_list_state, ..
+    } = &app.screen
+    {
+        assert_eq!(trace_list_state.selected(), Some(0));
+    }
+}
+
+#[test]
+fn test_up_down_navigation_in_span_tree() {
+    let tmp = TempDir::new().unwrap();
+    let root = setup_project(&tmp);
+    let traces_dir = root.join(".assay").join("traces");
+
+    let spans = vec![
+        make_span("root", 1, None, "2024-01-01T12:00:00Z", Some(100.0)),
+        make_span("child-a", 2, Some(1), "2024-01-01T12:00:01Z", Some(30.0)),
+        make_span("child-b", 3, Some(1), "2024-01-01T12:00:02Z", Some(40.0)),
+    ];
+    write_trace_file(&traces_dir, "test-trace", &spans);
+
+    let mut app = App::with_project_root(Some(root)).unwrap();
+    app.handle_event(key(KeyCode::Char('t')));
+    app.handle_event(key(KeyCode::Enter)); // expand span tree
+
+    // Should start at 0.
+    if let Screen::TraceViewer {
+        span_list_state, ..
+    } = &app.screen
+    {
+        assert_eq!(span_list_state.selected(), Some(0));
+    }
+
+    // Down → 1, Down → 2.
+    app.handle_event(key(KeyCode::Down));
+    if let Screen::TraceViewer {
+        span_list_state, ..
+    } = &app.screen
+    {
+        assert_eq!(span_list_state.selected(), Some(1));
+    }
+    app.handle_event(key(KeyCode::Down));
+    if let Screen::TraceViewer {
+        span_list_state, ..
+    } = &app.screen
+    {
+        assert_eq!(span_list_state.selected(), Some(2));
+    }
+
+    // Down again → clamped at 2.
+    app.handle_event(key(KeyCode::Down));
+    if let Screen::TraceViewer {
+        span_list_state, ..
+    } = &app.screen
+    {
+        assert_eq!(span_list_state.selected(), Some(2));
+    }
+
+    // Up → 1.
+    app.handle_event(key(KeyCode::Up));
+    if let Screen::TraceViewer {
+        span_list_state, ..
+    } = &app.screen
+    {
+        assert_eq!(span_list_state.selected(), Some(1));
     }
 }
 

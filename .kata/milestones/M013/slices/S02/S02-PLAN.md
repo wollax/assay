@@ -50,7 +50,7 @@
   - Verify: `cargo test -p assay-tui --test trace_viewer` compiles; trace_viewer module functions are unit-testable standalone
   - Done when: `load_traces()` and `flatten_span_tree()` pass their unit tests; integration test file exists and compiles (screen transition tests may fail until T02 wires them)
 
-- [ ] **T02: Screen::TraceViewer variant and event handling** `est:45m`
+- [x] **T02: Screen::TraceViewer variant and event handling** `est:45m`
   - Why: Wire the trace viewer into the TUI app — Screen variant, `t` key handler, navigation (Up/Down/Enter/Esc), and list state management.
   - Files: `crates/assay-tui/src/app.rs`, `crates/assay-tui/src/trace_viewer.rs`
   - Do: Add `Screen::TraceViewer` variant to `Screen` enum with fields: `traces: Vec<TraceEntry>`, `trace_list_state: ListState`, `selected_trace: Option<usize>` (index into traces for expanded span tree), `span_lines: Vec<SpanLine>`, `span_list_state: ListState`. Add `t` key handler in Dashboard match arm: load traces via `load_traces()`, transition to TraceViewer. Add TraceViewer match arm in `handle_event()`: Up/Down for list navigation, Enter to expand span tree (calls `flatten_span_tree`), Esc to return (span tree → trace list → Dashboard). Add `'t'` to help overlay Dashboard section.
