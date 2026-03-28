@@ -1,8 +1,10 @@
 ---
 version: 1
 workflow:
-  mode: file
-linear: {}
+  mode: linear
+linear:
+  teamKey: NDI
+  projectId: f97b4c37-acff-44e5-a745-c196aac69d47
 pr:
   enabled: true
   auto_create: true
