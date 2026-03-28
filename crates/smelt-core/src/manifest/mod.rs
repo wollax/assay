@@ -90,6 +90,14 @@ pub struct JobManifest {
     /// See D154 for the passthrough design.
     #[serde(default)]
     pub state_backend: Option<StateBackendConfig>,
+
+    /// Computed environment variables injected into containers at dispatch time.
+    ///
+    /// Unlike `credentials.env` (which maps logical names to host env var names
+    /// for lookup), these are direct key=value pairs set programmatically —
+    /// e.g. `SMELT_EVENT_URL`, `SMELT_JOB_ID`. Not deserialized from TOML.
+    #[serde(skip)]
+    pub runtime_env: HashMap<String, String>,
 }
 
 /// `[job]` — high-level job metadata.

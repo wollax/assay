@@ -140,6 +140,16 @@ pub enum StateBackendConfig {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         port: Option<u16>,
     },
+    /// Smelt event channel backend — Assay POSTs events to Smelt's HTTP endpoint.
+    Smelt {
+        /// URL of the Smelt event ingestion endpoint.
+        endpoint_url: String,
+        /// Job identifier for associating events.
+        job_id: String,
+        /// Environment variable name holding the write token (optional).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        token_env: Option<String>,
+    },
     /// Custom third-party backend identified by name.
     Custom {
         /// Identifier for the backend implementation.
@@ -287,6 +297,54 @@ ssh = { host = "ci.example.com", remote_assay_dir = "/opt/assay", user = "deploy
                 remote_assay_dir: "/opt/assay".into(),
                 user: Some("deploy".into()),
                 port: Some(2222),
+            }
+        );
+        let re_serialized = toml::to_string(&parsed).unwrap();
+        let re_parsed: Wrapper = toml::from_str(&re_serialized).unwrap();
+        assert_eq!(parsed, re_parsed);
+    }
+
+    #[test]
+    fn state_backend_smelt_toml_round_trip() {
+        let toml_str = r#"
+[state_backend]
+smelt = { endpoint_url = "http://host.docker.internal:8765/api/v1/events", job_id = "job-1", token_env = "SMELT_WRITE_TOKEN" }
+"#;
+        #[derive(Deserialize, Serialize, PartialEq, Debug)]
+        struct Wrapper {
+            state_backend: StateBackendConfig,
+        }
+        let parsed: Wrapper = toml::from_str(toml_str).unwrap();
+        assert_eq!(
+            parsed.state_backend,
+            StateBackendConfig::Smelt {
+                endpoint_url: "http://host.docker.internal:8765/api/v1/events".into(),
+                job_id: "job-1".into(),
+                token_env: Some("SMELT_WRITE_TOKEN".into()),
+            }
+        );
+        let re_serialized = toml::to_string(&parsed).unwrap();
+        let re_parsed: Wrapper = toml::from_str(&re_serialized).unwrap();
+        assert_eq!(parsed, re_parsed);
+    }
+
+    #[test]
+    fn state_backend_smelt_without_token_env() {
+        let toml_str = r#"
+[state_backend]
+smelt = { endpoint_url = "http://localhost:8765/api/v1/events", job_id = "job-2" }
+"#;
+        #[derive(Deserialize, Serialize, PartialEq, Debug)]
+        struct Wrapper {
+            state_backend: StateBackendConfig,
+        }
+        let parsed: Wrapper = toml::from_str(toml_str).unwrap();
+        assert_eq!(
+            parsed.state_backend,
+            StateBackendConfig::Smelt {
+                endpoint_url: "http://localhost:8765/api/v1/events".into(),
+                job_id: "job-2".into(),
+                token_env: None,
             }
         );
         let re_serialized = toml::to_string(&parsed).unwrap();

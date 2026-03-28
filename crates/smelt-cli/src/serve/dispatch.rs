@@ -14,6 +14,7 @@
 //! with probe-based offline skip. If all workers are offline, the job is
 //! re-queued (status reverted to `Queued`, running_count decremented).
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -26,6 +27,20 @@ use crate::serve::config::WorkerConfig;
 use crate::serve::queue::ServerState;
 use crate::serve::ssh::{SshClient, deliver_manifest, run_remote_job, sync_state_back};
 use crate::serve::types::{JobId, JobStatus};
+
+/// Configuration for Smelt event environment injection into dispatched jobs.
+///
+/// When present, `run_job_task` injects `SMELT_EVENT_URL`, `SMELT_JOB_ID`,
+/// and optionally `SMELT_WRITE_TOKEN` into the container environment.
+#[derive(Clone, Debug)]
+pub(crate) struct EventEnvConfig {
+    /// Host address reachable from inside containers (e.g. `host.docker.internal`).
+    pub host: String,
+    /// HTTP port of the Smelt server.
+    pub port: u16,
+    /// Optional write auth token value for SmeltBackend to authenticate.
+    pub write_token: Option<String>,
+}
 
 /// Execute a single job under the given `CancellationToken`.
 ///
@@ -40,6 +55,7 @@ pub(crate) async fn run_job_task(
     state: Arc<Mutex<ServerState>>,
     cancel_token: CancellationToken,
     max_attempts: u32,
+    event_env: Option<EventEnvConfig>,
 ) {
     // --- transition to Running ---
     let attempt = {
@@ -56,10 +72,33 @@ pub(crate) async fn run_job_task(
 
     info!(job_id = %job_id, manifest = %manifest_path.display(), attempt, "job started");
 
+    // Compute event env vars for container injection.
+    let runtime_env = match &event_env {
+        Some(cfg) => {
+            let env = smelt_core::assay::compute_smelt_event_env(
+                &cfg.host,
+                cfg.port,
+                &job_id.0,
+                cfg.write_token.as_deref(),
+            );
+            let event_url = env
+                .get("SMELT_EVENT_URL")
+                .expect("compute_smelt_event_env must always set SMELT_EVENT_URL");
+            info!(
+                job_id = %job_id,
+                smelt_event_url = %event_url,
+                "injecting SMELT_EVENT_URL and SMELT_JOB_ID into container env"
+            );
+            env
+        }
+        None => HashMap::new(),
+    };
+
     let args = RunArgs {
         manifest: manifest_path.clone(),
         dry_run: false,
         no_pr: false,
+        runtime_env,
     };
 
     // CancellationToken adapter: convert `cancelled()` (returns ()) to the
@@ -312,6 +351,7 @@ pub(crate) async fn dispatch_loop<C: SshClient + Clone + Send + Sync + 'static>(
     workers: Vec<WorkerConfig>,
     ssh_client: C,
     ssh_timeout_secs: u64,
+    event_env: Option<EventEnvConfig>,
 ) {
     let mut interval = tokio::time::interval(Duration::from_secs(2));
     // `MissedTickBehavior::Skip` keeps the loop from catching up after a long
@@ -338,6 +378,7 @@ pub(crate) async fn dispatch_loop<C: SshClient + Clone + Send + Sync + 'static>(
                                 // --- Local dispatch path ---
                                 let state2 = Arc::clone(&state);
                                 let child_token = cancel_token.child_token();
+                                let env = event_env.clone();
                                 info!(job_id = %id, "dispatching job locally");
                                 tokio::spawn(run_job_task(
                                     job.manifest_path,
@@ -345,6 +386,7 @@ pub(crate) async fn dispatch_loop<C: SshClient + Clone + Send + Sync + 'static>(
                                     state2,
                                     child_token,
                                     max_attempts,
+                                    env,
                                 ));
                             } else {
                                 // --- SSH dispatch path ---
@@ -519,7 +561,7 @@ pub(crate) mod tests {
     /// results for repeated tick cycles.
     #[tokio::test]
     async fn test_requeue_all_workers_offline() {
-        let state = Arc::new(Mutex::new(ServerState::new(2)));
+        let state = Arc::new(Mutex::new(ServerState::new_without_events(2)));
         let manifest = std::path::PathBuf::from("/tmp/fake.toml");
         {
             let mut s = state.lock().unwrap();

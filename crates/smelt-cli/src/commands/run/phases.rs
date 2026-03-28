@@ -62,9 +62,19 @@ where
 
     // Phase 1: Load manifest
     info!(path = %args.manifest.display(), "loading manifest");
-    let manifest = JobManifest::load(&args.manifest)
+    let mut manifest = JobManifest::load(&args.manifest)
         .with_context(|| format!("failed to load manifest `{}`", args.manifest.display()))?;
     info!("manifest loaded successfully");
+
+    // Merge runtime_env from dispatch context (e.g. SMELT_EVENT_URL, SMELT_JOB_ID)
+    if !args.runtime_env.is_empty() {
+        info!(
+            count = args.runtime_env.len(),
+            keys = ?args.runtime_env.keys().collect::<Vec<_>>(),
+            "injecting runtime env vars from dispatch context"
+        );
+        manifest.runtime_env.extend(args.runtime_env.clone());
+    }
 
     // Phase 2: Validate
     info!("validating manifest");

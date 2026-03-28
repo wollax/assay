@@ -24,7 +24,7 @@ async fn test_dispatch_loop_two_jobs_concurrent() {
         std::fs::write(p, VALID_MANIFEST_TOML).unwrap();
     }
 
-    let state = Arc::new(Mutex::new(ServerState::new(2)));
+    let state = Arc::new(Mutex::new(ServerState::new_without_events(2)));
     {
         let mut s = state.lock().unwrap();
         s.enqueue(m1, JobSource::DirectoryWatch);
@@ -42,6 +42,7 @@ async fn test_dispatch_loop_two_jobs_concurrent() {
             vec![],
             crate::serve::SubprocessSshClient,
             3,
+            None,
         )
         .await;
     });
@@ -140,7 +141,7 @@ async fn test_watcher_picks_up_manifest() {
     let manifest_path = queue_dir.join("my-job.toml");
     std::fs::write(&manifest_path, VALID_MANIFEST_TOML).unwrap();
 
-    let state = Arc::new(Mutex::new(ServerState::new(2)));
+    let state = Arc::new(Mutex::new(ServerState::new_without_events(2)));
     let watcher = DirectoryWatcher::new(queue_dir.clone(), Arc::clone(&state));
 
     let handle = tokio::spawn(async move {
@@ -172,7 +173,7 @@ async fn test_watcher_moves_to_dispatched() {
     let manifest_path = queue_dir.join("move-test.toml");
     std::fs::write(&manifest_path, VALID_MANIFEST_TOML).unwrap();
 
-    let state = Arc::new(Mutex::new(ServerState::new(2)));
+    let state = Arc::new(Mutex::new(ServerState::new_without_events(2)));
     let watcher = DirectoryWatcher::new(queue_dir.clone(), Arc::clone(&state));
 
     let handle = tokio::spawn(async move {

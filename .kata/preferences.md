@@ -3,8 +3,8 @@ version: 1
 workflow:
   mode: linear
 linear:
-  teamKey: NDI
-  projectId: f97b4c37-acff-44e5-a745-c196aac69d47
+  teamKey: WOL
+  projectId: 8bebdf2c-4edd-429f-a2b1-0e9ed3be1105
 pr:
   enabled: true
   auto_create: true

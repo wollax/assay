@@ -158,7 +158,7 @@ mod tests {
 
     #[test]
     fn test_tui_render_worker_host() {
-        let mut state = ServerState::new(1);
+        let mut state = ServerState::new_without_events(1);
         state.jobs.push_back(QueuedJob {
             id: JobId::new("job-w1"),
             manifest_path: PathBuf::from("test.smelt.toml"),
@@ -204,7 +204,7 @@ mod tests {
 
     #[test]
     fn test_tui_render_tracker_source() {
-        let mut state = ServerState::new(1);
+        let mut state = ServerState::new_without_events(1);
         state.jobs.push_back(QueuedJob {
             id: JobId::new("job-t1"),
             manifest_path: PathBuf::from("tracker-issue.smelt.toml"),
@@ -231,7 +231,7 @@ mod tests {
 
     #[test]
     fn test_tui_render_dirwatch_source() {
-        let mut state = ServerState::new(1);
+        let mut state = ServerState::new_without_events(1);
         state.jobs.push_back(QueuedJob {
             id: JobId::new("job-d1"),
             manifest_path: PathBuf::from("watched.smelt.toml"),

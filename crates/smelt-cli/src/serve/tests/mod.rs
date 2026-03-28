@@ -1,5 +1,6 @@
 mod config;
 mod dispatch;
+mod events;
 mod http;
 mod queue;
 mod ssh_dispatch;
@@ -37,6 +38,28 @@ fn manifest() -> PathBuf {
     PathBuf::from("/tmp/test.toml")
 }
 
+/// Helper: create a `ServerState` with a pre-enqueued job so event POST tests
+/// have a valid `job_id` to target. Returns `(Arc<Mutex<ServerState>>, job_id)`.
+fn state_with_job() -> (std::sync::Arc<std::sync::Mutex<ServerState>>, String) {
+    use crate::serve::types::{JobId, JobSource, JobStatus, QueuedJob, now_epoch};
+    let state = std::sync::Arc::new(std::sync::Mutex::new(ServerState::new_without_events(4)));
+    let job_id = {
+        let mut s = state.lock().unwrap();
+        s.jobs.push_back(QueuedJob {
+            id: JobId::new("test-job-1"),
+            manifest_path: PathBuf::from("test.smelt.toml"),
+            source: JobSource::HttpApi,
+            attempt: 0,
+            status: JobStatus::Running,
+            queued_at: now_epoch(),
+            started_at: Some(now_epoch()),
+            worker_host: None,
+        });
+        "test-job-1".to_string()
+    };
+    (state, job_id)
+}
+
 /// Helper: spin up an axum server on an OS-assigned port, return the base URL.
 async fn start_test_server(state: std::sync::Arc<std::sync::Mutex<ServerState>>) -> String {
     start_test_server_with_auth(state, None).await
@@ -69,7 +92,7 @@ fn test_tui_render_no_panic() {
 
     let backend = TestBackend::new(80, 24);
     let mut terminal = Terminal::new(backend).unwrap();
-    let state = Arc::new(Mutex::new(ServerState::new(2)));
+    let state = Arc::new(Mutex::new(ServerState::new_without_events(2)));
 
     // Render with empty state — must not panic
     terminal.draw(|frame| render(frame, &state)).unwrap();

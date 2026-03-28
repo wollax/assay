@@ -64,6 +64,7 @@ fn k8s_manifest() -> JobManifest {
         }),
         services: vec![],
         state_backend: None,
+        runtime_env: HashMap::new(),
     }
 }
 

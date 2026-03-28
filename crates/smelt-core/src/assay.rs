@@ -14,6 +14,8 @@ use base64::engine::general_purpose::STANDARD as BASE64;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info};
 
+use std::collections::HashMap;
+
 use crate::error::SmeltError;
 use crate::manifest::{JobManifest, SessionDef};
 use crate::provider::{ContainerId, ExecHandle};
@@ -404,6 +406,36 @@ impl AssayInvoker {
 
         Ok(handle)
     }
+}
+
+// ── Event env injection ──────────────────────────────────────────────
+
+/// Compute runtime environment variables for Smelt event injection.
+///
+/// Returns a `HashMap` containing:
+/// - `SMELT_EVENT_URL`: `http://{host}:{port}/api/v1/events`
+/// - `SMELT_JOB_ID`: the job identifier string
+/// - `SMELT_WRITE_TOKEN`: the auth token value (only when `auth_token` is `Some`)
+///
+/// These are injected into containers at provision time so that Assay's
+/// `SmeltBackend` can POST events back to the Smelt server.
+pub fn compute_smelt_event_env(
+    host: &str,
+    port: u16,
+    job_id: &str,
+    auth_token: Option<&str>,
+) -> HashMap<String, String> {
+    let capacity = if auth_token.is_some() { 3 } else { 2 };
+    let mut env = HashMap::with_capacity(capacity);
+    env.insert(
+        "SMELT_EVENT_URL".to_string(),
+        format!("http://{host}:{port}/api/v1/events"),
+    );
+    env.insert("SMELT_JOB_ID".to_string(), job_id.to_string());
+    if let Some(token) = auth_token {
+        env.insert("SMELT_WRITE_TOKEN".to_string(), token.to_string());
+    }
+    env
 }
 
 // ── Unit tests ───────────────────────────────────────────────────────
@@ -838,6 +870,31 @@ timeout = 300
         let parsed_typed: SmeltRunManifest =
             toml::from_str(&toml_str).expect("SmeltRunManifest roundtrip must succeed");
         assert_eq!(parsed_typed.state_backend, manifest.state_backend);
+    }
+
+    // ── compute_smelt_event_env tests ─────────────────────────────
+
+    #[test]
+    fn test_compute_event_env_basic() {
+        let env = compute_smelt_event_env("host.docker.internal", 8765, "job-42", None);
+        assert_eq!(
+            env.get("SMELT_EVENT_URL").unwrap(),
+            "http://host.docker.internal:8765/api/v1/events"
+        );
+        assert_eq!(env.get("SMELT_JOB_ID").unwrap(), "job-42");
+        assert!(!env.contains_key("SMELT_WRITE_TOKEN"));
+    }
+
+    #[test]
+    fn test_compute_event_env_with_auth() {
+        let env =
+            compute_smelt_event_env("172.17.0.1", 9090, "build-backend", Some("secret-token"));
+        assert_eq!(
+            env.get("SMELT_EVENT_URL").unwrap(),
+            "http://172.17.0.1:9090/api/v1/events"
+        );
+        assert_eq!(env.get("SMELT_JOB_ID").unwrap(), "build-backend");
+        assert_eq!(env.get("SMELT_WRITE_TOKEN").unwrap(), "secret-token");
     }
 
     /// When `state_backend` is `LocalFs`, the run manifest TOML must contain

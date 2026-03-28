@@ -24,6 +24,15 @@ pub struct RunArgs {
     /// Skip PR creation even when a `[forge]` section is present in the manifest.
     #[arg(long)]
     pub no_pr: bool,
+
+    /// Computed environment variables injected into the **container** at provision time.
+    ///
+    /// Set programmatically by `smelt serve` dispatch (not exposed on CLI).
+    /// Merged into `manifest.runtime_env` before provision. Transient — never
+    /// serialized to disk or manifest files. Values cross a security boundary
+    /// (host → container).
+    #[arg(skip)]
+    pub runtime_env: std::collections::HashMap<String, String>,
 }
 
 // ── AnyProvider ──────────────────────────────────────────────────────────────

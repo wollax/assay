@@ -560,3 +560,43 @@ github = { repo = "owner/repo" }
         })
     );
 }
+
+#[test]
+fn manifest_state_backend_smelt() {
+    let toml = r#"
+[job]
+name = "test"
+repo = "repo"
+base_ref = "main"
+
+[environment]
+runtime = "docker"
+image = "img"
+
+[credentials]
+provider = "anthropic"
+model = "m"
+
+[[session]]
+name = "s1"
+spec = "s"
+harness = "h"
+timeout = 60
+
+[merge]
+strategy = "sequential"
+target = "main"
+
+[state_backend]
+smelt = { endpoint_url = "http://host.docker.internal:8765/api/v1/events", job_id = "job-1", token_env = "SMELT_WRITE_TOKEN" }
+"#;
+    let manifest = load_from_str(toml).unwrap();
+    assert_eq!(
+        manifest.state_backend,
+        Some(crate::tracker::StateBackendConfig::Smelt {
+            endpoint_url: "http://host.docker.internal:8765/api/v1/events".into(),
+            job_id: "job-1".into(),
+            token_env: Some("SMELT_WRITE_TOKEN".into()),
+        })
+    );
+}

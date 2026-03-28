@@ -4,7 +4,7 @@ use super::{VALID_MANIFEST_TOML, start_test_server};
 
 #[tokio::test]
 async fn test_http_post_enqueues_job() {
-    let state = std::sync::Arc::new(std::sync::Mutex::new(ServerState::new(4)));
+    let state = std::sync::Arc::new(std::sync::Mutex::new(ServerState::new_without_events(4)));
     let base = start_test_server(state.clone()).await;
 
     let client = reqwest::Client::new();
@@ -25,7 +25,7 @@ async fn test_http_post_enqueues_job() {
 
 #[tokio::test]
 async fn test_http_post_invalid_toml() {
-    let state = std::sync::Arc::new(std::sync::Mutex::new(ServerState::new(4)));
+    let state = std::sync::Arc::new(std::sync::Mutex::new(ServerState::new_without_events(4)));
     let base = start_test_server(state.clone()).await;
 
     let client = reqwest::Client::new();
@@ -48,7 +48,7 @@ async fn test_http_post_invalid_toml() {
 
 #[tokio::test]
 async fn test_http_get_jobs() {
-    let state = std::sync::Arc::new(std::sync::Mutex::new(ServerState::new(4)));
+    let state = std::sync::Arc::new(std::sync::Mutex::new(ServerState::new_without_events(4)));
     let base = start_test_server(state.clone()).await;
 
     let client = reqwest::Client::new();
@@ -75,7 +75,7 @@ async fn test_http_get_jobs() {
 
 #[tokio::test]
 async fn test_http_get_job_by_id() {
-    let state = std::sync::Arc::new(std::sync::Mutex::new(ServerState::new(4)));
+    let state = std::sync::Arc::new(std::sync::Mutex::new(ServerState::new_without_events(4)));
     let base = start_test_server(state.clone()).await;
 
     let client = reqwest::Client::new();
@@ -111,7 +111,7 @@ async fn test_http_get_job_by_id() {
 
 #[tokio::test]
 async fn test_http_delete_queued_job() {
-    let state = std::sync::Arc::new(std::sync::Mutex::new(ServerState::new(4)));
+    let state = std::sync::Arc::new(std::sync::Mutex::new(ServerState::new_without_events(4)));
     let base = start_test_server(state.clone()).await;
 
     let client = reqwest::Client::new();
@@ -138,7 +138,7 @@ async fn test_http_delete_queued_job() {
 
 #[tokio::test]
 async fn test_http_delete_running_job() {
-    let state = std::sync::Arc::new(std::sync::Mutex::new(ServerState::new(4)));
+    let state = std::sync::Arc::new(std::sync::Mutex::new(ServerState::new_without_events(4)));
     let base = start_test_server(state.clone()).await;
 
     // Enqueue and then dispatch the job so it becomes Dispatching.
@@ -180,7 +180,7 @@ async fn test_health_endpoint_bypasses_auth() {
         write_token: "secret-write".to_string(),
         read_token: Some("secret-read".to_string()),
     };
-    let state = std::sync::Arc::new(std::sync::Mutex::new(ServerState::new(4)));
+    let state = std::sync::Arc::new(std::sync::Mutex::new(ServerState::new_without_events(4)));
     let base = super::start_test_server_with_auth(state, Some(auth)).await;
 
     let client = reqwest::Client::new();
@@ -209,7 +209,7 @@ async fn test_health_endpoint_bypasses_auth() {
 
 #[tokio::test]
 async fn test_health_endpoint_no_auth_configured() {
-    let state = std::sync::Arc::new(std::sync::Mutex::new(ServerState::new(4)));
+    let state = std::sync::Arc::new(std::sync::Mutex::new(ServerState::new_without_events(4)));
     let base = super::start_test_server_with_auth(state, None).await;
 
     let resp = reqwest::Client::new()
@@ -251,7 +251,7 @@ async fn start_auth_server(
     std::sync::Arc<std::sync::Mutex<super::super::queue::ServerState>>,
 ) {
     let state = std::sync::Arc::new(std::sync::Mutex::new(
-        super::super::queue::ServerState::new(4),
+        super::super::queue::ServerState::new_without_events(4),
     ));
     let base = super::start_test_server_with_auth(state.clone(), Some(auth)).await;
     (base, state)

@@ -54,7 +54,7 @@ async fn test_round_robin_two_workers() {
             .with_scp_from_result(Ok(()));
     }
 
-    let state = Arc::new(Mutex::new(ServerState::new(4)));
+    let state = Arc::new(Mutex::new(ServerState::new_without_events(4)));
     {
         let mut s = state.lock().unwrap();
         for m in &manifests {
@@ -66,7 +66,7 @@ async fn test_round_robin_two_workers() {
     let cancel2 = cancel.clone();
     let state2 = Arc::clone(&state);
     let handle = tokio::spawn(async move {
-        dispatch_loop(state2, cancel2, 3, workers, client, 3).await;
+        dispatch_loop(state2, cancel2, 3, workers, client, 3, None).await;
     });
 
     // Wait for all jobs to reach a terminal state.
@@ -175,7 +175,7 @@ async fn test_failover_one_offline() {
         .with_scp_from_result(Ok(()))
         .with_scp_from_result(Ok(()));
 
-    let state = Arc::new(Mutex::new(ServerState::new(2)));
+    let state = Arc::new(Mutex::new(ServerState::new_without_events(2)));
     {
         let mut s = state.lock().unwrap();
         for m in &manifests {
@@ -187,7 +187,7 @@ async fn test_failover_one_offline() {
     let cancel2 = cancel.clone();
     let state2 = Arc::clone(&state);
     let handle = tokio::spawn(async move {
-        dispatch_loop(state2, cancel2, 3, workers, client, 3).await;
+        dispatch_loop(state2, cancel2, 3, workers, client, 3, None).await;
     });
 
     let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(10);
@@ -256,7 +256,7 @@ async fn test_all_workers_offline_requeue() {
         .with_probe_result(Err(anyhow::anyhow!("offline")))
         .with_probe_result(Err(anyhow::anyhow!("offline")));
 
-    let state = Arc::new(Mutex::new(ServerState::new(2)));
+    let state = Arc::new(Mutex::new(ServerState::new_without_events(2)));
     let manifest = std::path::PathBuf::from("/tmp/fake-requeue.toml");
     {
         let mut s = state.lock().unwrap();

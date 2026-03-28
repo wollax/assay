@@ -2,6 +2,7 @@ use std::io::Write;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
+use axum::extract::DefaultBodyLimit;
 use axum::extract::{self, State};
 use axum::http::{Method, StatusCode};
 use axum::middleware::Next;
@@ -13,7 +14,7 @@ use smelt_core::manifest::JobManifest;
 
 use crate::serve::config::AuthConfig;
 use crate::serve::queue::ServerState;
-use crate::serve::types::{JobSource, JobStatus, QueuedJob, elapsed_secs_since};
+use crate::serve::types::{JobSource, JobStatus, QueuedJob, elapsed_secs_since, now_epoch};
 
 /// JSON-serialisable snapshot of a single job's state.
 ///
@@ -200,7 +201,13 @@ async fn health_check() -> Json<serde_json::Value> {
 /// unauthenticated (preserving the pre-auth behaviour).
 pub(crate) fn build_router(state: SharedState, auth: Option<ResolvedAuth>) -> Router {
     // API routes — auth middleware enforced when auth is Some, passthrough when None.
+    // 64 KB body limit on the event endpoint — prevents memory exhaustion
+    // from arbitrarily large payloads (256 events × N jobs in memory).
     let api_routes = Router::new()
+        .route(
+            "/api/v1/events",
+            post(post_event).layer(DefaultBodyLimit::max(64 * 1024)),
+        )
         .route("/api/v1/jobs", post(post_job))
         .route("/api/v1/jobs", get(list_jobs))
         .route("/api/v1/jobs/{id}", get(get_job))
@@ -212,6 +219,75 @@ pub(crate) fn build_router(state: SharedState, auth: Option<ResolvedAuth>) -> Ro
     let health_routes = Router::new().route("/health", get(health_check));
 
     api_routes.merge(health_routes)
+}
+
+/// POST /api/v1/events — ingest an Assay event for a known job.
+///
+/// Expects a JSON body with at least a `job_id` string field. Stores the event
+/// in the per-job `EventStore` and broadcasts it on the `EventBus`. Returns:
+/// - 200 on success
+/// - 400 if `job_id` is missing or not a string
+/// - 404 if `job_id` does not match any known job
+/// - 500 on internal error (e.g. poisoned mutex)
+///
+/// Body size is capped at 64 KB by the [`EVENT_BODY_LIMIT`] layer.
+async fn post_event(
+    State(state): State<SharedState>,
+    Json(body): Json<serde_json::Value>,
+) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    let job_id = body
+        .get("job_id")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"error": "missing or non-string job_id field"})),
+            )
+        })?
+        .to_string();
+
+    let event_id = body
+        .get("event_id")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+
+    let mut s = state.lock().map_err(|_| {
+        tracing::error!("ServerState mutex poisoned in post_event");
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": "internal server error"})),
+        )
+    })?;
+
+    // Validate that the job_id exists in the server's job queue (any status).
+    let job_exists = s.jobs.iter().any(|j| j.id.0 == job_id);
+    if !job_exists {
+        tracing::warn!(job_id = %job_id, "event POST: unknown job_id");
+        return Err((
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({"error": "unknown job_id"})),
+        ));
+    }
+
+    // Strip control fields from payload to avoid duplication with struct fields.
+    let mut payload = body;
+    if let Some(obj) = payload.as_object_mut() {
+        obj.remove("job_id");
+        obj.remove("event_id");
+    }
+
+    let event = crate::serve::events::AssayEvent {
+        job_id: job_id.clone(),
+        event_id,
+        received_at: now_epoch(),
+        payload,
+    };
+
+    // Store in per-job EventStore and broadcast via the encapsulated method.
+    s.ingest_event(event);
+
+    tracing::info!(job_id = %job_id, "event ingested");
+    Ok(Json(serde_json::json!({"status": "ok"})))
 }
 
 /// POST /api/v1/jobs — accept raw TOML body, parse, validate, enqueue.

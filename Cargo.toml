@@ -14,7 +14,7 @@ repository = "https://github.com/wollax/smelt"
 clap = { version = "4.5", features = ["derive"] }
 
 # Async
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "process", "signal", "io-util"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "process", "signal", "io-util", "sync"] }
 futures-util = "0.3"
 
 # Docker

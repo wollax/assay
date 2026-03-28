@@ -73,12 +73,17 @@ impl RuntimeProvider for ComposeProvider {
         info!(project = %project_name, "starting compose provision");
 
         // Resolve credentials from the environment.
-        let extra_env: HashMap<String, String> = manifest
+        let mut extra_env: HashMap<String, String> = manifest
             .credentials
             .env
             .iter()
             .filter_map(|(key, env_var)| std::env::var(env_var).ok().map(|val| (key.clone(), val)))
             .collect();
+
+        // Merge runtime_env (computed values like SMELT_EVENT_URL)
+        for (key, val) in &manifest.runtime_env {
+            extra_env.insert(key.clone(), val.clone());
+        }
 
         // Generate compose YAML.
         let yaml = generate_compose_file(manifest, &project_name, &extra_env)?;
@@ -614,6 +619,7 @@ mod tests {
             kubernetes: None,
             services,
             state_backend: None,
+            runtime_env: HashMap::new(),
         }
     }
 

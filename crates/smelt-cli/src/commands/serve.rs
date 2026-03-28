@@ -19,6 +19,8 @@ use clap::Parser;
 use tokio::net::TcpListener;
 use tokio_util::sync::CancellationToken;
 
+use crate::serve::dispatch::EventEnvConfig;
+use crate::serve::events::AssayEvent;
 use crate::serve::github::{GithubTrackerSource, SubprocessGhClient};
 use crate::serve::linear::{LinearTrackerSource, ReqwestLinearClient};
 use crate::serve::{
@@ -54,9 +56,11 @@ pub async fn execute(args: &ServeArgs) -> anyhow::Result<i32> {
     let config = ServerConfig::load(&args.config)?;
     std::fs::create_dir_all(&config.queue_dir)?;
 
+    let (event_bus, _event_rx) = tokio::sync::broadcast::channel::<AssayEvent>(1024);
     let state = Arc::new(Mutex::new(ServerState::load_or_new(
         config.queue_dir.clone(),
         config.max_concurrent,
+        event_bus,
     )));
     let cancel_token = CancellationToken::new();
     let shutdown = Arc::new(AtomicBool::new(false));
@@ -71,6 +75,49 @@ pub async fn execute(args: &ServeArgs) -> anyhow::Result<i32> {
     tracing::info!("smelt serve started on {}", bound_addr);
 
     let resolved_auth = config.auth.as_ref().map(resolve_auth).transpose()?;
+
+    // Detect host address for event env injection (D177).
+    // Uses detect_host_address: SMELT_EVENT_HOST env override → macOS → Linux bridge.
+    // Fallible: if Docker is unavailable (e.g. SSH-only dispatch), event injection
+    // is disabled with a warning instead of failing the entire server startup.
+    let event_env = match smelt_core::docker::DockerProvider::new() {
+        Ok(docker_provider) => {
+            match smelt_core::docker::detect_host_address(docker_provider.client()).await {
+                Ok(host) => {
+                    let write_token = resolved_auth.as_ref().map(|a| a.write_token.clone());
+                    tracing::info!(
+                        host = %host,
+                        port = bound_addr.port(),
+                        has_token = write_token.is_some(),
+                        "computed event env config for container injection"
+                    );
+                    Some(EventEnvConfig {
+                        host,
+                        port: bound_addr.port(),
+                        write_token,
+                    })
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        error = %e,
+                        "failed to detect host address for event injection; \
+                         set SMELT_EVENT_HOST to bypass Docker detection. \
+                         Event env injection disabled for this session."
+                    );
+                    None
+                }
+            }
+        }
+        Err(e) => {
+            tracing::warn!(
+                error = %e,
+                "Docker not available for host address detection; \
+                 set SMELT_EVENT_HOST to bypass. \
+                 Event env injection disabled for this session."
+            );
+            None
+        }
+    };
 
     if let Some(ref auth_cfg) = config.auth {
         tracing::info!(
@@ -169,7 +216,7 @@ pub async fn execute(args: &ServeArgs) -> anyhow::Result<i32> {
     let cancel_for_tui = cancel_token.clone();
 
     tokio::select! {
-        _ = dispatch_loop(Arc::clone(&state), cancel_token.clone(), retry_attempts, workers, SubprocessSshClient, ssh_timeout_secs) => {}
+        _ = dispatch_loop(Arc::clone(&state), cancel_token.clone(), retry_attempts, workers, SubprocessSshClient, ssh_timeout_secs, event_env) => {}
         _ = watcher.watch() => {}
         _ = axum::serve(listener, router) => {}
         _ = tokio::signal::ctrl_c() => {

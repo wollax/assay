@@ -359,7 +359,7 @@ target = "main"
     }
 
     fn make_state() -> Arc<Mutex<ServerState>> {
-        Arc::new(Mutex::new(ServerState::new(10)))
+        Arc::new(Mutex::new(ServerState::new_without_events(10)))
     }
 
     // ── (a) test_poller_enqueues_issues ─────────────────────────

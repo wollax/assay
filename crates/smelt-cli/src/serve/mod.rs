@@ -1,3 +1,5 @@
+/// Assay event types, bounded store, and broadcast bus.
+pub(crate) mod events;
 /// Persistent job queue and concurrency controller.
 pub mod queue;
 /// Job data types: identifiers, status, source, and queue entries.

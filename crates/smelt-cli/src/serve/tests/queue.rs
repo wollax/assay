@@ -5,7 +5,7 @@ use super::manifest;
 
 #[test]
 fn test_queue_fifo_order() {
-    let mut state = ServerState::new(10);
+    let mut state = ServerState::new_without_events(10);
     let id1 = state.enqueue(manifest(), JobSource::HttpApi);
     let id2 = state.enqueue(manifest(), JobSource::HttpApi);
     let id3 = state.enqueue(manifest(), JobSource::HttpApi);
@@ -21,7 +21,7 @@ fn test_queue_fifo_order() {
 
 #[test]
 fn test_queue_max_concurrent() {
-    let mut state = ServerState::new(1);
+    let mut state = ServerState::new_without_events(1);
     state.enqueue(manifest(), JobSource::DirectoryWatch);
     state.enqueue(manifest(), JobSource::DirectoryWatch);
 
@@ -50,7 +50,7 @@ fn test_queue_max_concurrent() {
 
 #[test]
 fn test_queue_cancel_queued() {
-    let mut state = ServerState::new(2);
+    let mut state = ServerState::new_without_events(2);
     let id_queued = state.enqueue(manifest(), JobSource::HttpApi);
     let id_dispatching = state.enqueue(manifest(), JobSource::HttpApi);
 
@@ -80,7 +80,7 @@ fn test_queue_cancel_queued() {
 
 #[test]
 fn test_queue_retry_eligible() {
-    let mut state = ServerState::new(3);
+    let mut state = ServerState::new_without_events(3);
     let id = state.enqueue(manifest(), JobSource::HttpApi);
     state.try_dispatch();
 

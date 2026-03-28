@@ -1,8 +1,9 @@
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 
 use tracing::{info, warn};
 
+use crate::serve::events::{AssayEvent, EventBus, EventStore};
 use crate::serve::types::{JobId, JobSource, JobStatus, QueuedJob, now_epoch};
 
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -95,18 +96,33 @@ pub struct ServerState {
     pub queue_dir: Option<PathBuf>,
     /// Round-robin index for SSH worker selection. Volatile — not serialized.
     pub round_robin_idx: usize,
+    /// Broadcast sender for real-time event fan-out.
+    pub(crate) event_bus: EventBus,
+    /// Per-job bounded ring buffers of received Assay events.
+    pub(crate) events: HashMap<String, EventStore>,
 }
 
 impl ServerState {
     /// Create a non-persistent `ServerState` (queue is only in memory).
-    pub fn new(max_concurrent: usize) -> Self {
+    pub fn new(max_concurrent: usize, event_bus: EventBus) -> Self {
         ServerState {
             jobs: VecDeque::new(),
             running_count: 0,
             max_concurrent,
             queue_dir: None,
             round_robin_idx: 0,
+            event_bus,
+            events: HashMap::new(),
         }
+    }
+
+    /// Convenience constructor that creates its own throwaway broadcast channel.
+    ///
+    /// Useful in tests and contexts where the caller does not need the
+    /// `Receiver` half of the event bus.
+    pub fn new_without_events(max_concurrent: usize) -> Self {
+        let (tx, _rx) = tokio::sync::broadcast::channel::<AssayEvent>(16);
+        Self::new(max_concurrent, tx)
     }
 
     /// Load persisted queue state from `queue_dir` and return a `ServerState`
@@ -116,7 +132,7 @@ impl ServerState {
     ///
     /// When no state file exists (first run or empty dir) the function returns
     /// an empty queue — equivalent to calling `new_with_persistence`.
-    pub fn load_or_new(queue_dir: PathBuf, max_concurrent: usize) -> Self {
+    pub fn load_or_new(queue_dir: PathBuf, max_concurrent: usize, event_bus: EventBus) -> Self {
         let mut jobs: Vec<QueuedJob> = read_queue_state(&queue_dir);
         let n = jobs.len();
         let mut remapped = 0usize;
@@ -130,20 +146,47 @@ impl ServerState {
             "load_or_new: loaded {n} jobs from {}, {remapped} remapped to Queued",
             queue_dir.display()
         );
-        let mut state = Self::new_with_persistence(max_concurrent, queue_dir);
+        let mut state = Self::new_with_persistence(max_concurrent, queue_dir, event_bus);
         state.jobs = VecDeque::from(jobs);
         state
     }
 
     /// Create a `ServerState` that persists queue state to `queue_dir` after
     /// every durable mutation (`enqueue`, `complete`, `cancel`).
-    pub fn new_with_persistence(max_concurrent: usize, queue_dir: PathBuf) -> Self {
+    pub fn new_with_persistence(
+        max_concurrent: usize,
+        queue_dir: PathBuf,
+        event_bus: EventBus,
+    ) -> Self {
         ServerState {
             jobs: VecDeque::new(),
             running_count: 0,
             max_concurrent,
             queue_dir: Some(queue_dir),
             round_robin_idx: 0,
+            event_bus,
+            events: HashMap::new(),
+        }
+    }
+
+    /// Store an event in the per-job ring buffer and broadcast it.
+    ///
+    /// The broadcast `SendError` (no active receivers) is tolerated — the
+    /// event is always stored regardless. Returns `true` if the broadcast
+    /// had at least one receiver.
+    pub(crate) fn ingest_event(&mut self, event: AssayEvent) {
+        self.events
+            .entry(event.job_id.clone())
+            .or_default()
+            .push(event.clone());
+
+        match self.event_bus.send(event) {
+            Ok(_) => {}
+            Err(tokio::sync::broadcast::error::SendError(_)) => {
+                tracing::trace!(
+                    "broadcast: no active receivers (normal when no clients are streaming)"
+                );
+            }
         }
     }
 
@@ -239,9 +282,14 @@ impl ServerState {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::serve::events::AssayEvent;
     use crate::serve::types::{JobId, JobSource, JobStatus};
     use std::path::PathBuf;
     use tempfile::TempDir;
+
+    fn test_event_bus() -> EventBus {
+        tokio::sync::broadcast::channel::<AssayEvent>(16).0
+    }
 
     fn make_job(id: &str, status: JobStatus, started_at: Option<u64>) -> QueuedJob {
         QueuedJob {
@@ -315,7 +363,8 @@ mod tests {
     #[test]
     fn test_server_state_writes_on_enqueue() {
         let tmp = TempDir::new().unwrap();
-        let mut state = ServerState::new_with_persistence(2, tmp.path().to_path_buf());
+        let mut state =
+            ServerState::new_with_persistence(2, tmp.path().to_path_buf(), test_event_bus());
         state.enqueue(PathBuf::from("/tmp/test.toml"), JobSource::HttpApi);
 
         // State file must exist after enqueue
@@ -346,7 +395,7 @@ mod tests {
         jobs.push_back(job_c);
         write_queue_state(dir.path(), &jobs);
 
-        let state = ServerState::load_or_new(dir.path().to_path_buf(), 2);
+        let state = ServerState::load_or_new(dir.path().to_path_buf(), 2, test_event_bus());
 
         assert_eq!(state.jobs.len(), 3);
         // All jobs must be Queued after recovery
@@ -364,7 +413,7 @@ mod tests {
     #[test]
     fn test_load_or_new_missing_file() {
         let dir = TempDir::new().unwrap(); // no writes
-        let state = ServerState::load_or_new(dir.path().to_path_buf(), 4);
+        let state = ServerState::load_or_new(dir.path().to_path_buf(), 4, test_event_bus());
 
         assert!(state.jobs.is_empty());
         assert!(state.queue_dir.is_some());

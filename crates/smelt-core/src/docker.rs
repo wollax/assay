@@ -12,7 +12,7 @@ use bollard::query_parameters::{
     CreateImageOptionsBuilder, RemoveContainerOptionsBuilder, StopContainerOptionsBuilder,
 };
 use futures_util::{StreamExt, TryStreamExt};
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 use crate::error::SmeltError;
 use crate::manifest::{JobManifest, resolve_repo_path};
@@ -47,6 +47,69 @@ impl DockerProvider {
     }
 }
 
+/// Detect the host address reachable from inside Docker containers.
+///
+/// Resolution order:
+/// 1. `host_override` parameter (caller reads `SMELT_EVENT_HOST` env var).
+/// 2. On macOS: `"host.docker.internal"` (Docker Desktop provides this).
+/// 3. On Linux: inspect the Docker `bridge` network and extract the gateway IP.
+///    Falls back to `"172.17.0.1"` with a warning if inspection fails or the
+///    IPAM config is missing.
+///
+/// This function currently never returns `Err` — all fallback paths produce `Ok`.
+pub async fn detect_host_address(docker: &Docker) -> crate::Result<String> {
+    // Read the env override and delegate to the testable inner function.
+    let host_override = std::env::var("SMELT_EVENT_HOST")
+        .ok()
+        .filter(|s| !s.is_empty());
+    detect_host_address_with_override(docker, host_override.as_deref()).await
+}
+
+/// Inner implementation that accepts the override as a parameter for testability.
+pub(crate) async fn detect_host_address_with_override(
+    docker: &Docker,
+    host_override: Option<&str>,
+) -> crate::Result<String> {
+    // 1. Explicit override — always respected.
+    if let Some(host) = host_override {
+        info!(host = %host, "using host address override");
+        return Ok(host.to_string());
+    }
+
+    // 2. macOS — Docker Desktop provides host.docker.internal
+    if cfg!(target_os = "macos") {
+        return Ok("host.docker.internal".to_string());
+    }
+
+    // 3. Linux — inspect bridge network for gateway IP
+    match docker.inspect_network("bridge", None).await {
+        Ok(network) => {
+            if let Some(ipam) = network.ipam
+                && let Some(configs) = ipam.config
+                && let Some(first) = configs.first()
+                && let Some(gateway) = &first.gateway
+                && !gateway.is_empty()
+            {
+                info!(gateway = %gateway, "detected Docker bridge gateway");
+                return Ok(gateway.clone());
+            }
+            warn!(
+                "bridge network IPAM config has no gateway; falling back to 172.17.0.1. \
+                 Set SMELT_EVENT_HOST to override."
+            );
+            Ok("172.17.0.1".to_string())
+        }
+        Err(e) => {
+            warn!(
+                error = %e,
+                "failed to inspect Docker bridge network; falling back to 172.17.0.1. \
+                 Set SMELT_EVENT_HOST to override."
+            );
+            Ok("172.17.0.1".to_string())
+        }
+    }
+}
+
 impl RuntimeProvider for DockerProvider {
     async fn provision(&self, manifest: &JobManifest) -> crate::Result<ContainerId> {
         let image = &manifest.environment.image;
@@ -72,7 +135,7 @@ impl RuntimeProvider for DockerProvider {
         }
 
         // Build env vars from credentials
-        let env: Vec<String> = manifest
+        let mut env: Vec<String> = manifest
             .credentials
             .env
             .iter()
@@ -82,6 +145,11 @@ impl RuntimeProvider for DockerProvider {
                     .map(|val| format!("{key}={val}"))
             })
             .collect();
+
+        // Merge runtime_env (computed values like SMELT_EVENT_URL)
+        for (key, val) in &manifest.runtime_env {
+            env.push(format!("{key}={val}"));
+        }
 
         // Parse resource limits
         let memory = manifest
@@ -601,5 +669,49 @@ mod tests {
     #[test]
     fn cpu_negative() {
         assert!(parse_cpu_nanocpus("-1").is_err());
+    }
+
+    // ── detect_host_address ─────────────────────────────────────
+
+    /// Test override takes priority via the testable inner function.
+    #[tokio::test]
+    async fn detect_host_address_override() {
+        let docker = Docker::connect_with_socket_defaults()
+            .unwrap_or_else(|_| panic!("Docker client needed for test structure"));
+
+        let result =
+            super::detect_host_address_with_override(&docker, Some("custom-host.example.com"))
+                .await
+                .unwrap();
+        assert_eq!(
+            result, "custom-host.example.com",
+            "explicit override must take priority"
+        );
+    }
+
+    /// Without override, platform default is used.
+    #[tokio::test]
+    async fn detect_host_address_platform_default() {
+        let docker = Docker::connect_with_socket_defaults()
+            .unwrap_or_else(|_| panic!("Docker client needed for test structure"));
+
+        let result = super::detect_host_address_with_override(&docker, None)
+            .await
+            .unwrap();
+
+        #[cfg(target_os = "macos")]
+        assert_eq!(
+            result, "host.docker.internal",
+            "macOS must return host.docker.internal"
+        );
+
+        #[cfg(target_os = "linux")]
+        {
+            // On Linux, should be a valid IP address (gateway or fallback)
+            assert!(
+                !result.is_empty(),
+                "Linux must return a non-empty host address"
+            );
+        }
     }
 }
