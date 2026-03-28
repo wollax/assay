@@ -3,13 +3,19 @@
 //! Uses `git merge-tree --write-tree` to detect conflicts without mutating
 //! the index or working tree. Follows the same `std::process::Command` pattern
 //! as the `worktree` module.
+//!
+//! Also provides [`merge_propose`] for pushing a branch and creating a GitHub
+//! PR with formatted gate evidence via `gh pr create`.
 
+use std::io::Write;
 use std::path::Path;
-use std::process::Command;
+use std::process::{Command, Stdio};
+
+use tracing::{info, warn};
 
 use assay_types::{
     ChangeType, ConflictMarker, ConflictScan, ConflictType, FileChange, MarkerType, MergeCheck,
-    MergeConflict, MergeExecuteResult,
+    MergeConflict, MergeExecuteResult, MergeProposal, MergeProposeConfig,
 };
 
 use crate::error::{AssayError, Result};
@@ -545,6 +551,209 @@ pub fn merge_execute(
             conflict_details: Some(conflict_scan),
         })
     }
+}
+
+// ---------------------------------------------------------------------------
+// Merge propose: push branch + create PR with gate evidence
+// ---------------------------------------------------------------------------
+
+/// Character limit for the GitHub PR body.
+const GITHUB_BODY_LIMIT: usize = 65_536;
+
+/// Push the current branch to remote origin and create a GitHub PR with
+/// formatted gate evidence in the PR body.
+///
+/// When `config.dry_run` is `true`, returns the proposal shape without pushing
+/// or creating a PR.
+///
+/// Sets `ASSAY_BRANCH`, `ASSAY_SPEC`, and `ASSAY_GATE_REPORT_PATH` as
+/// environment variables on the `gh` subprocess invocation for downstream
+/// tooling (hooks, CI scripts) to consume.
+///
+/// # Errors
+///
+/// Returns [`AssayError`] when:
+/// - `gh` CLI is not found on PATH (with install link)
+/// - No gate runs exist for the specified spec
+/// - `git push` fails
+/// - `gh pr create` fails (stderr captured and included)
+pub fn merge_propose(config: &MergeProposeConfig) -> Result<MergeProposal> {
+    info!(
+        spec_name = %config.spec_name,
+        branch = %config.branch,
+        dry_run = config.dry_run,
+        "merge_propose: starting"
+    );
+
+    // 1. gh preflight — verify gh is on PATH
+    match Command::new("gh")
+        .arg("--version")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+    {
+        Ok(mut child) => {
+            let _ = child.wait();
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return Err(AssayError::Io {
+                operation: "merge_propose".into(),
+                path: "gh".into(),
+                source: std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    "gh CLI not found — install from https://cli.github.com",
+                ),
+            });
+        }
+        Err(e) => {
+            return Err(AssayError::Io {
+                operation: "merge_propose: gh preflight".into(),
+                path: "gh".into(),
+                source: e,
+            });
+        }
+    }
+
+    // 2. Load gate evidence from history
+    let run_ids = crate::history::list(&config.assay_dir, &config.spec_name)?;
+    if run_ids.is_empty() {
+        return Err(AssayError::Io {
+            operation: "merge_propose".into(),
+            path: config.assay_dir.clone(),
+            source: std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!("no gate runs found for spec '{}'", config.spec_name),
+            ),
+        });
+    }
+
+    let run_id = config
+        .run_id
+        .clone()
+        .unwrap_or_else(|| run_ids.last().unwrap().clone());
+
+    let record = crate::history::load(&config.assay_dir, &config.spec_name, &run_id)?;
+    let report_path = config
+        .assay_dir
+        .join("results")
+        .join(&config.spec_name)
+        .join(&run_id);
+    let evidence =
+        crate::gate::evidence::format_gate_evidence(&record, &report_path, GITHUB_BODY_LIMIT);
+
+    // 3. Dry run path — return early without side effects
+    if config.dry_run {
+        return Ok(MergeProposal {
+            pr_url: None,
+            pr_number: None,
+            gate_summary: evidence.pr_body,
+            dry_run: true,
+        });
+    }
+
+    // 4. git push origin <branch>
+    let push_output = Command::new("git")
+        .args(["push", "origin", &config.branch])
+        .current_dir(&config.working_dir)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .map_err(|e| AssayError::WorktreeGit {
+            cmd: format!("git push origin {}", config.branch),
+            source: e,
+        })?;
+
+    if !push_output.status.success() {
+        let stderr = String::from_utf8_lossy(&push_output.stderr);
+        warn!(stderr = %stderr, "merge_propose: git push failed");
+        return Err(AssayError::WorktreeGitFailed {
+            cmd: format!("git push origin {}", config.branch),
+            stderr: stderr.into_owned(),
+            exit_code: push_output.status.code(),
+        });
+    }
+
+    // 5. gh pr create with env vars and stdin pipe for body
+    let gate_report_path = config
+        .assay_dir
+        .join("results")
+        .join(&config.spec_name)
+        .join(format!("{run_id}.json"));
+
+    let mut gh_child = Command::new("gh")
+        .args([
+            "pr",
+            "create",
+            "--base",
+            &config.base_branch,
+            "--title",
+            &config.title,
+            "--body-file",
+            "-",
+            "--json",
+            "number,url",
+        ])
+        .current_dir(&config.working_dir)
+        .env("ASSAY_BRANCH", &config.branch)
+        .env("ASSAY_SPEC", &config.spec_name)
+        .env(
+            "ASSAY_GATE_REPORT_PATH",
+            gate_report_path.to_string_lossy().as_ref(),
+        )
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| AssayError::Io {
+            operation: "merge_propose: gh pr create".into(),
+            path: "gh".into(),
+            source: e,
+        })?;
+
+    // Write PR body to stdin, then drop handle to close stdin
+    if let Some(mut stdin) = gh_child.stdin.take() {
+        let _ = stdin.write_all(evidence.pr_body.as_bytes());
+    }
+
+    let gh_output = gh_child.wait_with_output().map_err(|e| AssayError::Io {
+        operation: "merge_propose: gh pr create wait".into(),
+        path: "gh".into(),
+        source: e,
+    })?;
+
+    if !gh_output.status.success() {
+        let stderr = String::from_utf8_lossy(&gh_output.stderr);
+        warn!(stderr = %stderr, "merge_propose: gh pr create failed");
+        return Err(AssayError::Io {
+            operation: "merge_propose: gh pr create".into(),
+            path: "gh".into(),
+            source: std::io::Error::other(format!(
+                "gh pr create failed (exit {}): {}",
+                gh_output.status.code().unwrap_or(-1),
+                stderr
+            )),
+        });
+    }
+
+    // Parse JSON output: { "number": N, "url": "..." }
+    let stdout = String::from_utf8_lossy(&gh_output.stdout);
+    let parsed: serde_json::Value =
+        serde_json::from_str(stdout.trim()).map_err(|e| AssayError::Io {
+            operation: "merge_propose: parsing gh output".into(),
+            path: "gh".into(),
+            source: std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()),
+        })?;
+
+    let pr_number = parsed["number"].as_u64();
+    let pr_url = parsed["url"].as_str().map(String::from);
+
+    Ok(MergeProposal {
+        pr_url,
+        pr_number,
+        gate_summary: evidence.pr_body,
+        dry_run: false,
+    })
 }
 
 // ---------------------------------------------------------------------------
