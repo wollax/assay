@@ -2,8 +2,8 @@
 
 **Active Milestone:** M013 — Tech Debt & Deferred Features
 **Active Slice:** S01 — GitHubBackend correctness fixes (Q001–Q004)
-**Active Task:** T03 — Full workspace verification
-**Phase:** Executing
+**Active Task:** —
+**Phase:** Verifying (slice S01 complete, all tasks done)
 
 ## Recent Decisions
 - D177: GitHubBackend repo validation is warn-not-error at construction
@@ -19,4 +19,4 @@
 - M013: planning complete — 4 slices, all independent
 
 ## Next Action
-Execute T03: run `just ready` for full workspace verification. Fix any clippy warnings or formatting issues. Confirm 1529+ tests passing.
+S01 all tasks complete. Slice ready for completion — all Q001–Q004 fixes implemented and verified, 1501 tests passing.

@@ -54,7 +54,7 @@
   - Verify: `cargo test -p assay-backends --features github` — all 12+ tests pass; `grep -c '(M011/S' crates/assay-backends/src/factory.rs` returns `0`; `grep -c "from_utf8_lossy" crates/assay-backends/src/github.rs` returns `1`
   - Done when: All new Q001–Q004 tests pass, all 8 existing tests still pass, factory.rs doc clean
 
-- [ ] **T03: Full workspace verification** `est:15m`
+- [x] **T03: Full workspace verification** `est:15m`
   - Why: Confirm no regressions across the full workspace after the changes.
   - Files: none (verification-only task)
   - Do: Run `just ready` (fmt, lint, test, deny). Fix any clippy warnings or formatting issues introduced by the changes.
