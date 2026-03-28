@@ -161,7 +161,16 @@ fn test_capabilities_returns_all() {
         None,
         tmp.path().to_path_buf(),
     );
-    assert_eq!(backend.capabilities(), CapabilitySet::all());
+    assert_eq!(
+        backend.capabilities(),
+        CapabilitySet {
+            supports_messaging: true,
+            supports_gossip_manifest: true,
+            supports_annotations: true,
+            supports_checkpoints: true,
+            supports_signals: false,
+        }
+    );
 }
 
 /// `push_session_event` should invoke `scp` to push state.json to remote.

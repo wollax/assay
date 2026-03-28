@@ -115,6 +115,40 @@ expression: schema.to_value()
     },
     {
       "additionalProperties": false,
+      "description": "Smelt backend for pushing session events to Smelt's HTTP server.",
+      "properties": {
+        "smelt": {
+          "properties": {
+            "job_id": {
+              "description": "Job identifier for scoping events.",
+              "type": "string"
+            },
+            "token": {
+              "description": "Optional bearer token for authentication.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "url": {
+              "description": "Smelt server URL (e.g. `http://localhost:9000`).",
+              "type": "string"
+            }
+          },
+          "required": [
+            "url",
+            "job_id"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "smelt"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
       "description": "Custom third-party backend identified by name.",
       "properties": {
         "custom": {

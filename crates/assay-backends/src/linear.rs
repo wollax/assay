@@ -306,6 +306,7 @@ impl StateBackend for LinearBackend {
             supports_gossip_manifest: false,
             supports_annotations: true,
             supports_checkpoints: false,
+            supports_signals: false,
         }
     }
 

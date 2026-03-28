@@ -59,6 +59,7 @@ fn test_capabilities_returns_d164_flags() {
             supports_gossip_manifest: false,
             supports_annotations: true,
             supports_checkpoints: false,
+            supports_signals: false,
         }
     );
 }
