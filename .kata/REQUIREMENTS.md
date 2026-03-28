@@ -112,7 +112,7 @@ This file is the explicit capability and coverage contract for the project.
 - Primary owning slice: M011/S02
 - Supporting slices: none
 - Validation: validated
-- Notes: Proven by M012/S01: `Duration::from_secs(10)` changed to `Duration::from_secs(30)` in docker_lifecycle.rs; `rg 'from_secs(10)' crates/smelt-cli/tests/docker_lifecycle.rs` returns 0 results; `cargo test --workspace` passes 298 tests.
+- Notes: Proven by M012/S01: `Duration::from_secs(10)` changed to `Duration::from_secs(30)` in docker_lifecycle.rs; `rg 'from_secs(10)' crates/smelt-cli/tests/docker_lifecycle.rs` returns 0 results; `cargo test --workspace` passes 398 tests.
 
 ### R062 — Full tracing migration
 - Class: quality-attribute
@@ -123,7 +123,7 @@ This file is the explicit capability and coverage contract for the project.
 - Primary owning slice: M011/S02
 - Supporting slices: none
 - Validation: validated
-- Notes: Proven by M012/S01: 50 eprintln! calls migrated across phases.rs (33), watch.rs (10), status.rs (3), dry_run.rs (2), init.rs (1), list.rs (1). Two documented exceptions remain: main.rs top-level error handler (D139) and serve/tui.rs TUI error. Bare-message format (D158) matches prior eprintln! UX. `SMELT_LOG=debug` activates full-format diagnostic output. Integration test assertions on stderr substrings still pass. `cargo test --workspace` passes 298 tests.
+- Notes: Proven by M012/S01: 50 eprintln! calls migrated across phases.rs (33), watch.rs (10), status.rs (3), dry_run.rs (2), init.rs (1), list.rs (1). Two documented exceptions remain: main.rs top-level error handler (D139) and serve/tui.rs TUI error. Bare-message format (D158) matches prior eprintln! UX. `SMELT_LOG=debug` activates full-format diagnostic output. Integration test assertions on stderr substrings still pass. `cargo test --workspace` passes 398 tests.
 
 ### R063 — Health check endpoint
 - Class: operability
@@ -160,36 +160,36 @@ This file is the explicit capability and coverage contract for the project.
 
 ### R072 — TrackerSource trait abstraction
 - Class: integration
-- Status: active
+- Status: validated
 - Description: A `TrackerSource` trait abstracts issue discovery, manifest generation, and lifecycle state transitions. GitHub and Linear are concrete implementations. The trait is generic enough for future tracker backends (Jira, etc.).
 - Why it matters: Keeps the dispatch loop tracker-agnostic. Adding a new tracker is one trait impl, not a rewrite.
 - Source: inferred
 - Primary owning slice: M012/S02
 - Supporting slices: M012/S03, M012/S04
-- Validation: unmapped
-- Notes: Trait methods: `poll_ready_issues()`, `transition_state()`, `issue_to_manifest()`. Object-safe for `Arc<dyn TrackerSource>`.
+- Validation: validated
+- Notes: TrackerSource RPITIT trait with poll_ready_issues() and transition_state(). GitHub and Linear are independent concrete implementations. MockTrackerSource proves trait testability. AnyTrackerSource enum proves dispatch without dyn. Proven by M012 (S02–S05): cargo test --workspace passes 398 tests.
 
 ### R073 — Template manifest with issue injection
 - Class: integration
-- Status: active
+- Status: validated
 - Description: `server.toml` accepts a `[tracker]` section with a `manifest_template` path pointing to a base JobManifest TOML that provides environment, credentials, merge config. Each tracked issue's title/body is injected as a session entry into the template to produce the dispatched manifest.
 - Why it matters: Users configure infrastructure once; each issue only needs to describe the work. No manifest authoring per-issue.
 - Source: user
 - Primary owning slice: M012/S02
 - Supporting slices: M012/S03, M012/S04
-- Validation: unmapped
-- Notes: Template manifest must be a valid JobManifest minus the `[[session]]` entries. Issue title → session name, issue body → session spec text.
+- Validation: validated
+- Notes: load_template_manifest() validates zero-session constraint at startup (D162); issue_to_manifest() clones template and injects sanitized session from TrackerIssue (D161); ServerConfig::load() calls template validation at startup. Proven by M012/S02: 14 unit tests in serve::tracker. cargo test --workspace passes 398 tests.
 
 ### R074 — Label-based lifecycle state machine
 - Class: operability
-- Status: active
+- Status: validated
 - Description: Tracked issues move through labels reflecting dispatch lifecycle: `smelt:ready` (eligible for pickup) → `smelt:queued` → `smelt:running` → `smelt:pr-created` → `smelt:done` (or `smelt:failed`). Labels work on both GitHub Issues and Linear issues.
 - Why it matters: Visible state in both tracker UIs. Prevents double-dispatch (issues without `smelt:ready` are skipped). Operators see lifecycle at a glance.
 - Source: user
 - Primary owning slice: M012/S02
 - Supporting slices: M012/S03, M012/S04
-- Validation: unmapped
-- Notes: GitHub uses issue labels. Linear uses issue labels (not workflow states, for consistency).
+- Validation: validated
+- Notes: TrackerState 6-variant enum with label_name(prefix). GitHub uses single gh issue edit with --add-label/--remove-label (D157/D166). Linear uses two GraphQL mutations (D170). ensure_labels() creates all 6 lifecycle labels idempotently on both backends. Proven by M012 (S02–S04): cargo test --workspace passes 398 tests.
 
 ### R075 — State backend passthrough in JobManifest
 - Class: integration
@@ -200,7 +200,7 @@ This file is the explicit capability and coverage contract for the project.
 - Primary owning slice: M012/S05
 - Supporting slices: none
 - Validation: validated
-- Notes: Maps to Assay's `StateBackendConfig` enum (local_fs, linear, github, ssh, custom). Smelt serializes it into the RunManifest TOML without interpreting it — pure passthrough. Proven by M012/S05/T01: `SmeltRunManifest.state_backend` with `#[serde(default, skip_serializing_if)]`; `build_run_manifest_toml()` clones field from JobManifest; 3 unit tests cover None (omitted), Linear (`[state_backend.linear]` with team_id/project_id), and LocalFs variants. `cargo test --workspace` passes 398 tests including these. Tagged-enum TOML shape (`[state_backend.linear]`) is correct serde behavior.
+- Notes: Maps to Assay's `StateBackendConfig` enum (local_fs, linear, github, ssh, custom). Smelt serializes it into the RunManifest TOML without interpreting it — pure passthrough. Proven by M012/S05/T01: `SmeltRunManifest.state_backend` with `#[serde(default, skip_serializing_if)]`; `build_run_manifest_toml()` clones field from JobManifest; 3 unit tests cover None (omitted), Linear (`[state_backend.linear]` with team_id/project_id), and LocalFs variants. `cargo test --workspace` passes 398 tests. Tagged-enum TOML shape (`[state_backend.linear]`) is correct serde behavior.
 
 ---
 
@@ -586,14 +586,15 @@ This file is the explicit capability and coverage contract for the project.
 
 | R070 | primary-user-loop    | active      | M012/S03      | M012/S02,S04,S05     | mapped    |
 | R071 | primary-user-loop    | active      | M012/S04      | M012/S02,S05         | mapped    |
-| R072 | integration          | active      | M012/S02      | M012/S03,S04         | mapped    |
-| R073 | integration          | active      | M012/S02      | M012/S03,S04         | mapped    |
-| R074 | operability          | active      | M012/S02      | M012/S03,S04         | mapped    |
+| R072 | integration          | validated   | M012/S02      | M012/S03,S04         | validated |
+| R073 | integration          | validated   | M012/S02      | M012/S03,S04         | validated |
+| R074 | operability          | validated   | M012/S02      | M012/S03,S04         | validated |
 | R075 | integration          | validated   | M012/S05      | none                 | validated |
 
 ## Coverage Summary
 
-- Active requirements: 7 (R026, R070, R071, R072, R073, R074)
-- Mapped to slices: 8
-- Validated (all milestones through M012/S01): 35 (R001–R008, R010–R015, R020, R021, R023, R024, R025, R027, R028, R040–R045, R050–R053, R060, R061, R062, R063)
+- Active requirements: 3 (R026, R070, R071)
+- Mapped to slices: 3
+- Validated (all milestones through M012): 39 (R001–R008, R010–R015, R020, R021, R023, R024, R025, R027, R028, R040–R045, R050–R053, R060, R061, R062, R063, R072, R073, R074, R075)
 - Unmapped active requirements: 0
+- Note: R070 and R071 remain active — GithubTrackerSource and LinearTrackerSource are implemented and wired, but live end-to-end UAT with real gh CLI / Linear API has not been performed
