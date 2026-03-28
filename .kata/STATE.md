@@ -2,7 +2,7 @@
 
 **Active Milestone:** M013 — Tech Debt & Deferred Features
 **Active Slice:** S02 — TUI Trace Viewer
-**Active Task:** T02 — Screen::TraceViewer variant and event handling
+**Active Task:** T03 — Render trace list and span tree
 **Phase:** Executing
 
 ## Recent Decisions
@@ -17,9 +17,9 @@
 ## Progress
 - M012 ✅ COMPLETE (R080 validated, 1529 tests with all features)
 - M013: S01 ✅ complete (R081 validated, 1501 tests)
-  - S02: TUI trace viewer — T01 ✅ complete (module scaffold, types, logic, integration tests)
+  - S02: TUI trace viewer — T01 ✅, T02 ✅ (two-mode navigation, span tree drill-down, load_trace_spans)
   - S03: OTel metrics
   - S04: Wizard runnable criteria
 
 ## Next Action
-Execute M013/S02/T02: Wire Screen::TraceViewer with span tree drill-down (Enter expands, Esc chain), Up/Down navigation in both views, help overlay update. Note: T01 already added the Screen variant, t-key handler, and basic draw — T02 needs to add span tree expansion and list state management.
+Execute M013/S02/T03: Render trace list and span tree. Note: T02 already implemented draw_trace_viewer with List-based rendering for both views — T03 may focus on polish, final integration test pass, and `just ready`.
