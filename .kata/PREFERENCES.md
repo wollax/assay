@@ -18,8 +18,8 @@ auto_supervisor: {}
 workflow:
   mode: linear
 linear:
-  teamKey: WOL
-  projectId: b6ff6491-d7f3-428c-854d-6ee116899fe5
+  teamKey: NDI
+  projectId: 4dd51644-8c79-40dc-919c-d63a6779d882
 ---
 
 # Kata Skill Preferences
