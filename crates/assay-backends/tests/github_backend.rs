@@ -309,9 +309,10 @@ fn test_gh_nonzero_exit_returns_error() {
 
 // ── Q001: warn on malformed repo ─────────────────────────────────────────────
 
-/// Q001: `GitHubBackend::new` should emit a `tracing::warn!` when repo is empty.
+/// Q001: `GitHubBackend::new` emits a `tracing::warn!` when `repo` is empty.
 ///
-/// Currently fails (no warn emitted) — contract test for the fix in T02.
+/// A valid GitHub repo must be in `owner/repo` format. An empty string
+/// indicates misconfiguration and is caught at construction time.
 #[test]
 #[traced_test]
 fn test_new_warns_on_empty_repo() {
@@ -322,11 +323,11 @@ fn test_new_warns_on_empty_repo() {
     );
 }
 
-/// Q001: `GitHubBackend::new` should emit a `tracing::warn!` when repo has no slash.
+/// Q001: `GitHubBackend::new` emits a `tracing::warn!` when `repo` contains no `/`.
 ///
 /// A valid GitHub repo identifier must be `owner/repo`. A bare name like
-/// `"noslash"` indicates a misconfiguration.
-/// Currently fails (no warn emitted) — contract test for the fix in T02.
+/// `"noslash"` indicates a misconfiguration that would surface as a cryptic
+/// `gh` error at the first API call.
 #[test]
 #[traced_test]
 fn test_new_warns_on_repo_missing_slash() {
@@ -339,13 +340,11 @@ fn test_new_warns_on_repo_missing_slash() {
 
 // ── Q002: reject issue number 0 ──────────────────────────────────────────────
 
-/// Q002: `read_issue_number` (called via `read_run_state`) should return `Err`
-/// when `.github-issue-number` contains `"0"`.
+/// Q002: `read_issue_number` returns `Err` when `.github-issue-number` contains `"0"`.
 ///
-/// Issue number 0 is invalid in the GitHub API. Accepting it silently causes
-/// confusing downstream failures. The fix (T02) makes the parse return `Err`
-/// with a message including "0".
-/// Currently fails (0 is parsed as a valid `u64`) — contract test for the fix in T02.
+/// Issue number 0 is invalid in the GitHub API and indicates file corruption.
+/// The error propagates through `read_run_state`. Accepting it silently would
+/// cause a confusing downstream `gh issue view 0` failure.
 #[test]
 fn test_read_issue_number_rejects_zero() {
     let tmp = TempDir::new().unwrap();
@@ -356,7 +355,8 @@ fn test_read_issue_number_rejects_zero() {
     fs::write(run_dir.join(".github-issue-number"), "0").unwrap();
 
     let backend = make_backend();
-    // `read_run_state` calls `read_issue_number` internally; the error propagates.
+    // `read_issue_number` is private; test it indirectly via `read_run_state`,
+    // which calls it internally and propagates the error.
     let result = backend.read_run_state(&run_dir);
 
     assert!(
@@ -365,7 +365,7 @@ fn test_read_issue_number_rejects_zero() {
     );
     let err_msg = format!("{}", result.unwrap_err());
     assert!(
-        err_msg.contains('0'),
-        "error message should mention the invalid value '0': {err_msg}"
+        err_msg.contains("invalid issue number: 0"),
+        "error message should mention the specific guard phrase: {err_msg}"
     );
 }
