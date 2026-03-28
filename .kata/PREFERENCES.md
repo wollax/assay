@@ -16,7 +16,10 @@ models:
 skill_discovery: suggest
 auto_supervisor: {}
 workflow:
-  mode: file
+  mode: linear
+linear:
+  teamKey: NDI
+  projectId: 4dd51644-8c79-40dc-919c-d63a6779d882
 ---
 
 # Kata Skill Preferences
