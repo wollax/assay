@@ -582,6 +582,51 @@ pub struct ChunkStatusParams {
     pub chunk_slug: String,
 }
 
+/// A structured criterion input for MCP tools.
+///
+/// Allows specifying name, optional description, and optional shell command.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct CriterionInputParam {
+    /// Human-readable criterion name.
+    pub name: String,
+    /// Detailed description of what this criterion checks.
+    #[serde(default)]
+    pub description: Option<String>,
+    /// Optional shell command to evaluate this criterion.
+    #[serde(default)]
+    pub cmd: Option<String>,
+}
+
+/// Accepts either a plain string or a structured object for a criterion.
+///
+/// This provides backward compatibility: existing callers can pass `"criterion-name"` strings,
+/// while new callers can pass `{"name": "...", "cmd": "..."}` objects.
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum CriterionOrString {
+    /// Structured criterion with optional fields.
+    Object(CriterionInputParam),
+    /// Plain string used as the criterion name.
+    Plain(String),
+}
+
+impl From<CriterionOrString> for assay_core::wizard::CriterionInput {
+    fn from(value: CriterionOrString) -> Self {
+        match value {
+            CriterionOrString::Object(param) => Self {
+                name: param.name,
+                description: param.description.unwrap_or_default(),
+                cmd: param.cmd,
+            },
+            CriterionOrString::Plain(name) => Self {
+                name,
+                description: String::new(),
+                cmd: None,
+            },
+        }
+    }
+}
+
 /// A single chunk entry within [`MilestoneCreateParams`].
 #[derive(Deserialize, JsonSchema)]
 pub struct MilestoneChunkInput {
@@ -589,8 +634,8 @@ pub struct MilestoneChunkInput {
     pub slug: String,
     /// Human-readable display name.
     pub name: String,
-    /// Criterion name strings for this chunk.
-    pub criteria: Vec<String>,
+    /// Criteria for this chunk. Accepts plain strings (backward-compatible) or objects with optional `cmd` field.
+    pub criteria: Vec<CriterionOrString>,
 }
 
 /// Parameters for the `milestone_create` tool.
@@ -617,8 +662,8 @@ pub struct SpecCreateParams {
     pub description: Option<String>,
     /// Optionally link the spec to a milestone by slug. Patches the milestone's chunk list.
     pub milestone_slug: Option<String>,
-    /// Criterion name strings. Each becomes a gate criterion with `name = string` and `description = ""`.
-    pub criteria: Vec<String>,
+    /// Criteria for this spec. Accepts plain strings (backward-compatible) or objects with optional `cmd` field.
+    pub criteria: Vec<CriterionOrString>,
 }
 
 // ── Response structs ─────────────────────────────────────────────────
@@ -3664,7 +3709,8 @@ impl AssayServer {
         let slug = params.0.slug.clone();
         let name = params.0.name.clone();
         let milestone_slug = params.0.milestone_slug.clone();
-        let criteria = params.0.criteria.clone();
+        let criteria: Vec<assay_core::wizard::CriterionInput> =
+            params.0.criteria.into_iter().map(Into::into).collect();
 
         let result = tokio::task::spawn_blocking(move || {
             assay_core::wizard::create_spec_from_params(
@@ -8003,7 +8049,7 @@ spec = "auth"
                 chunks: vec![MilestoneChunkInput {
                     slug: "chunk-1".to_string(),
                     name: "Chunk 1".to_string(),
-                    criteria: vec!["criterion-1".to_string()],
+                    criteria: vec![CriterionOrString::Plain("criterion-1".to_string())],
                 }],
             }))
             .await
@@ -8046,7 +8092,7 @@ spec = "auth"
                 name: "Chunk 1".to_string(),
                 description: None,
                 milestone_slug: None,
-                criteria: vec!["criterion-1".to_string()],
+                criteria: vec![CriterionOrString::Plain("criterion-1".to_string())],
             }))
             .await
             .unwrap();
@@ -8085,7 +8131,7 @@ spec = "auth"
                 name: "Dup Chunk".to_string(),
                 description: None,
                 milestone_slug: None,
-                criteria: vec!["criterion-1".to_string()],
+                criteria: vec![CriterionOrString::Plain("criterion-1".to_string())],
             }))
             .await
             .unwrap();
@@ -8097,7 +8143,7 @@ spec = "auth"
                 name: "Dup Chunk Again".to_string(),
                 description: None,
                 milestone_slug: None,
-                criteria: vec!["criterion-1".to_string()],
+                criteria: vec![CriterionOrString::Plain("criterion-1".to_string())],
             }))
             .await
             .unwrap();
@@ -8106,5 +8152,101 @@ spec = "auth"
             result.is_error.unwrap_or(false),
             "duplicate spec_create should return isError: true"
         );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn spec_create_with_object_criteria_writes_cmd() {
+        let dir = create_project(r#"project_name = "wizard-test""#);
+        std::env::set_current_dir(dir.path()).unwrap();
+
+        let server = AssayServer::new();
+        let result = server
+            .spec_create(Parameters(SpecCreateParams {
+                slug: "cmd-chunk".to_string(),
+                name: "Cmd Chunk".to_string(),
+                description: None,
+                milestone_slug: None,
+                criteria: vec![
+                    CriterionOrString::Object(CriterionInputParam {
+                        name: "tests-pass".to_string(),
+                        description: Some("All tests must pass".to_string()),
+                        cmd: Some("cargo test".to_string()),
+                    }),
+                    CriterionOrString::Plain("manual-review".to_string()),
+                ],
+            }))
+            .await
+            .unwrap();
+
+        assert!(
+            !result.is_error.unwrap_or(false),
+            "spec_create with object criteria should succeed, got: {:?}",
+            extract_text(&result)
+        );
+
+        // Verify the generated gates.toml has the cmd field.
+        let gates_path = dir
+            .path()
+            .join(".assay")
+            .join("specs")
+            .join("cmd-chunk")
+            .join("gates.toml");
+        assert!(gates_path.exists(), "gates.toml should exist on disk");
+
+        let content = std::fs::read_to_string(&gates_path).unwrap();
+        assert!(
+            content.contains("cmd = \"cargo test\""),
+            "gates.toml should contain cmd field, got:\n{content}"
+        );
+        assert!(
+            content.contains("tests-pass"),
+            "gates.toml should contain criterion name 'tests-pass', got:\n{content}"
+        );
+        assert!(
+            content.contains("manual-review"),
+            "gates.toml should contain plain criterion 'manual-review', got:\n{content}"
+        );
+    }
+
+    #[test]
+    fn criterion_or_string_deserializes_plain_string() {
+        let json = r#""my-criterion""#;
+        let parsed: CriterionOrString = serde_json::from_str(json).unwrap();
+        let input: assay_core::wizard::CriterionInput = parsed.into();
+        assert_eq!(input.name, "my-criterion");
+        assert!(input.cmd.is_none());
+    }
+
+    #[test]
+    fn criterion_or_string_deserializes_object_with_cmd() {
+        let json = r#"{"name": "tests-pass", "cmd": "cargo test"}"#;
+        let parsed: CriterionOrString = serde_json::from_str(json).unwrap();
+        let input: assay_core::wizard::CriterionInput = parsed.into();
+        assert_eq!(input.name, "tests-pass");
+        assert_eq!(input.cmd.as_deref(), Some("cargo test"));
+    }
+
+    #[test]
+    fn criterion_or_string_deserializes_object_without_cmd() {
+        let json = r#"{"name": "manual-review"}"#;
+        let parsed: CriterionOrString = serde_json::from_str(json).unwrap();
+        let input: assay_core::wizard::CriterionInput = parsed.into();
+        assert_eq!(input.name, "manual-review");
+        assert!(input.cmd.is_none());
+    }
+
+    #[test]
+    fn criterion_or_string_in_vec_mixed() {
+        let json = r#"["plain-string", {"name": "with-cmd", "cmd": "echo hi"}]"#;
+        let parsed: Vec<CriterionOrString> = serde_json::from_str(json).unwrap();
+        assert_eq!(parsed.len(), 2);
+
+        let inputs: Vec<assay_core::wizard::CriterionInput> =
+            parsed.into_iter().map(Into::into).collect();
+        assert_eq!(inputs[0].name, "plain-string");
+        assert!(inputs[0].cmd.is_none());
+        assert_eq!(inputs[1].name, "with-cmd");
+        assert_eq!(inputs[1].cmd.as_deref(), Some("echo hi"));
     }
 }

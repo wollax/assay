@@ -49,7 +49,7 @@
   - Verify: `cargo test -p assay-core --test wizard` passes; new cmd round-trip test passes
   - Done when: `write_gates_toml` writes `cmd` when `Some`; omits it when `None`; existing tests updated and green
 
-- [ ] **T02: Update CLI wizard and MCP tools for cmd input** `est:30m`
+- [x] **T02: Update CLI wizard and MCP tools for cmd input** `est:30m`
   - Why: CLI and MCP are the two non-TUI input surfaces. CLI needs an interactive cmd prompt; MCP needs backward-compatible schema change.
   - Files: `crates/assay-cli/src/commands/plan.rs`, `crates/assay-mcp/src/server.rs`
   - Do: CLI: after each criterion name prompt, add `dialoguer::Input::allow_empty(true)` for cmd ("  Command (Enter to skip):"). Build `CriterionInput` from name + cmd. MCP: create `CriterionInputParam` struct with `name`, optional `description`, optional `cmd`. Create untagged enum `CriterionOrString` that accepts either a plain string or a `CriterionInputParam` object. Update `SpecCreateParams.criteria` and `MilestoneChunkInput.criteria` to use `Vec<CriterionOrString>`. Add conversion from `CriterionOrString` to `CriterionInput`. Update MCP handler call sites. Update MCP tests.

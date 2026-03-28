@@ -7,7 +7,9 @@
 use std::io::IsTerminal as _;
 
 use anyhow::Context as _;
-use assay_core::wizard::{WizardChunkInput, WizardInputs, create_from_inputs, slugify};
+use assay_core::wizard::{
+    CriterionInput, WizardChunkInput, WizardInputs, create_from_inputs, slugify,
+};
 
 use super::{assay_dir, project_root};
 
@@ -69,7 +71,7 @@ pub(crate) fn handle() -> anyhow::Result<i32> {
         let chunk_slug = slugify(&chunk_name);
 
         // Collect criteria for this chunk.
-        let mut criteria: Vec<String> = Vec::new();
+        let mut criteria: Vec<CriterionInput> = Vec::new();
         loop {
             let add_more = dialoguer::Confirm::new()
                 .with_prompt("  Add a criterion?")
@@ -84,7 +86,22 @@ pub(crate) fn handle() -> anyhow::Result<i32> {
                 .with_prompt("    Criterion name")
                 .interact_text()?;
 
-            criteria.push(criterion_name);
+            let cmd_raw: String = dialoguer::Input::new()
+                .with_prompt("    Command (Enter to skip)")
+                .allow_empty(true)
+                .interact_text()?;
+
+            let cmd = if cmd_raw.is_empty() {
+                None
+            } else {
+                Some(cmd_raw)
+            };
+
+            criteria.push(CriterionInput {
+                name: criterion_name,
+                description: String::new(),
+                cmd,
+            });
         }
 
         chunks.push(WizardChunkInput {
