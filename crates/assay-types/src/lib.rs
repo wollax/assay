@@ -55,7 +55,7 @@ pub use harness::{
 pub use manifest::{ManifestSession, RunManifest};
 pub use merge::{
     ChangeType, ConflictMarker, ConflictScan, ConflictType, FileChange, MarkerType, MergeCheck,
-    MergeConflict, MergeExecuteResult,
+    MergeConflict, MergeExecuteResult, MergeProposal, MergeProposeConfig,
 };
 pub use milestone::{ChunkRef, Milestone, MilestoneStatus};
 pub use session::{AgentEvaluation, Confidence, EvaluatorRole, GateEvalContext};

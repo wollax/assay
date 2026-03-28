@@ -276,6 +276,14 @@ fn conflict_marker_schema_snapshot() {
     assert_json_snapshot!("conflict-marker-schema", schema.to_value());
 }
 
+// ── Merge propose types ──────────────────────────────────────────────
+
+#[test]
+fn merge_proposal_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::MergeProposal);
+    assert_json_snapshot!("merge-proposal-schema", schema.to_value());
+}
+
 // ── Orchestrator types (behind orchestrate feature) ──────────────────
 
 #[cfg(feature = "orchestrate")]
