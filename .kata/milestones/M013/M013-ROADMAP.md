@@ -57,7 +57,7 @@ This milestone is complete only when all are true:
 - [x] **S03: OTel metrics** `risk:medium` `depends:[]`
   > After this: `gate run --features telemetry` increments session/gate/merge counters and records latency histograms; `MeterProvider` cleanly shuts down; `just ready` green.
 
-- [ ] **S04: Wizard runnable criteria** `risk:low` `depends:[]`
+- [x] **S04: Wizard runnable criteria** `risk:low` `depends:[]`
   > After this: `assay plan` wizard collects an optional `cmd` per criterion; generated gates.toml has `cmd` when provided; `gate run` succeeds immediately on wizard output without manual editing.
 
 ## Boundary Map

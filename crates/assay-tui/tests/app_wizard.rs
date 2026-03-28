@@ -27,7 +27,7 @@ fn app_type(app: &mut App, s: &str) {
 /// The wizard (Screen::Wizard) must already be open before calling this.
 ///
 /// Sequence: "Test Milestone" / "A description" / 2 chunks /
-/// "Alpha Chunk" / "Criterion A" / "Beta Chunk" / "Criterion B"
+/// "Alpha Chunk" / "Criterion A" (+ cmd skip) / "Beta Chunk" / "Criterion B" (+ cmd skip)
 fn drive_two_chunk_wizard(app: &mut App) {
     // Step 0 — milestone name
     app_type(app, "Test Milestone");
@@ -43,15 +43,17 @@ fn drive_two_chunk_wizard(app: &mut App) {
     app.handle_event(key(KeyCode::Enter));
     // Step 4 — chunk 0 criteria
     app_type(app, "Criterion A");
-    app.handle_event(key(KeyCode::Enter));
-    app.handle_event(key(KeyCode::Enter)); // blank → end criteria
+    app.handle_event(key(KeyCode::Enter)); // name → cmd sub-step
+    app.handle_event(key(KeyCode::Enter)); // blank cmd → skip
+    app.handle_event(key(KeyCode::Enter)); // blank name → end criteria
     // Step 5 — chunk 1 name
     app_type(app, "Beta Chunk");
     app.handle_event(key(KeyCode::Enter));
     // Step 6 — chunk 1 criteria → Submit
     app_type(app, "Criterion B");
-    app.handle_event(key(KeyCode::Enter));
-    app.handle_event(key(KeyCode::Enter)); // blank → Submit
+    app.handle_event(key(KeyCode::Enter)); // name → cmd sub-step
+    app.handle_event(key(KeyCode::Enter)); // blank cmd → skip
+    app.handle_event(key(KeyCode::Enter)); // blank name → Submit
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
