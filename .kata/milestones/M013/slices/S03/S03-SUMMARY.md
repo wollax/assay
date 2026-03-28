@@ -22,7 +22,7 @@ key_decisions:
   - "D179: meter provider shutdown before tracer provider in TracingGuard::drop"
   - "Dual cfg stubs: telemetry feature has real impl, non-telemetry has empty functions — both pub with same signature; callers need no cfg guards"
   - "OnceLock pattern for global metric handles — recording functions call .get() for safe no-op when uninitialized"
-  - "Metric names use dotted notation: assay.sessions.launched, assay.gates.evaluated, assay.merges.attempted, assay.gate_eval_latency_ms, assay.agent_run_duration_ms"
+  - "Metric names use dotted notation: assay.sessions.launched, assay.gates.evaluated, assay.merges.attempted, assay.gate_eval.latency_ms, assay.agent_run.duration_ms"
   - "agent_run_duration recorded only on successful agent runs — error paths return early before recording call"
 patterns_established:
   - "Instrumentation pattern: unconditional crate::telemetry::record_*() calls at site — no cfg guards; recording functions handle no-op internally"

@@ -845,7 +845,6 @@ pub fn execute_session(
         info_span!("gate_evaluate", spec = %manifest_session.spec, spec_name = %spec_name)
             .in_scope(|| {
                 crate::telemetry::record_gate_evaluated();
-                let gate_start = Instant::now();
                 let stage_start = Instant::now();
                 let summary = match &spec_entry {
                     SpecEntry::Legacy { spec, .. } => {
@@ -885,7 +884,7 @@ pub fn execute_session(
                     duration,
                 });
                 crate::telemetry::record_gate_eval_latency_ms(
-                    gate_start.elapsed().as_secs_f64() * 1000.0,
+                    stage_start.elapsed().as_secs_f64() * 1000.0,
                 );
                 (summary, passed)
             });

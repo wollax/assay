@@ -64,7 +64,11 @@ fn test_histogram_recording() {
 /// Call recording functions without metrics initialization — must not panic.
 /// Confirms the OnceLock guard works: when metric handles are not populated,
 /// recording is a silent no-op.
+///
+/// Must run before `test_init_metrics_populates_handles` sets the global
+/// OnceLocks (which can never be unset). `#[serial]` ensures exclusivity.
 #[test]
+#[serial]
 fn test_recording_functions_noop_without_init() {
     // These functions should be callable from any context without cfg guards.
     // Before init_metric_handles() is called, they silently no-op.

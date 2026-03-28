@@ -33,7 +33,7 @@ Run `gate run` on any spec and check that `assay.sessions.launched` counter appe
 ### 2. Histogram records gate eval latency
 
 1. Run: `cargo run --features telemetry -- gate run <spec-slug>` (any spec with ≥1 criterion)
-2. In collector UI, find `assay.gate_eval_latency_ms` histogram
+2. In collector UI, find `assay.gate_eval.latency_ms` histogram
 3. **Expected:** Histogram has ≥1 data point with a positive millisecond value
 
 ### 3. Merge counter increments on orchestrate run
@@ -75,7 +75,7 @@ Run `gate run` on any spec and check that `assay.sessions.launched` counter appe
 
 ## Requirements Proved By This UAT
 
-- R067 — Real OTLP collector receiving `assay.sessions.launched`, `assay.gates.evaluated`, `assay.merges.attempted` counters and `assay.gate_eval_latency_ms`, `assay.agent_run_duration_ms` histograms proves end-to-end metrics export pipeline functions correctly.
+- R067 — Real OTLP collector receiving `assay.sessions.launched`, `assay.gates.evaluated`, `assay.merges.attempted` counters and `assay.gate_eval.latency_ms`, `assay.agent_run.duration_ms` histograms proves end-to-end metrics export pipeline functions correctly.
 
 ## Not Proven By This UAT
 
@@ -89,4 +89,4 @@ Run `gate run` on any spec and check that `assay.sessions.launched` counter appe
 - The periodic exporter has a default flush interval (typically 60s). Use Jaeger's "last 1 minute" search window or wait for the interval before expecting metrics to appear.
 - `cargo run --features telemetry` builds the assay-cli binary with telemetry. Make sure you're using the telemetry-enabled binary throughout.
 - If using Tempo, metrics OTLP and traces OTLP share the same port (4318) in the default all-in-one config.
-- The `agent_run_duration_ms` histogram only populates when an agent actually runs (not on dry-run gate evaluations that short-circuit without launching a subprocess).
+- The `assay.agent_run.duration_ms` histogram only populates when an agent actually runs (not on dry-run gate evaluations that short-circuit without launching a subprocess).

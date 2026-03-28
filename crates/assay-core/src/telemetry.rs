@@ -369,8 +369,9 @@ where
 /// Build an OTel `SdkMeterProvider` for metrics export.
 ///
 /// Returns `Some(provider)` when `config.otlp_endpoint` is set and the
-/// exporter builds successfully. Returns `None` when no endpoint is
-/// configured or on initialization failure (with a `tracing::warn!`).
+/// exporter builds successfully. Returns `None` silently when no endpoint
+/// is configured; returns `None` with a `tracing::warn!` on initialization
+/// failure.
 #[cfg(feature = "telemetry")]
 fn build_otel_metrics(
     config: &TracingConfig,
@@ -405,7 +406,9 @@ fn build_otel_metrics(
             tracing::warn!(
                 endpoint = %endpoint,
                 error = %e,
-                "OTel metrics provider init failed; metrics export disabled"
+                "OTel metrics provider init failed; metrics export disabled. \
+                 Verify the endpoint is reachable and a collector is running. \
+                 Set RUST_LOG=opentelemetry=debug for details."
             );
             None
         }
@@ -426,15 +429,54 @@ static AGENT_RUN_DURATION: OnceLock<opentelemetry::metrics::Histogram<f64>> = On
 
 /// Initialize the five global metric handles from a `Meter`.
 ///
-/// Must be called once after the `SdkMeterProvider` is built. Subsequent
-/// calls are no-ops (OnceLock semantics).
+/// Must be called once after the `SdkMeterProvider` is built. If called
+/// multiple times (e.g. in tests), the second call's instruments are
+/// silently dropped; the handles remain bound to the first provider's
+/// `Meter`. A `tracing::warn!` is emitted for each handle that was
+/// already initialized.
 #[cfg(feature = "telemetry")]
 pub fn init_metric_handles(meter: &opentelemetry::metrics::Meter) {
-    let _ = SESSIONS_LAUNCHED.set(meter.u64_counter("assay.sessions.launched").build());
-    let _ = GATES_EVALUATED.set(meter.u64_counter("assay.gates.evaluated").build());
-    let _ = MERGES_ATTEMPTED.set(meter.u64_counter("assay.merges.attempted").build());
-    let _ = GATE_EVAL_LATENCY.set(meter.f64_histogram("assay.gate_eval.latency_ms").build());
-    let _ = AGENT_RUN_DURATION.set(meter.f64_histogram("assay.agent_run.duration_ms").build());
+    let sets: [(&str, bool); 5] = [
+        (
+            "SESSIONS_LAUNCHED",
+            SESSIONS_LAUNCHED
+                .set(meter.u64_counter("assay.sessions.launched").build())
+                .is_ok(),
+        ),
+        (
+            "GATES_EVALUATED",
+            GATES_EVALUATED
+                .set(meter.u64_counter("assay.gates.evaluated").build())
+                .is_ok(),
+        ),
+        (
+            "MERGES_ATTEMPTED",
+            MERGES_ATTEMPTED
+                .set(meter.u64_counter("assay.merges.attempted").build())
+                .is_ok(),
+        ),
+        (
+            "GATE_EVAL_LATENCY",
+            GATE_EVAL_LATENCY
+                .set(meter.f64_histogram("assay.gate_eval.latency_ms").build())
+                .is_ok(),
+        ),
+        (
+            "AGENT_RUN_DURATION",
+            AGENT_RUN_DURATION
+                .set(meter.f64_histogram("assay.agent_run.duration_ms").build())
+                .is_ok(),
+        ),
+    ];
+    for (name, was_new) in sets {
+        if !was_new {
+            tracing::warn!(
+                handle = name,
+                "OTel metric handle already initialized; second provider's \
+                 meter will not be used — recording functions retain the first handle"
+            );
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -485,7 +527,7 @@ pub fn record_gate_eval_latency_ms(ms: f64) {
     }
 }
 
-/// Record gate evaluation latency. No-op stub when telemetry feature is off.
+/// Record gate evaluation latency in milliseconds. No-op stub when telemetry feature is off.
 #[cfg(not(feature = "telemetry"))]
 pub fn record_gate_eval_latency_ms(_ms: f64) {}
 
@@ -497,7 +539,7 @@ pub fn record_agent_run_duration_ms(ms: f64) {
     }
 }
 
-/// Record agent run duration. No-op stub when telemetry feature is off.
+/// Record agent run duration in milliseconds. No-op stub when telemetry feature is off.
 #[cfg(not(feature = "telemetry"))]
 pub fn record_agent_run_duration_ms(_ms: f64) {}
 
@@ -511,8 +553,9 @@ pub fn record_agent_run_duration_ms(_ms: f64) {}
 /// buffered log events.
 ///
 /// When the `telemetry` feature is enabled and an OTLP exporter was
-/// initialized, dropping the guard also shuts down the tracer provider,
-/// flushing any pending spans.
+/// initialized, dropping the guard shuts down the meter provider (flushing
+/// pending metrics) and then the tracer provider (flushing pending spans),
+/// in that order (D179).
 pub struct TracingGuard {
     _worker_guard: WorkerGuard,
     #[cfg(feature = "telemetry")]
