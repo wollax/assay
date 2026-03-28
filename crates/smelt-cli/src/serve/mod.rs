@@ -7,6 +7,8 @@ pub(crate) mod config;
 pub(crate) use config::ServerConfig;
 /// SSH transport layer for dispatching jobs to remote workers.
 pub mod ssh;
+/// Tracker source trait and types for polling issues from external trackers.
+pub mod tracker;
 pub use ssh::{SshClient, SshOutput, SubprocessSshClient};
 pub(crate) mod dispatch;
 pub(crate) use dispatch::dispatch_loop;

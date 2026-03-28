@@ -44,6 +44,7 @@ pub mod k8s;
 pub mod manifest;
 pub mod monitor;
 pub mod provider;
+pub mod tracker;
 
 pub use assay::AssayInvoker;
 pub use collector::{BranchCollectResult, ResultCollector};

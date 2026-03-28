@@ -68,6 +68,16 @@ pub enum SmeltError {
         message: String,
     },
 
+    // ── Tracker errors ──────────────────────────────────────────
+    /// A tracker operation failed.
+    #[error("tracker {operation} failed: {message}")]
+    Tracker {
+        /// The tracker operation that failed (e.g. `"poll"`, `"transition"`).
+        operation: String,
+        /// Human-readable error message from the tracker.
+        message: String,
+    },
+
     // ── Credential errors ───────────────────────────────────────
     /// Credential resolution or validation failed.
     #[error("credential error ({provider}): {message}")]
@@ -171,6 +181,14 @@ impl SmeltError {
     pub fn credential(provider: impl Into<String>, message: impl Into<String>) -> Self {
         Self::Credential {
             provider: provider.into(),
+            message: message.into(),
+        }
+    }
+
+    /// Convenience constructor for the [`Tracker`](SmeltError::Tracker) variant.
+    pub fn tracker(operation: impl Into<String>, message: impl Into<String>) -> Self {
+        Self::Tracker {
+            operation: operation.into(),
             message: message.into(),
         }
     }

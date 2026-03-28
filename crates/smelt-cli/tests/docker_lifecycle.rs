@@ -236,6 +236,7 @@ fn test_manifest_with_repo(name: &str, repo: &str) -> JobManifest {
         },
         forge: None,
         kubernetes: None,
+        state_backend: None,
         services: vec![],
     }
 }

@@ -50,6 +50,8 @@ pub enum JobSource {
     DirectoryWatch,
     /// Job was submitted via the HTTP API.
     HttpApi,
+    /// Job was generated from a tracker issue (e.g. GitHub or Linear).
+    Tracker,
 }
 
 /// Lifecycle state of a job.

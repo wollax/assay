@@ -205,12 +205,14 @@ fn validate_invalid_merge_order() {
 
 #[test]
 fn validate_no_sessions() {
-    // TOML without any [[session]] — fails to parse since session is a required Vec.
+    // TOML without any [[session]] — parses fine (session defaults to empty vec)
+    // but validation rejects it because at least one session is required.
     let toml = "[job]\nname = \"test\"\nrepo = \"repo\"\nbase_ref = \"main\"\n\n\
                 [environment]\nruntime = \"docker\"\nimage = \"img\"\n\n\
                 [credentials]\nprovider = \"anthropic\"\nmodel = \"m\"\n\n\
                 [merge]\nstrategy = \"sequential\"\ntarget = \"main\"";
-    let err = load_from_str(toml).unwrap_err();
+    let manifest = load_from_str(toml).unwrap();
+    let err = manifest.validate().unwrap_err();
     assert!(err.to_string().contains("session"));
 }
 
@@ -433,4 +435,128 @@ fn validate_job_name_plain_valid() {
     manifest
         .validate()
         .expect("plain job name should pass validation");
+}
+
+// ── state_backend integration ──────────────────────────────
+
+#[test]
+fn manifest_state_backend_absent_defaults_to_none() {
+    let toml = minimal_toml("", "", "", "");
+    let manifest = load_from_str(&toml).unwrap();
+    assert!(manifest.state_backend.is_none());
+}
+
+#[test]
+fn manifest_state_backend_local_fs() {
+    // state_backend as inline value must appear before any [table] section
+    // or use inline syntax within the TOML structure.
+    let toml = r#"
+state_backend = "local_fs"
+
+[job]
+name = "test"
+repo = "repo"
+base_ref = "main"
+
+[environment]
+runtime = "docker"
+image = "img"
+
+[credentials]
+provider = "anthropic"
+model = "m"
+
+[[session]]
+name = "s1"
+spec = "s"
+harness = "h"
+timeout = 60
+
+[merge]
+strategy = "sequential"
+target = "main"
+"#;
+    let manifest = load_from_str(toml).unwrap();
+    assert_eq!(
+        manifest.state_backend,
+        Some(crate::tracker::StateBackendConfig::LocalFs)
+    );
+}
+
+#[test]
+fn manifest_state_backend_linear() {
+    let toml = r#"
+[job]
+name = "test"
+repo = "repo"
+base_ref = "main"
+
+[environment]
+runtime = "docker"
+image = "img"
+
+[credentials]
+provider = "anthropic"
+model = "m"
+
+[[session]]
+name = "s1"
+spec = "s"
+harness = "h"
+timeout = 60
+
+[merge]
+strategy = "sequential"
+target = "main"
+
+[state_backend]
+linear = { team_id = "TEAM" }
+"#;
+    let manifest = load_from_str(toml).unwrap();
+    assert_eq!(
+        manifest.state_backend,
+        Some(crate::tracker::StateBackendConfig::Linear {
+            team_id: "TEAM".into(),
+            project_id: None,
+        })
+    );
+}
+
+#[test]
+fn manifest_state_backend_github() {
+    let toml = r#"
+[job]
+name = "test"
+repo = "repo"
+base_ref = "main"
+
+[environment]
+runtime = "docker"
+image = "img"
+
+[credentials]
+provider = "anthropic"
+model = "m"
+
+[[session]]
+name = "s1"
+spec = "s"
+harness = "h"
+timeout = 60
+
+[merge]
+strategy = "sequential"
+target = "main"
+
+[state_backend]
+github = { repo = "owner/repo" }
+"#;
+    let manifest = load_from_str(toml).unwrap();
+    assert_eq!(
+        manifest.state_backend,
+        Some(crate::tracker::StateBackendConfig::GitHub {
+            repo: "owner/repo".into(),
+            label: None,
+        })
+    );
 }

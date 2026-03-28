@@ -11,6 +11,7 @@ use serde::Deserialize;
 
 use crate::error::SmeltError;
 use crate::forge::ForgeConfig;
+use crate::tracker::StateBackendConfig;
 
 mod validation;
 pub use validation::ValidationErrors;
@@ -19,7 +20,7 @@ pub use validation::ValidationErrors;
 mod tests;
 
 /// Configuration for the Kubernetes runtime provider.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct KubernetesConfig {
     /// Kubernetes namespace for the Pod and SSH Secret.
@@ -50,7 +51,7 @@ pub struct KubernetesConfig {
 }
 
 /// Top-level job manifest parsed from TOML.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct JobManifest {
     /// Job metadata.
@@ -62,7 +63,9 @@ pub struct JobManifest {
     /// LLM credential configuration.
     pub credentials: CredentialConfig,
 
-    /// Session definitions (at least one required).
+    /// Session definitions. Empty after deserialization of template manifests;
+    /// `validate()` enforces at least one is present for execution manifests.
+    #[serde(default)]
     pub session: Vec<SessionDef>,
 
     /// Merge configuration.
@@ -80,10 +83,17 @@ pub struct JobManifest {
     /// Defaults to an empty vec so existing manifests without services still parse.
     #[serde(default)]
     pub services: Vec<ComposeService>,
+
+    /// Optional state-backend configuration (mirrors Assay's `StateBackendConfig`).
+    ///
+    /// When present, Smelt passes this through to Assay for state persistence.
+    /// See D154 for the passthrough design.
+    #[serde(default)]
+    pub state_backend: Option<StateBackendConfig>,
 }
 
 /// `[job]` — high-level job metadata.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct JobMeta {
     /// Human-readable job name.
@@ -97,7 +107,7 @@ pub struct JobMeta {
 }
 
 /// `[environment]` — container runtime configuration.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct Environment {
     /// Container runtime (e.g., "docker").
@@ -112,7 +122,7 @@ pub struct Environment {
 }
 
 /// `[credentials]` — LLM provider credentials.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct CredentialConfig {
     /// LLM provider name (e.g., "anthropic", "openai").
@@ -128,7 +138,7 @@ pub struct CredentialConfig {
 }
 
 /// `[[session]]` — a single coding session definition.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct SessionDef {
     /// Unique session name.
@@ -149,7 +159,7 @@ pub struct SessionDef {
 }
 
 /// `[merge]` — how to merge session results.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct MergeConfig {
     /// Merge strategy (e.g., "sequential", "octopus").
@@ -173,7 +183,7 @@ pub struct MergeConfig {
 /// Compose keys (e.g. `ports`, `volumes`, `environment`) are captured as-is
 /// via serde flatten into `extra`. No `deny_unknown_fields` so this is an
 /// intentional passthrough per D073.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct ComposeService {
     /// Service name used to identify this container within the compose network.
     pub name: String,

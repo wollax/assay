@@ -63,6 +63,7 @@ fn k8s_manifest() -> JobManifest {
             memory_limit: None,
         }),
         services: vec![],
+        state_backend: None,
     }
 }
 

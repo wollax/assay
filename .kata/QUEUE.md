@@ -16,3 +16,27 @@
 - Priority: low (cosmetic)
 - Description: The two methods share ~90% identical logic (common flags, key resolution, port handling) and differ only in `-p` vs `-P` for the port flag. Could extract a shared helper.
 - Files: `crates/smelt-cli/src/serve/ssh/client.rs`
+
+### Deduplicate template manifest TOML constants across test modules
+- Source: PR #44 review (pr-code-simplifier, pr-comment-analyzer)
+- Priority: low (cosmetic, test-only)
+- Description: `TEMPLATE_MANIFEST_TOML` in `config.rs` tests and `TEMPLATE_TOML` in `tracker.rs` tests are identical. If `JobManifest` gains a required field, both must be updated. Extract a shared test helper or `pub(crate)` constant, or add cross-reference comments.
+- Files: `crates/smelt-cli/src/serve/config.rs`, `crates/smelt-cli/src/serve/tracker.rs`
+
+### `sanitize()` single-pass optimization
+- Source: PR #44 review (pr-code-simplifier)
+- Priority: low (perf micro-optimization, correctness is fine)
+- Description: `sanitize()` allocates an intermediate `String` from `to_lowercase()` then iterates again to collapse hyphens. Can be done in a single pass over the lowercased chars. Also: `to_ascii_lowercase()` vs `to_lowercase()` — current impl handles non-ASCII correctly via `to_lowercase()`.
+- Files: `crates/smelt-cli/src/serve/tracker.rs`
+
+### `MockTrackerSource` over-wrapping with `Arc<Mutex<>>`
+- Source: PR #44 review (pr-code-simplifier)
+- Priority: low (cosmetic, test-only)
+- Description: The mock uses `Arc<Mutex<VecDeque<...>>>` but is never cloned; plain `Mutex<VecDeque>` without `Arc` would suffice. Kept for consistency with `MockSshClient` pattern. Revisit if the mock pattern is refactored broadly.
+- Files: `crates/smelt-cli/src/serve/tracker.rs`
+
+### Deduplicate manifest TOML in `StateBackendConfig` tests
+- Source: PR #44 review (pr-code-simplifier)
+- Priority: low (cosmetic, test-only)
+- Description: The three `manifest_state_backend_*` tests each duplicate a full manifest TOML (~15 lines) differing only in `[state_backend]`. A `manifest_with_state_backend(section: &str) -> String` helper would reduce duplication.
+- Files: `crates/smelt-core/src/manifest/tests/core.rs`

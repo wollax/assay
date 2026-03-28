@@ -613,6 +613,7 @@ mod tests {
             forge: None,
             kubernetes: None,
             services,
+            state_backend: None,
         }
     }
 

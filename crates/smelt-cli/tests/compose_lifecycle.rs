@@ -82,6 +82,7 @@ fn compose_manifest(name: &str, services: Vec<ComposeService>) -> JobManifest {
         },
         forge: None,
         kubernetes: None,
+        state_backend: None,
         services,
     }
 }

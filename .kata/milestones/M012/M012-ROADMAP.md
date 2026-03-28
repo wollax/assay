@@ -59,7 +59,7 @@ This milestone is complete only when all are true:
 - [x] **S01: M011 Leftover Cleanup — Tracing Migration & Flaky Test Fix** `risk:low` `depends:[]`
   > After this: all `eprintln!` calls in smelt-cli are replaced with structured tracing events; `test_cli_run_invalid_manifest` uses a 30s timeout and no longer flakes. 298+ tests pass.
 
-- [ ] **S02: TrackerSource Trait, Config, & Template Manifest** `risk:high` `depends:[S01]`
+- [x] **S02: TrackerSource Trait, Config, & Template Manifest** `risk:high` `depends:[S01]`
   > After this: `ServerConfig` accepts a `[tracker]` section; `TrackerSource` trait is defined; template manifest loading + validation + issue injection works; `MockTrackerSource` exercises the full trait contract. Proven by unit tests.
 
 - [ ] **S03: GitHub Issues Tracker Backend** `risk:medium` `depends:[S02]`
