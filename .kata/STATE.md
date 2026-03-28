@@ -2,7 +2,7 @@
 
 **Active Milestone:** M013 — Tech Debt & Deferred Features
 **Active Slice:** S01 — GitHubBackend correctness fixes (Q001–Q004)
-**Active Task:** T01 — Write contract tests for Q001–Q004
+**Active Task:** T03 — Full workspace verification
 **Phase:** Executing
 
 ## Recent Decisions
@@ -19,4 +19,4 @@
 - M013: planning complete — 4 slices, all independent
 
 ## Next Action
-Begin M013/S01: GitHubBackend correctness fixes (Q001–Q004). Create branch `kata/M013/S01`, implement validation warn + issue-0 rejection + GhRunner error helper + factory doc cleanup, write contract tests, `just ready` green.
+Execute T03: run `just ready` for full workspace verification. Fix any clippy warnings or formatting issues. Confirm 1529+ tests passing.

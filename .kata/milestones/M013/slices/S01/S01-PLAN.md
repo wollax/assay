@@ -47,7 +47,7 @@
   - Verify: Tests compile but Q001/Q002 fail (no warn emitted yet); Q003 fails (method doesn't exist yet)
   - Done when: 4+ new test functions exist in `github_backend.rs` targeting Q001–Q004 behavior
 
-- [ ] **T02: Implement Q001–Q004 fixes** `est:30m`
+- [x] **T02: Implement Q001–Q004 fixes** `est:30m`
   - Why: Make all new tests pass by implementing the actual fixes.
   - Files: `crates/assay-backends/src/github.rs`, `crates/assay-backends/src/factory.rs`
   - Do: (1) Q001: Add `tracing::warn!` in `GitHubBackend::new` when `repo.is_empty() || !repo.contains('/')`. Keep constructor infallible (D177). (2) Q002: Add `if number == 0 { return Err(...) }` guard in `read_issue_number` after successful parse. Error message must include `"0"` and path. (3) Q003: Extract `GhRunner::gh_error(&self, operation: &str, output: &std::process::Output) -> AssayError` that does `from_utf8_lossy(stderr)` → `tracing::warn!` → `Err(AssayError::io(...))`. Replace the 3 duplicated blocks in `create_issue`, `create_comment`, `get_issue_json`. (4) Q004: Remove `(M011/S02)`, `(M011/S03)`, `(M011/S04)` from factory.rs doc comment.

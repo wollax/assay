@@ -10,11 +10,11 @@ use assay_types::StateBackendConfig;
 /// Create a [`StateBackend`] from the given configuration.
 ///
 /// - `LocalFs` → [`LocalFsBackend`] rooted at `assay_dir`.
-/// - `Linear` → `LinearBackend` when the `linear` feature is enabled (M011/S02);
+/// - `Linear` → `LinearBackend` when the `linear` feature is enabled;
 ///   falls back to [`NoopBackend`] otherwise — all state writes are discarded.
-/// - `GitHub` → `GitHubBackend` when the `github` feature is enabled (M011/S03);
+/// - `GitHub` → `GitHubBackend` when the `github` feature is enabled;
 ///   falls back to [`NoopBackend`] otherwise — all state writes are discarded.
-/// - `Ssh` → `SshSyncBackend` when the `ssh` feature is enabled (M011/S04);
+/// - `Ssh` → `SshSyncBackend` when the `ssh` feature is enabled;
 ///   falls back to [`NoopBackend`] otherwise — all state writes are discarded.
 /// - `Custom` → [`NoopBackend`] (no built-in implementation; all state writes are discarded).
 pub fn backend_from_config(
