@@ -43,7 +43,7 @@
 
 ## Tasks
 
-- [ ] **T01: Contract tests and workspace dep setup** `est:30m`
+- [x] **T01: Contract tests and workspace dep setup** `est:30m`
   - Why: Establishes the test contract (red state) and adds `metrics` feature to workspace deps — validates compilation before any metrics code is written
   - Files: `Cargo.toml` (workspace root), `crates/assay-core/Cargo.toml`, `crates/assay-core/tests/otel_metrics.rs`
   - Do: Add `metrics` feature to `opentelemetry`, `opentelemetry_sdk`, `opentelemetry-otlp` workspace deps. Gate the new features through `telemetry` in `assay-core/Cargo.toml`. Write red-state contract tests: (1) `SdkMeterProvider` construction + counter increment, (2) histogram recording, (3) default build dep isolation via `cargo tree`. Verify `cargo build --features telemetry` compiles with metrics types available.
