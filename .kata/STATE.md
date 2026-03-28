@@ -2,7 +2,7 @@
 
 **Active Milestone:** M013 — Tech Debt & Deferred Features
 **Active Slice:** S04 — Wizard runnable criteria
-**Active Task:** T02 — Update CLI wizard and MCP tools for cmd input
+**Active Task:** T03 — Update TUI wizard state machine for cmd sub-step
 **Phase:** Executing
 
 ## Recent Decisions
@@ -19,7 +19,7 @@
   - S01 ✅ complete (R081 validated)
   - S02 ✅ complete (R066 validated)
   - S03 ✅ complete (R067 validated)
-  - S04: Wizard runnable criteria — T01 ✅, T02 next
+  - S04: Wizard runnable criteria — T01 ✅, T02 ✅, T03 next
 
 ## Next Action
-Execute T02: Update CLI wizard and MCP tools for cmd input.
+Execute T03: Update TUI wizard state machine for cmd sub-step.
