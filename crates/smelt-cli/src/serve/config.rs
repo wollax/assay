@@ -107,6 +107,14 @@ pub struct TrackerConfig {
     /// is `"github"`, ignored for other providers.
     #[serde(default)]
     pub repo: Option<String>,
+    /// Name of the env var holding the Linear API key. Required when
+    /// `provider` is `"linear"`, ignored for other providers.
+    #[serde(default)]
+    pub api_key_env: Option<String>,
+    /// Linear team ID. Required when `provider` is `"linear"`, ignored
+    /// for other providers.
+    #[serde(default)]
+    pub team_id: Option<String>,
     /// Path to the template manifest used to generate job manifests from
     /// tracker issues. Validated at startup (D017).
     pub manifest_template: PathBuf,
@@ -238,6 +246,39 @@ impl ServerConfig {
             }
             if tracker.manifest_template.as_os_str().is_empty() {
                 tracker_errors.push("manifest_template must not be empty".into());
+            }
+            // Linear provider requires api_key_env and team_id.
+            if tracker.provider == "linear" {
+                match &tracker.api_key_env {
+                    None => {
+                        tracker_errors
+                            .push("api_key_env must be set when provider is \"linear\"".into());
+                    }
+                    Some(v) if v.trim().is_empty() => {
+                        tracker_errors.push(
+                            "api_key_env must not be empty when provider is \"linear\"".into(),
+                        );
+                    }
+                    Some(var_name) => {
+                        // Resolve the env var at startup (D017) to fail fast.
+                        if std::env::var(var_name).is_err() {
+                            tracker_errors.push(format!(
+                                "api_key_env references env var \"{var_name}\" which is not set in the environment"
+                            ));
+                        }
+                    }
+                }
+                match &tracker.team_id {
+                    None => {
+                        tracker_errors
+                            .push("team_id must be set when provider is \"linear\"".into());
+                    }
+                    Some(v) if v.trim().is_empty() => {
+                        tracker_errors
+                            .push("team_id must not be empty when provider is \"linear\"".into());
+                    }
+                    _ => {}
+                }
             }
             // GitHub provider requires a valid `repo` in owner/repo format.
             if tracker.provider == "github" {
@@ -581,7 +622,237 @@ default_timeout = 600
     #[test]
     fn test_tracker_linear_ignores_repo() {
         let template = write_template_file();
-        // Linear provider with no repo field — should pass
+        // Linear provider with no repo field — should pass (api_key_env + team_id present)
+        unsafe {
+            std::env::set_var("SMELT_TEST_LINEAR_KEY_2", "lin_test_key");
+        }
+        let toml = format!(
+            r#"
+queue_dir = "/tmp/q"
+max_concurrent = 2
+
+[tracker]
+provider = "linear"
+api_key_env = "SMELT_TEST_LINEAR_KEY_2"
+team_id = "team-uuid-123"
+manifest_template = "{}"
+default_harness = "bash"
+default_timeout = 600
+"#,
+            template.path().display()
+        );
+        let cfg = load_from_str(&toml).unwrap();
+        assert!(cfg.tracker.as_ref().unwrap().repo.is_none());
+        unsafe {
+            std::env::remove_var("SMELT_TEST_LINEAR_KEY_2");
+        }
+    }
+
+    #[test]
+    fn test_tracker_linear_requires_api_key_env() {
+        let template = write_template_file();
+        let toml = format!(
+            r#"
+queue_dir = "/tmp/q"
+max_concurrent = 2
+
+[tracker]
+provider = "linear"
+team_id = "team-uuid-123"
+manifest_template = "{}"
+default_harness = "bash"
+default_timeout = 600
+"#,
+            template.path().display()
+        );
+        let err = load_from_str(&toml).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("api_key_env must be set when provider is \"linear\""),
+            "got: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_tracker_linear_requires_team_id() {
+        let template = write_template_file();
+        unsafe {
+            std::env::set_var("SMELT_TEST_LINEAR_KEY_3", "lin_test_key");
+        }
+        let toml = format!(
+            r#"
+queue_dir = "/tmp/q"
+max_concurrent = 2
+
+[tracker]
+provider = "linear"
+api_key_env = "SMELT_TEST_LINEAR_KEY_3"
+manifest_template = "{}"
+default_harness = "bash"
+default_timeout = 600
+"#,
+            template.path().display()
+        );
+        let err = load_from_str(&toml).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("team_id must be set when provider is \"linear\""),
+            "got: {msg}"
+        );
+        unsafe {
+            std::env::remove_var("SMELT_TEST_LINEAR_KEY_3");
+        }
+    }
+
+    #[test]
+    fn test_tracker_linear_empty_api_key_env_rejected() {
+        let template = write_template_file();
+        let toml = format!(
+            r#"
+queue_dir = "/tmp/q"
+max_concurrent = 2
+
+[tracker]
+provider = "linear"
+api_key_env = ""
+team_id = "team-uuid-123"
+manifest_template = "{}"
+default_harness = "bash"
+default_timeout = 600
+"#,
+            template.path().display()
+        );
+        let err = load_from_str(&toml).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("api_key_env must not be empty when provider is \"linear\""),
+            "got: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_tracker_linear_empty_team_id_rejected() {
+        let template = write_template_file();
+        unsafe {
+            std::env::set_var("SMELT_TEST_LINEAR_KEY_4", "lin_test_key");
+        }
+        let toml = format!(
+            r#"
+queue_dir = "/tmp/q"
+max_concurrent = 2
+
+[tracker]
+provider = "linear"
+api_key_env = "SMELT_TEST_LINEAR_KEY_4"
+team_id = "  "
+manifest_template = "{}"
+default_harness = "bash"
+default_timeout = 600
+"#,
+            template.path().display()
+        );
+        let err = load_from_str(&toml).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("team_id must not be empty when provider is \"linear\""),
+            "got: {msg}"
+        );
+        unsafe {
+            std::env::remove_var("SMELT_TEST_LINEAR_KEY_4");
+        }
+    }
+
+    #[test]
+    fn test_tracker_linear_valid_config() {
+        let template = write_template_file();
+        // Set the env var so startup validation passes (D017).
+        unsafe {
+            std::env::set_var("SMELT_TEST_LINEAR_KEY", "lin_test_key");
+        }
+        let toml = format!(
+            r#"
+queue_dir = "/tmp/q"
+max_concurrent = 2
+
+[tracker]
+provider = "linear"
+api_key_env = "SMELT_TEST_LINEAR_KEY"
+team_id = "team-uuid-123"
+manifest_template = "{}"
+default_harness = "bash"
+default_timeout = 600
+"#,
+            template.path().display()
+        );
+        let cfg = load_from_str(&toml).unwrap();
+        let t = cfg.tracker.as_ref().unwrap();
+        assert_eq!(t.provider, "linear");
+        assert_eq!(t.api_key_env.as_deref(), Some("SMELT_TEST_LINEAR_KEY"));
+        assert_eq!(t.team_id.as_deref(), Some("team-uuid-123"));
+        unsafe {
+            std::env::remove_var("SMELT_TEST_LINEAR_KEY");
+        }
+    }
+
+    #[test]
+    fn test_tracker_linear_unset_env_var_rejected() {
+        let template = write_template_file();
+        // Ensure the env var does NOT exist
+        unsafe {
+            std::env::remove_var("SMELT_TEST_NONEXISTENT_KEY");
+        }
+        let toml = format!(
+            r#"
+queue_dir = "/tmp/q"
+max_concurrent = 2
+
+[tracker]
+provider = "linear"
+api_key_env = "SMELT_TEST_NONEXISTENT_KEY"
+team_id = "team-uuid-123"
+manifest_template = "{}"
+default_harness = "bash"
+default_timeout = 600
+"#,
+            template.path().display()
+        );
+        let err = load_from_str(&toml).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("SMELT_TEST_NONEXISTENT_KEY")
+                && msg.contains("not set in the environment"),
+            "got: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_tracker_github_ignores_linear_fields() {
+        let template = write_template_file();
+        // GitHub provider without api_key_env/team_id — should pass
+        let toml = format!(
+            r#"
+queue_dir = "/tmp/q"
+max_concurrent = 2
+
+[tracker]
+provider = "github"
+repo = "owner/repo"
+manifest_template = "{}"
+default_harness = "bash"
+default_timeout = 600
+"#,
+            template.path().display()
+        );
+        let cfg = load_from_str(&toml).unwrap();
+        let t = cfg.tracker.as_ref().unwrap();
+        assert!(t.api_key_env.is_none());
+        assert!(t.team_id.is_none());
+    }
+
+    #[test]
+    fn test_tracker_linear_multiple_errors_collected() {
+        let template = write_template_file();
+        // Both api_key_env and team_id missing — both errors collected
         let toml = format!(
             r#"
 queue_dir = "/tmp/q"
@@ -595,8 +866,16 @@ default_timeout = 600
 "#,
             template.path().display()
         );
-        let cfg = load_from_str(&toml).unwrap();
-        assert!(cfg.tracker.as_ref().unwrap().repo.is_none());
+        let err = load_from_str(&toml).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("api_key_env must be set"),
+            "should contain api_key_env error, got: {msg}"
+        );
+        assert!(
+            msg.contains("team_id must be set"),
+            "should contain team_id error, got: {msg}"
+        );
     }
 
     #[test]

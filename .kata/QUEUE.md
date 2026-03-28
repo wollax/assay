@@ -40,3 +40,27 @@
 - Priority: low (cosmetic, test-only)
 - Description: The three `manifest_state_backend_*` tests each duplicate a full manifest TOML (~15 lines) differing only in `[state_backend]`. A `manifest_with_state_backend(section: &str) -> String` helper would reduce duplication.
 - Files: `crates/smelt-core/src/manifest/tests/core.rs`
+
+### Typestate pattern for `LinearTrackerSource` initialization guard
+- Source: PR #46 review (pr-type-design-analyzer)
+- Priority: medium (type safety improvement)
+- Description: `LinearTrackerSource` allows construction in an invalid state — `transition_state()` fails at runtime if `ensure_labels()` was not called. A typestate pattern (`Uninitialized` → `Ready`) with `PhantomData` could make this a compile-time guarantee. `TrackerSource` would only be implemented on the `Ready` variant. Trade-off: small increase in callsite verbosity in S05.
+- Files: `crates/smelt-cli/src/serve/linear/source.rs`
+
+### Newtype wrappers for `IssueUuid` / `LabelUuid` to prevent transposition
+- Source: PR #46 review (pr-type-design-analyzer)
+- Priority: low (defense-in-depth)
+- Description: `add_label(issue_id: &str, label_id: &str)` and `remove_label` accept two `&str` params that are both UUIDs — a transposition is a silent logic error. Lightweight newtypes (`IssueUuid(String)`, `LabelUuid(String)`) would make swaps a compile error.
+- Files: `crates/smelt-cli/src/serve/linear/mod.rs`, `crates/smelt-cli/src/serve/linear/source.rs`
+
+### End-to-end test: `ensure_labels()` → `transition_state()` integration
+- Source: PR #46 review (pr-type-design-analyzer)
+- Priority: medium (test coverage gap)
+- Description: `make_source_with_cache()` in tests bypasses `ensure_labels()` entirely, so no test exercises the real initialization-then-transition path. Add one test that calls `ensure_labels()` followed by `transition_state()` to verify the UUIDs stored by ensure match those passed to mutations.
+- Files: `crates/smelt-cli/src/serve/linear/source.rs`
+
+### `MockLinearClient` Default impl
+- Source: PR #46 review (pr-code-simplifier)
+- Priority: low (cosmetic)
+- Description: `MockLinearClient::new()` is exactly `Default::default()`. Adding `impl Default` is idiomatic Rust convention.
+- Files: `crates/smelt-cli/src/serve/linear/mock.rs`

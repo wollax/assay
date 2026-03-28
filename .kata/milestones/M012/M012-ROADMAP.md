@@ -65,7 +65,7 @@ This milestone is complete only when all are true:
 - [x] **S03: GitHub Issues Tracker Backend** `risk:medium` `depends:[S02]`
   > After this: `GithubTrackerSource` polls GitHub Issues via `gh` CLI, transitions labels, generates manifests from templates. Proven by unit tests with mock `gh` and integration tests against a real repo (gated by env var).
 
-- [ ] **S04: Linear Tracker Backend** `risk:medium` `depends:[S02]`
+- [x] **S04: Linear Tracker Backend** `risk:medium` `depends:[S02]`
   > After this: `LinearTrackerSource` polls Linear via GraphQL API, transitions labels, generates manifests from templates. Proven by unit tests with mock HTTP and integration tests against a real Linear project (gated by env var).
 
 - [ ] **S05: Dispatch Integration, State Backend Passthrough & Final Assembly** `risk:medium` `depends:[S03,S04]`

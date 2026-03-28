@@ -252,6 +252,8 @@ target = "main"
         TrackerConfig {
             provider: "github".into(),
             repo: Some("owner/repo".into()),
+            api_key_env: None,
+            team_id: None,
             manifest_template: "/tmp/unused.toml".into(),
             poll_interval_secs: 30,
             label_prefix: "smelt".into(),

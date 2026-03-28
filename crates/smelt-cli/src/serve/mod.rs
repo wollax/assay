@@ -7,6 +7,8 @@ pub(crate) mod config;
 pub(crate) use config::ServerConfig;
 /// GitHub client abstraction for interacting with GitHub Issues via `gh` CLI.
 pub mod github;
+/// Linear client abstraction for interacting with Linear Issues via GraphQL API.
+pub mod linear;
 /// SSH transport layer for dispatching jobs to remote workers.
 pub mod ssh;
 /// Tracker source trait and types for polling issues from external trackers.
