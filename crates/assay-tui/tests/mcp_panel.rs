@@ -180,5 +180,6 @@ fn screen_name(screen: &Screen) -> &'static str {
         Screen::AgentRun { .. } => "AgentRun",
         Screen::McpPanel { .. } => "McpPanel",
         Screen::Analytics => "Analytics",
+        Screen::TraceViewer { .. } => "TraceViewer",
     }
 }

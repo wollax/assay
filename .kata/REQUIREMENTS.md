@@ -787,14 +787,14 @@
 
 ### R066 — TUI trace viewer
 - Class: primary-user-loop
-- Status: active
+- Status: validated
 - Description: TUI screen showing recent orchestration traces with span tree, timing, and status. Accessible via `t` key from Dashboard. Reads `.assay/traces/*.json` files written by `JsonFileLayer` (R063).
 - Why it matters: The TUI is the primary surface — trace inspection should be available without leaving the TUI. M009 built the data; M013 surfaces it.
 - Source: user
 - Primary owning slice: M013/S02
 - Supporting slices: none
-- Validation: unmapped
-- Notes: Depends on R063 (JSON file export). Trace file format from `JsonFileLayer` is the coupling surface.
+- Validation: S02 — `Screen::TraceViewer` variant exists with trace_list_state, selected_trace, span_lines, span_list_state; `t` key opens trace list from Dashboard; Up/Down navigates list; Enter expands span tree with indented spans; Esc chain returns (span tree → list → Dashboard); empty dir shows informative message; orphan spans treated as roots; help overlay updated; 7 integration tests all pass; `just ready` green with 1512+ tests. Visual rendering quality is UAT-only.
+- Notes: Depends on R063 (JSON file export). Trace file format from `JsonFileLayer` is the coupling surface. D180, D182, D183, D184 capture key design decisions.
 
 ### R067 — OTel metrics
 - Class: quality-attribute
@@ -947,7 +947,7 @@
 | R063 | core-capability | validated | M009/S04 | M009/S01 | S04 |
 | R064 | core-capability | validated | M009/S05 | M009/S01 | S05 |
 | R065 | quality-attribute | validated | M009/S05 | M009/S02, M009/S03 | S05 |
-| R066 | primary-user-loop | active | M013/S02 | none | unmapped |
+| R066 | primary-user-loop | validated | M013/S02 | none | S02 |
 | R067 | quality-attribute | active | M013/S03 | none | unmapped |
 | R071 | core-capability | validated | M010/S01 | M010/S02 | S01 |
 | R072 | quality-attribute | validated | M010/S02 | none | S02 |
@@ -964,8 +964,8 @@
 
 ## Coverage Summary
 
-- Active requirements: 3 (R066, R067, R082)
-- Validated: 73 (R001–R029 except R025, R034–R065, R071–R081)
+- Active requirements: 2 (R067, R082)
+- Validated: 74 (R001–R029 except R025, R034–R066, R071–R081)
 - Unmapped active requirements: 0
 - Deferred: 1 (R025)
 - Out of scope: 4 (R030, R031, R032, R033)
