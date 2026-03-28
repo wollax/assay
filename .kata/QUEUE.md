@@ -75,3 +75,71 @@ fn gh_error(operation: &str, status: &std::process::ExitStatus, stderr: &str) ->
 The doc comment contains planning artefacts `(M011/S02)`, `(M011/S03)`, `(M011/S04)`
 that add no value to crate consumers and will silently go stale as work progresses.
 Remove the milestone identifiers from the three bullet points in the function doc.
+
+## [Q005] GitHubBackend: add tracing to silent fallback paths in read_run_state
+
+**Queued:** 2026-03-28
+**Source:** PR #197 review (finding #1)
+**Scope:** `crates/assay-backends/src/github.rs` — `read_run_state`
+
+The comment→issue-body fallback chain in `read_run_state` silently collapses
+structurally invalid JSON into `Ok(None)`. When `gh issue view` returns unexpected
+JSON (missing `"comments"` key, not an array, `"body"` not a string), every
+`.and_then` folds to `None` and the method returns `Ok(None)` as if no state exists.
+
+Add `tracing::debug!` when taking the fallback path (legitimate first-push case)
+and `tracing::warn!` when neither comment body nor issue body yields usable data.
+
+---
+
+## [Q006] GitHubBackend: include repo in AssayError returned by gh_error
+
+**Queued:** 2026-03-28
+**Source:** PR #197 review (finding #2)
+**Scope:** `crates/assay-backends/src/github.rs` — `gh_error`
+
+`gh_error` includes `repo` in the `tracing::warn!` but not in the returned
+`AssayError` message. In multi-repo setups the user sees
+`"gh issue create failed: HTTP 422"` with no indication which repo. Fix:
+
+```rust
+format!("{operation} failed for repo '{}': {stderr}", self.repo)
+```
+
+---
+
+## [Q007] GitHubBackend: add tracing::warn on URL parse failure in create_issue
+
+**Queued:** 2026-03-28
+**Source:** PR #197 review (finding #3)
+**Scope:** `crates/assay-backends/src/github.rs` — `create_issue`
+
+When `gh issue create` succeeds but returns unexpected stdout, the
+`ParseIntError` from `.parse::<u64>()` is silently discarded via `.ok()`.
+This is the only gh error path without a `tracing::warn!`. Add a warn log
+before returning the error, including `repo` and `raw_output` fields.
+
+---
+
+## [Q008] GitHubBackend: add tracing::debug on "assay-run" title fallback
+
+**Queued:** 2026-03-28
+**Source:** PR #197 review (finding #4)
+**Scope:** `crates/assay-backends/src/github.rs` — `push_session_event`
+
+When `run_dir.file_name()` returns `None`, the issue title silently falls back
+to `"assay-run"`. Add `tracing::debug!` with the `run_dir` display value for
+traceability.
+
+---
+
+## [Q009] factory.rs: add #[traced_test] for NoopBackend fallback warning
+
+**Queued:** 2026-03-28
+**Source:** PR #197 review (finding #5)
+**Scope:** `crates/assay-backends/src/factory.rs` — tests
+
+The feature-gated `NoopBackend` fallback emits `tracing::warn!` correctly but
+no test asserts the warning. Add `#[traced_test]` + `logs_contain("falling back
+to NoopBackend")` on `factory_github_capabilities` (and linear equivalent) when
+the corresponding feature is disabled.

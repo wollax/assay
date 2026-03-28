@@ -809,14 +809,14 @@
 
 ### R081 — GitHubBackend construction validation
 - Class: quality-attribute
-- Status: active
+- Status: validated
 - Description: `GitHubBackend::new` emits `tracing::warn!` when `repo` is empty or missing a `/`. `read_issue_number` returns `Err` when the parsed issue number is `0`. `GhRunner` error helper extracted to reduce duplication. `factory.rs` doc comment cleaned of milestone identifiers.
 - Why it matters: Silent construction failures surface as confusing `gh` CLI errors at runtime instead of actionable diagnostics at construction time. Issue `0` can be written by file corruption and causes `gh issue view 0` to fail cryptically.
 - Source: execution (PR #193 review backlog Q001–Q004)
 - Primary owning slice: M013/S01
 - Supporting slices: none
-- Validation: unmapped
-- Notes: Q001: validate `owner/repo` format at construction. Q002: reject issue `0` in `read_issue_number`. Q003: extract `GhRunner::gh_error` helper. Q004: clean factory.rs doc.
+- Validation: S01 — `GitHubBackend::new` warns via `tracing::warn!(repo, ...)` when `repo.is_empty() || !repo.contains('/')` (Q001); `read_issue_number` returns `Err` with path and value when parsed number is `0` (Q002); `GhRunner::gh_error` helper extracted, 3 call sites deduplicated (Q003); `(M011/SXX)` identifiers removed from `factory.rs` doc (Q004); `test_new_warns_on_empty_repo`, `test_new_warns_on_repo_missing_slash`, `test_read_issue_number_rejects_zero` contract tests pass; `just ready` green with 1501 tests. Real `gh` CLI validation is UAT only.
+- Notes: Q001: constructor stays infallible (D177). Q002: error includes path and literal `"0"` for diagnosability. Q003: `from_utf8_lossy` for stderr appears only in `gh_error`; second occurrence in `create_issue` for stdout URL parsing is not an error-path duplicate. Q004: `grep -c '(M011/S' factory.rs` → 0.
 
 ### R082 — Wizard runnable criteria
 - Class: primary-user-loop
@@ -959,13 +959,13 @@
 | R078 | core-capability | validated | M011/S04 | M011/S01 | S04 |
 | R079 | core-capability | validated | M011/S01 | M011/S04 | S01 |
 | R080 | core-capability | validated | M012/S01 | none | S01 |
-| R081 | quality-attribute | active | M013/S01 | none | unmapped |
+| R081 | quality-attribute | validated | M013/S01 | none | S01 |
 | R082 | primary-user-loop | active | M013/S04 | none | unmapped |
 
 ## Coverage Summary
 
-- Active requirements: 4 (R066, R067, R081, R082)
-- Validated: 72 (R001–R029 except R025, R034–R065, R071–R080)
+- Active requirements: 3 (R066, R067, R082)
+- Validated: 73 (R001–R029 except R025, R034–R065, R071–R081)
 - Unmapped active requirements: 0
 - Deferred: 1 (R025)
 - Out of scope: 4 (R030, R031, R032, R033)
