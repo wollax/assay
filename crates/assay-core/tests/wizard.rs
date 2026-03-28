@@ -5,7 +5,7 @@
 
 use assay_core::milestone::{milestone_load, milestone_save};
 use assay_core::wizard::{
-    WizardChunkInput, WizardInputs, create_from_inputs, create_spec_from_params,
+    CriterionInput, WizardChunkInput, WizardInputs, create_from_inputs, create_spec_from_params,
 };
 use assay_types::{GatesSpec, Milestone, MilestoneStatus};
 use chrono::Utc;
@@ -49,7 +49,11 @@ fn one_criterion_chunk(slug: &str) -> WizardChunkInput {
     WizardChunkInput {
         slug: slug.to_string(),
         name: format!("Chunk {slug}"),
-        criteria: vec!["criterion-1".to_string()],
+        criteria: vec![CriterionInput {
+            name: "criterion-1".to_string(),
+            description: String::new(),
+            cmd: None,
+        }],
     }
 }
 
@@ -211,5 +215,79 @@ fn wizard_create_spec_rejects_nonexistent_milestone() {
     assert!(
         result.is_err(),
         "create_spec_from_params with nonexistent milestone should return Err"
+    );
+}
+
+#[test]
+fn wizard_cmd_field_round_trips_to_gates_toml() {
+    let tmp = TempDir::new().unwrap();
+    let assay_dir = tmp.path().join(".assay");
+    let specs_dir = assay_dir.join("specs");
+
+    let inputs = make_inputs(
+        "cmd-test",
+        vec![WizardChunkInput {
+            slug: "cmd-chunk".to_string(),
+            name: "Cmd Chunk".to_string(),
+            criteria: vec![CriterionInput {
+                name: "builds".to_string(),
+                description: "Project compiles".to_string(),
+                cmd: Some("cargo test".to_string()),
+            }],
+        }],
+    );
+
+    create_from_inputs(&inputs, &assay_dir, &specs_dir).unwrap();
+
+    let gates_path = specs_dir.join("cmd-chunk").join("gates.toml");
+    let content = std::fs::read_to_string(&gates_path).unwrap();
+    let spec: GatesSpec = toml::from_str(&content).unwrap();
+
+    assert_eq!(spec.criteria.len(), 1);
+    let crit = &spec.criteria[0];
+    assert_eq!(crit.name, "builds");
+    assert_eq!(crit.description, "Project compiles");
+    assert_eq!(
+        crit.cmd,
+        Some("cargo test".to_string()),
+        "cmd should round-trip through gates.toml"
+    );
+}
+
+#[test]
+fn wizard_cmd_none_omits_cmd_from_gates_toml() {
+    let tmp = TempDir::new().unwrap();
+    let assay_dir = tmp.path().join(".assay");
+    let specs_dir = assay_dir.join("specs");
+
+    let inputs = make_inputs(
+        "no-cmd-test",
+        vec![WizardChunkInput {
+            slug: "no-cmd-chunk".to_string(),
+            name: "No Cmd Chunk".to_string(),
+            criteria: vec![CriterionInput {
+                name: "reviewed".to_string(),
+                description: "Code reviewed".to_string(),
+                cmd: None,
+            }],
+        }],
+    );
+
+    create_from_inputs(&inputs, &assay_dir, &specs_dir).unwrap();
+
+    let gates_path = specs_dir.join("no-cmd-chunk").join("gates.toml");
+    let content = std::fs::read_to_string(&gates_path).unwrap();
+    let spec: GatesSpec = toml::from_str(&content).unwrap();
+
+    assert_eq!(spec.criteria.len(), 1);
+    assert_eq!(
+        spec.criteria[0].cmd, None,
+        "cmd: None should produce no cmd field"
+    );
+
+    // Also verify the raw TOML doesn't contain a `cmd` key.
+    assert!(
+        !content.contains("cmd ="),
+        "raw TOML should not contain 'cmd =' when cmd is None, got:\n{content}"
     );
 }

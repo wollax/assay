@@ -42,7 +42,7 @@
 
 ## Tasks
 
-- [ ] **T01: Wire CriterionInput through core wizard and write contract tests** `est:30m`
+- [x] **T01: Wire CriterionInput through core wizard and write contract tests** `est:30m`
   - Why: The type change from `Vec<String>` to `Vec<CriterionInput>` is the foundation; all UI surfaces depend on it. Contract tests prove the cmd field round-trips to gates.toml.
   - Files: `crates/assay-core/src/wizard.rs`, `crates/assay-core/tests/wizard.rs`
   - Do: Add `Debug` to `CriterionInput`. Change `WizardChunkInput.criteria` to `Vec<CriterionInput>`. Update `write_gates_toml` to accept `&[CriterionInput]` and pass `cmd` through. Update `create_spec_from_params` to accept `Vec<CriterionInput>`. Update `create_from_inputs` callers. Fix all existing core wizard tests to use `CriterionInput`. Add new test asserting `cmd` field appears in generated TOML.

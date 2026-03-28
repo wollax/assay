@@ -26,6 +26,7 @@ use crate::milestone::{milestone_load, milestone_save};
 /// The string is used as the criterion's `name`; `description` defaults to empty.
 /// This keeps the wizard input surface minimal while still producing valid `GatesSpec`
 /// criterion entries.
+#[derive(Debug)]
 pub struct CriterionInput {
     /// Human-readable criterion name.
     pub name: String,
@@ -45,9 +46,9 @@ pub struct WizardChunkInput {
     pub slug: String,
     /// Human-readable display name.
     pub name: String,
-    /// Criterion names for this chunk. Each string becomes a [`Criterion`] with
-    /// `name = string` and `description = ""`.
-    pub criteria: Vec<String>,
+    /// Criteria for this chunk. Each [`CriterionInput`] becomes a [`Criterion`]
+    /// in the generated `gates.toml`, preserving name, description, and optional cmd.
+    pub criteria: Vec<CriterionInput>,
 }
 
 /// Top-level input for the guided wizard.
@@ -275,8 +276,9 @@ pub fn create_milestone_from_params(
 /// Writes `<specs_dir>/<slug>/gates.toml` atomically. If `milestone_slug` is provided,
 /// the spec is linked to the milestone and the milestone's `chunks` list is updated.
 ///
-/// `criteria` is a list of criterion name strings; each becomes a [`Criterion`] with
-/// `name = string` and `description = ""`. Pass an empty `Vec` when no criteria are needed.
+/// `criteria` is a list of [`CriterionInput`] values; each becomes a [`Criterion`] in
+/// the generated `gates.toml`, preserving name, description, and optional cmd.
+/// Pass an empty `Vec` when no criteria are needed.
 ///
 /// # Errors
 ///
@@ -288,7 +290,7 @@ pub fn create_spec_from_params(
     milestone_slug: Option<&str>,
     assay_dir: &Path,
     specs_dir: &Path,
-    criteria: Vec<String>,
+    criteria: Vec<CriterionInput>,
 ) -> Result<PathBuf> {
     validate_path_component(slug, "spec slug")?;
 
@@ -339,25 +341,25 @@ pub fn create_spec_from_params(
 
 /// Write a `gates.toml` file atomically to `<specs_dir>/<slug>/gates.toml`.
 ///
-/// Creates the directory if it doesn't exist. Criteria strings become
-/// [`Criterion`] entries with `name = string` and `description = ""`.
+/// Creates the directory if it doesn't exist. Each [`CriterionInput`] becomes a
+/// [`Criterion`] entry preserving name, description, and optional cmd.
 fn write_gates_toml(
     slug: &str,
     milestone_slug: &str,
     order: Option<u32>,
-    criteria_names: &[String],
+    criteria_inputs: &[CriterionInput],
     specs_dir: &Path,
 ) -> Result<PathBuf> {
     let chunk_dir = specs_dir.join(slug);
     std::fs::create_dir_all(&chunk_dir)
         .map_err(|e| AssayError::io("creating spec directory", &chunk_dir, e))?;
 
-    let criteria: Vec<Criterion> = criteria_names
+    let criteria: Vec<Criterion> = criteria_inputs
         .iter()
-        .map(|name| Criterion {
-            name: name.clone(),
-            description: String::new(),
-            cmd: None,
+        .map(|input| Criterion {
+            name: input.name.clone(),
+            description: input.description.clone(),
+            cmd: input.cmd.clone(),
             path: None,
             timeout: None,
             enforcement: None,
