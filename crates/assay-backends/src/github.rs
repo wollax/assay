@@ -9,7 +9,7 @@
 //! The issue number is cached in a `.github-issue-number` file inside `run_dir`.
 
 use std::path::Path;
-use std::process::{Command, Stdio};
+use std::process::{Command, Output, Stdio};
 
 use assay_core::{AssayError, CapabilitySet, StateBackend};
 use assay_types::{OrchestratorStatus, TeamCheckpoint};
@@ -28,6 +28,28 @@ struct GhRunner {
 }
 
 impl GhRunner {
+    /// Build a structured [`AssayError`] from a failed `gh` command output.
+    ///
+    /// Logs a warning with the repo, exit code, and stderr trim, then constructs
+    /// and **returns the bare error value** (not a `Result`). Callers wrap it:
+    /// `return Err(self.gh_error("gh issue create", &output, None));`
+    fn gh_error(&self, operation: &str, output: &Output, issue_number: Option<u64>) -> AssayError {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stderr = stderr.trim();
+        tracing::warn!(
+            repo = %self.repo,
+            issue_number,
+            exit_code = output.status.code(),
+            stderr = %stderr,
+            "{operation} failed"
+        );
+        AssayError::io(
+            format!("{operation} failed: {stderr}"),
+            "gh",
+            std::io::Error::other(stderr.to_string()),
+        )
+    }
+
     /// Create a GitHub issue and return its number.
     ///
     /// Runs `gh issue create --repo <repo> --title <title> --body-file - [--label <label>]`
@@ -77,18 +99,7 @@ impl GhRunner {
             .map_err(|e| AssayError::io("waiting for gh issue create", "gh", e))?;
 
         if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            tracing::warn!(
-                repo = %self.repo,
-                exit_code = output.status.code(),
-                stderr = %stderr.trim(),
-                "gh issue create failed"
-            );
-            return Err(AssayError::io(
-                format!("gh issue create failed: {}", stderr.trim()),
-                "gh",
-                std::io::Error::other(stderr.trim().to_string()),
-            ));
+            return Err(self.gh_error("gh issue create", &output, None));
         }
 
         let stdout = String::from_utf8_lossy(&output.stdout);
@@ -148,19 +159,7 @@ impl GhRunner {
             .map_err(|e| AssayError::io("waiting for gh issue comment", "gh", e))?;
 
         if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            tracing::warn!(
-                repo = %self.repo,
-                issue_number,
-                exit_code = output.status.code(),
-                stderr = %stderr.trim(),
-                "gh issue comment failed"
-            );
-            return Err(AssayError::io(
-                format!("gh issue comment failed: {}", stderr.trim()),
-                "gh",
-                std::io::Error::other(stderr.trim().to_string()),
-            ));
+            return Err(self.gh_error("gh issue comment", &output, Some(issue_number)));
         }
 
         tracing::info!(issue_number, repo = %self.repo, "created GitHub comment");
@@ -190,19 +189,7 @@ impl GhRunner {
             .map_err(|e| AssayError::io("running gh issue view", "gh", e))?;
 
         if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            tracing::warn!(
-                repo = %self.repo,
-                issue_number,
-                exit_code = output.status.code(),
-                stderr = %stderr.trim(),
-                "gh issue view failed"
-            );
-            return Err(AssayError::io(
-                format!("gh issue view failed: {}", stderr.trim()),
-                "gh",
-                std::io::Error::other(stderr.trim().to_string()),
-            ));
+            return Err(self.gh_error("gh issue view", &output, Some(issue_number)));
         }
 
         let json: Value = serde_json::from_slice(&output.stdout).map_err(|e| {
@@ -248,9 +235,14 @@ impl std::fmt::Debug for GitHubBackend {
 impl GitHubBackend {
     /// Construct a `GitHubBackend` targeting the given repository.
     ///
-    /// `repo` should be in `owner/repo` format.
+    /// `repo` must be in `owner/repo` format. If `repo` is empty or contains no
+    /// `/`, a `tracing::warn!` is emitted at construction time; the constructor
+    /// remains infallible and the backend is still created (D177).
     /// `label` is an optional label applied to created issues.
     pub fn new(repo: String, label: Option<String>) -> Self {
+        if repo.is_empty() || !repo.contains('/') {
+            tracing::warn!(repo = %repo, "malformed GitHub repo — expected 'owner/repo' format");
+        }
         Self {
             runner: GhRunner { repo },
             label,
@@ -258,6 +250,8 @@ impl GitHubBackend {
     }
 
     /// Read the cached issue number from `.github-issue-number` in `run_dir`.
+    ///
+    /// Returns `Err` if the file contains `0` (treated as file corruption).
     fn read_issue_number(run_dir: &Path) -> assay_core::Result<Option<u64>> {
         let path = run_dir.join(".github-issue-number");
         match std::fs::read_to_string(&path) {
@@ -276,6 +270,16 @@ impl GitHubBackend {
                             ),
                         )
                     })?;
+                    if number == 0 {
+                        return Err(AssayError::io(
+                            "invalid issue number: 0 (possible file corruption)",
+                            &path,
+                            std::io::Error::new(
+                                std::io::ErrorKind::InvalidData,
+                                "issue number must be non-zero",
+                            ),
+                        ));
+                    }
                     Ok(Some(number))
                 }
             }
