@@ -139,6 +139,7 @@ pub enum Screen {
         /// Selection state for the trace list.
         trace_list_state: ListState,
         /// `None` = viewing trace list; `Some(idx)` = viewing span tree for `traces[idx]`.
+        /// `span_lines` is populated when entering span mode and cleared when leaving it.
         selected_trace: Option<usize>,
         /// Flattened span lines for the currently expanded trace.
         span_lines: Vec<crate::trace_viewer::SpanLine>,
@@ -510,7 +511,7 @@ impl App {
                     } = &mut self.screen
                     {
                         *selected_trace = None;
-                        *span_lines = vec![];
+                        span_lines.clear();
                         *span_list_state = ListState::default();
                     }
                 }
@@ -570,7 +571,7 @@ impl App {
                 }
                 KeyCode::Enter => {
                     // Extract what we need: selected index and trace id.
-                    let enter_data: Option<(usize, String)> = if let Screen::TraceViewer {
+                    let enter_data = if let Screen::TraceViewer {
                         traces,
                         trace_list_state,
                         ..
@@ -589,19 +590,19 @@ impl App {
                         let assay_dir = root.join(".assay");
                         let spans = crate::trace_viewer::load_trace_spans(&assay_dir, &trace_id);
                         let lines = crate::trace_viewer::flatten_span_tree(&spans);
-                        if let Screen::TraceViewer {
+                        if lines.is_empty() {
+                            // Load failed or trace has no spans — stay in list mode.
+                            tracing::warn!(trace_id = %trace_id, "trace expanded to empty span list");
+                        } else if let Screen::TraceViewer {
                             selected_trace,
                             span_lines,
                             span_list_state,
                             ..
                         } = &mut self.screen
                         {
-                            let has_lines = !lines.is_empty();
                             *span_lines = lines;
                             let mut new_state = ListState::default();
-                            if has_lines {
-                                new_state.select(Some(0));
-                            }
+                            new_state.select(Some(0));
                             *span_list_state = new_state;
                             *selected_trace = Some(idx);
                         }
@@ -923,9 +924,11 @@ impl App {
                                 traces,
                                 trace_list_state,
                                 selected_trace: None,
-                                span_lines: vec![],
+                                span_lines: Vec::new(),
                                 span_list_state: ListState::default(),
                             };
+                        } else {
+                            tracing::debug!("'t' pressed with no project loaded; ignoring");
                         }
                     }
                     KeyCode::Char('s') => {
@@ -2023,10 +2026,9 @@ fn draw_analytics(frame: &mut ratatui::Frame, area: Rect, report: Option<&Analyt
     frame.render_widget(hint, hint_area);
 }
 
-/// Render the persistent one-line status bar showing project context.
 /// Render the trace viewer screen.
 ///
-/// When `selected_trace` is `None`, renders the trace list table.
+/// When `selected_trace` is `None`, renders the scrollable trace list.
 /// When `selected_trace` is `Some(idx)`, renders the span tree for that trace.
 fn draw_trace_viewer(
     frame: &mut ratatui::Frame,
@@ -2042,7 +2044,14 @@ fn draw_trace_viewer(
         let trace_title = traces
             .get(idx)
             .map(|t| format!(" Trace: {} — {} ", t.timestamp, t.root_span_name))
-            .unwrap_or_else(|| " Trace: (unknown) ".to_string());
+            .unwrap_or_else(|| {
+                tracing::warn!(
+                    idx,
+                    traces_len = traces.len(),
+                    "selected_trace index out of bounds"
+                );
+                " Trace: (unknown) ".to_string()
+            });
 
         if span_lines.is_empty() {
             let msg = Paragraph::new("No spans found in this trace.\n\nPress Esc to go back.")
@@ -2097,6 +2106,7 @@ fn draw_trace_viewer(
     }
 }
 
+/// Render the persistent one-line status bar showing project context.
 ///
 /// Shows: `<project_name>  ·  <cycle_slug>  ·  ? help  q quit` (dim hints).
 /// When `project_name` is empty and `cycle_slug` is `None`, only the key hints

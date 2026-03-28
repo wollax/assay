@@ -1,8 +1,8 @@
 //! Trace viewer data types and logic for the TUI trace viewer screen.
 //!
 //! Provides [`TraceEntry`] (parsed trace file metadata), [`SpanLine`] (flattened
-//! span tree line for rendering), and the core functions [`load_traces`] and
-//! [`flatten_span_tree`].
+//! span tree line for rendering), and the core functions [`load_traces`],
+//! [`load_trace_spans`], and [`flatten_span_tree`].
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -16,7 +16,8 @@ pub struct TraceEntry {
     pub id: String,
     /// Timestamp string from the root span's `start_time`.
     pub timestamp: String,
-    /// Name of the root span (first span with `parent_id: None`).
+    /// Name of the root span (first span in iteration order whose `parent_id` is `None`).
+    /// When multiple roots exist (e.g., orphaned spans), only the first is used as the display name.
     pub root_span_name: String,
     /// Total number of spans in the trace.
     pub span_count: usize,
@@ -59,17 +60,40 @@ pub fn load_traces(assay_dir: &Path) -> Vec<TraceEntry> {
 
     // Collect (path, mtime) pairs for JSON files.
     let mut files: Vec<(std::path::PathBuf, std::time::SystemTime)> = entries
-        .filter_map(|r| r.ok())
+        .filter_map(|r| match r {
+            Ok(entry) => Some(entry),
+            Err(e) => {
+                tracing::warn!(
+                    dir = %traces_dir.display(),
+                    error = %e,
+                    "failed to read directory entry in traces dir"
+                );
+                None
+            }
+        })
         .filter_map(|entry| {
             let path = entry.path();
             if path.extension().and_then(|e| e.to_str()) != Some("json") {
                 return None;
             }
-            let mtime = entry
-                .metadata()
-                .ok()
-                .and_then(|m| m.modified().ok())
-                .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+            let mtime = match entry.metadata() {
+                Ok(m) => m.modified().unwrap_or_else(|e| {
+                    tracing::warn!(
+                        path = %path.display(),
+                        error = %e,
+                        "mtime unavailable; file will sort as oldest"
+                    );
+                    std::time::SystemTime::UNIX_EPOCH
+                }),
+                Err(e) => {
+                    tracing::warn!(
+                        path = %path.display(),
+                        error = %e,
+                        "metadata unavailable; skipping trace file"
+                    );
+                    return None;
+                }
+            };
             Some((path, mtime))
         })
         .collect();
@@ -105,10 +129,13 @@ pub fn load_traces(assay_dir: &Path) -> Vec<TraceEntry> {
             }
         };
 
-        let id = path
-            .file_stem()
-            .map(|s| s.to_string_lossy().to_string())
-            .unwrap_or_default();
+        let id = match path.file_stem() {
+            Some(s) if !s.is_empty() => s.to_string_lossy().to_string(),
+            _ => {
+                tracing::warn!(path = %path.display(), "skipping trace file with no stem");
+                continue;
+            }
+        };
 
         let root_span = spans.iter().find(|s| s.parent_id.is_none());
         let timestamp = root_span
@@ -177,11 +204,7 @@ pub fn flatten_span_tree(spans: &[SpanData]) -> Vec<SpanLine> {
     // Build adjacency map: parent_id → children.
     let mut children: HashMap<Option<u64>, Vec<&SpanData>> = HashMap::new();
     for span in spans {
-        let effective_parent = match span.parent_id {
-            Some(pid) if known_ids.contains(&pid) => Some(pid),
-            Some(_) => None, // orphan — treat as root
-            None => None,
-        };
+        let effective_parent = span.parent_id.filter(|pid| known_ids.contains(pid));
         children.entry(effective_parent).or_default().push(span);
     }
 
@@ -223,7 +246,6 @@ fn flatten_recursive(
 mod tests {
     use super::*;
     use assay_core::telemetry::SpanData;
-    use std::collections::HashMap as StdHashMap;
     use tempfile::TempDir;
 
     fn make_span(
@@ -242,7 +264,7 @@ mod tests {
             start_time: start_time.to_string(),
             end_time: None,
             duration_ms,
-            fields: StdHashMap::new(),
+            fields: HashMap::new(),
         }
     }
 

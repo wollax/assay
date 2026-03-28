@@ -143,3 +143,45 @@ The feature-gated `NoopBackend` fallback emits `tracing::warn!` correctly but
 no test asserts the warning. Add `#[traced_test]` + `logs_contain("falling back
 to NoopBackend")` on `factory_github_capabilities` (and linear equivalent) when
 the corresponding feature is disabled.
+
+## [Q010] TUI trace viewer: surface skipped file count in trace list title
+
+**Queued:** 2026-03-28
+**Source:** PR #198 review
+**Scope:** `crates/assay-tui/src/trace_viewer.rs` — `load_traces`
+
+When bad trace files are skipped (unreadable/unparseable), the user sees fewer
+traces with no indication some files were skipped. Return a `(Vec<TraceEntry>, usize)`
+tuple with the skip count and show "18 traces (2 unreadable)" in the list title.
+S02-PLAN noted this was possible but deferred; the current warn-only approach is
+acceptable but not ideal for TUI UX.
+
+---
+
+## [Q011] TUI: `a` and `t` keys silent no-op when project_root is None
+
+**Queued:** 2026-03-28
+**Source:** PR #198 review
+**Scope:** `crates/assay-tui/src/app.rs` — Dashboard key handlers
+
+Both `a` (Analytics) and `t` (TraceViewer) silently ignore keypresses when
+`project_root` is `None`. The `t` handler now has `tracing::debug!` but `a`
+does not. Consider transitioning to the screen with an empty-state message
+instead of ignoring the keypress — the draw functions already handle empty data.
+
+---
+
+## [Q012] TUI trace viewer: inline D098 doc explanation
+
+**Queued:** 2026-03-28
+**Source:** PR #198 review (suggestion)
+**Scope:** `crates/assay-tui/src/app.rs` — `handle_trace_viewer_event` doc
+
+The doc references "D098" without explanation. Inline the pattern description
+so future readers don't need to consult the decisions register:
+
+```rust
+/// Extracted as a method to avoid borrow-splitting issues in the main `handle_event`
+/// match (same pattern as `handle_mcp_panel_event` — extracting to a `&mut self` method
+/// lets us re-borrow `self.screen` mutably after reading mode from it, D098).
+```
