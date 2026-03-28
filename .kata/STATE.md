@@ -2,8 +2,8 @@
 
 **Active Milestone:** M013 — Tech Debt & Deferred Features
 **Active Slice:** S04 — Wizard runnable criteria
-**Active Task:** T03 — Update TUI wizard state machine for cmd sub-step
-**Phase:** Executing
+**Active Task:** — (all tasks complete)
+**Phase:** Summarizing
 
 ## Recent Decisions
 - D178: Wizard cmd field is optional and per-criterion; empty input skips cmd (supersedes D076)
@@ -19,7 +19,7 @@
   - S01 ✅ complete (R081 validated)
   - S02 ✅ complete (R066 validated)
   - S03 ✅ complete (R067 validated)
-  - S04: Wizard runnable criteria — T01 ✅, T02 ✅, T03 next
+  - S04: Wizard runnable criteria — T01 ✅, T02 ✅, T03 ✅ — all tasks complete, slice ready for summary
 
 ## Next Action
-Execute T03: Update TUI wizard state machine for cmd sub-step.
+Write S04 slice summary, mark S04 done in roadmap, update milestone summary, advance to next slice.

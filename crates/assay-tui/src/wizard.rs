@@ -5,7 +5,7 @@
 //! On completion it returns `WizardAction::Submit(WizardInputs)` so the
 //! caller can invoke `assay_core::wizard::create_from_inputs`.
 
-use assay_core::wizard::{WizardChunkInput, WizardInputs, slugify};
+use assay_core::wizard::{CriterionInput, WizardChunkInput, WizardInputs, slugify};
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Rect};
@@ -38,6 +38,10 @@ pub struct WizardState {
     pub(crate) chunk_count: usize,
     /// Inline error message set by field validation or a failed `create_from_inputs` call.
     pub error: Option<String>,
+    /// When `true`, the current input line in a criteria step is collecting a command
+    /// rather than a criterion name. This flag enables the name→cmd sub-step alternation
+    /// without changing the step index arithmetic.
+    pub criteria_awaiting_cmd: bool,
 }
 
 impl WizardState {
@@ -49,6 +53,7 @@ impl WizardState {
             cursor: 0,
             chunk_count: 0,
             error: None,
+            criteria_awaiting_cmd: false,
         }
     }
 }
@@ -108,12 +113,27 @@ fn assemble_inputs(state: &WizardState) -> WizardInputs {
         let chunk_name = state.fields[name_step].last().cloned().unwrap_or_default();
         let chunk_slug = slugify(&chunk_name);
 
-        // Filter out trailing empty string left by the blank-Enter that triggered advance.
-        let criteria: Vec<String> = state.fields[criteria_step]
-            .iter()
-            .filter(|s| !s.is_empty())
-            .cloned()
-            .collect();
+        // Fields in the criteria step alternate: name, cmd, name, cmd, ..., trailing-empty.
+        // Iterate in pairs to build CriterionInput values.
+        let raw = &state.fields[criteria_step];
+        let mut criteria = Vec::new();
+        let mut j = 0;
+        while j + 1 < raw.len() {
+            let crit_name = &raw[j];
+            let crit_cmd = &raw[j + 1];
+            if !crit_name.is_empty() {
+                criteria.push(CriterionInput {
+                    name: crit_name.clone(),
+                    description: String::new(),
+                    cmd: if crit_cmd.is_empty() {
+                        None
+                    } else {
+                        Some(crit_cmd.clone())
+                    },
+                });
+            }
+            j += 2;
+        }
 
         chunks.push(WizardChunkInput {
             slug: chunk_slug,
@@ -265,15 +285,25 @@ fn handle_enter(state: &mut WizardState) -> WizardAction {
                     state.error = None;
                     WizardAction::Continue
                 }
+            } else if state.criteria_awaiting_cmd {
+                // Cmd sub-step: store the cmd value, return to name phase.
+                // Current line is the cmd (may be empty → None later).
+                // Push a new empty string for the next criterion name.
+                state.criteria_awaiting_cmd = false;
+                state.fields[step].push(String::new());
+                state.cursor = 0;
+                WizardAction::Continue
             } else {
-                // Criteria step.
+                // Criteria name sub-step.
                 if !current_line(state).is_empty() {
-                    // Non-empty Enter: append a new blank line for the next criterion.
+                    // Non-empty Enter: criterion name entered.
+                    // Switch to cmd sub-step: push a new empty string for cmd input.
+                    state.criteria_awaiting_cmd = true;
                     state.fields[step].push(String::new());
                     state.cursor = 0;
                     WizardAction::Continue
                 } else {
-                    // Blank Enter: end criteria for this chunk.
+                    // Blank Enter: done with criteria for this chunk.
                     if i < state.chunk_count - 1 {
                         // More chunks to go: advance to next chunk's name step.
                         state.step += 1;
@@ -320,7 +350,7 @@ pub fn draw_wizard(frame: &mut Frame, area: Rect, state: &WizardState) {
     };
 
     // ── Prompt label for current step ────────────────────────────────────────
-    let prompt = step_prompt(state.step, state.chunk_count);
+    let prompt = step_prompt(state.step, state.chunk_count, state.criteria_awaiting_cmd);
 
     // ── Header: "New Milestone" title + step counter + prompt ────────────────
     let header_text = Text::from(vec![
@@ -392,7 +422,7 @@ pub fn draw_wizard(frame: &mut Frame, area: Rect, state: &WizardState) {
 }
 
 /// Return the prompt label string for the given step.
-fn step_prompt(step: usize, _chunk_count: usize) -> String {
+fn step_prompt(step: usize, _chunk_count: usize, awaiting_cmd: bool) -> String {
     match step {
         0 => "Milestone name:".to_string(),
         1 => "Description (optional):".to_string(),
@@ -402,7 +432,11 @@ fn step_prompt(step: usize, _chunk_count: usize) -> String {
             let i = offset / 2;
             let is_criteria = offset % 2 == 1;
             if is_criteria {
-                format!("Chunk {} criteria (blank line when done):", i + 1)
+                if awaiting_cmd {
+                    "Command (Enter to skip):".to_string()
+                } else {
+                    format!("Chunk {} criteria (blank line when done):", i + 1)
+                }
             } else {
                 format!("Chunk {} name:", i + 1)
             }

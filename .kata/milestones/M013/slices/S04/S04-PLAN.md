@@ -56,7 +56,7 @@
   - Verify: `cargo test -p assay-cli` passes; `cargo test -p assay-mcp` passes; MCP tests cover both string and object criteria formats
   - Done when: CLI wizard collects cmd per criterion; MCP accepts both plain strings and objects with cmd
 
-- [ ] **T03: Update TUI wizard for cmd collection and verify all surfaces** `est:30m`
+- [x] **T03: Update TUI wizard for cmd collection and verify all surfaces** `est:30m`
   - Why: TUI is the third input surface. The criteria step must collect cmd per criterion. This task also runs the full verification suite.
   - Files: `crates/assay-tui/src/wizard.rs`, `crates/assay-tui/tests/wizard_round_trip.rs`
   - Do: Modify TUI wizard criteria step to use a two-phase input: after each criterion name (non-empty Enter), prompt for cmd (next Enter). Track whether current line is a name or cmd via a `bool` flag on `WizardState`. Empty name line still ends criteria collection. Build `CriterionInput` from name+cmd pairs in `assemble_inputs`. Update `draw_wizard` to show "Command (Enter to skip):" prompt during cmd sub-step. Update wizard_round_trip tests to drive through cmd steps. Add test asserting cmd appears in assembled `WizardInputs`.
