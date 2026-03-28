@@ -12,7 +12,9 @@ Automated infrastructure delivery: `smelt run manifest.toml` provisions → runs
 
 ## Current State
 
-**M011 partially complete (S01 ✅, S02 ✗, S03 ✅).** S01 decomposed `manifest.rs` (1924L) and `git/cli.rs` (1365L) into 14 focused modules under 500 lines each (max 337L); R060 validated. S03 added unauthenticated `GET /health` endpoint via `Router::merge()`; R063 validated. S02 (eprintln→tracing migration, flaky test fix for `test_cli_run_invalid_manifest`) was researched but not implemented — R061 and R062 remain active. 297 workspace tests, 0 failures.
+**M011 complete.** S01 decomposed `manifest.rs` (1924L) and `git/cli.rs` (1365L) into 14 focused modules under 500 lines each (max 337L); R060 validated. S03 added unauthenticated `GET /health` endpoint via `Router::merge()`; R063 validated. S02 (carried into M012/S01) migrated 50 `eprintln!` calls to structured tracing macros and fixed `test_cli_run_invalid_manifest` timeout from 10s to 30s; R061 and R062 validated. 298 workspace tests, 0 failures.
+
+**M012 in progress (S01 ✅).** S01 cleaned up M011 leftover work: three-way tracing subscriber init (D158), full eprintln! migration (D159), flaky test timeout fix. R061 and R062 now validated. S02 next: TrackerSource trait, config, and template manifest.
 
 **M010 complete.** HTTP API authentication and code quality. S01 delivered bearer token auth for `smelt serve`: opt-in `[auth]` config with env var resolution, read/write permission split middleware (GET/HEAD = read, POST/DELETE = write), 401/403 JSON error responses, and 4 integration tests covering all token×permission combinations. S02 cleaned up two PR review debt items: extracted `warn_teardown()` replacing 6 silent `let _ =` blocks with logged warnings, replaced 5 `anyhow!("{e}")` with `.context()`, and extracted `build_common_ssh_args()` eliminating SSH/SCP flag duplication. S03 documented the `[auth]` section in `examples/server.toml` and README.md, then verified all milestone success criteria (290 tests, clippy clean, doc clean). R050–R053 validated.
 
@@ -89,7 +91,8 @@ examples/
 | M008 | SSH Worker Pools | ✅ Complete (2026-03-24, pending live UAT via S04-UAT.md) |
 | M009 | Documentation, Examples & Code Cleanup | ✅ Complete (2026-03-24) |
 | M010 | HTTP API Authentication & Code Quality | ✅ Complete (2026-03-24) |
-| M011 | Code Quality III & Operational Hardening | ⚠️ Partial (S01 ✅, S02 ✗, S03 ✅) — R061/R062 remain active |
+| M011 | Code Quality III & Operational Hardening | ✅ Complete (2026-03-27) |
+| M012 | Tracker-Driven Autonomous Dispatch | 🔄 In Progress — S01 ✅, S02–S05 remaining |
 
 ## Technology Decisions
 

@@ -105,25 +105,25 @@ This file is the explicit capability and coverage contract for the project.
 
 ### R061 — Flaky test fix (test_cli_run_invalid_manifest)
 - Class: quality-attribute
-- Status: active
+- Status: validated
 - Description: `test_cli_run_invalid_manifest` uses a 10s subprocess timeout that's too short when cargo needs to link, causing intermittent failures.
 - Why it matters: Flaky tests erode trust in the test suite and block CI.
 - Source: execution (M010 forward intelligence)
 - Primary owning slice: M011/S02
 - Supporting slices: none
-- Validation: unmapped
-- Notes: Pre-existing issue confirmed at M009 completion commit. Needs increased timeout or restructured test approach.
+- Validation: validated
+- Notes: Proven by M012/S01: `Duration::from_secs(10)` changed to `Duration::from_secs(30)` in docker_lifecycle.rs; `rg 'from_secs(10)' crates/smelt-cli/tests/docker_lifecycle.rs` returns 0 results; `cargo test --workspace` passes 298 tests.
 
 ### R062 — Full tracing migration
 - Class: quality-attribute
-- Status: active
+- Status: validated
 - Description: All `eprintln!` calls in smelt-cli are replaced with structured `tracing` events. User-facing output remains clean and readable at default log level.
 - Why it matters: `eprintln!` output cannot be filtered, structured, or redirected. Tracing enables operators to control verbosity via `SMELT_LOG` and get structured diagnostic output.
 - Source: user
 - Primary owning slice: M011/S02
 - Supporting slices: none
-- Validation: unmapped
-- Notes: ~50 eprintln! calls across phases.rs (33), watch.rs (10), status.rs (3), and others. main.rs error handler excluded.
+- Validation: validated
+- Notes: Proven by M012/S01: 50 eprintln! calls migrated across phases.rs (33), watch.rs (10), status.rs (3), dry_run.rs (2), init.rs (1), list.rs (1). Two documented exceptions remain: main.rs top-level error handler (D139) and serve/tui.rs TUI error. Bare-message format (D158) matches prior eprintln! UX. `SMELT_LOG=debug` activates full-format diagnostic output. Integration test assertions on stderr substrings still pass. `cargo test --workspace` passes 298 tests.
 
 ### R063 — Health check endpoint
 - Class: operability
@@ -135,6 +135,72 @@ This file is the explicit capability and coverage contract for the project.
 - Supporting slices: none
 - Validation: validated
 - Notes: Proven by M011/S03: `GET /health` route added via `Router::merge()` outside auth middleware; `test_health_endpoint_bypasses_auth` passes with auth configured and no token; README documents endpoint. Follows D140.
+
+### R070 — Tracker-driven autonomous dispatch from GitHub Issues
+- Class: primary-user-loop
+- Status: active
+- Description: `smelt serve` polls a GitHub repository for issues matching a configurable label (e.g. `smelt:ready`), generates a JobManifest from a template manifest combined with issue title/body, dispatches an Assay session, creates a PR from the result, and updates issue labels through the lifecycle (`smelt:queued` → `smelt:running` → `smelt:pr-created` → `smelt:done`).
+- Why it matters: Closes the autonomous loop from issue tracker to merged PR without human dispatch. The user files an issue, Smelt does the rest.
+- Source: user (originally R026, now scoped to GitHub)
+- Primary owning slice: M012/S03
+- Supporting slices: M012/S02, M012/S04, M012/S05
+- Validation: unmapped
+- Notes: Requires `gh` CLI for issue operations. Template manifest provides environment/credentials/merge config; issue title becomes session name, body becomes spec.
+
+### R071 — Tracker-driven autonomous dispatch from Linear
+- Class: primary-user-loop
+- Status: active
+- Description: `smelt serve` polls a Linear project for issues in a configurable state (e.g. `Todo`), generates a JobManifest from a template manifest combined with issue title/description, dispatches an Assay session, creates a PR, and transitions the Linear issue state through the lifecycle.
+- Why it matters: Linear is the project tracker for the smelt/assay/cupel ecosystem. Native Linear integration provides the tightest autonomous loop.
+- Source: user (originally R026, now scoped to Linear)
+- Primary owning slice: M012/S04
+- Supporting slices: M012/S02, M012/S05
+- Validation: unmapped
+- Notes: Uses Linear GraphQL API directly (no `gh` CLI). Requires `LINEAR_API_KEY` env var. Follows patterns from Assay's `LinearBackend` implementation.
+
+### R072 — TrackerSource trait abstraction
+- Class: integration
+- Status: active
+- Description: A `TrackerSource` trait abstracts issue discovery, manifest generation, and lifecycle state transitions. GitHub and Linear are concrete implementations. The trait is generic enough for future tracker backends (Jira, etc.).
+- Why it matters: Keeps the dispatch loop tracker-agnostic. Adding a new tracker is one trait impl, not a rewrite.
+- Source: inferred
+- Primary owning slice: M012/S02
+- Supporting slices: M012/S03, M012/S04
+- Validation: unmapped
+- Notes: Trait methods: `poll_ready_issues()`, `transition_state()`, `issue_to_manifest()`. Object-safe for `Arc<dyn TrackerSource>`.
+
+### R073 — Template manifest with issue injection
+- Class: integration
+- Status: active
+- Description: `server.toml` accepts a `[tracker]` section with a `manifest_template` path pointing to a base JobManifest TOML that provides environment, credentials, merge config. Each tracked issue's title/body is injected as a session entry into the template to produce the dispatched manifest.
+- Why it matters: Users configure infrastructure once; each issue only needs to describe the work. No manifest authoring per-issue.
+- Source: user
+- Primary owning slice: M012/S02
+- Supporting slices: M012/S03, M012/S04
+- Validation: unmapped
+- Notes: Template manifest must be a valid JobManifest minus the `[[session]]` entries. Issue title → session name, issue body → session spec text.
+
+### R074 — Label-based lifecycle state machine
+- Class: operability
+- Status: active
+- Description: Tracked issues move through labels reflecting dispatch lifecycle: `smelt:ready` (eligible for pickup) → `smelt:queued` → `smelt:running` → `smelt:pr-created` → `smelt:done` (or `smelt:failed`). Labels work on both GitHub Issues and Linear issues.
+- Why it matters: Visible state in both tracker UIs. Prevents double-dispatch (issues without `smelt:ready` are skipped). Operators see lifecycle at a glance.
+- Source: user
+- Primary owning slice: M012/S02
+- Supporting slices: M012/S03, M012/S04
+- Validation: unmapped
+- Notes: GitHub uses issue labels. Linear uses issue labels (not workflow states, for consistency).
+
+### R075 — State backend passthrough in JobManifest
+- Class: integration
+- Status: active
+- Description: Smelt's `JobManifest` accepts an optional `[state_backend]` section that is forwarded into the Assay RunManifest generated inside the container. This allows orchestrator state to flow to Linear/GitHub/SSH instead of being trapped in ephemeral containers.
+- Why it matters: When dispatching from a tracker, orchestrator status should be visible in the same tracker — not trapped in a container that gets torn down.
+- Source: user
+- Primary owning slice: M012/S05
+- Supporting slices: none
+- Validation: unmapped
+- Notes: Maps to Assay's `StateBackendConfig` enum (local_fs, linear, github, ssh, custom). Smelt serializes it into the RunManifest TOML without interpreting it — pure passthrough.
 
 ---
 
@@ -403,14 +469,14 @@ This file is the explicit capability and coverage contract for the project.
 
 ### R026 — Linear/GitHub Issues backlog integration for `smelt serve`
 - Class: integration
-- Status: deferred
+- Status: active
 - Description: `smelt serve` can poll a Linear project or GitHub Issues label for `Todo` issues and automatically dispatch an Assay session per issue, managing the full lifecycle from issue state transitions through PR creation and merge.
 - Why it matters: Closes the autonomous loop from tracker to merged PR without any human dispatch step — the target end state for unattended agentic development workflows.
 - Source: user
-- Primary owning slice: none
-- Supporting slices: none
+- Primary owning slice: M012/S03
+- Supporting slices: M012/S02, M012/S04, M012/S05
 - Validation: unmapped
-- Notes: Requires R023 (smelt serve parallel dispatch) and Assay changes to accept issue context. Deferred until M006 proves the dispatch daemon.
+- Notes: R023 (smelt serve) is validated. Assay's StateBackend + MCP tools provide the integration surface. Promoted from deferred for M012.
 
 ### R027 — SSH worker pools / remote dispatch
 - Class: integration
@@ -497,7 +563,7 @@ This file is the explicit capability and coverage contract for the project.
 | R023 | core-capability      | validated   | M006/S01      | M006/S02,S03         | validated |
 | R024 | integration          | validated   | M006/S02      | M006/S03             | validated |
 | R025 | failure-visibility   | validated   | M006/S03      | M006/S01             | validated |
-| R026 | integration          | deferred    | none          | none                 | unmapped  |
+| R026 | integration          | active      | M012/S03      | M012/S02,S04,S05     | mapped    |
 | R027 | integration          | validated   | M008/S04      | M008/S01,S02,S03     | validated |
 | R028 | operability          | validated   | M007/S03      | M007/S01,S02         | validated |
 | R030 | anti-feature         | out-of-scope| none          | none                 | n/a       |
@@ -514,13 +580,20 @@ This file is the explicit capability and coverage contract for the project.
 | R052 | failure-visibility   | validated   | M010/S02      | none                 | validated |
 | R053 | quality-attribute    | validated   | M010/S02      | none                 | validated |
 | R060 | quality-attribute    | validated   | M011/S01      | none                 | validated |
-| R061 | quality-attribute    | active      | M011/S02      | none                 | mapped    |
-| R062 | quality-attribute    | active      | M011/S02      | none                 | mapped    |
+| R061 | quality-attribute    | validated   | M011/S02      | none                 | validated |
+| R062 | quality-attribute    | validated   | M011/S02      | none                 | validated |
 | R063 | operability          | validated   | M011/S03      | none                 | validated |
+
+| R070 | primary-user-loop    | active      | M012/S03      | M012/S02,S04,S05     | mapped    |
+| R071 | primary-user-loop    | active      | M012/S04      | M012/S02,S05         | mapped    |
+| R072 | integration          | active      | M012/S02      | M012/S03,S04         | mapped    |
+| R073 | integration          | active      | M012/S02      | M012/S03,S04         | mapped    |
+| R074 | operability          | active      | M012/S02      | M012/S03,S04         | mapped    |
+| R075 | integration          | active      | M012/S05      | none                 | mapped    |
 
 ## Coverage Summary
 
-- Active requirements: 2 (R061, R062)
-- Mapped to slices: 2
-- Validated (all milestones through M011 partial): 33 (R001–R008, R010–R015, R020, R021, R023, R024, R025, R027, R028, R040–R045, R050–R053, R060, R063)
+- Active requirements: 8 (R026, R070, R071, R072, R073, R074, R075)
+- Mapped to slices: 8
+- Validated (all milestones through M012/S01): 35 (R001–R008, R010–R015, R020, R021, R023, R024, R025, R027, R028, R040–R045, R050–R053, R060, R061, R062, R063)
 - Unmapped active requirements: 0

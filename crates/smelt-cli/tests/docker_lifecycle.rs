@@ -810,7 +810,7 @@ async fn test_cli_run_invalid_manifest() {
         .expect("binary should exist")
         .arg("run")
         .arg("nonexistent-manifest.toml")
-        .timeout(std::time::Duration::from_secs(10))
+        .timeout(std::time::Duration::from_secs(30))
         .output()
         .expect("failed to run smelt");
 

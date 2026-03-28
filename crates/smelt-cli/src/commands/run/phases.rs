@@ -3,7 +3,7 @@
 use std::future::Future;
 
 use anyhow::{Context, Result};
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use smelt_core::config::SmeltConfig;
 use smelt_core::manifest::{self, JobManifest};
@@ -27,7 +27,7 @@ enum ExecOutcome {
 ///
 /// Always prints a "Tearing down container…" progress message to stderr.
 /// Sets phase to `TearingDown`, calls `provider.teardown()`, then `monitor.cleanup()`.
-/// Each step logs an `eprintln!` warning on failure; prints a success message when
+/// Each step logs a warning on failure; prints a success message when
 /// teardown succeeds.
 async fn warn_teardown(
     monitor: &mut JobMonitor,
@@ -36,16 +36,16 @@ async fn warn_teardown(
 ) {
     use smelt_core::provider::RuntimeProvider;
     if let Err(e) = monitor.set_phase(JobPhase::TearingDown) {
-        eprintln!("Warning: failed to set TearingDown phase for {container}: {e:#}");
+        warn!(container = %container, error = %e, "failed to set TearingDown phase");
     }
-    eprintln!("Tearing down container...");
+    info!("Tearing down container...");
     if let Err(e) = provider.teardown(container).await {
-        eprintln!("Warning: teardown failed for {container}: {e:#}");
+        warn!(container = %container, error = %e, "teardown failed");
     } else {
-        eprintln!("Container removed.");
+        info!("Container removed.");
     }
     if let Err(e) = monitor.cleanup() {
-        eprintln!("Warning: monitor cleanup failed for {container}: {e:#}");
+        warn!(container = %container, error = %e, "monitor cleanup failed");
     }
 }
 
@@ -69,9 +69,8 @@ where
     // Phase 2: Validate
     info!("validating manifest");
     if let Err(e) = manifest.validate() {
-        error!(%e, "manifest validation failed");
-        eprintln!("Validation failed for `{}`:\n", args.manifest.display());
-        eprintln!("{e}");
+        error!(%e, path = %args.manifest.display(), "Validation failed");
+        error!("{e}");
         return Ok(1);
     }
     info!("manifest validation passed");
@@ -80,7 +79,7 @@ where
     if let Ok(repo_path) = manifest::resolve_repo_path(&manifest.job.repo)
         && let Err(e) = ensure_gitignore_assay(&repo_path)
     {
-        eprintln!("[WARN] could not update .gitignore: {e:#}");
+        warn!(error = %e, "could not update .gitignore");
     }
 
     // Compute state dir and timeout
@@ -101,7 +100,7 @@ where
         .context("failed to write initial monitor state")?;
 
     // Phase 3 + 4: Connect to runtime provider
-    eprintln!("Provisioning container...");
+    info!("Provisioning container...");
     let provider: AnyProvider = match manifest.environment.runtime.as_str() {
         "docker" => AnyProvider::Docker(
             DockerProvider::new().with_context(|| "failed to connect to Docker daemon")?,
@@ -116,9 +115,7 @@ where
                 .with_context(|| "failed to connect to Kubernetes cluster")?,
         ),
         other => {
-            eprintln!(
-                "Error: unsupported runtime `{other}`. Supported: docker, compose, kubernetes."
-            );
+            error!("Error: unsupported runtime `{other}`. Supported: docker, compose, kubernetes.");
             return Ok(1);
         }
     };
@@ -128,7 +125,7 @@ where
         .provision(&manifest)
         .await
         .with_context(|| "failed to provision container")?;
-    eprintln!("Container provisioned: {container}");
+    info!("Container provisioned: {container}");
     monitor.set_container(container.as_str());
 
     // From here, teardown must run regardless of what happens.
@@ -138,7 +135,7 @@ where
     // Phase 5.5: Assay setup — config, specs dir, per-session spec files
 
     // Write assay config into container (idempotent — skips if already present)
-    eprintln!("Writing assay config...");
+    info!("Writing assay config...");
     let config_cmd = smelt_core::AssayInvoker::build_write_assay_config_command(&manifest.job.name);
     match provider.exec(&container, &config_cmd).await {
         Err(e) => {
@@ -159,7 +156,7 @@ where
     }
 
     // Ensure the specs directory exists inside the container
-    eprintln!("Writing specs dir...");
+    info!("Writing specs dir...");
     let specs_dir_cmd = smelt_core::AssayInvoker::build_ensure_specs_dir_command();
     match provider.exec(&container, &specs_dir_cmd).await {
         Err(e) => {
@@ -183,7 +180,7 @@ where
     for s in manifest.session.iter() {
         let spec_name = smelt_core::AssayInvoker::sanitize_session_name(&s.name);
         let spec_toml = smelt_core::AssayInvoker::build_spec_toml(s);
-        eprintln!("Writing spec: {spec_name}...");
+        info!("Writing spec: {spec_name}...");
         if let Err(e) = smelt_core::AssayInvoker::write_spec_file_to_container(
             &provider, &container, &spec_name, &spec_toml,
         )
@@ -200,7 +197,7 @@ where
     monitor
         .set_phase(JobPhase::WritingManifest)
         .context("failed to set WritingManifest phase")?;
-    eprintln!("Writing manifest...");
+    info!("Writing manifest...");
     let toml_content = smelt_core::AssayInvoker::build_run_manifest_toml(&manifest);
     let write_result =
         smelt_core::AssayInvoker::write_manifest_to_container(&provider, &container, &toml_content)
@@ -211,13 +208,13 @@ where
         warn_teardown(&mut monitor, &provider, &container).await;
         return Err(e).with_context(|| "failed to write assay manifest to container");
     }
-    eprintln!("Manifest written.");
+    info!("Manifest written.");
 
     // Phase 7: Execute assay run with timeout + cancellation
     monitor
         .set_phase(JobPhase::Executing)
         .context("failed to set Executing phase")?;
-    eprintln!("Executing assay run...");
+    info!("Executing assay run...");
 
     let cmd = smelt_core::AssayInvoker::build_run_command(&manifest);
     let exec_future = async {
@@ -227,9 +224,9 @@ where
             .with_context(|| "failed to execute assay run")?;
         let assay_exit = handle.exit_code;
         if assay_exit == 2 {
-            eprintln!("Assay complete — gate failures (exit 2)");
+            info!("Assay complete — gate failures (exit 2)");
         } else {
-            eprintln!("Assay complete — exit code: {assay_exit}");
+            info!("Assay complete — exit code: {assay_exit}");
         }
 
         if assay_exit != 0 && assay_exit != 2 {
@@ -243,7 +240,7 @@ where
         monitor
             .set_phase(JobPhase::Collecting)
             .context("failed to set Collecting phase")?;
-        eprintln!("Collecting results...");
+        info!("Collecting results...");
         let repo_path = manifest::resolve_repo_path(&manifest.job.repo)
             .with_context(|| "failed to resolve repo path for collection")?;
         let git_binary =
@@ -265,9 +262,9 @@ where
             .with_context(|| "failed to collect results")?;
 
         if collect_result.no_changes {
-            eprintln!("No new commits from Assay — target branch not created");
+            info!("No new commits from Assay — target branch not created");
         } else {
-            eprintln!(
+            info!(
                 "Collected: {} commits on branch '{}', {} files changed",
                 collect_result.commit_count,
                 collect_result.branch,
@@ -295,7 +292,7 @@ where
             let base = &manifest.job.base_ref;
             let title = format!("[smelt] {} — {} → {}", job_name, head, base);
             let body = format!("Automated results from smelt job '{job_name}'.\n\nBase: `{base}`");
-            eprintln!("Creating PR: {} → {}...", head, base);
+            info!("Creating PR: {} → {}...", head, base);
             let pr = github
                 .create_pr(&forge_cfg.repo, head, base, &title, &body)
                 .await
@@ -307,7 +304,7 @@ where
             monitor
                 .write()
                 .context("failed to write monitor state after PR creation")?;
-            eprintln!("PR created: {}", pr.url);
+            info!("PR created: {}", pr.url);
         }
 
         Ok::<i32, anyhow::Error>(assay_exit)
@@ -335,7 +332,7 @@ where
         }
         ExecOutcome::Timeout => {
             let _ = monitor.set_phase(JobPhase::Timeout);
-            eprintln!("Timeout — tearing down...");
+            warn!("Timeout — tearing down...");
             Err(anyhow::anyhow!(
                 "job timed out after {}s",
                 timeout_duration.as_secs()
@@ -343,29 +340,29 @@ where
         }
         ExecOutcome::Cancelled => {
             let _ = monitor.set_phase(JobPhase::Cancelled);
-            eprintln!("Cancelled — tearing down...");
+            warn!("Cancelled — tearing down...");
             Err(anyhow::anyhow!("job cancelled by signal"))
         }
     };
 
     // Teardown — always runs
     if let Err(e) = monitor.set_phase(JobPhase::TearingDown) {
-        eprintln!("Warning: failed to set TearingDown phase for {container}: {e:#}");
+        warn!(container = %container, error = %e, "failed to set TearingDown phase");
     }
-    eprintln!("Tearing down container...");
+    info!("Tearing down container...");
     if let Err(e) = provider.teardown(&container).await {
-        eprintln!("Warning: teardown failed for {container}: {e:#}");
+        warn!(container = %container, error = %e, "teardown failed");
         if result.is_ok() {
             if let Err(e) = monitor.cleanup() {
-                eprintln!("Warning: monitor cleanup failed for {container}: {e:#}");
+                warn!(container = %container, error = %e, "monitor cleanup failed");
             }
             return Err(e.into());
         }
     } else {
-        eprintln!("Container removed.");
+        info!("Container removed.");
     }
     if let Err(e) = monitor.cleanup() {
-        eprintln!("Warning: monitor cleanup failed for {container}: {e:#}");
+        warn!(container = %container, error = %e, "monitor cleanup failed");
     }
 
     result

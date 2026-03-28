@@ -10,6 +10,7 @@ use std::time::Duration;
 
 use anyhow::Result;
 use clap::Args;
+use tracing::{error, info, warn};
 
 use smelt_core::forge::{CiStatus, ForgeClient, GitHubForge, PrState};
 use smelt_core::monitor::{JobMonitor, RunState};
@@ -35,14 +36,14 @@ pub async fn execute(args: &WatchArgs) -> Result<i32> {
     let state = match JobMonitor::read(&state_dir) {
         Ok(s) => s,
         Err(_) => {
-            eprintln!("No state file — has `smelt run` been called?");
+            error!("No state file — has `smelt run` been called?");
             return Ok(1);
         }
     };
 
     // Check pr_url — surface the expected state path for diagnosability
     if state.pr_url.is_none() {
-        eprintln!(
+        error!(
             "No PR was created for this job (pr_url is not set in state at {}). \
              Did `smelt run` complete Phase 9?",
             state_dir.display()
@@ -54,7 +55,7 @@ pub async fn execute(args: &WatchArgs) -> Result<i32> {
     let token_env = match &state.forge_token_env {
         Some(t) => t.clone(),
         None => {
-            eprintln!(
+            error!(
                 "No forge context in state (forge_token_env missing). \
                  State was written before S03."
             );
@@ -66,7 +67,7 @@ pub async fn execute(args: &WatchArgs) -> Result<i32> {
     let token = match std::env::var(&token_env) {
         Ok(t) => t,
         Err(_) => {
-            eprintln!("env var `{token_env}` not set — required for PR polling");
+            error!("env var `{token_env}` not set — required for PR polling");
             return Ok(1);
         }
     };
@@ -75,7 +76,7 @@ pub async fn execute(args: &WatchArgs) -> Result<i32> {
     let repo = match &state.forge_repo {
         Some(r) => r.clone(),
         None => {
-            eprintln!("No forge_repo in state — cannot determine repository to poll.");
+            error!("No forge_repo in state — cannot determine repository to poll.");
             return Ok(1);
         }
     };
@@ -84,7 +85,7 @@ pub async fn execute(args: &WatchArgs) -> Result<i32> {
     let pr_number = match state.pr_number {
         Some(n) => n,
         None => {
-            eprintln!("No pr_number in state — cannot determine PR to poll.");
+            error!("No pr_number in state — cannot determine PR to poll.");
             return Ok(1);
         }
     };
@@ -119,10 +120,7 @@ pub(crate) async fn run_watch<F: ForgeClient>(
     loop {
         match forge.poll_pr_status(repo, pr_number).await {
             Err(e) => {
-                eprintln!(
-                    "[WARN] poll failed: {e:#} — retrying in {}s",
-                    interval.as_secs()
-                );
+                warn!("poll failed: {e:#} — retrying in {}s", interval.as_secs());
                 tokio::time::sleep(interval).await;
             }
             Ok(status) => {
@@ -139,18 +137,18 @@ pub(crate) async fn run_watch<F: ForgeClient>(
                 let time = local_time_hms();
                 let pr_state_str = pr_state_label(&status.state);
                 let ci_str = ci_status_label(&status.ci_status);
-                eprintln!(
+                info!(
                     "[{time}] PR #{pr_number} — state: {pr_state_str} | CI: {ci_str} | reviews: {}",
                     status.review_count
                 );
 
                 match status.state {
                     PrState::Merged => {
-                        eprintln!("PR merged.");
+                        info!("PR merged.");
                         return Ok(0);
                     }
                     PrState::Closed => {
-                        eprintln!("PR closed without merging.");
+                        info!("PR closed without merging.");
                         return Ok(1);
                     }
                     PrState::Open => {

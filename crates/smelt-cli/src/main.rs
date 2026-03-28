@@ -36,14 +36,22 @@ enum Commands {
 async fn main() {
     let cli = Cli::parse();
 
-    // Build the env filter from SMELT_LOG or RUST_LOG, defaulting to "warn".
+    // Detect whether the user explicitly set a log filter via env var.
+    // If set: use full format (timestamp, target, level) with the user-provided filter.
+    // If not set: use bare-message format (no timestamp, no target, no level) with a
+    // target-scoped default that shows info for smelt crates and warn for everything else.
+    let explicit_env = std::env::var("SMELT_LOG").is_ok() || std::env::var("RUST_LOG").is_ok();
+
     let env_filter = tracing_subscriber::EnvFilter::try_from_env("SMELT_LOG")
         .or_else(|_| tracing_subscriber::EnvFilter::try_from_env("RUST_LOG"))
-        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("warn"));
+        .unwrap_or_else(|_| {
+            tracing_subscriber::EnvFilter::new("smelt_cli=info,smelt_core=info,warn")
+        });
 
     // When running `smelt serve` with TUI enabled, redirect tracing output to
     // `.smelt/serve.log` so that log lines don't corrupt the alternate-screen
-    // terminal display.  All other commands write to stderr as usual.
+    // terminal display.  TUI file appender always uses full format (levels are
+    // useful in log files).  All other commands write to stderr.
     match &cli.command {
         Commands::Serve(args) if !args.no_tui => {
             std::fs::create_dir_all(".smelt").ok();
@@ -53,9 +61,20 @@ async fn main() {
                 .with_writer(file_appender)
                 .init();
         }
-        _ => {
+        _ if explicit_env => {
+            // User explicitly set SMELT_LOG or RUST_LOG — full diagnostic format.
             tracing_subscriber::fmt()
                 .with_env_filter(env_filter)
+                .with_writer(std::io::stderr)
+                .init();
+        }
+        _ => {
+            // No env var set — bare-message format matching previous stderr behavior.
+            tracing_subscriber::fmt()
+                .with_env_filter(env_filter)
+                .without_time()
+                .with_target(false)
+                .with_level(false)
                 .with_writer(std::io::stderr)
                 .init();
         }

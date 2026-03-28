@@ -6,6 +6,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use anyhow::Result;
 use clap::Args;
 
+use tracing::{error, warn};
+
 use smelt_core::forge::{CiStatus, PrState};
 use smelt_core::monitor::{JobMonitor, JobPhase, RunState};
 
@@ -36,7 +38,7 @@ pub async fn execute(args: &StatusArgs) -> Result<i32> {
             match JobMonitor::read(&state_dir) {
                 Ok(s) => s,
                 Err(_) => {
-                    eprintln!(
+                    error!(
                         "No state file for job '{}' at {}",
                         name,
                         state_dir.display()
@@ -48,7 +50,7 @@ pub async fn execute(args: &StatusArgs) -> Result<i32> {
         None => match JobMonitor::read_legacy(&state_dir_base) {
             Ok(s) => s,
             Err(_) => {
-                eprintln!("No running job.");
+                error!("No running job.");
                 return Ok(1);
             }
         },
@@ -145,8 +147,8 @@ fn print_status(state: &RunState, stale: bool) {
     let elapsed = now.saturating_sub(state.started_at);
 
     if stale {
-        eprintln!(
-            "Warning: process (PID {}) is no longer running — state may be stale.",
+        warn!(
+            "process (PID {}) is no longer running — state may be stale",
             state.pid
         );
     }

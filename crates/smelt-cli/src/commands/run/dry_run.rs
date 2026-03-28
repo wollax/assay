@@ -18,9 +18,8 @@ pub(super) fn execute_dry_run(args: &RunArgs) -> Result<i32> {
     // Phase 2: Validate
     info!("validating manifest");
     if let Err(e) = manifest.validate() {
-        error!(%e, "manifest validation failed");
-        eprintln!("Validation failed for `{}`:\n", args.manifest.display());
-        eprintln!("{e}");
+        error!(%e, path = %args.manifest.display(), "Validation failed");
+        error!("{e}");
         return Ok(1);
     }
     info!("manifest validation passed");

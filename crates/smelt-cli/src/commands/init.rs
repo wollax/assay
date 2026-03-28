@@ -90,10 +90,7 @@ pub async fn execute(_args: &InitArgs) -> anyhow::Result<i32> {
     let dest = std::path::Path::new("job-manifest.toml");
 
     if dest.exists() {
-        eprintln!(
-            "Error: job-manifest.toml already exists. \
-             Remove it first or edit it directly."
-        );
+        tracing::error!("job-manifest.toml already exists — remove it first or edit it directly");
         return Ok(1);
     }
 

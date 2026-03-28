@@ -50,7 +50,7 @@ pub async fn execute(args: &ListArgs) -> Result<i32> {
 
         match JobMonitor::read(&entry_path) {
             Err(e) => {
-                eprintln!("[WARN] skipping {}: {}", entry_path.display(), e);
+                tracing::warn!("skipping {}: {}", entry_path.display(), e);
             }
             Ok(state) => {
                 let elapsed = state.updated_at.saturating_sub(state.started_at);
