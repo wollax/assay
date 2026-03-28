@@ -798,14 +798,14 @@
 
 ### R067 — OTel metrics
 - Class: quality-attribute
-- Status: active
+- Status: validated
 - Description: OTel counters (sessions launched, gates evaluated, merges attempted) and histograms (gate eval latency, agent run duration) alongside existing tracing spans. Feature-flagged under `telemetry`. `MeterProvider` stored in `TracingGuard` for clean shutdown.
 - Why it matters: Metrics enable dashboards, alerting, and trend analysis that tracing alone cannot provide efficiently.
 - Source: user
 - Primary owning slice: M013/S03
 - Supporting slices: none
-- Validation: unmapped
-- Notes: Uses same http-proto + hyper-client transport as OTLP trace export (D144). Default build must have zero new OTel deps.
+- Validation: S03 — `build_otel_metrics` + `init_metric_handles` + 5 OnceLock globals + 5 recording functions implemented in `telemetry.rs`; `TracingGuard._meter_provider` with D179 meter-before-tracer shutdown; 4 contract tests prove meter init, counter increment, histogram recording, and no-op without init; 5 instrumentation sites in `pipeline.rs` (4) and `merge_runner.rs` (1); `cargo build -p assay-core` has zero new OTel deps; `cargo build -p assay-core --features telemetry` compiles with metrics support; `just ready` green with 1516+ tests. Real OTLP collector validation is UAT only.
+- Notes: Uses same http-proto + hyper-client transport as OTLP trace export (D144). Default build must have zero new OTel deps. Metric attributes are currently empty (&[]) — per-spec labels deferred.
 
 ### R081 — GitHubBackend construction validation
 - Class: quality-attribute
@@ -948,7 +948,7 @@
 | R064 | core-capability | validated | M009/S05 | M009/S01 | S05 |
 | R065 | quality-attribute | validated | M009/S05 | M009/S02, M009/S03 | S05 |
 | R066 | primary-user-loop | validated | M013/S02 | none | S02 |
-| R067 | quality-attribute | active | M013/S03 | none | unmapped |
+| R067 | quality-attribute | validated | M013/S03 | none | S03 |
 | R071 | core-capability | validated | M010/S01 | M010/S02 | S01 |
 | R072 | quality-attribute | validated | M010/S02 | none | S02 |
 | R073 | core-capability | validated | M010/S02 | M010/S03 | S02 |
@@ -964,8 +964,8 @@
 
 ## Coverage Summary
 
-- Active requirements: 2 (R067, R082)
-- Validated: 74 (R001–R029 except R025, R034–R066, R071–R081)
+- Active requirements: 1 (R082)
+- Validated: 75 (R001–R029 except R025, R034–R067, R071–R081)
 - Unmapped active requirements: 0
 - Deferred: 1 (R025)
 - Out of scope: 4 (R030, R031, R032, R033)

@@ -1,9 +1,9 @@
 # Kata State
 
 **Active Milestone:** M013 — Tech Debt & Deferred Features
-**Active Slice:** S03 — OTel metrics
-**Active Task:** None — S03 complete
-**Phase:** Summarizing (S03)
+**Active Slice:** S04 — Wizard runnable criteria
+**Active Task:** None — S04 not started
+**Phase:** Planning
 
 ## Recent Decisions
 - D185: OTel metrics verification strategy — contract tests with in-process MeterProvider, real collector is UAT
@@ -20,8 +20,8 @@
 - M013:
   - S01 ✅ complete (R081 validated, 1501 tests)
   - S02 ✅ complete (R066 validated, 7 integration tests, `just ready` green)
-  - S03 ✅ complete — T01 contract tests, T02 metrics infra, T03 instrumentation sites (1516 tests, all slice verification green)
+  - S03 ✅ complete (R067 validated — OTel metrics infra + 5 instrumentation sites, 1516 tests, `just ready` green)
   - S04: Wizard runnable criteria — not started
 
 ## Next Action
-Write S03 slice summary, UAT, mark S03 done in roadmap, then advance to S04.
+Begin S04: wizard runnable criteria (R082). Touches wizard.rs, spec.rs, create_spec_from_params.
