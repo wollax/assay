@@ -50,7 +50,7 @@
   - Verify: `cargo build -p assay-core --features telemetry` compiles; `cargo build -p assay-core` compiles with zero new deps; test file exists (tests will fail until T02 provides the API)
   - Done when: workspace deps have `metrics` feature; `assay-core` `telemetry` feature gates them; contract test file committed; compilation green
 
-- [ ] **T02: build_otel_metrics, init_metric_handles, and TracingGuard integration** `est:45m`
+- [x] **T02: build_otel_metrics, init_metric_handles, and TracingGuard integration** `est:45m`
   - Why: Core metrics infrastructure — builds the meter provider, creates global metric handles, wires into TracingGuard for shutdown, and connects to init_tracing
   - Files: `crates/assay-core/src/telemetry.rs`
   - Do: Add `build_otel_metrics(config) -> Option<SdkMeterProvider>` behind `#[cfg(feature = "telemetry")]` using `MetricExporter::builder().with_http()` and `SdkMeterProvider::builder().with_periodic_exporter()`. Add `init_metric_handles(meter: &Meter)` that populates five `OnceLock` globals. Add `TracingGuard._meter_provider: Option<SdkMeterProvider>` field. Update `Drop` to shut down meter provider BEFORE tracer provider. Add five thin recording functions (`record_session_launched`, `record_gate_evaluated`, `record_merges_attempted`, `record_gate_eval_latency`, `record_agent_run_duration`) that check OnceLock and no-op when None. Wire `build_otel_metrics` + `init_metric_handles` into `init_tracing`. Ensure default (non-telemetry) build still compiles.
