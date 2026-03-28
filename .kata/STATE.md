@@ -1,11 +1,13 @@
 # Kata State
 
-**Active Milestone:** M013 — Tech Debt & Deferred Features
-**Active Slice:** S04 — Wizard runnable criteria
-**Active Task:** — (all tasks complete)
-**Phase:** Summarizing
+**Active Milestone:** — (M013 complete)
+**Active Slice:** — (all slices complete)
+**Active Task:** —
+**Phase:** Idle
 
 ## Recent Decisions
+- D187: CriterionOrString untagged enum for backward-compatible MCP criteria input
+- D188: Sub-step flag (criteria_awaiting_cmd) for multi-phase input within a single wizard step index
 - D178: Wizard cmd field is optional and per-criterion; empty input skips cmd (supersedes D076)
 - D185: OTel metrics verification strategy — contract tests with in-process MeterProvider
 - D186: Recording functions unconditional (no cfg guards at call sites)
@@ -14,12 +16,14 @@
 - None
 
 ## Progress
-- M012 ✅ COMPLETE
-- M013:
-  - S01 ✅ complete (R081 validated)
-  - S02 ✅ complete (R066 validated)
-  - S03 ✅ complete (R067 validated)
-  - S04: Wizard runnable criteria — T01 ✅, T02 ✅, T03 ✅ — all tasks complete, slice ready for summary
+- M001–M012 ✅ COMPLETE
+- M013 ✅ COMPLETE
+  - S01 ✅ complete (R081 validated — GitHubBackend construction validation)
+  - S02 ✅ complete (R066 validated — TUI trace viewer)
+  - S03 ✅ complete (R067 validated — OTel metrics)
+  - S04 ✅ complete (R082 validated — Wizard runnable criteria)
+
+All 76 requirements validated. 0 active. 1525 tests passing.
 
 ## Next Action
-Write S04 slice summary, mark S04 done in roadmap, update milestone summary, advance to next slice.
+No next action — milestone M013 is the final planned milestone. Begin M014 planning when new requirements emerge.
