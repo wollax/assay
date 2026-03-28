@@ -57,7 +57,7 @@
   - Verify: `cargo test -p assay-core --test otel_metrics --features telemetry` — contract tests pass; `cargo build -p assay-core` — default build clean; `cargo test -p assay-core --lib` — existing telemetry unit tests pass
   - Done when: All contract tests from T01 pass; `TracingGuard` shuts down meters then traces; recording functions are pub and callable without cfg guards
 
-- [ ] **T03: Instrument pipeline and merge code paths** `est:30m`
+- [x] **T03: Instrument pipeline and merge code paths** `est:30m`
   - Why: Places the five recording calls at their instrumentation sites — the actual metric emission that makes the feature useful
   - Files: `crates/assay-core/src/pipeline.rs`, `crates/assay-core/src/orchestrate/merge_runner.rs`
   - Do: Add `record_session_launched()` at `run_session` entry. Add `record_gate_evaluated()` + `Instant`-based `record_gate_eval_latency(elapsed_ms)` in the `gate_evaluate` span scope. Add `record_merges_attempted()` at `merge_completed_sessions` entry. Add `Instant`-based `record_agent_run_duration(elapsed_ms)` wrapping `launch_agent` call. Use `Instant::elapsed().as_secs_f64() * 1000.0` for histogram values. All calls are unconditional (no cfg guards) — recording functions no-op when metrics not initialized. Run `just ready` to verify zero regression.

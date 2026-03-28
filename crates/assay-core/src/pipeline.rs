@@ -756,6 +756,7 @@ pub fn execute_session(
     })?;
 
     // ── Stage 4: AgentLaunch ─────────────────────────────────────
+    let agent_start = Instant::now();
     let agent_output =
         info_span!("agent_launch", spec = %manifest_session.spec).in_scope(|| {
             let stage_start = Instant::now();
@@ -835,6 +836,7 @@ pub fn execute_session(
             });
             Ok::<_, PipelineError>(output)
         })?;
+    crate::telemetry::record_agent_run_duration_ms(agent_start.elapsed().as_secs_f64() * 1000.0);
     // agent_output.stdout/stderr not used downstream — gate evaluation reads from the worktree filesystem.
     drop(agent_output);
 
@@ -842,6 +844,8 @@ pub fn execute_session(
     let (gate_summary, gate_passed) =
         info_span!("gate_evaluate", spec = %manifest_session.spec, spec_name = %spec_name)
             .in_scope(|| {
+                crate::telemetry::record_gate_evaluated();
+                let gate_start = Instant::now();
                 let stage_start = Instant::now();
                 let summary = match &spec_entry {
                     SpecEntry::Legacy { spec, .. } => {
@@ -880,6 +884,9 @@ pub fn execute_session(
                     stage: PipelineStage::GateEvaluate,
                     duration,
                 });
+                crate::telemetry::record_gate_eval_latency_ms(
+                    gate_start.elapsed().as_secs_f64() * 1000.0,
+                );
                 (summary, passed)
             });
 
@@ -979,6 +986,7 @@ pub fn run_session(
     config: &PipelineConfig,
     harness_writer: &HarnessWriter,
 ) -> std::result::Result<PipelineResult, PipelineError> {
+    crate::telemetry::record_session_launched();
     let setup = setup_session(manifest_session, config)?;
     execute_session(manifest_session, config, harness_writer, setup)
 }
