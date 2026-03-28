@@ -1,8 +1,8 @@
 # Kata State
 
 **Active Milestone:** M013 — Tech Debt & Deferred Features
-**Active Slice:** none (S01 complete, ready to execute S02)
-**Active Task:** none
+**Active Slice:** S02 — TUI Trace Viewer
+**Active Task:** T01 — Integration tests and trace_viewer module scaffold
 **Phase:** Executing
 
 ## Recent Decisions
@@ -23,4 +23,4 @@
   - S04: Wizard runnable criteria
 
 ## Next Action
-Begin M013/S02: TUI trace viewer. Create branch `kata/M013/S02`, implement `t` key → trace viewer screen that reads `.assay/traces/*.json` files, render span tree, Esc closes. Integration test reads real JsonFileLayer output.
+Execute M013/S02/T01: Create `trace_viewer.rs` module with `TraceEntry`, `SpanLine`, `load_traces()`, `flatten_span_tree()` and unit tests. Create integration test file `tests/trace_viewer.rs`.
