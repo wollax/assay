@@ -10,7 +10,7 @@ use ratatui::layout::Constraint;
 use ratatui::widgets::{Block, Borders, Cell, Row, Table};
 
 use crate::serve::queue::ServerState;
-use crate::serve::types::elapsed_secs_since;
+use crate::serve::types::{JobSource, elapsed_secs_since};
 
 /// Spawn the TUI background thread. Returns a JoinHandle.
 /// `shutdown` is an AtomicBool: when set to `true`, the TUI loop exits.
@@ -79,6 +79,11 @@ pub(crate) fn render(frame: &mut Frame, state: &Arc<Mutex<ServerState>>) {
                     .unwrap_or("?")
                     .to_string();
                 let worker = j.worker_host.clone().unwrap_or_else(|| "-".to_string());
+                let source = match j.source {
+                    JobSource::Tracker => "Tracker",
+                    JobSource::HttpApi => "HTTP",
+                    JobSource::DirectoryWatch => "DirWatch",
+                };
                 (
                     j.id.to_string(),
                     manifest_name,
@@ -86,6 +91,7 @@ pub(crate) fn render(frame: &mut Frame, state: &Arc<Mutex<ServerState>>) {
                     j.attempt.to_string(),
                     elapsed,
                     worker,
+                    source,
                 )
             })
             .collect::<Vec<_>>()
@@ -93,10 +99,11 @@ pub(crate) fn render(frame: &mut Frame, state: &Arc<Mutex<ServerState>>) {
 
     let rows: Vec<Row> = jobs
         .iter()
-        .map(|(id, name, status, attempt, elapsed, worker)| {
+        .map(|(id, name, status, attempt, elapsed, worker, source)| {
             Row::new(vec![
                 Cell::from(id.as_str()),
                 Cell::from(name.as_str()),
+                Cell::from(*source),
                 Cell::from(status.as_str()),
                 Cell::from(attempt.as_str()),
                 Cell::from(elapsed.as_str()),
@@ -108,6 +115,7 @@ pub(crate) fn render(frame: &mut Frame, state: &Arc<Mutex<ServerState>>) {
     let widths = [
         Constraint::Length(10), // id
         Constraint::Fill(1),    // name (variable)
+        Constraint::Length(10), // source
         Constraint::Length(12), // status
         Constraint::Length(8),  // attempt
         Constraint::Length(8),  // elapsed
@@ -116,7 +124,7 @@ pub(crate) fn render(frame: &mut Frame, state: &Arc<Mutex<ServerState>>) {
 
     let table = Table::new(rows, widths)
         .header(Row::new(vec![
-            "Job ID", "Manifest", "Status", "Attempt", "Elapsed", "Worker",
+            "Job ID", "Manifest", "Source", "Status", "Attempt", "Elapsed", "Worker",
         ]))
         .block(
             Block::default()
@@ -135,6 +143,18 @@ mod tests {
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
     use std::path::PathBuf;
+
+    /// Helper: render the TUI into a `TestBackend` and return the buffer text.
+    fn render_to_text(state: &Arc<Mutex<ServerState>>) -> String {
+        let backend = TestBackend::new(120, 10);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|frame| render(frame, state)).unwrap();
+        let buf = terminal.backend().buffer().clone();
+        buf.content
+            .iter()
+            .map(|cell| cell.symbol().chars().next().unwrap_or(' '))
+            .collect()
+    }
 
     #[test]
     fn test_tui_render_worker_host() {
@@ -162,17 +182,7 @@ mod tests {
         });
 
         let shared = Arc::new(Mutex::new(state));
-        let backend = TestBackend::new(100, 10);
-        let mut terminal = Terminal::new(backend).unwrap();
-        terminal.draw(|frame| render(frame, &shared)).unwrap();
-
-        // Collect all buffer content into a single string for assertion
-        let buf = terminal.backend().buffer().clone();
-        let text: String = buf
-            .content
-            .iter()
-            .map(|cell| cell.symbol().chars().next().unwrap_or(' '))
-            .collect();
+        let text = render_to_text(&shared);
 
         assert!(
             text.contains("worker-1"),
@@ -181,6 +191,64 @@ mod tests {
         assert!(
             text.contains("Worker"),
             "expected 'Worker' header in TUI output"
+        );
+        assert!(
+            text.contains("Source"),
+            "expected 'Source' header in TUI output"
+        );
+        assert!(
+            text.contains("HTTP"),
+            "expected 'HTTP' source for HttpApi jobs"
+        );
+    }
+
+    #[test]
+    fn test_tui_render_tracker_source() {
+        let mut state = ServerState::new(1);
+        state.jobs.push_back(QueuedJob {
+            id: JobId::new("job-t1"),
+            manifest_path: PathBuf::from("tracker-issue.smelt.toml"),
+            source: JobSource::Tracker,
+            attempt: 0,
+            status: JobStatus::Queued,
+            queued_at: now_epoch(),
+            started_at: None,
+            worker_host: None,
+        });
+
+        let shared = Arc::new(Mutex::new(state));
+        let text = render_to_text(&shared);
+
+        assert!(
+            text.contains("Source"),
+            "expected 'Source' header in TUI output"
+        );
+        assert!(
+            text.contains("Tracker"),
+            "expected 'Tracker' in TUI output for tracker-sourced job"
+        );
+    }
+
+    #[test]
+    fn test_tui_render_dirwatch_source() {
+        let mut state = ServerState::new(1);
+        state.jobs.push_back(QueuedJob {
+            id: JobId::new("job-d1"),
+            manifest_path: PathBuf::from("watched.smelt.toml"),
+            source: JobSource::DirectoryWatch,
+            attempt: 0,
+            status: JobStatus::Queued,
+            queued_at: now_epoch(),
+            started_at: None,
+            worker_host: None,
+        });
+
+        let shared = Arc::new(Mutex::new(state));
+        let text = render_to_text(&shared);
+
+        assert!(
+            text.contains("DirWatch"),
+            "expected 'DirWatch' in TUI output for directory-watch job"
         );
     }
 }

@@ -302,9 +302,60 @@ Queue state is automatically persisted to `queue_dir/.smelt-queue-state.toml` af
 
 When `[[workers]]` entries are present in the server config, `smelt serve` dispatches jobs to remote hosts via SSH instead of running them locally. Jobs are round-robined across available workers; unreachable workers are skipped and the job is re-queued for the next available host.
 
+### Tracker-Driven Dispatch
+
+`smelt serve` can automatically poll an external issue tracker (GitHub Issues or Linear) for work items tagged with lifecycle labels. When an issue is labelled `smelt:ready`, the poller picks it up, transitions it to `smelt:queued`, generates a job manifest from a template, and enqueues the job.
+
+**Configuration** — add a `[tracker]` section to `server.toml`:
+
+```toml
+# GitHub provider
+[tracker]
+provider = "github"
+repo = "myorg/myrepo"
+manifest_template = "path/to/template.toml"
+poll_interval_secs = 30
+label_prefix = "smelt"
+default_harness = "bash"
+default_timeout = 600
+```
+
+```toml
+# Linear provider
+[tracker]
+provider = "linear"
+api_key_env = "LINEAR_API_KEY"
+team_id = "team-uuid-here"
+manifest_template = "path/to/template.toml"
+poll_interval_secs = 60
+label_prefix = "smelt"
+default_harness = "bash"
+default_timeout = 600
+```
+
+The `manifest_template` must be a valid job manifest TOML with **no** `[[session]]` entries — sessions are injected dynamically from tracker issues. The template is validated at startup.
+
+**Lifecycle labels** — the poller manages label transitions automatically: `ready` → `queued` → `running` → `complete` / `failed`. Labels are created in the tracker on first startup if they don't exist.
+
+Tracker-sourced jobs appear in the TUI with source `Tracker` (vs `HTTP` for API-submitted jobs or `DirWatch` for filesystem-watched jobs).
+
+### State Backend Passthrough
+
+Job manifests may include an optional `[state_backend]` section that configures where Assay persists session state inside the container. When present, this section is passed through verbatim into the Assay RunManifest TOML:
+
+```toml
+[state_backend]
+type = "linear"
+api_key_env = "LINEAR_API_KEY"
+project_id = "project-uuid"
+team_id = "team-uuid"
+```
+
+Supported types: `"linear"`, `"file"` (default when absent). The state backend is opaque to Smelt — it is serialized into the RunManifest and interpreted by Assay at runtime.
+
 ### Live TUI
 
-By default, `smelt serve` displays a live Ratatui terminal dashboard showing all jobs, their status, assigned worker, and elapsed time. Use `--no-tui` to disable the TUI and keep tracing output on stderr instead.
+By default, `smelt serve` displays a live Ratatui terminal dashboard showing all jobs, their status, source, assigned worker, and elapsed time. Use `--no-tui` to disable the TUI and keep tracing output on stderr instead.
 
 ---
 

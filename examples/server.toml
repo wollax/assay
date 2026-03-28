@@ -69,3 +69,46 @@ port = 8765
 # [auth]
 # write_token_env = "SMELT_WRITE_TOKEN"
 # read_token_env = "SMELT_READ_TOKEN"
+
+# [tracker] — optional. Tracker-driven dispatch.
+# When present, smelt serve polls an external tracker (GitHub Issues or Linear)
+# for issues tagged with lifecycle labels. Issues in the "ready" state are
+# automatically converted into job manifests and enqueued. The poller manages
+# label transitions through the lifecycle: ready → queued → running → complete/failed.
+#
+# Common fields:
+#   provider           — "github" or "linear" (required)
+#   manifest_template  — path to a template .toml manifest with no [[session]] entries;
+#                         the poller injects a session from each tracker issue (required)
+#   poll_interval_secs — seconds between poll cycles (default: 30)
+#   label_prefix       — prefix for lifecycle labels, e.g. "smelt" → "smelt:ready" (default: "smelt")
+#   default_harness    — harness name injected into generated sessions (required)
+#   default_timeout    — timeout in seconds for generated jobs (required)
+#
+# GitHub-specific fields:
+#   repo — repository in "owner/repo" format (required for github provider)
+#
+# Linear-specific fields:
+#   api_key_env — name of env var holding the Linear API key (required for linear provider)
+#   team_id     — Linear team UUID (required for linear provider)
+
+# Example: GitHub provider
+# [tracker]
+# provider = "github"
+# repo = "myorg/myrepo"
+# manifest_template = "examples/job-manifest.toml"
+# poll_interval_secs = 30
+# label_prefix = "smelt"
+# default_harness = "bash"
+# default_timeout = 600
+
+# Example: Linear provider
+# [tracker]
+# provider = "linear"
+# api_key_env = "LINEAR_API_KEY"
+# team_id = "team-uuid-here"
+# manifest_template = "examples/job-manifest.toml"
+# poll_interval_secs = 60
+# label_prefix = "smelt"
+# default_harness = "bash"
+# default_timeout = 600

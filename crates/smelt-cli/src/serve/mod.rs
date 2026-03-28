@@ -16,6 +16,8 @@ pub mod tracker;
 pub use ssh::{SshClient, SshOutput, SubprocessSshClient};
 pub(crate) mod dispatch;
 pub(crate) use dispatch::dispatch_loop;
+pub(crate) mod tracker_poller;
+pub(crate) use tracker_poller::{AnyTrackerSource, TrackerPoller};
 pub(crate) mod queue_watcher;
 pub(crate) use queue_watcher::DirectoryWatcher;
 pub(crate) mod http_api;

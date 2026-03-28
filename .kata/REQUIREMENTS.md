@@ -193,14 +193,14 @@ This file is the explicit capability and coverage contract for the project.
 
 ### R075 — State backend passthrough in JobManifest
 - Class: integration
-- Status: active
+- Status: validated
 - Description: Smelt's `JobManifest` accepts an optional `[state_backend]` section that is forwarded into the Assay RunManifest generated inside the container. This allows orchestrator state to flow to Linear/GitHub/SSH instead of being trapped in ephemeral containers.
 - Why it matters: When dispatching from a tracker, orchestrator status should be visible in the same tracker — not trapped in a container that gets torn down.
 - Source: user
 - Primary owning slice: M012/S05
 - Supporting slices: none
-- Validation: unmapped
-- Notes: Maps to Assay's `StateBackendConfig` enum (local_fs, linear, github, ssh, custom). Smelt serializes it into the RunManifest TOML without interpreting it — pure passthrough.
+- Validation: validated
+- Notes: Maps to Assay's `StateBackendConfig` enum (local_fs, linear, github, ssh, custom). Smelt serializes it into the RunManifest TOML without interpreting it — pure passthrough. Proven by M012/S05/T01: `SmeltRunManifest.state_backend` with `#[serde(default, skip_serializing_if)]`; `build_run_manifest_toml()` clones field from JobManifest; 3 unit tests cover None (omitted), Linear (`[state_backend.linear]` with team_id/project_id), and LocalFs variants. `cargo test --workspace` passes 398 tests including these. Tagged-enum TOML shape (`[state_backend.linear]`) is correct serde behavior.
 
 ---
 
@@ -589,11 +589,11 @@ This file is the explicit capability and coverage contract for the project.
 | R072 | integration          | active      | M012/S02      | M012/S03,S04         | mapped    |
 | R073 | integration          | active      | M012/S02      | M012/S03,S04         | mapped    |
 | R074 | operability          | active      | M012/S02      | M012/S03,S04         | mapped    |
-| R075 | integration          | active      | M012/S05      | none                 | mapped    |
+| R075 | integration          | validated   | M012/S05      | none                 | validated |
 
 ## Coverage Summary
 
-- Active requirements: 8 (R026, R070, R071, R072, R073, R074, R075)
+- Active requirements: 7 (R026, R070, R071, R072, R073, R074)
 - Mapped to slices: 8
 - Validated (all milestones through M012/S01): 35 (R001–R008, R010–R015, R020, R021, R023, R024, R025, R027, R028, R040–R045, R050–R053, R060, R061, R062, R063)
 - Unmapped active requirements: 0

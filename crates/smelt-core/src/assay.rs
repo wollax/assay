@@ -17,6 +17,7 @@ use tracing::{debug, info};
 use crate::error::SmeltError;
 use crate::manifest::{JobManifest, SessionDef};
 use crate::provider::{ContainerId, ExecHandle};
+use crate::tracker::StateBackendConfig;
 
 /// Path where the Assay run manifest is written inside the container.
 const CONTAINER_MANIFEST_PATH: &str = "/tmp/smelt-manifest.toml";
@@ -31,6 +32,14 @@ const CONTAINER_MANIFEST_PATH: &str = "/tmp/smelt-manifest.toml";
 pub(crate) struct SmeltRunManifest {
     /// Session references for Assay to execute.
     pub sessions: Vec<SmeltManifestSession>,
+
+    /// Optional state-backend configuration passed through from the job manifest.
+    ///
+    /// When present, serializes as a `[state_backend]` section in the TOML.
+    /// Omitted entirely when `None` (backward compat — existing manifests without
+    /// this field still parse via `serde(default)`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub state_backend: Option<StateBackendConfig>,
 }
 
 /// A single entry in the run manifest's `[[sessions]]` array.
@@ -185,6 +194,7 @@ impl AssayInvoker {
                     depends_on: s.depends_on.clone(),
                 })
                 .collect(),
+            state_backend: manifest.state_backend.clone(),
         };
 
         let toml_str = toml::to_string_pretty(&run_manifest)
@@ -746,6 +756,119 @@ depends_on = ["alpha", "beta"]
         assert!(
             parsed["sessions"][0].get("depends_on").is_none(),
             "sessions[0] must not serialize an empty depends_on"
+        );
+    }
+
+    // ── State backend passthrough tests ───────────────────────────
+
+    /// When `state_backend` is `None` (default), the run manifest TOML must not
+    /// contain any `state_backend` key — backward compat with existing manifests.
+    #[test]
+    fn test_run_manifest_no_state_backend_when_none() {
+        let manifest = test_manifest(
+            r#"
+[[session]]
+name = "unit-tests"
+spec = "Run the unit test suite"
+harness = "cargo test"
+timeout = 300
+"#,
+        );
+
+        // Confirm the manifest has no state_backend set
+        assert!(manifest.state_backend.is_none());
+
+        let toml_str = AssayInvoker::build_run_manifest_toml(&manifest);
+
+        assert!(
+            !toml_str.contains("state_backend"),
+            "run manifest must not contain state_backend when None; got:\n{toml_str}"
+        );
+
+        // Must still round-trip through deny_unknown_fields
+        let parsed: SmeltRunManifest =
+            toml::from_str(&toml_str).expect("SmeltRunManifest roundtrip must succeed");
+        assert!(parsed.state_backend.is_none());
+    }
+
+    /// When `state_backend` is `Linear { team_id, project_id }`, the run manifest
+    /// TOML must contain a `[state_backend]` section with `type = "linear"` and fields.
+    #[test]
+    fn test_run_manifest_linear_state_backend() {
+        let mut manifest = test_manifest(
+            r#"
+[[session]]
+name = "unit-tests"
+spec = "Run the unit test suite"
+harness = "cargo test"
+timeout = 300
+"#,
+        );
+        manifest.state_backend = Some(StateBackendConfig::Linear {
+            team_id: "TEAM-42".to_string(),
+            project_id: Some("PROJ-99".to_string()),
+        });
+
+        let toml_str = AssayInvoker::build_run_manifest_toml(&manifest);
+
+        // Must contain state_backend section (tagged enum serializes as [state_backend.linear])
+        assert!(
+            toml_str.contains("[state_backend"),
+            "run manifest must contain [state_backend...] section; got:\n{toml_str}"
+        );
+
+        // Parse and verify the content
+        let parsed: toml::Value = toml::from_str(&toml_str).expect("TOML must be valid");
+        let sb = parsed
+            .get("state_backend")
+            .expect("state_backend must exist");
+        let linear = sb.get("linear").expect("state_backend.linear must exist");
+        assert_eq!(
+            linear.get("team_id").and_then(|v| v.as_str()),
+            Some("TEAM-42"),
+            "state_backend.linear.team_id must be 'TEAM-42'"
+        );
+        assert_eq!(
+            linear.get("project_id").and_then(|v| v.as_str()),
+            Some("PROJ-99"),
+            "state_backend.linear.project_id must be 'PROJ-99'"
+        );
+
+        // Must round-trip through deny_unknown_fields
+        let parsed_typed: SmeltRunManifest =
+            toml::from_str(&toml_str).expect("SmeltRunManifest roundtrip must succeed");
+        assert_eq!(parsed_typed.state_backend, manifest.state_backend);
+    }
+
+    /// When `state_backend` is `LocalFs`, the run manifest TOML must contain
+    /// `state_backend = "local_fs"`.
+    #[test]
+    fn test_run_manifest_local_fs_state_backend() {
+        let mut manifest = test_manifest(
+            r#"
+[[session]]
+name = "unit-tests"
+spec = "Run the unit test suite"
+harness = "cargo test"
+timeout = 300
+"#,
+        );
+        manifest.state_backend = Some(StateBackendConfig::LocalFs);
+
+        let toml_str = AssayInvoker::build_run_manifest_toml(&manifest);
+
+        // LocalFs serializes as a bare string, not a table
+        assert!(
+            toml_str.contains(r#"state_backend = "local_fs""#),
+            "run manifest must contain state_backend = \"local_fs\"; got:\n{toml_str}"
+        );
+
+        // Must round-trip through deny_unknown_fields
+        let parsed_typed: SmeltRunManifest =
+            toml::from_str(&toml_str).expect("SmeltRunManifest roundtrip must succeed");
+        assert_eq!(
+            parsed_typed.state_backend,
+            Some(StateBackendConfig::LocalFs)
         );
     }
 }

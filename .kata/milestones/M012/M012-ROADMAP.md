@@ -68,7 +68,7 @@ This milestone is complete only when all are true:
 - [x] **S04: Linear Tracker Backend** `risk:medium` `depends:[S02]`
   > After this: `LinearTrackerSource` polls Linear via GraphQL API, transitions labels, generates manifests from templates. Proven by unit tests with mock HTTP and integration tests against a real Linear project (gated by env var).
 
-- [ ] **S05: Dispatch Integration, State Backend Passthrough & Final Assembly** `risk:medium` `depends:[S03,S04]`
+- [x] **S05: Dispatch Integration, State Backend Passthrough & Final Assembly** `risk:medium` `depends:[S03,S04]`
   > After this: TrackerPoller runs inside `smelt serve`'s main loop, enqueuing tracker issues into ServerState; `state_backend` in JobManifest is forwarded into the Assay RunManifest TOML; TUI shows tracker-sourced jobs; server.toml example and README updated. End-to-end proven by integration test.
 
 ## Boundary Map

@@ -19,9 +19,12 @@ use clap::Parser;
 use tokio::net::TcpListener;
 use tokio_util::sync::CancellationToken;
 
+use crate::serve::github::{GithubTrackerSource, SubprocessGhClient};
+use crate::serve::linear::{LinearTrackerSource, ReqwestLinearClient};
 use crate::serve::{
-    DirectoryWatcher, ServerConfig, ServerState, SubprocessSshClient, build_router, dispatch_loop,
-    http_api::resolve_auth, run_tui,
+    AnyTrackerSource, DirectoryWatcher, ServerConfig, ServerState, SubprocessSshClient,
+    TrackerPoller, build_router, dispatch_loop, http_api::resolve_auth, run_tui,
+    tracker::load_template_manifest,
 };
 
 /// `smelt serve` command arguments.
@@ -83,6 +86,77 @@ pub async fn execute(args: &ServeArgs) -> anyhow::Result<i32> {
     let workers = config.workers.clone();
     let ssh_timeout_secs = config.ssh_timeout_secs;
 
+    // Build the optional tracker poller.
+    let mut tracker_poller: Option<TrackerPoller> = match config.tracker {
+        Some(ref tracker_config) => {
+            let source = match tracker_config.provider.as_str() {
+                "github" => {
+                    let repo = tracker_config
+                        .repo
+                        .clone()
+                        .expect("github provider requires repo (validated at startup)");
+                    AnyTrackerSource::GitHub(GithubTrackerSource::new(
+                        SubprocessGhClient,
+                        repo,
+                        tracker_config.label_prefix.clone(),
+                    ))
+                }
+                "linear" => {
+                    let api_key_env = tracker_config
+                        .api_key_env
+                        .as_deref()
+                        .expect("linear provider requires api_key_env (validated at startup)");
+                    let api_key = std::env::var(api_key_env).map_err(|_| {
+                        anyhow::anyhow!(
+                            "tracker api_key_env '{}' is not set in the environment",
+                            api_key_env
+                        )
+                    })?;
+                    let team_id = tracker_config
+                        .team_id
+                        .clone()
+                        .expect("linear provider requires team_id (validated at startup)");
+                    let client = ReqwestLinearClient::new(
+                        api_key,
+                        "https://api.linear.app/graphql".to_string(),
+                    )?;
+                    AnyTrackerSource::Linear(LinearTrackerSource::new(
+                        client,
+                        team_id,
+                        tracker_config.label_prefix.clone(),
+                    ))
+                }
+                other => {
+                    anyhow::bail!(
+                        "unsupported tracker provider '{}' (expected 'github' or 'linear')",
+                        other
+                    );
+                }
+            };
+
+            let template_toml = std::fs::read_to_string(&tracker_config.manifest_template)?;
+            let template = load_template_manifest(&tracker_config.manifest_template)?;
+            let interval = Duration::from_secs(tracker_config.poll_interval_secs);
+
+            tracing::info!(
+                provider = %tracker_config.provider,
+                poll_interval_secs = tracker_config.poll_interval_secs,
+                "tracker poller configured"
+            );
+
+            Some(TrackerPoller {
+                source,
+                template,
+                template_toml,
+                config: tracker_config.clone(),
+                state: Arc::clone(&state),
+                cancel: cancel_token.child_token(),
+                interval,
+            })
+        }
+        None => None,
+    };
+
     // Spawn the TUI thread when TUI mode is active.
     let tui_handle: Option<std::thread::JoinHandle<()>> = if !args.no_tui {
         Some(run_tui(Arc::clone(&state), Arc::clone(&shutdown)))
@@ -115,6 +189,21 @@ pub async fn execute(args: &ServeArgs) -> anyhow::Result<i32> {
         } => {
             tracing::info!("TUI requested shutdown");
             cancel_for_tui.cancel();
+        }
+        // Tracker poller arm — runs only when [tracker] is configured.
+        // When tracker is None, pending::<()>() never resolves so this arm
+        // is effectively a no-op.
+        result = async {
+            match tracker_poller.as_mut() {
+                Some(poller) => poller.run().await,
+                None => { std::future::pending::<anyhow::Result<()>>().await }
+            }
+        } => {
+            if let Err(e) = result {
+                tracing::error!(error = %e, "tracker poller exited with error");
+            }
+            shutdown.store(true, Ordering::SeqCst);
+            cancel_token.cancel();
         }
     }
 
