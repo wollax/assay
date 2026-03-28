@@ -49,6 +49,16 @@ pub enum StateBackendConfig {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         port: Option<u16>,
     },
+    /// Smelt backend for pushing session events to Smelt's HTTP server.
+    Smelt {
+        /// Smelt server URL (e.g. `http://localhost:9000`).
+        url: String,
+        /// Job identifier for scoping events.
+        job_id: String,
+        /// Optional bearer token for authentication.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        token: Option<String>,
+    },
     /// Custom third-party backend identified by name.
     Custom {
         /// Identifier for the backend implementation.

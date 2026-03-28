@@ -25,3 +25,4 @@ tracing-test = { workspace = true }
 linear = ["reqwest"]
 github = []
 ssh = ["tempfile"]
+smelt = ["reqwest"]

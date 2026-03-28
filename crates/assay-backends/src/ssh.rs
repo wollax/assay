@@ -216,7 +216,13 @@ impl SshSyncBackend {
 
 impl StateBackend for SshSyncBackend {
     fn capabilities(&self) -> CapabilitySet {
-        CapabilitySet::all()
+        CapabilitySet {
+            supports_messaging: true,
+            supports_gossip_manifest: true,
+            supports_annotations: true,
+            supports_checkpoints: true,
+            supports_signals: false,
+        }
     }
 
     fn push_session_event(

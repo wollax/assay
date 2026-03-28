@@ -35,6 +35,8 @@ pub struct CapabilitySet {
     pub supports_annotations: bool,
     /// Whether the backend supports team checkpoint persistence.
     pub supports_checkpoints: bool,
+    /// Whether the backend supports external signal reception (e.g. HTTP endpoint).
+    pub supports_signals: bool,
 }
 
 impl CapabilitySet {
@@ -45,6 +47,7 @@ impl CapabilitySet {
             supports_gossip_manifest: true,
             supports_annotations: true,
             supports_checkpoints: true,
+            supports_signals: true,
         }
     }
 
@@ -55,6 +58,7 @@ impl CapabilitySet {
             supports_gossip_manifest: false,
             supports_annotations: false,
             supports_checkpoints: false,
+            supports_signals: false,
         }
     }
 }
@@ -235,7 +239,13 @@ impl LocalFsBackend {
 
 impl StateBackend for LocalFsBackend {
     fn capabilities(&self) -> CapabilitySet {
-        CapabilitySet::all()
+        CapabilitySet {
+            supports_messaging: true,
+            supports_gossip_manifest: true,
+            supports_annotations: true,
+            supports_checkpoints: true,
+            supports_signals: false,
+        }
     }
 
     fn push_session_event(&self, run_dir: &Path, status: &OrchestratorStatus) -> crate::Result<()> {
