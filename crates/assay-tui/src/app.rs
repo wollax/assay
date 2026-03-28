@@ -132,6 +132,13 @@ pub enum Screen {
         /// Inline error message from a failed load or save attempt.
         error: Option<String>,
     },
+    /// Trace viewer screen — list of recent traces with span tree drill-down.
+    TraceViewer {
+        /// Loaded trace entries (sorted by mtime descending).
+        traces: Vec<crate::trace_viewer::TraceEntry>,
+        /// Currently selected trace index in the list.
+        selected: usize,
+    },
 }
 
 // ── App ───────────────────────────────────────────────────────────────────────
@@ -556,6 +563,9 @@ impl App {
                     error.as_deref(),
                 );
             }
+            Screen::TraceViewer { traces, selected } => {
+                draw_trace_viewer(frame, content_area, traces, *selected);
+            }
         }
 
         let project_name = self
@@ -742,6 +752,16 @@ impl App {
                             let assay_dir = root.join(".assay");
                             self.analytics_report = compute_analytics(&assay_dir).ok();
                             self.screen = Screen::Analytics;
+                        }
+                    }
+                    KeyCode::Char('t') => {
+                        if let Some(ref root) = self.project_root {
+                            let assay_dir = root.join(".assay");
+                            let traces = crate::trace_viewer::load_traces(&assay_dir);
+                            self.screen = Screen::TraceViewer {
+                                traces,
+                                selected: 0,
+                            };
                         }
                     }
                     KeyCode::Char('s') => {
@@ -1251,6 +1271,31 @@ impl App {
             }
 
             Screen::McpPanel { .. } => self.handle_mcp_panel_event(key),
+
+            Screen::TraceViewer { .. } => {
+                match key.code {
+                    KeyCode::Esc => {
+                        self.screen = Screen::Dashboard;
+                    }
+                    KeyCode::Char('q') => return true,
+                    KeyCode::Up => {
+                        if let Screen::TraceViewer { selected, .. } = &mut self.screen {
+                            *selected = selected.saturating_sub(1);
+                        }
+                    }
+                    KeyCode::Down => {
+                        if let Screen::TraceViewer {
+                            traces, selected, ..
+                        } = &mut self.screen
+                            && !traces.is_empty()
+                        {
+                            *selected = (*selected + 1).min(traces.len() - 1);
+                        }
+                    }
+                    _ => {}
+                }
+                false
+            }
         }
     }
 }
@@ -1838,6 +1883,66 @@ fn draw_analytics(frame: &mut ratatui::Frame, area: Rect, report: Option<&Analyt
 }
 
 /// Render the persistent one-line status bar showing project context.
+/// Render the trace viewer screen.
+fn draw_trace_viewer(
+    frame: &mut ratatui::Frame,
+    area: Rect,
+    traces: &[crate::trace_viewer::TraceEntry],
+    selected: usize,
+) {
+    if traces.is_empty() {
+        let msg = Paragraph::new("No trace files found.\n\nRun an instrumented pipeline to generate traces.\n\nPress Esc to return.")
+            .block(Block::default().title(" Traces ").borders(Borders::ALL));
+        frame.render_widget(msg, area);
+        return;
+    }
+
+    let header = Row::new(vec![
+        Cell::from("Timestamp"),
+        Cell::from("Root Span"),
+        Cell::from("Spans"),
+        Cell::from("Duration"),
+    ])
+    .style(Style::default().bold());
+
+    let rows: Vec<Row> = traces
+        .iter()
+        .enumerate()
+        .map(|(i, t)| {
+            let dur = t
+                .duration_ms
+                .map(|ms| format!("{ms:.1}ms"))
+                .unwrap_or_else(|| "—".to_string());
+            let style = if i == selected {
+                Style::default().fg(Color::Black).bg(Color::Cyan)
+            } else {
+                Style::default()
+            };
+            Row::new(vec![
+                Cell::from(t.timestamp.clone()),
+                Cell::from(t.root_span_name.clone()),
+                Cell::from(t.span_count.to_string()),
+                Cell::from(dur),
+            ])
+            .style(style)
+        })
+        .collect();
+
+    let table = Table::new(
+        rows,
+        [
+            Constraint::Min(26),
+            Constraint::Fill(1),
+            Constraint::Length(6),
+            Constraint::Length(12),
+        ],
+    )
+    .header(header)
+    .block(Block::default().title(" Traces ").borders(Borders::ALL));
+
+    frame.render_widget(table, area);
+}
+
 ///
 /// Shows: `<project_name>  ·  <cycle_slug>  ·  ? help  q quit` (dim hints).
 /// When `project_name` is empty and `cycle_slug` is `None`, only the key hints

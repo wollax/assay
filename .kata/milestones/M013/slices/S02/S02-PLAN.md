@@ -43,7 +43,7 @@
 
 ## Tasks
 
-- [ ] **T01: Integration tests and trace_viewer module scaffold** `est:45m`
+- [x] **T01: Integration tests and trace_viewer module scaffold** `est:45m`
   - Why: Test-first — define the contract before building the UI. Creates the integration test file and the trace_viewer module with types and trace-loading logic.
   - Files: `crates/assay-tui/tests/trace_viewer.rs`, `crates/assay-tui/src/trace_viewer.rs`, `crates/assay-tui/src/lib.rs`
   - Do: Create `trace_viewer.rs` with `TraceEntry` struct, `load_traces()` fn (reads dir, parses JSON, sorts by mtime, caps at 20), `flatten_span_tree()` fn (builds adjacency map, handles orphan roots, returns indented lines). Create integration test with fixture JSON exercising: `t` opens TraceViewer, Esc returns to Dashboard, load_traces returns correct entries, orphan span handling, empty dir handling. Tests will initially fail (Screen variant doesn't exist yet).
