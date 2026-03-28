@@ -57,7 +57,7 @@
   - Verify: `cargo test -p assay-tui --test trace_viewer` — screen transition tests pass
   - Done when: `t` opens TraceViewer, Enter expands span tree, Esc chain works (span→list→Dashboard), help overlay updated
 
-- [ ] **T03: Render trace list and span tree** `est:45m`
+- [x] **T03: Render trace list and span tree** `est:45m`
   - Why: Build the visual rendering — the actual UI the user sees. Makes the integration tests fully pass.
   - Files: `crates/assay-tui/src/trace_viewer.rs`, `crates/assay-tui/src/app.rs`
   - Do: Implement `draw_trace_viewer()` free function (D097/D105 pattern — takes `frame, area, traces, trace_list_state, selected_trace, span_lines, span_list_state`). Trace list view: bordered block titled "Traces", each item shows `timestamp  root_span  spans:N  duration_ms`. Span tree view: bordered block titled with trace root span name, each line indented with `"  ".repeat(depth)` + span name + duration. Empty state: centered paragraph "No traces found. Run an instrumented pipeline to generate traces." Wire `draw_trace_viewer` into `App::draw()` match on `Screen::TraceViewer { .. }`. Verify all integration tests pass. Run `just ready`.

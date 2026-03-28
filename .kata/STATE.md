@@ -2,8 +2,8 @@
 
 **Active Milestone:** M013 — Tech Debt & Deferred Features
 **Active Slice:** S02 — TUI Trace Viewer
-**Active Task:** T03 — Render trace list and span tree
-**Phase:** Executing
+**Active Task:** — (S02 complete, all tasks done)
+**Phase:** Summarizing
 
 ## Recent Decisions
 - D178: Wizard cmd field is optional and per-criterion; empty input skips cmd
@@ -17,9 +17,9 @@
 ## Progress
 - M012 ✅ COMPLETE (R080 validated, 1529 tests with all features)
 - M013: S01 ✅ complete (R081 validated, 1501 tests)
-  - S02: TUI trace viewer — T01 ✅, T02 ✅ (two-mode navigation, span tree drill-down, load_trace_spans)
+  - S02: TUI trace viewer — T01 ✅, T02 ✅, T03 ✅ (all tasks complete, 7 integration tests, `just ready` green)
   - S03: OTel metrics
   - S04: Wizard runnable criteria
 
 ## Next Action
-Execute M013/S02/T03: Render trace list and span tree. Note: T02 already implemented draw_trace_viewer with List-based rendering for both views — T03 may focus on polish, final integration test pass, and `just ready`.
+Write S02 slice summary, then advance to S03.

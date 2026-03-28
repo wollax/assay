@@ -105,6 +105,70 @@ fn write_trace_file(dir: &std::path::Path, id: &str, spans: &[SpanData]) {
 // ── Screen transition tests ───────────────────────────────────────────────────
 
 #[test]
+fn test_trace_viewer_with_traces_loads_entries() {
+    let tmp = TempDir::new().unwrap();
+    let root = setup_project(&tmp);
+    let traces_dir = root.join(".assay").join("traces");
+
+    // Write two trace fixture files with different mtimes.
+    let spans_old = vec![make_span(
+        "old-pipeline",
+        1,
+        None,
+        "2024-01-01T10:00:00Z",
+        Some(50.0),
+    )];
+    write_trace_file(&traces_dir, "trace-old", &spans_old);
+    std::thread::sleep(std::time::Duration::from_millis(50));
+
+    let spans_new = vec![
+        make_span(
+            "new-pipeline",
+            10,
+            None,
+            "2024-01-02T10:00:00Z",
+            Some(200.0),
+        ),
+        make_span(
+            "new-child",
+            11,
+            Some(10),
+            "2024-01-02T10:00:01Z",
+            Some(80.0),
+        ),
+    ];
+    write_trace_file(&traces_dir, "trace-new", &spans_new);
+
+    let mut app = App::with_project_root(Some(root)).unwrap();
+    app.handle_event(key(KeyCode::Char('t')));
+
+    match &app.screen {
+        Screen::TraceViewer {
+            traces,
+            trace_list_state,
+            selected_trace,
+            ..
+        } => {
+            assert_eq!(traces.len(), 2, "should load both trace files");
+            // Most recently modified file should be first (mtime descending).
+            assert_eq!(traces[0].root_span_name, "new-pipeline");
+            assert_eq!(traces[0].span_count, 2);
+            assert_eq!(traces[0].duration_ms, Some(200.0));
+            assert_eq!(traces[1].root_span_name, "old-pipeline");
+            assert_eq!(traces[1].span_count, 1);
+            assert_eq!(traces[1].duration_ms, Some(50.0));
+            // Selection should be at first entry.
+            assert_eq!(trace_list_state.selected(), Some(0));
+            assert!(selected_trace.is_none(), "should be in list mode");
+        }
+        _ => panic!(
+            "expected Screen::TraceViewer, got {:?}",
+            screen_name(&app.screen)
+        ),
+    }
+}
+
+#[test]
 fn test_t_key_transitions_to_trace_viewer() {
     let tmp = TempDir::new().unwrap();
     let root = setup_project(&tmp);
@@ -191,9 +255,11 @@ fn test_enter_expands_span_tree_and_esc_returns() {
     let root = setup_project(&tmp);
     let traces_dir = root.join(".assay").join("traces");
 
+    // 3 spans: root + 2 children.
     let spans = vec![
         make_span("pipeline", 1, None, "2024-01-01T12:00:00Z", Some(100.0)),
         make_span("gate-run", 2, Some(1), "2024-01-01T12:00:01Z", Some(50.0)),
+        make_span("review", 3, Some(1), "2024-01-01T12:00:02Z", Some(30.0)),
     ];
     write_trace_file(&traces_dir, "test-trace", &spans);
 
@@ -210,9 +276,13 @@ fn test_enter_expands_span_tree_and_esc_returns() {
             ..
         } => {
             assert_eq!(*selected_trace, Some(0), "should be in span tree mode");
-            assert_eq!(span_lines.len(), 2, "should have 2 span lines");
+            assert_eq!(span_lines.len(), 3, "should have 3 span lines");
             assert_eq!(span_lines[0].name, "pipeline");
+            assert_eq!(span_lines[0].depth, 0);
             assert_eq!(span_lines[1].name, "gate-run");
+            assert_eq!(span_lines[1].depth, 1);
+            assert_eq!(span_lines[2].name, "review");
+            assert_eq!(span_lines[2].depth, 1);
             assert_eq!(span_list_state.selected(), Some(0));
         }
         _ => panic!("expected TraceViewer in span mode"),
