@@ -785,29 +785,51 @@
 - Validation: S04 — plugins/smelt-agent/AGENTS.md (27 lines, ≤60 cap) with skill table, MCP tool table, and workflow overview; skills/run-dispatch.md, skills/backend-status.md, skills/peer-message.md all exist with valid YAML frontmatter; MCP tool names (orchestrate_run, orchestrate_status, run_manifest) verified against server.rs; just ready green
 - Notes: Plugin follows the same format as `plugins/claude-code/` and `plugins/codex/`. Skills document the MCP tool signatures stabilised in S02.
 
-## Deferred
-
 ### R066 — TUI trace viewer
 - Class: primary-user-loop
-- Status: deferred
-- Description: TUI screen showing recent orchestration traces with span tree, timing, and status. Accessible via a key from Dashboard.
-- Why it matters: The TUI is the primary surface — trace inspection should eventually be available without leaving the TUI.
+- Status: active
+- Description: TUI screen showing recent orchestration traces with span tree, timing, and status. Accessible via `t` key from Dashboard. Reads `.assay/traces/*.json` files written by `JsonFileLayer` (R063).
+- Why it matters: The TUI is the primary surface — trace inspection should be available without leaving the TUI. M009 built the data; M013 surfaces it.
 - Source: user
-- Primary owning slice: none (deferred to future milestone)
+- Primary owning slice: M013/S02
 - Supporting slices: none
 - Validation: unmapped
-- Notes: Deferred per user decision. Depends on R063 (JSON file export) for data source.
+- Notes: Depends on R063 (JSON file export). Trace file format from `JsonFileLayer` is the coupling surface.
 
 ### R067 — OTel metrics
 - Class: quality-attribute
-- Status: deferred
-- Description: OTel counters (sessions launched, gates evaluated, merges attempted) and histograms (gate eval latency, agent run duration) alongside tracing.
+- Status: active
+- Description: OTel counters (sessions launched, gates evaluated, merges attempted) and histograms (gate eval latency, agent run duration) alongside existing tracing spans. Feature-flagged under `telemetry`. `MeterProvider` stored in `TracingGuard` for clean shutdown.
 - Why it matters: Metrics enable dashboards, alerting, and trend analysis that tracing alone cannot provide efficiently.
 - Source: user
-- Primary owning slice: none (deferred to future milestone)
+- Primary owning slice: M013/S03
 - Supporting slices: none
 - Validation: unmapped
-- Notes: Deferred per user decision. Tracing provides the most diagnostic value first.
+- Notes: Uses same http-proto + hyper-client transport as OTLP trace export (D144). Default build must have zero new OTel deps.
+
+### R081 — GitHubBackend construction validation
+- Class: quality-attribute
+- Status: validated
+- Description: `GitHubBackend::new` emits `tracing::warn!` when `repo` is empty or missing a `/`. `read_issue_number` returns `Err` when the parsed issue number is `0`. `GhRunner` error helper extracted to reduce duplication. `factory.rs` doc comment cleaned of milestone identifiers.
+- Why it matters: Silent construction failures surface as confusing `gh` CLI errors at runtime instead of actionable diagnostics at construction time. Issue `0` can be written by file corruption and causes `gh issue view 0` to fail cryptically.
+- Source: execution (PR #193 review backlog Q001–Q004)
+- Primary owning slice: M013/S01
+- Supporting slices: none
+- Validation: S01 — Q001: `tracing::warn!(repo, ...)` in `GitHubBackend::new` when `repo.is_empty() || !repo.contains('/')`, proven by 2 `#[traced_test]` + `logs_contain("malformed")` tests; Q002: `if number == 0 { return Err(...) }` guard in `read_issue_number` proven by 1 contract test; Q003: `GhRunner::gh_error` helper extracted, 3 call sites deduplicated (grep confirmed); Q004: `grep -c '(M011/S' factory.rs` → 0; all 11 tests pass; `just ready` green with 1501 tests. Constructor stays infallible per D177.
+- Notes: Q001: validate `owner/repo` format at construction. Q002: reject issue `0` in `read_issue_number`. Q003: extract `GhRunner::gh_error` helper. Q004: clean factory.rs doc. `from_utf8_lossy` appears twice: once in `gh_error` (stderr) and once in `create_issue` (stdout URL parsing) — both correct.
+
+### R082 — Wizard runnable criteria
+- Class: primary-user-loop
+- Status: active
+- Description: `assay plan` wizard collects an optional `cmd` per criterion; `create_spec_from_params` writes the `cmd` field to gates.toml when provided. Generated specs can run `gate run` immediately without manual editing.
+- Why it matters: Currently wizard-generated specs have description-only criteria with no `cmd` field — they cannot run until manually edited. This defeats the purpose of a guided authoring wizard for users who don't know the spec format.
+- Source: user (D076 revisited)
+- Primary owning slice: M013/S04
+- Supporting slices: none
+- Validation: unmapped
+- Notes: `cmd` is optional — leaving it blank produces the same text-only output as today. CLI wizard prompts after each description; MCP `spec_create` tool accepts objects with optional `cmd`. Supersedes D076 ("Yes — if the wizard collects cmd per criterion in a future iteration").
+
+## Deferred
 
 ## Out of Scope
 
@@ -925,8 +947,8 @@
 | R063 | core-capability | validated | M009/S04 | M009/S01 | S04 |
 | R064 | core-capability | validated | M009/S05 | M009/S01 | S05 |
 | R065 | quality-attribute | validated | M009/S05 | M009/S02, M009/S03 | S05 |
-| R066 | primary-user-loop | deferred | none | none | unmapped |
-| R067 | quality-attribute | deferred | none | none | unmapped |
+| R066 | primary-user-loop | active | M013/S02 | none | unmapped |
+| R067 | quality-attribute | active | M013/S03 | none | unmapped |
 | R071 | core-capability | validated | M010/S01 | M010/S02 | S01 |
 | R072 | quality-attribute | validated | M010/S02 | none | S02 |
 | R073 | core-capability | validated | M010/S02 | M010/S03 | S02 |
@@ -937,12 +959,14 @@
 | R078 | core-capability | validated | M011/S04 | M011/S01 | S04 |
 | R079 | core-capability | validated | M011/S01 | M011/S04 | S01 |
 | R080 | core-capability | validated | M012/S01 | none | S01 |
+| R081 | quality-attribute | validated | M013/S01 | none | S01 |
+| R082 | primary-user-loop | active | M013/S04 | none | unmapped |
 
 ## Coverage Summary
 
-- Active requirements: 0
-- Validated: 72 (R001–R029 except R025, R034–R065, R071–R080)
+- Active requirements: 3 (R066, R067, R082)
+- Validated: 73 (R001–R029 except R025, R034–R065, R071–R081)
 - Unmapped active requirements: 0
-- Deferred: 3 (R025, R066, R067)
+- Deferred: 1 (R025)
 - Out of scope: 4 (R030, R031, R032, R033)
 - Unmapped active requirements: 0
