@@ -2,8 +2,8 @@
 
 **Active Milestone:** M013 — Tech Debt & Deferred Features
 **Active Slice:** S03 — OTel metrics
-**Active Task:** T03 — Instrument pipeline and merge code paths
-**Phase:** Executing
+**Active Task:** None — S03 complete
+**Phase:** Summarizing (S03)
 
 ## Recent Decisions
 - D185: OTel metrics verification strategy — contract tests with in-process MeterProvider, real collector is UAT
@@ -20,8 +20,8 @@
 - M013:
   - S01 ✅ complete (R081 validated, 1501 tests)
   - S02 ✅ complete (R066 validated, 7 integration tests, `just ready` green)
-  - S03: OTel metrics — T01 done, T02 done (metrics infra), T03 next
+  - S03 ✅ complete — T01 contract tests, T02 metrics infra, T03 instrumentation sites (1516 tests, all slice verification green)
   - S04: Wizard runnable criteria — not started
 
 ## Next Action
-Execute T03: Instrument pipeline and merge code paths with the five recording call sites.
+Write S03 slice summary, UAT, mark S03 done in roadmap, then advance to S04.
