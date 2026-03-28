@@ -57,6 +57,7 @@ where
     H: Fn(&str, &[String], &ConflictScan, &Path) -> ConflictResolutionResult,
 {
     let start = Instant::now();
+    crate::telemetry::record_merge_attempted();
     let project_root = &config.project_root;
 
     // Root merge span wraps the entire merge run, including pre-flight checks.

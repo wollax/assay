@@ -24,6 +24,8 @@ use std::collections::HashMap;
 use std::hash::{BuildHasher, Hasher, RandomState};
 use std::path::PathBuf;
 use std::sync::Mutex;
+#[cfg(feature = "telemetry")]
+use std::sync::OnceLock;
 
 use serde::{Deserialize, Serialize};
 use tempfile::NamedTempFile;
@@ -361,6 +363,187 @@ where
 }
 
 // ---------------------------------------------------------------------------
+// OTel metrics infrastructure
+// ---------------------------------------------------------------------------
+
+/// Build an OTel `SdkMeterProvider` for metrics export.
+///
+/// Returns `Some(provider)` when `config.otlp_endpoint` is set and the
+/// exporter builds successfully. Returns `None` silently when no endpoint
+/// is configured; returns `None` with a `tracing::warn!` on initialization
+/// failure.
+#[cfg(feature = "telemetry")]
+fn build_otel_metrics(
+    config: &TracingConfig,
+) -> Option<opentelemetry_sdk::metrics::SdkMeterProvider> {
+    use opentelemetry_otlp::WithExportConfig;
+
+    let endpoint = config.otlp_endpoint.as_deref()?;
+
+    let result =
+        (|| -> Result<opentelemetry_sdk::metrics::SdkMeterProvider, Box<dyn std::error::Error>> {
+            let exporter = opentelemetry_otlp::MetricExporter::builder()
+                .with_http()
+                .with_endpoint(endpoint)
+                .build()?;
+
+            let provider = opentelemetry_sdk::metrics::SdkMeterProvider::builder()
+                .with_periodic_exporter(exporter)
+                .build();
+
+            Ok(provider)
+        })();
+
+    match result {
+        Ok(provider) => {
+            tracing::debug!(
+                endpoint = %endpoint,
+                "OTel metrics provider initialized successfully"
+            );
+            Some(provider)
+        }
+        Err(e) => {
+            tracing::warn!(
+                endpoint = %endpoint,
+                error = %e,
+                "OTel metrics provider init failed; metrics export disabled. \
+                 Verify the endpoint is reachable and a collector is running. \
+                 Set RUST_LOG=opentelemetry=debug for details."
+            );
+            None
+        }
+    }
+}
+
+// Five global metric handles behind OnceLock (telemetry feature only).
+#[cfg(feature = "telemetry")]
+static SESSIONS_LAUNCHED: OnceLock<opentelemetry::metrics::Counter<u64>> = OnceLock::new();
+#[cfg(feature = "telemetry")]
+static GATES_EVALUATED: OnceLock<opentelemetry::metrics::Counter<u64>> = OnceLock::new();
+#[cfg(feature = "telemetry")]
+static MERGES_ATTEMPTED: OnceLock<opentelemetry::metrics::Counter<u64>> = OnceLock::new();
+#[cfg(feature = "telemetry")]
+static GATE_EVAL_LATENCY: OnceLock<opentelemetry::metrics::Histogram<f64>> = OnceLock::new();
+#[cfg(feature = "telemetry")]
+static AGENT_RUN_DURATION: OnceLock<opentelemetry::metrics::Histogram<f64>> = OnceLock::new();
+
+/// Initialize the five global metric handles from a `Meter`.
+///
+/// Must be called once after the `SdkMeterProvider` is built. If called
+/// multiple times (e.g. in tests), the second call's instruments are
+/// silently dropped; the handles remain bound to the first provider's
+/// `Meter`. A `tracing::warn!` is emitted for each handle that was
+/// already initialized.
+#[cfg(feature = "telemetry")]
+pub fn init_metric_handles(meter: &opentelemetry::metrics::Meter) {
+    let sets: [(&str, bool); 5] = [
+        (
+            "SESSIONS_LAUNCHED",
+            SESSIONS_LAUNCHED
+                .set(meter.u64_counter("assay.sessions.launched").build())
+                .is_ok(),
+        ),
+        (
+            "GATES_EVALUATED",
+            GATES_EVALUATED
+                .set(meter.u64_counter("assay.gates.evaluated").build())
+                .is_ok(),
+        ),
+        (
+            "MERGES_ATTEMPTED",
+            MERGES_ATTEMPTED
+                .set(meter.u64_counter("assay.merges.attempted").build())
+                .is_ok(),
+        ),
+        (
+            "GATE_EVAL_LATENCY",
+            GATE_EVAL_LATENCY
+                .set(meter.f64_histogram("assay.gate_eval.latency_ms").build())
+                .is_ok(),
+        ),
+        (
+            "AGENT_RUN_DURATION",
+            AGENT_RUN_DURATION
+                .set(meter.f64_histogram("assay.agent_run.duration_ms").build())
+                .is_ok(),
+        ),
+    ];
+    for (name, was_new) in sets {
+        if !was_new {
+            tracing::warn!(
+                handle = name,
+                "OTel metric handle already initialized; second provider's \
+                 meter will not be used — recording functions retain the first handle"
+            );
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Thin recording functions — callable without cfg guards
+// ---------------------------------------------------------------------------
+
+/// Record a session launch event. No-op when metrics are not initialized.
+#[cfg(feature = "telemetry")]
+pub fn record_session_launched() {
+    if let Some(c) = SESSIONS_LAUNCHED.get() {
+        c.add(1, &[]);
+    }
+}
+
+/// Record a session launch event. No-op stub when telemetry feature is off.
+#[cfg(not(feature = "telemetry"))]
+pub fn record_session_launched() {}
+
+/// Record a gate evaluation event. No-op when metrics are not initialized.
+#[cfg(feature = "telemetry")]
+pub fn record_gate_evaluated() {
+    if let Some(c) = GATES_EVALUATED.get() {
+        c.add(1, &[]);
+    }
+}
+
+/// Record a gate evaluation event. No-op stub when telemetry feature is off.
+#[cfg(not(feature = "telemetry"))]
+pub fn record_gate_evaluated() {}
+
+/// Record a merge attempt event. No-op when metrics are not initialized.
+#[cfg(feature = "telemetry")]
+pub fn record_merge_attempted() {
+    if let Some(c) = MERGES_ATTEMPTED.get() {
+        c.add(1, &[]);
+    }
+}
+
+/// Record a merge attempt event. No-op stub when telemetry feature is off.
+#[cfg(not(feature = "telemetry"))]
+pub fn record_merge_attempted() {}
+
+/// Record gate evaluation latency in milliseconds. No-op when metrics are not initialized.
+#[cfg(feature = "telemetry")]
+pub fn record_gate_eval_latency_ms(ms: f64) {
+    if let Some(h) = GATE_EVAL_LATENCY.get() {
+        h.record(ms, &[]);
+    }
+}
+
+/// Record gate evaluation latency in milliseconds. No-op stub when telemetry feature is off.
+#[cfg(not(feature = "telemetry"))]
+pub fn record_gate_eval_latency_ms(_ms: f64) {}
+
+/// Record agent run duration in milliseconds. No-op when metrics are not initialized.
+#[cfg(feature = "telemetry")]
+pub fn record_agent_run_duration_ms(ms: f64) {
+    if let Some(h) = AGENT_RUN_DURATION.get() {
+        h.record(ms, &[]);
+    }
+}
+
+/// Record agent run duration in milliseconds. No-op stub when telemetry feature is off.
+#[cfg(not(feature = "telemetry"))]
+pub fn record_agent_run_duration_ms(_ms: f64) {}
+
+// ---------------------------------------------------------------------------
 // TracingGuard
 // ---------------------------------------------------------------------------
 
@@ -370,10 +553,13 @@ where
 /// buffered log events.
 ///
 /// When the `telemetry` feature is enabled and an OTLP exporter was
-/// initialized, dropping the guard also shuts down the tracer provider,
-/// flushing any pending spans.
+/// initialized, dropping the guard shuts down the meter provider (flushing
+/// pending metrics) and then the tracer provider (flushing pending spans),
+/// in that order (D179).
 pub struct TracingGuard {
     _worker_guard: WorkerGuard,
+    #[cfg(feature = "telemetry")]
+    _meter_provider: Option<opentelemetry_sdk::metrics::SdkMeterProvider>,
     #[cfg(feature = "telemetry")]
     _tracer_provider: Option<opentelemetry_sdk::trace::SdkTracerProvider>,
 }
@@ -381,6 +567,18 @@ pub struct TracingGuard {
 #[cfg(feature = "telemetry")]
 impl Drop for TracingGuard {
     fn drop(&mut self) {
+        // D179: Shut down meter provider FIRST, then tracer provider.
+        // Metrics may reference trace context; flushing metrics first ensures
+        // no dangling references during tracer shutdown.
+        if let Some(ref provider) = self._meter_provider
+            && let Err(e) = provider.shutdown()
+        {
+            eprintln!(
+                "[assay] ERROR: OTel meter provider failed to flush pending metrics on shutdown: {e}. \
+                 Some metrics may not have been exported to the collector."
+            );
+        }
+
         if let Some(ref provider) = self._tracer_provider
             && let Err(e) = provider.shutdown()
         {
@@ -459,6 +657,18 @@ pub fn init_tracing(mut config: TracingConfig) -> TracingGuard {
     #[cfg(feature = "telemetry")]
     let (otel_layer, tracer_provider) = build_otel_layer(&config);
 
+    // Build the optional OTel metrics provider behind cfg(feature = "telemetry").
+    #[cfg(feature = "telemetry")]
+    let meter_provider = build_otel_metrics(&config);
+
+    // If meter provider was built, initialize global metric handles.
+    #[cfg(feature = "telemetry")]
+    if let Some(ref provider) = meter_provider {
+        use opentelemetry::metrics::MeterProvider;
+        let meter = provider.meter("assay");
+        init_metric_handles(&meter);
+    }
+
     // When telemetry feature is not compiled, provide a None placeholder so
     // the `.with(otel_layer)` call is a type-safe no-op.
     #[cfg(not(feature = "telemetry"))]
@@ -482,6 +692,8 @@ pub fn init_tracing(mut config: TracingConfig) -> TracingGuard {
 
     TracingGuard {
         _worker_guard: worker_guard,
+        #[cfg(feature = "telemetry")]
+        _meter_provider: meter_provider,
         #[cfg(feature = "telemetry")]
         _tracer_provider: tracer_provider,
     }

@@ -54,7 +54,7 @@ This milestone is complete only when all are true:
 - [x] **S02: TUI trace viewer** `risk:medium` `depends:[]`
   > After this: TUI `t` key opens a trace list screen; span tree visible from real `.assay/traces/` JSON; Esc closes — proven by integration test reading real trace output.
 
-- [ ] **S03: OTel metrics** `risk:medium` `depends:[]`
+- [x] **S03: OTel metrics** `risk:medium` `depends:[]`
   > After this: `gate run --features telemetry` increments session/gate/merge counters and records latency histograms; `MeterProvider` cleanly shuts down; `just ready` green.
 
 - [ ] **S04: Wizard runnable criteria** `risk:low` `depends:[]`
