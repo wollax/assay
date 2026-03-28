@@ -62,7 +62,7 @@ This milestone is complete only when all are true:
 - [x] **S02: TrackerSource Trait, Config, & Template Manifest** `risk:high` `depends:[S01]`
   > After this: `ServerConfig` accepts a `[tracker]` section; `TrackerSource` trait is defined; template manifest loading + validation + issue injection works; `MockTrackerSource` exercises the full trait contract. Proven by unit tests.
 
-- [ ] **S03: GitHub Issues Tracker Backend** `risk:medium` `depends:[S02]`
+- [x] **S03: GitHub Issues Tracker Backend** `risk:medium` `depends:[S02]`
   > After this: `GithubTrackerSource` polls GitHub Issues via `gh` CLI, transitions labels, generates manifests from templates. Proven by unit tests with mock `gh` and integration tests against a real repo (gated by env var).
 
 - [ ] **S04: Linear Tracker Backend** `risk:medium` `depends:[S02]`

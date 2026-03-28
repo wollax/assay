@@ -103,6 +103,10 @@ pub struct AuthConfig {
 pub struct TrackerConfig {
     /// Tracker provider — must be `"github"` or `"linear"`.
     pub provider: String,
+    /// GitHub repository in `owner/repo` format. Required when `provider`
+    /// is `"github"`, ignored for other providers.
+    #[serde(default)]
+    pub repo: Option<String>,
     /// Path to the template manifest used to generate job manifests from
     /// tracker issues. Validated at startup (D017).
     pub manifest_template: PathBuf,
@@ -235,6 +239,27 @@ impl ServerConfig {
             if tracker.manifest_template.as_os_str().is_empty() {
                 tracker_errors.push("manifest_template must not be empty".into());
             }
+            // GitHub provider requires a valid `repo` in owner/repo format.
+            if tracker.provider == "github" {
+                match &tracker.repo {
+                    None => {
+                        tracker_errors.push("repo must be set when provider is \"github\"".into());
+                    }
+                    Some(r) if r.trim().is_empty() => {
+                        tracker_errors
+                            .push("repo must not be empty when provider is \"github\"".into());
+                    }
+                    Some(r) => {
+                        let slash_count = r.chars().filter(|c| *c == '/').count();
+                        if slash_count != 1 {
+                            tracker_errors.push(format!(
+                                "repo must be in owner/repo format (exactly one '/'), got \"{}\"",
+                                r
+                            ));
+                        }
+                    }
+                }
+            }
             if !tracker_errors.is_empty() {
                 anyhow::bail!(
                     "invalid tracker configuration:\n  {}",
@@ -297,6 +322,7 @@ max_concurrent = 2
 
 [tracker]
 provider = "github"
+repo = "owner/repo"
 manifest_template = "{}"
 default_harness = "bash"
 default_timeout = 600
@@ -318,6 +344,7 @@ max_concurrent = 2
         let cfg = load_from_str(&toml).unwrap();
         let t = cfg.tracker.as_ref().unwrap();
         assert_eq!(t.provider, "github");
+        assert_eq!(t.repo.as_deref(), Some("owner/repo"));
         assert_eq!(t.poll_interval_secs, 30); // default
         assert_eq!(t.label_prefix, "smelt"); // default
         assert_eq!(t.default_harness, "bash");
@@ -373,6 +400,7 @@ max_concurrent = 2
 
 [tracker]
 provider = "github"
+repo = "owner/repo"
 manifest_template = "/tmp/t.tera"
 default_harness = "bash"
 default_timeout = 0
@@ -390,6 +418,7 @@ max_concurrent = 2
 
 [tracker]
 provider = "github"
+repo = "owner/repo"
 manifest_template = "/tmp/t.tera"
 default_harness = ""
 default_timeout = 600
@@ -410,6 +439,7 @@ max_concurrent = 2
 
 [tracker]
 provider = "github"
+repo = "owner/repo"
 manifest_template = "/tmp/t.tera"
 default_harness = "bash"
 default_timeout = 600
@@ -428,6 +458,7 @@ max_concurrent = 2
 
 [tracker]
 provider = "github"
+repo = "owner/repo"
 manifest_template = ""
 default_harness = "bash"
 default_timeout = 600
@@ -460,6 +491,130 @@ poll_interval_secs = 0
         assert!(msg.contains("poll_interval_secs"), "got: {msg}");
         assert!(msg.contains("default_timeout"), "got: {msg}");
         assert!(msg.contains("default_harness"), "got: {msg}");
+    }
+
+    #[test]
+    fn test_tracker_github_requires_repo() {
+        let toml = r#"
+queue_dir = "/tmp/q"
+max_concurrent = 2
+
+[tracker]
+provider = "github"
+manifest_template = "/tmp/t.tera"
+default_harness = "bash"
+default_timeout = 600
+"#;
+        let err = load_from_str(toml).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("repo must be set when provider is \"github\""),
+            "got: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_tracker_github_invalid_repo_format() {
+        // No slash
+        let toml = r#"
+queue_dir = "/tmp/q"
+max_concurrent = 2
+
+[tracker]
+provider = "github"
+repo = "noslash"
+manifest_template = "/tmp/t.tera"
+default_harness = "bash"
+default_timeout = 600
+"#;
+        let err = load_from_str(toml).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("repo must be in owner/repo format"),
+            "no-slash case got: {msg}"
+        );
+
+        // Multiple slashes
+        let toml2 = r#"
+queue_dir = "/tmp/q"
+max_concurrent = 2
+
+[tracker]
+provider = "github"
+repo = "a/b/c"
+manifest_template = "/tmp/t.tera"
+default_harness = "bash"
+default_timeout = 600
+"#;
+        let err2 = load_from_str(toml2).unwrap_err();
+        let msg2 = err2.to_string();
+        assert!(
+            msg2.contains("repo must be in owner/repo format"),
+            "multi-slash case got: {msg2}"
+        );
+    }
+
+    #[test]
+    fn test_tracker_github_valid_repo() {
+        let template = write_template_file();
+        let toml = format!(
+            r#"
+queue_dir = "/tmp/q"
+max_concurrent = 2
+
+[tracker]
+provider = "github"
+repo = "myorg/myrepo"
+manifest_template = "{}"
+default_harness = "bash"
+default_timeout = 600
+"#,
+            template.path().display()
+        );
+        let cfg = load_from_str(&toml).unwrap();
+        assert_eq!(
+            cfg.tracker.as_ref().unwrap().repo.as_deref(),
+            Some("myorg/myrepo")
+        );
+    }
+
+    #[test]
+    fn test_tracker_linear_ignores_repo() {
+        let template = write_template_file();
+        // Linear provider with no repo field — should pass
+        let toml = format!(
+            r#"
+queue_dir = "/tmp/q"
+max_concurrent = 2
+
+[tracker]
+provider = "linear"
+manifest_template = "{}"
+default_harness = "bash"
+default_timeout = 600
+"#,
+            template.path().display()
+        );
+        let cfg = load_from_str(&toml).unwrap();
+        assert!(cfg.tracker.as_ref().unwrap().repo.is_none());
+    }
+
+    #[test]
+    fn test_tracker_github_repo_empty_string() {
+        let toml = r#"
+queue_dir = "/tmp/q"
+max_concurrent = 2
+
+[tracker]
+provider = "github"
+repo = ""
+manifest_template = "/tmp/t.tera"
+default_harness = "bash"
+default_timeout = 600
+"#;
+        let err = load_from_str(toml).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("repo must not be empty"), "got: {msg}");
     }
 
     #[test]
@@ -517,6 +672,7 @@ max_concurrent = 2
 
 [tracker]
 provider = "github"
+repo = "owner/repo"
 manifest_template = "/nonexistent/template.toml"
 default_harness = "bash"
 default_timeout = 600

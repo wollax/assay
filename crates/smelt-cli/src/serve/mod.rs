@@ -5,6 +5,8 @@ pub mod types;
 pub(crate) use queue::ServerState;
 pub(crate) mod config;
 pub(crate) use config::ServerConfig;
+/// GitHub client abstraction for interacting with GitHub Issues via `gh` CLI.
+pub mod github;
 /// SSH transport layer for dispatching jobs to remote workers.
 pub mod ssh;
 /// Tracker source trait and types for polling issues from external trackers.

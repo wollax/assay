@@ -251,6 +251,7 @@ target = "main"
     fn make_tracker_config() -> TrackerConfig {
         TrackerConfig {
             provider: "github".into(),
+            repo: Some("owner/repo".into()),
             manifest_template: "/tmp/unused.toml".into(),
             poll_interval_secs: 30,
             label_prefix: "smelt".into(),
