@@ -91,10 +91,11 @@ pub(crate) fn handle() -> anyhow::Result<i32> {
                 .allow_empty(true)
                 .interact_text()?;
 
-            let cmd = if cmd_raw.is_empty() {
+            let cmd_trimmed = cmd_raw.trim().to_string();
+            let cmd = if cmd_trimmed.is_empty() {
                 None
             } else {
-                Some(cmd_raw)
+                Some(cmd_trimmed)
             };
 
             criteria.push(CriterionInput {

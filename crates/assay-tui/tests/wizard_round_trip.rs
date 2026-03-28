@@ -306,6 +306,85 @@ fn test_wizard_single_chunk_submits() {
     );
 }
 
+// ── Backspace from cmd sub-step ───────────────────────────────────────────────
+
+/// Pressing Backspace on an empty cmd line must cancel the cmd sub-step
+/// (reset the flag) and return to the name sub-step within the same criteria step.
+#[test]
+fn test_backspace_from_cmd_sub_step_resets_flag() {
+    let mut state = WizardState::new();
+
+    // Drive to a single-chunk wizard's criteria step.
+    type_str(&mut state, "BS Test");
+    handle_wizard_event(&mut state, key(KeyCode::Enter)); // step 0 → 1
+    handle_wizard_event(&mut state, key(KeyCode::Enter)); // step 1 → 2 (blank desc)
+    handle_wizard_event(&mut state, key(KeyCode::Char('1')));
+    handle_wizard_event(&mut state, key(KeyCode::Enter)); // step 2 → 3
+    type_str(&mut state, "Chunk A");
+    handle_wizard_event(&mut state, key(KeyCode::Enter)); // step 3 → 4 (criteria)
+
+    let criteria_step = state.step;
+
+    // Enter a criterion name → cmd sub-step
+    type_str(&mut state, "Criterion A");
+    handle_wizard_event(&mut state, key(KeyCode::Enter)); // name → cmd
+    assert!(state.criteria_awaiting_cmd, "should be in cmd sub-step");
+    assert_eq!(state.step, criteria_step, "step must stay in criteria step");
+
+    // Backspace on empty cmd line → should cancel cmd sub-step, return to name
+    handle_wizard_event(&mut state, key(KeyCode::Backspace));
+    assert!(
+        !state.criteria_awaiting_cmd,
+        "flag must reset when backspacing out of cmd sub-step"
+    );
+    assert_eq!(
+        state.step, criteria_step,
+        "step must stay in criteria step after cmd-backspace"
+    );
+}
+
+/// After backspacing out of cmd sub-step, re-entering the name and completing
+/// the wizard must produce correct criteria without corruption.
+#[test]
+fn test_backspace_from_cmd_sub_step_then_complete() {
+    let mut state = WizardState::new();
+
+    type_str(&mut state, "BS Complete");
+    handle_wizard_event(&mut state, key(KeyCode::Enter));
+    handle_wizard_event(&mut state, key(KeyCode::Enter));
+    handle_wizard_event(&mut state, key(KeyCode::Char('1')));
+    handle_wizard_event(&mut state, key(KeyCode::Enter));
+    type_str(&mut state, "Chunk A");
+    handle_wizard_event(&mut state, key(KeyCode::Enter)); // → criteria step
+
+    // Enter name, go to cmd, then backspace out
+    type_str(&mut state, "Crit 1");
+    handle_wizard_event(&mut state, key(KeyCode::Enter)); // name → cmd
+    assert!(state.criteria_awaiting_cmd);
+    handle_wizard_event(&mut state, key(KeyCode::Backspace)); // cancel cmd sub-step
+    assert!(!state.criteria_awaiting_cmd);
+
+    // Now re-enter the name flow: press Enter on restored "Crit 1" → cmd sub-step again
+    handle_wizard_event(&mut state, key(KeyCode::Enter)); // name → cmd
+    assert!(state.criteria_awaiting_cmd);
+    type_str(&mut state, "cargo test");
+    handle_wizard_event(&mut state, key(KeyCode::Enter)); // cmd → name
+
+    // Blank name → submit
+    let action = handle_wizard_event(&mut state, key(KeyCode::Enter));
+    let inputs = match action {
+        WizardAction::Submit(inputs) => inputs,
+        other => panic!("expected Submit, got {other:?}"),
+    };
+
+    assert_eq!(inputs.chunks[0].criteria.len(), 1);
+    assert_eq!(inputs.chunks[0].criteria[0].name, "Crit 1");
+    assert_eq!(
+        inputs.chunks[0].criteria[0].cmd,
+        Some("cargo test".to_string())
+    );
+}
+
 // ── Cmd-aware criteria tests ──────────────────────────────────────────────────
 
 /// The wizard must alternate name→cmd sub-steps and produce CriterionInput

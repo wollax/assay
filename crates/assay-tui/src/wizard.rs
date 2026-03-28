@@ -113,26 +113,32 @@ fn assemble_inputs(state: &WizardState) -> WizardInputs {
         let chunk_name = state.fields[name_step].last().cloned().unwrap_or_default();
         let chunk_slug = slugify(&chunk_name);
 
-        // Fields in the criteria step alternate: name, cmd, name, cmd, ..., trailing-empty.
-        // Iterate in pairs to build CriterionInput values.
+        // The criteria step's field vec has the layout:
+        //   [name₀, cmd₀, name₁, cmd₁, …, nameₙ₋₁, cmdₙ₋₁, ""]
+        // where the trailing "" is the empty name buffer present when blank Enter
+        // terminates the step. Pairs are iterated via chunks(2); the trailing ""
+        // is excluded because it forms an incomplete chunk of length 1.
         let raw = &state.fields[criteria_step];
+        debug_assert!(
+            !state.criteria_awaiting_cmd,
+            "assemble_inputs called while criteria_awaiting_cmd is true — last criterion will be lost"
+        );
         let mut criteria = Vec::new();
-        let mut j = 0;
-        while j + 1 < raw.len() {
-            let crit_name = &raw[j];
-            let crit_cmd = &raw[j + 1];
+        for pair in raw.chunks(2) {
+            let crit_name = &pair[0];
+            let crit_cmd = pair.get(1).map(String::as_str).unwrap_or("");
             if !crit_name.is_empty() {
+                let trimmed = crit_cmd.trim();
                 criteria.push(CriterionInput {
                     name: crit_name.clone(),
                     description: String::new(),
-                    cmd: if crit_cmd.is_empty() {
+                    cmd: if trimmed.is_empty() {
                         None
                     } else {
-                        Some(crit_cmd.clone())
+                        Some(trimmed.to_string())
                     },
                 });
             }
-            j += 2;
         }
 
         chunks.push(WizardChunkInput {
@@ -187,8 +193,17 @@ pub fn handle_wizard_event(state: &mut WizardState, event: KeyEvent) -> WizardAc
         KeyCode::Backspace => {
             let line_empty = current_line(state).is_empty();
 
-            if line_empty && state.step > 0 {
+            if line_empty && state.criteria_awaiting_cmd {
+                // Cancel the cmd sub-step: pop the empty cmd buffer, return to name phase.
+                state.criteria_awaiting_cmd = false;
+                state.fields[state.step].pop();
+                state.cursor = state.fields[state.step]
+                    .last()
+                    .map(|s| s.len())
+                    .unwrap_or(0);
+            } else if line_empty && state.step > 0 {
                 // Go back to previous step.
+                state.criteria_awaiting_cmd = false;
                 state.step -= 1;
                 state.fields.pop();
                 state.cursor = state.fields[state.step]

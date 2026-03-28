@@ -601,6 +601,10 @@ pub struct CriterionInputParam {
 ///
 /// This provides backward compatibility: existing callers can pass `"criterion-name"` strings,
 /// while new callers can pass `{"name": "...", "cmd": "..."}` objects.
+///
+/// **Important:** serde resolves `#[serde(untagged)]` variants in declaration order.
+/// `Object` must come before `Plain` so that JSON objects aren't swallowed by the
+/// string fallback. Do not reorder or insert variants without verifying deserialization.
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(untagged)]
 pub enum CriterionOrString {
@@ -3650,6 +3654,17 @@ impl AssayServer {
         &self,
         params: Parameters<MilestoneCreateParams>,
     ) -> Result<CallToolResult, McpError> {
+        // milestone_create only creates the milestone manifest, not per-chunk spec files.
+        // If a caller passes criteria, reject explicitly rather than silently dropping them.
+        for chunk in &params.0.chunks {
+            if !chunk.criteria.is_empty() {
+                return Ok(CallToolResult::error(vec![Content::text(
+                    "milestone_create does not create spec files; criteria are not supported here. \
+                     Use spec_create for each chunk to set criteria with cmd fields.",
+                )]));
+            }
+        }
+
         let cwd = resolve_cwd()?;
         let assay_dir = cwd.join(".assay");
 
@@ -8049,7 +8064,7 @@ spec = "auth"
                 chunks: vec![MilestoneChunkInput {
                     slug: "chunk-1".to_string(),
                     name: "Chunk 1".to_string(),
-                    criteria: vec![CriterionOrString::Plain("criterion-1".to_string())],
+                    criteria: vec![],
                 }],
             }))
             .await
@@ -8076,6 +8091,38 @@ spec = "auth"
         assert!(
             milestone_path.exists(),
             ".assay/milestones/test-ms.toml should exist on disk"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn milestone_create_rejects_criteria() {
+        let dir = create_project(r#"project_name = "wizard-test""#);
+        std::env::set_current_dir(dir.path()).unwrap();
+
+        let server = AssayServer::new();
+        let result = server
+            .milestone_create(Parameters(MilestoneCreateParams {
+                slug: "test-ms".to_string(),
+                name: "Test MS".to_string(),
+                description: None,
+                chunks: vec![MilestoneChunkInput {
+                    slug: "chunk-1".to_string(),
+                    name: "Chunk 1".to_string(),
+                    criteria: vec![CriterionOrString::Plain("criterion-1".to_string())],
+                }],
+            }))
+            .await
+            .unwrap();
+
+        assert!(
+            result.is_error.unwrap_or(false),
+            "milestone_create must reject chunks with criteria"
+        );
+        let text = extract_text(&result);
+        assert!(
+            text.contains("spec_create"),
+            "error should mention spec_create as the alternative, got: {text}"
         );
     }
 

@@ -21,11 +21,12 @@ use crate::milestone::{milestone_load, milestone_save};
 
 // ── Public types ─────────────────────────────────────────────────────────────
 
-/// A single criterion string for a wizard chunk input.
+/// A single criterion for a wizard chunk input.
 ///
-/// The string is used as the criterion's `name`; `description` defaults to empty.
-/// This keeps the wizard input surface minimal while still producing valid `GatesSpec`
-/// criterion entries.
+/// Carries the criterion `name`, optional `description`, and optional shell `cmd`.
+/// All three fields are threaded through to the generated `gates.toml` `Criterion` entry.
+/// All three surfaces (CLI, TUI, MCP) construct this type before passing it to
+/// [`create_spec_from_params`].
 #[derive(Debug)]
 pub struct CriterionInput {
     /// Human-readable criterion name.
@@ -39,7 +40,7 @@ pub struct CriterionInput {
 /// A single chunk (spec) within a wizard input.
 ///
 /// The `slug` is used directly as the spec directory name and the `GatesSpec.name`
-/// field. `criteria` are plain strings used as criterion names.
+/// field.
 #[derive(Debug)]
 pub struct WizardChunkInput {
     /// Slug for this chunk (used as the spec directory name).
