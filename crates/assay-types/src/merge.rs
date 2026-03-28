@@ -219,3 +219,57 @@ inventory::submit! {
         generate: || schemars::schema_for!(ConflictMarker),
     }
 }
+
+// ---------------------------------------------------------------------------
+// Merge propose types
+// ---------------------------------------------------------------------------
+
+/// Result of a merge proposal (push branch + create PR).
+///
+/// Returned by `merge_propose()` in `assay-core`. When `dry_run` is true,
+/// `pr_url` and `pr_number` are `None` and no side effects occur.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct MergeProposal {
+    /// URL of the created pull request (absent in dry-run mode).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pr_url: Option<String>,
+    /// Number of the created pull request (absent in dry-run mode).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pr_number: Option<u64>,
+    /// Formatted gate evidence used as the PR body.
+    pub gate_summary: String,
+    /// Whether this was a dry run (no side effects).
+    pub dry_run: bool,
+}
+
+inventory::submit! {
+    crate::schema_registry::SchemaEntry {
+        name: "merge-proposal",
+        generate: || schemars::schema_for!(MergeProposal),
+    }
+}
+
+/// Configuration for `merge_propose()`.
+///
+/// This is a function-parameter struct, not a persisted type.
+/// It is not serialized or included in schema snapshots.
+#[derive(Debug, Clone)]
+pub struct MergeProposeConfig {
+    /// Name of the spec to gather gate evidence for.
+    pub spec_name: String,
+    /// Specific run ID to use for gate evidence. If `None`, uses the latest.
+    pub run_id: Option<String>,
+    /// Branch to push and create PR from.
+    pub branch: String,
+    /// Target base branch for the PR (e.g. "main").
+    pub base_branch: String,
+    /// PR title.
+    pub title: String,
+    /// Working directory (git repository root).
+    pub working_dir: std::path::PathBuf,
+    /// Path to the `.assay` directory.
+    pub assay_dir: std::path::PathBuf,
+    /// If true, return the proposal without pushing or creating a PR.
+    pub dry_run: bool,
+}
