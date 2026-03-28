@@ -132,6 +132,19 @@ pub enum Screen {
         /// Inline error message from a failed load or save attempt.
         error: Option<String>,
     },
+    /// Trace viewer screen — list of recent traces with span tree drill-down.
+    TraceViewer {
+        /// Loaded trace entries (sorted by mtime descending).
+        traces: Vec<crate::trace_viewer::TraceEntry>,
+        /// Selection state for the trace list.
+        trace_list_state: ListState,
+        /// `None` = viewing trace list; `Some(idx)` = viewing span tree for `traces[idx]`.
+        selected_trace: Option<usize>,
+        /// Flattened span lines for the currently expanded trace.
+        span_lines: Vec<crate::trace_viewer::SpanLine>,
+        /// Selection state for the span line list.
+        span_list_state: ListState,
+    },
 }
 
 // ── App ───────────────────────────────────────────────────────────────────────
@@ -468,6 +481,139 @@ impl App {
         false
     }
 
+    /// Handle key events for `Screen::TraceViewer`.
+    ///
+    /// Supports two modes: trace list (`selected_trace = None`) and span tree
+    /// (`selected_trace = Some(idx)`). Extracted as a method to avoid
+    /// borrow-splitting issues in the main `handle_event` match (same pattern
+    /// as `handle_mcp_panel_event`, D098). Returns `true` if the app should exit.
+    fn handle_trace_viewer_event(&mut self, key: crossterm::event::KeyEvent) -> bool {
+        // Determine which mode we're in without holding a long mutable borrow.
+        let in_span_mode = matches!(
+            self.screen,
+            Screen::TraceViewer {
+                selected_trace: Some(_),
+                ..
+            }
+        );
+
+        if in_span_mode {
+            // ── Span tree mode ───────────────────────────────────────
+            match key.code {
+                KeyCode::Char('q') => return true,
+                KeyCode::Esc => {
+                    if let Screen::TraceViewer {
+                        selected_trace,
+                        span_lines,
+                        span_list_state,
+                        ..
+                    } = &mut self.screen
+                    {
+                        *selected_trace = None;
+                        *span_lines = vec![];
+                        *span_list_state = ListState::default();
+                    }
+                }
+                KeyCode::Up => {
+                    if let Screen::TraceViewer {
+                        span_list_state, ..
+                    } = &mut self.screen
+                        && let Some(i) = span_list_state.selected()
+                    {
+                        span_list_state.select(Some(i.saturating_sub(1)));
+                    }
+                }
+                KeyCode::Down => {
+                    if let Screen::TraceViewer {
+                        span_lines,
+                        span_list_state,
+                        ..
+                    } = &mut self.screen
+                        && let Some(i) = span_list_state.selected()
+                        && !span_lines.is_empty()
+                    {
+                        span_list_state.select(Some((i + 1).min(span_lines.len() - 1)));
+                    }
+                }
+                _ => {}
+            }
+        } else {
+            // ── Trace list mode ──────────────────────────────────────
+            match key.code {
+                KeyCode::Char('q') => return true,
+                KeyCode::Char('/') => {
+                    self.slash_state = Some(SlashState::default());
+                }
+                KeyCode::Esc => {
+                    self.screen = Screen::Dashboard;
+                }
+                KeyCode::Up => {
+                    if let Screen::TraceViewer {
+                        trace_list_state, ..
+                    } = &mut self.screen
+                        && let Some(i) = trace_list_state.selected()
+                    {
+                        trace_list_state.select(Some(i.saturating_sub(1)));
+                    }
+                }
+                KeyCode::Down => {
+                    if let Screen::TraceViewer {
+                        traces,
+                        trace_list_state,
+                        ..
+                    } = &mut self.screen
+                        && let Some(i) = trace_list_state.selected()
+                        && !traces.is_empty()
+                    {
+                        trace_list_state.select(Some((i + 1).min(traces.len() - 1)));
+                    }
+                }
+                KeyCode::Enter => {
+                    // Extract what we need: selected index and trace id.
+                    let enter_data: Option<(usize, String)> = if let Screen::TraceViewer {
+                        traces,
+                        trace_list_state,
+                        ..
+                    } = &self.screen
+                    {
+                        trace_list_state
+                            .selected()
+                            .and_then(|idx| traces.get(idx).map(|t| (idx, t.id.clone())))
+                    } else {
+                        None
+                    };
+
+                    if let Some((idx, trace_id)) = enter_data
+                        && let Some(ref root) = self.project_root
+                    {
+                        let assay_dir = root.join(".assay");
+                        let spans = crate::trace_viewer::load_trace_spans(&assay_dir, &trace_id);
+                        let lines = crate::trace_viewer::flatten_span_tree(&spans);
+                        if let Screen::TraceViewer {
+                            selected_trace,
+                            span_lines,
+                            span_list_state,
+                            ..
+                        } = &mut self.screen
+                        {
+                            let has_lines = !lines.is_empty();
+                            *span_lines = lines;
+                            let mut new_state = ListState::default();
+                            if has_lines {
+                                new_state.select(Some(0));
+                            }
+                            *span_list_state = new_state;
+                            *selected_trace = Some(idx);
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        false
+    }
+
     /// Draw the current screen into `frame`.
     pub fn draw(&mut self, frame: &mut ratatui::Frame) {
         let [content_area, status_area] =
@@ -555,6 +701,27 @@ impl App {
                     add_form.as_ref(),
                     error.as_deref(),
                 );
+            }
+            Screen::TraceViewer { .. } => {
+                // Re-borrow mutably for ListState (same pattern as draw_dashboard).
+                if let Screen::TraceViewer {
+                    traces,
+                    trace_list_state,
+                    selected_trace,
+                    span_lines,
+                    span_list_state,
+                } = &mut self.screen
+                {
+                    draw_trace_viewer(
+                        frame,
+                        content_area,
+                        traces,
+                        trace_list_state,
+                        *selected_trace,
+                        span_lines,
+                        span_list_state,
+                    );
+                }
             }
         }
 
@@ -742,6 +909,23 @@ impl App {
                             let assay_dir = root.join(".assay");
                             self.analytics_report = compute_analytics(&assay_dir).ok();
                             self.screen = Screen::Analytics;
+                        }
+                    }
+                    KeyCode::Char('t') => {
+                        if let Some(ref root) = self.project_root {
+                            let assay_dir = root.join(".assay");
+                            let traces = crate::trace_viewer::load_traces(&assay_dir);
+                            let mut trace_list_state = ListState::default();
+                            if !traces.is_empty() {
+                                trace_list_state.select(Some(0));
+                            }
+                            self.screen = Screen::TraceViewer {
+                                traces,
+                                trace_list_state,
+                                selected_trace: None,
+                                span_lines: vec![],
+                                span_list_state: ListState::default(),
+                            };
                         }
                     }
                     KeyCode::Char('s') => {
@@ -1251,6 +1435,8 @@ impl App {
             }
 
             Screen::McpPanel { .. } => self.handle_mcp_panel_event(key),
+
+            Screen::TraceViewer { .. } => self.handle_trace_viewer_event(key),
         }
     }
 }
@@ -1838,6 +2024,79 @@ fn draw_analytics(frame: &mut ratatui::Frame, area: Rect, report: Option<&Analyt
 }
 
 /// Render the persistent one-line status bar showing project context.
+/// Render the trace viewer screen.
+///
+/// When `selected_trace` is `None`, renders the trace list table.
+/// When `selected_trace` is `Some(idx)`, renders the span tree for that trace.
+fn draw_trace_viewer(
+    frame: &mut ratatui::Frame,
+    area: Rect,
+    traces: &[crate::trace_viewer::TraceEntry],
+    trace_list_state: &mut ListState,
+    selected_trace: Option<usize>,
+    span_lines: &[crate::trace_viewer::SpanLine],
+    span_list_state: &mut ListState,
+) {
+    if let Some(idx) = selected_trace {
+        // ── Span tree view ───────────────────────────────────────────────
+        let trace_title = traces
+            .get(idx)
+            .map(|t| format!(" Trace: {} — {} ", t.timestamp, t.root_span_name))
+            .unwrap_or_else(|| " Trace: (unknown) ".to_string());
+
+        if span_lines.is_empty() {
+            let msg = Paragraph::new("No spans found in this trace.\n\nPress Esc to go back.")
+                .block(Block::default().title(trace_title).borders(Borders::ALL));
+            frame.render_widget(msg, area);
+            return;
+        }
+
+        let items: Vec<ListItem> = span_lines
+            .iter()
+            .map(|sl| {
+                let indent = "  ".repeat(sl.depth);
+                let dur = sl
+                    .duration_ms
+                    .map(|ms| format!("  ({ms:.1}ms)"))
+                    .unwrap_or_default();
+                ListItem::new(format!("{indent}{}{dur}", sl.name))
+            })
+            .collect();
+
+        let list = List::new(items)
+            .block(Block::default().title(trace_title).borders(Borders::ALL))
+            .highlight_style(Style::default().bold().reversed());
+        frame.render_stateful_widget(list, area, span_list_state);
+    } else {
+        // ── Trace list view ──────────────────────────────────────────────
+        if traces.is_empty() {
+            let msg = Paragraph::new("No trace files found.\n\nRun an instrumented pipeline to generate traces.\n\nPress Esc to return.")
+                .block(Block::default().title(" Traces ").borders(Borders::ALL));
+            frame.render_widget(msg, area);
+            return;
+        }
+
+        let items: Vec<ListItem> = traces
+            .iter()
+            .map(|t| {
+                let dur = t
+                    .duration_ms
+                    .map(|ms| format!("{ms:.1}ms"))
+                    .unwrap_or_else(|| "—".to_string());
+                ListItem::new(format!(
+                    "  {}  {:30}  {:>5} spans  {}",
+                    t.timestamp, t.root_span_name, t.span_count, dur
+                ))
+            })
+            .collect();
+
+        let list = List::new(items)
+            .block(Block::default().title(" Traces ").borders(Borders::ALL))
+            .highlight_style(Style::default().bold().reversed());
+        frame.render_stateful_widget(list, area, trace_list_state);
+    }
+}
+
 ///
 /// Shows: `<project_name>  ·  <cycle_slug>  ·  ? help  q quit` (dim hints).
 /// When `project_name` is empty and `cycle_slug` is `None`, only the key hints
@@ -1873,7 +2132,7 @@ fn draw_status_bar(
 /// content beneath the popup.
 fn draw_help_overlay(frame: &mut ratatui::Frame, area: Rect) {
     let w = area.width.min(62);
-    let h = 23;
+    let h = 24;
     let x = area.x + (area.width.saturating_sub(w)) / 2;
     let y = area.y + (area.height.saturating_sub(h)) / 2;
     let popup = Rect::new(x, y, w, h);
@@ -1908,6 +2167,7 @@ fn draw_help_overlay(frame: &mut ratatui::Frame, area: Rect) {
             Cell::from("New milestone (wizard)"),
         ]),
         Row::new(vec![Cell::from("  a"), Cell::from("Analytics")]),
+        Row::new(vec![Cell::from("  t"), Cell::from("Traces")]),
         Row::new(vec![Cell::from("  s"), Cell::from("Settings")]),
         Row::new(vec![
             Cell::from("Detail views").style(Style::default().bold()),
