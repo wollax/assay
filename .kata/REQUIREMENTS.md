@@ -820,14 +820,14 @@
 
 ### R082 — Wizard runnable criteria
 - Class: primary-user-loop
-- Status: active
+- Status: validated
 - Description: `assay plan` wizard collects an optional `cmd` per criterion; `create_spec_from_params` writes the `cmd` field to gates.toml when provided. Generated specs can run `gate run` immediately without manual editing.
 - Why it matters: Currently wizard-generated specs have description-only criteria with no `cmd` field — they cannot run until manually edited. This defeats the purpose of a guided authoring wizard for users who don't know the spec format.
 - Source: user (D076 revisited)
 - Primary owning slice: M013/S04
 - Supporting slices: none
-- Validation: unmapped
-- Notes: `cmd` is optional — leaving it blank produces the same text-only output as today. CLI wizard prompts after each description; MCP `spec_create` tool accepts objects with optional `cmd`. Supersedes D076 ("Yes — if the wizard collects cmd per criterion in a future iteration").
+- Validation: S04 — `CriterionInput` threaded through all three surfaces (CLI, TUI, MCP); `write_gates_toml` writes `cmd` when `Some`, omits when `None`; contract tests prove cmd round-trip to gates.toml; `CriterionOrString` untagged enum maintains backward compat for MCP plain-string callers; TUI criteria step alternates name→cmd via `criteria_awaiting_cmd` flag; `just ready` green with 1525 tests. Interactive TTY wizard and TUI form require human UAT.
+- Notes: `cmd` is optional — leaving it blank produces the same text-only output as today. CLI wizard prompts after each criterion name; MCP `spec_create` and `milestone_create` accept both plain strings and `{name, cmd}` objects. Supersedes D076 ("Yes — if the wizard collects cmd per criterion in a future iteration").
 
 ## Deferred
 
@@ -960,11 +960,11 @@
 | R079 | core-capability | validated | M011/S01 | M011/S04 | S01 |
 | R080 | core-capability | validated | M012/S01 | none | S01 |
 | R081 | quality-attribute | validated | M013/S01 | none | S01 |
-| R082 | primary-user-loop | active | M013/S04 | none | unmapped |
+| R082 | primary-user-loop | validated | M013/S04 | none | S04 |
 
 ## Coverage Summary
 
-- Active requirements: 1 (R082)
+- Active requirements: 0
 - Validated: 75 (R001–R029 except R025, R034–R067, R071–R081)
 - Unmapped active requirements: 0
 - Deferred: 1 (R025)

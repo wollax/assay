@@ -32,9 +32,11 @@ fn type_str(state: &mut WizardState, s: &str) {
 /// - chunk count "2" + Enter
 /// - chunk 0 name "Alpha Chunk" + Enter
 /// - chunk 0 criterion "Criterion A" + Enter
+/// - chunk 0 criterion cmd "cargo test" + Enter
 /// - blank Enter (end chunk 0 criteria)
 /// - chunk 1 name "Beta Chunk" + Enter
 /// - chunk 1 criterion "Criterion B" + Enter
+/// - chunk 1 criterion cmd (blank = skip) + Enter
 /// - blank Enter (end chunk 1 criteria, triggers Submit)
 fn drive_two_chunk_wizard(state: &mut WizardState) -> WizardAction {
     // Step 0 — milestone name
@@ -53,19 +55,22 @@ fn drive_two_chunk_wizard(state: &mut WizardState) -> WizardAction {
     type_str(state, "Alpha Chunk");
     handle_wizard_event(state, key(KeyCode::Enter));
 
-    // Step 4 — chunk 0 criteria: one criterion then blank Enter
+    // Step 4 — chunk 0 criteria: one criterion with cmd, then blank Enter
     type_str(state, "Criterion A");
-    handle_wizard_event(state, key(KeyCode::Enter));
-    handle_wizard_event(state, key(KeyCode::Enter)); // blank → end criteria
+    handle_wizard_event(state, key(KeyCode::Enter)); // name entered → cmd sub-step
+    type_str(state, "cargo test");
+    handle_wizard_event(state, key(KeyCode::Enter)); // cmd entered → back to name
+    handle_wizard_event(state, key(KeyCode::Enter)); // blank name → end criteria
 
     // Step 5 — chunk 1 name
     type_str(state, "Beta Chunk");
     handle_wizard_event(state, key(KeyCode::Enter));
 
-    // Step 6 — chunk 1 criteria: one criterion then blank Enter → Submit
+    // Step 6 — chunk 1 criteria: one criterion with no cmd, then blank Enter → Submit
     type_str(state, "Criterion B");
-    handle_wizard_event(state, key(KeyCode::Enter));
-    handle_wizard_event(state, key(KeyCode::Enter)) // blank → Submit
+    handle_wizard_event(state, key(KeyCode::Enter)); // name entered → cmd sub-step
+    handle_wizard_event(state, key(KeyCode::Enter)); // blank cmd → skip, back to name
+    handle_wizard_event(state, key(KeyCode::Enter)) // blank name → Submit
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -119,17 +124,28 @@ fn test_wizard_submit_produces_correct_wizard_inputs() {
     assert_eq!(inputs.chunks[0].slug, "alpha-chunk");
     assert_eq!(inputs.chunks[0].name, "Alpha Chunk");
     assert_eq!(
-        inputs.chunks[0].criteria,
-        vec!["Criterion A".to_string()],
+        inputs.chunks[0].criteria.len(),
+        1,
         "chunk 0 must have exactly one criterion"
+    );
+    assert_eq!(inputs.chunks[0].criteria[0].name, "Criterion A");
+    assert_eq!(
+        inputs.chunks[0].criteria[0].cmd,
+        Some("cargo test".to_string()),
+        "chunk 0 criterion must have cmd 'cargo test'"
     );
 
     assert_eq!(inputs.chunks[1].slug, "beta-chunk");
     assert_eq!(inputs.chunks[1].name, "Beta Chunk");
     assert_eq!(
-        inputs.chunks[1].criteria,
-        vec!["Criterion B".to_string()],
+        inputs.chunks[1].criteria.len(),
+        1,
         "chunk 1 must have exactly one criterion"
+    );
+    assert_eq!(inputs.chunks[1].criteria[0].name, "Criterion B");
+    assert_eq!(
+        inputs.chunks[1].criteria[0].cmd, None,
+        "chunk 1 criterion must have cmd None (skipped)"
     );
 }
 
@@ -281,10 +297,171 @@ fn test_wizard_single_chunk_submits() {
     type_str(&mut state, "Only Chunk");
     handle_wizard_event(&mut state, key(KeyCode::Enter)); // step 3 → 4
     type_str(&mut state, "Criterion X");
-    handle_wizard_event(&mut state, key(KeyCode::Enter)); // non-blank → push new line
-    let action = handle_wizard_event(&mut state, key(KeyCode::Enter)); // blank → Submit
+    handle_wizard_event(&mut state, key(KeyCode::Enter)); // name → cmd sub-step
+    handle_wizard_event(&mut state, key(KeyCode::Enter)); // blank cmd → skip, back to name
+    let action = handle_wizard_event(&mut state, key(KeyCode::Enter)); // blank name → Submit
     assert!(
         matches!(action, WizardAction::Submit(_)),
         "single-chunk wizard must produce Submit on final blank Enter"
     );
+}
+
+// ── Backspace from cmd sub-step ───────────────────────────────────────────────
+
+/// Pressing Backspace on an empty cmd line must cancel the cmd sub-step
+/// (reset the flag) and return to the name sub-step within the same criteria step.
+#[test]
+fn test_backspace_from_cmd_sub_step_resets_flag() {
+    let mut state = WizardState::new();
+
+    // Drive to a single-chunk wizard's criteria step.
+    type_str(&mut state, "BS Test");
+    handle_wizard_event(&mut state, key(KeyCode::Enter)); // step 0 → 1
+    handle_wizard_event(&mut state, key(KeyCode::Enter)); // step 1 → 2 (blank desc)
+    handle_wizard_event(&mut state, key(KeyCode::Char('1')));
+    handle_wizard_event(&mut state, key(KeyCode::Enter)); // step 2 → 3
+    type_str(&mut state, "Chunk A");
+    handle_wizard_event(&mut state, key(KeyCode::Enter)); // step 3 → 4 (criteria)
+
+    let criteria_step = state.step;
+
+    // Enter a criterion name → cmd sub-step
+    type_str(&mut state, "Criterion A");
+    handle_wizard_event(&mut state, key(KeyCode::Enter)); // name → cmd
+    assert!(state.criteria_awaiting_cmd, "should be in cmd sub-step");
+    assert_eq!(state.step, criteria_step, "step must stay in criteria step");
+
+    // Backspace on empty cmd line → should cancel cmd sub-step, return to name
+    handle_wizard_event(&mut state, key(KeyCode::Backspace));
+    assert!(
+        !state.criteria_awaiting_cmd,
+        "flag must reset when backspacing out of cmd sub-step"
+    );
+    assert_eq!(
+        state.step, criteria_step,
+        "step must stay in criteria step after cmd-backspace"
+    );
+}
+
+/// After backspacing out of cmd sub-step, re-entering the name and completing
+/// the wizard must produce correct criteria without corruption.
+#[test]
+fn test_backspace_from_cmd_sub_step_then_complete() {
+    let mut state = WizardState::new();
+
+    type_str(&mut state, "BS Complete");
+    handle_wizard_event(&mut state, key(KeyCode::Enter));
+    handle_wizard_event(&mut state, key(KeyCode::Enter));
+    handle_wizard_event(&mut state, key(KeyCode::Char('1')));
+    handle_wizard_event(&mut state, key(KeyCode::Enter));
+    type_str(&mut state, "Chunk A");
+    handle_wizard_event(&mut state, key(KeyCode::Enter)); // → criteria step
+
+    // Enter name, go to cmd, then backspace out
+    type_str(&mut state, "Crit 1");
+    handle_wizard_event(&mut state, key(KeyCode::Enter)); // name → cmd
+    assert!(state.criteria_awaiting_cmd);
+    handle_wizard_event(&mut state, key(KeyCode::Backspace)); // cancel cmd sub-step
+    assert!(!state.criteria_awaiting_cmd);
+
+    // Now re-enter the name flow: press Enter on restored "Crit 1" → cmd sub-step again
+    handle_wizard_event(&mut state, key(KeyCode::Enter)); // name → cmd
+    assert!(state.criteria_awaiting_cmd);
+    type_str(&mut state, "cargo test");
+    handle_wizard_event(&mut state, key(KeyCode::Enter)); // cmd → name
+
+    // Blank name → submit
+    let action = handle_wizard_event(&mut state, key(KeyCode::Enter));
+    let inputs = match action {
+        WizardAction::Submit(inputs) => inputs,
+        other => panic!("expected Submit, got {other:?}"),
+    };
+
+    assert_eq!(inputs.chunks[0].criteria.len(), 1);
+    assert_eq!(inputs.chunks[0].criteria[0].name, "Crit 1");
+    assert_eq!(
+        inputs.chunks[0].criteria[0].cmd,
+        Some("cargo test".to_string())
+    );
+}
+
+// ── Cmd-aware criteria tests ──────────────────────────────────────────────────
+
+/// The wizard must alternate name→cmd sub-steps and produce CriterionInput
+/// structs with correct cmd values (Some for provided, None for skipped).
+#[test]
+fn test_wizard_criteria_cmd_round_trip() {
+    let mut state = WizardState::new();
+
+    // Drive through to a single-chunk wizard with 2 criteria:
+    // criterion 1: name="Build check", cmd="cargo build"
+    // criterion 2: name="Lint check", cmd=None (skipped)
+    type_str(&mut state, "Cmd Test");
+    handle_wizard_event(&mut state, key(KeyCode::Enter)); // step 0 → 1
+    handle_wizard_event(&mut state, key(KeyCode::Enter)); // step 1 → 2 (blank desc)
+    handle_wizard_event(&mut state, key(KeyCode::Char('1')));
+    handle_wizard_event(&mut state, key(KeyCode::Enter)); // step 2 → 3
+
+    type_str(&mut state, "My Chunk");
+    handle_wizard_event(&mut state, key(KeyCode::Enter)); // step 3 → 4 (criteria)
+
+    // Criterion 1: name then cmd
+    type_str(&mut state, "Build check");
+    assert!(!state.criteria_awaiting_cmd, "should be in name phase");
+    handle_wizard_event(&mut state, key(KeyCode::Enter)); // name → cmd
+    assert!(
+        state.criteria_awaiting_cmd,
+        "should be in cmd phase after entering name"
+    );
+    type_str(&mut state, "cargo build");
+    handle_wizard_event(&mut state, key(KeyCode::Enter)); // cmd → back to name
+    assert!(
+        !state.criteria_awaiting_cmd,
+        "should be back in name phase after cmd"
+    );
+
+    // Criterion 2: name then skip cmd
+    type_str(&mut state, "Lint check");
+    handle_wizard_event(&mut state, key(KeyCode::Enter)); // name → cmd
+    assert!(state.criteria_awaiting_cmd);
+    handle_wizard_event(&mut state, key(KeyCode::Enter)); // blank cmd → skip
+
+    // Blank name → submit (single chunk)
+    let action = handle_wizard_event(&mut state, key(KeyCode::Enter));
+    let inputs = match action {
+        WizardAction::Submit(inputs) => inputs,
+        other => panic!("expected Submit, got {other:?}"),
+    };
+
+    assert_eq!(inputs.chunks.len(), 1);
+    let criteria = &inputs.chunks[0].criteria;
+    assert_eq!(criteria.len(), 2, "must have 2 criteria");
+
+    assert_eq!(criteria[0].name, "Build check");
+    assert_eq!(criteria[0].cmd, Some("cargo build".to_string()));
+    assert_eq!(criteria[0].description, "");
+
+    assert_eq!(criteria[1].name, "Lint check");
+    assert_eq!(criteria[1].cmd, None);
+    assert_eq!(criteria[1].description, "");
+}
+
+/// The two-chunk wizard produces correct cmd values from `drive_two_chunk_wizard`.
+#[test]
+fn test_wizard_two_chunk_cmd_values() {
+    let mut state = WizardState::new();
+    let action = drive_two_chunk_wizard(&mut state);
+
+    let inputs = match action {
+        WizardAction::Submit(inputs) => inputs,
+        other => panic!("expected Submit, got {other:?}"),
+    };
+
+    // Chunk 0: "Criterion A" with cmd "cargo test"
+    assert_eq!(
+        inputs.chunks[0].criteria[0].cmd,
+        Some("cargo test".to_string())
+    );
+    // Chunk 1: "Criterion B" with no cmd
+    assert_eq!(inputs.chunks[1].criteria[0].cmd, None);
 }
