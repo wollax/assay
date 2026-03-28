@@ -239,3 +239,81 @@ Each of the five recording functions is written twice (real + stub), totaling
 a declarative macro or a `mod metrics_impl` with `pub use metrics_impl::*` pattern
 to eliminate duplication. Low-urgency but worth addressing before more metrics are
 added.
+
+## [Q017] CriterionOrString: custom deserializer for actionable error messages
+
+**Queued:** 2026-03-28
+**Source:** PR #200 review (suggestion #4)
+**Scope:** `crates/assay-mcp/src/server.rs` — `CriterionOrString`
+
+With `#[serde(untagged)]`, malformed input (e.g. `42` — a JSON number) produces
+a generic `"data did not match any variant of untagged enum CriterionOrString"`
+error with no guidance. Replace with a custom `Deserialize` impl or wrapping
+validator that produces:
+
+```
+"Invalid criterion at index N: expected a string (criterion name) or an object
+ with \"name\" (required), \"cmd\" (optional), and \"description\" (optional).
+ Got: 42"
+```
+
+At minimum, add a schemars doc comment so schema-aware callers get format guidance.
+
+---
+
+## [Q018] TUI wizard: remove unused `_chunk_count` param from `step_prompt`
+
+**Queued:** 2026-03-28
+**Source:** PR #200 review (suggestion)
+**Scope:** `crates/assay-tui/src/wizard.rs` — `step_prompt`
+
+The `_chunk_count` parameter is explicitly suppressed with a leading underscore
+and never used. If not retained for a planned future use, remove it from the
+signature and all call sites.
+
+---
+
+## [Q019] MCP: document CriterionInputParam.description → CriterionInput.description mapping
+
+**Queued:** 2026-03-28
+**Source:** PR #200 review (suggestion)
+**Scope:** `crates/assay-mcp/src/server.rs` — `From<CriterionOrString> for CriterionInput`
+
+`CriterionInputParam.description` is `Option<String>` while `CriterionInput.description`
+is a plain `String`. The conversion uses `unwrap_or_default()` to map `None → ""`.
+Add a doc comment on the `From` impl noting this intentional mapping, so future
+validation on `description` in `CriterionInput` doesn't miss the `None` → `""` case.
+
+---
+
+## [Q020] MCP: add test for malformed CriterionOrString (missing `name` field)
+
+**Queued:** 2026-03-28
+**Source:** PR #200 review (test gap)
+**Scope:** `crates/assay-mcp/src/server.rs` — unit tests
+
+No test verifies that `{"cmd": "cargo test"}` (object without required `name`)
+is correctly rejected by `CriterionOrString` deserialization. A future change
+making `name` optional could silently alter the contract. Add:
+
+```rust
+#[test]
+fn criterion_or_string_rejects_object_without_name() {
+    let json = r#"{"cmd": "cargo test"}"#;
+    let result = serde_json::from_str::<CriterionOrString>(json);
+    assert!(result.is_err());
+}
+```
+
+---
+
+## [Q021] TUI wizard: end-to-end test from key events through to gates.toml cmd field
+
+**Queued:** 2026-03-28
+**Source:** PR #200 review (test gap)
+**Scope:** `crates/assay-tui/tests/wizard_round_trip.rs`
+
+`test_wizard_submit_produces_correct_wizard_inputs` tests in-memory struct fields
+but not the TOML output. The round-trip test drives `create_from_inputs` but its
+assertions check criterion names only — should also assert `cmd` field appears in
+the generated `gates.toml` text to close the TUI→TOML gap.
