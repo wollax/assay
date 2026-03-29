@@ -14,6 +14,7 @@ assay-backends = { workspace = true }
 assay-core = { workspace = true, features = ["orchestrate"] }
 assay-harness.workspace = true
 assay-types = { workspace = true, features = ["orchestrate"] }
+axum.workspace = true
 chrono.workspace = true
 rmcp.workspace = true
 schemars.workspace = true

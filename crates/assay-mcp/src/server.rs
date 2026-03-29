@@ -4227,6 +4227,23 @@ pub async fn serve() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
+    // Start the HTTP signal server alongside stdio MCP.
+    // The signal server runs in the same tokio runtime via `tokio::spawn`.
+    let signal_port: u16 = std::env::var("ASSAY_SIGNAL_PORT")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(7432);
+    let signal_token = std::env::var("ASSAY_SIGNAL_TOKEN").ok();
+
+    let signal_state = std::sync::Arc::new(crate::signal_server::SignalServerState {
+        backend: std::sync::Arc::new(assay_core::NoopBackend),
+        registry: std::sync::Arc::new(crate::signal_server::RunRegistry::new()),
+        token: signal_token,
+        started_at: std::time::Instant::now(),
+    });
+
+    let _signal_handle = crate::signal_server::start_signal_server(signal_state, signal_port).await;
+
     let service = AssayServer::new().serve(stdio()).await?;
 
     service.waiting().await?;

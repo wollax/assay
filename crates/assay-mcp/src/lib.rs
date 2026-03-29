@@ -24,6 +24,7 @@
 //! - `session_list` — list sessions with optional spec_name and status filters
 
 mod server;
+pub mod signal_server;
 
 #[cfg(any(test, feature = "testing"))]
 pub use server::{
