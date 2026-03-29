@@ -4679,7 +4679,7 @@ pub async fn serve() -> Result<(), Box<dyn std::error::Error>> {
         http_client: reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(30))
             .build()
-            .expect("reqwest client build failed"),
+            .map_err(|e| format!("failed to build reqwest client for signal forwarding: {e}"))?,
     });
 
     let mut signal_server_started = false;

@@ -306,12 +306,25 @@ async fn handle_signal(
     let entry = match state.registry.lookup_session(&request.target_session) {
         Some(e) => e,
         None => {
-            // Loop prevention: forwarded requests never re-forward.
-            if headers
-                .get("x-assay-forwarded")
-                .and_then(|v| v.to_str().ok())
-                == Some("true")
-            {
+            // Loop prevention: if X-Assay-Forwarded is already set, this request
+            // arrived from a peer — return 404 immediately to break forwarding loops.
+            let is_forwarded = match headers.get("x-assay-forwarded") {
+                None => false,
+                Some(v) => match v.to_str() {
+                    Ok("true") => true,
+                    Ok(_) => false,
+                    Err(_) => {
+                        // Fail closed: treat invalid header as forwarded to prevent loops.
+                        tracing::warn!(
+                            target_session = %request.target_session,
+                            "x-assay-forwarded header contained non-UTF-8 bytes; \
+                             treating as forwarded to break potential loop"
+                        );
+                        true
+                    }
+                },
+            };
+            if is_forwarded {
                 return (
                     StatusCode::NOT_FOUND,
                     Json(ErrorBody {
@@ -321,15 +334,33 @@ async fn handle_signal(
                     .into_response();
             }
 
-            // Peer forwarding: query the backend for known peers and try each.
-            // Extract data from the RwLock guard before the async boundary.
-            let (supports_registry, peers) = {
-                let backend = state.backend.read().unwrap_or_else(|p| p.into_inner());
+            // Peer forwarding — extract data from the RwLock guard before the async
+            // boundary (guard must not be held across .await).
+            let (supports_registry, peers_result) = {
+                let backend = state.backend.read().unwrap_or_else(|p| {
+                    tracing::error!(
+                        target_session = %request.target_session,
+                        "signal_backend RwLock poisoned during peer lookup — recovering"
+                    );
+                    p.into_inner()
+                });
                 (
                     backend.capabilities().supports_peer_registry,
-                    backend.list_peers().unwrap_or_default(),
+                    backend.list_peers(),
                 )
-            }; // guard dropped here — safe to .await below
+            }; // RwLock guard dropped here — safe to .await below
+
+            let peers = match peers_result {
+                Ok(p) => p,
+                Err(e) => {
+                    tracing::warn!(
+                        target_session = %request.target_session,
+                        error = %e,
+                        "failed to list peers for signal forwarding; treating as no peers"
+                    );
+                    vec![]
+                }
+            };
 
             if supports_registry && !peers.is_empty() {
                 if forward_to_peers(peers, &request, state.token.as_deref(), &state.http_client)
