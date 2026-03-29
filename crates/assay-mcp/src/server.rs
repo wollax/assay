@@ -32,7 +32,7 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
 use assay_backends::factory::backend_from_config;
@@ -47,6 +47,8 @@ use rmcp::{
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
+
+use crate::signal_server::RunRegistry;
 
 use assay_core::milestone::{milestone_load, milestone_scan};
 use assay_core::spec::SpecEntry;
@@ -1176,6 +1178,14 @@ pub struct AssayServer {
     tool_router: ToolRouter<Self>,
     sessions: Arc<Mutex<HashMap<String, GateEvalContext>>>,
     timed_out_sessions: Arc<Mutex<HashMap<String, TimedOutInfo>>>,
+    /// Shared run registry — sessions registered by orchestrate handlers,
+    /// queried by the signal server to route PeerUpdates.
+    run_registry: Arc<RunRegistry>,
+    /// Swappable signal backend — set to the run's real backend before
+    /// spawning the blocking orchestrator task, and restored to `NoopBackend`
+    /// after completion (normal or panic). This is the window during which
+    /// signal routing is active.
+    signal_backend: Arc<RwLock<Arc<dyn assay_core::StateBackend>>>,
 }
 
 impl Default for AssayServer {
@@ -1187,12 +1197,34 @@ impl Default for AssayServer {
 #[tool_router]
 impl AssayServer {
     /// Create a new server with the tool router initialized.
+    ///
+    /// Uses isolated `RunRegistry` and `NoopBackend`. Call
+    /// [`AssayServer::with_signal_state()`] to inject shared signal
+    /// infrastructure for production use.
     pub fn new() -> Self {
         Self {
             tool_router: Self::tool_router(),
             sessions: Arc::new(Mutex::new(HashMap::new())),
             timed_out_sessions: Arc::new(Mutex::new(HashMap::new())),
+            run_registry: Arc::new(RunRegistry::new()),
+            signal_backend: Arc::new(RwLock::new(
+                Arc::new(assay_core::NoopBackend) as Arc<dyn assay_core::StateBackend>
+            )),
         }
+    }
+
+    /// Replace the default isolated signal state with shared instances.
+    ///
+    /// Used by `serve()` to inject the same `RunRegistry` and swappable
+    /// backend that the signal server reads from.
+    pub fn with_signal_state(
+        mut self,
+        run_registry: Arc<RunRegistry>,
+        signal_backend: Arc<RwLock<Arc<dyn assay_core::StateBackend>>>,
+    ) -> Self {
+        self.run_registry = run_registry;
+        self.signal_backend = signal_backend;
+        self
     }
 
     /// List all specs in the current Assay project.
@@ -3174,19 +3206,62 @@ impl AssayServer {
         // These modes bypass the full DAG+merge pipeline and delegate to stubs.
         match manifest.mode {
             OrchestratorMode::Mesh => {
+                let run_backend = backend_from_config(
+                    manifest
+                        .state_backend
+                        .as_ref()
+                        .unwrap_or(&StateBackendConfig::LocalFs),
+                    assay_dir.clone(),
+                );
                 let orch_config = assay_core::orchestrate::executor::OrchestratorConfig {
                     max_concurrency: 8,
                     failure_policy,
-                    backend: backend_from_config(
-                        manifest
-                            .state_backend
-                            .as_ref()
-                            .unwrap_or(&StateBackendConfig::LocalFs),
-                        assay_dir.clone(),
-                    ),
+                    backend: run_backend.clone(),
                 };
+
+                // Collect session info before the blocking call so we can
+                // register sessions *before* launch (enables signal routing
+                // during execution) and have the data available for cleanup.
+                let run_id = ulid::Ulid::new().to_string();
+                let run_dir = assay_dir.join("orchestrator").join(&run_id);
+                let run_started_at = std::time::Instant::now();
+                let session_pairs: Vec<(String, String)> = manifest
+                    .sessions
+                    .iter()
+                    .map(|s| {
+                        (
+                            s.name.as_deref().unwrap_or(&s.spec).to_string(),
+                            s.spec.clone(),
+                        )
+                    })
+                    .collect();
+                let session_count = session_pairs.len() as u32;
+
+                // Swap signal backend to the run's real backend so signals
+                // route during execution.
+                *self.signal_backend.write().unwrap_or_else(|p| {
+                    tracing::error!("signal_backend RwLock poisoned — recovering");
+                    p.into_inner()
+                }) = run_backend;
+
+                // Register sessions before spawning so the signal server can
+                // route inbound signals from the start of the run.
+                for (name, spec) in &session_pairs {
+                    self.run_registry.register_session(
+                        name.clone(),
+                        crate::signal_server::RunEntry {
+                            run_id: run_id.clone(),
+                            run_dir: run_dir.clone(),
+                            spec_name: spec.clone(),
+                            started_at: run_started_at,
+                            session_count,
+                        },
+                    );
+                }
+
                 let manifest_clone = manifest.clone();
                 let pipeline_config_clone = pipeline_config.clone();
+                let run_id_clone = run_id.clone();
                 let result = tokio::task::spawn_blocking(move || {
                     let session_runner = |_session: &assay_types::ManifestSession,
                                           _pipe_cfg: &assay_core::pipeline::PipelineConfig|
@@ -3196,15 +3271,37 @@ impl AssayServer {
                     > {
                         unreachable!("mesh stub does not invoke session_runner")
                     };
-                    assay_core::orchestrate::mesh::run_mesh(
+                    assay_core::orchestrate::mesh::run_mesh_with_id(
                         &manifest_clone,
                         &orch_config,
                         &pipeline_config_clone,
                         &session_runner,
+                        Some(run_id_clone),
                     )
                 })
                 .await
-                .map_err(|e| McpError::internal_error(format!("mesh task panicked: {e}"), None))?;
+                .map_err(|e| {
+                    // Panic path: restore backend so subsequent runs are not affected.
+                    *self.signal_backend.write().unwrap_or_else(|p| {
+                        tracing::error!("signal_backend RwLock poisoned — recovering");
+                        p.into_inner()
+                    }) = Arc::new(assay_core::NoopBackend) as Arc<dyn assay_core::StateBackend>;
+                    for (name, _) in &session_pairs {
+                        self.run_registry.unregister_session(name);
+                    }
+                    McpError::internal_error(format!("mesh task panicked: {e}"), None)
+                })?;
+
+                // Unregister sessions and restore backend in both success and
+                // error paths — the run is over.
+                for (name, _) in &session_pairs {
+                    self.run_registry.unregister_session(name);
+                }
+                *self.signal_backend.write().unwrap_or_else(|p| {
+                    tracing::error!("signal_backend RwLock poisoned — recovering");
+                    p.into_inner()
+                }) = Arc::new(assay_core::NoopBackend) as Arc<dyn assay_core::StateBackend>;
+
                 return match result {
                     Ok(orch_result) => {
                         let response = OrchestrateRunResponse {
@@ -3229,19 +3326,60 @@ impl AssayServer {
                 };
             }
             OrchestratorMode::Gossip => {
+                let run_backend = backend_from_config(
+                    manifest
+                        .state_backend
+                        .as_ref()
+                        .unwrap_or(&StateBackendConfig::LocalFs),
+                    assay_dir.clone(),
+                );
                 let orch_config = assay_core::orchestrate::executor::OrchestratorConfig {
                     max_concurrency: 8,
                     failure_policy,
-                    backend: backend_from_config(
-                        manifest
-                            .state_backend
-                            .as_ref()
-                            .unwrap_or(&StateBackendConfig::LocalFs),
-                        assay_dir.clone(),
-                    ),
+                    backend: run_backend.clone(),
                 };
+
+                // Collect session info before the blocking call so we can
+                // register sessions *before* launch.
+                let run_id = ulid::Ulid::new().to_string();
+                let run_dir = assay_dir.join("orchestrator").join(&run_id);
+                let run_started_at = std::time::Instant::now();
+                let session_pairs: Vec<(String, String)> = manifest
+                    .sessions
+                    .iter()
+                    .map(|s| {
+                        (
+                            s.name.as_deref().unwrap_or(&s.spec).to_string(),
+                            s.spec.clone(),
+                        )
+                    })
+                    .collect();
+                let session_count = session_pairs.len() as u32;
+
+                // Swap signal backend to the run's real backend so signals
+                // route during execution.
+                *self.signal_backend.write().unwrap_or_else(|p| {
+                    tracing::error!("signal_backend RwLock poisoned — recovering");
+                    p.into_inner()
+                }) = run_backend;
+
+                // Register sessions before spawning.
+                for (name, spec) in &session_pairs {
+                    self.run_registry.register_session(
+                        name.clone(),
+                        crate::signal_server::RunEntry {
+                            run_id: run_id.clone(),
+                            run_dir: run_dir.clone(),
+                            spec_name: spec.clone(),
+                            started_at: run_started_at,
+                            session_count,
+                        },
+                    );
+                }
+
                 let manifest_clone = manifest.clone();
                 let pipeline_config_clone = pipeline_config.clone();
+                let run_id_clone = run_id.clone();
                 let result = tokio::task::spawn_blocking(move || {
                     let session_runner = |_session: &assay_types::ManifestSession,
                                           _pipe_cfg: &assay_core::pipeline::PipelineConfig|
@@ -3251,17 +3389,36 @@ impl AssayServer {
                     > {
                         unreachable!("gossip stub does not invoke session_runner")
                     };
-                    assay_core::orchestrate::gossip::run_gossip(
+                    assay_core::orchestrate::gossip::run_gossip_with_id(
                         &manifest_clone,
                         &orch_config,
                         &pipeline_config_clone,
                         &session_runner,
+                        Some(run_id_clone),
                     )
                 })
                 .await
                 .map_err(|e| {
+                    // Panic path: restore backend and unregister.
+                    *self.signal_backend.write().unwrap_or_else(|p| {
+                        tracing::error!("signal_backend RwLock poisoned — recovering");
+                        p.into_inner()
+                    }) = Arc::new(assay_core::NoopBackend) as Arc<dyn assay_core::StateBackend>;
+                    for (name, _) in &session_pairs {
+                        self.run_registry.unregister_session(name);
+                    }
                     McpError::internal_error(format!("gossip task panicked: {e}"), None)
                 })?;
+
+                // Unregister and restore backend in both success and error paths.
+                for (name, _) in &session_pairs {
+                    self.run_registry.unregister_session(name);
+                }
+                *self.signal_backend.write().unwrap_or_else(|p| {
+                    tracing::error!("signal_backend RwLock poisoned — recovering");
+                    p.into_inner()
+                }) = Arc::new(assay_core::NoopBackend) as Arc<dyn assay_core::StateBackend>;
+
                 return match result {
                     Ok(orch_result) => {
                         let response = OrchestrateRunResponse {
@@ -3288,6 +3445,52 @@ impl AssayServer {
             OrchestratorMode::Dag => {} // fall through to existing DAG path
         }
 
+        // Swap signal backend to the run's real backend (DAG path).
+        let dag_run_backend = backend_from_config(
+            manifest
+                .state_backend
+                .as_ref()
+                .unwrap_or(&StateBackendConfig::LocalFs),
+            assay_dir.clone(),
+        );
+        *self
+            .signal_backend
+            .write()
+            .unwrap_or_else(|p| p.into_inner()) = dag_run_backend;
+
+        // Collect session info before the blocking call so we can register
+        // sessions *before* launch (enables signal routing during execution).
+        let dag_run_id = ulid::Ulid::new().to_string();
+        let dag_run_dir = assay_dir.join("orchestrator").join(&dag_run_id);
+        let dag_run_started_at = std::time::Instant::now();
+        let dag_session_pairs: Vec<(String, String)> = manifest
+            .sessions
+            .iter()
+            .map(|s| {
+                (
+                    s.name.as_deref().unwrap_or(&s.spec).to_string(),
+                    s.spec.clone(),
+                )
+            })
+            .collect();
+        let dag_session_count = dag_session_pairs.len() as u32;
+
+        // Register sessions before spawning so signal routing is live from
+        // the start of the run.
+        for (name, spec) in &dag_session_pairs {
+            self.run_registry.register_session(
+                name.clone(),
+                crate::signal_server::RunEntry {
+                    run_id: dag_run_id.clone(),
+                    run_dir: dag_run_dir.clone(),
+                    spec_name: spec.clone(),
+                    started_at: dag_run_started_at,
+                    session_count: dag_session_count,
+                },
+            );
+        }
+
+        let dag_run_id_clone = dag_run_id.clone();
         // Wrap the sync orchestration + merge in spawn_blocking (D007).
         let result = tokio::task::spawn_blocking(move || {
             // Session runner closure uses plain function calls (D035):
@@ -3310,12 +3513,14 @@ impl AssayServer {
                 assay_core::pipeline::run_session(session, pipe_cfg, &harness_writer)
             };
 
-            // Execute orchestration
-            let orch_result = assay_core::orchestrate::executor::run_orchestrated(
+            // Execute orchestration with the pre-generated run_id so the
+            // registered sessions and the orchestrator agree on the run_dir.
+            let orch_result = assay_core::orchestrate::executor::run_orchestrated_with_id(
                 &manifest,
                 orch_config,
                 &pipeline_config,
                 &session_runner,
+                Some(dag_run_id_clone),
             )?;
 
             // Checkout base branch before merge
@@ -3397,7 +3602,27 @@ impl AssayServer {
             Ok::<_, assay_core::AssayError>((orch_result, merge_report))
         })
         .await
-        .map_err(|e| McpError::internal_error(format!("orchestration task panicked: {e}"), None))?;
+        .map_err(|e| {
+            // Panic path: restore backend and unregister sessions.
+            *self.signal_backend.write().unwrap_or_else(|p| {
+                tracing::error!("signal_backend RwLock poisoned — recovering");
+                p.into_inner()
+            }) = Arc::new(assay_core::NoopBackend) as Arc<dyn assay_core::StateBackend>;
+            for (name, _) in &dag_session_pairs {
+                self.run_registry.unregister_session(name);
+            }
+            McpError::internal_error(format!("orchestration task panicked: {e}"), None)
+        })?;
+
+        // Unregister sessions and restore backend unconditionally — the run
+        // is over regardless of success or failure.
+        for (name, _) in &dag_session_pairs {
+            self.run_registry.unregister_session(name);
+        }
+        *self.signal_backend.write().unwrap_or_else(|p| {
+            tracing::error!("signal_backend RwLock poisoned — recovering");
+            p.into_inner()
+        }) = Arc::new(assay_core::NoopBackend) as Arc<dyn assay_core::StateBackend>;
 
         match result {
             Ok((orch_result, merge_report)) => {
@@ -4240,21 +4465,44 @@ pub async fn serve() -> Result<(), Box<dyn std::error::Error>> {
         }),
         Err(_) => 7432,
     };
+    let signal_bind = {
+        let raw = std::env::var("ASSAY_SIGNAL_BIND").unwrap_or_else(|_| "127.0.0.1".to_string());
+        if raw.parse::<std::net::IpAddr>().is_err() {
+            tracing::error!(
+                value = %raw,
+                "ASSAY_SIGNAL_BIND is not a valid IP address; falling back to 127.0.0.1"
+            );
+            "127.0.0.1".to_string()
+        } else {
+            raw
+        }
+    };
     let signal_token = std::env::var("ASSAY_SIGNAL_TOKEN").ok();
 
-    // TODO: Replace NoopBackend with the real backend once the orchestrator
-    // registers sessions into the RunRegistry. NoopBackend silently discards
-    // all signals — this is scaffolding only. The signal endpoint will return
-    // 404 for all session lookups until sessions are registered.
+    // Shared RunRegistry and swappable backend — both the MCP handlers
+    // (via AssayServer) and the signal endpoint (via SignalServerState)
+    // operate on the same instances. The backend starts as NoopBackend
+    // and is swapped to the run's real backend when orchestrate handlers
+    // register sessions.
+    let run_registry = std::sync::Arc::new(crate::signal_server::RunRegistry::new());
+    let signal_backend: std::sync::Arc<
+        std::sync::RwLock<std::sync::Arc<dyn assay_core::StateBackend>>,
+    > = std::sync::Arc::new(std::sync::RwLock::new(
+        std::sync::Arc::new(assay_core::NoopBackend)
+            as std::sync::Arc<dyn assay_core::StateBackend>,
+    ));
+
     let signal_state = std::sync::Arc::new(crate::signal_server::SignalServerState {
-        backend: std::sync::Arc::new(assay_core::NoopBackend),
-        registry: std::sync::Arc::new(crate::signal_server::RunRegistry::new()),
+        backend: signal_backend.clone(),
+        registry: run_registry.clone(),
         token: signal_token,
         started_at: std::time::Instant::now(),
     });
 
-    match crate::signal_server::start_signal_server(signal_state, signal_port).await {
-        Ok(_handle) => {}
+    match crate::signal_server::start_signal_server(signal_state, &signal_bind, signal_port).await {
+        Ok(_handle) => {
+            tracing::info!(port = signal_port, bind = %signal_bind, "signal server started");
+        }
         Err(e) => {
             tracing::error!(
                 port = signal_port,
@@ -4264,7 +4512,10 @@ pub async fn serve() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    let service = AssayServer::new().serve(stdio()).await?;
+    let service = AssayServer::new()
+        .with_signal_state(run_registry, signal_backend)
+        .serve(stdio())
+        .await?;
 
     service.waiting().await?;
     Ok(())
