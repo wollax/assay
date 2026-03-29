@@ -291,3 +291,325 @@ async fn test_broadcast_no_receivers_returns_200() {
     let store = s.events.get(&job_id).expect("EventStore should exist");
     assert_eq!(store.len(), 1);
 }
+
+// ─── SSE endpoint tests ────────────────────────────────────────────────
+
+/// Helper: read SSE chunks from a response until we find one containing `needle`, or timeout.
+async fn read_sse_until(
+    mut response: reqwest::Response,
+    needle: &str,
+    timeout_secs: u64,
+) -> String {
+    let mut collected = String::new();
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(timeout_secs);
+    loop {
+        let chunk = tokio::time::timeout_at(deadline, response.chunk()).await;
+        match chunk {
+            Ok(Ok(Some(bytes))) => {
+                let text = String::from_utf8_lossy(&bytes);
+                collected.push_str(&text);
+                if collected.contains(needle) {
+                    return collected;
+                }
+            }
+            Ok(Ok(None)) => panic!("SSE stream ended before finding '{needle}'. Got: {collected}"),
+            Ok(Err(e)) => panic!("SSE stream error: {e}"),
+            Err(_) => panic!("Timeout waiting for '{needle}' in SSE stream. Got: {collected}"),
+        }
+    }
+}
+
+#[tokio::test]
+async fn test_sse_global_receives_event() {
+    let (state, job_id) = super::state_with_job();
+    let base = super::start_test_server(state.clone()).await;
+    let client = reqwest::Client::new();
+
+    // Connect to SSE endpoint.
+    let sse_resp = client
+        .get(format!("{base}/api/v1/events"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(sse_resp.status(), 200, "SSE endpoint should return 200");
+    assert!(
+        sse_resp
+            .headers()
+            .get("content-type")
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .contains("text/event-stream"),
+        "SSE should return text/event-stream content type"
+    );
+
+    // POST an event to the ingestion endpoint (in background — SSE read blocks).
+    let base2 = base.clone();
+    let job_id2 = job_id.clone();
+    tokio::spawn(async move {
+        // Small delay to ensure SSE subscriber is connected before posting.
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        let c = reqwest::Client::new();
+        let post_resp = c
+            .post(format!("{base2}/api/v1/events"))
+            .json(&serde_json::json!({
+                "job_id": job_id2,
+                "phase": "running",
+            }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(post_resp.status(), 200);
+    });
+
+    // Read SSE chunks until we see the job_id.
+    let body: String = read_sse_until(sse_resp, &job_id, 3).await;
+    assert!(
+        body.contains("running"),
+        "SSE stream should contain the phase"
+    );
+}
+
+#[tokio::test]
+async fn test_sse_job_filtered() {
+    use crate::serve::types::{JobId, JobSource, JobStatus, QueuedJob, now_epoch};
+
+    // Create state with two jobs.
+    let state = std::sync::Arc::new(std::sync::Mutex::new(
+        crate::serve::queue::ServerState::new_without_events(4),
+    ));
+    {
+        let mut s = state.lock().unwrap();
+        for name in ["job-a", "job-b"] {
+            s.jobs.push_back(QueuedJob {
+                id: JobId::new(name),
+                manifest_path: std::path::PathBuf::from("test.toml"),
+                source: JobSource::HttpApi,
+                attempt: 0,
+                status: JobStatus::Running,
+                queued_at: now_epoch(),
+                started_at: Some(now_epoch()),
+                worker_host: None,
+            });
+        }
+    }
+
+    let base = super::start_test_server(state.clone()).await;
+    let client = reqwest::Client::new();
+
+    // Connect to SSE filtered for job-a.
+    let sse_resp = client
+        .get(format!("{base}/api/v1/events?job=job-a"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(sse_resp.status(), 200);
+
+    // POST events in background after a small delay for SSE to connect.
+    let base2 = base.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        let c = reqwest::Client::new();
+        // POST event for job-b (should NOT appear on filtered stream).
+        c.post(format!("{base2}/api/v1/events"))
+            .json(&serde_json::json!({ "job_id": "job-b", "phase": "running" }))
+            .send()
+            .await
+            .unwrap();
+        // POST event for job-a (SHOULD appear on filtered stream).
+        c.post(format!("{base2}/api/v1/events"))
+            .json(&serde_json::json!({ "job_id": "job-a", "phase": "complete" }))
+            .send()
+            .await
+            .unwrap();
+    });
+
+    // Read SSE until we see job-a data.
+    let body: String = read_sse_until(sse_resp, "job-a", 3).await;
+    assert!(
+        body.contains("complete"),
+        "filtered SSE should contain job-a's phase"
+    );
+    // job-b events should not appear (they're filtered out).
+    assert!(
+        !body.contains("job-b"),
+        "filtered SSE should NOT contain job-b events: got {body}"
+    );
+}
+
+#[tokio::test]
+async fn test_sse_lagged_subscriber() {
+    let (state, _job_id) = super::state_with_job();
+
+    // Get a reference to the broadcast sender before starting the server.
+    let event_bus = {
+        let s = state.lock().unwrap();
+        s.event_bus.clone()
+    };
+
+    let base = super::start_test_server(state.clone()).await;
+    let client = reqwest::Client::new();
+
+    // Connect SSE subscriber.
+    let sse_resp = client
+        .get(format!("{base}/api/v1/events"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(sse_resp.status(), 200);
+
+    // new_without_events uses broadcast capacity 16.
+    // Send more than capacity in background to trigger Lagged error.
+    let event_bus2 = event_bus.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        for i in 0..20 {
+            let _ = event_bus2.send(make_event("test-job-1", i));
+        }
+    });
+
+    // Read SSE until we see the synthetic "lagged" event.
+    let body: String = read_sse_until(sse_resp, "lagged", 3).await;
+    assert!(
+        body.contains("dropped"),
+        "lagged event should contain dropped count: got {body}"
+    );
+}
+
+#[tokio::test]
+async fn test_sse_auth() {
+    let (state, _job_id) = super::state_with_job();
+    let auth = crate::serve::http_api::ResolvedAuth {
+        write_token: "write-secret".to_string(),
+        read_token: Some("read-secret".to_string()),
+    };
+    let base = super::start_test_server_with_auth(state.clone(), Some(auth)).await;
+    let client = reqwest::Client::new();
+
+    // GET SSE without token → 401
+    let resp = client
+        .get(format!("{base}/api/v1/events"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 401, "SSE without auth should return 401");
+
+    // GET SSE with read token → 200 (read operations allow read token)
+    let resp = client
+        .get(format!("{base}/api/v1/events"))
+        .header("Authorization", "Bearer read-secret")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200, "SSE with read token should return 200");
+
+    // GET SSE with write token → 200
+    let resp = client
+        .get(format!("{base}/api/v1/events"))
+        .header("Authorization", "Bearer write-secret")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200, "SSE with write token should return 200");
+}
+
+#[tokio::test]
+async fn test_sse_end_to_end_post_to_stream() {
+    let (state, job_id) = super::state_with_job();
+    let cancel_token = tokio_util::sync::CancellationToken::new();
+    let base =
+        super::start_test_server_with_cancel(state.clone(), None, cancel_token.clone()).await;
+    let client = reqwest::Client::new();
+
+    // Connect to SSE endpoint.
+    let sse_resp = client
+        .get(format!("{base}/api/v1/events"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(sse_resp.status(), 200);
+
+    // POST an event via the ingestion endpoint (in background).
+    let base2 = base.clone();
+    let job_id2 = job_id.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        let c = reqwest::Client::new();
+        let resp = c
+            .post(format!("{base2}/api/v1/events"))
+            .json(&serde_json::json!({
+                "job_id": job_id2,
+                "phase": "complete",
+                "sessions": [{"name": "frontend", "passed": true}],
+            }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200);
+    });
+
+    // Read SSE stream until we see the event data.
+    let body: String = read_sse_until(sse_resp, "complete", 3).await;
+
+    // Verify the SSE event contains the correct job_id and payload.
+    assert!(
+        body.contains(&job_id),
+        "SSE stream should contain job_id '{job_id}': got {body}"
+    );
+    assert!(
+        body.contains("frontend"),
+        "SSE stream should contain session data from payload"
+    );
+
+    // Also verify the event is stored in ServerState (TUI-readable path).
+    {
+        let s = state.lock().unwrap();
+        let store = s.events.get(&job_id).expect("EventStore should exist");
+        assert!(!store.is_empty(), "at least 1 event should be stored");
+    }
+}
+
+#[tokio::test]
+async fn test_sse_shutdown_closes_streams() {
+    let (state, _job_id) = super::state_with_job();
+    let cancel_token = tokio_util::sync::CancellationToken::new();
+    let base =
+        super::start_test_server_with_cancel(state.clone(), None, cancel_token.clone()).await;
+    let client = reqwest::Client::new();
+
+    // Connect to SSE endpoint.
+    let sse_resp = client
+        .get(format!("{base}/api/v1/events"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(sse_resp.status(), 200);
+
+    // Cancel the token after a short delay — SSE stream should close.
+    let token = cancel_token.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        token.cancel();
+    });
+
+    // Reading the full body should complete (stream terminates) within the timeout.
+    let result = tokio::time::timeout(std::time::Duration::from_secs(3), sse_resp.text()).await;
+
+    match result {
+        Ok(Ok(_body)) => {
+            // Stream closed cleanly — this is the expected path.
+        }
+        Ok(Err(e)) => {
+            // Connection error is also acceptable if the server shut down the stream.
+            // reqwest may report a connection reset.
+            let msg = e.to_string();
+            assert!(
+                msg.contains("reset") || msg.contains("closed") || msg.contains("eof"),
+                "unexpected error on shutdown: {msg}"
+            );
+        }
+        Err(_) => {
+            panic!("SSE stream did not close within 3s after CancellationToken was cancelled");
+        }
+    }
+}

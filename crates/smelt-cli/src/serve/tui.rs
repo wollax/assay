@@ -6,11 +6,12 @@ use std::time::Duration;
 use crossterm::event::{self, Event, KeyCode, KeyModifiers};
 use ratatui::DefaultTerminal;
 use ratatui::Frame;
-use ratatui::layout::Constraint;
-use ratatui::widgets::{Block, Borders, Cell, Row, Table};
+use ratatui::layout::{Constraint, Layout};
+use ratatui::style::{Color, Style};
+use ratatui::widgets::{Block, Borders, Cell, List, ListItem, Row, Table};
 
 use crate::serve::queue::ServerState;
-use crate::serve::types::{JobSource, elapsed_secs_since};
+use crate::serve::types::{JobSource, elapsed_secs_since, now_epoch};
 
 /// Spawn the TUI background thread. Returns a JoinHandle.
 /// `shutdown` is an AtomicBool: when set to `true`, the TUI loop exits.
@@ -61,11 +62,30 @@ fn tui_loop(
     Ok(())
 }
 
+/// Format a `received_at` epoch timestamp as a human-readable relative age.
+fn format_age(received_at: u64) -> String {
+    let now = now_epoch();
+    let age = now.saturating_sub(received_at);
+    if age < 60 {
+        format!("{age}s ago")
+    } else if age < 3600 {
+        format!("{}m ago", age / 60)
+    } else {
+        format!("{}h ago", age / 3600)
+    }
+}
+
 pub(crate) fn render(frame: &mut Frame, state: &Arc<Mutex<ServerState>>) {
-    // Lock briefly — clone only what we need, then release immediately
-    let jobs = {
+    // Split the frame vertically: job table on top (fill), event pane on bottom (12 rows).
+    let areas = Layout::vertical([Constraint::Fill(1), Constraint::Length(12)]).split(frame.area());
+    let job_area = areas[0];
+    let event_area = areas[1];
+
+    // Lock briefly — clone only what we need, then release immediately.
+    let (jobs, events) = {
         let s = state.lock().unwrap();
-        s.jobs
+        let jobs = s
+            .jobs
             .iter()
             .map(|j| {
                 let elapsed = j
@@ -94,9 +114,32 @@ pub(crate) fn render(frame: &mut Frame, state: &Arc<Mutex<ServerState>>) {
                     source,
                 )
             })
-            .collect::<Vec<_>>()
+            .collect::<Vec<_>>();
+
+        // Collect events across all jobs: (job_id, received_at, phase).
+        let mut events: Vec<(String, u64, String)> = s
+            .events
+            .iter()
+            .flat_map(|(_, store)| {
+                store.iter().map(|e| {
+                    let phase = e
+                        .payload
+                        .get("phase")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("event")
+                        .to_string();
+                    (e.job_id.clone(), e.received_at, phase)
+                })
+            })
+            .collect();
+        // Sort by received_at descending (most recent first), keep the 20 most recent.
+        events.sort_by(|a, b| b.1.cmp(&a.1));
+        events.truncate(20);
+
+        (jobs, events)
     };
 
+    // ── Job table (top panel) ──────────────────────────────────────────
     let rows: Vec<Row> = jobs
         .iter()
         .map(|(id, name, status, attempt, elapsed, worker, source)| {
@@ -132,12 +175,31 @@ pub(crate) fn render(frame: &mut Frame, state: &Arc<Mutex<ServerState>>) {
                 .borders(Borders::ALL),
         );
 
-    frame.render_widget(table, frame.area());
+    frame.render_widget(table, job_area);
+
+    // ── Event pane (bottom panel) ──────────────────────────────────────
+    let event_items: Vec<ListItem> = if events.is_empty() {
+        vec![ListItem::new("No events yet").style(Style::default().fg(Color::DarkGray))]
+    } else {
+        events
+            .iter()
+            .map(|(job_id, received_at, phase)| {
+                let age = format_age(*received_at);
+                ListItem::new(format!("[{job_id}] {age} {phase}"))
+            })
+            .collect()
+    };
+
+    let event_list =
+        List::new(event_items).block(Block::default().title("Events").borders(Borders::ALL));
+
+    frame.render_widget(event_list, event_area);
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::serve::events::AssayEvent;
     use crate::serve::queue::ServerState;
     use crate::serve::types::{JobId, JobSource, JobStatus, QueuedJob, now_epoch};
     use ratatui::Terminal;
@@ -146,7 +208,7 @@ mod tests {
 
     /// Helper: render the TUI into a `TestBackend` and return the buffer text.
     fn render_to_text(state: &Arc<Mutex<ServerState>>) -> String {
-        let backend = TestBackend::new(120, 10);
+        let backend = TestBackend::new(120, 24);
         let mut terminal = Terminal::new(backend).unwrap();
         terminal.draw(|frame| render(frame, state)).unwrap();
         let buf = terminal.backend().buffer().clone();
@@ -249,6 +311,63 @@ mod tests {
         assert!(
             text.contains("DirWatch"),
             "expected 'DirWatch' in TUI output for directory-watch job"
+        );
+    }
+
+    #[test]
+    fn test_tui_event_pane_renders_events() {
+        use crate::serve::events::EventStore;
+
+        let mut state = ServerState::new_without_events(1);
+        // Add events to the state.
+        let mut store = EventStore::default();
+        store.push(AssayEvent {
+            job_id: "job-ev1".to_string(),
+            event_id: Some("e1".to_string()),
+            received_at: now_epoch(),
+            payload: serde_json::json!({"phase": "running"}),
+        });
+        store.push(AssayEvent {
+            job_id: "job-ev1".to_string(),
+            event_id: Some("e2".to_string()),
+            received_at: now_epoch(),
+            payload: serde_json::json!({"phase": "complete"}),
+        });
+        state.events.insert("job-ev1".to_string(), store);
+
+        let shared = Arc::new(Mutex::new(state));
+        let text = render_to_text(&shared);
+
+        // The event pane should show the Events title.
+        assert!(
+            text.contains("Events"),
+            "expected 'Events' title in TUI output"
+        );
+        // Events should show job_id and phase.
+        assert!(
+            text.contains("job-ev1"),
+            "expected 'job-ev1' in event pane: got text of len {}",
+            text.len()
+        );
+        assert!(
+            text.contains("running") || text.contains("complete"),
+            "expected phase text in event pane"
+        );
+    }
+
+    #[test]
+    fn test_tui_event_pane_empty_state() {
+        let state = ServerState::new_without_events(1);
+        let shared = Arc::new(Mutex::new(state));
+        let text = render_to_text(&shared);
+
+        assert!(
+            text.contains("Events"),
+            "expected 'Events' title in TUI output"
+        );
+        assert!(
+            text.contains("No events yet"),
+            "expected 'No events yet' in empty event pane"
         );
     }
 }

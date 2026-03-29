@@ -3,6 +3,7 @@ mod dispatch;
 mod events;
 mod http;
 mod queue;
+mod signals;
 mod ssh_dispatch;
 
 use std::path::PathBuf;
@@ -70,9 +71,18 @@ async fn start_test_server_with_auth(
     state: std::sync::Arc<std::sync::Mutex<ServerState>>,
     auth: Option<crate::serve::http_api::ResolvedAuth>,
 ) -> String {
+    start_test_server_with_cancel(state, auth, tokio_util::sync::CancellationToken::new()).await
+}
+
+/// Helper: spin up an axum server with optional auth and a specific CancellationToken.
+async fn start_test_server_with_cancel(
+    state: std::sync::Arc<std::sync::Mutex<ServerState>>,
+    auth: Option<crate::serve::http_api::ResolvedAuth>,
+    cancel_token: tokio_util::sync::CancellationToken,
+) -> String {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
-    let router = crate::serve::http_api::build_router(state, auth);
+    let router = crate::serve::http_api::build_router(state, auth, cancel_token);
     tokio::spawn(async move {
         axum::serve(listener, router).await.unwrap();
     });

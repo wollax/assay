@@ -1,19 +1,25 @@
+use std::convert::Infallible;
 use std::io::Write;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use axum::extract::DefaultBodyLimit;
-use axum::extract::{self, State};
+use axum::extract::{self, Query, State};
 use axum::http::{Method, StatusCode};
 use axum::middleware::Next;
 use axum::response::IntoResponse;
+use axum::response::sse::{Event as SseEvent, KeepAlive, Sse};
 use axum::routing::{delete, get, post};
-use axum::{Json, Router};
-use serde::Serialize;
+use axum::{Extension, Json, Router};
+use futures_util::StreamExt;
+use serde::{Deserialize, Serialize};
 use smelt_core::manifest::JobManifest;
+use tokio_stream::wrappers::BroadcastStream;
+use tokio_util::sync::CancellationToken;
 
 use crate::serve::config::AuthConfig;
 use crate::serve::queue::ServerState;
+use crate::serve::signals::{PeerUpdate, deliver_peer_update, validate_session_name};
 use crate::serve::types::{JobSource, JobStatus, QueuedJob, elapsed_secs_since, now_epoch};
 
 /// JSON-serialisable snapshot of a single job's state.
@@ -199,26 +205,127 @@ async fn health_check() -> Json<serde_json::Value> {
 /// When `auth` is `Some`, bearer-token authentication is enforced on all
 /// `/api/v1/*` routes.  When `auth` is `None`, those routes are also
 /// unauthenticated (preserving the pre-auth behaviour).
-pub(crate) fn build_router(state: SharedState, auth: Option<ResolvedAuth>) -> Router {
+pub(crate) fn build_router(
+    state: SharedState,
+    auth: Option<ResolvedAuth>,
+    cancel_token: CancellationToken,
+) -> Router {
     // API routes — auth middleware enforced when auth is Some, passthrough when None.
     // 64 KB body limit on the event endpoint — prevents memory exhaustion
     // from arbitrarily large payloads (256 events × N jobs in memory).
     let api_routes = Router::new()
         .route(
             "/api/v1/events",
-            post(post_event).layer(DefaultBodyLimit::max(64 * 1024)),
+            post(post_event)
+                .get(get_events)
+                .layer(DefaultBodyLimit::max(64 * 1024)),
         )
         .route("/api/v1/jobs", post(post_job))
         .route("/api/v1/jobs", get(list_jobs))
         .route("/api/v1/jobs/{id}", get(get_job))
         .route("/api/v1/jobs/{id}", delete(delete_job))
+        .route(
+            "/api/v1/jobs/{id}/signals",
+            post(post_signal).layer(DefaultBodyLimit::max(64 * 1024)),
+        )
         .layer(axum::middleware::from_fn_with_state(auth, auth_middleware))
+        .layer(Extension(cancel_token))
         .with_state(state);
 
     // Health routes — no auth, no shared state needed.
     let health_routes = Router::new().route("/health", get(health_check));
 
     api_routes.merge(health_routes)
+}
+
+/// Query parameters for the SSE event stream endpoint.
+#[derive(Deserialize)]
+struct EventStreamParams {
+    /// Optional job_id filter. When present, only events for this job are streamed.
+    job: Option<String>,
+}
+
+/// GET /api/v1/events — SSE stream of Assay events.
+///
+/// Subscribes to the `EventBus` broadcast channel and streams events as SSE.
+/// Supports an optional `?job=<id>` query parameter to filter by job_id.
+///
+/// Lagged subscribers receive a synthetic `event: lagged` with the drop count
+/// and the stream continues (does NOT close on lag).
+///
+/// The stream terminates when the `CancellationToken` is cancelled (server
+/// shutdown) or when the broadcast sender is dropped.
+async fn get_events(
+    State(state): State<SharedState>,
+    Extension(cancel_token): Extension<CancellationToken>,
+    Query(params): Query<EventStreamParams>,
+) -> Sse<impl futures_util::Stream<Item = Result<SseEvent, Infallible>>> {
+    // Clone the event_bus sender (briefly lock state, then release).
+    let event_bus = {
+        let s = state.lock().map_err(|_| {
+            tracing::error!("ServerState mutex poisoned in get_events");
+        });
+        match s {
+            Ok(guard) => guard.event_bus.clone(),
+            Err(()) => {
+                // Return an empty stream on mutex poisoning (extremely rare).
+                let (tx, _rx) =
+                    tokio::sync::broadcast::channel::<crate::serve::events::AssayEvent>(1);
+                tx
+            }
+        }
+    };
+
+    let job_filter = params.job;
+    tracing::info!(
+        job_filter = ?job_filter,
+        "SSE subscriber connected"
+    );
+
+    let rx = event_bus.subscribe();
+    let raw_stream = BroadcastStream::new(rx);
+
+    // Map broadcast items to SSE events, handling Lagged errors gracefully.
+    // Uses futures_util::StreamExt::filter_map (async closure) so that
+    // take_until (also from futures_util) works on the resulting stream.
+    let mapped = raw_stream.filter_map(move |result| {
+        let job_filter = job_filter.clone();
+        async move {
+            match result {
+                Ok(event) => {
+                    // Apply job filter if specified.
+                    if let Some(ref filter_job) = job_filter
+                        && event.job_id != *filter_job
+                    {
+                        return None;
+                    }
+                    match SseEvent::default().json_data(&event) {
+                        Ok(sse_event) => Some(Ok(sse_event)),
+                        Err(e) => {
+                            tracing::error!(error = %e, "SSE: failed to serialize event");
+                            None
+                        }
+                    }
+                }
+                Err(tokio_stream::wrappers::errors::BroadcastStreamRecvError::Lagged(n)) => {
+                    tracing::warn!(dropped = n, "SSE: subscriber lagged");
+                    let data = format!(r#"{{"dropped":{n}}}"#);
+                    Some(Ok(SseEvent::default().event("lagged").data(data)))
+                }
+            }
+        }
+    });
+
+    // Terminate the stream on CancellationToken (server shutdown).
+    // CancellationToken::cancelled() borrows &self; we need a 'static future.
+    // Clone the token and move it into an async block to produce an owned future.
+    let cancel_fut = {
+        let token = cancel_token.clone();
+        async move { token.cancelled().await }
+    };
+    let stream = mapped.take_until(cancel_fut);
+
+    Sse::new(stream).keep_alive(KeepAlive::default())
 }
 
 /// POST /api/v1/events — ingest an Assay event for a known job.
@@ -342,6 +449,145 @@ async fn get_job(
         .find(|j| j.id.to_string() == id)
         .map(|j| Json(JobStateResponse::from(j)))
         .ok_or(StatusCode::NOT_FOUND)
+}
+
+/// POST /api/v1/jobs/:id/signals — deliver a PeerUpdate signal to a running session.
+///
+/// Validates:
+/// - Job exists (404 if not)
+/// - `run_id` is known from prior event ingestion (409 if not)
+/// - `session_name` passes path traversal validation (400 if invalid)
+/// - Required `PeerUpdate` fields are present (400 if missing)
+///
+/// On success, writes the PeerUpdate as an atomic JSON file to the session's
+/// inbox path on the host filesystem and returns 200 with the file path.
+async fn post_signal(
+    State(state): State<SharedState>,
+    extract::Path(job_id): extract::Path<String>,
+    Json(body): Json<serde_json::Value>,
+) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
+    // Extract session_name from body (required).
+    let session_name = body
+        .get("session_name")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"error": "missing or non-string session_name field"})),
+            )
+        })?
+        .to_string();
+
+    // Validate session_name for path traversal.
+    validate_session_name(&session_name).map_err(|msg| {
+        tracing::warn!(session_name = %session_name, "signal: invalid session_name");
+        (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": format!("invalid session_name: {msg}")})),
+        )
+    })?;
+
+    // Parse PeerUpdate fields from body (consume body — no further use).
+    let peer_update: PeerUpdate = serde_json::from_value(body).map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": format!("invalid PeerUpdate payload: {e}")})),
+        )
+    })?;
+
+    // Lock state to validate job and extract needed data.
+    let (run_id, manifest_path) = {
+        let s = state.lock().map_err(|_| {
+            tracing::error!("ServerState mutex poisoned in post_signal");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": "internal server error"})),
+            )
+        })?;
+
+        // Validate job exists.
+        let job = s.jobs.iter().find(|j| j.id.0 == job_id).ok_or_else(|| {
+            (
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({"error": "unknown job_id"})),
+            )
+        })?;
+
+        // Look up cached run_id.
+        let run_id = s.run_ids.get(&job_id).cloned().ok_or_else(|| {
+            tracing::warn!(job_id = %job_id, "signal: no run_id known for job — waiting for first event");
+            (
+                StatusCode::CONFLICT,
+                Json(serde_json::json!({"error": "no run_id known for job — waiting for first event"})),
+            )
+        })?;
+
+        let manifest_path = job.manifest_path.clone();
+        (run_id, manifest_path)
+    };
+    // Mutex is released here.
+
+    // Resolve repo path from the manifest file.
+    let manifest_content = std::fs::read_to_string(&manifest_path).map_err(|e| {
+        tracing::error!(path = %manifest_path.display(), error = %e, "signal: cannot read manifest");
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": format!("cannot read manifest: {e}")})),
+        )
+    })?;
+
+    let manifest_dir = manifest_path.parent().ok_or_else(|| {
+        tracing::error!(
+            path = %manifest_path.display(),
+            "signal: manifest path has no parent directory"
+        );
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": "manifest path has no parent directory"})),
+        )
+    })?;
+    let manifest = JobManifest::from_str(&manifest_content, manifest_dir).map_err(|e| {
+        tracing::error!(error = %e, "signal: cannot parse manifest");
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": format!("cannot parse manifest: {e}")})),
+        )
+    })?;
+
+    let repo_path = smelt_core::manifest::resolve_repo_path(&manifest.job.repo).map_err(|e| {
+        tracing::error!(repo = %manifest.job.repo, error = %e, "signal: cannot resolve repo path");
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": format!("cannot resolve repo path: {e}")})),
+        )
+    })?;
+
+    // Deliver the signal (filesystem I/O outside the Mutex lock).
+    let written_path = deliver_peer_update(&repo_path, &run_id, &session_name, &peer_update)
+        .map_err(|e| {
+            tracing::error!(
+                job_id = %job_id,
+                session_name = %session_name,
+                error = %e,
+                "signal: delivery failed"
+            );
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": format!("signal delivery failed: {e}")})),
+            )
+        })?;
+
+    tracing::info!(
+        job_id = %job_id,
+        session_name = %session_name,
+        path = %written_path.display(),
+        "signal delivered"
+    );
+
+    Ok(Json(serde_json::json!({
+        "status": "ok",
+        "path": written_path.display().to_string()
+    })))
 }
 
 /// DELETE /api/v1/jobs/:id — cancel a queued job, or 409 if running/dispatching.

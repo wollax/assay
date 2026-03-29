@@ -2,6 +2,8 @@
 pub(crate) mod events;
 /// Persistent job queue and concurrency controller.
 pub mod queue;
+/// PeerUpdate signal types and filesystem-based delivery to Assay session inboxes.
+pub(crate) mod signals;
 /// Job data types: identifiers, status, source, and queue entries.
 pub mod types;
 pub(crate) use queue::ServerState;

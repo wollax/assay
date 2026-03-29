@@ -29,7 +29,6 @@ pub struct AssayEvent {
 /// Query methods (`iter`, `len`, `is_empty`, `dropped`) are consumed by tests
 /// and upcoming S02 (SSE fan-out, TUI event pane).
 #[derive(Debug)]
-#[allow(dead_code)]
 pub struct EventStore {
     events: VecDeque<AssayEvent>,
     capacity: usize,
@@ -43,7 +42,6 @@ impl Default for EventStore {
     }
 }
 
-#[allow(dead_code)]
 impl EventStore {
     /// Create a new `EventStore` with the given maximum capacity.
     ///
@@ -75,18 +73,21 @@ impl EventStore {
 
     /// Number of events dropped due to overflow since creation.
     #[must_use]
+    #[allow(dead_code)]
     pub fn dropped(&self) -> u64 {
         self.dropped
     }
 
     /// Current number of events in the store.
     #[must_use]
+    #[allow(dead_code)]
     pub fn len(&self) -> usize {
         self.events.len()
     }
 
     /// Whether the store contains no events.
     #[must_use]
+    #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.events.is_empty()
     }

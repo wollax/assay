@@ -127,7 +127,7 @@ pub async fn execute(args: &ServeArgs) -> anyhow::Result<i32> {
         );
     }
 
-    let router = build_router(Arc::clone(&state), resolved_auth);
+    let router = build_router(Arc::clone(&state), resolved_auth, cancel_token.clone());
     let watcher = DirectoryWatcher::new(config.queue_dir.clone(), Arc::clone(&state));
     let retry_attempts = config.retry_attempts;
     let workers = config.workers.clone();

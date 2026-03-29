@@ -100,6 +100,10 @@ pub struct ServerState {
     pub(crate) event_bus: EventBus,
     /// Per-job bounded ring buffers of received Assay events.
     pub(crate) events: HashMap<String, EventStore>,
+    /// Cached `run_id` per job_id, extracted from ingested event payloads.
+    /// Used by signal delivery to resolve inbox paths. Upsert semantics:
+    /// each new event with a `run_id` field overwrites the previous value.
+    pub(crate) run_ids: HashMap<String, String>,
 }
 
 impl ServerState {
@@ -113,6 +117,7 @@ impl ServerState {
             round_robin_idx: 0,
             event_bus,
             events: HashMap::new(),
+            run_ids: HashMap::new(),
         }
     }
 
@@ -166,6 +171,7 @@ impl ServerState {
             round_robin_idx: 0,
             event_bus,
             events: HashMap::new(),
+            run_ids: HashMap::new(),
         }
     }
 
@@ -179,6 +185,46 @@ impl ServerState {
             .entry(event.job_id.clone())
             .or_default()
             .push(event.clone());
+
+        // Cache run_id from the event payload for signal delivery path resolution.
+        // Validate before caching — run_id is joined into a filesystem path.
+        match event.payload.get("run_id") {
+            Some(v) if v.is_string() => {
+                let run_id = v.as_str().unwrap();
+                if let Err(msg) = crate::serve::signals::validate_run_id(run_id) {
+                    tracing::warn!(
+                        job_id = %event.job_id,
+                        run_id = %run_id,
+                        reason = %msg,
+                        "ingest_event: run_id failed validation — ignoring; \
+                         signal delivery will return 409"
+                    );
+                } else {
+                    // Log when run_id changes mid-flight (job restart).
+                    if let Some(existing) = self.run_ids.get(&event.job_id)
+                        && existing != run_id
+                    {
+                        tracing::info!(
+                            job_id = %event.job_id,
+                            old_run_id = %existing,
+                            new_run_id = %run_id,
+                            "run_id updated for job — inbox path has changed"
+                        );
+                    }
+                    self.run_ids
+                        .insert(event.job_id.clone(), run_id.to_string());
+                }
+            }
+            Some(v) => {
+                tracing::warn!(
+                    job_id = %event.job_id,
+                    run_id_value = ?v,
+                    "ingest_event: run_id present but not a string — ignoring; \
+                     signal delivery will return 409"
+                );
+            }
+            None => {}
+        }
 
         match self.event_bus.send(event) {
             Ok(_) => {}
