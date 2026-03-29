@@ -1,9 +1,0 @@
-#!/usr/bin/env bash
-# Full checks — runs before push
-set -euo pipefail
-
-echo "🔍 pre-push: full ready (fmt + clippy + tests + deny + plugin version)"
-
-just ready
-
-echo "✅ pre-push passed"

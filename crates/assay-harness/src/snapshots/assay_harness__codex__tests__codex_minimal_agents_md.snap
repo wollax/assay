@@ -1,5 +1,0 @@
----
-source: crates/assay-harness/src/codex.rs
-expression: config.agents_md
----
-

@@ -1,8 +1,0 @@
----
-source: crates/assay-harness/src/codex.rs
-expression: "args.join(\"\\n\")"
----
-exec
---full-auto
---model
-o3

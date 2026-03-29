@@ -1,7 +1,0 @@
----
-source: crates/assay-harness/src/codex.rs
-expression: config.config_toml
----
-model = "o3"
-approval_policy = "full-auto"
-sandbox_mode = "workspace-write"

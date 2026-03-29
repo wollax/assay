@@ -1,9 +1,0 @@
----
-source: crates/assay-harness/src/opencode.rs
-expression: "args.join(\"\\n\")"
----
-run
---model
-anthropic/claude-sonnet
---format
-json

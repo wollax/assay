@@ -1,9 +1,0 @@
-{
-  "mcpServers": {
-    "assay": {
-      "type": "stdio",
-      "command": "assay",
-      "args": ["mcp", "serve"]
-    }
-  }
-}
