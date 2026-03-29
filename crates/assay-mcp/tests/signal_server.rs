@@ -23,6 +23,7 @@ fn make_state(backend: Arc<dyn StateBackend>, token: Option<String>) -> Arc<Sign
         registry: Arc::new(RunRegistry::new()),
         token,
         started_at: Instant::now(),
+        http_client: reqwest::Client::new(),
     })
 }
 
@@ -307,6 +308,7 @@ async fn test_backend_swap_routes_through_new_backend() {
         registry: registry.clone(),
         token: None,
         started_at: Instant::now(),
+        http_client: reqwest::Client::new(),
     });
 
     let tmp = tempfile::tempdir().unwrap();
@@ -399,6 +401,7 @@ async fn test_shared_registry_between_state_instances() {
         registry: registry.clone(),
         token: None,
         started_at: Instant::now(),
+        http_client: reqwest::Client::new(),
     });
 
     // Register through the shared registry (simulating what AssayServer handler does).
@@ -460,6 +463,7 @@ async fn test_start_signal_server_bind_addr_localhost() {
         registry: Arc::new(RunRegistry::new()),
         token: None,
         started_at: Instant::now(),
+        http_client: reqwest::Client::new(),
     });
 
     // Bind to 127.0.0.1 on a random high port.
@@ -481,6 +485,7 @@ async fn test_start_signal_server_bind_addr_all_interfaces() {
         registry: Arc::new(RunRegistry::new()),
         token: None,
         started_at: Instant::now(),
+        http_client: reqwest::Client::new(),
     });
 
     // Bind to 0.0.0.0 (all interfaces) on a random high port.
@@ -718,5 +723,159 @@ async fn test_send_signal_unreachable_url() {
     assert!(
         text.contains("send_signal failed"),
         "error should mention send_signal, got: {text}"
+    );
+}
+
+// ── Cross-instance signal forwarding integration tests ──────────────
+
+#[tokio::test]
+async fn test_signal_forwards_to_peer_on_unknown_session() {
+    // Server B: has "worker-1" registered.
+    let dir_b = tempfile::tempdir().unwrap();
+    let backend_b: Arc<dyn StateBackend> =
+        Arc::new(LocalFsBackend::new(dir_b.path().to_path_buf()));
+    let backend_b_lock: Arc<RwLock<Arc<dyn StateBackend>>> =
+        Arc::new(RwLock::new(backend_b.clone()));
+    let registry_b = Arc::new(RunRegistry::new());
+
+    // Create inbox directory for worker-1 and register the session.
+    let run_dir_b = dir_b.path().to_path_buf();
+    let inbox_dir_b = run_dir_b.join("mesh/worker-1/inbox");
+    std::fs::create_dir_all(&inbox_dir_b).unwrap();
+    registry_b.register_session(
+        "worker-1".to_string(),
+        RunEntry {
+            run_id: "run-b".to_string(),
+            run_dir: run_dir_b,
+            spec_name: "test".to_string(),
+            started_at: Instant::now(),
+            session_count: 1,
+        },
+    );
+
+    let state_b = Arc::new(SignalServerState {
+        backend: backend_b_lock,
+        registry: registry_b,
+        token: None,
+        started_at: Instant::now(),
+        http_client: reqwest::Client::new(),
+    });
+
+    // Start server B on a random port.
+    let listener_b = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port_b = listener_b.local_addr().unwrap().port();
+    let router_b = build_router(state_b);
+    tokio::spawn(async move {
+        axum::serve(listener_b, router_b).await.ok();
+    });
+
+    // Server A: empty registry, but has server B registered as a peer.
+    let dir_a = tempfile::tempdir().unwrap();
+    let backend_a = LocalFsBackend::new(dir_a.path().to_path_buf());
+    // Register peer B.
+    backend_a
+        .register_peer(&assay_types::PeerInfo {
+            peer_id: "server-b".to_string(),
+            signal_url: format!("http://127.0.0.1:{port_b}"),
+            registered_at: chrono::Utc::now(),
+        })
+        .unwrap();
+
+    let backend_a_arc: Arc<dyn StateBackend> = Arc::new(backend_a);
+    let state_a = Arc::new(SignalServerState {
+        backend: Arc::new(RwLock::new(backend_a_arc)),
+        registry: Arc::new(RunRegistry::new()),
+        token: None,
+        started_at: Instant::now(),
+        http_client: reqwest::Client::new(),
+    });
+
+    // Start server A on a random port.
+    let listener_a = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port_a = listener_a.local_addr().unwrap().port();
+    let router_a = build_router(state_a);
+    tokio::spawn(async move {
+        axum::serve(listener_a, router_a).await.ok();
+    });
+
+    // Give servers a moment to start accepting.
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+    // POST to server A for "worker-1" (which only server B knows about).
+    let client = reqwest::Client::new();
+    let signal_req = SignalRequest {
+        target_session: "worker-1".to_string(),
+        update: PeerUpdate {
+            source_job: "job-fwd".to_string(),
+            source_session: "orchestrator".to_string(),
+            changed_files: vec![],
+            gate_summary: GateSummary {
+                passed: 1,
+                failed: 0,
+                skipped: 0,
+            },
+            branch: "main".to_string(),
+        },
+    };
+
+    let resp = client
+        .post(format!("http://127.0.0.1:{port_a}/api/v1/signal"))
+        .json(&signal_req)
+        .send()
+        .await
+        .expect("POST to server A should succeed");
+
+    assert_eq!(
+        resp.status(),
+        reqwest::StatusCode::ACCEPTED,
+        "Server A should forward to B and return 202"
+    );
+
+    // Verify the PeerUpdate appeared in server B's inbox.
+    let messages = backend_b
+        .poll_inbox(&inbox_dir_b)
+        .expect("poll_inbox should succeed");
+    assert_eq!(
+        messages.len(),
+        1,
+        "server B should have received exactly one message"
+    );
+
+    let peer_update: PeerUpdate =
+        serde_json::from_slice(&messages[0].1).expect("message should deserialize as PeerUpdate");
+    assert_eq!(peer_update.source_job, "job-fwd");
+    assert_eq!(peer_update.source_session, "orchestrator");
+}
+
+#[tokio::test]
+async fn test_forwarded_signal_returns_404_without_relaying() {
+    // Single server with empty registry and no peers.
+    let dir = tempfile::tempdir().unwrap();
+    let backend: Arc<dyn StateBackend> = Arc::new(LocalFsBackend::new(dir.path().to_path_buf()));
+
+    let state = Arc::new(SignalServerState {
+        backend: Arc::new(RwLock::new(backend)),
+        registry: Arc::new(RunRegistry::new()),
+        token: None,
+        started_at: Instant::now(),
+        http_client: reqwest::Client::new(),
+    });
+
+    let router = build_router(state);
+
+    let signal_body = sample_signal_json("nonexistent");
+    let req = Request::builder()
+        .method("POST")
+        .uri("/api/v1/signal")
+        .header("content-type", "application/json")
+        .header("x-assay-forwarded", "true")
+        .body(Body::from(signal_body))
+        .unwrap();
+
+    let resp = router.oneshot(req).await.unwrap();
+    assert_eq!(
+        resp.status(),
+        StatusCode::NOT_FOUND,
+        "Forwarded request to unknown session should return 404 immediately"
     );
 }

@@ -116,6 +116,10 @@ pub struct SignalServerState {
     pub token: Option<String>,
     /// When the server started (for uptime calculation).
     pub started_at: Instant,
+    /// Shared HTTP client for forwarding signals to peer instances.
+    /// `reqwest::Client` internally pools connections; one instance is shared
+    /// across all forwarding requests.
+    pub http_client: reqwest::Client,
 }
 
 // ── Router ──────────────────────────────────────────────────────────
@@ -202,6 +206,55 @@ struct ErrorBody {
     error: String,
 }
 
+/// Attempt to forward a signal to peer instances.
+///
+/// Tries each peer sequentially; returns `true` on the first 202 response.
+/// Returns `false` if all peers fail or the list is empty.
+async fn forward_to_peers(
+    peers: Vec<assay_types::PeerInfo>,
+    request: &SignalRequest,
+    token: Option<&str>,
+    client: &reqwest::Client,
+) -> bool {
+    for peer in &peers {
+        let url = format!("{}/api/v1/signal", peer.signal_url.trim_end_matches('/'));
+        let mut req = client
+            .post(&url)
+            .header("X-Assay-Forwarded", "true")
+            .json(request);
+        if let Some(tok) = token {
+            req = req.header("Authorization", format!("Bearer {tok}"));
+        }
+        match req.send().await {
+            Ok(resp) if resp.status() == reqwest::StatusCode::ACCEPTED => {
+                tracing::info!(
+                    target_session = %request.target_session,
+                    forwarded_to = %url,
+                    "signal forwarded to peer"
+                );
+                return true;
+            }
+            Ok(resp) => {
+                tracing::warn!(
+                    target_session = %request.target_session,
+                    url = %url,
+                    status = %resp.status(),
+                    "peer rejected forwarded signal"
+                );
+            }
+            Err(e) => {
+                tracing::warn!(
+                    target_session = %request.target_session,
+                    url = %url,
+                    error = %e,
+                    "peer forward failed"
+                );
+            }
+        }
+    }
+    false
+}
+
 /// `POST /api/v1/signal` — route a `PeerUpdate` into a session's inbox.
 async fn handle_signal(
     State(state): State<Arc<SignalServerState>>,
@@ -253,6 +306,80 @@ async fn handle_signal(
     let entry = match state.registry.lookup_session(&request.target_session) {
         Some(e) => e,
         None => {
+            // Loop prevention: if X-Assay-Forwarded is already set, this request
+            // arrived from a peer — return 404 immediately to break forwarding loops.
+            let is_forwarded = match headers.get("x-assay-forwarded") {
+                None => false,
+                Some(v) => match v.to_str() {
+                    Ok("true") => true,
+                    Ok(_) => false,
+                    Err(_) => {
+                        // Fail closed: treat invalid header as forwarded to prevent loops.
+                        tracing::warn!(
+                            target_session = %request.target_session,
+                            "x-assay-forwarded header contained non-UTF-8 bytes; \
+                             treating as forwarded to break potential loop"
+                        );
+                        true
+                    }
+                },
+            };
+            if is_forwarded {
+                return (
+                    StatusCode::NOT_FOUND,
+                    Json(ErrorBody {
+                        error: format!("unknown session: {}", request.target_session),
+                    }),
+                )
+                    .into_response();
+            }
+
+            // Peer forwarding — extract data from the RwLock guard before the async
+            // boundary (guard must not be held across .await).
+            let (supports_registry, peers_result) = {
+                let backend = state.backend.read().unwrap_or_else(|p| {
+                    tracing::error!(
+                        target_session = %request.target_session,
+                        "signal_backend RwLock poisoned during peer lookup — recovering"
+                    );
+                    p.into_inner()
+                });
+                (
+                    backend.capabilities().supports_peer_registry,
+                    backend.list_peers(),
+                )
+            }; // RwLock guard dropped here — safe to .await below
+
+            let peers = match peers_result {
+                Ok(p) => p,
+                Err(e) => {
+                    tracing::warn!(
+                        target_session = %request.target_session,
+                        error = %e,
+                        "failed to list peers for signal forwarding; treating as no peers"
+                    );
+                    vec![]
+                }
+            };
+
+            if supports_registry && !peers.is_empty() {
+                if forward_to_peers(peers, &request, state.token.as_deref(), &state.http_client)
+                    .await
+                {
+                    return StatusCode::ACCEPTED.into_response();
+                }
+                return (
+                    StatusCode::NOT_FOUND,
+                    Json(ErrorBody {
+                        error: format!(
+                            "no peer accepted signal for session: {}",
+                            request.target_session
+                        ),
+                    }),
+                )
+                    .into_response();
+            }
+
             return (
                 StatusCode::NOT_FOUND,
                 Json(ErrorBody {
