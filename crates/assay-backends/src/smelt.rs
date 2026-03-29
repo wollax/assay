@@ -93,7 +93,7 @@ impl StateBackend for SmeltBackend {
             supports_gossip_manifest: false,
             supports_annotations: true,
             supports_checkpoints: false,
-            supports_peer_registry: true,
+            supports_peer_registry: false, // register_peer is fire-and-forget; unregister not implemented
         }
     }
 
@@ -223,10 +223,11 @@ impl StateBackend for SmeltBackend {
 
     fn register_peer(&self, peer: &assay_types::PeerInfo) -> assay_core::Result<()> {
         let url = format!("{}/api/v1/peers", self.url);
-        let json_str = serde_json::to_string(peer)
+        // Use the header-map client which sets Content-Type: application/json by default.
+        let json_bytes = serde_json::to_vec(peer)
             .map_err(|e| AssayError::json("serializing PeerInfo", "SmeltBackend", e))?;
 
-        match self.client.post(&url).body(json_str).send() {
+        match self.client.post(&url).body(json_bytes).send() {
             Ok(resp) => {
                 let status_code = resp.status();
                 if status_code.is_success() {

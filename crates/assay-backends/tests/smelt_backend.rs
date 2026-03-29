@@ -58,7 +58,7 @@ fn test_capabilities_returns_correct_flags() {
             supports_gossip_manifest: false,
             supports_annotations: true,
             supports_checkpoints: false,
-            supports_peer_registry: true,
+            supports_peer_registry: false,
         }
     );
 }

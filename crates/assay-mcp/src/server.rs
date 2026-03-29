@@ -4696,8 +4696,29 @@ pub async fn serve() -> Result<(), Box<dyn std::error::Error>> {
     // Register this instance as a peer after the signal server is bound.
     let peer_id = hostname::get()
         .map(|h| h.to_string_lossy().into_owned())
-        .unwrap_or_else(|_| uuid_v4_simple());
-    let signal_url = format!("http://{}:{}", signal_bind, signal_port);
+        .unwrap_or_else(|e| {
+            let fallback = uuid_v4_simple();
+            tracing::warn!(
+                error = %e,
+                peer_id = %fallback,
+                "hostname unavailable; using timestamp-based fallback peer_id — \
+                 not stable across restarts"
+            );
+            fallback
+        });
+    // ASSAY_SIGNAL_URL overrides the derived URL for peer registration — use it when
+    // ASSAY_SIGNAL_BIND is 0.0.0.0 (all interfaces) since 0.0.0.0 is not reachable by peers.
+    let signal_url = std::env::var("ASSAY_SIGNAL_URL").unwrap_or_else(|_| {
+        let url = format!("http://{}:{}", signal_bind, signal_port);
+        if signal_bind == "0.0.0.0" {
+            tracing::warn!(
+                signal_url = %url,
+                "ASSAY_SIGNAL_BIND is 0.0.0.0; registered peer URL is unroutable — \
+                 set ASSAY_SIGNAL_URL to the reachable address for forwarding to work"
+            );
+        }
+        url
+    });
 
     if signal_server_started {
         let peer_info = assay_types::PeerInfo {
@@ -4739,14 +4760,18 @@ pub async fn serve() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 /// Generate a simple UUID v4 string (fallback when hostname is unavailable).
+/// Generate a fallback peer identifier when `hostname::get()` fails.
+///
+/// Uses wall-clock nanoseconds + process ID for uniqueness.
+/// Not stable across restarts — a new ID is generated each time.
 fn uuid_v4_simple() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
-    // Minimal entropy using timestamp + thread id for a unique enough fallback.
     let ts = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
-        .as_nanos();
-    format!("{:032x}", ts)
+        .as_nanos() as u64;
+    let pid = std::process::id() as u64;
+    format!("{:016x}{:016x}", ts, pid)
 }
 
 // ── Tests ────────────────────────────────────────────────────────────
