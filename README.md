@@ -416,3 +416,4 @@ Smelt stores per-job run state in `.smelt/runs/<job-name>/state.toml`. This file
 ## License
 
 TBD
+
