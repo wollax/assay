@@ -4678,8 +4678,10 @@ pub async fn serve() -> Result<(), Box<dyn std::error::Error>> {
         started_at: std::time::Instant::now(),
     });
 
+    let mut signal_server_started = false;
     match crate::signal_server::start_signal_server(signal_state, &signal_bind, signal_port).await {
         Ok(_handle) => {
+            signal_server_started = true;
             tracing::info!(port = signal_port, bind = %signal_bind, "signal server started");
         }
         Err(e) => {
@@ -4691,13 +4693,60 @@ pub async fn serve() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
+    // Register this instance as a peer after the signal server is bound.
+    let peer_id = hostname::get()
+        .map(|h| h.to_string_lossy().into_owned())
+        .unwrap_or_else(|_| uuid_v4_simple());
+    let signal_url = format!("http://{}:{}", signal_bind, signal_port);
+
+    if signal_server_started {
+        let peer_info = assay_types::PeerInfo {
+            peer_id: peer_id.clone(),
+            signal_url: signal_url.clone(),
+            registered_at: chrono::Utc::now(),
+        };
+        let backend_guard = signal_backend.read().unwrap_or_else(|p| p.into_inner());
+        if let Err(e) = backend_guard.register_peer(&peer_info) {
+            tracing::warn!(
+                peer_id = %peer_id,
+                signal_url = %signal_url,
+                error = %e,
+                "failed to register peer on startup; continuing"
+            );
+        } else {
+            tracing::info!(peer_id = %peer_id, signal_url = %signal_url, "registered as peer");
+        }
+    }
+
     let service = AssayServer::new()
-        .with_signal_state(run_registry, signal_backend)
+        .with_signal_state(run_registry, signal_backend.clone())
         .serve(stdio())
         .await?;
 
     service.waiting().await?;
+
+    // Unregister peer on clean shutdown.
+    if signal_server_started {
+        let backend_guard = signal_backend.read().unwrap_or_else(|p| p.into_inner());
+        if let Err(e) = backend_guard.unregister_peer(&peer_id) {
+            tracing::warn!(peer_id = %peer_id, error = %e, "failed to unregister peer on shutdown");
+        } else {
+            tracing::info!(peer_id = %peer_id, "unregistered peer on shutdown");
+        }
+    }
+
     Ok(())
+}
+
+/// Generate a simple UUID v4 string (fallback when hostname is unavailable).
+fn uuid_v4_simple() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    // Minimal entropy using timestamp + thread id for a unique enough fallback.
+    let ts = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    format!("{:032x}", ts)
 }
 
 // ── Tests ────────────────────────────────────────────────────────────

@@ -307,6 +307,7 @@ impl StateBackend for LinearBackend {
             supports_annotations: true,
             supports_checkpoints: false,
             supports_signals: false,
+            supports_peer_registry: false,
         }
     }
 

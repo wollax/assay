@@ -37,6 +37,8 @@ pub struct CapabilitySet {
     pub supports_checkpoints: bool,
     /// Whether the backend supports external signal reception (e.g. HTTP endpoint).
     pub supports_signals: bool,
+    /// Whether the backend supports peer registry (register/list/unregister peers).
+    pub supports_peer_registry: bool,
 }
 
 impl CapabilitySet {
@@ -48,6 +50,7 @@ impl CapabilitySet {
             supports_annotations: true,
             supports_checkpoints: true,
             supports_signals: true,
+            supports_peer_registry: true,
         }
     }
 
@@ -59,6 +62,7 @@ impl CapabilitySet {
             supports_annotations: false,
             supports_checkpoints: false,
             supports_signals: false,
+            supports_peer_registry: false,
         }
     }
 }
@@ -129,6 +133,32 @@ pub trait StateBackend: Send + Sync {
         assay_dir: &Path,
         checkpoint: &TeamCheckpoint,
     ) -> crate::Result<()>;
+
+    // ── Peer registry (optional, default no-op) ─────────────────────
+
+    /// Register a peer instance that can receive signals.
+    ///
+    /// Default implementation is a no-op. Override when
+    /// `capabilities().supports_peer_registry` is `true`.
+    fn register_peer(&self, _peer: &assay_types::PeerInfo) -> crate::Result<()> {
+        Ok(())
+    }
+
+    /// List all registered peer instances.
+    ///
+    /// Default implementation returns an empty list. Override when
+    /// `capabilities().supports_peer_registry` is `true`.
+    fn list_peers(&self) -> crate::Result<Vec<assay_types::PeerInfo>> {
+        Ok(vec![])
+    }
+
+    /// Remove a peer by its identifier.
+    ///
+    /// Default implementation is a no-op. Override when
+    /// `capabilities().supports_peer_registry` is `true`.
+    fn unregister_peer(&self, _peer_id: &str) -> crate::Result<()> {
+        Ok(())
+    }
 }
 
 /// Compile-time object-safety guard.
@@ -245,6 +275,7 @@ impl StateBackend for LocalFsBackend {
             supports_annotations: true,
             supports_checkpoints: true,
             supports_signals: false,
+            supports_peer_registry: true,
         }
     }
 
@@ -408,5 +439,183 @@ impl StateBackend for LocalFsBackend {
         checkpoint: &TeamCheckpoint,
     ) -> crate::Result<()> {
         crate::checkpoint::persistence::save_checkpoint(assay_dir, checkpoint).map(|_| ())
+    }
+
+    // ── Peer registry ───────────────────────────────────────────────
+
+    fn register_peer(&self, peer: &assay_types::PeerInfo) -> crate::Result<()> {
+        let peers_path = self.assay_dir.join("peers.json");
+
+        // Read existing peers (or start with empty list).
+        let mut peers: Vec<assay_types::PeerInfo> = match std::fs::read_to_string(&peers_path) {
+            Ok(contents) => serde_json::from_str(&contents)
+                .map_err(|e| crate::AssayError::json("reading peers.json", &peers_path, e))?,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => vec![],
+            Err(e) => return Err(crate::AssayError::io("reading peers.json", &peers_path, e)),
+        };
+
+        // Upsert by peer_id.
+        if let Some(existing) = peers.iter_mut().find(|p| p.peer_id == peer.peer_id) {
+            *existing = peer.clone();
+        } else {
+            peers.push(peer.clone());
+        }
+
+        // Atomic write.
+        std::fs::create_dir_all(&self.assay_dir)
+            .map_err(|e| crate::AssayError::io("creating assay directory", &self.assay_dir, e))?;
+
+        let json = serde_json::to_string_pretty(&peers)
+            .map_err(|e| crate::AssayError::json("serializing peers.json", &peers_path, e))?;
+
+        let mut tmpfile = NamedTempFile::new_in(&self.assay_dir).map_err(|e| {
+            crate::AssayError::io("creating temp file for peers", &self.assay_dir, e)
+        })?;
+        tmpfile
+            .write_all(json.as_bytes())
+            .map_err(|e| crate::AssayError::io("writing peers.json", &peers_path, e))?;
+        tmpfile
+            .as_file()
+            .sync_all()
+            .map_err(|e| crate::AssayError::io("syncing peers.json", &peers_path, e))?;
+        tmpfile
+            .persist(&peers_path)
+            .map_err(|e| crate::AssayError::io("persisting peers.json", &peers_path, e.error))?;
+
+        Ok(())
+    }
+
+    fn list_peers(&self) -> crate::Result<Vec<assay_types::PeerInfo>> {
+        let peers_path = self.assay_dir.join("peers.json");
+        match std::fs::read_to_string(&peers_path) {
+            Ok(contents) => serde_json::from_str(&contents)
+                .map_err(|e| crate::AssayError::json("reading peers.json", &peers_path, e)),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(vec![]),
+            Err(e) => Err(crate::AssayError::io("reading peers.json", &peers_path, e)),
+        }
+    }
+
+    fn unregister_peer(&self, peer_id: &str) -> crate::Result<()> {
+        let peers_path = self.assay_dir.join("peers.json");
+
+        let mut peers: Vec<assay_types::PeerInfo> = match std::fs::read_to_string(&peers_path) {
+            Ok(contents) => serde_json::from_str(&contents)
+                .map_err(|e| crate::AssayError::json("reading peers.json", &peers_path, e))?,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(e) => return Err(crate::AssayError::io("reading peers.json", &peers_path, e)),
+        };
+
+        let original_len = peers.len();
+        peers.retain(|p| p.peer_id != peer_id);
+
+        // Only write back if something changed.
+        if peers.len() == original_len {
+            return Ok(());
+        }
+
+        let json = serde_json::to_string_pretty(&peers)
+            .map_err(|e| crate::AssayError::json("serializing peers.json", &peers_path, e))?;
+
+        let mut tmpfile = NamedTempFile::new_in(&self.assay_dir).map_err(|e| {
+            crate::AssayError::io("creating temp file for peers", &self.assay_dir, e)
+        })?;
+        tmpfile
+            .write_all(json.as_bytes())
+            .map_err(|e| crate::AssayError::io("writing peers.json", &peers_path, e))?;
+        tmpfile
+            .as_file()
+            .sync_all()
+            .map_err(|e| crate::AssayError::io("syncing peers.json", &peers_path, e))?;
+        tmpfile
+            .persist(&peers_path)
+            .map_err(|e| crate::AssayError::io("persisting peers.json", &peers_path, e.error))?;
+
+        Ok(())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod peer_tests {
+    use super::*;
+    use assay_types::PeerInfo;
+    use chrono::Utc;
+
+    fn make_peer(id: &str, url: &str) -> PeerInfo {
+        PeerInfo {
+            peer_id: id.to_string(),
+            signal_url: url.to_string(),
+            registered_at: Utc::now(),
+        }
+    }
+
+    #[test]
+    fn test_register_and_list_peers() {
+        let tmp = tempfile::tempdir().unwrap();
+        let backend = LocalFsBackend::new(tmp.path().to_path_buf());
+
+        backend
+            .register_peer(&make_peer("peer-1", "http://localhost:7432"))
+            .unwrap();
+        backend
+            .register_peer(&make_peer("peer-2", "http://localhost:7433"))
+            .unwrap();
+
+        let peers = backend.list_peers().unwrap();
+        assert_eq!(peers.len(), 2);
+        assert!(peers.iter().any(|p| p.peer_id == "peer-1"));
+        assert!(peers.iter().any(|p| p.peer_id == "peer-2"));
+    }
+
+    #[test]
+    fn test_register_peer_upserts() {
+        let tmp = tempfile::tempdir().unwrap();
+        let backend = LocalFsBackend::new(tmp.path().to_path_buf());
+
+        backend
+            .register_peer(&make_peer("peer-1", "http://localhost:7432"))
+            .unwrap();
+        backend
+            .register_peer(&make_peer("peer-1", "http://localhost:9999"))
+            .unwrap();
+
+        let peers = backend.list_peers().unwrap();
+        assert_eq!(peers.len(), 1, "upsert should not duplicate");
+        assert_eq!(peers[0].signal_url, "http://localhost:9999");
+    }
+
+    #[test]
+    fn test_unregister_peer() {
+        let tmp = tempfile::tempdir().unwrap();
+        let backend = LocalFsBackend::new(tmp.path().to_path_buf());
+
+        backend
+            .register_peer(&make_peer("peer-1", "http://localhost:7432"))
+            .unwrap();
+        backend.unregister_peer("peer-1").unwrap();
+
+        let peers = backend.list_peers().unwrap();
+        assert!(peers.is_empty(), "should be empty after unregister");
+    }
+
+    #[test]
+    fn test_unregister_nonexistent_peer() {
+        let tmp = tempfile::tempdir().unwrap();
+        let backend = LocalFsBackend::new(tmp.path().to_path_buf());
+
+        // Should be Ok(()) even when there's no peers.json.
+        backend.unregister_peer("nonexistent").unwrap();
+    }
+
+    #[test]
+    fn test_list_peers_no_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let backend = LocalFsBackend::new(tmp.path().to_path_buf());
+
+        let peers = backend.list_peers().unwrap();
+        assert!(peers.is_empty(), "no peers.json should return empty vec");
     }
 }

@@ -135,6 +135,7 @@ mod tests {
                 supports_annotations: true,
                 supports_checkpoints: true,
                 supports_signals: false,
+                supports_peer_registry: true,
             }
         );
     }
@@ -161,6 +162,7 @@ mod tests {
                         supports_annotations: true,
                         supports_checkpoints: false,
                         supports_signals: false,
+                        supports_peer_registry: false,
                     }
                 );
             } else {
@@ -207,6 +209,7 @@ mod tests {
                 supports_annotations: true,
                 supports_checkpoints: true,
                 supports_signals: false,
+                supports_peer_registry: false,
             }
         );
         #[cfg(not(feature = "ssh"))]

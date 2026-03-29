@@ -93,6 +93,7 @@ impl StateBackend for SmeltBackend {
             supports_gossip_manifest: false,
             supports_annotations: true,
             supports_checkpoints: false,
+            supports_peer_registry: true,
         }
     }
 
@@ -218,5 +219,41 @@ impl StateBackend for SmeltBackend {
                 "SmeltBackend does not support checkpoints",
             ),
         ))
+    }
+
+    fn register_peer(&self, peer: &assay_types::PeerInfo) -> assay_core::Result<()> {
+        let url = format!("{}/api/v1/peers", self.url);
+        let json_str = serde_json::to_string(peer)
+            .map_err(|e| AssayError::json("serializing PeerInfo", "SmeltBackend", e))?;
+
+        match self.client.post(&url).body(json_str).send() {
+            Ok(resp) => {
+                let status_code = resp.status();
+                if status_code.is_success() {
+                    tracing::debug!(
+                        url = %url,
+                        peer_id = %peer.peer_id,
+                        "SmeltBackend: register_peer succeeded"
+                    );
+                } else {
+                    tracing::warn!(
+                        url = %url,
+                        status = %status_code,
+                        peer_id = %peer.peer_id,
+                        "SmeltBackend: register_peer received non-2xx, continuing gracefully"
+                    );
+                }
+            }
+            Err(e) => {
+                tracing::warn!(
+                    url = %url,
+                    error = %e,
+                    peer_id = %peer.peer_id,
+                    "SmeltBackend: register_peer failed, continuing gracefully"
+                );
+            }
+        }
+
+        Ok(())
     }
 }

@@ -207,6 +207,7 @@ dependencies = [
  "assay-types",
  "axum",
  "chrono",
+ "hostname",
  "http-body-util",
  "insta",
  "mockito",
