@@ -30,8 +30,8 @@ pub mod signal_server;
 pub use server::{
     AssayServer, ContextDiagnoseParams, EstimateTokensParams, GateFinalizeParams,
     GateHistoryParams, GateReportParams, GateRunParams, MergeCheckParams, OrchestrateRunParams,
-    OrchestrateStatusParams, SessionCreateParams, SessionGetParams, SessionListParams,
-    SessionUpdateParams, SpecGetParams, SpecValidateParams,
+    OrchestrateStatusParams, PollSignalsParams, SendSignalParams, SessionCreateParams,
+    SessionGetParams, SessionListParams, SessionUpdateParams, SpecGetParams, SpecValidateParams,
 };
 
 #[cfg(any(test, feature = "testing"))]

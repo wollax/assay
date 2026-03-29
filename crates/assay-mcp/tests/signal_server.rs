@@ -490,3 +490,233 @@ async fn test_start_signal_server_bind_addr_all_interfaces() {
         "start_signal_server should succeed on 0.0.0.0:0"
     );
 }
+
+// ── poll_signals MCP tool tests ─────────────────────────────────────
+
+use assay_mcp::{AssayServer, Parameters, PollSignalsParams, SendSignalParams};
+use assay_types::PollSignalsResult;
+use rmcp::model::RawContent;
+
+/// Extract text content from a CallToolResult.
+fn extract_text(result: &rmcp::model::CallToolResult) -> String {
+    result
+        .content
+        .iter()
+        .filter_map(|c| match &c.raw {
+            RawContent::Text(t) => Some(t.text.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("")
+}
+
+#[tokio::test]
+async fn test_poll_signals_unknown_session() {
+    // AssayServer::new() creates an empty registry — any session is unknown.
+    let server = AssayServer::new();
+    let params = Parameters(PollSignalsParams {
+        session_name: "nonexistent".to_string(),
+    });
+    let result = server.poll_signals(params).await.unwrap();
+    assert!(
+        result.is_error.unwrap_or(false),
+        "should be an error result"
+    );
+    let text = extract_text(&result);
+    assert!(
+        text.contains("session not found"),
+        "error should mention session not found, got: {text}"
+    );
+}
+
+#[tokio::test]
+async fn test_poll_signals_empty_inbox() {
+    let tmp = tempfile::tempdir().unwrap();
+    let backend: Arc<dyn StateBackend> = Arc::new(LocalFsBackend::new(tmp.path().to_path_buf()));
+    let registry = Arc::new(RunRegistry::new());
+    let backend_lock = Arc::new(std::sync::RwLock::new(backend));
+
+    // Register a session.
+    let run_dir = tmp.path().join("orchestrator/run-001");
+    let inbox_dir = run_dir.join("mesh/worker-1/inbox");
+    std::fs::create_dir_all(&inbox_dir).unwrap();
+    registry.register_session(
+        "worker-1".to_string(),
+        RunEntry {
+            run_id: "run-001".to_string(),
+            run_dir,
+            spec_name: "test".to_string(),
+            started_at: Instant::now(),
+            session_count: 1,
+        },
+    );
+
+    let server = AssayServer::new().with_signal_state(registry, backend_lock);
+    let params = Parameters(PollSignalsParams {
+        session_name: "worker-1".to_string(),
+    });
+    let result = server.poll_signals(params).await.unwrap();
+    assert!(
+        !result.is_error.unwrap_or(false),
+        "empty inbox should not be an error"
+    );
+    let text = extract_text(&result);
+    let poll_result: PollSignalsResult = serde_json::from_str(&text).unwrap();
+    assert!(
+        poll_result.signals.is_empty(),
+        "empty inbox should return no signals"
+    );
+}
+
+#[tokio::test]
+async fn test_poll_signals_returns_messages() {
+    let tmp = tempfile::tempdir().unwrap();
+    let backend: Arc<dyn StateBackend> = Arc::new(LocalFsBackend::new(tmp.path().to_path_buf()));
+    let registry = Arc::new(RunRegistry::new());
+    let backend_lock = Arc::new(std::sync::RwLock::new(backend.clone()));
+
+    // Register a session.
+    let run_dir = tmp.path().join("orchestrator/run-001");
+    let inbox_dir = run_dir.join("mesh/worker-1/inbox");
+    std::fs::create_dir_all(&inbox_dir).unwrap();
+    registry.register_session(
+        "worker-1".to_string(),
+        RunEntry {
+            run_id: "run-001".to_string(),
+            run_dir,
+            spec_name: "test".to_string(),
+            started_at: Instant::now(),
+            session_count: 1,
+        },
+    );
+
+    // Write a PeerUpdate JSON file to the inbox (same as what handle_signal writes).
+    let update = PeerUpdate {
+        source_job: "job-abc".to_string(),
+        source_session: "orchestrator".to_string(),
+        changed_files: vec!["src/main.rs".to_string()],
+        gate_summary: GateSummary {
+            passed: 5,
+            failed: 0,
+            skipped: 1,
+        },
+        branch: "feature/test".to_string(),
+    };
+    let json_bytes = serde_json::to_vec(&update).unwrap();
+    std::fs::write(inbox_dir.join("signal-12345"), &json_bytes).unwrap();
+
+    let server = AssayServer::new().with_signal_state(registry, backend_lock);
+    let params = Parameters(PollSignalsParams {
+        session_name: "worker-1".to_string(),
+    });
+    let result = server.poll_signals(params).await.unwrap();
+    assert!(
+        !result.is_error.unwrap_or(false),
+        "should succeed with messages"
+    );
+    let text = extract_text(&result);
+    let poll_result: PollSignalsResult = serde_json::from_str(&text).unwrap();
+    assert_eq!(poll_result.signals.len(), 1, "should have one signal");
+    assert_eq!(poll_result.signals[0].source_job, "job-abc");
+    assert_eq!(poll_result.signals[0].branch, "feature/test");
+}
+
+// ── send_signal MCP tool tests ──────────────────────────────────────
+
+fn sample_peer_update() -> PeerUpdate {
+    PeerUpdate {
+        source_job: "job-abc".to_string(),
+        source_session: "worker-1".to_string(),
+        changed_files: vec!["src/main.rs".to_string()],
+        gate_summary: GateSummary {
+            passed: 5,
+            failed: 0,
+            skipped: 1,
+        },
+        branch: "feature/test".to_string(),
+    }
+}
+
+#[tokio::test]
+async fn test_send_signal_posts_correct_json() {
+    let mut mock_server = mockito::Server::new_async().await;
+    let mock = mock_server
+        .mock("POST", "/api/v1/signal")
+        .match_header("content-type", "application/json")
+        .match_body(mockito::Matcher::PartialJsonString(
+            r#"{"target_session":"worker-1"}"#.to_string(),
+        ))
+        .with_status(202)
+        .with_body("accepted")
+        .create_async()
+        .await;
+
+    let server = AssayServer::new();
+    let params = Parameters(SendSignalParams {
+        url: format!("{}/api/v1/signal", mock_server.url()),
+        target_session: "worker-1".to_string(),
+        update: sample_peer_update(),
+    });
+    let result = server.send_signal(params).await.unwrap();
+    assert!(
+        !result.is_error.unwrap_or(false),
+        "should succeed: {}",
+        extract_text(&result)
+    );
+    let text = extract_text(&result);
+    assert!(
+        text.contains("202"),
+        "should contain status 202, got: {text}"
+    );
+
+    mock.assert_async().await;
+}
+
+#[tokio::test]
+async fn test_send_signal_returns_non_2xx_as_result() {
+    let mut mock_server = mockito::Server::new_async().await;
+    let _mock = mock_server
+        .mock("POST", "/api/v1/signal")
+        .with_status(404)
+        .with_body("not found")
+        .create_async()
+        .await;
+
+    let server = AssayServer::new();
+    let params = Parameters(SendSignalParams {
+        url: format!("{}/api/v1/signal", mock_server.url()),
+        target_session: "worker-1".to_string(),
+        update: sample_peer_update(),
+    });
+    let result = server.send_signal(params).await.unwrap();
+    // Non-2xx is NOT a tool error — it's returned as a success result with the status.
+    assert!(
+        !result.is_error.unwrap_or(false),
+        "non-2xx should not be a tool error"
+    );
+    let text = extract_text(&result);
+    assert!(
+        text.contains("404"),
+        "should contain status 404, got: {text}"
+    );
+}
+
+#[tokio::test]
+async fn test_send_signal_unreachable_url() {
+    let server = AssayServer::new();
+    let params = Parameters(SendSignalParams {
+        url: "http://127.0.0.1:1/api/v1/signal".to_string(),
+        target_session: "worker-1".to_string(),
+        update: sample_peer_update(),
+    });
+    let result = server.send_signal(params).await.unwrap();
+    assert!(
+        result.is_error.unwrap_or(false),
+        "unreachable URL should be a domain error"
+    );
+    let text = extract_text(&result);
+    assert!(
+        text.contains("send_signal failed"),
+        "error should mention send_signal, got: {text}"
+    );
+}
