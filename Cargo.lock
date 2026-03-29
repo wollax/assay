@@ -207,6 +207,7 @@ dependencies = [
  "assay-types",
  "axum",
  "chrono",
+ "http-body-util",
  "insta",
  "rmcp",
  "schemars",
@@ -216,6 +217,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "toml",
+ "tower",
  "tracing",
 ]
 
