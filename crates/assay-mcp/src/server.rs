@@ -4678,8 +4678,10 @@ pub async fn serve() -> Result<(), Box<dyn std::error::Error>> {
         started_at: std::time::Instant::now(),
     });
 
+    let mut signal_server_started = false;
     match crate::signal_server::start_signal_server(signal_state, &signal_bind, signal_port).await {
         Ok(_handle) => {
+            signal_server_started = true;
             tracing::info!(port = signal_port, bind = %signal_bind, "signal server started");
         }
         Err(e) => {
@@ -4691,13 +4693,85 @@ pub async fn serve() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
+    // Register this instance as a peer after the signal server is bound.
+    let peer_id = hostname::get()
+        .map(|h| h.to_string_lossy().into_owned())
+        .unwrap_or_else(|e| {
+            let fallback = uuid_v4_simple();
+            tracing::warn!(
+                error = %e,
+                peer_id = %fallback,
+                "hostname unavailable; using timestamp-based fallback peer_id — \
+                 not stable across restarts"
+            );
+            fallback
+        });
+    // ASSAY_SIGNAL_URL overrides the derived URL for peer registration — use it when
+    // ASSAY_SIGNAL_BIND is 0.0.0.0 (all interfaces) since 0.0.0.0 is not reachable by peers.
+    let signal_url = std::env::var("ASSAY_SIGNAL_URL").unwrap_or_else(|_| {
+        let url = format!("http://{}:{}", signal_bind, signal_port);
+        if signal_bind == "0.0.0.0" {
+            tracing::warn!(
+                signal_url = %url,
+                "ASSAY_SIGNAL_BIND is 0.0.0.0; registered peer URL is unroutable — \
+                 set ASSAY_SIGNAL_URL to the reachable address for forwarding to work"
+            );
+        }
+        url
+    });
+
+    if signal_server_started {
+        let peer_info = assay_types::PeerInfo {
+            peer_id: peer_id.clone(),
+            signal_url: signal_url.clone(),
+            registered_at: chrono::Utc::now(),
+        };
+        let backend_guard = signal_backend.read().unwrap_or_else(|p| p.into_inner());
+        if let Err(e) = backend_guard.register_peer(&peer_info) {
+            tracing::warn!(
+                peer_id = %peer_id,
+                signal_url = %signal_url,
+                error = %e,
+                "failed to register peer on startup; continuing"
+            );
+        } else {
+            tracing::info!(peer_id = %peer_id, signal_url = %signal_url, "registered as peer");
+        }
+    }
+
     let service = AssayServer::new()
-        .with_signal_state(run_registry, signal_backend)
+        .with_signal_state(run_registry, signal_backend.clone())
         .serve(stdio())
         .await?;
 
     service.waiting().await?;
+
+    // Unregister peer on clean shutdown.
+    if signal_server_started {
+        let backend_guard = signal_backend.read().unwrap_or_else(|p| p.into_inner());
+        if let Err(e) = backend_guard.unregister_peer(&peer_id) {
+            tracing::warn!(peer_id = %peer_id, error = %e, "failed to unregister peer on shutdown");
+        } else {
+            tracing::info!(peer_id = %peer_id, "unregistered peer on shutdown");
+        }
+    }
+
     Ok(())
+}
+
+/// Generate a simple UUID v4 string (fallback when hostname is unavailable).
+/// Generate a fallback peer identifier when `hostname::get()` fails.
+///
+/// Uses wall-clock nanoseconds + process ID for uniqueness.
+/// Not stable across restarts — a new ID is generated each time.
+fn uuid_v4_simple() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let ts = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos() as u64;
+    let pid = std::process::id() as u64;
+    format!("{:016x}{:016x}", ts, pid)
 }
 
 // ── Tests ────────────────────────────────────────────────────────────

@@ -1,0 +1,31 @@
+---
+source: crates/assay-types/tests/schema_snapshots.rs
+expression: schema.to_value()
+---
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Metadata about a peer Assay instance that can receive signals.\n\nRegistered via [`StateBackend::register_peer`] on startup, queried via\n[`StateBackend::list_peers`] during signal forwarding.",
+  "properties": {
+    "peer_id": {
+      "description": "Unique identifier for this peer (typically hostname or UUID).",
+      "type": "string"
+    },
+    "registered_at": {
+      "description": "When this peer was registered (UTC).",
+      "format": "date-time",
+      "type": "string"
+    },
+    "signal_url": {
+      "description": "Signal endpoint URL of this peer (e.g. `http://127.0.0.1:7432`).",
+      "type": "string"
+    }
+  },
+  "required": [
+    "peer_id",
+    "signal_url",
+    "registered_at"
+  ],
+  "title": "PeerInfo",
+  "type": "object"
+}

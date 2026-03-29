@@ -58,6 +58,7 @@ fn test_capabilities_returns_correct_flags() {
             supports_gossip_manifest: false,
             supports_annotations: true,
             supports_checkpoints: false,
+            supports_peer_registry: false,
         }
     );
 }
@@ -219,4 +220,55 @@ fn test_factory_dispatch_creates_smelt_backend() {
     assert!(!caps.supports_messaging);
     assert!(!caps.supports_gossip_manifest);
     assert!(!caps.supports_checkpoints);
+}
+
+// ── Peer registry tests ─────────────────────────────────────────────
+
+fn sample_peer_info() -> assay_types::PeerInfo {
+    assay_types::PeerInfo {
+        peer_id: "test-peer-1".to_string(),
+        signal_url: "http://localhost:7432".to_string(),
+        registered_at: chrono::Utc::now(),
+    }
+}
+
+#[test]
+fn test_register_peer_posts_to_peers_endpoint() {
+    let mut server = Server::new();
+    let mock = server
+        .mock("POST", "/api/v1/peers")
+        .match_body(Matcher::PartialJsonString(
+            r#"{"peer_id":"test-peer-1"}"#.to_string(),
+        ))
+        .with_status(201)
+        .create();
+
+    let backend = SmeltBackend::new(
+        server.url(),
+        "test-job".to_string(),
+        Some("test-token".to_string()),
+    );
+
+    let result = backend.register_peer(&sample_peer_info());
+    assert!(result.is_ok());
+    mock.assert();
+}
+
+#[test]
+fn test_register_peer_graceful_on_failure() {
+    let mut server = Server::new();
+    let _mock = server
+        .mock("POST", "/api/v1/peers")
+        .with_status(500)
+        .with_body("internal server error")
+        .create();
+
+    let backend = SmeltBackend::new(
+        server.url(),
+        "test-job".to_string(),
+        Some("test-token".to_string()),
+    );
+
+    let result = backend.register_peer(&sample_peer_info());
+    assert!(result.is_ok(), "should degrade gracefully on 500");
 }
