@@ -483,3 +483,35 @@ fn state_backend_config_schema_snapshot() {
     let schema = schemars::schema_for!(assay_types::StateBackendConfig);
     assert_json_snapshot!("state-backend-config-schema", schema.to_value());
 }
+
+// ── Signal types ────────────────────────────────────────────────────
+
+#[test]
+fn gate_summary_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::GateSummary);
+    assert_json_snapshot!("signal-gate-summary-schema", schema.to_value());
+}
+
+#[test]
+fn peer_update_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::PeerUpdate);
+    assert_json_snapshot!("peer-update-schema", schema.to_value());
+}
+
+#[test]
+fn signal_request_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::SignalRequest);
+    assert_json_snapshot!("signal-request-schema", schema.to_value());
+}
+
+#[test]
+fn run_summary_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::RunSummary);
+    assert_json_snapshot!("run-summary-schema", schema.to_value());
+}
+
+#[test]
+fn assay_server_state_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::AssayServerState);
+    assert_json_snapshot!("assay-server-state-schema", schema.to_value());
+}

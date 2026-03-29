@@ -1,0 +1,36 @@
+---
+source: crates/assay-types/tests/schema_snapshots.rs
+expression: schema.to_value()
+---
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Lightweight gate pass/fail/skip counts included in a [`PeerUpdate`].\n\nThis is a signal-specific summary — not the same as the full gate types\nin [`crate::gate_run`].",
+  "properties": {
+    "failed": {
+      "description": "Number of gate criteria that failed.",
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "passed": {
+      "description": "Number of gate criteria that passed.",
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "skipped": {
+      "description": "Number of gate criteria that were skipped.",
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "passed",
+    "failed",
+    "skipped"
+  ],
+  "title": "GateSummary",
+  "type": "object"
+}
