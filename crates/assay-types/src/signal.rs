@@ -108,6 +108,25 @@ inventory::submit! {
     }
 }
 
+// ── PollSignalsResult ───────────────────────────────────────────────
+
+/// Result type for the `poll_signals` MCP tool.
+///
+/// Wraps a vector of [`PeerUpdate`] messages read from a session's inbox.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct PollSignalsResult {
+    /// Signals consumed from the session inbox (exactly-once delivery).
+    pub signals: Vec<PeerUpdate>,
+}
+
+inventory::submit! {
+    schema_registry::SchemaEntry {
+        name: "poll-signals-result",
+        generate: || schemars::schema_for!(PollSignalsResult),
+    }
+}
+
 // ── AssayServerState ────────────────────────────────────────────────
 
 /// Global server state returned by `GET /api/v1/state`.

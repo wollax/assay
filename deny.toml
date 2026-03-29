@@ -27,6 +27,7 @@ allow = [
     "Unicode-DFS-2016",
     "CC0-1.0",
     "Artistic-2.0",
+    "CDLA-Permissive-2.0",
 ]
 
 [licenses.private]
@@ -55,6 +56,13 @@ skip = [
 
     # notify -> inotify -> bitflags 1.x; rest of tree uses bitflags 2.x
     { crate = "bitflags@1", reason = "inotify (via notify) uses bitflags 1.x" },
+
+    # reqwest -> rustls-platform-verifier -> system-configuration -> core-foundation 0.9
+    { crate = "core-foundation@0.9", reason = "system-configuration (via hyper-util) uses core-foundation 0.9" },
+
+    # reqwest -> rustls-platform-verifier -> jni -> thiserror 1.x; workspace uses thiserror 2.x
+    { crate = "thiserror@1", reason = "jni (via reqwest/rustls-platform-verifier) uses thiserror 1.x" },
+    { crate = "thiserror-impl@1", reason = "thiserror 1.x proc-macro" },
 ]
 
 skip-tree = [
@@ -64,6 +72,7 @@ skip-tree = [
     { crate = "windows-sys@0.52", reason = "notify uses windows-sys 0.52; rest of tree uses newer versions" },
     { crate = "windows-sys@0.59", reason = "Windows platform crate version fragmentation across transitive deps" },
     { crate = "windows-sys@0.60", reason = "Windows platform crate version fragmentation across transitive deps" },
+    { crate = "windows-sys@0.45", reason = "jni (via reqwest/rustls-platform-verifier) uses windows-sys 0.45" },
 ]
 
 [sources]

@@ -209,6 +209,8 @@ dependencies = [
  "chrono",
  "http-body-util",
  "insta",
+ "mockito",
+ "reqwest",
  "rmcp",
  "schemars",
  "serde",

@@ -711,6 +711,32 @@ pub struct SpecCreateParams {
     pub criteria: Vec<CriterionOrString>,
 }
 
+// ── Signal tool params ───────────────────────────────────────────────
+
+/// Parameters for the `poll_signals` tool.
+#[derive(Deserialize, JsonSchema)]
+pub struct PollSignalsParams {
+    /// Name of the session whose inbox to poll.
+    #[schemars(description = "Name of the session whose inbox to poll")]
+    pub session_name: String,
+}
+
+/// Parameters for the `send_signal` tool.
+#[derive(Deserialize, JsonSchema)]
+pub struct SendSignalParams {
+    /// Full URL of the signal endpoint (e.g. `http://localhost:7432/api/v1/signal`).
+    #[schemars(
+        description = "Full URL of the signal endpoint (e.g. http://localhost:7432/api/v1/signal)"
+    )]
+    pub url: String,
+    /// Name of the target session to receive the signal.
+    #[schemars(description = "Name of the target session to receive the signal")]
+    pub target_session: String,
+    /// The PeerUpdate payload to send.
+    #[schemars(description = "The PeerUpdate payload to send")]
+    pub update: assay_types::PeerUpdate,
+}
+
 // ── Response structs ─────────────────────────────────────────────────
 
 /// A single entry in the `spec_list` response.
@@ -4096,6 +4122,126 @@ impl AssayServer {
             }
             Err(e) => Ok(domain_error(&e)),
         }
+    }
+
+    /// Poll signals from a session's inbox.
+    ///
+    /// Returns all `PeerUpdate` messages consumed from the session's inbox (exactly-once delivery).
+    #[tool(
+        description = "Poll signals from a session's inbox. Returns all PeerUpdate messages consumed from the session's inbox (exactly-once delivery). Use this to receive signals from peer agents during an orchestrated run."
+    )]
+    pub async fn poll_signals(
+        &self,
+        params: Parameters<PollSignalsParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let session_name = params.0.session_name;
+        // Look up the session in the run registry.
+        let entry = match self.run_registry.lookup_session(&session_name) {
+            Some(e) => e,
+            None => {
+                return Ok(CallToolResult::error(vec![Content::text(format!(
+                    "session not found: {session_name}"
+                ))]));
+            }
+        };
+
+        // Build inbox path: <run_dir>/mesh/<session_name>/inbox/
+        let inbox_path = entry.run_dir.join("mesh").join(&session_name).join("inbox");
+
+        // Read through the RwLock to the active backend.
+        let backend = self
+            .signal_backend
+            .read()
+            .unwrap_or_else(|p| p.into_inner())
+            .clone();
+
+        // poll_inbox does file I/O — run in spawn_blocking.
+        let result = tokio::task::spawn_blocking(move || backend.poll_inbox(&inbox_path))
+            .await
+            .map_err(|e| McpError::internal_error(format!("poll_signals panicked: {e}"), None))?;
+
+        match result {
+            Ok(messages) => {
+                let mut signals = Vec::with_capacity(messages.len());
+                for (name, bytes) in &messages {
+                    match serde_json::from_slice::<assay_types::PeerUpdate>(bytes) {
+                        Ok(update) => signals.push(update),
+                        Err(e) => {
+                            tracing::warn!(
+                                message_name = %name,
+                                error = %e,
+                                "poll_signals: skipping malformed message"
+                            );
+                        }
+                    }
+                }
+                tracing::debug!(
+                    session = %session_name,
+                    count = signals.len(),
+                    "poll_signals"
+                );
+                let result = assay_types::PollSignalsResult { signals };
+                let json = serde_json::to_string(&result).map_err(|e| {
+                    McpError::internal_error(format!("serialization failed: {e}"), None)
+                })?;
+                Ok(CallToolResult::success(vec![Content::text(json)]))
+            }
+            Err(e) => Ok(domain_error(&e)),
+        }
+    }
+
+    /// Send a signal to a session via the Assay signal endpoint.
+    ///
+    /// POSTs a `SignalRequest` to the given URL. Returns the HTTP status code and response body.
+    /// Non-2xx responses are returned as tool results (not tool errors) so the caller can decide.
+    #[tool(
+        description = "Send a signal to a session via the Assay signal endpoint. POSTs a SignalRequest to the given URL. Returns the HTTP status and response body. Non-2xx responses are returned as results (not errors) so the caller can decide how to handle them."
+    )]
+    pub async fn send_signal(
+        &self,
+        params: Parameters<SendSignalParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let url = params.0.url;
+        let target_session = params.0.target_session;
+        let update = params.0.update;
+        let signal_request = assay_types::SignalRequest {
+            target_session: target_session.clone(),
+            update: update.clone(),
+        };
+
+        tracing::debug!(
+            url = %url,
+            target_session = %target_session,
+            "send_signal"
+        );
+
+        let client = reqwest::Client::new();
+        let response = match client.post(&url).json(&signal_request).send().await {
+            Ok(resp) => resp,
+            Err(e) => {
+                tracing::warn!(url = %url, error = %e, "send_signal: request failed");
+                return Ok(CallToolResult::error(vec![Content::text(format!(
+                    "send_signal failed: {e}"
+                ))]));
+            }
+        };
+
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+
+        if !status.is_success() {
+            tracing::warn!(
+                url = %url,
+                status = %status,
+                "send_signal: non-2xx response"
+            );
+        }
+
+        Ok(CallToolResult::success(vec![Content::text(format!(
+            "{}: {}",
+            status.as_u16(),
+            body
+        ))]))
     }
 }
 
