@@ -85,6 +85,7 @@ fn compose_manifest(name: &str, services: Vec<ComposeService>) -> JobManifest {
         state_backend: None,
         services,
         runtime_env: HashMap::new(),
+        notify: Vec::new(),
     }
 }
 

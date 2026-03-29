@@ -98,6 +98,32 @@ pub struct JobManifest {
     /// e.g. `SMELT_EVENT_URL`, `SMELT_JOB_ID`. Not deserialized from TOML.
     #[serde(skip)]
     pub runtime_env: HashMap<String, String>,
+
+    /// Declarative cross-job PeerUpdate routing rules (D179).
+    ///
+    /// When a session-completion event is ingested for this job, Smelt evaluates
+    /// these rules and delivers a `PeerUpdate` signal to each matching target job.
+    /// Populated from `[[notify]]` TOML array syntax.
+    #[serde(default)]
+    pub notify: Vec<NotifyRule>,
+}
+
+/// A single cross-job notification rule (D179).
+///
+/// Declared as `[[notify]]` in the manifest TOML:
+/// ```toml
+/// [[notify]]
+/// target_job = "frontend"
+/// on_session_complete = true
+/// ```
+#[derive(Debug, Deserialize, Clone, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct NotifyRule {
+    /// Name of the job to notify when the trigger condition fires.
+    pub target_job: String,
+    /// Fire when the source job's Assay session completes (phase == "complete").
+    #[serde(default)]
+    pub on_session_complete: bool,
 }
 
 /// `[job]` — high-level job metadata.

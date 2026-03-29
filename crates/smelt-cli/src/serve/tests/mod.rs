@@ -2,6 +2,7 @@ mod config;
 mod dispatch;
 mod events;
 mod http;
+mod notify;
 mod queue;
 mod signals;
 mod ssh_dispatch;

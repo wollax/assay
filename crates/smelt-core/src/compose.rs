@@ -620,6 +620,7 @@ mod tests {
             services,
             state_backend: None,
             runtime_env: HashMap::new(),
+            notify: Vec::new(),
         }
     }
 

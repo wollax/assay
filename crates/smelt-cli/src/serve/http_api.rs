@@ -18,6 +18,7 @@ use tokio_stream::wrappers::BroadcastStream;
 use tokio_util::sync::CancellationToken;
 
 use crate::serve::config::AuthConfig;
+use crate::serve::notify;
 use crate::serve::queue::ServerState;
 use crate::serve::signals::{PeerUpdate, deliver_peer_update, validate_session_name};
 use crate::serve::types::{JobSource, JobStatus, QueuedJob, elapsed_secs_since, now_epoch};
@@ -391,7 +392,114 @@ async fn post_event(
     };
 
     // Store in per-job EventStore and broadcast via the encapsulated method.
-    s.ingest_event(event);
+    s.ingest_event(event.clone());
+
+    // Extract the data needed for notify routing under the lock.
+    // No filesystem I/O happens here — manifest reading is deferred until after
+    // the lock is dropped to avoid blocking the Mutex on disk reads.
+    let source_manifest_path = s
+        .jobs
+        .iter()
+        .find(|j| j.id.0 == job_id)
+        .map(|j| j.manifest_path.clone());
+
+    let queued_snapshots: Vec<notify::QueuedJobSnapshot> = s
+        .jobs
+        .iter()
+        .map(|j| notify::QueuedJobSnapshot {
+            job_id: j.id.clone(),
+            // NOTE: job_name uses the server-assigned JobId string for now.
+            // In smelt serve, operators must use the JobId (e.g. "job-1") in
+            // [[notify]] target_job. A future improvement would store [job].name
+            // in QueuedJob at enqueue time to enable name-based matching.
+            job_name: j.id.0.clone(),
+            manifest_path: j.manifest_path.clone(),
+            is_terminal: matches!(
+                j.status,
+                crate::serve::types::JobStatus::Complete | crate::serve::types::JobStatus::Failed
+            ),
+        })
+        .collect();
+
+    // Also snapshot run_ids under the lock.
+    let run_ids_snapshot = s.run_ids.clone();
+
+    // Drop lock before any filesystem I/O.
+    drop(s);
+
+    // Evaluate notify rules outside the lock (reads source manifest from disk).
+    let notify_targets = if let Some(src_manifest) = source_manifest_path {
+        notify::evaluate_notify_rules(&event, &src_manifest, &queued_snapshots)
+    } else {
+        Vec::new()
+    };
+
+    let pending_deliveries: Vec<_> = notify_targets
+        .into_iter()
+        .filter_map(|target| {
+            let run_id = match run_ids_snapshot.get(&target.job_id.0).cloned() {
+                Some(id) => id,
+                None => {
+                    tracing::warn!(
+                        source_job = %job_id,
+                        target_job = %target.job_id,
+                        "notify: no run_id for target job yet — signal cannot be delivered, skipping"
+                    );
+                    return None;
+                }
+            };
+            Some((target.job_id, run_id, target.manifest_path, target.peer_update))
+        })
+        .collect();
+
+    // Deliver cross-job PeerUpdate signals (D179) — skip individual targets on error.
+    for (target_job_id, run_id, manifest_path, peer_update) in pending_deliveries {
+        // Resolve the target job's repo path and its session names in one manifest read.
+        let (repo_path, target_session_names) =
+            match notify::resolve_target_delivery_context(&manifest_path) {
+                Some(ctx) => ctx,
+                None => {
+                    // resolve_target_delivery_context already logged per-step errors.
+                    tracing::warn!(
+                        source_job = %job_id,
+                        target_job = %target_job_id,
+                        "notify: cannot resolve delivery context for target job — skipping"
+                    );
+                    continue;
+                }
+            };
+
+        // Deliver to each of the target job's sessions (the inboxes Assay watches).
+        // Fall back to the source session name when the target has no named sessions.
+        let sessions_to_notify: Vec<String> = if target_session_names.is_empty() {
+            vec![peer_update.source_session.clone()]
+        } else {
+            target_session_names
+        };
+
+        for session_name in &sessions_to_notify {
+            match deliver_peer_update(&repo_path, &run_id, session_name, &peer_update) {
+                Ok(path) => {
+                    tracing::info!(
+                        source_job = %job_id,
+                        target_job = %target_job_id,
+                        session = %session_name,
+                        path = %path.display(),
+                        "notify: PeerUpdate delivered"
+                    );
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        source_job = %job_id,
+                        target_job = %target_job_id,
+                        session = %session_name,
+                        error = %e,
+                        "notify: signal delivery failed — skipping session"
+                    );
+                }
+            }
+        }
+    }
 
     tracing::info!(job_id = %job_id, "event ingested");
     Ok(Json(serde_json::json!({"status": "ok"})))

@@ -239,6 +239,7 @@ fn test_manifest_with_repo(name: &str, repo: &str) -> JobManifest {
         state_backend: None,
         services: vec![],
         runtime_env: HashMap::new(),
+        notify: Vec::new(),
     }
 }
 

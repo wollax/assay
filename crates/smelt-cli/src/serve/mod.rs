@@ -1,5 +1,7 @@
 /// Assay event types, bounded store, and broadcast bus.
 pub(crate) mod events;
+/// Cross-job PeerUpdate routing via [[notify]] rules in JobManifest.
+pub(crate) mod notify;
 /// Persistent job queue and concurrency controller.
 pub mod queue;
 /// PeerUpdate signal types and filesystem-based delivery to Assay session inboxes.

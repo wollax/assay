@@ -600,3 +600,88 @@ smelt = { endpoint_url = "http://host.docker.internal:8765/api/v1/events", job_i
         })
     );
 }
+
+// ── [[notify]] rules ──────────────────────────────────────────
+#[test]
+fn manifest_notify_absent_defaults_to_empty() {
+    let manifest = load_from_str(&minimal_toml("", "", "", "")).unwrap();
+    assert!(manifest.notify.is_empty());
+}
+
+#[test]
+fn manifest_notify_single_rule() {
+    let toml = r#"
+[job]
+name = "backend"
+repo = "."
+base_ref = "main"
+
+[environment]
+runtime = "docker"
+image = "img"
+
+[credentials]
+provider = "anthropic"
+model = "m"
+
+[[session]]
+name = "s1"
+spec = "s"
+harness = "h"
+timeout = 60
+
+[merge]
+strategy = "sequential"
+target = "main"
+
+[[notify]]
+target_job = "frontend"
+on_session_complete = true
+"#;
+    let manifest = load_from_str(toml).unwrap();
+    assert_eq!(manifest.notify.len(), 1);
+    assert_eq!(manifest.notify[0].target_job, "frontend");
+    assert!(manifest.notify[0].on_session_complete);
+}
+
+#[test]
+fn manifest_notify_multiple_rules() {
+    let toml = r#"
+[job]
+name = "backend"
+repo = "."
+base_ref = "main"
+
+[environment]
+runtime = "docker"
+image = "img"
+
+[credentials]
+provider = "anthropic"
+model = "m"
+
+[[session]]
+name = "s1"
+spec = "s"
+harness = "h"
+timeout = 60
+
+[merge]
+strategy = "sequential"
+target = "main"
+
+[[notify]]
+target_job = "frontend"
+on_session_complete = true
+
+[[notify]]
+target_job = "docs"
+on_session_complete = false
+"#;
+    let manifest = load_from_str(toml).unwrap();
+    assert_eq!(manifest.notify.len(), 2);
+    assert_eq!(manifest.notify[0].target_job, "frontend");
+    assert!(manifest.notify[0].on_session_complete);
+    assert_eq!(manifest.notify[1].target_job, "docs");
+    assert!(!manifest.notify[1].on_session_complete);
+}
