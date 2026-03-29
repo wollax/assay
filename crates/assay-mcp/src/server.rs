@@ -4227,6 +4227,43 @@ pub async fn serve() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
+    // Start the HTTP signal server alongside stdio MCP.
+    // The signal server runs in the same tokio runtime via `tokio::spawn`.
+    let signal_port: u16 = match std::env::var("ASSAY_SIGNAL_PORT") {
+        Ok(val) => val.parse().unwrap_or_else(|e| {
+            tracing::error!(
+                value = %val,
+                error = %e,
+                "ASSAY_SIGNAL_PORT is not a valid port number; falling back to 7432"
+            );
+            7432
+        }),
+        Err(_) => 7432,
+    };
+    let signal_token = std::env::var("ASSAY_SIGNAL_TOKEN").ok();
+
+    // TODO: Replace NoopBackend with the real backend once the orchestrator
+    // registers sessions into the RunRegistry. NoopBackend silently discards
+    // all signals — this is scaffolding only. The signal endpoint will return
+    // 404 for all session lookups until sessions are registered.
+    let signal_state = std::sync::Arc::new(crate::signal_server::SignalServerState {
+        backend: std::sync::Arc::new(assay_core::NoopBackend),
+        registry: std::sync::Arc::new(crate::signal_server::RunRegistry::new()),
+        token: signal_token,
+        started_at: std::time::Instant::now(),
+    });
+
+    match crate::signal_server::start_signal_server(signal_state, signal_port).await {
+        Ok(_handle) => {}
+        Err(e) => {
+            tracing::error!(
+                port = signal_port,
+                error = %e,
+                "failed to start signal server; signal endpoint will be unavailable"
+            );
+        }
+    }
+
     let service = AssayServer::new().serve(stdio()).await?;
 
     service.waiting().await?;
