@@ -98,7 +98,7 @@ The `X-Assay-Forwarded: true` header is the loop-prevention mechanism. A forward
 
 To deploy Assay across multiple machines:
 
-1. **Set `ASSAY_SIGNAL_BIND=0.0.0.0`** on each machine to accept connections from other hosts.
+1. **Set `ASSAY_SIGNAL_BIND=0.0.0.0`** and **`ASSAY_SIGNAL_URL=http://<machine-ip>:7432`** on each machine. Without `ASSAY_SIGNAL_URL`, the registered peer URL is `http://0.0.0.0:7432` — unroutable by other machines.
 2. **Use a shared state backend** — either `LocalFsBackend` on a shared filesystem (NFS) or `SmeltBackend` with a central Smelt server.
 3. **Start each Assay instance** — each registers itself as a peer automatically.
 4. **Dispatch runs** — sessions on any machine can send signals to sessions on any other machine via `send_signal`. Unknown-session signals are forwarded through the peer registry.
@@ -109,13 +109,15 @@ To deploy Assay across multiple machines:
 | --- | --- | --- |
 | `ASSAY_SIGNAL_PORT` | `7432` | Port for the HTTP signal listener |
 | `ASSAY_SIGNAL_BIND` | `127.0.0.1` | Bind address (`0.0.0.0` for multi-machine) |
+| `ASSAY_SIGNAL_URL` | _(derived)_ | **Required when `ASSAY_SIGNAL_BIND=0.0.0.0`** — override the peer-registered URL with the machine's reachable address (e.g. `http://192.168.1.10:7432`). Without this, peers register `http://0.0.0.0:7432` which is unroutable. |
 | `ASSAY_SIGNAL_TOKEN` | _(none)_ | Optional bearer token for auth (shared across peers) |
 
 ## Capability Guard
 
 Check `supports_peer_registry` before relying on peer discovery:
 
-- `supports_peer_registry: true` — `LocalFsBackend`, `SmeltBackend`
+- `supports_peer_registry: true` — `LocalFsBackend`
+- Note: `SmeltBackend` returns `false` — it implements `register_peer` as fire-and-forget but `list_peers` and `unregister_peer` are no-ops, so local signal forwarding is disabled; Smelt handles cross-instance routing server-side
 - `supports_peer_registry: false` — `NoopBackend`, `LinearBackend`, `GitHubBackend`, `SshSyncBackend`
 
 When peer registry is unavailable, signals for unknown local sessions return `404` without any forwarding attempt.

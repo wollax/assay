@@ -79,7 +79,7 @@ For multi-machine deployments, sessions communicate via the HTTP signal endpoint
 11. **Use the `send_signal` MCP tool** to POST a signal to any Assay signal endpoint:
     ```json
     {
-      "url": "http://peer-host:7432",
+      "url": "http://peer-host:7432/api/v1/signal",
       "target_session": "orchestrator",
       "update": {
         "source_job": "job-abc",
@@ -98,4 +98,4 @@ For multi-machine deployments, sessions communicate via the HTTP signal endpoint
 
 ### Capability Guard
 
-13. **Check `supports_signals` and `supports_peer_registry`** to determine if signal-based messaging and cross-instance forwarding are available. The `SmeltBackend` supports both; `LocalFsBackend` supports peer registry but not signal push; `NoopBackend` supports neither.
+13. **Check `supports_signals` and `supports_peer_registry`** to determine if signal-based messaging and cross-instance forwarding are available. `SmeltBackend` supports signals but not peer registry (`supports_peer_registry: false` — register_peer is fire-and-forget, forwarding uses Smelt's server-side routing); `LocalFsBackend` supports peer registry but not signal push; `NoopBackend` supports neither.

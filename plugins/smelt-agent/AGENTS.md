@@ -60,6 +60,7 @@ When the signal endpoint receives a `POST /api/v1/signal` for an unknown local s
 | --- | --- | --- |
 | `ASSAY_SIGNAL_PORT` | `7432` | Port for the HTTP signal listener |
 | `ASSAY_SIGNAL_BIND` | `127.0.0.1` | Bind address (`0.0.0.0` for all interfaces) |
+| `ASSAY_SIGNAL_URL` | _(derived)_ | Override the peer-registered URL — required when `ASSAY_SIGNAL_BIND=0.0.0.0` to provide a routable address |
 | `ASSAY_SIGNAL_TOKEN` | _(none)_ | Optional bearer token for auth |
 
 On startup, the MCP server registers itself as a peer in the state backend. On clean shutdown, it unregisters.

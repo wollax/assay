@@ -36,7 +36,7 @@ DOC_TOOLS=$(grep -oE '`[a-z_]+`' "$PLUGIN_DIR/AGENTS.md" \
 # Known tools that exist on feature branches but not yet on main.
 # These are documented in advance of the M015 merge and will be
 # validated once M015 lands.
-PENDING_TOOLS="poll_signals send_signal"
+PENDING_TOOLS=""
 
 # Filter out non-tool identifiers (field names, config keys, etc.)
 NON_TOOLS="run_id state_backend"
