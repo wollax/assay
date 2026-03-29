@@ -7,7 +7,7 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::Instant;
 
 use axum::extract::State;
@@ -103,9 +103,14 @@ impl RunRegistry {
 // ── SignalServerState ───────────────────────────────────────────────
 
 /// Shared state for the signal server axum handlers.
+///
+/// The `backend` field is wrapped in `RwLock` so the MCP orchestrate
+/// handlers can swap it from `NoopBackend` to the run's real backend
+/// when a run starts, and restore it when the run completes.
 pub struct SignalServerState {
     /// State backend for routing messages into session inboxes.
-    pub backend: Arc<dyn StateBackend>,
+    /// Wrapped in `RwLock` so it can be swapped per-run by the MCP handler.
+    pub backend: Arc<RwLock<Arc<dyn StateBackend>>>,
     /// Registry of active sessions.
     pub registry: Arc<RunRegistry>,
     /// Optional bearer token for authentication.
@@ -134,24 +139,26 @@ pub fn build_router(state: Arc<SignalServerState>) -> Router {
         .with_state(state)
 }
 
-/// Start the signal server on the given port.
+/// Start the signal server on the given address and port.
 ///
 /// Returns a `JoinHandle` for the background task. The caller should
 /// store the handle to track the server's lifetime, or `.await` it
 /// to block until the server exits. Dropping the handle detaches the
 /// task — it does not stop the server.
 ///
-/// Binds to `127.0.0.1` by default. Returns `Err` if the port is
-/// already in use, allowing the caller to continue without the signal
-/// server.
+/// `bind_addr` controls the listen address (e.g. `"127.0.0.1"` for
+/// local-only, `"0.0.0.0"` for all interfaces). Returns `Err` if the
+/// address/port is already in use, allowing the caller to continue
+/// without the signal server.
 pub async fn start_signal_server(
     state: Arc<SignalServerState>,
+    bind_addr: &str,
     port: u16,
 ) -> Result<tokio::task::JoinHandle<()>, std::io::Error> {
     let router = build_router(state);
-    let listener = tokio::net::TcpListener::bind(format!("127.0.0.1:{port}")).await?;
+    let listener = tokio::net::TcpListener::bind(format!("{bind_addr}:{port}")).await?;
 
-    tracing::info!(port, "signal server listening on 127.0.0.1");
+    tracing::info!(bind_addr, port, "signal server listening");
 
     Ok(tokio::spawn(async move {
         if let Err(e) = axum::serve(listener, router).await {
@@ -286,8 +293,13 @@ async fn handle_signal(
     // serialized `PeerUpdate` payload, so no information is lost.
     let name = format!("signal-{}", chrono::Utc::now().timestamp_millis());
 
-    // Route into inbox.
-    match state.backend.send_message(&inbox_path, &name, &payload) {
+    // Route into inbox. Acquire read lock on the swappable backend.
+    let backend = state
+        .backend
+        .read()
+        .unwrap_or_else(|p| p.into_inner())
+        .clone();
+    match backend.send_message(&inbox_path, &name, &payload) {
         Ok(()) => {
             tracing::debug!(
                 target_session = %request.target_session,
