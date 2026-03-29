@@ -517,6 +517,12 @@ fn poll_signals_result_schema_snapshot() {
 }
 
 #[test]
+fn peer_info_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::PeerInfo);
+    assert_json_snapshot!("peer-info-schema", schema.to_value());
+}
+
+#[test]
 fn assay_server_state_schema_snapshot() {
     let schema = schemars::schema_for!(assay_types::AssayServerState);
     assert_json_snapshot!("assay-server-state-schema", schema.to_value());

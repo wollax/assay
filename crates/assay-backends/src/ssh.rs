@@ -222,6 +222,7 @@ impl StateBackend for SshSyncBackend {
             supports_annotations: true,
             supports_checkpoints: true,
             supports_signals: false,
+            supports_peer_registry: false,
         }
     }
 

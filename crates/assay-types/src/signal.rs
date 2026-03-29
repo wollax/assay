@@ -63,6 +63,30 @@ inventory::submit! {
     }
 }
 
+// ── PeerInfo ─────────────────────────────────────────────────────────
+
+/// Metadata about a peer Assay instance that can receive signals.
+///
+/// Registered via [`StateBackend::register_peer`] on startup, queried via
+/// [`StateBackend::list_peers`] during signal forwarding.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct PeerInfo {
+    /// Unique identifier for this peer (typically hostname or UUID).
+    pub peer_id: String,
+    /// Signal endpoint URL of this peer (e.g. `http://127.0.0.1:7432`).
+    pub signal_url: String,
+    /// When this peer was registered (UTC).
+    pub registered_at: chrono::DateTime<chrono::Utc>,
+}
+
+inventory::submit! {
+    schema_registry::SchemaEntry {
+        name: "peer-info",
+        generate: || schemars::schema_for!(PeerInfo),
+    }
+}
+
 // ── SignalRequest ───────────────────────────────────────────────────
 
 /// Envelope for routing a [`PeerUpdate`] to a specific session.

@@ -61,7 +61,8 @@ pub use merge::{
 pub use milestone::{ChunkRef, Milestone, MilestoneStatus};
 pub use session::{AgentEvaluation, Confidence, EvaluatorRole, GateEvalContext};
 pub use signal::{
-    AssayServerState, GateSummary, PeerUpdate, PollSignalsResult, RunSummary, SignalRequest,
+    AssayServerState, GateSummary, PeerInfo, PeerUpdate, PollSignalsResult, RunSummary,
+    SignalRequest,
 };
 pub use state_backend::StateBackendConfig;
 pub use validation::{Diagnostic, DiagnosticSummary, Severity, ValidationResult};
