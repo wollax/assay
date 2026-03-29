@@ -61,3 +61,41 @@ In gossip mode, there is no direct messaging between sessions. Instead, a coordi
 ### Capability Guard
 
 9. **Check `supports_gossip_manifest` before relying on the manifest.** If the backend has `supports_gossip_manifest: false`, the knowledge manifest may not persist between coordinator rounds. Check `gossip_status.sessions_synthesized` via `orchestrate_status` — if it stays at zero despite sessions completing, manifest persistence is disabled.
+
+## Signal-Based Messaging (Cross-Instance)
+
+For multi-machine deployments, sessions communicate via the HTTP signal endpoint instead of filesystem-based mesh routing.
+
+### Receiving Signals
+
+10. **Use the `poll_signals` MCP tool** to read `PeerUpdate` messages from your session's signal inbox:
+    ```json
+    { "session_name": "worker-1" }
+    ```
+    Returns a `PollSignalsResult` with a `signals` array of `PeerUpdate` objects. Messages are consumed on read (exactly-once delivery).
+
+### Sending Signals
+
+11. **Use the `send_signal` MCP tool** to POST a signal to any Assay signal endpoint:
+    ```json
+    {
+      "url": "http://peer-host:7432/api/v1/signal",
+      "target_session": "orchestrator",
+      "update": {
+        "source_job": "job-abc",
+        "source_session": "worker-1",
+        "changed_files": ["src/main.rs"],
+        "gate_summary": { "passed": 5, "failed": 0, "skipped": 1 },
+        "branch": "feature/auth"
+      }
+    }
+    ```
+    Returns the HTTP status code and response body. Non-2xx responses are returned as the tool result (not a tool-level error) so the agent can decide how to proceed.
+
+### Cross-Instance Forwarding
+
+12. **Signals for unknown local sessions are forwarded automatically.** When the signal endpoint receives a request for a session not registered locally, it queries the peer registry and forwards to known peers. The first peer to return `202 Accepted` wins. An `X-Assay-Forwarded: true` header prevents forwarding loops.
+
+### Capability Guard
+
+13. **Check `supports_signals` and `supports_peer_registry`** to determine if signal-based messaging and cross-instance forwarding are available. `SmeltBackend` supports signals but not peer registry (`supports_peer_registry: false` — register_peer is fire-and-forget, forwarding uses Smelt's server-side routing); `LocalFsBackend` supports peer registry but not signal push; `NoopBackend` supports neither.
