@@ -67,7 +67,7 @@ impl RunRegistry {
         self.entries.lock().unwrap().get(session_name).cloned()
     }
 
-    /// List all registered sessions as `RunSummary` entries.
+    /// List all active runs as `RunSummary` entries, deduplicated by run ID.
     pub fn list_runs(&self) -> Vec<RunSummary> {
         let entries = self.entries.lock().unwrap();
         // Deduplicate by run_id — multiple sessions may share a run.
@@ -118,24 +118,28 @@ pub fn build_router(state: Arc<SignalServerState>) -> Router {
 
 /// Start the signal server on the given port.
 ///
-/// Returns a `JoinHandle` — the caller should `tokio::spawn` this or
-/// store the handle. The server runs until dropped.
+/// Returns a `JoinHandle` for the background task. The caller should
+/// store the handle to track the server's lifetime, or `.await` it
+/// to block until the server exits. Dropping the handle detaches the
+/// task — it does not stop the server.
+///
+/// Binds to `127.0.0.1` by default. Returns `Err` if the port is
+/// already in use, allowing the caller to continue without the signal
+/// server.
 pub async fn start_signal_server(
     state: Arc<SignalServerState>,
     port: u16,
-) -> tokio::task::JoinHandle<()> {
+) -> Result<tokio::task::JoinHandle<()>, std::io::Error> {
     let router = build_router(state);
-    let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{port}"))
-        .await
-        .unwrap_or_else(|e| panic!("failed to bind signal server on port {port}: {e}"));
+    let listener = tokio::net::TcpListener::bind(format!("127.0.0.1:{port}")).await?;
 
-    tracing::info!(port, "signal server listening");
+    tracing::info!(port, "signal server listening on 127.0.0.1");
 
-    tokio::spawn(async move {
+    Ok(tokio::spawn(async move {
         if let Err(e) = axum::serve(listener, router).await {
             tracing::error!(error = %e, "signal server error");
         }
-    })
+    }))
 }
 
 // ── Handlers ────────────────────────────────────────────────────────
@@ -223,7 +227,8 @@ async fn handle_signal(
         }
     };
 
-    // Generate a unique message name.
+    // Generate a message name. Unique assuming at most one signal per
+    // source_job per millisecond — add a random suffix if this proves insufficient.
     let name = format!(
         "signal-{}-{}",
         request.update.source_job,
