@@ -45,6 +45,24 @@ pub fn run_mesh<F>(
 where
     F: Fn(&ManifestSession, &PipelineConfig) -> Result<PipelineResult, PipelineError> + Sync,
 {
+    run_mesh_with_id(manifest, config, pipeline_config, session_runner, None)
+}
+
+/// Like [`run_mesh`] but accepts an optional pre-generated `run_id`.
+///
+/// When `run_id` is `Some`, uses the provided value so callers can register
+/// sessions in a `RunRegistry` before the run starts. When `None`, generates
+/// a fresh ULID (existing behavior).
+pub fn run_mesh_with_id<F>(
+    manifest: &assay_types::RunManifest,
+    config: &OrchestratorConfig,
+    pipeline_config: &PipelineConfig,
+    session_runner: &F,
+    run_id: Option<String>,
+) -> Result<OrchestratorResult, AssayError>
+where
+    F: Fn(&ManifestSession, &PipelineConfig) -> Result<PipelineResult, PipelineError> + Sync,
+{
     let session_count = manifest.sessions.len();
 
     let _root_span = info_span!(
@@ -55,7 +73,7 @@ where
     .entered();
     info!("starting Mesh orchestration");
 
-    let run_id = Ulid::new().to_string();
+    let run_id = run_id.unwrap_or_else(|| Ulid::new().to_string());
     let started_at = Utc::now();
     let wall_start = Instant::now();
 
