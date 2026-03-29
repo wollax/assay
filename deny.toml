@@ -57,7 +57,7 @@ skip = [
     # notify -> inotify -> bitflags 1.x; rest of tree uses bitflags 2.x
     { crate = "bitflags@1", reason = "inotify (via notify) uses bitflags 1.x" },
 
-    # reqwest -> rustls-platform-verifier -> system-configuration -> core-foundation 0.9
+    # reqwest -> hyper-util -> system-configuration -> core-foundation 0.9
     { crate = "core-foundation@0.9", reason = "system-configuration (via hyper-util) uses core-foundation 0.9" },
 
     # reqwest -> rustls-platform-verifier -> jni -> thiserror 1.x; workspace uses thiserror 2.x

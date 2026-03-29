@@ -1212,6 +1212,11 @@ pub struct AssayServer {
     /// after completion (normal or panic). This is the window during which
     /// signal routing is active.
     signal_backend: Arc<RwLock<Arc<dyn assay_core::StateBackend>>>,
+    /// Shared HTTP client for outbound signal requests.
+    ///
+    /// `reqwest::Client` holds a connection pool internally; reusing it
+    /// across `send_signal` calls avoids per-call TLS handshakes.
+    http_client: reqwest::Client,
 }
 
 impl Default for AssayServer {
@@ -1236,6 +1241,10 @@ impl AssayServer {
             signal_backend: Arc::new(RwLock::new(
                 Arc::new(assay_core::NoopBackend) as Arc<dyn assay_core::StateBackend>
             )),
+            http_client: reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(30))
+                .build()
+                .expect("reqwest client build failed"),
         }
     }
 
@@ -4135,25 +4144,33 @@ impl AssayServer {
         params: Parameters<PollSignalsParams>,
     ) -> Result<CallToolResult, McpError> {
         let session_name = params.0.session_name;
-        // Look up the session in the run registry.
         let entry = match self.run_registry.lookup_session(&session_name) {
             Some(e) => e,
             None => {
+                tracing::warn!(session = %session_name, "poll_signals: session not found in run registry");
                 return Ok(CallToolResult::error(vec![Content::text(format!(
                     "session not found: {session_name}"
                 ))]));
             }
         };
 
-        // Build inbox path: <run_dir>/mesh/<session_name>/inbox/
         let inbox_path = entry.run_dir.join("mesh").join(&session_name).join("inbox");
 
-        // Read through the RwLock to the active backend.
         let backend = self
             .signal_backend
             .read()
             .unwrap_or_else(|p| p.into_inner())
             .clone();
+
+        // Guard: mirrors the HTTP signal handler — return an explicit error
+        // when no orchestrated run has initialized the real backend.
+        if !backend.capabilities().supports_messaging {
+            return Ok(CallToolResult::error(vec![Content::text(
+                "signal backend not ready (no active run); \
+                 poll_signals is only available while an orchestrated run is active"
+                    .to_string(),
+            )]));
+        }
 
         // poll_inbox does file I/O — run in spawn_blocking.
         let result = tokio::task::spawn_blocking(move || backend.poll_inbox(&inbox_path))
@@ -4162,7 +4179,8 @@ impl AssayServer {
 
         match result {
             Ok(messages) => {
-                let mut signals = Vec::with_capacity(messages.len());
+                let raw_count = messages.len();
+                let mut signals = Vec::with_capacity(raw_count);
                 for (name, bytes) in &messages {
                     match serde_json::from_slice::<assay_types::PeerUpdate>(bytes) {
                         Ok(update) => signals.push(update),
@@ -4175,11 +4193,20 @@ impl AssayServer {
                         }
                     }
                 }
+                let skipped = raw_count - signals.len();
                 tracing::debug!(
                     session = %session_name,
-                    count = signals.len(),
+                    delivered = signals.len(),
+                    skipped,
                     "poll_signals"
                 );
+                if skipped > 0 {
+                    tracing::warn!(
+                        session = %session_name,
+                        skipped,
+                        "poll_signals: messages consumed but not decoded — data loss"
+                    );
+                }
                 let result = assay_types::PollSignalsResult { signals };
                 let json = serde_json::to_string(&result).map_err(|e| {
                     McpError::internal_error(format!("serialization failed: {e}"), None)
@@ -4201,22 +4228,26 @@ impl AssayServer {
         &self,
         params: Parameters<SendSignalParams>,
     ) -> Result<CallToolResult, McpError> {
-        let url = params.0.url;
-        let target_session = params.0.target_session;
-        let update = params.0.update;
+        let SendSignalParams {
+            url,
+            target_session,
+            update,
+        } = params.0;
+
+        tracing::debug!(url = %url, target_session = %target_session, "send_signal");
+
         let signal_request = assay_types::SignalRequest {
-            target_session: target_session.clone(),
-            update: update.clone(),
+            target_session,
+            update,
         };
 
-        tracing::debug!(
-            url = %url,
-            target_session = %target_session,
-            "send_signal"
-        );
-
-        let client = reqwest::Client::new();
-        let response = match client.post(&url).json(&signal_request).send().await {
+        let response = match self
+            .http_client
+            .post(&url)
+            .json(&signal_request)
+            .send()
+            .await
+        {
             Ok(resp) => resp,
             Err(e) => {
                 tracing::warn!(url = %url, error = %e, "send_signal: request failed");
@@ -4227,14 +4258,16 @@ impl AssayServer {
         };
 
         let status = response.status();
-        let body = response.text().await.unwrap_or_default();
+        let body = match response.text().await {
+            Ok(b) => b,
+            Err(e) => {
+                tracing::warn!(url = %url, %status, error = %e, "send_signal: failed to read response body");
+                format!("<body read error: {e}>")
+            }
+        };
 
         if !status.is_success() {
-            tracing::warn!(
-                url = %url,
-                status = %status,
-                "send_signal: non-2xx response"
-            );
+            tracing::warn!(url = %url, %status, "send_signal: non-2xx response");
         }
 
         Ok(CallToolResult::success(vec![Content::text(format!(
