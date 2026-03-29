@@ -15,6 +15,7 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::IntoResponse;
 use axum::routing::{get, post};
 use axum::{Json, Router};
+use tower_http::limit::RequestBodyLimitLayer;
 
 use assay_core::StateBackend;
 use assay_types::signal::{AssayServerState, RunSummary, SignalRequest};
@@ -54,22 +55,32 @@ impl RunRegistry {
 
     /// Register a session name with its run entry.
     pub fn register_session(&self, session_name: String, entry: RunEntry) {
-        self.entries.lock().unwrap().insert(session_name, entry);
+        self.entries
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .insert(session_name, entry);
     }
 
     /// Remove a session from the registry.
     pub fn unregister_session(&self, session_name: &str) {
-        self.entries.lock().unwrap().remove(session_name);
+        self.entries
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .remove(session_name);
     }
 
     /// Look up a session's run entry by name.
     pub fn lookup_session(&self, session_name: &str) -> Option<RunEntry> {
-        self.entries.lock().unwrap().get(session_name).cloned()
+        self.entries
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .get(session_name)
+            .cloned()
     }
 
     /// List all active runs as `RunSummary` entries, deduplicated by run ID.
     pub fn list_runs(&self) -> Vec<RunSummary> {
-        let entries = self.entries.lock().unwrap();
+        let entries = self.entries.lock().unwrap_or_else(|p| p.into_inner());
         // Deduplicate by run_id — multiple sessions may share a run.
         let mut seen = HashMap::new();
         for entry in entries.values() {
@@ -105,6 +116,12 @@ pub struct SignalServerState {
 
 // ── Router ──────────────────────────────────────────────────────────
 
+/// Maximum accepted request body size for `/api/v1/signal`.
+///
+/// `SignalRequest` payloads are small JSON objects. 64 KiB is generous
+/// and protects against accidental or malicious oversized bodies.
+const MAX_SIGNAL_BODY_BYTES: usize = 64 * 1024; // 64 KiB
+
 /// Build the axum router without binding to a port.
 ///
 /// Exposed for testing — callers can use `tower::ServiceExt::oneshot`
@@ -113,6 +130,7 @@ pub fn build_router(state: Arc<SignalServerState>) -> Router {
     Router::new()
         .route("/api/v1/signal", post(handle_signal))
         .route("/api/v1/state", get(handle_state))
+        .layer(RequestBodyLimitLayer::new(MAX_SIGNAL_BODY_BYTES))
         .with_state(state)
 }
 
@@ -140,6 +158,34 @@ pub async fn start_signal_server(
             tracing::error!(error = %e, "signal server error");
         }
     }))
+}
+
+// ── Handlers ────────────────────────────────────────────────────────
+
+// ── Path safety ─────────────────────────────────────────────────────
+
+/// Validate that `s` is safe to use as a single filesystem path component.
+///
+/// Rejects:
+/// - Empty strings
+/// - `.` or `..`
+/// - Strings containing `/`, `\`, or NUL
+/// - Strings that are absolute paths (start with `/` or a Windows drive letter)
+fn validate_path_component(s: &str) -> Result<(), String> {
+    if s.is_empty() {
+        return Err("path component must not be empty".to_string());
+    }
+    if s == "." || s == ".." {
+        return Err(format!("path component '{s}' is not allowed"));
+    }
+    if s.contains('/') || s.contains('\\') || s.contains('\0') {
+        return Err(format!("path component '{s}' contains illegal character"));
+    }
+    // Reject absolute paths (e.g. '/etc/passwd' or 'C:\\Windows').
+    if s.starts_with('/') {
+        return Err(format!("path component '{s}' must not be absolute"));
+    }
+    Ok(())
 }
 
 // ── Handlers ────────────────────────────────────────────────────────
@@ -191,6 +237,12 @@ async fn handle_signal(
         }
     };
 
+    // Validate target_session: must not be empty, absolute, or contain path
+    // components that could escape the run directory.
+    if let Err(e) = validate_path_component(&request.target_session) {
+        return (StatusCode::BAD_REQUEST, Json(ErrorBody { error: e })).into_response();
+    }
+
     // Look up session.
     let entry = match state.registry.lookup_session(&request.target_session) {
         Some(e) => e,
@@ -227,13 +279,12 @@ async fn handle_signal(
         }
     };
 
-    // Generate a message name. Unique assuming at most one signal per
-    // source_job per millisecond — add a random suffix if this proves insufficient.
-    let name = format!(
-        "signal-{}-{}",
-        request.update.source_job,
-        chrono::Utc::now().timestamp_millis()
-    );
+    // Generate a filename-safe message name. We use a timestamp-only name
+    // rather than embedding `source_job` — source_job may contain path
+    // separators or other characters that `send_message` rejects as
+    // filename components. The `source_job` field is already present in the
+    // serialized `PeerUpdate` payload, so no information is lost.
+    let name = format!("signal-{}", chrono::Utc::now().timestamp_millis());
 
     // Route into inbox.
     match state.backend.send_message(&inbox_path, &name, &payload) {
