@@ -109,7 +109,6 @@ impl RunRegistry {
 /// when a run starts, and restore it when the run completes.
 pub struct SignalServerState {
     /// State backend for routing messages into session inboxes.
-    /// Wrapped in `RwLock` so it can be swapped per-run by the MCP handler.
     pub backend: Arc<RwLock<Arc<dyn StateBackend>>>,
     /// Registry of active sessions.
     pub registry: Arc<RunRegistry>,
@@ -297,8 +296,25 @@ async fn handle_signal(
     let backend = state
         .backend
         .read()
-        .unwrap_or_else(|p| p.into_inner())
+        .unwrap_or_else(|p| {
+            tracing::error!("signal_backend RwLock poisoned — recovering");
+            p.into_inner()
+        })
         .clone();
+    if !backend.capabilities().supports_messaging {
+        tracing::warn!(
+            target_session = %request.target_session,
+            "signal backend not ready (NoopBackend active); signal will be dropped. \
+             Signals are only routed while an orchestrated run is active."
+        );
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(ErrorBody {
+                error: "signal backend not yet initialized; retry when a run is active".to_string(),
+            }),
+        )
+            .into_response();
+    }
     match backend.send_message(&inbox_path, &name, &payload) {
         Ok(()) => {
             tracing::debug!(

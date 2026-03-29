@@ -316,7 +316,7 @@ async fn test_backend_swap_routes_through_new_backend() {
 
     register_session(&state, "worker-1", run_dir);
 
-    // Signal with NoopBackend — send_message returns Ok(()) but no file is written.
+    // Signal with NoopBackend — returns 503 SERVICE_UNAVAILABLE with a clear message.
     let router = build_router(state.clone());
     let body = sample_signal_json("worker-1");
 
@@ -332,11 +332,11 @@ async fn test_backend_swap_routes_through_new_backend() {
         .await
         .unwrap();
 
-    // NoopBackend silently succeeds — 202, but no file in inbox.
+    // NoopBackend is not ready — returns 503 so the caller knows to retry.
     assert_eq!(
         response.status(),
-        StatusCode::ACCEPTED,
-        "NoopBackend silently accepts send_message"
+        StatusCode::SERVICE_UNAVAILABLE,
+        "NoopBackend should return 503 instead of silently dropping the signal"
     );
     let files_before: Vec<_> = std::fs::read_dir(&inbox_dir)
         .unwrap()
