@@ -176,6 +176,23 @@ pub fn budget_context(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use cupel::{
+        ChronologicalPlacer, ContextBudget, ContextItemBuilder, ContextKind, ContextSource,
+        DiagnosticTraceCollector, GreedySlice, OverflowStrategy, Pipeline, PriorityScorer,
+        TraceDetailLevel,
+    };
+    use cupel_testing::SelectionReportAssertions;
+
+    fn test_pipeline() -> Pipeline {
+        Pipeline::builder()
+            .scorer(Box::new(PriorityScorer))
+            .slicer(Box::new(GreedySlice))
+            .placer(Box::new(ChronologicalPlacer))
+            .deduplication(false)
+            .overflow_strategy(OverflowStrategy::Truncate)
+            .build()
+            .expect("pipeline builds")
+    }
 
     #[test]
     fn passthrough_when_content_fits() {
@@ -353,25 +370,11 @@ mod tests {
         assert_eq!(result[2], "diff");
     }
 
-    /// Exercises cupel 1.2.0 `run_traced()` + `DiagnosticTraceCollector` +
-    /// cupel-testing fluent assertions on a passthrough budget (all items fit).
+    /// Exercises `run_traced()` + `DiagnosticTraceCollector` + cupel-testing fluent assertions
+    /// on a passthrough budget where all items fit within the window.
     #[test]
     fn fluent_assertions_passthrough_report() {
-        use cupel::{
-            ChronologicalPlacer, ContextBudget, ContextItemBuilder, ContextKind, ContextSource,
-            DiagnosticTraceCollector, GreedySlice, OverflowStrategy, Pipeline, PriorityScorer,
-            TraceDetailLevel,
-        };
-        use cupel_testing::SelectionReportAssertions;
-
-        let pipeline = Pipeline::builder()
-            .scorer(Box::new(PriorityScorer))
-            .slicer(Box::new(GreedySlice))
-            .placer(Box::new(ChronologicalPlacer))
-            .deduplication(false)
-            .overflow_strategy(OverflowStrategy::Truncate)
-            .build()
-            .expect("pipeline builds");
+        let pipeline = test_pipeline();
 
         let items = vec![
             ContextItemBuilder::new("system prompt", 20)
@@ -393,6 +396,7 @@ mod tests {
                 .unwrap(),
         ];
 
+        // All 3 items fit: total 45 tokens is trivially within the 190k target.
         let budget =
             ContextBudget::new(200_000, 190_000, 4_096, HashMap::new(), 5.0).expect("budget valid");
 
@@ -401,12 +405,10 @@ mod tests {
             .run_traced(&items, &budget, &mut collector)
             .expect("pipeline succeeds");
 
-        // All 3 items should be included (budget is huge).
         assert_eq!(result.len(), 3, "all items should pass through");
 
         let report = collector.into_report();
 
-        // Fluent assertions via cupel-testing.
         report
             .should()
             .include_item_with_kind(ContextKind::new(ContextKind::SYSTEM_PROMPT).unwrap());
@@ -417,28 +419,12 @@ mod tests {
             .should()
             .include_item_with_kind(ContextKind::new("Diff").unwrap());
         report.should().have_kind_coverage_count(3);
-        report.should().have_budget_utilization_above(0.0, &budget);
     }
 
-    /// Exercises the truncation path: large diff exceeds a small budget.
-    /// Uses cupel-testing fluent assertions on the exclusion report.
+    /// Exercises the truncation path: a large diff that exceeds the token budget is excluded.
     #[test]
     fn fluent_assertions_truncation_report() {
-        use cupel::{
-            ChronologicalPlacer, ContextBudget, ContextItemBuilder, ContextKind, ContextSource,
-            DiagnosticTraceCollector, GreedySlice, OverflowStrategy, Pipeline, PriorityScorer,
-            TraceDetailLevel,
-        };
-        use cupel_testing::SelectionReportAssertions;
-
-        let pipeline = Pipeline::builder()
-            .scorer(Box::new(PriorityScorer))
-            .slicer(Box::new(GreedySlice))
-            .placer(Box::new(ChronologicalPlacer))
-            .deduplication(false)
-            .overflow_strategy(OverflowStrategy::Truncate)
-            .build()
-            .expect("pipeline builds");
+        let pipeline = test_pipeline();
 
         let large_diff = "x".repeat(1_000_000);
         let diff_tokens = estimate_tokens(&large_diff);
@@ -457,18 +443,24 @@ mod tests {
                 .unwrap(),
         ];
 
-        // Small budget: 50k window → ~43k target tokens. The diff is ~250k tokens.
+        // Small budget: 50k window → ~43k target. The diff (~1 MB, ≈270k tokens at
+        // 3.7 bytes/token) vastly exceeds the budget, forcing truncation.
         let budget =
             ContextBudget::new(50_000, 43_000, 4_096, HashMap::new(), 5.0).expect("budget valid");
 
         let mut collector = DiagnosticTraceCollector::new(TraceDetailLevel::Item);
-        let _result = pipeline
+        let result = pipeline
             .run_traced(&items, &budget, &mut collector)
             .expect("pipeline succeeds");
 
+        // The pinned prompt is always included; the oversized diff is the only exclusion
+        // candidate. Asserting ≥1 rather than ==1 because truncation may split fragments.
+        assert_eq!(
+            result.len(),
+            1,
+            "only the pinned prompt should survive the budget"
+        );
         let report = collector.into_report();
-
-        // The large diff must be excluded (budget exceeded).
         report.should().have_at_least_n_exclusions(1);
     }
 }

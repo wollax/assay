@@ -10,7 +10,6 @@ repository = "https://github.com/wollax/assay"
 
 [workspace.dependencies]
 cupel = "1.2.0"
-cupel-otel = "0.2.0"
 cupel-testing = "0.1.0"
 assay-types = { path = "crates/assay-types" }
 assay-core = { path = "crates/assay-core" }
