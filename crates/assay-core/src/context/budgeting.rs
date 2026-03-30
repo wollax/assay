@@ -352,4 +352,123 @@ mod tests {
         assert_eq!(result[1], "criteria");
         assert_eq!(result[2], "diff");
     }
+
+    /// Exercises cupel 1.2.0 `run_traced()` + `DiagnosticTraceCollector` +
+    /// cupel-testing fluent assertions on a passthrough budget (all items fit).
+    #[test]
+    fn fluent_assertions_passthrough_report() {
+        use cupel::{
+            ChronologicalPlacer, ContextBudget, ContextItemBuilder, ContextKind, ContextSource,
+            DiagnosticTraceCollector, GreedySlice, OverflowStrategy, Pipeline, PriorityScorer,
+            TraceDetailLevel,
+        };
+        use cupel_testing::SelectionReportAssertions;
+
+        let pipeline = Pipeline::builder()
+            .scorer(Box::new(PriorityScorer))
+            .slicer(Box::new(GreedySlice))
+            .placer(Box::new(ChronologicalPlacer))
+            .deduplication(false)
+            .overflow_strategy(OverflowStrategy::Truncate)
+            .build()
+            .expect("pipeline builds");
+
+        let items = vec![
+            ContextItemBuilder::new("system prompt", 20)
+                .kind(ContextKind::new(ContextKind::SYSTEM_PROMPT).unwrap())
+                .pinned(true)
+                .build()
+                .unwrap(),
+            ContextItemBuilder::new("spec body", 15)
+                .kind(ContextKind::new(ContextKind::DOCUMENT).unwrap())
+                .source(ContextSource::new(ContextSource::RAG).unwrap())
+                .priority(80)
+                .build()
+                .unwrap(),
+            ContextItemBuilder::new("diff content", 10)
+                .kind(ContextKind::new("Diff").unwrap())
+                .source(ContextSource::new(ContextSource::TOOL).unwrap())
+                .priority(50)
+                .build()
+                .unwrap(),
+        ];
+
+        let budget =
+            ContextBudget::new(200_000, 190_000, 4_096, HashMap::new(), 5.0).expect("budget valid");
+
+        let mut collector = DiagnosticTraceCollector::new(TraceDetailLevel::Item);
+        let result = pipeline
+            .run_traced(&items, &budget, &mut collector)
+            .expect("pipeline succeeds");
+
+        // All 3 items should be included (budget is huge).
+        assert_eq!(result.len(), 3, "all items should pass through");
+
+        let report = collector.into_report();
+
+        // Fluent assertions via cupel-testing.
+        report
+            .should()
+            .include_item_with_kind(ContextKind::new(ContextKind::SYSTEM_PROMPT).unwrap());
+        report
+            .should()
+            .include_item_with_kind(ContextKind::new(ContextKind::DOCUMENT).unwrap());
+        report
+            .should()
+            .include_item_with_kind(ContextKind::new("Diff").unwrap());
+        report.should().have_kind_coverage_count(3);
+        report.should().have_budget_utilization_above(0.0, &budget);
+    }
+
+    /// Exercises the truncation path: large diff exceeds a small budget.
+    /// Uses cupel-testing fluent assertions on the exclusion report.
+    #[test]
+    fn fluent_assertions_truncation_report() {
+        use cupel::{
+            ChronologicalPlacer, ContextBudget, ContextItemBuilder, ContextKind, ContextSource,
+            DiagnosticTraceCollector, GreedySlice, OverflowStrategy, Pipeline, PriorityScorer,
+            TraceDetailLevel,
+        };
+        use cupel_testing::SelectionReportAssertions;
+
+        let pipeline = Pipeline::builder()
+            .scorer(Box::new(PriorityScorer))
+            .slicer(Box::new(GreedySlice))
+            .placer(Box::new(ChronologicalPlacer))
+            .deduplication(false)
+            .overflow_strategy(OverflowStrategy::Truncate)
+            .build()
+            .expect("pipeline builds");
+
+        let large_diff = "x".repeat(1_000_000);
+        let diff_tokens = estimate_tokens(&large_diff);
+
+        let items = vec![
+            ContextItemBuilder::new("prompt", 10)
+                .kind(ContextKind::new(ContextKind::SYSTEM_PROMPT).unwrap())
+                .pinned(true)
+                .build()
+                .unwrap(),
+            ContextItemBuilder::new(&large_diff, diff_tokens)
+                .kind(ContextKind::new("Diff").unwrap())
+                .source(ContextSource::new(ContextSource::TOOL).unwrap())
+                .priority(50)
+                .build()
+                .unwrap(),
+        ];
+
+        // Small budget: 50k window → ~43k target tokens. The diff is ~250k tokens.
+        let budget =
+            ContextBudget::new(50_000, 43_000, 4_096, HashMap::new(), 5.0).expect("budget valid");
+
+        let mut collector = DiagnosticTraceCollector::new(TraceDetailLevel::Item);
+        let _result = pipeline
+            .run_traced(&items, &budget, &mut collector)
+            .expect("pipeline succeeds");
+
+        let report = collector.into_report();
+
+        // The large diff must be excluded (budget exceeded).
+        report.should().have_at_least_n_exclusions(1);
+    }
 }
