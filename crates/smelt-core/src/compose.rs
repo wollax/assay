@@ -26,7 +26,7 @@ use tracing::{info, warn};
 use crate::Result;
 use crate::docker::DockerProvider;
 use crate::manifest::{JobManifest, resolve_repo_path};
-use crate::provider::{CollectResult, ContainerId, ExecHandle, RuntimeProvider};
+use crate::provider::{CollectResult, ContainerId, ExecHandle, ProvisionResult, RuntimeProvider};
 
 // ── Internal state ────────────────────────────────────────────────────────────
 
@@ -67,7 +67,7 @@ impl ComposeProvider {
 }
 
 impl RuntimeProvider for ComposeProvider {
-    async fn provision(&self, manifest: &JobManifest) -> crate::Result<ContainerId> {
+    async fn provision(&self, manifest: &JobManifest) -> crate::Result<ProvisionResult> {
         let project_name = format!("smelt-{}", manifest.job.name);
 
         info!(project = %project_name, "starting compose provision");
@@ -329,7 +329,10 @@ impl RuntimeProvider for ComposeProvider {
             );
         }
 
-        Ok(container_id)
+        Ok(ProvisionResult {
+            container_id,
+            container_ip: None, // Compose IP discovery deferred
+        })
     }
 
     async fn exec(&self, container: &ContainerId, command: &[String]) -> crate::Result<ExecHandle> {

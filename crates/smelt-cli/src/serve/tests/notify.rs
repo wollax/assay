@@ -6,6 +6,7 @@ use crate::serve::notify::{
     is_session_complete,
 };
 use crate::serve::queue::ServerState;
+use crate::serve::signals::GateSummary;
 use crate::serve::types::{JobId, JobSource, JobStatus, QueuedJob, now_epoch};
 
 /// Test helper: call evaluate_notify_rules from a ServerState + event,
@@ -168,7 +169,14 @@ fn test_extract_gate_summary_all_passed() {
             {"name": "s2", "passed": true},
         ]),
     );
-    assert_eq!(extract_gate_summary(&event), "2/2 sessions passed");
+    assert_eq!(
+        extract_gate_summary(&event),
+        GateSummary {
+            passed: 2,
+            failed: 0,
+            skipped: 0
+        }
+    );
 }
 
 #[test]
@@ -180,7 +188,34 @@ fn test_extract_gate_summary_some_failed() {
             {"name": "s2", "passed": false},
         ]),
     );
-    assert_eq!(extract_gate_summary(&event), "1/2 sessions passed");
+    assert_eq!(
+        extract_gate_summary(&event),
+        GateSummary {
+            passed: 1,
+            failed: 1,
+            skipped: 0
+        }
+    );
+}
+
+#[test]
+fn test_extract_gate_summary_with_state_field() {
+    let event = make_event_with_sessions(
+        "job-1",
+        serde_json::json!([
+            {"name": "s1", "state": "completed"},
+            {"name": "s2", "state": "failed"},
+            {"name": "s3", "state": "skipped"},
+        ]),
+    );
+    assert_eq!(
+        extract_gate_summary(&event),
+        GateSummary {
+            passed: 1,
+            failed: 1,
+            skipped: 1
+        }
+    );
 }
 
 #[test]
@@ -191,7 +226,14 @@ fn test_extract_gate_summary_fallback() {
         received_at: now_epoch(),
         payload: serde_json::json!({"phase": "complete"}),
     };
-    assert_eq!(extract_gate_summary(&event), "session complete");
+    assert_eq!(
+        extract_gate_summary(&event),
+        GateSummary {
+            passed: 0,
+            failed: 0,
+            skipped: 0
+        }
+    );
 }
 
 // ─── evaluate_notify_rules tests ──────────────────────────────
@@ -473,5 +515,184 @@ target = "main"
     let peer_update: crate::serve::signals::PeerUpdate = serde_json::from_str(&content).unwrap();
     assert_eq!(peer_update.source_job, "backend");
     assert_eq!(peer_update.source_session, "main-session");
-    assert_eq!(peer_update.gate_summary, "1/1 sessions passed");
+    assert_eq!(
+        peer_update.gate_summary,
+        GateSummary {
+            passed: 1,
+            failed: 0,
+            skipped: 0
+        }
+    );
+}
+
+/// E2E test: [[notify]] routing delivers PeerUpdate via HTTP when signal URL is cached.
+///
+/// Two jobs (backend → frontend) with [[notify]] rule. A signal URL is cached for
+/// the target job pointing to a mock endpoint. When backend's session completes,
+/// the PeerUpdate is delivered via HTTP to the mock instead of filesystem.
+#[tokio::test]
+async fn test_notify_http_delivery_to_mock_signal_endpoint() {
+    use crate::serve::signals::SignalRequest;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let source_repo = tmp.path().join("source-repo");
+    let target_repo = tmp.path().join("target-repo");
+    std::fs::create_dir_all(&source_repo).unwrap();
+    std::fs::create_dir_all(&target_repo).unwrap();
+
+    // Write source manifest with [[notify]] rule pointing to target job.
+    let source_manifest_path = tmp.path().join("source.smelt.toml");
+    let source_toml = format!(
+        r#"[job]
+name = "backend"
+repo = "{}"
+base_ref = "main"
+[environment]
+runtime = "docker"
+image = "alpine:3.18"
+[credentials]
+provider = "anthropic"
+model = "claude-sonnet-4-20250514"
+[[session]]
+name = "main"
+spec = "test"
+harness = "echo hello"
+timeout = 300
+[merge]
+strategy = "sequential"
+target = "main"
+[[notify]]
+target_job = "frontend"
+on_session_complete = true
+"#,
+        source_repo.display()
+    );
+    std::fs::write(&source_manifest_path, &source_toml).unwrap();
+
+    // Write target manifest.
+    let target_manifest_path = tmp.path().join("target.smelt.toml");
+    let target_toml = format!(
+        r#"[job]
+name = "frontend"
+repo = "{}"
+base_ref = "main"
+[environment]
+runtime = "docker"
+image = "alpine:3.18"
+[credentials]
+provider = "anthropic"
+model = "claude-sonnet-4-20250514"
+[[session]]
+name = "main"
+spec = "test"
+harness = "echo hello"
+timeout = 300
+[merge]
+strategy = "sequential"
+target = "main"
+"#,
+        target_repo.display()
+    );
+    std::fs::write(&target_manifest_path, &target_toml).unwrap();
+
+    // Start a mock signal endpoint to capture the forwarded PeerUpdate.
+    let captured: std::sync::Arc<tokio::sync::Mutex<Option<SignalRequest>>> =
+        std::sync::Arc::new(tokio::sync::Mutex::new(None));
+    let captured_clone = captured.clone();
+    let mock_app = axum::Router::new().route(
+        "/api/v1/signal",
+        axum::routing::post(move |axum::Json(body): axum::Json<SignalRequest>| {
+            let cap = captured_clone.clone();
+            async move {
+                *cap.lock().await = Some(body);
+                axum::http::StatusCode::ACCEPTED
+            }
+        }),
+    );
+    let mock_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let mock_addr = mock_listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(mock_listener, mock_app).await.unwrap();
+    });
+    let mock_signal_url = format!("http://127.0.0.1:{}/api/v1/signal", mock_addr.port());
+
+    // Set up server state with both jobs + signal URL for target.
+    let state = std::sync::Arc::new(std::sync::Mutex::new(ServerState::new_without_events(4)));
+    {
+        let mut s = state.lock().unwrap();
+        s.jobs.push_back(QueuedJob {
+            id: JobId::new("backend"),
+            manifest_path: source_manifest_path,
+            source: JobSource::HttpApi,
+            attempt: 0,
+            status: JobStatus::Running,
+            queued_at: now_epoch(),
+            started_at: Some(now_epoch()),
+            worker_host: None,
+        });
+        s.jobs.push_back(QueuedJob {
+            id: JobId::new("frontend"),
+            manifest_path: target_manifest_path,
+            source: JobSource::HttpApi,
+            attempt: 0,
+            status: JobStatus::Running,
+            queued_at: now_epoch(),
+            started_at: Some(now_epoch()),
+            worker_host: None,
+        });
+        // Seed run_id for the target job (filesystem fallback needs it).
+        s.run_ids
+            .insert("frontend".to_string(), "01TARGET_RUN".to_string());
+        // Cache signal URL for the target job → mock endpoint.
+        s.signal_urls
+            .insert("frontend".to_string(), mock_signal_url);
+    }
+
+    let base = super::start_test_server(state).await;
+    let client = reqwest::Client::new();
+
+    // POST a session-completion event for backend.
+    let resp = client
+        .post(format!("{base}/api/v1/events"))
+        .json(&serde_json::json!({
+            "job_id": "backend",
+            "run_id": "01SOURCE_RUN",
+            "phase": "complete",
+            "sessions": [{"name": "main-session", "state": "completed"}],
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200, "event POST should succeed");
+
+    // Give the async notify delivery a moment to complete.
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+
+    // Verify the mock signal endpoint received the PeerUpdate via HTTP.
+    let received = captured.lock().await;
+    let received = received
+        .as_ref()
+        .expect("mock signal endpoint should have received a SignalRequest");
+
+    // The target session name comes from the target manifest's [[session]] name = "main".
+    assert_eq!(received.target_session, "main");
+    assert_eq!(received.update.source_job, "backend");
+    assert_eq!(received.update.source_session, "main-session");
+    assert_eq!(
+        received.update.gate_summary,
+        GateSummary {
+            passed: 1,
+            failed: 0,
+            skipped: 0
+        }
+    );
+    assert_eq!(received.update.branch, "main");
+
+    // Verify NO file was written to filesystem (HTTP delivery succeeded → no fallback).
+    let canonical_target = std::fs::canonicalize(&target_repo).unwrap();
+    let inbox_dir = canonical_target.join(".assay/orchestrator/01TARGET_RUN/mesh/main/inbox");
+    assert!(
+        !inbox_dir.exists(),
+        "inbox directory should NOT exist — HTTP delivery should have bypassed filesystem"
+    );
 }

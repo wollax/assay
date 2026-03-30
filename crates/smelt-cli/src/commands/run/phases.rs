@@ -131,10 +131,22 @@ where
     };
 
     // Phase 5: Provision container
-    let container = provider
+    let provision_result = provider
         .provision(&manifest)
         .await
         .with_context(|| "failed to provision container")?;
+    let container = provision_result.container_id;
+    if let Some(ref ip) = provision_result.container_ip {
+        info!(container_ip = %ip, "container IP discovered for signal delivery");
+        // Report container IP back to dispatch for signal_urls caching.
+        // Use .ok() on the Mutex lock — a poisoned mutex here is non-fatal;
+        // signal URL caching will simply not happen for this job.
+        if let Ok(mut guard) = args.container_ip_tx.lock()
+            && let Some(tx) = guard.take()
+        {
+            let _ = tx.send(ip.clone());
+        }
+    }
     info!("Container provisioned: {container}");
     monitor.set_container(container.as_str());
 

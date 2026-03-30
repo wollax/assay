@@ -33,6 +33,15 @@ pub struct RunArgs {
     /// (host → container).
     #[arg(skip)]
     pub runtime_env: std::collections::HashMap<String, String>,
+
+    /// Optional channel to report the container IP discovered at provision time.
+    ///
+    /// Used by `smelt serve` dispatch to cache signal URLs in `ServerState`.
+    /// `None` for `smelt run` (CLI) which doesn't need signal URL caching.
+    /// Wrapped in `Mutex` because `RunArgs` is passed by shared reference to
+    /// `run_with_cancellation`, and `Sender::send` consumes the sender.
+    #[arg(skip)]
+    pub container_ip_tx: std::sync::Mutex<Option<tokio::sync::oneshot::Sender<String>>>,
 }
 
 // ── AnyProvider ──────────────────────────────────────────────────────────────
@@ -55,7 +64,7 @@ impl smelt_core::provider::RuntimeProvider for AnyProvider {
     async fn provision(
         &self,
         manifest: &smelt_core::manifest::JobManifest,
-    ) -> smelt_core::Result<smelt_core::provider::ContainerId> {
+    ) -> smelt_core::Result<smelt_core::provider::ProvisionResult> {
         match self {
             AnyProvider::Docker(p) => p.provision(manifest).await,
             AnyProvider::Compose(p) => p.provision(manifest).await,

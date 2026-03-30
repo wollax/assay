@@ -21,7 +21,7 @@ use tracing::{info, warn};
 
 use crate::error::SmeltError;
 use crate::manifest::JobManifest;
-use crate::provider::{CollectResult, ContainerId, ExecHandle, RuntimeProvider};
+use crate::provider::{CollectResult, ContainerId, ExecHandle, ProvisionResult, RuntimeProvider};
 
 /// Generate a Kubernetes Pod spec for a Smelt job.
 ///
@@ -266,7 +266,7 @@ fn parse_container_id(id: &ContainerId) -> crate::Result<(String, String)> {
 }
 
 impl RuntimeProvider for KubernetesProvider {
-    async fn provision(&self, manifest: &JobManifest) -> crate::Result<ContainerId> {
+    async fn provision(&self, manifest: &JobManifest) -> crate::Result<ProvisionResult> {
         let kube_cfg = manifest.kubernetes.as_ref().ok_or_else(|| {
             SmeltError::provider("k8s", "provision called without [kubernetes] config block")
         })?;
@@ -421,7 +421,10 @@ impl RuntimeProvider for KubernetesProvider {
             );
         }
 
-        Ok(container_id)
+        Ok(ProvisionResult {
+            container_id,
+            container_ip: None, // K8s uses service discovery, not container IPs
+        })
     }
 
     async fn exec(&self, container: &ContainerId, command: &[String]) -> crate::Result<ExecHandle> {

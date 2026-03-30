@@ -1,4 +1,7 @@
-use crate::serve::signals::{PeerUpdate, deliver_peer_update, validate_run_id};
+use crate::serve::signals::{
+    GateSummary, PeerUpdate, SignalRequest, deliver_peer_update, validate_run_id,
+};
+use serde::Deserialize;
 use std::path::{Path, PathBuf};
 
 /// Helper: build a sample PeerUpdate for tests.
@@ -7,8 +10,12 @@ fn sample_peer_update() -> PeerUpdate {
         source_job: "job-alpha".to_string(),
         source_session: "session-1".to_string(),
         changed_files: vec!["src/main.rs".to_string(), "README.md".to_string()],
-        gate_summary: "all gates passed".to_string(),
-        branch_name: "results/job-alpha".to_string(),
+        gate_summary: GateSummary {
+            passed: 3,
+            failed: 0,
+            skipped: 1,
+        },
+        branch: "results/job-alpha".to_string(),
     }
 }
 
@@ -230,14 +237,16 @@ async fn test_signal_http_round_trip() {
         .unwrap();
     assert_eq!(resp.status(), 200, "event POST should succeed");
 
-    // Now POST a signal.
+    // Now POST a signal (SignalRequest format).
     let signal_body = serde_json::json!({
-        "session_name": "agent-1",
-        "source_job": "job-alpha",
-        "source_session": "session-1",
-        "changed_files": ["src/main.rs", "README.md"],
-        "gate_summary": "all gates passed",
-        "branch_name": "results/job-alpha",
+        "target_session": "agent-1",
+        "update": {
+            "source_job": "job-alpha",
+            "source_session": "session-1",
+            "changed_files": ["src/main.rs", "README.md"],
+            "gate_summary": { "passed": 3, "failed": 0, "skipped": 1 },
+            "branch": "results/job-alpha"
+        }
     });
 
     let resp = client
@@ -275,8 +284,15 @@ async fn test_signal_http_round_trip() {
     assert_eq!(deserialized.source_job, "job-alpha");
     assert_eq!(deserialized.source_session, "session-1");
     assert_eq!(deserialized.changed_files, vec!["src/main.rs", "README.md"]);
-    assert_eq!(deserialized.gate_summary, "all gates passed");
-    assert_eq!(deserialized.branch_name, "results/job-alpha");
+    assert_eq!(
+        deserialized.gate_summary,
+        GateSummary {
+            passed: 3,
+            failed: 0,
+            skipped: 1
+        }
+    );
+    assert_eq!(deserialized.branch, "results/job-alpha");
 }
 
 #[tokio::test]
@@ -287,12 +303,14 @@ async fn test_signal_unknown_job_404() {
     let resp = client
         .post(format!("{base}/api/v1/jobs/nonexistent-job/signals"))
         .json(&serde_json::json!({
-            "session_name": "agent-1",
-            "source_job": "x",
-            "source_session": "x",
-            "changed_files": [],
-            "gate_summary": "x",
-            "branch_name": "x",
+            "target_session": "agent-1",
+            "update": {
+                "source_job": "x",
+                "source_session": "x",
+                "changed_files": [],
+                "gate_summary": { "passed": 0, "failed": 0, "skipped": 0 },
+                "branch": "x"
+            }
         }))
         .send()
         .await
@@ -310,12 +328,14 @@ async fn test_signal_no_run_id_409() {
     let resp = client
         .post(format!("{base}/api/v1/jobs/{job_id}/signals"))
         .json(&serde_json::json!({
-            "session_name": "agent-1",
-            "source_job": "x",
-            "source_session": "x",
-            "changed_files": [],
-            "gate_summary": "x",
-            "branch_name": "x",
+            "target_session": "agent-1",
+            "update": {
+                "source_job": "x",
+                "source_session": "x",
+                "changed_files": [],
+                "gate_summary": { "passed": 0, "failed": 0, "skipped": 0 },
+                "branch": "x"
+            }
         }))
         .send()
         .await
@@ -368,12 +388,14 @@ async fn test_signal_auth() {
     let resp = client
         .post(format!("{base}/api/v1/jobs/auth-job/signals"))
         .json(&serde_json::json!({
-            "session_name": "a",
-            "source_job": "x",
-            "source_session": "x",
-            "changed_files": [],
-            "gate_summary": "x",
-            "branch_name": "x",
+            "target_session": "a",
+            "update": {
+                "source_job": "x",
+                "source_session": "x",
+                "changed_files": [],
+                "gate_summary": { "passed": 0, "failed": 0, "skipped": 0 },
+                "branch": "x"
+            }
         }))
         .send()
         .await
@@ -386,12 +408,14 @@ async fn test_signal_auth() {
         .post(format!("{base}/api/v1/jobs/auth-job/signals"))
         .header("Authorization", "Bearer read-secret")
         .json(&serde_json::json!({
-            "session_name": "a",
-            "source_job": "x",
-            "source_session": "x",
-            "changed_files": [],
-            "gate_summary": "x",
-            "branch_name": "x",
+            "target_session": "a",
+            "update": {
+                "source_job": "x",
+                "source_session": "x",
+                "changed_files": [],
+                "gate_summary": { "passed": 0, "failed": 0, "skipped": 0 },
+                "branch": "x"
+            }
         }))
         .send()
         .await
@@ -409,12 +433,14 @@ async fn test_signal_auth() {
         .post(format!("{base}/api/v1/jobs/auth-job/signals"))
         .header("Authorization", "Bearer write-secret")
         .json(&serde_json::json!({
-            "session_name": "a",
-            "source_job": "x",
-            "source_session": "x",
-            "changed_files": [],
-            "gate_summary": "x",
-            "branch_name": "x",
+            "target_session": "a",
+            "update": {
+                "source_job": "x",
+                "source_session": "x",
+                "changed_files": [],
+                "gate_summary": { "passed": 0, "failed": 0, "skipped": 0 },
+                "branch": "x"
+            }
         }))
         .send()
         .await
@@ -448,12 +474,14 @@ async fn test_signal_invalid_session_name_returns_400() {
         let resp = client
             .post(format!("{base}/api/v1/jobs/{job_id}/signals"))
             .json(&serde_json::json!({
-                "session_name": bad_name,
-                "source_job": "x",
-                "source_session": "x",
-                "changed_files": [],
-                "gate_summary": "x",
-                "branch_name": "x",
+                "target_session": bad_name,
+                "update": {
+                    "source_job": "x",
+                    "source_session": "x",
+                    "changed_files": [],
+                    "gate_summary": { "passed": 0, "failed": 0, "skipped": 0 },
+                    "branch": "x"
+                }
             }))
             .send()
             .await
@@ -496,12 +524,14 @@ async fn test_signal_full_pipeline() {
     let resp = client
         .post(format!("{base}/api/v1/jobs/{job_id}/signals"))
         .json(&serde_json::json!({
-            "session_name": "agent-1",
-            "source_job": "job-a",
-            "source_session": "session-1",
-            "changed_files": ["src/main.rs"],
-            "gate_summary": "all passed",
-            "branch_name": "results/job-a",
+            "target_session": "agent-1",
+            "update": {
+                "source_job": "job-a",
+                "source_session": "session-1",
+                "changed_files": ["src/main.rs"],
+                "gate_summary": { "passed": 1, "failed": 0, "skipped": 0 },
+                "branch": "results/job-a"
+            }
         }))
         .send()
         .await
@@ -529,8 +559,15 @@ async fn test_signal_full_pipeline() {
     assert_eq!(peer_update.source_job, "job-a");
     assert_eq!(peer_update.source_session, "session-1");
     assert_eq!(peer_update.changed_files, vec!["src/main.rs"]);
-    assert_eq!(peer_update.gate_summary, "all passed");
-    assert_eq!(peer_update.branch_name, "results/job-a");
+    assert_eq!(
+        peer_update.gate_summary,
+        GateSummary {
+            passed: 1,
+            failed: 0,
+            skipped: 0
+        }
+    );
+    assert_eq!(peer_update.branch, "results/job-a");
 }
 
 #[tokio::test]
@@ -568,12 +605,14 @@ async fn test_signal_run_id_updates_on_new_event() {
     let resp = client
         .post(format!("{base}/api/v1/jobs/{job_id}/signals"))
         .json(&serde_json::json!({
-            "session_name": "worker-1",
-            "source_job": "x",
-            "source_session": "x",
-            "changed_files": [],
-            "gate_summary": "x",
-            "branch_name": "x",
+            "target_session": "worker-1",
+            "update": {
+                "source_job": "x",
+                "source_session": "x",
+                "changed_files": [],
+                "gate_summary": { "passed": 0, "failed": 0, "skipped": 0 },
+                "branch": "x"
+            }
         }))
         .send()
         .await
@@ -600,4 +639,532 @@ async fn test_signal_run_id_updates_on_new_event() {
         !aaa_dir.exists(),
         "AAA directory should not exist — run_id was overwritten to BBB"
     );
+}
+
+// ─── Schema round-trip tests (D189) ────────────────────────────────────
+//
+// These test-only structs mirror Assay's exact types with deny_unknown_fields.
+// Serializing with Smelt's types and deserializing with these mirrors catches
+// any field name or type drift between the two repos.
+
+/// Mirror of Assay's `assay_types::signal::GateSummary` for round-trip testing.
+#[derive(Debug, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+struct AssayGateSummary {
+    pub passed: u32,
+    pub failed: u32,
+    pub skipped: u32,
+}
+
+/// Mirror of Assay's `assay_types::signal::PeerUpdate` for round-trip testing.
+#[derive(Debug, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+struct AssayPeerUpdate {
+    pub source_job: String,
+    pub source_session: String,
+    pub changed_files: Vec<String>,
+    pub gate_summary: AssayGateSummary,
+    pub branch: String,
+}
+
+/// Mirror of Assay's `assay_types::signal::SignalRequest` for round-trip testing.
+#[derive(Debug, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+struct AssaySignalRequest {
+    pub target_session: String,
+    pub update: AssayPeerUpdate,
+}
+
+#[test]
+fn test_gate_summary_schema_round_trip() {
+    let smelt = GateSummary {
+        passed: 5,
+        failed: 2,
+        skipped: 1,
+    };
+    let json = serde_json::to_string(&smelt).unwrap();
+    let assay: AssayGateSummary = serde_json::from_str(&json)
+        .expect("GateSummary round-trip failed — field name/type mismatch with Assay");
+    assert_eq!(assay.passed, 5);
+    assert_eq!(assay.failed, 2);
+    assert_eq!(assay.skipped, 1);
+}
+
+#[test]
+fn test_peer_update_schema_round_trip() {
+    let smelt = PeerUpdate {
+        source_job: "job-1".into(),
+        source_session: "session-1".into(),
+        changed_files: vec!["a.rs".into(), "b.rs".into()],
+        gate_summary: GateSummary {
+            passed: 3,
+            failed: 1,
+            skipped: 0,
+        },
+        branch: "results/job-1".into(),
+    };
+    let json = serde_json::to_string(&smelt).unwrap();
+    let assay: AssayPeerUpdate = serde_json::from_str(&json)
+        .expect("PeerUpdate round-trip failed — field name/type mismatch with Assay");
+    assert_eq!(assay.source_job, "job-1");
+    assert_eq!(assay.branch, "results/job-1");
+    assert_eq!(assay.gate_summary.passed, 3);
+    assert_eq!(assay.gate_summary.failed, 1);
+}
+
+#[test]
+fn test_signal_request_schema_round_trip() {
+    let smelt = SignalRequest {
+        target_session: "agent-1".into(),
+        update: PeerUpdate {
+            source_job: "job-1".into(),
+            source_session: "session-1".into(),
+            changed_files: vec!["src/main.rs".into()],
+            gate_summary: GateSummary {
+                passed: 1,
+                failed: 0,
+                skipped: 0,
+            },
+            branch: "main".into(),
+        },
+    };
+    let json = serde_json::to_string(&smelt).unwrap();
+    let assay: AssaySignalRequest = serde_json::from_str(&json)
+        .expect("SignalRequest round-trip failed — field name/type mismatch with Assay");
+    assert_eq!(assay.target_session, "agent-1");
+    assert_eq!(assay.update.source_job, "job-1");
+    assert_eq!(assay.update.branch, "main");
+}
+
+// ─── HTTP signal delivery tests ────────────────────────────────────────
+
+use crate::serve::signals::{deliver_signal_http, make_signal_client};
+use axum::Json as AxumJson;
+
+fn sample_signal_request() -> SignalRequest {
+    SignalRequest {
+        target_session: "agent-1".into(),
+        update: sample_peer_update(),
+    }
+}
+
+/// Start a minimal mock signal server that captures the received body.
+/// Returns (url, captured_body_handle).
+async fn start_mock_signal_server() -> (
+    String,
+    std::sync::Arc<tokio::sync::Mutex<Option<SignalRequest>>>,
+) {
+    use axum::{Router, http::StatusCode, routing::post};
+
+    let captured: std::sync::Arc<tokio::sync::Mutex<Option<SignalRequest>>> =
+        std::sync::Arc::new(tokio::sync::Mutex::new(None));
+    let captured_clone = captured.clone();
+
+    let app = Router::new().route(
+        "/api/v1/signal",
+        post(move |AxumJson(body): AxumJson<SignalRequest>| {
+            let cap = captured_clone.clone();
+            async move {
+                *cap.lock().await = Some(body);
+                StatusCode::ACCEPTED
+            }
+        }),
+    );
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    (format!("http://127.0.0.1:{}", addr.port()), captured)
+}
+
+#[tokio::test]
+async fn test_deliver_signal_http_success() {
+    let (url, captured) = start_mock_signal_server().await;
+    let client = make_signal_client();
+    let signal = sample_signal_request();
+
+    let status = deliver_signal_http(&client, &format!("{url}/api/v1/signal"), &signal, None)
+        .await
+        .expect("HTTP delivery should succeed");
+
+    assert_eq!(status, reqwest::StatusCode::ACCEPTED);
+
+    // Verify the mock received the correct body.
+    let received = captured.lock().await;
+    let received = received.as_ref().expect("mock should have captured a body");
+    assert_eq!(received.target_session, "agent-1");
+    assert_eq!(received.update.source_job, "job-alpha");
+    assert_eq!(received.update.branch, "results/job-alpha");
+    assert_eq!(received.update.gate_summary.passed, 3);
+}
+
+#[tokio::test]
+async fn test_deliver_signal_http_with_auth() {
+    use axum::{Router, http::StatusCode, routing::post};
+
+    let app = Router::new().route(
+        "/api/v1/signal",
+        post(
+            |headers: axum::http::HeaderMap,
+             AxumJson(_body): AxumJson<serde_json::Value>| async move {
+                match headers.get("authorization") {
+                    Some(val) if val == "Bearer test-token" => StatusCode::ACCEPTED,
+                    Some(_) => StatusCode::FORBIDDEN,
+                    None => StatusCode::UNAUTHORIZED,
+                }
+            },
+        ),
+    );
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    let url = format!("http://127.0.0.1:{}/api/v1/signal", addr.port());
+    let client = make_signal_client();
+    let signal = sample_signal_request();
+
+    // With correct token → 202.
+    let status = deliver_signal_http(&client, &url, &signal, Some("test-token"))
+        .await
+        .unwrap();
+    assert_eq!(status, reqwest::StatusCode::ACCEPTED);
+
+    // Without token → 401.
+    let status = deliver_signal_http(&client, &url, &signal, None)
+        .await
+        .unwrap();
+    assert_eq!(status, reqwest::StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn test_deliver_signal_http_timeout() {
+    use axum::{Router, http::StatusCode, routing::post};
+
+    let app = Router::new().route(
+        "/api/v1/signal",
+        post(|AxumJson(_body): AxumJson<serde_json::Value>| async {
+            // Sleep longer than the client's 5-second timeout.
+            tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+            StatusCode::ACCEPTED
+        }),
+    );
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    let url = format!("http://127.0.0.1:{}/api/v1/signal", addr.port());
+    let client = make_signal_client();
+    let signal = sample_signal_request();
+
+    // Wrap in a generous outer timeout to prevent test hangs.
+    let result = tokio::time::timeout(
+        std::time::Duration::from_secs(20), // outer: 20s > 5s client timeout, guards against CI jitter
+        deliver_signal_http(&client, &url, &signal, None),
+    )
+    .await
+    .expect("outer timeout should not fire — client timeout should fire first");
+
+    assert!(result.is_err(), "should get a timeout error from reqwest");
+    let err = result.unwrap_err();
+    assert!(err.is_timeout(), "error should be a timeout: {err}");
+}
+
+#[tokio::test]
+async fn test_deliver_signal_http_connection_refused() {
+    let client = make_signal_client();
+    let signal = sample_signal_request();
+
+    // Port 1 is almost certainly not listening.
+    let result =
+        deliver_signal_http(&client, "http://127.0.0.1:1/api/v1/signal", &signal, None).await;
+
+    assert!(result.is_err(), "connection to a closed port should fail");
+    let err = result.unwrap_err();
+    assert!(
+        err.is_connect(),
+        "error should be a connection error: {err}"
+    );
+}
+
+// ─── HTTP-first delivery integration tests (T03) ──────────────────────
+
+#[tokio::test]
+async fn test_post_signal_http_first_delivery() {
+    let (base, job_id, repo_dir, _manifest_dir, state) = setup_signal_test_server().await;
+    let client = reqwest::Client::new();
+
+    // Start a mock signal endpoint.
+    let (mock_url, captured) = start_mock_signal_server().await;
+
+    // Cache the mock URL as the job's signal URL.
+    {
+        let mut s = state.lock().unwrap();
+        s.signal_urls
+            .insert(job_id.clone(), format!("{mock_url}/api/v1/signal"));
+    }
+
+    // POST an event with run_id (needed for fallback path, but HTTP should bypass it).
+    client
+        .post(format!("{base}/api/v1/events"))
+        .json(&serde_json::json!({
+            "job_id": job_id,
+            "run_id": "01HTTP_TEST",
+            "phase": "running",
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    // POST a SignalRequest → should use HTTP delivery, not filesystem.
+    let resp = client
+        .post(format!("{base}/api/v1/jobs/{job_id}/signals"))
+        .json(&serde_json::json!({
+            "target_session": "agent-1",
+            "update": {
+                "source_job": "job-alpha",
+                "source_session": "session-1",
+                "changed_files": ["src/main.rs"],
+                "gate_summary": { "passed": 2, "failed": 0, "skipped": 0 },
+                "branch": "results/job-alpha"
+            }
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 200, "signal POST should succeed");
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["status"], "ok");
+    assert_eq!(
+        body["delivery"], "http",
+        "should use HTTP delivery when signal URL is cached"
+    );
+    assert_eq!(body["signal_status"], 202);
+
+    // Verify the mock received the correct SignalRequest.
+    let received = captured.lock().await;
+    let received = received
+        .as_ref()
+        .expect("mock should have captured a SignalRequest");
+    assert_eq!(received.target_session, "agent-1");
+    assert_eq!(received.update.source_job, "job-alpha");
+    assert_eq!(received.update.branch, "results/job-alpha");
+    assert_eq!(received.update.gate_summary.passed, 2);
+
+    // Verify filesystem fallback did NOT run (HTTP succeeded — no double delivery).
+    let canonical_repo = std::fs::canonicalize(repo_dir.path()).unwrap();
+    let inbox_dir = canonical_repo.join(".assay/orchestrator/01HTTP_TEST/mesh/agent-1/inbox");
+    assert!(
+        !inbox_dir.exists(),
+        "inbox dir should NOT exist when HTTP delivery succeeds — no double delivery"
+    );
+}
+
+#[tokio::test]
+async fn test_post_signal_fallback_to_filesystem() {
+    let (base, job_id, repo_dir, _manifest_dir, state) = setup_signal_test_server().await;
+    let client = reqwest::Client::new();
+
+    // Cache a signal URL pointing to a non-existent server (will fail HTTP delivery).
+    {
+        let mut s = state.lock().unwrap();
+        s.signal_urls.insert(
+            job_id.clone(),
+            "http://127.0.0.1:1/api/v1/signal".to_string(),
+        );
+    }
+
+    // POST an event with run_id (needed for filesystem fallback).
+    client
+        .post(format!("{base}/api/v1/events"))
+        .json(&serde_json::json!({
+            "job_id": job_id,
+            "run_id": "01FALLBACK_TEST",
+            "phase": "running",
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    // POST a SignalRequest → HTTP should fail, fallback to filesystem.
+    let resp = client
+        .post(format!("{base}/api/v1/jobs/{job_id}/signals"))
+        .json(&serde_json::json!({
+            "target_session": "worker-1",
+            "update": {
+                "source_job": "job-beta",
+                "source_session": "session-2",
+                "changed_files": [],
+                "gate_summary": { "passed": 0, "failed": 1, "skipped": 0 },
+                "branch": "main"
+            }
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 200, "signal should succeed via fallback");
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["status"], "ok");
+    assert_eq!(
+        body["delivery"], "filesystem",
+        "should fall back to filesystem when HTTP fails"
+    );
+    assert!(
+        body["path"].as_str().is_some(),
+        "filesystem delivery should include path"
+    );
+
+    // Verify the file actually exists on disk.
+    let canonical_repo = std::fs::canonicalize(repo_dir.path()).unwrap();
+    let inbox_dir = canonical_repo.join(".assay/orchestrator/01FALLBACK_TEST/mesh/worker-1/inbox");
+    assert!(inbox_dir.is_dir(), "inbox directory should exist");
+
+    let entries: Vec<_> = std::fs::read_dir(&inbox_dir)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .collect();
+    assert_eq!(entries.len(), 1, "exactly one signal file should exist");
+
+    let file_content = std::fs::read_to_string(entries[0].path()).unwrap();
+    let peer_update: crate::serve::signals::PeerUpdate =
+        serde_json::from_str(&file_content).unwrap();
+    assert_eq!(peer_update.source_job, "job-beta");
+    assert_eq!(
+        peer_update.gate_summary,
+        GateSummary {
+            passed: 0,
+            failed: 1,
+            skipped: 0
+        }
+    );
+}
+
+// ─── End-to-end tests (T05) ───────────────────────────────────────────
+
+#[tokio::test]
+async fn test_signal_end_to_end_http_delivery_with_fallback() {
+    // This E2E test proves the full pipeline: HTTP delivery succeeds → mock receives
+    // correct SignalRequest → then mock shuts down → next delivery falls back to filesystem.
+
+    let (base, job_id, repo_dir, _manifest_dir, state) = setup_signal_test_server().await;
+    let client = reqwest::Client::new();
+
+    // POST an event with run_id (needed for filesystem fallback path).
+    client
+        .post(format!("{base}/api/v1/events"))
+        .json(&serde_json::json!({
+            "job_id": job_id,
+            "run_id": "01E2E_RUN",
+            "phase": "running",
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    // Start a mock signal endpoint and cache its URL.
+    let (mock_url, captured) = start_mock_signal_server().await;
+    {
+        let mut s = state.lock().unwrap();
+        s.signal_urls
+            .insert(job_id.clone(), format!("{mock_url}/api/v1/signal"));
+    }
+
+    // --- Phase 1: HTTP delivery succeeds ---
+    let resp = client
+        .post(format!("{base}/api/v1/jobs/{job_id}/signals"))
+        .json(&serde_json::json!({
+            "target_session": "agent-1",
+            "update": {
+                "source_job": "e2e-source",
+                "source_session": "session-1",
+                "changed_files": ["src/lib.rs"],
+                "gate_summary": { "passed": 5, "failed": 0, "skipped": 2 },
+                "branch": "results/e2e"
+            }
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["delivery"], "http", "first delivery should use HTTP");
+    assert_eq!(body["signal_status"], 202);
+
+    // Verify mock received correct SignalRequest with all schema-aligned fields.
+    let received = captured.lock().await;
+    let received = received.as_ref().expect("mock should capture the request");
+    assert_eq!(received.target_session, "agent-1");
+    assert_eq!(received.update.source_job, "e2e-source");
+    assert_eq!(received.update.branch, "results/e2e");
+    assert_eq!(received.update.gate_summary.passed, 5);
+    assert_eq!(received.update.gate_summary.failed, 0);
+    assert_eq!(received.update.gate_summary.skipped, 2);
+    assert_eq!(received.update.changed_files, vec!["src/lib.rs"]);
+
+    // --- Phase 2: Simulate dead signal endpoint by pointing to a closed port ---
+    {
+        let mut s = state.lock().unwrap();
+        s.signal_urls.insert(
+            job_id.clone(),
+            "http://127.0.0.1:1/api/v1/signal".to_string(),
+        );
+    }
+
+    let resp = client
+        .post(format!("{base}/api/v1/jobs/{job_id}/signals"))
+        .json(&serde_json::json!({
+            "target_session": "agent-2",
+            "update": {
+                "source_job": "e2e-source",
+                "source_session": "session-2",
+                "changed_files": [],
+                "gate_summary": { "passed": 1, "failed": 1, "skipped": 0 },
+                "branch": "main"
+            }
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(
+        body["delivery"], "filesystem",
+        "second delivery should fall back to filesystem"
+    );
+    assert!(body["path"].as_str().is_some(), "should include file path");
+
+    // Verify the file exists on disk.
+    let canonical_repo = std::fs::canonicalize(repo_dir.path()).unwrap();
+    let inbox_dir = canonical_repo.join(".assay/orchestrator/01E2E_RUN/mesh/agent-2/inbox");
+    assert!(inbox_dir.is_dir(), "inbox directory should exist");
+    let entries: Vec<_> = std::fs::read_dir(&inbox_dir)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .collect();
+    assert_eq!(entries.len(), 1, "one fallback file should exist");
+
+    let content = std::fs::read_to_string(entries[0].path()).unwrap();
+    let peer_update: PeerUpdate = serde_json::from_str(&content).unwrap();
+    assert_eq!(peer_update.source_job, "e2e-source");
+    assert_eq!(
+        peer_update.gate_summary,
+        GateSummary {
+            passed: 1,
+            failed: 1,
+            skipped: 0
+        }
+    );
+    assert_eq!(peer_update.branch, "main");
 }

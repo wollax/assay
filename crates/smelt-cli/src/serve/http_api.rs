@@ -20,8 +20,16 @@ use tokio_util::sync::CancellationToken;
 use crate::serve::config::AuthConfig;
 use crate::serve::notify;
 use crate::serve::queue::ServerState;
-use crate::serve::signals::{PeerUpdate, deliver_peer_update, validate_session_name};
+use crate::serve::signals::{
+    SignalRequest, deliver_peer_update, deliver_signal_http, make_signal_client,
+    validate_session_name,
+};
 use crate::serve::types::{JobSource, JobStatus, QueuedJob, elapsed_secs_since, now_epoch};
+
+/// Shared reqwest client for HTTP signal delivery (D186).
+/// Built once with a 5-second timeout; connection-pooled across all deliveries.
+static SIGNAL_CLIENT: std::sync::LazyLock<reqwest::Client> =
+    std::sync::LazyLock::new(make_signal_client);
 
 /// JSON-serialisable snapshot of a single job's state.
 ///
@@ -359,73 +367,78 @@ async fn post_event(
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
 
-    let mut s = state.lock().map_err(|_| {
-        tracing::error!("ServerState mutex poisoned in post_event");
+    // Scope the MutexGuard so the future is Send (required by axum handlers).
+    // All data needed after the lock is extracted into owned values.
+    let (event, source_manifest_path, queued_snapshots, run_ids_snapshot, signal_urls_snapshot) = {
+        let mut s = state.lock().map_err(|_| {
+            tracing::error!("ServerState mutex poisoned in post_event");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": "internal server error"})),
+            )
+        })?;
+
+        // Validate that the job_id exists in the server's job queue (any status).
+        let job_exists = s.jobs.iter().any(|j| j.id.0 == job_id);
+        if !job_exists {
+            tracing::warn!(job_id = %job_id, "event POST: unknown job_id");
+            return Err((
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({"error": "unknown job_id"})),
+            ));
+        }
+
+        // Strip control fields from payload to avoid duplication with struct fields.
+        let mut payload = body;
+        if let Some(obj) = payload.as_object_mut() {
+            obj.remove("job_id");
+            obj.remove("event_id");
+        }
+
+        let event = crate::serve::events::AssayEvent {
+            job_id: job_id.clone(),
+            event_id,
+            received_at: now_epoch(),
+            payload,
+        };
+
+        // Store in per-job EventStore and broadcast via the encapsulated method.
+        s.ingest_event(event.clone());
+
+        // Extract the data needed for notify routing under the lock.
+        let source_manifest_path = s
+            .jobs
+            .iter()
+            .find(|j| j.id.0 == job_id)
+            .map(|j| j.manifest_path.clone());
+
+        let queued_snapshots: Vec<notify::QueuedJobSnapshot> = s
+            .jobs
+            .iter()
+            .map(|j| notify::QueuedJobSnapshot {
+                job_id: j.id.clone(),
+                job_name: j.id.0.clone(),
+                manifest_path: j.manifest_path.clone(),
+                is_terminal: matches!(
+                    j.status,
+                    crate::serve::types::JobStatus::Complete
+                        | crate::serve::types::JobStatus::Failed
+                ),
+            })
+            .collect();
+
+        let run_ids_snapshot = s.run_ids.clone();
+        let signal_urls_snapshot = s.signal_urls.clone();
+
         (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({"error": "internal server error"})),
+            event,
+            source_manifest_path,
+            queued_snapshots,
+            run_ids_snapshot,
+            signal_urls_snapshot,
         )
-    })?;
-
-    // Validate that the job_id exists in the server's job queue (any status).
-    let job_exists = s.jobs.iter().any(|j| j.id.0 == job_id);
-    if !job_exists {
-        tracing::warn!(job_id = %job_id, "event POST: unknown job_id");
-        return Err((
-            StatusCode::NOT_FOUND,
-            Json(serde_json::json!({"error": "unknown job_id"})),
-        ));
-    }
-
-    // Strip control fields from payload to avoid duplication with struct fields.
-    let mut payload = body;
-    if let Some(obj) = payload.as_object_mut() {
-        obj.remove("job_id");
-        obj.remove("event_id");
-    }
-
-    let event = crate::serve::events::AssayEvent {
-        job_id: job_id.clone(),
-        event_id,
-        received_at: now_epoch(),
-        payload,
     };
-
-    // Store in per-job EventStore and broadcast via the encapsulated method.
-    s.ingest_event(event.clone());
-
-    // Extract the data needed for notify routing under the lock.
-    // No filesystem I/O happens here — manifest reading is deferred until after
-    // the lock is dropped to avoid blocking the Mutex on disk reads.
-    let source_manifest_path = s
-        .jobs
-        .iter()
-        .find(|j| j.id.0 == job_id)
-        .map(|j| j.manifest_path.clone());
-
-    let queued_snapshots: Vec<notify::QueuedJobSnapshot> = s
-        .jobs
-        .iter()
-        .map(|j| notify::QueuedJobSnapshot {
-            job_id: j.id.clone(),
-            // NOTE: job_name uses the server-assigned JobId string for now.
-            // In smelt serve, operators must use the JobId (e.g. "job-1") in
-            // [[notify]] target_job. A future improvement would store [job].name
-            // in QueuedJob at enqueue time to enable name-based matching.
-            job_name: j.id.0.clone(),
-            manifest_path: j.manifest_path.clone(),
-            is_terminal: matches!(
-                j.status,
-                crate::serve::types::JobStatus::Complete | crate::serve::types::JobStatus::Failed
-            ),
-        })
-        .collect();
-
-    // Also snapshot run_ids under the lock.
-    let run_ids_snapshot = s.run_ids.clone();
-
-    // Drop lock before any filesystem I/O.
-    drop(s);
+    // MutexGuard is dropped here — before any .await points.
 
     // Evaluate notify rules outside the lock (reads source manifest from disk).
     let notify_targets = if let Some(src_manifest) = source_manifest_path {
@@ -477,7 +490,51 @@ async fn post_event(
             target_session_names
         };
 
+        // HTTP-first delivery (D186): check if we have a cached signal URL for the target.
+        let target_signal_url = signal_urls_snapshot.get(&target_job_id.0).cloned();
+
         for session_name in &sessions_to_notify {
+            // Try HTTP delivery first if signal URL is available.
+            if let Some(ref url) = target_signal_url {
+                let sr = SignalRequest {
+                    target_session: session_name.clone(),
+                    update: peer_update.clone(),
+                };
+                match deliver_signal_http(&SIGNAL_CLIENT, url, &sr, None).await {
+                    Ok(status) if status == reqwest::StatusCode::ACCEPTED => {
+                        tracing::info!(
+                            source_job = %job_id,
+                            target_job = %target_job_id,
+                            session = %session_name,
+                            url = %url,
+                            "notify: HTTP signal delivery succeeded"
+                        );
+                        continue; // Skip filesystem fallback.
+                    }
+                    Ok(status) => {
+                        tracing::warn!(
+                            source_job = %job_id,
+                            target_job = %target_job_id,
+                            session = %session_name,
+                            url = %url,
+                            status = %status,
+                            "notify: HTTP delivery returned non-202 — falling back to filesystem"
+                        );
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            source_job = %job_id,
+                            target_job = %target_job_id,
+                            session = %session_name,
+                            url = %url,
+                            error = %e,
+                            "notify: HTTP delivery failed — falling back to filesystem"
+                        );
+                    }
+                }
+            }
+
+            // Filesystem fallback.
             match deliver_peer_update(&repo_path, &run_id, session_name, &peer_update) {
                 Ok(path) => {
                     tracing::info!(
@@ -485,7 +542,7 @@ async fn post_event(
                         target_job = %target_job_id,
                         session = %session_name,
                         path = %path.display(),
-                        "notify: PeerUpdate delivered"
+                        "notify: PeerUpdate delivered via filesystem"
                     );
                 }
                 Err(e) => {
@@ -494,7 +551,7 @@ async fn post_event(
                         target_job = %target_job_id,
                         session = %session_name,
                         error = %e,
-                        "notify: signal delivery failed — skipping session"
+                        "notify: filesystem signal delivery failed — skipping session"
                     );
                 }
             }
@@ -561,11 +618,13 @@ async fn get_job(
 
 /// POST /api/v1/jobs/:id/signals — deliver a PeerUpdate signal to a running session.
 ///
+/// Accepts a `SignalRequest` body with `target_session` and nested `update` (PeerUpdate).
+///
 /// Validates:
 /// - Job exists (404 if not)
 /// - `run_id` is known from prior event ingestion (409 if not)
-/// - `session_name` passes path traversal validation (400 if invalid)
-/// - Required `PeerUpdate` fields are present (400 if missing)
+/// - `target_session` passes path traversal validation (400 if invalid)
+/// - Required `SignalRequest` fields are present (400 if missing)
 ///
 /// On success, writes the PeerUpdate as an atomic JSON file to the session's
 /// inbox path on the host filesystem and returns 200 with the file path.
@@ -574,37 +633,28 @@ async fn post_signal(
     extract::Path(job_id): extract::Path<String>,
     Json(body): Json<serde_json::Value>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<serde_json::Value>)> {
-    // Extract session_name from body (required).
-    let session_name = body
-        .get("session_name")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| {
-            (
-                StatusCode::BAD_REQUEST,
-                Json(serde_json::json!({"error": "missing or non-string session_name field"})),
-            )
-        })?
-        .to_string();
-
-    // Validate session_name for path traversal.
-    validate_session_name(&session_name).map_err(|msg| {
-        tracing::warn!(session_name = %session_name, "signal: invalid session_name");
+    // Parse SignalRequest from body.
+    let signal_request: SignalRequest = serde_json::from_value(body).map_err(|e| {
         (
             StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({"error": format!("invalid session_name: {msg}")})),
+            Json(serde_json::json!({"error": format!("invalid SignalRequest payload: {e}")})),
         )
     })?;
 
-    // Parse PeerUpdate fields from body (consume body — no further use).
-    let peer_update: PeerUpdate = serde_json::from_value(body).map_err(|e| {
+    let session_name = &signal_request.target_session;
+    let peer_update = &signal_request.update;
+
+    // Validate target_session for path traversal.
+    validate_session_name(session_name).map_err(|msg| {
+        tracing::warn!(target_session = %session_name, "signal: invalid target_session");
         (
             StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({"error": format!("invalid PeerUpdate payload: {e}")})),
+            Json(serde_json::json!({"error": format!("invalid target_session: {msg}")})),
         )
     })?;
 
     // Lock state to validate job and extract needed data.
-    let (run_id, manifest_path) = {
+    let (run_id, manifest_path, signal_url) = {
         let s = state.lock().map_err(|_| {
             tracing::error!("ServerState mutex poisoned in post_signal");
             (
@@ -631,11 +681,50 @@ async fn post_signal(
         })?;
 
         let manifest_path = job.manifest_path.clone();
-        (run_id, manifest_path)
+        let signal_url = s.signal_urls.get(&job_id).cloned();
+        (run_id, manifest_path, signal_url)
     };
     // Mutex is released here.
 
-    // Resolve repo path from the manifest file.
+    // HTTP-first delivery (D186): try the cached signal URL first.
+    if let Some(url) = &signal_url {
+        match deliver_signal_http(&SIGNAL_CLIENT, url, &signal_request, None).await {
+            Ok(status) if status == reqwest::StatusCode::ACCEPTED => {
+                tracing::info!(
+                    job_id = %job_id,
+                    target_session = %session_name,
+                    url = %url,
+                    status = %status,
+                    "signal: HTTP delivery succeeded"
+                );
+                return Ok(Json(serde_json::json!({
+                    "status": "ok",
+                    "delivery": "http",
+                    "signal_status": status.as_u16()
+                })));
+            }
+            Ok(status) => {
+                tracing::warn!(
+                    job_id = %job_id,
+                    target_session = %session_name,
+                    url = %url,
+                    status = %status,
+                    "signal: HTTP delivery returned non-202 — falling back to filesystem"
+                );
+            }
+            Err(e) => {
+                tracing::warn!(
+                    job_id = %job_id,
+                    target_session = %session_name,
+                    url = %url,
+                    error = %e,
+                    "signal: HTTP delivery failed — falling back to filesystem"
+                );
+            }
+        }
+    }
+
+    // Filesystem fallback: resolve repo path from the manifest file.
     let manifest_content = std::fs::read_to_string(&manifest_path).map_err(|e| {
         tracing::error!(path = %manifest_path.display(), error = %e, "signal: cannot read manifest");
         (
@@ -670,14 +759,14 @@ async fn post_signal(
         )
     })?;
 
-    // Deliver the signal (filesystem I/O outside the Mutex lock).
-    let written_path = deliver_peer_update(&repo_path, &run_id, &session_name, &peer_update)
+    // Deliver the signal via filesystem (fallback path).
+    let written_path = deliver_peer_update(&repo_path, &run_id, session_name, peer_update)
         .map_err(|e| {
             tracing::error!(
                 job_id = %job_id,
-                session_name = %session_name,
+                target_session = %session_name,
                 error = %e,
-                "signal: delivery failed"
+                "signal: filesystem delivery failed"
             );
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -687,13 +776,14 @@ async fn post_signal(
 
     tracing::info!(
         job_id = %job_id,
-        session_name = %session_name,
+        target_session = %session_name,
         path = %written_path.display(),
-        "signal delivered"
+        "signal: filesystem delivery succeeded"
     );
 
     Ok(Json(serde_json::json!({
         "status": "ok",
+        "delivery": "filesystem",
         "path": written_path.display().to_string()
     })))
 }

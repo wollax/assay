@@ -16,7 +16,7 @@ use tracing::{debug, info, warn};
 
 use crate::error::SmeltError;
 use crate::manifest::{JobManifest, resolve_repo_path};
-use crate::provider::{CollectResult, ContainerId, ExecHandle, RuntimeProvider};
+use crate::provider::{CollectResult, ContainerId, ExecHandle, ProvisionResult, RuntimeProvider};
 
 /// Docker-backed runtime provider.
 ///
@@ -111,7 +111,7 @@ pub(crate) async fn detect_host_address_with_override(
 }
 
 impl RuntimeProvider for DockerProvider {
-    async fn provision(&self, manifest: &JobManifest) -> crate::Result<ContainerId> {
+    async fn provision(&self, manifest: &JobManifest) -> crate::Result<ProvisionResult> {
         let image = &manifest.environment.image;
 
         // Pull image if not present locally
@@ -224,7 +224,41 @@ impl RuntimeProvider for DockerProvider {
 
         info!(container_id = %container_id, "container started");
 
-        Ok(ContainerId::new(container_id))
+        // Discover container IP for signal endpoint URL caching (D186).
+        let container_ip = match self.client.inspect_container(&container_id, None).await {
+            Ok(info) => {
+                let ip = info
+                    .network_settings
+                    .and_then(|ns| ns.networks)
+                    .and_then(|networks| {
+                        networks
+                            .into_values()
+                            .find_map(|endpoint| endpoint.ip_address.filter(|ip| !ip.is_empty()))
+                    });
+                if let Some(ref ip) = ip {
+                    info!(container_id = %container_id, ip = %ip, "container IP discovered");
+                } else {
+                    tracing::debug!(
+                        container_id = %container_id,
+                        "no container IP found (host networking or no bridge)"
+                    );
+                }
+                ip
+            }
+            Err(e) => {
+                tracing::debug!(
+                    container_id = %container_id,
+                    error = %e,
+                    "inspect_container failed — container IP not available"
+                );
+                None
+            }
+        };
+
+        Ok(ProvisionResult {
+            container_id: ContainerId::new(container_id),
+            container_ip,
+        })
     }
 
     async fn exec(&self, container: &ContainerId, command: &[String]) -> crate::Result<ExecHandle> {

@@ -149,7 +149,7 @@ async fn test_compose_provision_exec_teardown() {
     };
 
     let manifest = compose_manifest("compose-test-basic", vec![]);
-    let container = provider.provision(&manifest).await.unwrap();
+    let container = provider.provision(&manifest).await.unwrap().container_id;
 
     let handle = provider
         .exec(&container, &["echo".into(), "hello".into()])
@@ -222,7 +222,8 @@ async fn test_compose_healthcheck_wait_postgres() {
     let container = provider
         .provision(&manifest)
         .await
-        .expect("provision must succeed after postgres is healthy");
+        .expect("provision must succeed after postgres is healthy")
+        .container_id;
 
     // Exec a connectivity check from the agent container to confirm postgres is reachable.
     // `nc -z postgres 5432` checks TCP reachability on the shared compose network.
@@ -268,7 +269,7 @@ async fn test_compose_teardown_after_exec_error() {
     };
 
     let manifest = compose_manifest("compose-test-teardown-err", vec![]);
-    let container = provider.provision(&manifest).await.unwrap();
+    let container = provider.provision(&manifest).await.unwrap().container_id;
 
     let handle = provider
         .exec(&container, &["sh".into(), "-c".into(), "exit 1".into()])

@@ -104,6 +104,10 @@ pub struct ServerState {
     /// Used by signal delivery to resolve inbox paths. Upsert semantics:
     /// each new event with a `run_id` field overwrites the previous value.
     pub(crate) run_ids: HashMap<String, String>,
+    /// Cached signal endpoint URLs per job_id.
+    /// Populated from container IP discovery at provision time (T04).
+    /// Used by HTTP-first signal delivery (D186) in `post_signal` and notify paths.
+    pub(crate) signal_urls: HashMap<String, String>,
 }
 
 impl ServerState {
@@ -118,6 +122,7 @@ impl ServerState {
             event_bus,
             events: HashMap::new(),
             run_ids: HashMap::new(),
+            signal_urls: HashMap::new(),
         }
     }
 
@@ -172,6 +177,7 @@ impl ServerState {
             event_bus,
             events: HashMap::new(),
             run_ids: HashMap::new(),
+            signal_urls: HashMap::new(),
         }
     }
 

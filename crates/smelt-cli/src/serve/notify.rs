@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use smelt_core::manifest::{JobManifest, NotifyRule};
 
 use crate::serve::events::AssayEvent;
-use crate::serve::signals::PeerUpdate;
+use crate::serve::signals::{GateSummary, PeerUpdate};
 use crate::serve::types::JobId;
 
 /// Detect whether an event represents an Assay session completion.
@@ -42,23 +42,60 @@ pub(crate) fn extract_session_name(event: &AssayEvent) -> String {
         .to_string()
 }
 
-/// Extract a gate summary from the event payload.
+/// Extract a structured gate summary from the event payload.
 ///
-/// Builds a short summary from `payload["sessions"]` data.
-/// Falls back to `"session complete"` when session data is absent.
-pub(crate) fn extract_gate_summary(event: &AssayEvent) -> String {
+/// Counts sessions by terminal `state` field (Assay's `SessionRunState`):
+/// - `"completed"` → passed
+/// - `"failed"` → failed
+/// - `"skipped"` → skipped
+///
+/// Falls back to legacy `passed: bool` field for backward compatibility
+/// with existing test events that use the old format.
+///
+/// Returns `GateSummary { 0, 0, 0 }` when session data is absent.
+pub(crate) fn extract_gate_summary(event: &AssayEvent) -> GateSummary {
     let sessions = event.payload.get("sessions").and_then(|v| v.as_array());
 
     match sessions {
-        None => "session complete".to_string(),
-        Some(sessions) if sessions.is_empty() => "session complete".to_string(),
+        None => GateSummary {
+            passed: 0,
+            failed: 0,
+            skipped: 0,
+        },
+        Some(sessions) if sessions.is_empty() => GateSummary {
+            passed: 0,
+            failed: 0,
+            skipped: 0,
+        },
         Some(sessions) => {
-            let total = sessions.len();
-            let passed = sessions
-                .iter()
-                .filter(|s| s.get("passed").and_then(|v| v.as_bool()).unwrap_or(false))
-                .count();
-            format!("{passed}/{total} sessions passed")
+            let mut passed = 0u32;
+            let mut failed = 0u32;
+            let mut skipped = 0u32;
+
+            for s in sessions {
+                // Primary: count by Assay's SessionRunState `state` field.
+                if let Some(state) = s.get("state").and_then(|v| v.as_str()) {
+                    match state.to_lowercase().as_str() {
+                        "completed" => passed += 1,
+                        "failed" => failed += 1,
+                        "skipped" => skipped += 1,
+                        _ => {} // Pending, Running — not terminal
+                    }
+                } else if let Some(p) = s.get("passed").and_then(|v| v.as_bool()) {
+                    // Legacy fallback: `passed: bool` from existing test events.
+                    if p {
+                        passed += 1;
+                    } else {
+                        failed += 1;
+                    }
+                }
+            }
+
+            GateSummary {
+                passed,
+                failed,
+                skipped,
+            }
         }
     }
 }
@@ -201,13 +238,13 @@ pub(crate) fn evaluate_notify_rules(
 
     let session_name = extract_session_name(event);
     let gate_summary = extract_gate_summary(event);
-    // Use merge.target as the branch_name — that's the result branch peers care about.
-    let branch_name = if routing_info.merge_target.is_empty() {
+    // Use merge.target as the branch — that's the result branch peers care about.
+    let branch = if routing_info.merge_target.is_empty() {
         tracing::warn!(
             job_id = %event.job_id,
             path = %source_manifest_path.display(),
             "notify: merge.target is empty in source manifest — falling back to 'main'; \
-             PeerUpdate branch_name may be incorrect"
+             PeerUpdate branch may be incorrect"
         );
         "main".to_string()
     } else {
@@ -252,7 +289,7 @@ pub(crate) fn evaluate_notify_rules(
                 source_session: session_name.clone(),
                 changed_files: Vec::new(), // TODO: populate with per-job changed-file tracking
                 gate_summary: gate_summary.clone(),
-                branch_name: branch_name.clone(),
+                branch: branch.clone(),
             },
         });
     }

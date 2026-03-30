@@ -274,7 +274,8 @@ async fn test_provision_and_teardown() {
     let container = provider
         .provision(&manifest)
         .await
-        .expect("provision should succeed");
+        .expect("provision should succeed")
+        .container_id;
     let container_id = container.as_str().to_string();
 
     // Verify the container exists
@@ -302,7 +303,11 @@ async fn test_exec() {
     };
     let manifest = test_manifest("exec-hello");
 
-    let container = provider.provision(&manifest).await.expect("provision");
+    let container = provider
+        .provision(&manifest)
+        .await
+        .expect("provision")
+        .container_id;
 
     // Execute `echo "hello world"`
     let cmd = vec!["echo".to_string(), "hello world".to_string()];
@@ -329,7 +334,11 @@ async fn test_exec_nonzero_exit() {
     };
     let manifest = test_manifest("exec-nonzero");
 
-    let container = provider.provision(&manifest).await.expect("provision");
+    let container = provider
+        .provision(&manifest)
+        .await
+        .expect("provision")
+        .container_id;
 
     // Execute a command that exits with code 42
     let cmd = vec!["sh".to_string(), "-c".to_string(), "exit 42".to_string()];
@@ -351,7 +360,11 @@ async fn test_exec_long_running() {
     };
     let manifest = test_manifest("exec-long-running");
 
-    let container = provider.provision(&manifest).await.expect("provision");
+    let container = provider
+        .provision(&manifest)
+        .await
+        .expect("provision")
+        .container_id;
 
     // Execute a multi-second command that prints incrementally
     let cmd = vec![
@@ -391,7 +404,11 @@ async fn test_teardown_on_error() {
     };
     let manifest = test_manifest("teardown-on-error");
 
-    let container = provider.provision(&manifest).await.expect("provision");
+    let container = provider
+        .provision(&manifest)
+        .await
+        .expect("provision")
+        .container_id;
     let container_id = container.as_str().to_string();
 
     // Execute a command that fails
@@ -527,7 +544,11 @@ async fn test_bind_mount_read() {
     std::fs::write(dir.path().join("test.txt"), "hello from host").unwrap();
 
     let manifest = test_manifest_with_repo("mount-read", dir.path().to_str().unwrap());
-    let container = provider.provision(&manifest).await.expect("provision");
+    let container = provider
+        .provision(&manifest)
+        .await
+        .expect("provision")
+        .container_id;
 
     // Read the test file inside the container at /workspace
     let cmd = vec!["cat".to_string(), "/workspace/test.txt".to_string()];
@@ -551,7 +572,11 @@ async fn test_bind_mount_write() {
 
     let dir = tempfile::tempdir().unwrap();
     let manifest = test_manifest_with_repo("mount-write", dir.path().to_str().unwrap());
-    let container = provider.provision(&manifest).await.expect("provision");
+    let container = provider
+        .provision(&manifest)
+        .await
+        .expect("provision")
+        .container_id;
 
     // Create a file inside the container at /workspace
     let cmd = vec![
@@ -585,7 +610,11 @@ async fn test_bind_mount_working_dir() {
     std::fs::write(dir.path().join("marker.txt"), "found it").unwrap();
 
     let manifest = test_manifest_with_repo("mount-workdir", dir.path().to_str().unwrap());
-    let container = provider.provision(&manifest).await.expect("provision");
+    let container = provider
+        .provision(&manifest)
+        .await
+        .expect("provision")
+        .container_id;
 
     // `pwd` should return /workspace (the working_dir set in exec)
     let cmd = vec!["pwd".to_string()];
@@ -665,7 +694,11 @@ async fn test_assay_mock_execution() {
         },
     ];
 
-    let container = provider.provision(&manifest).await.expect("provision");
+    let container = provider
+        .provision(&manifest)
+        .await
+        .expect("provision")
+        .container_id;
 
     // Write the assay manifest into the container
     let toml_content = smelt_core::AssayInvoker::build_run_manifest_toml(&manifest);
@@ -759,7 +792,11 @@ async fn test_assay_mock_failure() {
     let repo_dir = tempfile::tempdir().unwrap();
     let manifest = test_manifest_with_repo("assay-failure", repo_dir.path().to_str().unwrap());
 
-    let container = provider.provision(&manifest).await.expect("provision");
+    let container = provider
+        .provision(&manifest)
+        .await
+        .expect("provision")
+        .container_id;
 
     // Write the assay manifest
     let toml_content = smelt_core::AssayInvoker::build_run_manifest_toml(&manifest);
@@ -878,7 +915,11 @@ async fn test_collect_creates_target_branch() {
     manifest.merge.target = "smelt/result".to_string();
 
     // 3. Provision container
-    let container = provider.provision(&manifest).await.expect("provision");
+    let container = provider
+        .provision(&manifest)
+        .await
+        .expect("provision")
+        .container_id;
 
     // Install git in alpine (not present by default)
     let install = provider
@@ -1023,7 +1064,11 @@ async fn test_full_e2e_pipeline() {
     manifest.merge.target = "smelt/e2e-result".to_string();
 
     // 3. Provision container
-    let container = provider.provision(&manifest).await.expect("provision");
+    let container = provider
+        .provision(&manifest)
+        .await
+        .expect("provision")
+        .container_id;
 
     // 4. Install git in alpine (not present by default)
     let install = provider
@@ -1149,7 +1194,11 @@ async fn test_timeout_triggers_teardown() {
     };
     let manifest = test_manifest("timeout-teardown");
 
-    let container = provider.provision(&manifest).await.expect("provision");
+    let container = provider
+        .provision(&manifest)
+        .await
+        .expect("provision")
+        .container_id;
     let container_id = container.as_str().to_string();
 
     let timeout_duration = std::time::Duration::from_secs(2);
@@ -1194,7 +1243,11 @@ async fn test_cancellation_triggers_teardown() {
     };
     let manifest = test_manifest("cancel-teardown");
 
-    let container = provider.provision(&manifest).await.expect("provision");
+    let container = provider
+        .provision(&manifest)
+        .await
+        .expect("provision")
+        .container_id;
     let container_id = container.as_str().to_string();
 
     let (tx, rx) = tokio::sync::oneshot::channel::<()>();
@@ -1266,7 +1319,11 @@ async fn test_multi_session_e2e() {
     ];
 
     // Provision container
-    let container = provider.provision(&manifest).await.expect("provision");
+    let container = provider
+        .provision(&manifest)
+        .await
+        .expect("provision")
+        .container_id;
 
     // Write mock assay binary to /usr/local/bin/assay (on PATH):
     // verifies /tmp/smelt-manifest.toml exists, then exits 0.
@@ -1373,7 +1430,11 @@ async fn test_e2e_assay_failure_no_orphans() {
     let manifest = test_manifest("failure-no-orphans");
 
     // Provision container
-    let container = provider.provision(&manifest).await.expect("provision");
+    let container = provider
+        .provision(&manifest)
+        .await
+        .expect("provision")
+        .container_id;
     let container_id = container.as_str().to_string();
 
     // Write failing mock assay to /usr/local/bin/assay
@@ -1450,7 +1511,11 @@ async fn test_double_teardown_safe() {
     };
     let manifest = test_manifest("double-teardown");
 
-    let container = provider.provision(&manifest).await.expect("provision");
+    let container = provider
+        .provision(&manifest)
+        .await
+        .expect("provision")
+        .container_id;
     let container_id = container.as_str().to_string();
 
     provider.teardown(&container).await.expect("first teardown");
@@ -1516,7 +1581,8 @@ async fn test_real_assay_manifest_parsing() {
     let container = provider
         .provision(&manifest)
         .await
-        .expect("provision should succeed");
+        .expect("provision should succeed")
+        .container_id;
 
     // Step 4: Inject real Linux assay binary into container and make it executable
     let injected =
@@ -1666,7 +1732,11 @@ async fn test_exec_streaming_delivers_chunks_in_order() {
     };
     let manifest = test_manifest("exec-streaming-order");
 
-    let container = provider.provision(&manifest).await.expect("provision");
+    let container = provider
+        .provision(&manifest)
+        .await
+        .expect("provision")
+        .container_id;
 
     let chunks: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
     let chunks_cb = Arc::clone(&chunks);

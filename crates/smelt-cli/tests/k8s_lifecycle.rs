@@ -138,7 +138,8 @@ async fn test_k8s_provision_exec_teardown() {
     let container = provider
         .provision(&k8s_manifest())
         .await
-        .expect("provision should succeed");
+        .expect("provision should succeed")
+        .container_id;
 
     assert!(
         container.as_str().starts_with("smelt/"),
@@ -200,7 +201,8 @@ async fn test_k8s_exec_streaming_callback() {
     let container = provider
         .provision(&k8s_manifest())
         .await
-        .expect("provision should succeed");
+        .expect("provision should succeed")
+        .container_id;
 
     // exec_streaming with accumulator
     let chunks = Arc::new(Mutex::new(Vec::<String>::new()));
@@ -259,7 +261,8 @@ async fn test_k8s_ssh_file_permissions() {
     let container = provider
         .provision(&k8s_manifest())
         .await
-        .expect("provision should succeed");
+        .expect("provision should succeed")
+        .container_id;
 
     // stat the SSH key to check permissions
     let handle = provider
@@ -311,7 +314,8 @@ async fn test_k8s_readiness_confirmed() {
     let container = provider
         .provision(&k8s_manifest())
         .await
-        .expect("provision should succeed and return only after readiness");
+        .expect("provision should succeed and return only after readiness")
+        .container_id;
 
     // Immediately exec — if main container were not Running this would fail
     let handle = provider
@@ -391,7 +395,8 @@ async fn test_k8s_push_from_pod_result_collection() {
     let container = provider
         .provision(&manifest)
         .await
-        .expect("provision should succeed");
+        .expect("provision should succeed")
+        .container_id;
 
     eprintln!("==> [S03] Pod provisioned: {}", container.as_str());
 

@@ -1,8 +1,7 @@
-//! PeerUpdate signal types and filesystem-based delivery to Assay session inboxes.
+//! PeerUpdate signal types and delivery to Assay session inboxes.
 //!
-//! When a peer job completes a session, Smelt can deliver a `PeerUpdate` signal
-//! to a target session's inbox directory on the host filesystem. The container
-//! sees the file via the Docker/Compose bind-mount at `/workspace`.
+//! Signal delivery uses HTTP-first with filesystem fallback (D186).
+//! Types mirror Assay's `assay-types::signal` schema exactly (D189).
 //!
 //! Inbox path convention (matches `assay-core/src/orchestrate/mesh.rs`):
 //! `<repo>/.assay/orchestrator/<run_id>/mesh/<session_name>/inbox/<filename>`
@@ -10,14 +9,33 @@
 use serde::{Deserialize, Serialize};
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tempfile::NamedTempFile;
+
+/// Lightweight gate pass/fail/skip counts included in a [`PeerUpdate`].
+///
+/// Mirrors Assay's `assay_types::signal::GateSummary` exactly (D189).
+/// Assay uses `deny_unknown_fields` — any field mismatch causes silent rejection.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct GateSummary {
+    /// Number of sessions/gates that passed.
+    pub passed: u32,
+    /// Number of sessions/gates that failed.
+    pub failed: u32,
+    /// Number of sessions/gates that were skipped.
+    pub skipped: u32,
+}
 
 /// A signal delivered to a running Assay session when a peer job completes.
 ///
 /// Carries context about what changed so the receiving session can adapt its
 /// work without human intermediation.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+///
+/// Mirrors Assay's `assay_types::signal::PeerUpdate` exactly (D189).
+/// Field names and types must match — Assay uses `deny_unknown_fields`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct PeerUpdate {
     /// Job that completed the session triggering this signal.
     pub source_job: String,
@@ -25,10 +43,23 @@ pub(crate) struct PeerUpdate {
     pub source_session: String,
     /// Files modified by the completed session.
     pub changed_files: Vec<String>,
-    /// Summary of quality gate results from the completed session.
-    pub gate_summary: String,
-    /// Result branch name where the completed session's work landed.
-    pub branch_name: String,
+    /// Lightweight gate result summary from the completed session.
+    pub gate_summary: GateSummary,
+    /// Git branch the source session worked on.
+    pub branch: String,
+}
+
+/// Envelope for routing a [`PeerUpdate`] to a specific session.
+///
+/// Mirrors Assay's `assay_types::signal::SignalRequest` exactly (D189).
+/// Posted to `POST /api/v1/signal` on the Assay signal endpoint.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct SignalRequest {
+    /// Name of the target session that should receive this update.
+    pub target_session: String,
+    /// The peer update payload to deliver.
+    pub update: PeerUpdate,
 }
 
 /// Validate that a path component (session name or run ID) is safe for use in
@@ -131,4 +162,52 @@ pub(crate) fn deliver_peer_update(
     tmp.persist(&final_path).map_err(|e| e.error)?;
 
     Ok(final_path)
+}
+
+// ── HTTP signal delivery (D186) ────────────────────────────────────────
+
+/// Build a `reqwest::Client` configured for signal delivery.
+///
+/// The client uses a 5-second timeout to avoid blocking on unresponsive
+/// signal endpoints. One client should be shared across all deliveries
+/// (connection pooling).
+pub(crate) fn make_signal_client() -> reqwest::Client {
+    reqwest::Client::builder()
+        .timeout(Duration::from_secs(5))
+        .build()
+        .expect("failed to build signal HTTP client")
+}
+
+/// Deliver a [`SignalRequest`] to an Assay signal endpoint via HTTP POST.
+///
+/// Posts `signal_request` as JSON to `url`. If `token` is `Some`, adds
+/// an `Authorization: Bearer <token>` header.
+///
+/// Returns the HTTP status code on success, or a `reqwest::Error` on
+/// transport failure (timeout, connection refused, etc.).
+pub(crate) async fn deliver_signal_http(
+    client: &reqwest::Client,
+    url: &str,
+    signal_request: &SignalRequest,
+    token: Option<&str>,
+) -> Result<reqwest::StatusCode, reqwest::Error> {
+    tracing::debug!(
+        url = %url,
+        target_session = %signal_request.target_session,
+        has_token = token.is_some(),
+        "deliver_signal_http: sending request"
+    );
+
+    let mut request = client.post(url).json(signal_request);
+
+    if let Some(t) = token {
+        request = request.header("Authorization", format!("Bearer {t}"));
+    }
+
+    let response = request.send().await?;
+    let status = response.status();
+
+    tracing::debug!(url = %url, status = %status, "deliver_signal_http: response received");
+
+    Ok(status)
 }

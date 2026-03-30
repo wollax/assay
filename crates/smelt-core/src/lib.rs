@@ -60,4 +60,4 @@ pub use git::{GitCli, GitOps, preflight};
 pub use k8s::KubernetesProvider;
 pub use manifest::JobManifest;
 pub use monitor::{JobMonitor, JobPhase, RunState, compute_job_timeout};
-pub use provider::{CollectResult, ContainerId, ExecHandle, RuntimeProvider};
+pub use provider::{CollectResult, ContainerId, ExecHandle, ProvisionResult, RuntimeProvider};

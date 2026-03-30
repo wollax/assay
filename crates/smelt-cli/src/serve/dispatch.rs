@@ -94,12 +94,20 @@ pub(crate) async fn run_job_task(
         None => HashMap::new(),
     };
 
+    // Create a channel to receive the container IP from provision (for signal URL caching).
+    let (ip_tx, ip_rx) = tokio::sync::oneshot::channel::<String>();
+
     let args = RunArgs {
         manifest: manifest_path.clone(),
         dry_run: false,
         no_pr: false,
         runtime_env,
+        container_ip_tx: std::sync::Mutex::new(Some(ip_tx)),
     };
+
+    /// Default port Assay's signal server listens on inside containers.
+    /// Must match `ASSAY_SIGNAL_PORT` (injected in S02).
+    const ASSAY_SIGNAL_PORT: u16 = 7432;
 
     // CancellationToken adapter: convert `cancelled()` (returns ()) to the
     // `Future<Output = std::io::Result<()>>` that `run_with_cancellation` expects.
@@ -110,6 +118,36 @@ pub(crate) async fn run_job_task(
             Ok::<(), std::io::Error>(())
         }
     };
+
+    // Cache signal URL from container IP (non-blocking — sender fires during provision).
+    // We spawn this as a concurrent task that waits for the IP, then inserts into state.
+    // Guard: only insert if the job still exists in the queue (fast jobs can complete
+    // before provision returns, causing the cleanup in complete() to run first).
+    {
+        let state_clone = state.clone();
+        let jid = job_id.clone();
+        tokio::spawn(async move {
+            if let Ok(ip) = ip_rx.await {
+                let signal_url = format!("http://{}:{}/api/v1/signal", ip, ASSAY_SIGNAL_PORT);
+                let mut s = state_clone.lock().unwrap();
+                // Only cache if the job is still present (guard against completed-before-IP race).
+                if s.jobs.iter().any(|j| j.id == jid) {
+                    info!(
+                        job_id = %jid,
+                        container_ip = %ip,
+                        signal_url = %signal_url,
+                        "caching signal URL for HTTP-first delivery"
+                    );
+                    s.signal_urls.insert(jid.0, signal_url);
+                } else {
+                    tracing::debug!(
+                        job_id = %jid,
+                        "skipping signal URL cache: job already completed"
+                    );
+                }
+            }
+        });
+    }
 
     let result = crate::commands::run::run_with_cancellation(&args, cancel_fut).await;
 
@@ -131,6 +169,8 @@ pub(crate) async fn run_job_task(
     {
         let mut s = state.lock().unwrap();
         s.complete(&job_id, success, attempt, max_attempts);
+        // Clean up cached signal URL for this job (stale after completion/failure).
+        s.signal_urls.remove(&job_id.0);
     }
 
     if success {
@@ -204,6 +244,7 @@ pub(crate) async fn run_ssh_job_task<C: SshClient>(
             warn!(job_id = %job_id, worker_host = %worker.host, error = %e, "deliver_manifest failed");
             let mut s = state.lock().unwrap();
             s.complete(&job_id, false, attempt, max_attempts);
+            s.signal_urls.remove(&job_id.0);
             return;
         }
     };
@@ -216,6 +257,7 @@ pub(crate) async fn run_ssh_job_task<C: SshClient>(
             warn!(job_id = %job_id, worker_host = %worker.host, error = %e, "run_remote_job failed");
             let mut s = state.lock().unwrap();
             s.complete(&job_id, false, attempt, max_attempts);
+            s.signal_urls.remove(&job_id.0);
             return;
         }
     };
@@ -275,6 +317,7 @@ pub(crate) async fn run_ssh_job_task<C: SshClient>(
     {
         let mut s = state.lock().unwrap();
         s.complete(&job_id, success, attempt, max_attempts);
+        s.signal_urls.remove(&job_id.0);
     }
 
     if success {

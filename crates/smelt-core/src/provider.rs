@@ -37,6 +37,19 @@ impl std::fmt::Display for ContainerId {
     }
 }
 
+/// Result of provisioning a container.
+///
+/// Contains the container ID and optional metadata discovered during
+/// provisioning (e.g. the container's IP address for signal delivery).
+#[derive(Debug, Clone)]
+pub struct ProvisionResult {
+    /// The provisioned container's identifier.
+    pub container_id: ContainerId,
+    /// Container's IP address on the Docker bridge network, if discovered.
+    /// Used to cache signal endpoint URLs for HTTP-first delivery (D186).
+    pub container_ip: Option<String>,
+}
+
 /// Result of executing a command inside a container.
 ///
 /// Carries the container, execution identifier, exit code, and captured
@@ -89,7 +102,7 @@ pub trait RuntimeProvider: Send + Sync {
     fn provision(
         &self,
         manifest: &JobManifest,
-    ) -> impl std::future::Future<Output = crate::Result<ContainerId>> + Send;
+    ) -> impl std::future::Future<Output = crate::Result<ProvisionResult>> + Send;
 
     /// Execute a command inside the container.
     ///
