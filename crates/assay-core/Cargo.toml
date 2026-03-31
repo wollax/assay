@@ -10,6 +10,7 @@ description = "Domain logic for Assay: specs, gates, reviews, and workflows"
 assay-types.workspace = true
 chrono.workspace = true
 cupel.workspace = true
+cupel-otel = { workspace = true, optional = true }
 schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -42,6 +43,7 @@ tracing-test.workspace = true
 [features]
 orchestrate = ["assay-types/orchestrate"]
 telemetry = [
+    "dep:cupel-otel",
     "dep:opentelemetry",
     "dep:opentelemetry_sdk",
     "dep:opentelemetry-otlp",
