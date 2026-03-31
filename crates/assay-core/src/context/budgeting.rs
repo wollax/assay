@@ -475,4 +475,18 @@ mod tests {
         let report = collector.into_report();
         report.should().have_at_least_n_exclusions(1);
     }
+
+    /// Proves the telemetry-gated `budget_context()` path using `CupelOtelTraceCollector`
+    /// produces identical results to the non-traced path.
+    #[cfg(feature = "telemetry")]
+    #[test]
+    fn traced_budget_context_produces_correct_output() {
+        let result = budget_context("prompt", "spec body", "criteria", "diff content", 200_000)
+            .expect("budget_context should succeed on traced path");
+        assert_eq!(result.len(), 4, "should return all 4 context items");
+        assert_eq!(result[0], "prompt", "first item is system prompt");
+        assert_eq!(result[1], "spec body", "second item is spec body");
+        assert_eq!(result[2], "criteria", "third item is criteria");
+        assert_eq!(result[3], "diff content", "fourth item is diff");
+    }
 }
