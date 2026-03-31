@@ -841,6 +841,18 @@ prompt = "Review the code for quality issues"
 #[tokio::test]
 #[serial]
 async fn gate_finalize_save_failure_surfaces_warning() {
+    // Skip when running as root (e.g. Docker CI containers) — root can write to
+    // read-only directories, so the permission-based save-failure can't be simulated.
+    #[cfg(unix)]
+    if std::process::Command::new("id")
+        .arg("-u")
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim() == "0")
+        .unwrap_or(false)
+    {
+        eprintln!("Skipping: running as root, read-only permission test is not reliable");
+        return;
+    }
     let dir = create_project(r#"project_name = "save-fail-test""#);
     create_spec(
         dir.path(),
