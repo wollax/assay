@@ -10,6 +10,8 @@ use cupel::{
     ChronologicalPlacer, ContextBudget, ContextItemBuilder, ContextKind, ContextSource,
     GreedySlice, OverflowStrategy, Pipeline, PriorityScorer,
 };
+#[cfg(feature = "telemetry")]
+use cupel_otel::{CupelOtelTraceCollector, CupelVerbosity};
 
 use super::tokens::estimate_tokens_from_bytes;
 use crate::AssayError;
@@ -169,7 +171,6 @@ pub fn budget_context(
     // cupel.pipeline + cupel.stage.* OTel spans during pipeline execution (D202, D203).
     #[cfg(feature = "telemetry")]
     let result = {
-        use cupel_otel::{CupelOtelTraceCollector, CupelVerbosity};
         let mut collector = CupelOtelTraceCollector::new(CupelVerbosity::StageOnly);
         pipeline
             .run_traced(&items, &budget, &mut collector)
@@ -476,8 +477,11 @@ mod tests {
         report.should().have_at_least_n_exclusions(1);
     }
 
-    /// Proves the telemetry-gated `budget_context()` path using `CupelOtelTraceCollector`
-    /// produces identical results to the non-traced path.
+    /// Proves `budget_context()` produces correct output on the telemetry-gated code path.
+    ///
+    /// This checks output values only (items returned in correct order). Actual span
+    /// emission from `CupelOtelTraceCollector` is exercised by the existing
+    /// `telemetry_otlp` integration tests in assay-core.
     #[cfg(feature = "telemetry")]
     #[test]
     fn traced_budget_context_produces_correct_output() {

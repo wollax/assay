@@ -10,6 +10,7 @@ description = "Domain logic for Assay: specs, gates, reviews, and workflows"
 assay-types.workspace = true
 chrono.workspace = true
 cupel.workspace = true
+cupel-otel = { workspace = true, optional = true }
 schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -26,7 +27,6 @@ tracing-appender.workspace = true
 tracing-subscriber.workspace = true
 which.workspace = true
 ulid.workspace = true
-cupel-otel = { workspace = true, optional = true }
 opentelemetry = { workspace = true, optional = true }
 opentelemetry_sdk = { workspace = true, optional = true }
 opentelemetry-otlp = { workspace = true, optional = true }
