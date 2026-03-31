@@ -4,31 +4,45 @@ on:
   push:
     branches: [main]
   pull_request:
+    branches: [main]
 
 env:
   CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-Dwarnings"
 
 jobs:
   check:
     name: Check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       - uses: https://github.com/dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
       - uses: https://github.com/Swatinem/rust-cache@v2
       - name: Install cargo-binstall
         run: curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
-      - name: Install tools
+      - name: Install tools (just, cargo-deny, cargo-nextest)
         run: cargo binstall -y just cargo-deny cargo-nextest
       - run: just ready
+
+      - name: Alert — CI failed
+        if: failure()
+        run: |
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          curl -sf \
+            -H "Title: assay CI failed" \
+            -H "Priority: high" \
+            -H "Tags: x" \
+            -d "Run: ${RUN_URL}" \
+            https://ntfy.alexwollan.com/homelab-alerts \
+            || echo "::warning::ntfy notification failed (non-fatal)"
 
   plugins:
     name: Validate plugins
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       - name: Validate Claude Code plugin.json
         run: python3 -c "import json; json.load(open('plugins/claude-code/.claude-plugin/plugin.json'))"
       - name: Validate OpenCode opencode.json
@@ -37,3 +51,15 @@ jobs:
         run: python3 -c "import json; json.load(open('plugins/opencode/package.json'))"
       - name: Validate OpenCode tsconfig.json
         run: python3 -c "import json; json.load(open('plugins/opencode/tsconfig.json'))"
+
+      - name: Alert — plugins validation failed
+        if: failure()
+        run: |
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          curl -sf \
+            -H "Title: assay plugins validation failed" \
+            -H "Priority: high" \
+            -H "Tags: x" \
+            -d "Run: ${RUN_URL}" \
+            https://ntfy.alexwollan.com/homelab-alerts \
+            || echo "::warning::ntfy notification failed (non-fatal)"
