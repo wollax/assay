@@ -26,6 +26,7 @@ tracing-appender.workspace = true
 tracing-subscriber.workspace = true
 which.workspace = true
 ulid.workspace = true
+cupel-otel = { workspace = true, optional = true }
 opentelemetry = { workspace = true, optional = true }
 opentelemetry_sdk = { workspace = true, optional = true }
 opentelemetry-otlp = { workspace = true, optional = true }
@@ -42,6 +43,7 @@ tracing-test.workspace = true
 [features]
 orchestrate = ["assay-types/orchestrate"]
 telemetry = [
+    "dep:cupel-otel",
     "dep:opentelemetry",
     "dep:opentelemetry_sdk",
     "dep:opentelemetry-otlp",

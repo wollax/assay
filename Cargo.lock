@@ -157,6 +157,7 @@ dependencies = [
  "assay-types",
  "chrono",
  "cupel",
+ "cupel-otel",
  "cupel-testing",
  "dirs",
  "hostname",
@@ -807,6 +808,16 @@ checksum = "ff91bb06197c1385d2eea1ba42df043afc9286344412521029d61b5e833fe3f9"
 dependencies = [
  "chrono",
  "thiserror 2.0.18",
+]
+
+[[package]]
+name = "cupel-otel"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c3ab1e15c95b50c2a42caa8f48d93c669551af5f1784a91c15c26d92b2922e96"
+dependencies = [
+ "cupel",
+ "opentelemetry",
 ]
 
 [[package]]

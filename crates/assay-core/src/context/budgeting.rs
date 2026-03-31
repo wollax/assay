@@ -165,6 +165,18 @@ pub fn budget_context(
     )
     .map_err(map_err)?;
 
+    // When telemetry is enabled, use CupelOtelTraceCollector to emit
+    // cupel.pipeline + cupel.stage.* OTel spans during pipeline execution (D202, D203).
+    #[cfg(feature = "telemetry")]
+    let result = {
+        use cupel_otel::{CupelOtelTraceCollector, CupelVerbosity};
+        let mut collector = CupelOtelTraceCollector::new(CupelVerbosity::StageOnly);
+        pipeline
+            .run_traced(&items, &budget, &mut collector)
+            .map_err(map_err)?
+    };
+
+    #[cfg(not(feature = "telemetry"))]
     let result = pipeline.run(&items, &budget).map_err(map_err)?;
 
     Ok(result
