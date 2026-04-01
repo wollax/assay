@@ -1569,4 +1569,63 @@ cmd = "echo ok"
         result_mut.warnings.push("test warning".to_string());
         assert_eq!(result_mut.warnings.len(), 1);
     }
+
+    #[test]
+    fn test_list_marks_orphan_entries() {
+        let (_tmp, _wt_tmp, root, specs_dir) = setup_repo();
+        let worktree_base = _wt_tmp.path().join("worktrees");
+
+        // Create worktree with no session_id — should be orphaned
+        create(
+            &root,
+            "auth-flow",
+            Some("main"),
+            &worktree_base,
+            &specs_dir,
+            None,
+        )
+        .expect("create failed");
+
+        let result = list(&root).expect("list failed");
+        assert_eq!(result.entries.len(), 1);
+        assert!(
+            result.entries[0].is_orphan,
+            "worktree with no session_id should be marked as orphan"
+        );
+    }
+
+    #[test]
+    fn test_list_marks_non_orphan_entries() {
+        let (_tmp, _wt_tmp, root, specs_dir) = setup_repo();
+        let worktree_base = _wt_tmp.path().join("worktrees");
+        let assay_dir = root.join(".assay");
+
+        // Create an active session
+        let session = crate::work_session::start_session(
+            &assay_dir,
+            "auth-flow",
+            worktree_base.join("auth-flow"),
+            "claude",
+            None,
+        )
+        .expect("start_session failed");
+
+        // Create worktree linked to the active session
+        create(
+            &root,
+            "auth-flow",
+            Some("main"),
+            &worktree_base,
+            &specs_dir,
+            Some(&session.id),
+        )
+        .expect("create failed");
+
+        let result = list(&root).expect("list failed");
+        assert_eq!(result.entries.len(), 1);
+        assert!(
+            !result.entries[0].is_orphan,
+            "worktree with active session should NOT be marked as orphan"
+        );
+    }
 }

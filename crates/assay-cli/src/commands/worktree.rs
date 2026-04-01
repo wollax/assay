@@ -237,8 +237,9 @@ fn handle_worktree_list(json: bool) -> anyhow::Result<i32> {
         // ANSI overhead for colored spec column
         let extra = if color { super::ANSI_COLOR_OVERHEAD } else { 0 };
 
+        let orphan_marker = if entry.is_orphan { " [orphan]" } else { "" };
         println!(
-            "  {:<sw$}  {:<bw$}  {}",
+            "  {:<sw$}  {:<bw$}  {}{orphan_marker}",
             spec_display,
             entry.branch,
             entry.path.display(),
