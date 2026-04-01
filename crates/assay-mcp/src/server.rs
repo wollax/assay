@@ -1595,18 +1595,117 @@ impl AssayServer {
             let assay_types::GateRunSummary {
                 spec_name, results, ..
             } = summary;
-            let session = assay_core::gate::session::create_session(
-                &spec_name,
-                info.agent_criteria_names,
-                info.spec_enforcement,
-                results,
-                diff,
-                diff_truncated,
-                diff_bytes_original,
-            );
+
+            // Resume-on-miss: check the in-memory HashMap first, then fall back to
+            // disk. This preserves write-through cache semantics:
+            // - In-memory hit: session is live; update command_results and return.
+            // - In-memory miss: cold start after restart; scan disk for the most
+            //   recent persisted session for this spec.
+            //
+            // Checking memory first is critical: scanning disk on a live session
+            // would load stale data and discard any agent_evaluations accumulated
+            // in the current server lifetime.
+            let in_memory_session_id: Option<String> = {
+                let sessions = self.sessions.lock().await;
+                sessions
+                    .values()
+                    .find(|s| s.spec_name == spec_name)
+                    .map(|s| s.session_id.clone())
+            };
+
+            let session = if let Some(ref existing_id) = in_memory_session_id {
+                // Live session already in memory — update command_results with fresh
+                // evaluation results, preserving all accumulated agent_evaluations.
+                let mut sessions = self.sessions.lock().await;
+                if let Some(s) = sessions.get_mut(existing_id) {
+                    s.command_results = results;
+                    tracing::info!(
+                        session_id = %existing_id,
+                        spec_name = %spec_name,
+                        "gate_run: refreshed in-memory session with new command_results"
+                    );
+                    s.clone()
+                } else {
+                    // Removed between lock acquisitions (e.g. timed out) — create new.
+                    assay_core::gate::session::create_session(
+                        &spec_name,
+                        info.agent_criteria_names,
+                        info.spec_enforcement,
+                        results,
+                        diff,
+                        diff_truncated,
+                        diff_bytes_original,
+                    )
+                }
+            } else {
+                // Not in memory — check disk (cold start / post-restart path).
+                let assay_dir_for_find = cwd.join(".assay");
+                let spec_name_for_find = spec_name.clone();
+                let disk_result = tokio::task::spawn_blocking(move || {
+                    assay_core::gate::session::find_context_for_spec(
+                        &assay_dir_for_find,
+                        &spec_name_for_find,
+                    )
+                })
+                .await
+                .map_err(|e| {
+                    McpError::internal_error(format!("find_context_for_spec panicked: {e}"), None)
+                })?;
+
+                match disk_result {
+                    Ok(Some(mut existing)) => {
+                        // Found a persisted session on disk — resume it.
+                        // Replace command_results with fresh evaluation results
+                        // (stale results from a prior run would be wrong).
+                        existing.command_results = results;
+                        tracing::info!(
+                            session_id = %existing.session_id,
+                            spec_name = %spec_name,
+                            "gate_run: resumed session from disk"
+                        );
+                        existing
+                    }
+                    Ok(None) => {
+                        // No persisted session — create a new one.
+                        assay_core::gate::session::create_session(
+                            &spec_name,
+                            info.agent_criteria_names,
+                            info.spec_enforcement,
+                            results,
+                            diff,
+                            diff_truncated,
+                            diff_bytes_original,
+                        )
+                    }
+                    Err(e) => {
+                        // Disk scan failed — fall through to create a new session.
+                        tracing::warn!(
+                            spec_name = %spec_name,
+                            "gate_run: disk scan for existing session failed, creating new: {e}"
+                        );
+                        assay_core::gate::session::create_session(
+                            &spec_name,
+                            info.agent_criteria_names,
+                            info.spec_enforcement,
+                            results,
+                            diff,
+                            diff_truncated,
+                            diff_bytes_original,
+                        )
+                    }
+                }
+            };
 
             let session_id = session.session_id.clone();
-            let pending: Vec<String> = session.criteria_names.iter().cloned().collect();
+            // Compute pending criteria: only those not yet evaluated.
+            // Correct for both new sessions (all pending) and resumed sessions
+            // (only unevaluated criteria remain).
+            let pending: Vec<String> = session
+                .criteria_names
+                .iter()
+                .filter(|name| !session.agent_evaluations.contains_key(*name))
+                .cloned()
+                .collect();
 
             response.session_id = Some(session_id.clone());
             response.pending_criteria = Some(pending);
@@ -9164,5 +9263,343 @@ cmd = "echo ok"
             result.is_error.unwrap_or(false),
             "should fail when not in an Assay project"
         );
+    }
+
+    /// Contract test: gate_run resumes an existing session from disk after the
+    /// in-memory entry is dropped (simulating an MCP server restart).
+    #[tokio::test]
+    #[serial]
+    async fn test_gate_run_resumes_session_from_disk() {
+        // Set up a project with a spec containing both a command criterion and
+        // an agent-evaluated criterion.
+        let dir = create_project(r#"project_name = "resume-test""#);
+        create_spec(
+            dir.path(),
+            "specs",
+            "resume-spec.toml",
+            r#"
+name = "resume-spec"
+description = "Spec for resume test"
+
+[[criteria]]
+name = "auto-check"
+description = "Automatic check"
+cmd = "echo ok"
+
+[[criteria]]
+name = "agent-review"
+description = "Agent-evaluated criterion"
+kind = "AgentReport"
+prompt = "Review the code"
+"#,
+        );
+
+        std::env::set_current_dir(dir.path()).unwrap();
+
+        let server = AssayServer::new();
+
+        // 1. First gate_run — creates a new session.
+        let result1 = server
+            .gate_run(Parameters(GateRunParams {
+                name: "resume-spec".to_string(),
+                include_evidence: false,
+                timeout: None,
+            }))
+            .await
+            .unwrap();
+        assert!(
+            !result1.is_error.unwrap_or(false),
+            "first gate_run should succeed"
+        );
+        let text1 = extract_text(&result1);
+        let json1: serde_json::Value = serde_json::from_str(&text1).unwrap();
+        let session_id_1 = json1["session_id"]
+            .as_str()
+            .expect("first gate_run should return session_id")
+            .to_string();
+        assert!(!session_id_1.is_empty(), "session_id should be non-empty");
+
+        // 2. Submit an agent evaluation via gate_report.
+        let report_result = server
+            .gate_report(Parameters(GateReportParams {
+                session_id: session_id_1.clone(),
+                criterion_name: "agent-review".to_string(),
+                passed: true,
+                evidence: "code looks good".to_string(),
+                reasoning: "all patterns followed".to_string(),
+                confidence: Some(Confidence::High),
+                evaluator_role: EvaluatorRole::SelfEval,
+            }))
+            .await
+            .unwrap();
+        assert!(
+            !report_result.is_error.unwrap_or(false),
+            "gate_report should succeed"
+        );
+
+        // 3. Drop the in-memory session (simulates MCP server restart).
+        {
+            let mut sessions = server.sessions.lock().await;
+            let removed = sessions.remove(&session_id_1);
+            assert!(removed.is_some(), "session should have been in memory");
+        }
+
+        // Verify session is no longer in memory.
+        assert!(
+            !server.sessions.lock().await.contains_key(&session_id_1),
+            "session should be gone from memory after removal"
+        );
+
+        // 4. Second gate_run for the same spec — should resume from disk.
+        let result2 = server
+            .gate_run(Parameters(GateRunParams {
+                name: "resume-spec".to_string(),
+                include_evidence: false,
+                timeout: None,
+            }))
+            .await
+            .unwrap();
+        assert!(
+            !result2.is_error.unwrap_or(false),
+            "second gate_run should succeed"
+        );
+        let text2 = extract_text(&result2);
+        let json2: serde_json::Value = serde_json::from_str(&text2).unwrap();
+        let session_id_2 = json2["session_id"]
+            .as_str()
+            .expect("second gate_run should return session_id")
+            .to_string();
+
+        // 5. Assert: same session_id (resumed, not new).
+        assert_eq!(
+            session_id_1, session_id_2,
+            "gate_run should resume the same session from disk"
+        );
+
+        // 6. Verify the previously-reported agent evaluation is still present.
+        {
+            let sessions = server.sessions.lock().await;
+            let session = sessions
+                .get(&session_id_2)
+                .expect("resumed session should be in memory");
+            assert!(
+                session.agent_evaluations.contains_key("agent-review"),
+                "resumed session should preserve agent_evaluations from disk"
+            );
+            let evals = &session.agent_evaluations["agent-review"];
+            assert_eq!(evals.len(), 1, "should have exactly one evaluation");
+            assert!(evals[0].passed, "evaluation should be passed=true");
+        }
+
+        // 7. Verify pending_criteria excludes already-evaluated criteria.
+        let pending = json2["pending_criteria"]
+            .as_array()
+            .expect("pending_criteria should be an array");
+        assert!(
+            !pending.iter().any(|v| v.as_str() == Some("agent-review")),
+            "already-evaluated criterion should not appear in pending_criteria on resume"
+        );
+    }
+
+    /// Regression test: gate_run after gate_finalize should create a NEW session,
+    /// not resume the finalized one (gate_finalize deletes the on-disk session file).
+    #[tokio::test]
+    #[serial]
+    async fn test_gate_run_creates_new_session_after_finalize() {
+        let dir = create_project(r#"project_name = "finalize-test""#);
+        create_spec(
+            dir.path(),
+            "specs",
+            "finalize-spec.toml",
+            r#"
+name = "finalize-spec"
+description = "Spec for finalize+resume test"
+
+[[criteria]]
+name = "auto-check"
+description = "Automatic check"
+cmd = "echo ok"
+
+[[criteria]]
+name = "agent-review"
+description = "Agent-evaluated criterion"
+kind = "AgentReport"
+prompt = "Review the code"
+"#,
+        );
+
+        std::env::set_current_dir(dir.path()).unwrap();
+        let server = AssayServer::new();
+
+        // 1. First gate_run — creates a session.
+        let result1 = server
+            .gate_run(Parameters(GateRunParams {
+                name: "finalize-spec".to_string(),
+                include_evidence: false,
+                timeout: None,
+            }))
+            .await
+            .unwrap();
+        let json1: serde_json::Value = serde_json::from_str(&extract_text(&result1)).unwrap();
+        let session_id_1 = json1["session_id"]
+            .as_str()
+            .expect("should have session_id")
+            .to_string();
+
+        // 2. Report an evaluation.
+        server
+            .gate_report(Parameters(GateReportParams {
+                session_id: session_id_1.clone(),
+                criterion_name: "agent-review".to_string(),
+                passed: true,
+                evidence: "looks good".to_string(),
+                reasoning: "all good".to_string(),
+                confidence: Some(Confidence::High),
+                evaluator_role: EvaluatorRole::SelfEval,
+            }))
+            .await
+            .unwrap();
+
+        // 3. Finalize the session (removes in-memory entry + deletes on-disk file).
+        let finalize_result = server
+            .gate_finalize(Parameters(GateFinalizeParams {
+                session_id: session_id_1.clone(),
+            }))
+            .await
+            .unwrap();
+        assert!(
+            !finalize_result.is_error.unwrap_or(false),
+            "gate_finalize should succeed"
+        );
+
+        // 4. gate_run again for same spec — should create a NEW session (disk file was deleted).
+        let result2 = server
+            .gate_run(Parameters(GateRunParams {
+                name: "finalize-spec".to_string(),
+                include_evidence: false,
+                timeout: None,
+            }))
+            .await
+            .unwrap();
+        assert!(
+            !result2.is_error.unwrap_or(false),
+            "second gate_run should succeed"
+        );
+        let json2: serde_json::Value = serde_json::from_str(&extract_text(&result2)).unwrap();
+        let session_id_2 = json2["session_id"]
+            .as_str()
+            .expect("second gate_run should return session_id")
+            .to_string();
+
+        // 5. Assert: different session_id (new session, not the finalized one).
+        assert_ne!(
+            session_id_1, session_id_2,
+            "gate_run after finalize should create a new session, not resume the finalized one"
+        );
+
+        // 6. New session has no agent_evaluations.
+        {
+            let sessions = server.sessions.lock().await;
+            let session = sessions
+                .get(&session_id_2)
+                .expect("new session should be in memory");
+            assert!(
+                session.agent_evaluations.is_empty(),
+                "new session should have no prior evaluations"
+            );
+        }
+    }
+
+    /// Regression test: gate_run on a live (in-memory) session must NOT bypass
+    /// the HashMap by scanning disk — doing so would discard accumulated evaluations.
+    #[tokio::test]
+    #[serial]
+    async fn test_gate_run_preserves_in_memory_session_evaluations() {
+        let dir = create_project(r#"project_name = "live-session-test""#);
+        create_spec(
+            dir.path(),
+            "specs",
+            "live-spec.toml",
+            r#"
+name = "live-spec"
+description = "Spec for live-session test"
+
+[[criteria]]
+name = "auto-check"
+description = "Automatic check"
+cmd = "echo ok"
+
+[[criteria]]
+name = "agent-review"
+description = "Agent-evaluated criterion"
+kind = "AgentReport"
+prompt = "Review the code"
+"#,
+        );
+
+        std::env::set_current_dir(dir.path()).unwrap();
+        let server = AssayServer::new();
+
+        // 1. First gate_run — creates session.
+        let result1 = server
+            .gate_run(Parameters(GateRunParams {
+                name: "live-spec".to_string(),
+                include_evidence: false,
+                timeout: None,
+            }))
+            .await
+            .unwrap();
+        let json1: serde_json::Value = serde_json::from_str(&extract_text(&result1)).unwrap();
+        let session_id_1 = json1["session_id"]
+            .as_str()
+            .expect("should have session_id")
+            .to_string();
+
+        // 2. Report an agent evaluation.
+        server
+            .gate_report(Parameters(GateReportParams {
+                session_id: session_id_1.clone(),
+                criterion_name: "agent-review".to_string(),
+                passed: true,
+                evidence: "looks good".to_string(),
+                reasoning: "all good".to_string(),
+                confidence: Some(Confidence::High),
+                evaluator_role: EvaluatorRole::SelfEval,
+            }))
+            .await
+            .unwrap();
+
+        // 3. Second gate_run WITHOUT dropping from memory (session is still live).
+        let result2 = server
+            .gate_run(Parameters(GateRunParams {
+                name: "live-spec".to_string(),
+                include_evidence: false,
+                timeout: None,
+            }))
+            .await
+            .unwrap();
+        let json2: serde_json::Value = serde_json::from_str(&extract_text(&result2)).unwrap();
+        let session_id_2 = json2["session_id"]
+            .as_str()
+            .expect("second gate_run should return session_id")
+            .to_string();
+
+        // 4. Same session_id (live session reused, not new one from disk).
+        assert_eq!(
+            session_id_1, session_id_2,
+            "live session should be reused, not replaced by disk scan"
+        );
+
+        // 5. agent_evaluations must still be present (not discarded by disk re-load).
+        {
+            let sessions = server.sessions.lock().await;
+            let session = sessions
+                .get(&session_id_2)
+                .expect("session should still be in memory");
+            assert!(
+                session.agent_evaluations.contains_key("agent-review"),
+                "agent_evaluations must be preserved when reusing live in-memory session"
+            );
+        }
     }
 }
