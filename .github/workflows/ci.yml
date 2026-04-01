@@ -1,10 +1,18 @@
+# Mirror of .forgejo/workflows/ci.yml — keep in sync when updating.
 name: CI
 
 on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
+    branches: [main] # PRs are authored on Forgejo; this handles any PRs opened directly on GitHub.
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always
@@ -28,7 +36,8 @@ jobs:
             | tar -xz -C ~/.cargo/bin
       - name: Install tools (just, cargo-deny, cargo-nextest)
         run: cargo binstall -y just@1.46.0 cargo-deny@0.19.0 cargo-nextest@0.9.132
-      - run: just ready
+      - name: Run just ready
+        run: just ready
 
       - name: Alert — CI failed
         if: failure()

@@ -1,3 +1,4 @@
+# Mirror of .github/workflows/ci.yml — keep in sync when updating.
 name: CI
 
 on:
