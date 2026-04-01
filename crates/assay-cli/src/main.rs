@@ -165,6 +165,18 @@ Examples:
         #[command(subcommand)]
         command: commands::checkpoint::CheckpointCommand,
     },
+    /// Generate run manifests from milestones or specs
+    #[command(after_long_help = "\
+Examples:
+  Generate from a milestone:
+    assay manifest generate --from-milestone my-milestone
+
+  Generate from all specs:
+    assay manifest generate --from-specs")]
+    Manifest {
+        #[command(subcommand)]
+        command: commands::manifest::ManifestCommand,
+    },
     /// Manage project milestones
     #[command(after_long_help = "\
 Examples:
@@ -272,6 +284,7 @@ async fn run() -> anyhow::Result<i32> {
         Some(Command::Run(cmd)) => commands::run::execute(&cmd),
         Some(Command::Harness { command }) => commands::harness::handle(command),
         Some(Command::Checkpoint { command }) => commands::checkpoint::handle(command),
+        Some(Command::Manifest { command }) => commands::manifest::handle(command),
         Some(Command::Milestone { command }) => commands::milestone::handle(command),
         Some(Command::Plan) => commands::plan::handle(),
         Some(Command::History { command }) => commands::history::handle(command),

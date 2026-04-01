@@ -50,6 +50,7 @@ use tokio::sync::Mutex;
 
 use crate::signal_server::RunRegistry;
 
+use assay_core::manifest_gen::{self, ManifestGenConfig, ManifestSource};
 use assay_core::milestone::{milestone_load, milestone_scan};
 use assay_core::spec::SpecEntry;
 use assay_types::work_session::SessionPhase;
@@ -735,6 +736,38 @@ pub struct SendSignalParams {
     /// The PeerUpdate payload to send.
     #[schemars(description = "The PeerUpdate payload to send")]
     pub update: assay_types::PeerUpdate,
+}
+
+/// Source type for the `manifest_generate` tool.
+#[derive(Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum ManifestSourceParam {
+    /// Generate sessions from a named milestone's chunks (use with `slug`).
+    Milestone,
+    /// Generate sessions from all specs (fully parallel, no deps).
+    AllSpecs,
+}
+
+/// Parameters for the `manifest_generate` tool.
+#[derive(Deserialize, JsonSchema)]
+pub struct ManifestGenerateParams {
+    /// Source type: "milestone" or "all-specs".
+    #[schemars(
+        description = "Source type: 'milestone' (from a named milestone's chunks) or 'all-specs' (from all specs, fully parallel)"
+    )]
+    pub source: ManifestSourceParam,
+
+    /// Milestone slug (required when source = "milestone").
+    #[schemars(description = "Milestone slug (required when source is 'milestone')")]
+    #[serde(default)]
+    pub slug: Option<String>,
+
+    /// Output file path. Defaults to "manifest.toml" in the current directory.
+    #[schemars(
+        description = "Output file path for the generated manifest (default: 'manifest.toml')"
+    )]
+    #[serde(default)]
+    pub output: Option<String>,
 }
 
 // ── Response structs ─────────────────────────────────────────────────
@@ -4401,6 +4434,71 @@ impl AssayServer {
             status.as_u16(),
             body
         ))]))
+    }
+
+    /// Generate a RunManifest from a milestone or all specs.
+    #[tool(
+        description = "Generate a RunManifest TOML file from a milestone's chunks or from all specs. \
+            Writes the manifest to the specified output path (default: manifest.toml). \
+            Source 'milestone' maps ChunkRef.depends_on to ManifestSession.depends_on; \
+            source 'all-specs' produces fully parallel sessions (no deps)."
+    )]
+    pub async fn manifest_generate(
+        &self,
+        params: Parameters<ManifestGenerateParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let ManifestGenerateParams {
+            source,
+            slug,
+            output,
+        } = params.0;
+
+        let manifest_source = match source {
+            ManifestSourceParam::Milestone => {
+                let slug = match slug {
+                    Some(s) if !s.is_empty() => s,
+                    _ => {
+                        return Ok(CallToolResult::error(vec![Content::text(
+                            "'slug' parameter is required when source is 'milestone'",
+                        )]));
+                    }
+                };
+                ManifestSource::Milestone(slug)
+            }
+            ManifestSourceParam::AllSpecs => ManifestSource::AllSpecs,
+        };
+
+        let cwd = resolve_cwd()?;
+        let assay_dir = cwd.join(".assay");
+        let output_path = cwd.join(output.as_deref().unwrap_or("manifest.toml"));
+
+        let config = ManifestGenConfig { assay_dir };
+
+        let output_path_for_write = output_path.clone();
+        let result = tokio::task::spawn_blocking(move || {
+            let manifest = manifest_gen::generate_manifest(manifest_source, &config)?;
+            manifest_gen::write_manifest(&manifest, &output_path_for_write)?;
+            Ok::<_, assay_core::AssayError>(manifest.sessions.len())
+        })
+        .await
+        .map_err(|e| McpError::internal_error(format!("manifest_generate panicked: {e}"), None))?
+        .map_err(|e| {
+            tracing::warn!(error = %e, "manifest_generate failed");
+            e
+        });
+
+        match result {
+            Ok(session_count) => {
+                let response = serde_json::json!({
+                    "written": output_path.display().to_string(),
+                    "sessions": session_count,
+                });
+                Ok(CallToolResult::success(vec![Content::text(
+                    response.to_string(),
+                )]))
+            }
+            Err(e) => Ok(domain_error(&e)),
+        }
     }
 }
 
@@ -9628,5 +9726,118 @@ prompt = "Review the code"
                 "agent_evaluations must be preserved when reusing live in-memory session"
             );
         }
+    }
+
+    // ── manifest_generate tests ──────────────────────────────────────
+
+    #[test]
+    fn manifest_generate_tool_in_router() {
+        let server = AssayServer::new();
+        let tools = server.tool_router.list_all();
+        let tool_names: Vec<&str> = tools.iter().map(|t| t.name.as_ref()).collect();
+        assert!(
+            tool_names.contains(&"manifest_generate"),
+            "manifest_generate should be in tool list, got: {tool_names:?}"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn manifest_generate_from_milestone() {
+        let dir = create_project(r#"project_name = "manifest-test""#);
+        std::env::set_current_dir(dir.path()).unwrap();
+
+        // Create a milestone with two chunks.
+        let assay_dir = dir.path().join(".assay");
+        let milestones_dir = assay_dir.join("milestones");
+        std::fs::create_dir_all(&milestones_dir).unwrap();
+        let now = chrono::Utc::now().to_rfc3339();
+        let milestone_toml = format!(
+            r#"slug = "test-ms"
+name = "Test Milestone"
+created_at = "{now}"
+updated_at = "{now}"
+
+[[chunks]]
+slug = "chunk-a"
+order = 1
+
+[[chunks]]
+slug = "chunk-b"
+order = 2
+depends_on = ["chunk-a"]
+"#
+        );
+        std::fs::write(milestones_dir.join("test-ms.toml"), milestone_toml).unwrap();
+
+        let server = AssayServer::new();
+        let result = server
+            .manifest_generate(Parameters(ManifestGenerateParams {
+                source: ManifestSourceParam::Milestone,
+                slug: Some("test-ms".to_string()),
+                output: Some("test-manifest.toml".to_string()),
+            }))
+            .await
+            .unwrap();
+
+        assert!(
+            !result.is_error.unwrap_or(false),
+            "manifest_generate should succeed, got: {:?}",
+            result
+        );
+
+        // Verify the output file was written.
+        let output_path = dir.path().join("test-manifest.toml");
+        assert!(output_path.exists(), "manifest file should be created");
+
+        // Parse the output and verify sessions.
+        let content = std::fs::read_to_string(&output_path).unwrap();
+        let manifest: assay_types::RunManifest = toml::from_str(&content).unwrap();
+        assert_eq!(manifest.sessions.len(), 2);
+
+        let session_b = manifest
+            .sessions
+            .iter()
+            .find(|s| s.spec == "chunk-b")
+            .expect("session for chunk-b should exist");
+        assert_eq!(session_b.depends_on, vec!["chunk-a"]);
+
+        // Verify tool result JSON contains session count.
+        let result_text: String = result
+            .content
+            .iter()
+            .filter_map(|c| match &c.raw {
+                RawContent::Text(t) => Some(t.text.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join("");
+        assert!(
+            result_text.contains("\"sessions\":2") || result_text.contains("\"sessions\": 2"),
+            "result should contain session count, got: {}",
+            result_text
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn manifest_generate_missing_slug_errors() {
+        let dir = create_project(r#"project_name = "slug-test""#);
+        std::env::set_current_dir(dir.path()).unwrap();
+
+        let server = AssayServer::new();
+        let result = server
+            .manifest_generate(Parameters(ManifestGenerateParams {
+                source: ManifestSourceParam::Milestone,
+                slug: None,
+                output: None,
+            }))
+            .await
+            .unwrap();
+
+        assert!(
+            result.is_error.unwrap_or(false),
+            "should fail when slug is missing for milestone source"
+        );
     }
 }

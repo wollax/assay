@@ -16,6 +16,7 @@ fn make_milestone(slug: &str) -> Milestone {
         chunks: vec![ChunkRef {
             slug: "auth-flow".to_string(),
             order: 1,
+            depends_on: vec![],
         }],
         completed_chunks: vec![],
         depends_on: vec!["foundation".to_string()],

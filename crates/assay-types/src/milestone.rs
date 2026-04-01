@@ -35,18 +35,28 @@ inventory::submit! {
     }
 }
 
-/// A reference to a `GatesSpec` chunk within a milestone, identified by slug and ordering.
+/// A reference to a `GatesSpec` chunk within a milestone, identified by slug and scheduling constraints.
 ///
 /// Each `ChunkRef` corresponds to a directory-based spec (a "chunk") that
-/// contributes to the parent milestone. The `order` field controls the
-/// canonical sequence for display and progress tracking.
+/// contributes to the parent milestone. The `order` field is cosmetic display ordering only;
+/// use `depends_on` to declare scheduling constraints between chunks.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ChunkRef {
     /// Slug of the referenced `GatesSpec` (matches the spec directory/file name).
     pub slug: String,
-    /// Position of this chunk in the milestone's ordered sequence (0-based or 1-based is caller's choice).
+    /// Cosmetic display order only. Use `depends_on` to declare scheduling constraints.
     pub order: u32,
+    /// Dependencies: slugs of other chunks **within the same milestone** that must complete before this one.
+    /// Values must match `ChunkRef.slug` values in the parent `Milestone.chunks` list.
+    /// Cross-milestone dependencies are not supported.
+    ///
+    /// Used during manifest generation to emit scheduling constraints in the output TOML.
+    /// Slug references are not validated at this layer — validation of dangling refs and cycles
+    /// is the responsibility of `manifest_gen::generate_manifest`.
+    /// Empty by default — chunks without explicit deps execute in parallel.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub depends_on: Vec<String>,
 }
 
 inventory::submit! {
@@ -158,10 +168,12 @@ mod tests {
                 ChunkRef {
                     slug: "auth-flow".to_string(),
                     order: 1,
+                    depends_on: vec![],
                 },
                 ChunkRef {
                     slug: "payment-flow".to_string(),
                     order: 2,
+                    depends_on: vec![],
                 },
             ],
             completed_chunks: vec![],
@@ -255,6 +267,7 @@ mod tests {
             chunks: vec![ChunkRef {
                 slug: "chunk-a".to_string(),
                 order: 1,
+                depends_on: vec![],
             }],
             completed_chunks: vec![],
             depends_on: vec![],
@@ -326,6 +339,71 @@ mod tests {
             serde_json::from_str::<ChunkRef>(json).is_err(),
             "ChunkRef should reject unknown fields"
         );
+    }
+
+    #[test]
+    fn chunk_ref_depends_on_roundtrip() {
+        let chunk = ChunkRef {
+            slug: "b".to_string(),
+            order: 2,
+            depends_on: vec!["a".to_string()],
+        };
+        let toml_str = toml::to_string(&chunk).expect("serialize to TOML");
+        assert!(
+            toml_str.contains("depends_on"),
+            "non-empty depends_on should appear in TOML, got: {toml_str}"
+        );
+        let back: ChunkRef = toml::from_str(&toml_str).expect("deserialize from TOML");
+        assert_eq!(back.depends_on, vec!["a"]);
+        assert_eq!(back.slug, "b");
+        assert_eq!(back.order, 2);
+    }
+
+    #[test]
+    fn chunk_ref_depends_on_absent_omitted() {
+        // Empty depends_on should be omitted from serialized TOML
+        let chunk = ChunkRef {
+            slug: "a".to_string(),
+            order: 1,
+            depends_on: vec![],
+        };
+        let toml_str = toml::to_string(&chunk).expect("serialize to TOML");
+        assert!(
+            !toml_str.contains("depends_on"),
+            "empty depends_on should be omitted from TOML, got: {toml_str}"
+        );
+
+        // Backward compat: TOML without depends_on key still parses
+        let minimal = r#"
+slug = "a"
+order = 1
+"#;
+        let back: ChunkRef = toml::from_str(minimal).expect("deserialize minimal TOML");
+        assert!(back.depends_on.is_empty());
+        assert_eq!(back.slug, "a");
+        assert_eq!(back.order, 1);
+    }
+
+    #[test]
+    fn chunk_ref_depends_on_json_roundtrip() {
+        // JSON is used by MCP server responses — verify depends_on round-trips correctly.
+        let chunk = ChunkRef {
+            slug: "a".to_string(),
+            order: 1,
+            depends_on: vec!["b".to_string()],
+        };
+        let json = serde_json::to_string(&chunk).expect("serialize to JSON");
+        assert!(
+            json.contains("depends_on"),
+            "non-empty depends_on should appear in JSON, got: {json}"
+        );
+        let back: ChunkRef = serde_json::from_str(&json).expect("deserialize from JSON");
+        assert_eq!(back.depends_on, vec!["b"]);
+
+        // JSON without depends_on key should deserialize to empty Vec
+        let no_dep = r#"{"slug":"a","order":1}"#;
+        let back2: ChunkRef = serde_json::from_str(no_dep).expect("deserialize no-dep JSON");
+        assert!(back2.depends_on.is_empty());
     }
 
     #[test]

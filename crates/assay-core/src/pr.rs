@@ -595,10 +595,12 @@ mod tests {
                 ChunkRef {
                     slug: "chunk-a".to_string(),
                     order: 1,
+                    depends_on: vec![],
                 },
                 ChunkRef {
                     slug: "chunk-b".to_string(),
                     order: 2,
+                    depends_on: vec![],
                 },
             ],
             completed_chunks: vec![],
