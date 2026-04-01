@@ -451,6 +451,34 @@ pub fn list_contexts(assay_dir: &Path) -> Result<Vec<String>> {
     Ok(ids)
 }
 
+/// Find the most recent gate eval context for a given spec name.
+///
+/// Scans `.assay/gate_sessions/*.json` in reverse chronological order
+/// (most recent first, since session IDs are timestamp-prefixed) and
+/// returns the first `GateEvalContext` whose `spec_name` matches.
+/// Unreadable context files are logged and skipped.
+///
+/// Returns `Ok(None)` when no matching context is found or the
+/// `gate_sessions` directory does not exist.
+pub fn find_context_for_spec(assay_dir: &Path, spec_name: &str) -> Result<Option<GateEvalContext>> {
+    let ids = list_contexts(assay_dir)?;
+    for id in ids.into_iter().rev() {
+        match load_context(assay_dir, &id) {
+            Ok(ctx) if ctx.spec_name == spec_name => return Ok(Some(ctx)),
+            Ok(_) => continue,
+            Err(e) => {
+                tracing::warn!(
+                    session_id = %id,
+                    error = %e,
+                    "find_context_for_spec: skipping unreadable context file"
+                );
+                continue;
+            }
+        }
+    }
+    Ok(None)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -812,6 +840,62 @@ mod tests {
         assert!(
             msg.contains("invalid session ID"),
             "should reject via path validation, got: {msg}"
+        );
+    }
+
+    // ── find_context_for_spec ─────────────────────────────────
+
+    #[test]
+    fn test_find_context_for_spec_returns_match() {
+        let dir = tempfile::tempdir().unwrap();
+        let ctx = make_test_context("target-spec");
+        let expected_id = ctx.session_id.clone();
+        save_context(dir.path(), &ctx).unwrap();
+
+        let found = find_context_for_spec(dir.path(), "target-spec").unwrap();
+        assert!(found.is_some(), "should find a matching context");
+        assert_eq!(found.unwrap().session_id, expected_id);
+    }
+
+    #[test]
+    fn test_find_context_for_spec_returns_none_on_miss() {
+        let dir = tempfile::tempdir().unwrap();
+        let ctx = make_test_context("other-spec");
+        save_context(dir.path(), &ctx).unwrap();
+
+        let found = find_context_for_spec(dir.path(), "target-spec").unwrap();
+        assert!(
+            found.is_none(),
+            "should not find a context for a different spec"
+        );
+    }
+
+    #[test]
+    fn test_find_context_for_spec_empty_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let found = find_context_for_spec(dir.path(), "target-spec").unwrap();
+        assert!(found.is_none(), "should return None for empty/missing dir");
+    }
+
+    #[test]
+    fn test_find_context_for_spec_returns_most_recent() {
+        let dir = tempfile::tempdir().unwrap();
+
+        // Use manually-assigned IDs to guarantee lexicographic ordering.
+        let mut ctx1 = make_test_context("target-spec");
+        ctx1.session_id = "20260101T000000Z-aaaaaa".to_string();
+        save_context(dir.path(), &ctx1).unwrap();
+
+        let mut ctx2 = make_test_context("target-spec");
+        ctx2.session_id = "20260102T000000Z-bbbbbb".to_string();
+        save_context(dir.path(), &ctx2).unwrap();
+
+        let found = find_context_for_spec(dir.path(), "target-spec").unwrap();
+        assert!(found.is_some(), "should find a matching context");
+        assert_eq!(
+            found.unwrap().session_id,
+            "20260102T000000Z-bbbbbb",
+            "should return the most recent (lexicographically last) context"
         );
     }
 }
