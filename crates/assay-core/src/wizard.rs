@@ -167,6 +167,7 @@ pub fn create_from_inputs(
         .map(|(i, chunk)| ChunkRef {
             slug: chunk.slug.clone(),
             order: i as u32,
+            depends_on: vec![],
         })
         .collect();
 
@@ -243,7 +244,11 @@ pub fn create_milestone_from_params(
 
     let chunk_refs: Vec<ChunkRef> = chunks
         .into_iter()
-        .map(|(s, order)| ChunkRef { slug: s, order })
+        .map(|(s, order)| ChunkRef {
+            slug: s,
+            order,
+            depends_on: vec![],
+        })
         .collect();
 
     let now = Utc::now();
@@ -330,6 +335,7 @@ pub fn create_spec_from_params(
         milestone.chunks.push(ChunkRef {
             slug: slug.to_string(),
             order,
+            depends_on: vec![],
         });
         milestone.updated_at = Utc::now();
         milestone_save(assay_dir, &milestone)?;

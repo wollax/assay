@@ -115,6 +115,7 @@ fn create_synthetic_milestone(
         .map(|i| ChunkRef {
             slug: format!("chunk-{i}"),
             order: i as u32,
+            depends_on: vec![],
         })
         .collect();
 

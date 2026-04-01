@@ -116,10 +116,12 @@ fn test_pr_check_all_pass() {
             ChunkRef {
                 slug: "chunk-a".to_string(),
                 order: 1,
+                depends_on: vec![],
             },
             ChunkRef {
                 slug: "chunk-b".to_string(),
                 order: 2,
+                depends_on: vec![],
             },
         ],
     );
@@ -154,10 +156,12 @@ fn test_pr_check_one_fails() {
             ChunkRef {
                 slug: "pass-chunk".to_string(),
                 order: 1,
+                depends_on: vec![],
             },
             ChunkRef {
                 slug: "fail-chunk".to_string(),
                 order: 2,
+                depends_on: vec![],
             },
         ],
     );
@@ -201,6 +205,7 @@ fn test_pr_check_missing_spec() {
         vec![ChunkRef {
             slug: "ghost-chunk".to_string(),
             order: 1,
+            depends_on: vec![],
         }],
     );
     milestone_save(&assay_dir, &milestone).expect("save milestone");
@@ -234,6 +239,7 @@ fn test_pr_create_already_created() {
         vec![ChunkRef {
             slug: "chunk-a".to_string(),
             order: 1,
+            depends_on: vec![],
         }],
     );
     // PR has already been created
@@ -280,6 +286,7 @@ fn test_pr_create_gates_fail() {
         vec![ChunkRef {
             slug: "fail-chunk".to_string(),
             order: 1,
+            depends_on: vec![],
         }],
     );
     milestone_save(&assay_dir, &milestone).expect("save milestone");
@@ -327,6 +334,7 @@ fn test_pr_create_gh_not_found() {
         vec![ChunkRef {
             slug: "chunk-a".to_string(),
             order: 1,
+            depends_on: vec![],
         }],
     );
     milestone_save(&assay_dir, &milestone).expect("save milestone");
@@ -386,10 +394,12 @@ fn test_pr_create_success_mock_gh() {
             ChunkRef {
                 slug: "chunk-a".to_string(),
                 order: 1,
+                depends_on: vec![],
             },
             ChunkRef {
                 slug: "chunk-b".to_string(),
                 order: 2,
+                depends_on: vec![],
             },
         ],
     );
@@ -457,6 +467,7 @@ fn test_pr_create_parse_gh_missing_fields() {
         vec![ChunkRef {
             slug: "chunk-a".to_string(),
             order: 1,
+            depends_on: vec![],
         }],
     );
     milestone_save(&assay_dir, &milestone).expect("save milestone");
@@ -518,6 +529,7 @@ fn test_pr_create_verify_transitions_to_complete() {
         vec![ChunkRef {
             slug: "chunk-a".to_string(),
             order: 1,
+            depends_on: vec![],
         }],
     );
     milestone_save(&assay_dir, &milestone).expect("save milestone");
@@ -614,6 +626,7 @@ fn test_pr_create_passes_labels_and_reviewers() {
         vec![ChunkRef {
             slug: "chunk-a".to_string(),
             order: 1,
+            depends_on: vec![],
         }],
     );
     milestone.pr_labels = Some(vec!["ready-for-review".to_string()]);
@@ -691,10 +704,12 @@ fn test_pr_create_renders_body_template() {
             ChunkRef {
                 slug: "chunk-a".to_string(),
                 order: 1,
+                depends_on: vec![],
             },
             ChunkRef {
                 slug: "chunk-b".to_string(),
                 order: 2,
+                depends_on: vec![],
             },
         ],
     );
@@ -769,6 +784,7 @@ fn test_pr_create_caller_body_overrides_template() {
         vec![ChunkRef {
             slug: "chunk-a".to_string(),
             order: 1,
+            depends_on: vec![],
         }],
     );
     milestone.pr_body_template = Some("TEMPLATE BODY".to_string());

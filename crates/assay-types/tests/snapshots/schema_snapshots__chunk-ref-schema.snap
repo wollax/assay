@@ -5,10 +5,17 @@ expression: schema.to_value()
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "description": "A reference to a `GatesSpec` chunk within a milestone, identified by slug and ordering.\n\nEach `ChunkRef` corresponds to a directory-based spec (a \"chunk\") that\ncontributes to the parent milestone. The `order` field controls the\ncanonical sequence for display and progress tracking.",
+  "description": "A reference to a `GatesSpec` chunk within a milestone, identified by slug and scheduling constraints.\n\nEach `ChunkRef` corresponds to a directory-based spec (a \"chunk\") that\ncontributes to the parent milestone. The `order` field is cosmetic display ordering only;\nuse `depends_on` to declare scheduling constraints between chunks.",
   "properties": {
+    "depends_on": {
+      "description": "Dependencies: slugs of other chunks **within the same milestone** that must complete before this one.\nValues must match `ChunkRef.slug` values in the parent `Milestone.chunks` list.\nCross-milestone dependencies are not supported.\n\nUsed by `manifest_generate` to emit `depends_on` entries in the output manifest TOML.\nSlug references are not validated at this layer — validation of dangling refs and cycles\nis the responsibility of the manifest generation layer (S03).\nEmpty by default — chunks without explicit deps execute in parallel.",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
     "order": {
-      "description": "Position of this chunk in the milestone's ordered sequence (0-based or 1-based is caller's choice).",
+      "description": "Cosmetic display order only. Use `depends_on` to declare scheduling constraints.",
       "format": "uint32",
       "minimum": 0,
       "type": "integer"

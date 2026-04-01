@@ -94,6 +94,7 @@ fn test_cycle_status_draft_milestone() {
         vec![ChunkRef {
             slug: "chunk-a".to_string(),
             order: 1,
+            depends_on: vec![],
         }],
     );
     milestone_save(&assay_dir, &draft).expect("save draft milestone");
@@ -119,10 +120,12 @@ fn test_cycle_status_in_progress() {
             ChunkRef {
                 slug: "chunk-a".to_string(),
                 order: 1,
+                depends_on: vec![],
             },
             ChunkRef {
                 slug: "chunk-b".to_string(),
                 order: 2,
+                depends_on: vec![],
             },
         ],
     );
@@ -158,10 +161,12 @@ fn test_active_chunk_sorted_by_order() {
             ChunkRef {
                 slug: "chunk-b".to_string(),
                 order: 2,
+                depends_on: vec![],
             },
             ChunkRef {
                 slug: "chunk-a".to_string(),
                 order: 1,
+                depends_on: vec![],
             },
         ],
     );
@@ -198,10 +203,12 @@ fn test_cycle_advance_marks_chunk_complete() {
             ChunkRef {
                 slug: "chunk-a".to_string(),
                 order: 1,
+                depends_on: vec![],
             },
             ChunkRef {
                 slug: "chunk-b".to_string(),
                 order: 2,
+                depends_on: vec![],
             },
         ],
     );
@@ -251,10 +258,12 @@ fn test_cycle_advance_all_chunks_move_to_verify() {
             ChunkRef {
                 slug: "chunk-a".to_string(),
                 order: 1,
+                depends_on: vec![],
             },
             ChunkRef {
                 slug: "chunk-b".to_string(),
                 order: 2,
+                depends_on: vec![],
             },
         ],
     );
@@ -307,6 +316,7 @@ fn test_cycle_advance_gates_fail_returns_error() {
         vec![ChunkRef {
             slug: "chunk-fail".to_string(),
             order: 1,
+            depends_on: vec![],
         }],
     );
     milestone_save(&assay_dir, &milestone).expect("save milestone");
@@ -348,6 +358,7 @@ fn test_milestone_phase_transition_valid() {
         chunks: vec![ChunkRef {
             slug: "chunk-a".to_string(),
             order: 1,
+            depends_on: vec![],
         }],
         completed_chunks: vec![],
         depends_on: vec![],
@@ -456,6 +467,7 @@ fn test_cycle_advance_no_active_milestone() {
         vec![ChunkRef {
             slug: "chunk-a".to_string(),
             order: 1,
+            depends_on: vec![],
         }],
     );
     milestone_save(&assay_dir, &draft).expect("save draft milestone");
