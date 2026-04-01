@@ -71,6 +71,10 @@ pub struct WorktreeInfo {
     /// Populated on create and list (from metadata), `None` when metadata is missing.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub base_branch: Option<String>,
+    /// Whether this worktree is orphaned (no linked active WorkSession).
+    /// Populated by `worktree::list()` when cross-referencing sessions.
+    #[serde(default)]
+    pub is_orphan: bool,
 }
 
 inventory::submit! {
