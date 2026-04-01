@@ -1616,17 +1616,44 @@ impl AssayServer {
             let session = if let Some(ref existing_id) = in_memory_session_id {
                 // Live session already in memory — update command_results with fresh
                 // evaluation results, preserving all accumulated agent_evaluations.
-                let mut sessions = self.sessions.lock().await;
-                if let Some(s) = sessions.get_mut(existing_id) {
-                    s.command_results = results;
-                    tracing::info!(
-                        session_id = %existing_id,
-                        spec_name = %spec_name,
-                        "gate_run: refreshed in-memory session with new command_results"
-                    );
-                    s.clone()
+                //
+                // command_results are intentionally *replaced*, not merged: they
+                // reflect the current run's deterministic command evaluation, which
+                // must be fresh.  agent_evaluations persist across runs because they
+                // are the accumulated evidence from the agent — the whole point of
+                // write-through persistence.
+                let found = {
+                    let mut sessions = self.sessions.lock().await;
+                    if let Some(s) = sessions.get_mut(existing_id) {
+                        s.command_results = results.clone();
+                        tracing::info!(
+                            session_id = %existing_id,
+                            spec_name = %spec_name,
+                            "gate_run: refreshed in-memory session with new command_results"
+                        );
+                        Some(s.clone())
+                    } else {
+                        // Removed between lock acquisitions (e.g. timed out).
+                        tracing::warn!(
+                            session_id = %existing_id,
+                            spec_name = %spec_name,
+                            "gate_run: session removed between lock acquisitions, creating new"
+                        );
+                        None
+                    }
+                };
+                if let Some(s) = found {
+                    // Write-through: persist the updated command_results immediately
+                    // so the next restart sees fresh results.
+                    if let Err(e) = assay_core::gate::session::save_context(&cwd.join(".assay"), &s)
+                    {
+                        tracing::warn!(
+                            session_id = %existing_id,
+                            "gate_run: failed to persist updated command_results to disk: {e}"
+                        );
+                    }
+                    s
                 } else {
-                    // Removed between lock acquisitions (e.g. timed out) — create new.
                     assay_core::gate::session::create_session(
                         &spec_name,
                         info.agent_criteria_names,
