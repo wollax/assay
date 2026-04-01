@@ -17,6 +17,14 @@ just build
 - Run `just ready` to verify everything passes
 - Open a pull request
 
+## CI & Release Pipeline
+
+Development happens on Forgejo, with a push-mirror that automatically forwards all branches and tags to GitHub.
+
+- **Forgejo CI** (`.forgejo/workflows/ci.yml`) runs on every push to `main` and every pull request — executes `just ready` (fmt-check, lint, test, deny, check-plugin-version) and validates plugin JSON manifests
+- **GitHub CI** (`.github/workflows/ci.yml`) runs on mirrored pushes — same gate checks as Forgejo CI (`just ready` + plugin validation)
+- **Releases**: push a tag to Forgejo (e.g., `git tag v0.6.0 && git push origin v0.6.0`) → the tag mirrors to GitHub → `release.yml` triggers → binaries for linux x86\_64, linux aarch64, macOS x86\_64, and macOS aarch64 are built and published as a GitHub Release (GitHub Releases only — not Forgejo Releases)
+
 ## Working with Local cupel
 
 If you're developing both `assay` and `cupel` simultaneously, override the registry dependency
