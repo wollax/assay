@@ -360,6 +360,7 @@ pub fn create(
         path: worktree_path,
         branch: branch_name,
         base_branch: Some(base),
+        is_orphan: false,
     })
 }
 
@@ -388,11 +389,27 @@ pub fn list(project_root: &Path) -> Result<WorktreeListResult> {
                 path: wt.path,
                 branch: branch.to_string(),
                 base_branch,
+                is_orphan: false,
             })
         })
         .collect();
 
     entries.sort_by(|a, b| a.spec_slug.cmp(&b.spec_slug));
+
+    // Cross-reference with sessions to populate is_orphan.
+    // Reuses the same logic as detect_orphans() but inline to avoid recursion.
+    let assay_dir = project_root.join(".assay");
+    for entry in &mut entries {
+        let metadata = read_metadata(&entry.path);
+        entry.is_orphan = match metadata.and_then(|m| m.session_id) {
+            None => true, // No session_id — orphaned
+            Some(sid) => match crate::work_session::load_session(&assay_dir, &sid) {
+                Err(_) => true, // Session doesn't exist on disk — orphaned
+                Ok(session) => session.phase.is_terminal(), // Terminal phase — orphaned
+            },
+        };
+    }
+
     Ok(WorktreeListResult { entries, warnings })
 }
 
