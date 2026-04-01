@@ -165,7 +165,7 @@ Examples:
         #[command(subcommand)]
         command: commands::checkpoint::CheckpointCommand,
     },
-    /// Generate and manage run manifests
+    /// Generate run manifests from milestones or specs
     #[command(after_long_help = "\
 Examples:
   Generate from a milestone:

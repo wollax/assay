@@ -51,9 +51,9 @@ pub struct ChunkRef {
     /// Values must match `ChunkRef.slug` values in the parent `Milestone.chunks` list.
     /// Cross-milestone dependencies are not supported.
     ///
-    /// Used by `manifest_generate` to emit `depends_on` entries in the output manifest TOML.
+    /// Used during manifest generation to emit scheduling constraints in the output TOML.
     /// Slug references are not validated at this layer — validation of dangling refs and cycles
-    /// is the responsibility of the manifest generation layer (S03).
+    /// is the responsibility of `manifest_gen::generate_manifest`.
     /// Empty by default — chunks without explicit deps execute in parallel.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub depends_on: Vec<String>,

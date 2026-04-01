@@ -7,7 +7,7 @@
 //!   `depends_on` from `ChunkRef.depends_on`.
 //! - **AllSpecs**: scans all specs and produces fully-parallel sessions.
 //!
-//! See D009, D011, D012 for design decisions.
+//! See decisions D009, D011, D012 in the project's `DECISIONS` document (stored in Linear).
 
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
@@ -23,11 +23,11 @@ use crate::milestone::milestone_load;
 use crate::spec;
 
 /// Where to source manifest sessions from.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ManifestSource {
     /// Generate sessions from a named milestone's chunk list.
     Milestone(String),
-    /// Generate sessions from all specs in `.assay/specs/`.
+    /// Generate sessions from all specs in the `specs/` subdirectory of the configured `assay_dir`.
     AllSpecs,
 }
 
@@ -58,14 +58,14 @@ pub fn generate_manifest(
 
             if milestone.chunks.is_empty() {
                 return Err(AssayError::Io {
-                    operation: format!("generating manifest: milestone '{}' has no chunks", slug),
+                    operation: format!("generating manifest for milestone '{slug}'"),
                     path: config
                         .assay_dir
                         .join("milestones")
                         .join(format!("{slug}.toml")),
                     source: std::io::Error::new(
                         std::io::ErrorKind::InvalidData,
-                        format!("milestone '{slug}' has no chunks"),
+                        "milestone has no chunks",
                     ),
                 });
             }
@@ -98,11 +98,11 @@ pub fn generate_manifest(
 
             if scan_result.entries.is_empty() {
                 return Err(AssayError::Io {
-                    operation: "generating manifest: no specs found".to_string(),
+                    operation: "generating manifest from all specs".to_string(),
                     path: specs_dir,
                     source: std::io::Error::new(
                         std::io::ErrorKind::NotFound,
-                        "no specs found in specs directory",
+                        "no specs found in the specs directory",
                     ),
                 });
             }
@@ -143,8 +143,9 @@ pub fn generate_manifest(
 /// Write a [`RunManifest`] to disk atomically.
 ///
 /// Serializes to TOML, writes via a temporary file in the parent directory,
-/// then renames to the final path. A crash mid-write never leaves a partial
-/// file.
+/// then renames to the final path. A crash mid-write never corrupts or
+/// partially overwrites the destination file — at worst, a stale temporary
+/// file is left in the parent directory.
 ///
 /// # Errors
 ///
@@ -199,8 +200,9 @@ mod tests {
         std::fs::create_dir_all(&milestones_dir).unwrap();
         let path = milestones_dir.join(format!("{slug}.toml"));
         let now = chrono::Utc::now().to_rfc3339();
-        // Split content: top-level fields must include timestamps BEFORE any [[chunks]]
-        // Find where [[chunks]] starts (if any) and insert timestamps before it.
+        // TOML spec: top-level key-value pairs must appear before [[array-of-tables]] blocks.
+        // Insert required timestamps before the first [[chunks]] entry.
+        // NOTE: chunks_content must not contain any top-level keys after [[chunks]].
         let (header, rest) = if let Some(pos) = chunks_content.find("[[chunks]]") {
             (&chunks_content[..pos], &chunks_content[pos..])
         } else {

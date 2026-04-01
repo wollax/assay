@@ -70,9 +70,7 @@ fn manifest_generate_cmd(
     let dir = assay_dir(&root);
     let output_path = PathBuf::from(&output);
 
-    let config = ManifestGenConfig {
-        assay_dir: dir.clone(),
-    };
+    let config = ManifestGenConfig { assay_dir: dir };
 
     let manifest = assay_core::manifest_gen::generate_manifest(source, &config)
         .context("manifest generation failed")?;

@@ -50,6 +50,7 @@ use tokio::sync::Mutex;
 
 use crate::signal_server::RunRegistry;
 
+use assay_core::manifest_gen::{self, ManifestGenConfig, ManifestSource};
 use assay_core::milestone::{milestone_load, milestone_scan};
 use assay_core::spec::SpecEntry;
 use assay_types::work_session::SessionPhase;
@@ -737,14 +738,24 @@ pub struct SendSignalParams {
     pub update: assay_types::PeerUpdate,
 }
 
+/// Source type for the `manifest_generate` tool.
+#[derive(Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum ManifestSourceParam {
+    /// Generate sessions from a named milestone's chunks (use with `slug`).
+    Milestone,
+    /// Generate sessions from all specs (fully parallel, no deps).
+    AllSpecs,
+}
+
 /// Parameters for the `manifest_generate` tool.
 #[derive(Deserialize, JsonSchema)]
 pub struct ManifestGenerateParams {
     /// Source type: "milestone" or "all-specs".
     #[schemars(
-        description = "Source type for manifest generation: 'milestone' (from a named milestone's chunks) or 'all-specs' (from all specs, fully parallel)"
+        description = "Source type: 'milestone' (from a named milestone's chunks) or 'all-specs' (from all specs, fully parallel)"
     )]
-    pub source: String,
+    pub source: ManifestSourceParam,
 
     /// Milestone slug (required when source = "milestone").
     #[schemars(description = "Milestone slug (required when source is 'milestone')")]
@@ -4442,8 +4453,8 @@ impl AssayServer {
             output,
         } = params.0;
 
-        let manifest_source = match source.as_str() {
-            "milestone" => {
+        let manifest_source = match source {
+            ManifestSourceParam::Milestone => {
                 let slug = match slug {
                     Some(s) if !s.is_empty() => s,
                     _ => {
@@ -4452,32 +4463,29 @@ impl AssayServer {
                         )]));
                     }
                 };
-                assay_core::manifest_gen::ManifestSource::Milestone(slug)
+                ManifestSource::Milestone(slug)
             }
-            "all-specs" => assay_core::manifest_gen::ManifestSource::AllSpecs,
-            other => {
-                return Ok(CallToolResult::error(vec![Content::text(format!(
-                    "unknown source type '{other}': expected 'milestone' or 'all-specs'"
-                ))]));
-            }
+            ManifestSourceParam::AllSpecs => ManifestSource::AllSpecs,
         };
 
         let cwd = resolve_cwd()?;
         let assay_dir = cwd.join(".assay");
         let output_path = cwd.join(output.as_deref().unwrap_or("manifest.toml"));
 
-        let config = assay_core::manifest_gen::ManifestGenConfig {
-            assay_dir: assay_dir.clone(),
-        };
+        let config = ManifestGenConfig { assay_dir };
 
-        let output_path_clone = output_path.clone();
+        let output_path_for_write = output_path.clone();
         let result = tokio::task::spawn_blocking(move || {
-            let manifest = assay_core::manifest_gen::generate_manifest(manifest_source, &config)?;
-            assay_core::manifest_gen::write_manifest(&manifest, &output_path_clone)?;
+            let manifest = manifest_gen::generate_manifest(manifest_source, &config)?;
+            manifest_gen::write_manifest(&manifest, &output_path_for_write)?;
             Ok::<_, assay_core::AssayError>(manifest.sessions.len())
         })
         .await
-        .map_err(|e| McpError::internal_error(format!("manifest_generate panicked: {e}"), None))?;
+        .map_err(|e| McpError::internal_error(format!("manifest_generate panicked: {e}"), None))?
+        .map_err(|e| {
+            tracing::warn!(error = %e, "manifest_generate failed");
+            e
+        });
 
         match result {
             Ok(session_count) => {
@@ -9765,7 +9773,7 @@ depends_on = ["chunk-a"]
         let server = AssayServer::new();
         let result = server
             .manifest_generate(Parameters(ManifestGenerateParams {
-                source: "milestone".to_string(),
+                source: ManifestSourceParam::Milestone,
                 slug: Some("test-ms".to_string()),
                 output: Some("test-manifest.toml".to_string()),
             }))
@@ -9820,7 +9828,7 @@ depends_on = ["chunk-a"]
         let server = AssayServer::new();
         let result = server
             .manifest_generate(Parameters(ManifestGenerateParams {
-                source: "milestone".to_string(),
+                source: ManifestSourceParam::Milestone,
                 slug: None,
                 output: None,
             }))

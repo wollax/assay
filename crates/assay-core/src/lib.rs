@@ -78,9 +78,10 @@ pub mod state_backend;
 /// Manifest generation from milestone chunks or all specs.
 ///
 /// Produces a [`RunManifest`] TOML from a milestone's chunk list or
-/// from all specs. Gated behind the `orchestrate` Cargo feature
-/// because the output uses [`OrchestratorMode`](assay_types::OrchestratorMode).
+/// from all specs. Grouped with the `orchestrate` feature since it produces
+/// manifests intended for the orchestration pipeline.
 #[cfg(feature = "orchestrate")]
 pub mod manifest_gen;
+
 #[cfg(feature = "orchestrate")]
 pub use state_backend::{CapabilitySet, LocalFsBackend, NoopBackend, StateBackend};
