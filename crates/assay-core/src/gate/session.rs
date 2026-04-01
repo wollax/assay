@@ -453,26 +453,40 @@ pub fn list_contexts(assay_dir: &Path) -> Result<Vec<String>> {
 
 /// Find the most recent gate eval context for a given spec name.
 ///
-/// Scans `.assay/gate_sessions/*.json` in reverse chronological order
-/// (most recent first, since session IDs are timestamp-prefixed) and
-/// returns the first `GateEvalContext` whose `spec_name` matches.
-/// Unreadable context files are logged and skipped.
+/// Scans `.assay/gate_sessions/*.json` in reverse order (most recent
+/// first) and returns the first [`GateEvalContext`] whose `spec_name`
+/// matches the given `spec_name`.
 ///
-/// Returns `Ok(None)` when no matching context is found or the
-/// `gate_sessions` directory does not exist.
+/// ## Ordering invariant
+///
+/// Correctness relies on session IDs being timestamp-prefixed (format
+/// `YYYYMMDDTHHMMSSZ-xxxxxx`) so that lexicographic ascending order
+/// equals chronological order.  [`list_contexts`] returns IDs in that
+/// ascending order; this function reverses the list before iterating
+/// so the most recently created session is checked first.
+///
+/// ## Error handling
+///
+/// Context files that cannot be read or deserialized are logged at
+/// `warn` level and skipped — they do not cause the function to fail.
+/// An `Ok(None)` return means *no matching readable context was found*;
+/// it does not guarantee that no context was ever persisted for the
+/// spec.
+///
+/// Returns `Ok(None)` without error when the `gate_sessions` directory
+/// does not exist (fresh project).
 pub fn find_context_for_spec(assay_dir: &Path, spec_name: &str) -> Result<Option<GateEvalContext>> {
     let ids = list_contexts(assay_dir)?;
     for id in ids.into_iter().rev() {
         match load_context(assay_dir, &id) {
             Ok(ctx) if ctx.spec_name == spec_name => return Ok(Some(ctx)),
-            Ok(_) => continue,
+            Ok(_) => {}
             Err(e) => {
                 tracing::warn!(
                     session_id = %id,
                     error = %e,
-                    "find_context_for_spec: skipping unreadable context file"
+                    "skipping unreadable context file"
                 );
-                continue;
             }
         }
     }
