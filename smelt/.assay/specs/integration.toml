@@ -1,0 +1,7 @@
+name = "integration"
+description = "Add end-to-end tests for the login flow using Playwright."
+
+[[criteria]]
+name = "harness"
+description = "Harness gate for integration"
+cmd = "npx playwright test auth.spec.ts"

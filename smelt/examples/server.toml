@@ -1,0 +1,114 @@
+# Smelt server configuration — used by `smelt serve`.
+#
+# The server watches a queue directory for incoming manifest .toml files,
+# dispatches jobs (locally or to SSH workers), and exposes an HTTP API
+# for job status, enqueue, and lifecycle management.
+#
+# Queue state is automatically persisted to queue_dir/.smelt-queue-state.toml
+# after every enqueue, complete, and cancel. On restart, smelt serve loads this
+# file and re-queues any jobs that were Queued, Retrying, Dispatching, or Running
+# at shutdown time — no operator intervention required.
+#
+# Run with: smelt serve --config examples/server.toml
+
+# Directory to watch for incoming manifest .toml files.
+# New .toml files dropped here are automatically enqueued.
+# Queue state is persisted to <queue_dir>/.smelt-queue-state.toml.
+queue_dir = "/tmp/smelt-queue"
+
+# Maximum number of jobs to run concurrently.
+# Additional jobs wait in the queue until a slot opens.
+max_concurrent = 2
+
+# Maximum retry attempts before marking a job as permanently failed.
+# Default: 3.
+retry_attempts = 3
+
+# Seconds to wait between retry attempts.
+# Default: 5.
+retry_backoff_secs = 5
+
+# [server] — optional. HTTP API server settings.
+# Defaults: host = "127.0.0.1", port = 8765.
+[server]
+# Host address for the HTTP API to bind to.
+host = "127.0.0.1"
+# Port for the HTTP API.
+port = 8765
+
+# [[workers]] — optional. SSH worker pool.
+# When present, smelt serve dispatches jobs to these remote hosts instead of
+# running them locally. Jobs are round-robined across available workers;
+# unreachable workers are skipped and the job is re-queued.
+#
+# Fields per worker:
+#   host     — SSH hostname or IP address (required)
+#   user     — SSH username (required)
+#   key_env  — name of env var holding path to SSH private key (required)
+#   port     — SSH port (optional, default: 22)
+#
+# Timeout in seconds for SSH connection probes to workers. Default: 3.
+# ssh_timeout_secs = 3
+
+# [[workers]]
+# host = "worker1.example.com"
+# user = "smelt"
+# key_env = "WORKER_SSH_KEY"
+# port = 22
+
+# [auth] — optional. Bearer-token authentication for the HTTP API.
+# When present, all HTTP endpoints require a valid `Authorization: Bearer <token>`
+# header. When absent, the API is unauthenticated (open access).
+#
+# Fields:
+#   write_token_env — env var name for the read-write (full access) token (required).
+#   read_token_env  — env var name for the read-only token (optional;
+#     when omitted, only the write token grants any access).
+#     GET and HEAD requests are "read"; all other methods require the write token.
+
+# [auth]
+# write_token_env = "SMELT_WRITE_TOKEN"
+# read_token_env = "SMELT_READ_TOKEN"
+
+# [tracker] — optional. Tracker-driven dispatch.
+# When present, smelt serve polls an external tracker (GitHub Issues or Linear)
+# for issues tagged with lifecycle labels. Issues in the "ready" state are
+# automatically converted into job manifests and enqueued. The poller manages
+# label transitions through the lifecycle: ready → queued → running → complete/failed.
+#
+# Common fields:
+#   provider           — "github" or "linear" (required)
+#   manifest_template  — path to a template .toml manifest with no [[session]] entries;
+#                         the poller injects a session from each tracker issue (required)
+#   poll_interval_secs — seconds between poll cycles (default: 30)
+#   label_prefix       — prefix for lifecycle labels, e.g. "smelt" → "smelt:ready" (default: "smelt")
+#   default_harness    — harness name injected into generated sessions (required)
+#   default_timeout    — timeout in seconds for generated jobs (required)
+#
+# GitHub-specific fields:
+#   repo — repository in "owner/repo" format (required for github provider)
+#
+# Linear-specific fields:
+#   api_key_env — name of env var holding the Linear API key (required for linear provider)
+#   team_id     — Linear team UUID (required for linear provider)
+
+# Example: GitHub provider
+# [tracker]
+# provider = "github"
+# repo = "myorg/myrepo"
+# manifest_template = "examples/job-manifest.toml"
+# poll_interval_secs = 30
+# label_prefix = "smelt"
+# default_harness = "bash"
+# default_timeout = 600
+
+# Example: Linear provider
+# [tracker]
+# provider = "linear"
+# api_key_env = "LINEAR_API_KEY"
+# team_id = "team-uuid-here"
+# manifest_template = "examples/job-manifest.toml"
+# poll_interval_secs = 60
+# label_prefix = "smelt"
+# default_harness = "bash"
+# default_timeout = 600
