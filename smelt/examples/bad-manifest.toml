@@ -1,0 +1,59 @@
+# Invalid Smelt job manifest — demonstrates validation errors.
+#
+# This file is intentionally broken to show what Smelt's validator catches.
+# Every error below is documented with the validation rule it violates.
+#
+# Run with: smelt run examples/bad-manifest.toml --dry-run
+# Expected: exits non-zero with 7 validation errors.
+
+[job]
+# VIOLATION: job.name must not be empty.
+name = ""
+# repo is valid — not every field needs to be wrong.
+repo = "https://github.com/example/webapp"
+# base_ref is valid.
+base_ref = "main"
+
+[environment]
+# runtime is valid.
+runtime = "docker"
+# VIOLATION: environment.image must not be empty.
+image = ""
+
+[credentials]
+# credentials section is valid — provider and model are present.
+provider = "anthropic"
+model = "claude-sonnet-4-20250514"
+
+[[session]]
+# This session name is valid on its own, but see the next session...
+name = "frontend"
+spec = "Implement the login page"
+harness = "npm test"
+# VIOLATION: session[0].timeout must be > 0. Zero is not allowed.
+timeout = 0
+
+[[session]]
+# VIOLATION: duplicate session name. Session names must be unique across
+# all sessions in the manifest. "frontend" is already used above.
+name = "frontend"
+spec = "Duplicate name — should be rejected"
+harness = "npm test"
+timeout = 300
+
+[[session]]
+name = "orphan"
+spec = "Depends on nonexistent session"
+harness = "npm test"
+timeout = 300
+# VIOLATION: depends_on references session "nonexistent" which does not
+# exist in this manifest. All depends_on entries must name valid sessions.
+depends_on = ["nonexistent"]
+
+[merge]
+strategy = "sequential"
+# VIOLATION: merge.order references session "also_nonexistent" which does
+# not exist. All entries in merge.order must name valid sessions.
+order = ["frontend", "also_nonexistent"]
+# VIOLATION: merge.target must not be empty.
+target = ""
