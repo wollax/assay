@@ -222,6 +222,20 @@ mod tests {
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
+    /// Install the default rustls crypto provider once per test binary.
+    ///
+    /// Octocrab uses hyper-rustls which requires a global CryptoProvider when
+    /// both `aws-lc-rs` and `ring` are in the dependency tree. In nextest,
+    /// each test runs in a separate process and the provider must be installed
+    /// before any `OctocrabBuilder::build()` call.
+    fn install_crypto_provider() {
+        use std::sync::OnceLock;
+        static PROVIDER: OnceLock<()> = OnceLock::new();
+        PROVIDER.get_or_init(|| {
+            let _ = rustls::crypto::ring::default_provider().install_default();
+        });
+    }
+
     // Compile-time assertion: octocrab::Error must be Send + Sync + 'static
     // for it to be usable as a boxed source error.  If this does not compile,
     // keep forge_with_source as a stringify-only helper (D053).
@@ -236,6 +250,7 @@ mod tests {
     /// Constructs `GitHubForge { client }` directly to bypass token-at-
     /// construction validation and point octocrab at the mock base URI.
     async fn forge_for_server(server: &MockServer) -> GitHubForge {
+        install_crypto_provider();
         let client = octocrab::OctocrabBuilder::new()
             .base_uri(server.uri())
             .expect("invalid mock server URI")

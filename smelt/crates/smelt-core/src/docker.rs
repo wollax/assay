@@ -709,6 +709,7 @@ mod tests {
 
     /// Test override takes priority via the testable inner function.
     #[tokio::test]
+    #[ignore = "requires running Docker daemon"]
     async fn detect_host_address_override() {
         let docker = Docker::connect_with_socket_defaults()
             .unwrap_or_else(|_| panic!("Docker client needed for test structure"));
@@ -725,6 +726,7 @@ mod tests {
 
     /// Without override, platform default is used.
     #[tokio::test]
+    #[ignore = "requires running Docker daemon"]
     async fn detect_host_address_platform_default() {
         let docker = Docker::connect_with_socket_defaults()
             .unwrap_or_else(|_| panic!("Docker client needed for test structure"));
