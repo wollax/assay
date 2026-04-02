@@ -483,3 +483,26 @@ fn test_noop_backend_all_methods_succeed() {
             .is_ok()
     );
 }
+
+#[test]
+fn toml_round_trip_manifest_with_custom_backend_and_json_value() {
+    use assay_types::RunManifest;
+    // Deserialize Custom variant with nested serde_json::Value from TOML inline table
+    let toml_str = r#"
+[[sessions]]
+spec = "auth"
+
+[state_backend]
+custom = { name = "redis", config = { url = "redis://localhost", port = 6379 } }
+"#;
+    let manifest: RunManifest = toml::from_str(toml_str).unwrap();
+    let backend = manifest.state_backend.unwrap();
+    match backend {
+        StateBackendConfig::Custom { name, config } => {
+            assert_eq!(name, "redis");
+            assert_eq!(config["url"], "redis://localhost");
+            assert_eq!(config["port"], 6379);
+        }
+        other => panic!("Expected Custom variant, got {:?}", other),
+    }
+}

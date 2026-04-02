@@ -32,7 +32,8 @@ fn workspace_root() -> std::path::PathBuf {
 /// Build the assay binary for Linux aarch64 inside a `rust:alpine` Docker container.
 ///
 /// - Detects the assay source directory via `ASSAY_SOURCE_DIR` env var, or falls back to
-///   `<workspace_root>/../../assay` (sibling repo pattern for local dev).
+///   `<workspace_root>/..` (monorepo layout: smelt lives at `smelt/` inside the assay repo,
+///   so the monorepo root is one level above the smelt workspace root).
 /// - Returns `None` immediately if neither source location exists, or if the Docker build fails.
 /// - On success, caches the binary at `target/smelt-test-cache/assay-linux-aarch64` and returns
 ///   `Some(cache_path)`. Subsequent calls return the cached path without rebuilding.
@@ -60,14 +61,15 @@ fn build_linux_assay_binary() -> Option<std::path::PathBuf> {
             return None;
         }
     } else {
-        // Sibling repo pattern: <workspace_root>/../../assay
-        let sibling = workspace.join("../../assay");
-        match sibling.canonicalize() {
-            Ok(p) if p.exists() => p,
+        // Monorepo layout: smelt workspace root is `smelt/`, one level up is the
+        // assay repo root which contains `crates/assay-*`.
+        let monorepo_root = workspace.join("..");
+        match monorepo_root.canonicalize() {
+            Ok(p) if p.join("crates/assay-cli").exists() => p,
             _ => {
                 eprintln!(
                     "Skipping: assay source not found at {} (set ASSAY_SOURCE_DIR to override)",
-                    sibling.display()
+                    monorepo_root.display()
                 );
                 return None;
             }

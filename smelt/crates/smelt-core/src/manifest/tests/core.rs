@@ -588,17 +588,107 @@ strategy = "sequential"
 target = "main"
 
 [state_backend]
-smelt = { endpoint_url = "http://host.docker.internal:8765/api/v1/events", job_id = "job-1", token_env = "SMELT_WRITE_TOKEN" }
+smelt = { url = "http://host.docker.internal:8765/api/v1/events", job_id = "job-1", token = "SMELT_WRITE_TOKEN" }
 "#;
     let manifest = load_from_str(toml).unwrap();
     assert_eq!(
         manifest.state_backend,
         Some(crate::tracker::StateBackendConfig::Smelt {
-            endpoint_url: "http://host.docker.internal:8765/api/v1/events".into(),
+            url: "http://host.docker.internal:8765/api/v1/events".into(),
             job_id: "job-1".into(),
-            token_env: Some("SMELT_WRITE_TOKEN".into()),
+            token: Some("SMELT_WRITE_TOKEN".into()),
         })
     );
+}
+
+#[test]
+fn manifest_state_backend_ssh() {
+    let toml = r#"
+[job]
+name = "test"
+repo = "repo"
+base_ref = "main"
+
+[environment]
+runtime = "docker"
+image = "img"
+
+[credentials]
+provider = "anthropic"
+model = "m"
+
+[[session]]
+name = "s1"
+spec = "s"
+harness = "h"
+timeout = 60
+
+[merge]
+strategy = "sequential"
+target = "main"
+
+[state_backend]
+ssh = { host = "ci.example.com", remote_assay_dir = "/opt/assay", user = "deploy", port = 2222 }
+"#;
+    let manifest = load_from_str(toml).unwrap();
+    assert_eq!(
+        manifest.state_backend,
+        Some(crate::tracker::StateBackendConfig::Ssh {
+            host: "ci.example.com".into(),
+            remote_assay_dir: "/opt/assay".into(),
+            user: Some("deploy".into()),
+            port: Some(2222),
+        })
+    );
+}
+
+#[test]
+fn manifest_state_backend_custom_json_value_from_toml() {
+    // Verifies that serde_json::Value (used in Custom.config) deserializes
+    // correctly from a TOML document — both implement serde, so cross-format
+    // deserialization works via serde's type system.
+    let toml = r#"
+[job]
+name = "test"
+repo = "repo"
+base_ref = "main"
+
+[environment]
+runtime = "docker"
+image = "img"
+
+[credentials]
+provider = "anthropic"
+model = "m"
+
+[[session]]
+name = "s1"
+spec = "s"
+harness = "h"
+timeout = 60
+
+[merge]
+strategy = "sequential"
+target = "main"
+
+[state_backend.custom]
+name = "redis"
+[state_backend.custom.config]
+url = "redis://localhost:6379"
+db = 0
+"#;
+    let manifest = load_from_str(toml).unwrap();
+    match manifest.state_backend {
+        Some(crate::tracker::StateBackendConfig::Custom { name, config }) => {
+            assert_eq!(name, "redis");
+            assert_eq!(
+                config["url"],
+                serde_json::Value::String("redis://localhost:6379".into())
+            );
+            assert_eq!(config["db"], serde_json::Value::Number(0.into()));
+        }
+        other => panic!("expected Custom variant, got {other:?}"),
+    }
 }
 
 // ── [[notify]] rules ──────────────────────────────────────────
