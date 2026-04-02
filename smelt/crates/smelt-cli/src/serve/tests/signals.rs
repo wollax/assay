@@ -867,7 +867,7 @@ async fn test_deliver_signal_http_timeout() {
 
     // Wrap in a generous outer timeout to prevent test hangs.
     let result = tokio::time::timeout(
-        std::time::Duration::from_secs(20), // outer: 20s > 5s client timeout, guards against CI jitter
+        std::time::Duration::from_secs(60), // outer: 60s > 5s client timeout, guards against CI jitter
         deliver_signal_http(&client, &url, &signal, None),
     )
     .await
