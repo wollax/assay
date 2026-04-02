@@ -6,5 +6,6 @@ incremental = false
 
 [profile.test]
 # Disable incremental compilation for test builds to avoid stale-artifact
-# flakiness seen during rapid iterative test runs.
+# flakiness seen during rapid iterative test runs. Scoped to [profile.test]
+# so normal `cargo build` dev iteration is unaffected.
 incremental = false
