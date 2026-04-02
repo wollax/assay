@@ -12,6 +12,9 @@ ignore = [
     "RUSTSEC-2026-0048",
     # rustls-webpki 0.103.9 advisory (same transitive chain as above)
     "RUSTSEC-2026-0049",
+    # rsa 0.9.10 Marvin Attack (octocrab → jsonwebtoken → rsa);
+    # no patch available; octocrab is a smelt-core dev/optional dep only
+    "RUSTSEC-2023-0071",
 ]
 
 [licenses]
@@ -63,6 +66,12 @@ skip = [
     # reqwest -> rustls-platform-verifier -> jni -> thiserror 1.x; workspace uses thiserror 2.x
     { crate = "thiserror@1", reason = "jni (via reqwest/rustls-platform-verifier) uses thiserror 1.x" },
     { crate = "thiserror-impl@1", reason = "thiserror 1.x proc-macro" },
+
+    # ring (via rustls) -> getrandom 0.2 -> rand 0.8 ecosystem;
+    # rest of tree uses rand 0.9 via getrandom 0.3
+    { crate = "rand@0.8", reason = "ring (via rustls) uses getrandom 0.2 which requires rand 0.8" },
+    { crate = "rand_core@0.6", reason = "rand 0.8 ecosystem uses rand_core 0.6" },
+    { crate = "rand_chacha@0.3", reason = "rand 0.8 ecosystem uses rand_chacha 0.3" },
 ]
 
 skip-tree = [

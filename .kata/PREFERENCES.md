@@ -15,6 +15,8 @@ models:
   planner: claude-opus-4-6
 skill_discovery: suggest
 auto_supervisor: {}
+symphony:
+  url: http://127.0.0.1:8081
 workflow:
   mode: linear
 linear:
