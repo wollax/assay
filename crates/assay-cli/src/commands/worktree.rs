@@ -130,7 +130,7 @@ fn resolve_dirs(
     if !ad.is_dir() {
         bail!("No Assay project found. Run `assay init` first.");
     }
-    let config = assay_core::config::load(&root).map_err(|e| anyhow::anyhow!("{e}"))?;
+    let config = assay_core::config::load(&root)?;
     let worktree_dir =
         assay_core::worktree::resolve_worktree_dir(worktree_dir_override, &config, &root);
     let specs_dir = root.join(".assay").join(&config.specs_dir);
@@ -145,8 +145,7 @@ fn handle_worktree_create(
 ) -> anyhow::Result<i32> {
     let (root, worktree_dir, specs_dir) = resolve_dirs(worktree_dir_override)?;
 
-    let info = assay_core::worktree::create(&root, name, base, &worktree_dir, &specs_dir, None)
-        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    let info = assay_core::worktree::create(&root, name, base, &worktree_dir, &specs_dir, None)?;
 
     if json {
         let output = serde_json::to_string_pretty(&info)?;
@@ -170,7 +169,7 @@ fn handle_worktree_create(
 fn handle_worktree_list(json: bool) -> anyhow::Result<i32> {
     let (root, _worktree_dir, _specs_dir) = resolve_dirs(None)?;
 
-    let result = assay_core::worktree::list(&root).map_err(|e| anyhow::anyhow!("{e}"))?;
+    let result = assay_core::worktree::list(&root)?;
     for warning in &result.warnings {
         tracing::warn!("{warning}");
     }
@@ -238,8 +237,9 @@ fn handle_worktree_list(json: bool) -> anyhow::Result<i32> {
         // ANSI overhead for colored spec column
         let extra = if color { super::ANSI_COLOR_OVERHEAD } else { 0 };
 
+        let orphan_marker = if entry.is_orphan { " [orphan]" } else { "" };
         println!(
-            "  {:<sw$}  {:<bw$}  {}",
+            "  {:<sw$}  {:<bw$}  {}{orphan_marker}",
             spec_display,
             entry.branch,
             entry.path.display(),
@@ -259,8 +259,7 @@ fn handle_worktree_status(
     let (_root, worktree_dir, _specs_dir) = resolve_dirs(worktree_dir_override)?;
     let worktree_path = worktree_dir.join(name);
 
-    let st =
-        assay_core::worktree::status(&worktree_path, name).map_err(|e| anyhow::anyhow!("{e}"))?;
+    let st = assay_core::worktree::status(&worktree_path, name)?;
 
     if json {
         let output = serde_json::to_string_pretty(&st)?;
@@ -324,7 +323,7 @@ fn handle_worktree_cleanup(
         let is_dirty = match assay_core::worktree::status(&worktree_path, spec_slug) {
             Ok(s) => s.dirty,
             Err(assay_core::error::AssayError::WorktreeNotFound { .. }) => false,
-            Err(e) => return Err(anyhow::anyhow!("{e}")),
+            Err(e) => return Err(e.into()),
         };
 
         if is_dirty {
@@ -349,8 +348,7 @@ fn handle_worktree_cleanup(
         true
     };
 
-    assay_core::worktree::cleanup(&root, &worktree_path, spec_slug, effective_force)
-        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    assay_core::worktree::cleanup(&root, &worktree_path, spec_slug, effective_force)?;
 
     if json {
         let output = serde_json::json!({"removed": spec_slug});
@@ -367,7 +365,7 @@ fn handle_worktree_cleanup_all(
     force: bool,
     json: bool,
 ) -> anyhow::Result<i32> {
-    let result = assay_core::worktree::list(root).map_err(|e| anyhow::anyhow!("{e}"))?;
+    let result = assay_core::worktree::list(root)?;
     for warning in &result.warnings {
         tracing::warn!("{warning}");
     }

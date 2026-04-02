@@ -18,6 +18,11 @@ expression: schema.to_value()
       "description": "The git branch checked out in this worktree (e.g., `assay/auth-flow`).",
       "type": "string"
     },
+    "is_orphan": {
+      "default": false,
+      "description": "Whether this worktree is orphaned (no linked active WorkSession).\nPopulated by `worktree::list()` when cross-referencing sessions.",
+      "type": "boolean"
+    },
     "path": {
       "description": "Absolute path to the worktree directory.",
       "type": "string"

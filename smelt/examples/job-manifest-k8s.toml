@@ -1,0 +1,83 @@
+# Smelt job manifest — Kubernetes runtime example.
+#
+# Demonstrates running agent sessions as Kubernetes Pods instead of local
+# Docker containers. The [kubernetes] section configures Pod resources
+# and SSH key injection for git operations inside the cluster.
+#
+# Run with: smelt run examples/job-manifest-k8s.toml --dry-run
+#
+# For real execution, ensure:
+#   - kubectl is configured with access to the target cluster/namespace
+#   - The env var named in kubernetes.ssh_key_env holds a valid SSH private key
+#   - The container image exists and is pullable from the cluster
+
+# [job] — required. Identifies the job and which repo/ref to work against.
+[job]
+# Human-readable job name. Must be non-empty.
+name = "my-k8s-job"
+# Repository URL. For Kubernetes runtime this is typically a remote git URL
+# (SSH or HTTPS) since Pods clone the repo from scratch.
+repo = "git@github.com:example/repo.git"
+# Git ref (branch, tag, or commit SHA) to base work on.
+base_ref = "main"
+
+# [environment] — required. Container runtime and image configuration.
+[environment]
+# Container runtime. Set to "kubernetes" to run sessions as K8s Pods.
+# Other values: "docker" (default), "compose".
+runtime = "kubernetes"
+# Container image for the agent Pod. Must be pullable from the cluster.
+image = "ghcr.io/example/assay-agent:latest"
+
+# [credentials] — required. LLM provider and model selection.
+[credentials]
+# LLM provider name (e.g. "anthropic", "openai").
+provider = "anthropic"
+# Model identifier. Higher-capability models suit complex review tasks.
+model = "claude-opus-4-5"
+
+# Environment variable mappings for credential resolution.
+# Key = logical name used by the provider, Value = env var name to read.
+[credentials.env]
+ANTHROPIC_API_KEY = "ANTHROPIC_API_KEY"
+
+# [[session]] — at least one required. Each session runs as a separate K8s Pod.
+[[session]]
+# Unique session name. Used in depends_on and merge order references.
+name = "code-review"
+# Task specification / prompt describing what the agent should do.
+spec = "review"
+# Harness command for verification. "default" uses the built-in harness.
+harness = "default"
+# Maximum seconds before this session times out. Must be > 0.
+# K8s sessions may need longer timeouts due to Pod scheduling latency.
+timeout = 1800
+
+# [merge] — required. Controls how session results are combined.
+[merge]
+# Merge strategy: "sequential" merges sessions one at a time in order.
+strategy = "sequential"
+# Target branch for the merged result.
+target = "main"
+
+# [kubernetes] — optional. Required when environment.runtime = "kubernetes".
+# Configures Pod scheduling, resource limits, and SSH key injection.
+# Fields map to the KubernetesConfig struct in manifest.rs.
+[kubernetes]
+# Kubeconfig context to use. Omit to use the ambient/default context.
+# context = "my-cluster"
+# Kubernetes namespace for the Pod and SSH Secret. Required.
+namespace = "smelt"
+# Name of the env var containing the SSH private key for git clone.
+# The key is injected into the Pod as a Kubernetes Secret. Required.
+ssh_key_env = "SMELT_SSH_KEY"
+# CPU request for the agent container (Kubernetes resource quantity, e.g. "500m").
+# Optional — omit to use cluster defaults.
+cpu_request = "500m"
+# Memory request for the agent container (e.g. "512Mi", "1Gi").
+# Optional — omit to use cluster defaults.
+memory_request = "512Mi"
+# CPU limit for the agent container. Optional.
+cpu_limit = "2000m"
+# Memory limit for the agent container. Optional.
+memory_limit = "2Gi"

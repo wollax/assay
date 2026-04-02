@@ -546,6 +546,7 @@ fn worktree_info_validates() {
         path: std::path::PathBuf::from("/tmp/worktrees/auth-flow"),
         branch: "assay/auth-flow".to_string(),
         base_branch: Some("main".to_string()),
+        is_orphan: false,
     });
 }
 
@@ -556,6 +557,7 @@ fn worktree_info_without_base_branch_validates() {
         path: std::path::PathBuf::from("/tmp/worktrees/auth-flow"),
         branch: "assay/auth-flow".to_string(),
         base_branch: None,
+        is_orphan: false,
     });
 }
 

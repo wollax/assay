@@ -360,6 +360,7 @@ pub fn create(
         path: worktree_path,
         branch: branch_name,
         base_branch: Some(base),
+        is_orphan: false,
     })
 }
 
@@ -388,11 +389,36 @@ pub fn list(project_root: &Path) -> Result<WorktreeListResult> {
                 path: wt.path,
                 branch: branch.to_string(),
                 base_branch,
+                is_orphan: false,
             })
         })
         .collect();
 
     entries.sort_by(|a, b| a.spec_slug.cmp(&b.spec_slug));
+
+    // Cross-reference with sessions to populate is_orphan.
+    // Reuses the same logic as detect_orphans() but inline to avoid recursion.
+    let assay_dir = project_root.join(".assay");
+    for entry in &mut entries {
+        let metadata = read_metadata(&entry.path);
+        entry.is_orphan = match metadata.and_then(|m| m.session_id) {
+            None => true, // No session_id — orphaned
+            Some(sid) => match crate::work_session::load_session(&assay_dir, &sid) {
+                Ok(session) => session.phase.is_terminal(), // Terminal phase — orphaned
+                Err(AssayError::WorkSessionNotFound { .. }) => true, // Session file missing — orphaned
+                Err(e) => {
+                    // I/O or parse error — conservatively not orphaned; warn so operator can investigate
+                    tracing::warn!(
+                        spec_slug = %entry.spec_slug,
+                        error = %e,
+                        "worktree list: could not load session to determine orphan status, assuming active"
+                    );
+                    false
+                }
+            },
+        };
+    }
+
     Ok(WorktreeListResult { entries, warnings })
 }
 
@@ -538,26 +564,14 @@ pub fn cleanup(
 /// - Its `session_id` points to a session in a terminal phase (Completed or Abandoned)
 ///
 /// Worktrees with an active (non-terminal) session are NOT orphaned.
-pub fn detect_orphans(project_root: &Path, assay_dir: &Path) -> Result<Vec<WorktreeInfo>> {
+pub fn detect_orphans(project_root: &Path, _assay_dir: &Path) -> Result<Vec<WorktreeInfo>> {
     let list_result = list(project_root)?;
-    let mut orphans = Vec::new();
-
-    for entry in list_result.entries {
-        let metadata = read_metadata(&entry.path);
-        let is_orphan = match metadata.and_then(|m| m.session_id) {
-            None => true, // No session_id — orphaned
-            Some(sid) => match crate::work_session::load_session(assay_dir, &sid) {
-                Err(_) => true, // Session doesn't exist on disk — orphaned
-                Ok(session) => session.phase.is_terminal(), // Terminal phase — orphaned
-            },
-        };
-
-        if is_orphan {
-            orphans.push(entry);
-        }
-    }
-
-    Ok(orphans)
+    // list() already populates is_orphan on every entry via session cross-reference.
+    Ok(list_result
+        .entries
+        .into_iter()
+        .filter(|e| e.is_orphan)
+        .collect())
 }
 
 /// Detect if the current working directory is inside a linked worktree.
@@ -1551,5 +1565,110 @@ cmd = "echo ok"
         let mut result_mut = result;
         result_mut.warnings.push("test warning".to_string());
         assert_eq!(result_mut.warnings.len(), 1);
+    }
+
+    #[test]
+    fn test_list_marks_orphan_entries() {
+        let (_tmp, _wt_tmp, root, specs_dir) = setup_repo();
+        let worktree_base = _wt_tmp.path().join("worktrees");
+
+        // Create worktree with no session_id — should be orphaned
+        create(
+            &root,
+            "auth-flow",
+            Some("main"),
+            &worktree_base,
+            &specs_dir,
+            None,
+        )
+        .expect("create failed");
+
+        let result = list(&root).expect("list failed");
+        assert_eq!(result.entries.len(), 1);
+        assert!(
+            result.entries[0].is_orphan,
+            "worktree with no session_id should be marked as orphan"
+        );
+    }
+
+    #[test]
+    fn test_list_marks_non_orphan_entries() {
+        let (_tmp, _wt_tmp, root, specs_dir) = setup_repo();
+        let worktree_base = _wt_tmp.path().join("worktrees");
+        let assay_dir = root.join(".assay");
+
+        // Create an active session
+        let session = crate::work_session::start_session(
+            &assay_dir,
+            "auth-flow",
+            worktree_base.join("auth-flow"),
+            "claude",
+            None,
+        )
+        .expect("start_session failed");
+
+        // Create worktree linked to the active session
+        create(
+            &root,
+            "auth-flow",
+            Some("main"),
+            &worktree_base,
+            &specs_dir,
+            Some(&session.id),
+        )
+        .expect("create failed");
+
+        let result = list(&root).expect("list failed");
+        assert_eq!(result.entries.len(), 1);
+        assert!(
+            !result.entries[0].is_orphan,
+            "worktree with active session should NOT be marked as orphan"
+        );
+    }
+
+    #[test]
+    fn test_list_marks_terminal_session_as_orphan() {
+        let (_tmp, _wt_tmp, root, specs_dir) = setup_repo();
+        let worktree_base = _wt_tmp.path().join("worktrees");
+        let assay_dir = root.join(".assay");
+
+        // Create a session and complete it (terminal phase).
+        // complete_session requires prior record_gate_result to advance state.
+        let session = crate::work_session::start_session(
+            &assay_dir,
+            "auth-flow",
+            worktree_base.join("auth-flow"),
+            "claude",
+            None,
+        )
+        .expect("start_session failed");
+        crate::work_session::record_gate_result(
+            &assay_dir,
+            &session.id,
+            "run-001",
+            "gate_eval",
+            None,
+        )
+        .expect("record_gate_result failed");
+        crate::work_session::complete_session(&assay_dir, &session.id, None)
+            .expect("complete_session failed");
+
+        // Create worktree linked to the completed (terminal) session
+        create(
+            &root,
+            "auth-flow",
+            Some("main"),
+            &worktree_base,
+            &specs_dir,
+            Some(&session.id),
+        )
+        .expect("create failed");
+
+        let result = list(&root).expect("list failed");
+        assert_eq!(result.entries.len(), 1);
+        assert!(
+            result.entries[0].is_orphan,
+            "worktree linked to a terminal session should be marked as orphan"
+        );
     }
 }

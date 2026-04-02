@@ -289,6 +289,24 @@ pub struct WorktreeCleanupParams {
     pub worktree_dir: Option<String>,
 }
 
+/// Parameters for the `worktree_cleanup_all` tool.
+#[derive(Deserialize, JsonSchema)]
+pub struct WorktreeCleanupAllParams {
+    /// Only remove orphaned worktrees (no linked active WorkSession). Defaults to true.
+    #[schemars(
+        description = "Only remove orphaned worktrees (default: true). Set false to remove all."
+    )]
+    #[serde(default)]
+    pub orphans_only: Option<bool>,
+
+    /// Force cleanup of dirty worktrees. Defaults to true for MCP (non-interactive).
+    #[schemars(
+        description = "Force cleanup even if worktree has uncommitted changes (default: true)"
+    )]
+    #[serde(default)]
+    pub force: Option<bool>,
+}
+
 /// Parameters for the `merge_check` tool.
 #[derive(Deserialize, JsonSchema)]
 pub struct MergeCheckParams {
@@ -2768,7 +2786,61 @@ impl AssayServer {
         Ok(CallToolResult::success(vec![Content::text(json)]))
     }
 
-    // TODO(M002): worktree_cleanup_all tool — deferred per D005 (MCP additive-only)
+    /// Remove all worktrees (or only orphaned ones).
+    #[tool(
+        description = "Remove all worktrees (or only orphaned ones). Defaults to orphans_only=true and force=true. Returns the count of removed worktrees."
+    )]
+    pub async fn worktree_cleanup_all(
+        &self,
+        params: Parameters<WorktreeCleanupAllParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let cwd = resolve_cwd()?;
+        let config = match load_config(&cwd) {
+            Ok(c) => c,
+            Err(err_result) => return Ok(err_result),
+        };
+
+        let orphans_only = params.0.orphans_only.unwrap_or(true);
+        let force = params.0.force.unwrap_or(true);
+
+        let result = match assay_core::worktree::list(&cwd) {
+            Ok(r) => r,
+            Err(e) => return Ok(domain_error(&e)),
+        };
+
+        let entries: Vec<_> = if orphans_only {
+            result.entries.into_iter().filter(|e| e.is_orphan).collect()
+        } else {
+            result.entries
+        };
+
+        let mut removed = 0u32;
+        let worktree_dir = assay_core::worktree::resolve_worktree_dir(None, &config, &cwd);
+        for entry in &entries {
+            let worktree_path = if entry.path.is_absolute() {
+                entry.path.clone()
+            } else {
+                worktree_dir.join(&entry.spec_slug)
+            };
+            match assay_core::worktree::cleanup(&cwd, &worktree_path, &entry.spec_slug, force) {
+                Ok(()) => removed += 1,
+                Err(e) => {
+                    tracing::warn!(
+                        spec_slug = %entry.spec_slug,
+                        error = %e,
+                        "worktree_cleanup_all: failed to remove worktree"
+                    );
+                }
+            }
+        }
+
+        tracing::info!(removed, orphans_only, "worktree_cleanup_all completed");
+
+        let response = serde_json::json!({ "removed": removed, "orphans_only": orphans_only });
+        let json = serde_json::to_string(&response)
+            .map_err(|e| McpError::internal_error(format!("serialization failed: {e}"), None))?;
+        Ok(CallToolResult::success(vec![Content::text(json)]))
+    }
 
     /// Remove a worktree and its associated branch.
     #[tool(
@@ -9839,5 +9911,75 @@ depends_on = ["chunk-a"]
             result.is_error.unwrap_or(false),
             "should fail when slug is missing for milestone source"
         );
+    }
+
+    // ── worktree_cleanup_all tests ──────────────────────────────────
+
+    #[tokio::test]
+    #[serial]
+    async fn test_worktree_cleanup_all_appears_in_tools() {
+        let server = AssayServer::new();
+        let tools = server.tool_router.list_all();
+        let tool_names: Vec<&str> = tools.iter().map(|t| t.name.as_ref()).collect();
+        assert!(
+            tool_names.contains(&"worktree_cleanup_all"),
+            "worktree_cleanup_all should be in tool list, got: {tool_names:?}"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_worktree_cleanup_all_empty_list() {
+        let dir = create_project(r#"project_name = "cleanup-test""#);
+        // git init so worktree::list() can run
+        std::process::Command::new("git")
+            .args(["init", "-b", "main"])
+            .current_dir(dir.path())
+            .output()
+            .expect("git init failed");
+        std::process::Command::new("git")
+            .args(["config", "user.email", "test@example.com"])
+            .current_dir(dir.path())
+            .output()
+            .expect("git config failed");
+        std::process::Command::new("git")
+            .args(["config", "user.name", "Test"])
+            .current_dir(dir.path())
+            .output()
+            .expect("git config failed");
+        std::process::Command::new("git")
+            .args(["add", "."])
+            .current_dir(dir.path())
+            .output()
+            .expect("git add failed");
+        std::process::Command::new("git")
+            .args(["commit", "-m", "init"])
+            .current_dir(dir.path())
+            .output()
+            .expect("git commit failed");
+
+        std::env::set_current_dir(dir.path()).unwrap();
+
+        let server = AssayServer::new();
+        let result = server
+            .worktree_cleanup_all(Parameters(WorktreeCleanupAllParams {
+                orphans_only: Some(true),
+                force: Some(true),
+            }))
+            .await
+            .unwrap();
+
+        assert!(
+            !result.is_error.unwrap_or(false),
+            "should succeed with no worktrees"
+        );
+        let text = result.content.first().and_then(|c| match &c.raw {
+            RawContent::Text(t) => Some(t.text.as_str()),
+            _ => None,
+        });
+        assert!(text.is_some(), "result should have text content");
+        let parsed: serde_json::Value = serde_json::from_str(text.unwrap()).unwrap();
+        assert_eq!(parsed["removed"], 0, "no worktrees to remove");
+        assert_eq!(parsed["orphans_only"], true);
     }
 }
