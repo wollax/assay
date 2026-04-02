@@ -2,16 +2,6 @@
 ignore = [
     # notify-types -> instant: unmaintained, no replacement available in notify 7.x
     "RUSTSEC-2024-0384",
-    # aws-lc-sys 0.37.1 advisories (via jsonschema dev-dep → reqwest → rustls → aws-lc-rs);
-    # these are dev-dependency-only and do not affect the shipped binary.
-    # Upgrade of aws-lc-sys is deferred until jsonschema releases a newer version.
-    "RUSTSEC-2026-0044",
-    "RUSTSEC-2026-0045",
-    "RUSTSEC-2026-0046",
-    "RUSTSEC-2026-0047",
-    "RUSTSEC-2026-0048",
-    # rustls-webpki 0.103.9 advisory (same transitive chain as above)
-    "RUSTSEC-2026-0049",
     # rsa 0.9.10 Marvin Attack (octocrab → jsonwebtoken → rsa);
     # no patch available; octocrab is a smelt-core dev/optional dep only
     "RUSTSEC-2023-0071",
