@@ -10,6 +10,7 @@ categories = ["command-line-utilities", "development-tools"]
 homepage = "https://github.com/wollax/smelt"
 
 [dependencies]
+assay-types = { path = "../../../crates/assay-types" }
 base64.workspace = true
 bollard.workspace = true
 indexmap.workspace = true

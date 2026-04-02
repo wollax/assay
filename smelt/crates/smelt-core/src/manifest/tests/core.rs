@@ -588,15 +588,15 @@ strategy = "sequential"
 target = "main"
 
 [state_backend]
-smelt = { endpoint_url = "http://host.docker.internal:8765/api/v1/events", job_id = "job-1", token_env = "SMELT_WRITE_TOKEN" }
+smelt = { url = "http://host.docker.internal:8765/api/v1/events", job_id = "job-1", token = "SMELT_WRITE_TOKEN" }
 "#;
     let manifest = load_from_str(toml).unwrap();
     assert_eq!(
         manifest.state_backend,
         Some(crate::tracker::StateBackendConfig::Smelt {
-            endpoint_url: "http://host.docker.internal:8765/api/v1/events".into(),
+            url: "http://host.docker.internal:8765/api/v1/events".into(),
             job_id: "job-1".into(),
-            token_env: Some("SMELT_WRITE_TOKEN".into()),
+            token: Some("SMELT_WRITE_TOKEN".into()),
         })
     );
 }

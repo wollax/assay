@@ -4471,6 +4471,7 @@ dependencies = [
 name = "smelt-core"
 version = "0.5.0"
 dependencies = [
+ "assay-types",
  "base64",
  "bollard",
  "futures-util",
