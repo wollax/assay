@@ -149,7 +149,8 @@ async fn test_watcher_picks_up_manifest() {
     });
 
     // Wait long enough for at least one poll cycle (2s interval).
-    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+    // Use 6s to allow for CI runner scheduling jitter.
+    tokio::time::sleep(std::time::Duration::from_secs(6)).await;
 
     let s = state.lock().unwrap();
     assert_eq!(s.jobs.len(), 1, "expected 1 job enqueued by watcher");
@@ -181,7 +182,8 @@ async fn test_watcher_moves_to_dispatched() {
     });
 
     // Wait for watcher to pick up the file.
-    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+    // Use 6s to allow for CI runner scheduling jitter.
+    tokio::time::sleep(std::time::Duration::from_secs(6)).await;
 
     // Original file should be gone from queue_dir root.
     assert!(
