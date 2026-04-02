@@ -8,17 +8,53 @@ default:
 build:
     cargo build --workspace
 
+# Build only assay crates
+build-assay:
+    cargo build --workspace --exclude smelt-core --exclude smelt-cli
+
+# Build only smelt crates
+build-smelt:
+    cargo build -p smelt-core -p smelt-cli
+
 # Run all tests (with per-test timeout via cargo-nextest)
 test:
     cargo nextest run --workspace
+
+# Run only assay tests
+test-assay:
+    cargo nextest run --workspace --exclude smelt-core --exclude smelt-cli
+
+# Run only smelt tests (docker_lifecycle tests skip gracefully when Docker is unavailable)
+test-smelt:
+    cargo nextest run -p smelt-core -p smelt-cli
+
+# Run only smelt unit tests, excluding docker_lifecycle integration tests
+test-smelt-unit:
+    cargo nextest run -p smelt-core -p smelt-cli -E 'not binary(docker_lifecycle)'
 
 # Run clippy lints
 lint:
     cargo clippy --workspace --all-targets -- -D warnings
 
+# Run clippy lints for assay crates only
+lint-assay:
+    cargo clippy --workspace --exclude smelt-core --exclude smelt-cli --all-targets -- -D warnings
+
+# Run clippy lints for smelt crates only
+lint-smelt:
+    cargo clippy -p smelt-core -p smelt-cli --all-targets -- -D warnings
+
 # Format code
 fmt:
     cargo fmt --all
+
+# Format only assay crates
+fmt-assay:
+    cargo fmt -p assay-types -p assay-core -p assay-backends -p assay-harness -p assay-mcp -p assay-cli -p assay-tui
+
+# Format only smelt crates
+fmt-smelt:
+    cargo fmt -p smelt-core -p smelt-cli
 
 # Check formatting without modifying files
 fmt-check:
