@@ -5,9 +5,9 @@
 //! manifest and per-session spec files), writes them into a running container, and
 //! constructs the `assay run` command.
 //!
-//! Design decision (D002): Smelt does not depend on the Assay crate directly.
-//! Instead, we define our own serde structs that mirror Assay's expected input
-//! format, keeping the two projects loosely coupled.
+//! The `SmeltRunManifest`, `SmeltSpec`, and `SmeltCriterion` types are
+//! deliberately simplified container-side contract types owned by smelt-core
+//! (D008). `StateBackendConfig` is imported from `assay-types`.
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
@@ -19,7 +19,7 @@ use std::collections::HashMap;
 use crate::error::SmeltError;
 use crate::manifest::{JobManifest, SessionDef};
 use crate::provider::{ContainerId, ExecHandle};
-use crate::tracker::StateBackendConfig;
+use assay_types::StateBackendConfig;
 
 /// Path where the Assay run manifest is written inside the container.
 const CONTAINER_MANIFEST_PATH: &str = "/tmp/smelt-manifest.toml";

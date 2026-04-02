@@ -84,10 +84,9 @@ pub struct JobManifest {
     #[serde(default)]
     pub services: Vec<ComposeService>,
 
-    /// Optional state-backend configuration (mirrors Assay's `StateBackendConfig`).
+    /// Optional state-backend configuration (from `assay-types::StateBackendConfig`).
     ///
     /// When present, Smelt passes this through to Assay for state persistence.
-    /// See D154 for the passthrough design.
     #[serde(default)]
     pub state_backend: Option<StateBackendConfig>,
 
