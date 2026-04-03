@@ -6,7 +6,19 @@
 period = "60s"
 terminate-after = 2
 
+# docker_lifecycle tests must run serially: they share a Docker daemon and
+# concurrent container provision/teardown causes 409 races. One thread ensures
+# each test gets exclusive access to the daemon for its full lifecycle.
+[[profile.default.overrides]]
+filter = 'binary(docker_lifecycle)'
+test-threads = 1
+
 # Tighter limits for CI: warn at 30s, kill at 60s.
 [profile.ci.slow-timeout]
 period = "30s"
 terminate-after = 2
+
+# Same serial constraint for CI profile.
+[[profile.ci.overrides]]
+filter = 'binary(docker_lifecycle)'
+test-threads = 1

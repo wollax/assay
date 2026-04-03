@@ -1,9 +1,19 @@
 #!/usr/bin/env bash
-# Full checks — runs before push
+# Full checks — runs before push.
+#
+# Uses per-project test targets so docker_lifecycle integration tests
+# (which require a running Docker daemon and must be serial) don't block
+# pushes on machines without Docker. To include Docker tests explicitly,
+# run `just test-smelt` separately.
 set -euo pipefail
 
-echo "🔍 pre-push: full ready (fmt + clippy + tests + deny + plugin version)"
+echo "🔍 pre-push: fmt-check + lint + test + deny + plugin version"
 
-just ready
+just fmt-check
+just lint
+just test-assay
+just test-smelt-unit
+just deny
+just check-plugin-version
 
 echo "✅ pre-push passed"
