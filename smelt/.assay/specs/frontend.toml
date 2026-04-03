@@ -1,7 +1,0 @@
-name = "frontend"
-description = "Implement the login page with email/password form, validation, and error states."
-
-[[criteria]]
-name = "harness"
-description = "Harness gate for frontend"
-cmd = "npm test -- --filter auth"
