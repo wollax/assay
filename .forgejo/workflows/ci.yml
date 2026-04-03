@@ -32,6 +32,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: "-Dwarnings"
@@ -100,22 +103,25 @@ jobs:
           TARBALL=cargo-binstall-x86_64-unknown-linux-musl.tgz
           curl -L --proto '=https' --tlsv1.2 -sSf "${BASE}/${TARBALL}" -o /tmp/cargo-binstall.tgz
           curl -L --proto '=https' --tlsv1.2 -sSf "${BASE}/${TARBALL}.sig" -o /tmp/cargo-binstall.tgz.sig
+          # Verify via minisign against the stable cargo-binstall signing key.
+          # Public key: https://github.com/cargo-bins/cargo-binstall/blob/main/SIGNING_KEY
+          # Key ID: A61FF3128D7A0977
           sudo apt-get install -y -q minisign
           echo 'untrusted comment: cargo-binstall signing key' > /tmp/binstall.pub
           echo 'RWR3CXqNEvMfpn3Z3B8EvM8nW6+Ej+ArxNTssUFX0BajRjSAovzpUYgY' >> /tmp/binstall.pub
           minisign -V -p /tmp/binstall.pub -x /tmp/cargo-binstall.tgz.sig -m /tmp/cargo-binstall.tgz
           tar -xz -C ~/.cargo/bin < /tmp/cargo-binstall.tgz
-      - name: Install tools (just, cargo-nextest)
-        run: cargo binstall -y just@1.46.0 cargo-nextest@0.9.132
+      - name: Install tools (just, cargo-deny, cargo-nextest)
+        run: cargo binstall -y just@1.46.0 cargo-deny@0.19.0 cargo-nextest@0.9.132
       - name: Run smelt-targeted checks
-        run: just fmt-check && just test-smelt && just lint-smelt
+        run: just fmt-check && just test-smelt && just lint-smelt && cargo deny check
 
       - name: Alert — CI failed
         if: failure()
         run: |
           RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           curl -sf \
-            -H "Title: assay CI failed (check-smelt)" \
+            -H "Title: smelt CI failed" \
             -H "Priority: high" \
             -H "Tags: x" \
             -d "Run: ${RUN_URL}" \
