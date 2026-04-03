@@ -61,3 +61,6 @@ pub use k8s::KubernetesProvider;
 pub use manifest::JobManifest;
 pub use monitor::{JobMonitor, JobPhase, RunState, compute_job_timeout};
 pub use provider::{CollectResult, ContainerId, ExecHandle, ProvisionResult, RuntimeProvider};
+
+// Signal types re-exported from assay-types (D012 — canonical types, no local mirrors).
+pub use assay_types::signal::{GateSummary, PeerUpdate, SignalRequest};
