@@ -527,3 +527,9 @@ fn assay_server_state_schema_snapshot() {
     let schema = schemars::schema_for!(assay_types::AssayServerState);
     assert_json_snapshot!("assay-server-state-schema", schema.to_value());
 }
+
+#[test]
+fn coverage_report_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::CoverageReport);
+    assert_json_snapshot!("coverage-report-schema", schema.to_value());
+}

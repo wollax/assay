@@ -1,0 +1,57 @@
+---
+source: crates/assay-types/tests/schema_snapshots.rs
+expression: schema.to_value()
+---
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Report produced by `compute_coverage()` summarizing requirement coverage.\n\n- **covered**: REQ-IDs that have at least one criterion referencing them.\n- **uncovered**: REQ-IDs that no criterion references.\n- **orphaned**: criterion `requirements` entries that don't match any declared REQ-ID.",
+  "properties": {
+    "coverage_pct": {
+      "description": "Coverage percentage: `covered.len() / total_requirements * 100`.\nReturns `100.0` when `total_requirements == 0` (nothing to miss).",
+      "format": "double",
+      "type": "number"
+    },
+    "covered": {
+      "description": "REQ-IDs that have at least one criterion referencing them.",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "orphaned": {
+      "description": "Criterion `requirements` entries that don't match any declared REQ-ID.",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "spec": {
+      "description": "Spec slug this report was generated for.",
+      "type": "string"
+    },
+    "total_requirements": {
+      "description": "Total number of declared requirements in the feature spec.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "uncovered": {
+      "description": "REQ-IDs that no criterion references.",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "spec",
+    "total_requirements",
+    "covered",
+    "uncovered",
+    "orphaned",
+    "coverage_pct"
+  ],
+  "title": "CoverageReport",
+  "type": "object"
+}

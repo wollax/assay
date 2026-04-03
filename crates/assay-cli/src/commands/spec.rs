@@ -60,6 +60,21 @@ Examples:
         #[arg(long)]
         check_commands: bool,
     },
+    /// Show requirements coverage for a spec
+    #[command(after_long_help = "\
+Examples:
+  Show coverage table:
+    assay spec coverage auth-flow
+
+  Output as JSON:
+    assay spec coverage auth-flow --json")]
+    Coverage {
+        /// Spec name (directory name or filename without .toml extension)
+        name: String,
+        /// Output as JSON instead of table
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 /// Handle spec subcommands.
@@ -73,6 +88,7 @@ pub(crate) fn handle(command: SpecCommand) -> anyhow::Result<i32> {
             json,
             check_commands,
         } => handle_spec_validate(&name, json, check_commands),
+        SpecCommand::Coverage { name, json } => handle_spec_coverage(&name, json),
     }
 }
 
@@ -401,6 +417,85 @@ fn handle_spec_validate(name: &str, json: bool, check_commands: bool) -> anyhow:
     Ok(if result.valid { 0 } else { 1 })
 }
 
+/// Handle `assay spec coverage <name> [--json]`.
+fn handle_spec_coverage(name: &str, json: bool) -> anyhow::Result<i32> {
+    let root = project_root()?;
+    let config = assay_core::config::load(&root)?;
+    let specs_dir = assay_dir(&root).join(&config.specs_dir);
+
+    let entry = assay_core::spec::load_spec_entry_with_diagnostics(name, &specs_dir)?;
+
+    let (gates, feature) = match &entry {
+        SpecEntry::Legacy { .. } => {
+            // Legacy flat specs have no FeatureSpec — no requirements to report.
+            println!("No spec.toml found for '{name}' — no requirements to report");
+            return Ok(0);
+        }
+        SpecEntry::Directory {
+            gates, spec_path, ..
+        } => {
+            let feature = spec_path
+                .as_ref()
+                .and_then(|p| assay_core::spec::load_feature_spec(p).ok());
+            (gates, feature)
+        }
+    };
+
+    let Some(feature) = feature else {
+        println!("No spec.toml found for '{name}' — no requirements to report");
+        return Ok(0);
+    };
+
+    let report = assay_core::spec::coverage::compute_coverage(name, gates, Some(&feature));
+
+    if json {
+        let output =
+            serde_json::to_string_pretty(&report).context("failed to serialize CoverageReport")?;
+        println!("{output}");
+        return Ok(0);
+    }
+
+    // Print headline
+    println!(
+        "{}/{} requirements covered ({:.1}%)",
+        report.covered.len(),
+        report.total_requirements,
+        report.coverage_pct,
+    );
+    println!();
+
+    if report.covered.is_empty() && report.uncovered.is_empty() && report.orphaned.is_empty() {
+        println!("No requirements declared");
+        return Ok(0);
+    }
+
+    if !report.covered.is_empty() {
+        println!("Covered:");
+        for id in &report.covered {
+            println!("  ✓ {id}");
+        }
+        println!();
+    }
+
+    if !report.uncovered.is_empty() {
+        println!("Uncovered:");
+        for id in &report.uncovered {
+            println!("  ✗ {id}");
+        }
+        println!();
+    }
+
+    if !report.orphaned.is_empty() {
+        println!("Orphaned (criterion references unknown REQ-ID):");
+        for id in &report.orphaned {
+            println!("  ? {id}");
+        }
+        println!();
+    }
+
+    Ok(0)
+}
+
 /// Testable core of `handle_spec_validate` that takes an explicit specs_dir.
 #[cfg(test)]
 fn validate_and_exit_code(
@@ -496,6 +591,45 @@ cmd = "echo 'TODO: add compile check'"
 #[cfg(test)]
 mod tests {
     use super::*;
+    use assay_types::CoverageReport;
+
+    /// Testable core of `handle_spec_coverage` that accepts an explicit specs_dir
+    /// (bypasses project_root discovery).
+    fn coverage_report_from(
+        name: &str,
+        json: bool,
+        specs_dir: &std::path::Path,
+    ) -> anyhow::Result<(i32, Option<CoverageReport>)> {
+        let entry = assay_core::spec::load_spec_entry_with_diagnostics(name, specs_dir)?;
+
+        let (gates, feature) = match &entry {
+            SpecEntry::Legacy { .. } => return Ok((0, None)),
+            SpecEntry::Directory {
+                gates, spec_path, ..
+            } => {
+                let feature = spec_path
+                    .as_ref()
+                    .and_then(|p| assay_core::spec::load_feature_spec(p).ok());
+                (gates, feature)
+            }
+        };
+
+        let Some(feature) = feature else {
+            return Ok((0, None));
+        };
+
+        let report = assay_core::spec::coverage::compute_coverage(name, gates, Some(&feature));
+
+        if json {
+            // Exercise the serialization path and verify round-trip.
+            let json_str = serde_json::to_string_pretty(&report)
+                .context("failed to serialize CoverageReport")?;
+            let _: CoverageReport = serde_json::from_str(&json_str)
+                .context("CoverageReport JSON did not round-trip")?;
+        }
+
+        Ok((0, Some(report)))
+    }
 
     /// Create a valid flat spec file in a tempdir and return the specs_dir path.
     fn write_valid_flat_spec(dir: &std::path::Path, name: &str) {
@@ -613,5 +747,179 @@ kind = "AgentReport"
         // Empty specs dir — no spec file
         let result = validate_and_exit_code("nonexistent", false, false, specs_dir);
         assert!(result.is_err(), "unknown spec should return an error");
+    }
+
+    // --- Coverage tests ---
+
+    /// Create a directory spec with spec.toml and gates.toml for coverage testing.
+    /// Requirements: REQ-AUTH-001 (covered), REQ-AUTH-002 (uncovered).
+    /// Criteria: c1 references REQ-AUTH-001 + REQ-ORPHAN-001 (orphaned).
+    fn write_coverage_dir_spec(dir: &std::path::Path, name: &str) {
+        let spec_dir = dir.join(name);
+        std::fs::create_dir_all(&spec_dir).unwrap();
+        let spec_toml = format!(
+            r#"name = "{name}"
+status = "draft"
+version = "0.1"
+
+[overview]
+description = "Test spec for coverage"
+functions = []
+
+[[requirements]]
+id = "REQ-AUTH-001"
+title = "First requirement"
+statement = "The system shall authenticate users."
+obligation = "shall"
+priority = "must"
+verification = "test"
+status = "draft"
+
+[[requirements]]
+id = "REQ-AUTH-002"
+title = "Second requirement"
+statement = "The system shall authorize access."
+obligation = "shall"
+priority = "must"
+verification = "test"
+status = "draft"
+"#
+        );
+        let gates_toml = format!(
+            r#"name = "{name}"
+
+[gate]
+enforcement = "required"
+
+[[criteria]]
+name = "auth-check"
+description = "Verifies authentication"
+cmd = "echo ok"
+requirements = ["REQ-AUTH-001", "REQ-ORPHAN-001"]
+"#
+        );
+        std::fs::write(spec_dir.join("spec.toml"), spec_toml).unwrap();
+        std::fs::write(spec_dir.join("gates.toml"), gates_toml).unwrap();
+    }
+
+    /// Create a directory spec with only gates.toml (no spec.toml).
+    fn write_gates_only_dir_spec(dir: &std::path::Path, name: &str) {
+        let spec_dir = dir.join(name);
+        std::fs::create_dir_all(&spec_dir).unwrap();
+        let gates_toml = format!(
+            r#"name = "{name}"
+
+[gate]
+enforcement = "required"
+
+[[criteria]]
+name = "check"
+description = "Basic check"
+cmd = "echo ok"
+"#
+        );
+        std::fs::write(spec_dir.join("gates.toml"), gates_toml).unwrap();
+    }
+
+    #[test]
+    fn test_spec_coverage_mixed_coverage() {
+        let tmp = tempfile::tempdir().unwrap();
+        let specs_dir = tmp.path();
+        write_coverage_dir_spec(specs_dir, "auth-flow");
+
+        let (exit_code, report) = coverage_report_from("auth-flow", false, specs_dir).unwrap();
+        assert_eq!(exit_code, 0);
+        let report = report.expect("should have a coverage report");
+        assert_eq!(report.total_requirements, 2);
+        assert_eq!(report.covered, vec!["REQ-AUTH-001"]);
+        assert_eq!(report.uncovered, vec!["REQ-AUTH-002"]);
+        assert_eq!(report.orphaned, vec!["REQ-ORPHAN-001"]);
+        assert!((report.coverage_pct - 50.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_spec_coverage_no_spec_toml_returns_none() {
+        let tmp = tempfile::tempdir().unwrap();
+        let specs_dir = tmp.path();
+        write_gates_only_dir_spec(specs_dir, "gates-only");
+
+        let (exit_code, report) = coverage_report_from("gates-only", false, specs_dir).unwrap();
+        assert_eq!(exit_code, 0);
+        assert!(report.is_none(), "gates-only spec should return None");
+    }
+
+    #[test]
+    fn test_spec_coverage_legacy_spec_returns_none() {
+        let tmp = tempfile::tempdir().unwrap();
+        let specs_dir = tmp.path();
+        write_valid_flat_spec(specs_dir, "legacy");
+
+        let (exit_code, report) = coverage_report_from("legacy", false, specs_dir).unwrap();
+        assert_eq!(exit_code, 0);
+        assert!(report.is_none(), "legacy spec should return None");
+    }
+
+    #[test]
+    fn test_spec_coverage_zero_coverage() {
+        // A spec with requirements but NO criteria that reference them.
+        let tmp = tempfile::tempdir().unwrap();
+        let specs_dir = tmp.path();
+
+        let spec_dir = specs_dir.join("zero-cov");
+        std::fs::create_dir_all(&spec_dir).unwrap();
+        let spec_toml = r#"name = "zero-cov"
+status = "draft"
+version = "0.1"
+
+[overview]
+description = "Zero coverage spec"
+functions = []
+
+[[requirements]]
+id = "REQ-ZERO-001"
+title = "Uncovered requirement"
+statement = "No criterion references this."
+obligation = "shall"
+priority = "must"
+verification = "test"
+status = "draft"
+"#;
+        let gates_toml = r#"name = "zero-cov"
+
+[[criteria]]
+name = "no-req-ref"
+description = "Criterion with no requirements references"
+cmd = "echo ok"
+"#;
+        std::fs::write(spec_dir.join("spec.toml"), spec_toml).unwrap();
+        std::fs::write(spec_dir.join("gates.toml"), gates_toml).unwrap();
+
+        let (exit_code, report) = coverage_report_from("zero-cov", false, specs_dir).unwrap();
+        assert_eq!(exit_code, 0);
+        let report = report.expect("should have a coverage report");
+        assert_eq!(report.total_requirements, 1);
+        assert_eq!(report.coverage_pct, 0.0);
+        assert!(report.covered.is_empty());
+        assert_eq!(report.uncovered, vec!["REQ-ZERO-001"]);
+        assert!(report.orphaned.is_empty());
+    }
+
+    #[test]
+    fn test_spec_coverage_json_roundtrips() {
+        let tmp = tempfile::tempdir().unwrap();
+        let specs_dir = tmp.path();
+        write_coverage_dir_spec(specs_dir, "auth-flow");
+
+        let (exit_code, report) = coverage_report_from("auth-flow", true, specs_dir).unwrap();
+        assert_eq!(exit_code, 0);
+        let report = report.expect("should have a coverage report");
+        // Verify JSON round-trip
+        let json_str = serde_json::to_string_pretty(&report).unwrap();
+        let parsed: CoverageReport = serde_json::from_str(&json_str).unwrap();
+        assert_eq!(parsed.spec, report.spec);
+        assert_eq!(parsed.total_requirements, report.total_requirements);
+        assert_eq!(parsed.covered, report.covered);
+        assert_eq!(parsed.uncovered, report.uncovered);
+        assert_eq!(parsed.orphaned, report.orphaned);
     }
 }

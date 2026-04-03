@@ -9,6 +9,7 @@
 
 pub mod checkpoint;
 pub mod context;
+pub mod coverage;
 pub mod criterion;
 pub mod enforcement;
 pub mod evaluator;
@@ -39,6 +40,7 @@ pub use context::{
     BloatCategory, ContextHealth, DiagnosticsReport, SessionEntry, SessionInfo, TokenEstimate,
     UsageData,
 };
+pub use coverage::CoverageReport;
 pub use criterion::{Criterion, CriterionKind};
 pub use enforcement::{Enforcement, EnforcementSummary, GateSection};
 pub use evaluator::{
