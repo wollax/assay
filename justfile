@@ -48,7 +48,7 @@ lint-smelt:
 fmt:
     cargo fmt --all
 
-# Format only assay crates
+# Format only assay crates (cargo fmt has no --exclude flag; uses explicit -p list)
 fmt-assay:
     cargo fmt -p assay-types -p assay-core -p assay-backends -p assay-harness -p assay-mcp -p assay-cli -p assay-tui
 
