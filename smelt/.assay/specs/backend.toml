@@ -1,7 +1,0 @@
-name = "backend"
-description = "Implement the /api/auth/login endpoint with JWT tokens and rate limiting."
-
-[[criteria]]
-name = "harness"
-description = "Harness gate for backend"
-cmd = "npm test -- --filter api-auth"

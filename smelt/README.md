@@ -13,13 +13,17 @@ Smelt is the infrastructure layer in the **Smelt / Assay / Cupel** toolkit. It p
 Build and install from source (requires [Rust](https://rustup.rs/)):
 
 ```bash
-cargo install --path .
+# From the smelt/ directory:
+cargo install --path crates/smelt-cli
+
+# Or from the repo root:
+cargo install --path smelt/crates/smelt-cli
 ```
 
-Or build without installing:
+Or build without installing (run from repo root):
 
 ```bash
-cargo build --release
+cargo build -p smelt-cli --release
 # binary at target/release/smelt
 ```
 
