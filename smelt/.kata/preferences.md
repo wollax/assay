@@ -4,7 +4,7 @@ workflow:
   mode: linear
 linear:
   teamKey: WOL
-  projectId: 8bebdf2c-4edd-429f-a2b1-0e9ed3be1105
+  projectId: b6ff6491-d7f3-428c-854d-6ee116899fe5
 pr:
   enabled: true
   auto_create: true
