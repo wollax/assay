@@ -8,11 +8,12 @@ You are working within the Assay monorepo, an agentic development kit built in R
 - `just test` — run all tests (both projects)
 - `just lint` — run clippy (both projects)
 - `just fmt` — format code
-- `just ready` — run all checks (fmt, lint, test, deny)
+- `just ready` — run all checks (fmt, lint, test, deny, check-plugin-version)
 - `just build-assay` — build assay crates only
 - `just build-smelt` — build smelt crates only
 - `just test-assay` — test assay crates only
-- `just test-smelt` — test smelt crates only (excludes Docker integration tests in `smelt-cli/tests/`; those require a live Docker daemon)
+- `just test-smelt` — test smelt crates only (Docker integration tests skip gracefully when Docker is unavailable)
+- `just test-smelt-unit` — test smelt crates only, explicitly excluding `docker_lifecycle` integration tests
 - `just lint-assay` — lint assay crates only
 - `just lint-smelt` — lint smelt crates only
 
