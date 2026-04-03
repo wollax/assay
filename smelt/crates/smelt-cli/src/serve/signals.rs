@@ -1,66 +1,19 @@
 //! PeerUpdate signal types and delivery to Assay session inboxes.
 //!
 //! Signal delivery uses HTTP-first with filesystem fallback (D186).
-//! Types mirror Assay's `assay-types::signal` schema exactly (D189).
+//! Types are the canonical `assay-types::signal` types, re-exported via
+//! `smelt-core` (D012 — no local mirrors, drift impossible).
 //!
 //! Inbox path convention (matches `assay-core/src/orchestrate/mesh.rs`):
 //! `<repo>/.assay/orchestrator/<run_id>/mesh/<session_name>/inbox/<filename>`
 
-use serde::{Deserialize, Serialize};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tempfile::NamedTempFile;
 
-/// Lightweight gate pass/fail/skip counts included in a [`PeerUpdate`].
-///
-/// Mirrors Assay's `assay_types::signal::GateSummary` exactly (D189).
-/// Assay uses `deny_unknown_fields` — any field mismatch causes silent rejection.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct GateSummary {
-    /// Number of sessions/gates that passed.
-    pub passed: u32,
-    /// Number of sessions/gates that failed.
-    pub failed: u32,
-    /// Number of sessions/gates that were skipped.
-    pub skipped: u32,
-}
-
-/// A signal delivered to a running Assay session when a peer job completes.
-///
-/// Carries context about what changed so the receiving session can adapt its
-/// work without human intermediation.
-///
-/// Mirrors Assay's `assay_types::signal::PeerUpdate` exactly (D189).
-/// Field names and types must match — Assay uses `deny_unknown_fields`.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct PeerUpdate {
-    /// Job that completed the session triggering this signal.
-    pub source_job: String,
-    /// Name of the completed session within the source job.
-    pub source_session: String,
-    /// Files modified by the completed session.
-    pub changed_files: Vec<String>,
-    /// Lightweight gate result summary from the completed session.
-    pub gate_summary: GateSummary,
-    /// Git branch the source session worked on.
-    pub branch: String,
-}
-
-/// Envelope for routing a [`PeerUpdate`] to a specific session.
-///
-/// Mirrors Assay's `assay_types::signal::SignalRequest` exactly (D189).
-/// Posted to `POST /api/v1/signal` on the Assay signal endpoint.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct SignalRequest {
-    /// Name of the target session that should receive this update.
-    pub target_session: String,
-    /// The peer update payload to deliver.
-    pub update: PeerUpdate,
-}
+// Canonical signal types from assay-types via smelt-core re-export (D012).
+pub(crate) use smelt_core::{GateSummary, PeerUpdate, SignalRequest};
 
 /// Validate that a path component (session name or run ID) is safe for use in
 /// filesystem paths.

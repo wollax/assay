@@ -1,7 +1,6 @@
 use crate::serve::signals::{
     GateSummary, PeerUpdate, SignalRequest, deliver_peer_update, validate_run_id,
 };
-use serde::Deserialize;
 use std::path::{Path, PathBuf};
 
 /// Helper: build a sample PeerUpdate for tests.
@@ -641,58 +640,46 @@ async fn test_signal_run_id_updates_on_new_event() {
     );
 }
 
-// ─── Schema round-trip tests (D189) ────────────────────────────────────
+// ─── Wire format tests (D012 — canonical types from assay-types) ─────────────
 //
-// These test-only structs mirror Assay's exact types with deny_unknown_fields.
-// Serializing with Smelt's types and deserializing with these mirrors catches
-// any field name or type drift between the two repos.
-
-/// Mirror of Assay's `assay_types::signal::GateSummary` for round-trip testing.
-#[derive(Debug, Deserialize, PartialEq)]
-#[serde(deny_unknown_fields)]
-struct AssayGateSummary {
-    pub passed: u32,
-    pub failed: u32,
-    pub skipped: u32,
-}
-
-/// Mirror of Assay's `assay_types::signal::PeerUpdate` for round-trip testing.
-#[derive(Debug, Deserialize, PartialEq)]
-#[serde(deny_unknown_fields)]
-struct AssayPeerUpdate {
-    pub source_job: String,
-    pub source_session: String,
-    pub changed_files: Vec<String>,
-    pub gate_summary: AssayGateSummary,
-    pub branch: String,
-}
-
-/// Mirror of Assay's `assay_types::signal::SignalRequest` for round-trip testing.
-#[derive(Debug, Deserialize, PartialEq)]
-#[serde(deny_unknown_fields)]
-struct AssaySignalRequest {
-    pub target_session: String,
-    pub update: AssayPeerUpdate,
-}
+// These tests verify two things:
+//   1. The canonical types round-trip through JSON correctly (serde sanity).
+//   2. The wire-format JSON contains the exact field names Smelt emits and Assay
+//      expects. Asserting on literal JSON keys provides the same protection the
+//      old mirror-struct tests did: if assay-types renames a field, these checks
+//      fail immediately, catching drift before it silently breaks serialization.
 
 #[test]
 fn test_gate_summary_schema_round_trip() {
-    let smelt = GateSummary {
+    let original = GateSummary {
         passed: 5,
         failed: 2,
         skipped: 1,
     };
-    let json = serde_json::to_string(&smelt).unwrap();
-    let assay: AssayGateSummary = serde_json::from_str(&json)
-        .expect("GateSummary round-trip failed — field name/type mismatch with Assay");
-    assert_eq!(assay.passed, 5);
-    assert_eq!(assay.failed, 2);
-    assert_eq!(assay.skipped, 1);
+    let json = serde_json::to_string(&original).unwrap();
+
+    // Wire-format assertions: exact field names must match the Smelt/Assay protocol.
+    assert!(
+        json.contains("\"passed\""),
+        "GateSummary must serialize 'passed' field"
+    );
+    assert!(
+        json.contains("\"failed\""),
+        "GateSummary must serialize 'failed' field"
+    );
+    assert!(
+        json.contains("\"skipped\""),
+        "GateSummary must serialize 'skipped' field"
+    );
+
+    let deserialized: GateSummary =
+        serde_json::from_str(&json).expect("GateSummary round-trip failed");
+    assert_eq!(deserialized, original);
 }
 
 #[test]
 fn test_peer_update_schema_round_trip() {
-    let smelt = PeerUpdate {
+    let original = PeerUpdate {
         source_job: "job-1".into(),
         source_session: "session-1".into(),
         changed_files: vec!["a.rs".into(), "b.rs".into()],
@@ -703,18 +690,38 @@ fn test_peer_update_schema_round_trip() {
         },
         branch: "results/job-1".into(),
     };
-    let json = serde_json::to_string(&smelt).unwrap();
-    let assay: AssayPeerUpdate = serde_json::from_str(&json)
-        .expect("PeerUpdate round-trip failed — field name/type mismatch with Assay");
-    assert_eq!(assay.source_job, "job-1");
-    assert_eq!(assay.branch, "results/job-1");
-    assert_eq!(assay.gate_summary.passed, 3);
-    assert_eq!(assay.gate_summary.failed, 1);
+    let json = serde_json::to_string(&original).unwrap();
+
+    // Wire-format assertions: exact field names must match the Smelt/Assay protocol.
+    assert!(
+        json.contains("\"source_job\""),
+        "PeerUpdate must serialize 'source_job'"
+    );
+    assert!(
+        json.contains("\"source_session\""),
+        "PeerUpdate must serialize 'source_session'"
+    );
+    assert!(
+        json.contains("\"changed_files\""),
+        "PeerUpdate must serialize 'changed_files'"
+    );
+    assert!(
+        json.contains("\"gate_summary\""),
+        "PeerUpdate must serialize 'gate_summary'"
+    );
+    assert!(
+        json.contains("\"branch\""),
+        "PeerUpdate must serialize 'branch'"
+    );
+
+    let deserialized: PeerUpdate =
+        serde_json::from_str(&json).expect("PeerUpdate round-trip failed");
+    assert_eq!(deserialized, original);
 }
 
 #[test]
 fn test_signal_request_schema_round_trip() {
-    let smelt = SignalRequest {
+    let original = SignalRequest {
         target_session: "agent-1".into(),
         update: PeerUpdate {
             source_job: "job-1".into(),
@@ -728,12 +735,21 @@ fn test_signal_request_schema_round_trip() {
             branch: "main".into(),
         },
     };
-    let json = serde_json::to_string(&smelt).unwrap();
-    let assay: AssaySignalRequest = serde_json::from_str(&json)
-        .expect("SignalRequest round-trip failed — field name/type mismatch with Assay");
-    assert_eq!(assay.target_session, "agent-1");
-    assert_eq!(assay.update.source_job, "job-1");
-    assert_eq!(assay.update.branch, "main");
+    let json = serde_json::to_string(&original).unwrap();
+
+    // Wire-format assertions: exact field names must match the Smelt/Assay protocol.
+    assert!(
+        json.contains("\"target_session\""),
+        "SignalRequest must serialize 'target_session'"
+    );
+    assert!(
+        json.contains("\"update\""),
+        "SignalRequest must serialize 'update'"
+    );
+
+    let deserialized: SignalRequest =
+        serde_json::from_str(&json).expect("SignalRequest round-trip failed");
+    assert_eq!(deserialized, original);
 }
 
 // ─── HTTP signal delivery tests ────────────────────────────────────────
