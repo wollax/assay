@@ -1,5 +1,6 @@
 use anyhow::{Context, bail};
 use assay_core::spec::SpecEntry;
+use assay_types::Severity;
 use clap::Subcommand;
 
 use super::{
@@ -38,6 +39,27 @@ Examples:
         /// Name for the new spec (used as directory name)
         name: String,
     },
+    /// Validate a spec and display diagnostics
+    #[command(after_long_help = "\
+Examples:
+  Validate a spec and show diagnostics table:
+    assay spec validate auth-flow
+
+  Output diagnostics as JSON:
+    assay spec validate auth-flow --json
+
+  Also check that command binaries exist on PATH:
+    assay spec validate auth-flow --check-commands")]
+    Validate {
+        /// Spec name (filename without .toml extension, or directory name)
+        name: String,
+        /// Output as JSON instead of table
+        #[arg(long)]
+        json: bool,
+        /// Also check that command binaries exist on PATH
+        #[arg(long)]
+        check_commands: bool,
+    },
 }
 
 /// Handle spec subcommands.
@@ -46,6 +68,11 @@ pub(crate) fn handle(command: SpecCommand) -> anyhow::Result<i32> {
         SpecCommand::Show { name, json } => handle_spec_show(&name, json),
         SpecCommand::List => handle_spec_list(),
         SpecCommand::New { name } => handle_spec_new(&name),
+        SpecCommand::Validate {
+            name,
+            json,
+            check_commands,
+        } => handle_spec_validate(&name, json, check_commands),
     }
 }
 
@@ -273,6 +300,131 @@ fn handle_spec_list() -> anyhow::Result<i32> {
     Ok(0)
 }
 
+/// Handle `assay spec validate <name> [--json] [--check-commands]`.
+fn handle_spec_validate(name: &str, json: bool, check_commands: bool) -> anyhow::Result<i32> {
+    let root = project_root()?;
+    let config = assay_core::config::load(&root)?;
+    let specs_dir = assay_dir(&root).join(&config.specs_dir);
+
+    let entry = assay_core::spec::load_spec_entry_with_diagnostics(name, &specs_dir)?;
+    let result = assay_core::spec::validate::validate_spec_with_dependencies(
+        &entry,
+        check_commands,
+        &specs_dir,
+    );
+
+    if json {
+        let output = serde_json::to_string_pretty(&result)
+            .context("failed to serialize ValidationResult")?;
+        println!("{output}");
+    } else {
+        let color = colors_enabled();
+        if result.diagnostics.is_empty() {
+            println!("✓ {} — no diagnostics", result.spec);
+        } else {
+            // Compute column widths.
+            // sev_width must accommodate the header "Severity" (8 chars) as well as
+            // the widest data value "warning" (7 chars). Use 8 so the header fits.
+            let sev_width = "Severity".len(); // 8
+            let loc_width = result
+                .diagnostics
+                .iter()
+                .map(|d| d.location.len())
+                .max()
+                .unwrap_or(8)
+                .max(8);
+
+            println!(
+                "  {:<sev_w$}{gap}{:<loc_w$}{gap}Message",
+                "Severity",
+                "Location",
+                sev_w = sev_width,
+                loc_w = loc_width,
+                gap = COLUMN_GAP,
+            );
+            println!(
+                "  {:<sev_w$}{gap}{:<loc_w$}{gap}{}",
+                "\u{2500}".repeat(sev_width),
+                "\u{2500}".repeat(loc_width),
+                "\u{2500}".repeat(7),
+                sev_w = sev_width,
+                loc_w = loc_width,
+                gap = COLUMN_GAP,
+            );
+
+            for diag in &result.diagnostics {
+                // Each label must be exactly `sev_width` (8) visible chars wide so
+                // the Location column starts at the same offset as the header/separator.
+                // ANSI codes are invisible bytes — they do not consume display width.
+                let sev_label = match diag.severity {
+                    Severity::Error => {
+                        if color {
+                            "\x1b[31merror\x1b[0m   " // 5 + 3 spaces = 8 visible
+                        } else {
+                            "error   " // 5 + 3 spaces = 8
+                        }
+                    }
+                    Severity::Warning => {
+                        if color {
+                            "\x1b[33mwarning\x1b[0m " // 7 + 1 space = 8 visible
+                        } else {
+                            "warning " // 7 + 1 space = 8
+                        }
+                    }
+                    Severity::Info => {
+                        if color {
+                            "\x1b[34minfo\x1b[0m    " // 4 + 4 spaces = 8 visible
+                        } else {
+                            "info    " // 4 + 4 spaces = 8
+                        }
+                    }
+                };
+                println!(
+                    "  {sev_label}{gap}{:<loc_w$}{gap}{}",
+                    diag.location,
+                    diag.message,
+                    loc_w = loc_width,
+                    gap = COLUMN_GAP,
+                );
+            }
+            println!();
+        }
+
+        // Summary line
+        let s = &result.summary;
+        println!(
+            "{}: {} error(s), {} warning(s), {} info(s)",
+            result.spec, s.errors, s.warnings, s.infos,
+        );
+    }
+
+    Ok(if result.valid { 0 } else { 1 })
+}
+
+/// Testable core of `handle_spec_validate` that takes an explicit specs_dir.
+#[cfg(test)]
+fn validate_and_exit_code(
+    name: &str,
+    json: bool,
+    check_commands: bool,
+    specs_dir: &std::path::Path,
+) -> anyhow::Result<(i32, assay_types::ValidationResult)> {
+    let entry = assay_core::spec::load_spec_entry_with_diagnostics(name, specs_dir)?;
+    let result = assay_core::spec::validate::validate_spec_with_dependencies(
+        &entry,
+        check_commands,
+        specs_dir,
+    );
+    let exit_code = if result.valid { 0 } else { 1 };
+
+    if json {
+        let _output = serde_json::to_string_pretty(&result)
+            .context("failed to serialize ValidationResult")?;
+    }
+
+    Ok((exit_code, result))
+}
+
 /// Handle `assay spec new <name>`.
 ///
 /// Creates a directory-based spec with template `spec.toml` and `gates.toml`.
@@ -339,4 +491,127 @@ cmd = "echo 'TODO: add compile check'"
     println!("    created {}", rel_spec.display());
     println!("    created {}", rel_gates.display());
     Ok(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Create a valid flat spec file in a tempdir and return the specs_dir path.
+    fn write_valid_flat_spec(dir: &std::path::Path, name: &str) {
+        let content = format!(
+            r#"name = "{name}"
+description = "a valid spec"
+
+[[criteria]]
+name = "check"
+description = "always passes"
+cmd = "echo ok"
+"#
+        );
+        std::fs::write(dir.join(format!("{name}.toml")), content).unwrap();
+    }
+
+    /// Create a spec with a validation error (empty depends entry).
+    fn write_invalid_flat_spec(dir: &std::path::Path, name: &str) {
+        let content = format!(
+            r#"name = "{name}"
+description = "has an empty depends entry"
+depends = [""]
+
+[[criteria]]
+name = "check"
+description = "always passes"
+cmd = "echo ok"
+"#
+        );
+        std::fs::write(dir.join(format!("{name}.toml")), content).unwrap();
+    }
+
+    /// Create a valid directory spec with a warning (AgentReport criterion without prompt).
+    fn write_warning_dir_spec(dir: &std::path::Path, name: &str) {
+        let spec_dir = dir.join(name);
+        std::fs::create_dir_all(&spec_dir).unwrap();
+        let gates = format!(
+            r#"name = "{name}"
+
+[gate]
+enforcement = "required"
+
+[[criteria]]
+name = "agent-check"
+description = "agent report"
+kind = "AgentReport"
+"#
+        );
+        std::fs::write(spec_dir.join("gates.toml"), gates).unwrap();
+    }
+
+    #[test]
+    fn test_spec_validate_valid_spec_returns_zero() {
+        let tmp = tempfile::tempdir().unwrap();
+        let specs_dir = tmp.path();
+        write_valid_flat_spec(specs_dir, "good-spec");
+
+        let (exit_code, result) =
+            validate_and_exit_code("good-spec", false, false, specs_dir).unwrap();
+        assert_eq!(exit_code, 0, "valid spec should exit 0");
+        assert!(result.valid);
+        assert_eq!(result.summary.errors, 0);
+    }
+
+    #[test]
+    fn test_spec_validate_invalid_spec_returns_one() {
+        let tmp = tempfile::tempdir().unwrap();
+        let specs_dir = tmp.path();
+        write_invalid_flat_spec(specs_dir, "bad-spec");
+
+        let (exit_code, result) =
+            validate_and_exit_code("bad-spec", false, false, specs_dir).unwrap();
+        assert_eq!(exit_code, 1, "invalid spec should exit 1");
+        assert!(!result.valid);
+        assert!(result.summary.errors > 0);
+    }
+
+    #[test]
+    fn test_spec_validate_warnings_only_returns_zero() {
+        let tmp = tempfile::tempdir().unwrap();
+        let specs_dir = tmp.path();
+        write_warning_dir_spec(specs_dir, "warn-spec");
+
+        let (exit_code, result) =
+            validate_and_exit_code("warn-spec", false, false, specs_dir).unwrap();
+        assert_eq!(exit_code, 0, "warnings-only should exit 0");
+        assert!(result.valid);
+        assert_eq!(result.summary.errors, 0);
+        assert!(
+            result.summary.warnings > 0,
+            "should have warnings: {result:?}"
+        );
+    }
+
+    #[test]
+    fn test_spec_validate_json_output_parses() {
+        let tmp = tempfile::tempdir().unwrap();
+        let specs_dir = tmp.path();
+        write_valid_flat_spec(specs_dir, "json-spec");
+
+        let (exit_code, result) =
+            validate_and_exit_code("json-spec", true, false, specs_dir).unwrap();
+        assert_eq!(exit_code, 0);
+        // Verify JSON round-trip
+        let json_str = serde_json::to_string_pretty(&result).unwrap();
+        let parsed: assay_types::ValidationResult = serde_json::from_str(&json_str).unwrap();
+        assert_eq!(parsed.spec, result.spec);
+        assert_eq!(parsed.valid, result.valid);
+    }
+
+    #[test]
+    fn test_spec_validate_unknown_spec_errors() {
+        let tmp = tempfile::tempdir().unwrap();
+        let specs_dir = tmp.path();
+        // Empty specs dir — no spec file
+        let result = validate_and_exit_code("nonexistent", false, false, specs_dir);
+        assert!(result.is_err(), "unknown spec should return an error");
+    }
 }
