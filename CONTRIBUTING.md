@@ -21,8 +21,8 @@ just build
 
 Development happens on Forgejo, with a push-mirror that automatically forwards all branches and tags to GitHub.
 
-- **Forgejo CI** (`.forgejo/workflows/ci.yml`) runs on every push to `main` and every pull request — executes `just ready` (fmt-check, lint, test, deny, check-plugin-version) and validates plugin JSON manifests
-- **GitHub CI** (`.github/workflows/ci.yml`) runs on mirrored pushes — same gate checks as Forgejo CI (`just ready` + plugin validation)
+- **Forgejo CI** (`.forgejo/workflows/ci.yml`) is the sole CI gate — runs on every push to `main` and every pull request. Two jobs: `check-assay` (`just ready` — fmt, lint, test, deny, plugins) and `check-smelt` (fmt-check, smelt tests, smelt lint, deny). Both are path-filtered to skip unrelated changes.
+- **GitHub CI**: no general CI on GitHub; the mirror exists for releases only.
 - **Releases**: push a tag to Forgejo (e.g., `git tag v0.6.0 && git push origin v0.6.0`) → the tag mirrors to GitHub → `release.yml` triggers → binaries for linux x86\_64, linux aarch64, macOS x86\_64, and macOS aarch64 are built and published as a GitHub Release (GitHub Releases only — not Forgejo Releases)
 
 ## Working with Local cupel
