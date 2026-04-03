@@ -1558,10 +1558,40 @@ async fn test_real_assay_manifest_parsing() {
     };
 
     // Build a two-session manifest — alpha (no deps) and beta (depends on alpha)
+    //
+    // Assay's pipeline calls `git worktree list --porcelain` and `git checkout`
+    // during session setup, so the repo path must be a real git repository with
+    // at least one commit. We also need to know the HEAD SHA to use as base_ref.
     let repo_dir = tempfile::tempdir().unwrap();
+    let git_bin = which::which("git").expect("git on PATH");
+    let run_git = |args: &[&str]| -> std::process::Output {
+        let out = std::process::Command::new(&git_bin)
+            .args(args)
+            .current_dir(repo_dir.path())
+            .output()
+            .expect("git command");
+        assert!(
+            out.status.success(),
+            "git {} failed: {}",
+            args.join(" "),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        out
+    };
+    run_git(&["init"]);
+    run_git(&["config", "user.email", "test@example.com"]);
+    run_git(&["config", "user.name", "Test"]);
+    std::fs::write(repo_dir.path().join("README.md"), "# parse test\n").unwrap();
+    run_git(&["add", "README.md"]);
+    run_git(&["commit", "-m", "initial"]);
+    let base_ref = {
+        let out = run_git(&["rev-parse", "HEAD"]);
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
+    };
+
     let mut manifest =
         test_manifest_with_repo("real-assay-parse", repo_dir.path().to_str().unwrap());
-    manifest.job.base_ref = "main".to_string();
+    manifest.job.base_ref = base_ref;
     manifest.session = vec![
         SessionDef {
             name: "parse-test-alpha".to_string(),
@@ -1611,7 +1641,26 @@ async fn test_real_assay_manifest_parsing() {
         chmod_handle.stderr
     );
 
-    // Step 5: Phase 5.5 — mirror the exact sequence from execute_run()
+    // Step 5: Install git — assay invokes `git worktree list` and `git checkout`
+    // during session setup; alpine:3 does not include git by default.
+    let git_install = provider
+        .exec(
+            &container,
+            &[
+                "sh".to_string(),
+                "-c".to_string(),
+                "apk add --no-cache git".to_string(),
+            ],
+        )
+        .await
+        .expect("git install exec should not error");
+    assert_eq!(
+        git_install.exit_code, 0,
+        "apk add git should succeed, stderr: {}",
+        git_install.stderr
+    );
+
+    // Phase 5.5 — mirror the exact sequence from execute_run()
 
     // 5a: Write assay config into container (idempotent mkdir + config.toml)
     let config_cmd = smelt_core::AssayInvoker::build_write_assay_config_command(&manifest.job.name);
@@ -1679,10 +1728,11 @@ async fn test_real_assay_manifest_parsing() {
     assert_container_removed(&provider, container.as_str()).await;
 
     // Step 7: Assert parse phase succeeded
-    // Primary signal: assay progressed past manifest parse and emitted "Manifest loaded:"
+    // Primary signal: assay progressed past manifest parse.
+    // Tracing emits: INFO Manifest loaded session_count=2  (no colon after "loaded")
     assert!(
-        assay_handle.stderr.contains("Manifest loaded:"),
-        "assay should have progressed past parse phase (expected 'Manifest loaded:' in stderr);\
+        assay_handle.stderr.contains("Manifest loaded"),
+        "assay should have progressed past parse phase (expected 'Manifest loaded' in stderr);\
         \nassay stdout: {}\nassay stderr: {}",
         assay_handle.stdout,
         assay_handle.stderr
