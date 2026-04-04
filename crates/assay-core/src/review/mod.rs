@@ -22,6 +22,7 @@ use crate::error::{AssayError, Result};
 use crate::history::{generate_run_id, validate_path_component};
 use crate::spec::coverage::compute_coverage;
 use crate::spec::is_valid_req_id;
+use assay_types::CoverageReport;
 
 /// Run all 6 structural checks against a spec.
 ///
@@ -32,12 +33,15 @@ pub fn run_structural_review(
     gates: &GatesSpec,
     feature: Option<&FeatureSpec>,
 ) -> ReviewReport {
+    tracing::debug!(spec_slug, "running structural review");
+    // Compute coverage once; reused by req-coverage and no-orphaned-criteria.
+    let coverage = feature.map(|f| compute_coverage(spec_slug, gates, Some(f)));
     let checks = vec![
-        check_req_coverage(spec_slug, gates, feature),
+        check_req_coverage(coverage.as_ref()),
         check_acceptance_criteria(feature),
         check_req_id_format(feature),
         check_criterion_traceability(gates),
-        check_no_orphaned_criteria(spec_slug, gates, feature),
+        check_no_orphaned_criteria(coverage.as_ref()),
         check_status_consistency(feature),
     ];
 
@@ -56,7 +60,7 @@ pub fn run_structural_review(
         }
     }
 
-    ReviewReport {
+    let report = ReviewReport {
         spec: spec_slug.to_string(),
         run_id: None, // Set by save_review() on persistence.
         timestamp: Utc::now(),
@@ -64,7 +68,15 @@ pub fn run_structural_review(
         passed,
         failed,
         skipped,
-    }
+    };
+    tracing::info!(
+        spec_slug,
+        passed = report.passed,
+        failed = report.failed,
+        skipped = report.skipped,
+        "structural review complete"
+    );
+    report
 }
 
 /// Persist a `ReviewReport` to `.assay/reviews/<spec>/<run-id>.json`.
@@ -77,6 +89,9 @@ pub fn save_review(assay_dir: &Path, report: &ReviewReport) -> Result<PathBuf> {
     validate_path_component(&report.spec, "spec slug")?;
 
     let run_id = generate_run_id(&report.timestamp);
+    // generate_run_id output is safe for filenames, but validate defensively to guard
+    // against future changes to the ID format.
+    validate_path_component(&run_id, "run id")?;
     let reviews_dir = assay_dir.join("reviews").join(&report.spec);
     std::fs::create_dir_all(&reviews_dir).map_err(|e| AssayError::Io {
         operation: "creating reviews directory".to_string(),
@@ -115,7 +130,12 @@ pub fn save_review(assay_dir: &Path, report: &ReviewReport) -> Result<PathBuf> {
         path: target.clone(),
         source: e.error,
     })?;
-
+    tracing::info!(
+        spec = %report.spec,
+        run_id = %run_id,
+        path = %target.display(),
+        "review saved"
+    );
     Ok(target)
 }
 
@@ -159,21 +179,23 @@ pub fn list_reviews(assay_dir: &Path, spec_slug: &str) -> Result<Vec<ReviewRepor
         }
     }
 
-    // Sort by timestamp descending (most recent first).
-    reports.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+    // Sort by timestamp descending (most recent first); tiebreak on run_id for stability.
+    reports.sort_by(|a, b| {
+        b.timestamp
+            .cmp(&a.timestamp)
+            .then_with(|| b.run_id.cmp(&a.run_id))
+    });
     Ok(reports)
 }
 
 /// Check 1: req-coverage — all declared requirements have at least one criterion.
-fn check_req_coverage(
-    spec_slug: &str,
-    gates: &GatesSpec,
-    feature: Option<&FeatureSpec>,
-) -> ReviewCheck {
+///
+/// Accepts a pre-computed `CoverageReport` (or `None` when there is no `spec.toml`).
+fn check_req_coverage(coverage: Option<&CoverageReport>) -> ReviewCheck {
     let name = "req-coverage".to_string();
     let kind = ReviewCheckKind::Structural;
 
-    let Some(feature) = feature else {
+    let Some(report) = coverage else {
         return ReviewCheck {
             name,
             kind,
@@ -183,8 +205,6 @@ fn check_req_coverage(
             details: None,
         };
     };
-
-    let report = compute_coverage(spec_slug, gates, Some(feature));
 
     if report.uncovered.is_empty() {
         ReviewCheck {
@@ -394,15 +414,13 @@ fn check_criterion_traceability(gates: &GatesSpec) -> ReviewCheck {
 }
 
 /// Check 5: no-orphaned-criteria — no criterion references an unknown REQ-ID.
-fn check_no_orphaned_criteria(
-    spec_slug: &str,
-    gates: &GatesSpec,
-    feature: Option<&FeatureSpec>,
-) -> ReviewCheck {
+///
+/// Accepts a pre-computed `CoverageReport` (or `None` when there is no `spec.toml`).
+fn check_no_orphaned_criteria(coverage: Option<&CoverageReport>) -> ReviewCheck {
     let name = "no-orphaned-criteria".to_string();
     let kind = ReviewCheckKind::Structural;
 
-    let Some(feature) = feature else {
+    let Some(report) = coverage else {
         return ReviewCheck {
             name,
             kind,
@@ -412,8 +430,6 @@ fn check_no_orphaned_criteria(
             details: None,
         };
     };
-
-    let report = compute_coverage(spec_slug, gates, Some(feature));
 
     if report.orphaned.is_empty() {
         ReviewCheck {
@@ -504,6 +520,7 @@ fn check_status_consistency(feature: Option<&FeatureSpec>) -> ReviewCheck {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::spec::coverage::compute_coverage;
     use assay_types::Criterion;
     use assay_types::feature_spec::{
         AcceptanceCriterion, AcceptanceCriterionType, Obligation, Priority, Requirement,
@@ -589,8 +606,9 @@ mod tests {
     fn req_coverage_pass_all_covered() {
         let feature = make_feature(vec![make_requirement("REQ-AUTH-001")]);
         let gates = make_gates(vec![make_criterion("c1", &["REQ-AUTH-001"])]);
+        let cov = compute_coverage("test", &gates, Some(&feature));
 
-        let check = check_req_coverage("test", &gates, Some(&feature));
+        let check = check_req_coverage(Some(&cov));
         assert!(check.passed);
         assert!(!check.skipped);
     }
@@ -602,16 +620,16 @@ mod tests {
             make_requirement("REQ-AUTH-002"),
         ]);
         let gates = make_gates(vec![make_criterion("c1", &["REQ-AUTH-001"])]);
+        let cov = compute_coverage("test", &gates, Some(&feature));
 
-        let check = check_req_coverage("test", &gates, Some(&feature));
+        let check = check_req_coverage(Some(&cov));
         assert!(!check.passed);
         assert!(check.details.as_ref().unwrap().contains("REQ-AUTH-002"));
     }
 
     #[test]
     fn req_coverage_skip_no_feature() {
-        let gates = make_gates(vec![]);
-        let check = check_req_coverage("test", &gates, None);
+        let check = check_req_coverage(None);
         assert!(check.passed);
         assert!(check.skipped);
     }
@@ -736,7 +754,8 @@ mod tests {
     fn no_orphaned_criteria_pass() {
         let feature = make_feature(vec![make_requirement("REQ-AUTH-001")]);
         let gates = make_gates(vec![make_criterion("c1", &["REQ-AUTH-001"])]);
-        let check = check_no_orphaned_criteria("test", &gates, Some(&feature));
+        let cov = compute_coverage("test", &gates, Some(&feature));
+        let check = check_no_orphaned_criteria(Some(&cov));
         assert!(check.passed);
     }
 
@@ -747,15 +766,15 @@ mod tests {
             "c1",
             &["REQ-AUTH-001", "REQ-GHOST-999"],
         )]);
-        let check = check_no_orphaned_criteria("test", &gates, Some(&feature));
+        let cov = compute_coverage("test", &gates, Some(&feature));
+        let check = check_no_orphaned_criteria(Some(&cov));
         assert!(!check.passed);
         assert!(check.details.as_ref().unwrap().contains("REQ-GHOST-999"));
     }
 
     #[test]
     fn no_orphaned_criteria_skip_no_feature() {
-        let gates = make_gates(vec![]);
-        let check = check_no_orphaned_criteria("test", &gates, None);
+        let check = check_no_orphaned_criteria(None);
         assert!(check.passed);
         assert!(check.skipped);
     }
@@ -841,7 +860,10 @@ mod tests {
 
         let report = run_structural_review("test", &gates, Some(&feature));
         assert_eq!(report.checks.len(), 6);
-        assert!(report.failed >= 2); // req-coverage + acceptance-criteria fail
+        assert_eq!(
+            report.failed, 2,
+            "expected exactly req-coverage + acceptance-criteria to fail"
+        );
         assert_eq!(report.passed + report.failed + report.skipped, 6);
     }
 
@@ -919,7 +941,13 @@ mod tests {
         let reviews = list_reviews(assay_dir, "my-spec").unwrap();
         assert_eq!(reviews.len(), 2);
         // Most recent first.
-        assert!(reviews[0].timestamp >= reviews[1].timestamp);
+        // Timestamps must be strictly ordered (generate_run_id randomises subsec_nanos).
+        assert!(
+            reviews[0].timestamp > reviews[1].timestamp,
+            "expected most-recent review first, but timestamps were equal or reversed: {:?} vs {:?}",
+            reviews[0].timestamp,
+            reviews[1].timestamp
+        );
     }
 
     #[test]
@@ -934,5 +962,63 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let result = list_reviews(dir.path(), "../escape");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn list_reviews_skips_non_json_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let assay_dir = dir.path();
+
+        let feature = make_feature(vec![make_requirement_with_ac("REQ-AUTH-001")]);
+        let gates = make_gates(vec![make_criterion("c1", &["REQ-AUTH-001"])]);
+        let report = run_structural_review("my-spec", &gates, Some(&feature));
+        save_review(assay_dir, &report).unwrap();
+
+        // Inject a non-JSON file into the reviews directory.
+        let reviews_dir = assay_dir.join("reviews").join("my-spec");
+        std::fs::write(reviews_dir.join("notes.txt"), "not json").unwrap();
+        std::fs::write(reviews_dir.join("corrupt.json"), "{not valid json").unwrap();
+
+        // Should return only the 1 valid review and not error.
+        let reviews = list_reviews(assay_dir, "my-spec").unwrap();
+        assert_eq!(
+            reviews.len(),
+            1,
+            "non-JSON and corrupt files should be skipped"
+        );
+    }
+
+    #[test]
+    fn criterion_traceability_exactly_50_pct_is_advisory() {
+        // 2 of 4 criteria have no requirements → exactly 50% → advisory (not fail, per D008)
+        let gates = make_gates(vec![
+            make_criterion("c1", &[]),
+            make_criterion("c2", &[]),
+            make_criterion("c3", &["REQ-AUTH-001"]),
+            make_criterion("c4", &["REQ-AUTH-002"]),
+        ]);
+        let check = check_criterion_traceability(&gates);
+        assert!(
+            check.passed,
+            "exactly 50% without requirements should be advisory (threshold is >50%)"
+        );
+        assert!(check.message.contains("advisory"));
+    }
+
+    #[test]
+    fn criterion_traceability_just_over_50_pct_fails() {
+        // 3 of 5 = 60% → just over threshold → fail
+        let gates = make_gates(vec![
+            make_criterion("c1", &[]),
+            make_criterion("c2", &[]),
+            make_criterion("c3", &[]),
+            make_criterion("c4", &["REQ-AUTH-001"]),
+            make_criterion("c5", &["REQ-AUTH-002"]),
+        ]);
+        let check = check_criterion_traceability(&gates);
+        assert!(
+            !check.passed,
+            "60% without requirements should fail (>50% threshold)"
+        );
     }
 }
