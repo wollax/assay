@@ -1,0 +1,120 @@
+---
+source: crates/assay-types/tests/schema_snapshots.rs
+expression: schema.to_value()
+---
+{
+  "$defs": {
+    "ReviewCheck": {
+      "additionalProperties": false,
+      "description": "A single review check result.",
+      "properties": {
+        "details": {
+          "description": "Optional detailed evidence (e.g. list of uncovered REQ-IDs).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kind": {
+          "$ref": "#/$defs/ReviewCheckKind",
+          "description": "Whether this is a structural or agent-quality check."
+        },
+        "message": {
+          "description": "Human-readable summary of the check result.",
+          "type": "string"
+        },
+        "name": {
+          "description": "Check identifier, e.g. \"req-coverage\", \"acceptance-criteria\".",
+          "type": "string"
+        },
+        "passed": {
+          "description": "Whether the check passed (always true when `skipped` is true).",
+          "type": "boolean"
+        },
+        "skipped": {
+          "default": false,
+          "description": "Whether the check was skipped (not applicable for this spec type).\nWhen true, `passed` is also true and the result should not count\nagainst the failure tally.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name",
+        "kind",
+        "passed",
+        "message"
+      ],
+      "type": "object"
+    },
+    "ReviewCheckKind": {
+      "description": "The kind of review check: structural (machine-checkable) or\nagent quality (LLM-evaluated).",
+      "oneOf": [
+        {
+          "const": "structural",
+          "description": "Machine-checkable structural completeness check.",
+          "type": "string"
+        },
+        {
+          "const": "agent_quality",
+          "description": "LLM-evaluated quality assessment (via evaluator subprocess).",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "A complete review report for a spec.\n\nContains the results of all checks (structural and optionally agent-quality),\nalong with summary counts and metadata for persistence.",
+  "properties": {
+    "checks": {
+      "description": "All check results in execution order.",
+      "items": {
+        "$ref": "#/$defs/ReviewCheck"
+      },
+      "type": "array"
+    },
+    "failed": {
+      "description": "Number of checks that failed.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "passed": {
+      "description": "Number of checks that passed.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "run_id": {
+      "description": "Unique run identifier (timestamp-based, set by `save_review()`).\n`None` for unsaved in-memory reports; always `Some` after persistence.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "skipped": {
+      "description": "Number of checks that were skipped (not applicable).",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "spec": {
+      "description": "Spec slug this review was generated for.",
+      "type": "string"
+    },
+    "timestamp": {
+      "description": "When the review was executed.",
+      "format": "date-time",
+      "type": "string"
+    }
+  },
+  "required": [
+    "spec",
+    "timestamp",
+    "checks",
+    "passed",
+    "failed",
+    "skipped"
+  ],
+  "title": "ReviewReport",
+  "type": "object"
+}

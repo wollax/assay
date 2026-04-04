@@ -93,6 +93,33 @@ Valid statuses: draft, proposed, planned, in-progress, verified, deprecated")]
         #[arg(long)]
         to: Option<String>,
     },
+    /// Run structural review checks on a spec
+    #[command(after_long_help = "\
+Examples:
+  Run structural review:
+    assay spec review auth-flow
+
+  Output review report as JSON:
+    assay spec review auth-flow --json
+
+  List past reviews:
+    assay spec review auth-flow --list
+
+  Also run agent quality pass (S05, currently no-op):
+    assay spec review auth-flow --agent")]
+    Review {
+        /// Spec name (directory name or filename without .toml extension)
+        name: String,
+        /// Output ReviewReport as JSON to stdout
+        #[arg(long)]
+        json: bool,
+        /// List past review reports instead of running a new review
+        #[arg(long)]
+        list: bool,
+        /// Also run agent quality pass (no-op until S05)
+        #[arg(long)]
+        agent: bool,
+    },
 }
 
 /// Handle spec subcommands.
@@ -108,6 +135,12 @@ pub(crate) fn handle(command: SpecCommand) -> anyhow::Result<i32> {
         } => handle_spec_validate(&name, json, check_commands),
         SpecCommand::Coverage { name, json } => handle_spec_coverage(&name, json),
         SpecCommand::Promote { name, to } => handle_spec_promote(&name, to.as_deref()),
+        SpecCommand::Review {
+            name,
+            json,
+            list,
+            agent: _,
+        } => handle_spec_review(&name, json, list),
     }
 }
 
@@ -547,6 +580,108 @@ fn handle_spec_promote(name: &str, to: Option<&str>) -> anyhow::Result<i32> {
     let (old, new) = assay_core::spec::promote::promote_spec(&specs_dir, name, target)?;
     println!("{name}: {old} → {new}");
     Ok(0)
+}
+
+/// Handle `assay spec review <name> [--json] [--list] [--agent]`.
+fn handle_spec_review(name: &str, json: bool, list: bool) -> anyhow::Result<i32> {
+    let root = project_root()?;
+    let config = assay_core::config::load(&root)?;
+    let ad = assay_dir(&root);
+
+    if list {
+        let reviews = assay_core::review::list_reviews(&ad, name)?;
+        if reviews.is_empty() {
+            println!("No past reviews for '{name}'");
+            return Ok(0);
+        }
+        // Print table header.
+        println!(
+            "  {:<26}  {:>6}  {:>6}  {:>7}",
+            "Timestamp", "Passed", "Failed", "Skipped"
+        );
+        println!(
+            "  {}  {}  {}  {}",
+            "\u{2500}".repeat(26),
+            "\u{2500}".repeat(6),
+            "\u{2500}".repeat(6),
+            "\u{2500}".repeat(7),
+        );
+        for r in &reviews {
+            println!(
+                "  {:<26}  {:>6}  {:>6}  {:>7}",
+                r.timestamp.format("%Y-%m-%d %H:%M:%S UTC"),
+                r.passed,
+                r.failed,
+                r.skipped,
+            );
+        }
+        return Ok(0);
+    }
+
+    let specs_dir = ad.join(&config.specs_dir);
+    let entry = assay_core::spec::load_spec_entry_with_diagnostics(name, &specs_dir)?;
+
+    let report = match &entry {
+        SpecEntry::Legacy { spec, .. } => {
+            // Build a GatesSpec-like wrapper from the legacy Spec.
+            let gates_spec = assay_types::GatesSpec {
+                name: spec.name.clone(),
+                description: spec.description.clone(),
+                gate: None,
+                depends: vec![],
+                milestone: None,
+                order: None,
+                criteria: spec.criteria.clone(),
+            };
+            assay_core::review::run_structural_review(name, &gates_spec, None)
+        }
+        SpecEntry::Directory {
+            gates, spec_path, ..
+        } => {
+            let feature = spec_path
+                .as_ref()
+                .and_then(|p| assay_core::spec::load_feature_spec(p).ok());
+            assay_core::review::run_structural_review(name, gates, feature.as_ref())
+        }
+    };
+
+    // Save the review.
+    let path = assay_core::review::save_review(&ad, &report)?;
+    eprintln!("Review saved: {}", path.display());
+
+    if json {
+        // Read the saved file (it has the run_id populated).
+        let content = std::fs::read_to_string(&path).context("failed to read saved review")?;
+        println!("{content}");
+    } else {
+        // Print pass/fail table.
+        let color = colors_enabled();
+        println!("Review: {name}");
+        println!();
+        for check in &report.checks {
+            let symbol = if check.skipped {
+                if color { "\x1b[33m⊘\x1b[0m" } else { "⊘" }
+            } else if check.passed {
+                if color { "\x1b[32m✓\x1b[0m" } else { "✓" }
+            } else if color {
+                "\x1b[31m✗\x1b[0m"
+            } else {
+                "✗"
+            };
+            println!("  {} {}: {}", symbol, check.name, check.message);
+            if let Some(details) = &check.details {
+                println!("    {details}");
+            }
+        }
+        println!();
+        println!(
+            "Passed: {}  Failed: {}  Skipped: {}",
+            report.passed, report.failed, report.skipped
+        );
+    }
+
+    // Exit 0 if all pass, 1 if any fail.
+    if report.failed > 0 { Ok(1) } else { Ok(0) }
 }
 
 /// Testable core of `handle_spec_validate` that takes an explicit specs_dir.
@@ -1082,5 +1217,184 @@ cmd = "echo ok"
             msg.contains("spec.toml"),
             "Expected spec.toml error, got: {msg}"
         );
+    }
+
+    // ── Review tests ─────────────────────────────────────────────────
+
+    /// Testable core for `handle_spec_review` that bypasses project_root discovery.
+    fn review_and_result(
+        name: &str,
+        specs_dir: &std::path::Path,
+        assay_dir: &std::path::Path,
+    ) -> anyhow::Result<(i32, assay_types::ReviewReport)> {
+        let entry = assay_core::spec::load_spec_entry_with_diagnostics(name, specs_dir)?;
+
+        let report = match &entry {
+            SpecEntry::Legacy { spec, .. } => {
+                let gates_spec = assay_types::GatesSpec {
+                    name: spec.name.clone(),
+                    description: spec.description.clone(),
+                    gate: None,
+                    depends: vec![],
+                    milestone: None,
+                    order: None,
+                    criteria: spec.criteria.clone(),
+                };
+                assay_core::review::run_structural_review(name, &gates_spec, None)
+            }
+            SpecEntry::Directory {
+                gates, spec_path, ..
+            } => {
+                let feature = spec_path
+                    .as_ref()
+                    .and_then(|p| assay_core::spec::load_feature_spec(p).ok());
+                assay_core::review::run_structural_review(name, gates, feature.as_ref())
+            }
+        };
+
+        let _path = assay_core::review::save_review(assay_dir, &report)?;
+        let exit_code = if report.failed > 0 { 1 } else { 0 };
+        Ok((exit_code, report))
+    }
+
+    fn write_dir_spec_with_feature(
+        dir: &std::path::Path,
+        name: &str,
+        reqs: &[&str],
+        criteria_reqs: &[(&str, &[&str])],
+    ) {
+        let spec_dir = dir.join(name);
+        std::fs::create_dir_all(&spec_dir).unwrap();
+
+        // Write gates.toml.
+        let mut gates = format!("name = \"{name}\"\n\n");
+        for (cname, creqs) in criteria_reqs {
+            gates.push_str(&format!(
+                "[[criteria]]\nname = \"{cname}\"\ndescription = \"test\"\ncmd = \"echo ok\"\n"
+            ));
+            if !creqs.is_empty() {
+                let reqs_str: Vec<String> = creqs.iter().map(|r| format!("\"{r}\"")).collect();
+                gates.push_str(&format!("requirements = [{}]\n", reqs_str.join(", ")));
+            }
+            gates.push('\n');
+        }
+        std::fs::write(spec_dir.join("gates.toml"), gates).unwrap();
+
+        // Write spec.toml with requirements.
+        let mut spec = format!("name = \"{name}\"\nstatus = \"draft\"\nversion = \"0.1\"\n\n");
+        for req_id in reqs {
+            spec.push_str(&format!(
+                "[[requirements]]\nid = \"{req_id}\"\ntitle = \"Test\"\nstatement = \"Must work\"\nobligation = \"shall\"\npriority = \"must\"\nverification = \"test\"\nstatus = \"draft\"\n\n[[requirements.acceptance_criteria]]\ncriterion = \"Given X, when Y, then Z\"\n\n"
+            ));
+        }
+        std::fs::write(spec_dir.join("spec.toml"), spec).unwrap();
+    }
+
+    #[test]
+    fn test_spec_review_all_pass_returns_zero() {
+        let tmp = tempfile::tempdir().unwrap();
+        let specs_dir = tmp.path();
+        let assay_dir = tmp.path().join(".assay");
+        std::fs::create_dir_all(&assay_dir).unwrap();
+
+        write_dir_spec_with_feature(
+            specs_dir,
+            "review-pass",
+            &["REQ-AUTH-001"],
+            &[("c1", &["REQ-AUTH-001"])],
+        );
+
+        let (exit_code, report) = review_and_result("review-pass", specs_dir, &assay_dir).unwrap();
+        assert_eq!(exit_code, 0, "all-pass review should exit 0");
+        assert_eq!(report.failed, 0);
+        assert_eq!(report.checks.len(), 6);
+    }
+
+    #[test]
+    fn test_spec_review_failure_returns_one() {
+        let tmp = tempfile::tempdir().unwrap();
+        let specs_dir = tmp.path();
+        let assay_dir = tmp.path().join(".assay");
+        std::fs::create_dir_all(&assay_dir).unwrap();
+
+        // REQ-AUTH-002 is uncovered → req-coverage fails.
+        write_dir_spec_with_feature(
+            specs_dir,
+            "review-fail",
+            &["REQ-AUTH-001", "REQ-AUTH-002"],
+            &[("c1", &["REQ-AUTH-001"])],
+        );
+
+        let (exit_code, report) = review_and_result("review-fail", specs_dir, &assay_dir).unwrap();
+        assert_eq!(exit_code, 1, "review with failures should exit 1");
+        assert!(report.failed > 0);
+    }
+
+    #[test]
+    fn test_spec_review_json_output_roundtrips() {
+        let tmp = tempfile::tempdir().unwrap();
+        let specs_dir = tmp.path();
+        let assay_dir = tmp.path().join(".assay");
+        std::fs::create_dir_all(&assay_dir).unwrap();
+
+        write_dir_spec_with_feature(
+            specs_dir,
+            "review-json",
+            &["REQ-AUTH-001"],
+            &[("c1", &["REQ-AUTH-001"])],
+        );
+
+        let (_exit_code, report) = review_and_result("review-json", specs_dir, &assay_dir).unwrap();
+
+        let json_str =
+            serde_json::to_string_pretty(&report).expect("ReviewReport should serialize");
+        let deserialized: assay_types::ReviewReport =
+            serde_json::from_str(&json_str).expect("ReviewReport JSON should round-trip");
+        assert_eq!(deserialized.spec, "review-json");
+        assert_eq!(deserialized.checks.len(), report.checks.len());
+    }
+
+    #[test]
+    fn test_spec_review_list_returns_saved_reviews() {
+        let tmp = tempfile::tempdir().unwrap();
+        let specs_dir = tmp.path();
+        let assay_dir = tmp.path().join(".assay");
+        std::fs::create_dir_all(&assay_dir).unwrap();
+
+        write_dir_spec_with_feature(
+            specs_dir,
+            "review-list",
+            &["REQ-AUTH-001"],
+            &[("c1", &["REQ-AUTH-001"])],
+        );
+
+        // Save two reviews.
+        review_and_result("review-list", specs_dir, &assay_dir).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        review_and_result("review-list", specs_dir, &assay_dir).unwrap();
+
+        let reviews = assay_core::review::list_reviews(&assay_dir, "review-list").unwrap();
+        assert_eq!(reviews.len(), 2);
+        // Most recent first.
+        assert!(reviews[0].timestamp >= reviews[1].timestamp);
+    }
+
+    #[test]
+    fn test_spec_review_no_spec_toml_skips_gracefully() {
+        let tmp = tempfile::tempdir().unwrap();
+        let specs_dir = tmp.path();
+        let assay_dir = tmp.path().join(".assay");
+        std::fs::create_dir_all(&assay_dir).unwrap();
+
+        // Directory spec with gates only, no spec.toml.
+        write_gates_only_dir_spec(specs_dir, "no-feature");
+
+        let (_exit_code, report) = review_and_result("no-feature", specs_dir, &assay_dir).unwrap();
+        // 5 checks skip (those needing FeatureSpec), 1 runs (criterion-traceability).
+        assert_eq!(report.skipped, 5);
+        // criterion-traceability runs; exit code depends on whether it passes.
+        // The gates-only spec has 1 criterion with no requirements → 100% → fails.
+        assert_eq!(report.failed, 1);
+        assert_eq!(report.checks.len(), 6);
     }
 }

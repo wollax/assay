@@ -1,0 +1,64 @@
+---
+source: crates/assay-types/tests/schema_snapshots.rs
+expression: schema.to_value()
+---
+{
+  "$defs": {
+    "ReviewCheckKind": {
+      "description": "The kind of review check: structural (machine-checkable) or\nagent quality (LLM-evaluated).",
+      "oneOf": [
+        {
+          "const": "structural",
+          "description": "Machine-checkable structural completeness check.",
+          "type": "string"
+        },
+        {
+          "const": "agent_quality",
+          "description": "LLM-evaluated quality assessment (via evaluator subprocess).",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "A single review check result.",
+  "properties": {
+    "details": {
+      "description": "Optional detailed evidence (e.g. list of uncovered REQ-IDs).",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "kind": {
+      "$ref": "#/$defs/ReviewCheckKind",
+      "description": "Whether this is a structural or agent-quality check."
+    },
+    "message": {
+      "description": "Human-readable summary of the check result.",
+      "type": "string"
+    },
+    "name": {
+      "description": "Check identifier, e.g. \"req-coverage\", \"acceptance-criteria\".",
+      "type": "string"
+    },
+    "passed": {
+      "description": "Whether the check passed (always true when `skipped` is true).",
+      "type": "boolean"
+    },
+    "skipped": {
+      "default": false,
+      "description": "Whether the check was skipped (not applicable for this spec type).\nWhen true, `passed` is also true and the result should not count\nagainst the failure tally.",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "name",
+    "kind",
+    "passed",
+    "message"
+  ],
+  "title": "ReviewCheck",
+  "type": "object"
+}
