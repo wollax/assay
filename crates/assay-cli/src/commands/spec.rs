@@ -1,6 +1,7 @@
 use anyhow::{Context, bail};
 use assay_core::spec::SpecEntry;
 use assay_types::Severity;
+use assay_types::feature_spec::SpecStatus;
 use clap::Subcommand;
 
 use super::{
@@ -75,6 +76,23 @@ Examples:
         #[arg(long)]
         json: bool,
     },
+    /// Promote a spec's lifecycle status
+    #[command(after_long_help = "\
+Examples:
+  Advance to the next status:
+    assay spec promote auth-flow
+
+  Jump directly to a specific status:
+    assay spec promote auth-flow --to planned
+
+Valid statuses: draft, proposed, planned, in-progress, verified, deprecated")]
+    Promote {
+        /// Spec name (directory name)
+        name: String,
+        /// Target status to set directly (e.g. planned, in-progress)
+        #[arg(long)]
+        to: Option<String>,
+    },
 }
 
 /// Handle spec subcommands.
@@ -89,6 +107,7 @@ pub(crate) fn handle(command: SpecCommand) -> anyhow::Result<i32> {
             check_commands,
         } => handle_spec_validate(&name, json, check_commands),
         SpecCommand::Coverage { name, json } => handle_spec_coverage(&name, json),
+        SpecCommand::Promote { name, to } => handle_spec_promote(&name, to.as_deref()),
     }
 }
 
@@ -493,6 +512,40 @@ fn handle_spec_coverage(name: &str, json: bool) -> anyhow::Result<i32> {
         println!();
     }
 
+    Ok(0)
+}
+
+/// Parse a lifecycle status string (kebab-case) into a `SpecStatus`.
+///
+/// Uses serde's JSON deserialization since `SpecStatus` derives
+/// `serde(rename_all = "kebab-case")`. The string is wrapped in JSON quotes
+/// so serde sees a valid JSON string value.
+fn parse_spec_status(s: &str) -> Option<SpecStatus> {
+    // Escape any JSON metacharacters so the format produces valid JSON.
+    // serde_json::to_string wraps the str in quotes and escapes as needed.
+    let json = serde_json::to_string(s).ok()?;
+    serde_json::from_str(&json).ok()
+}
+
+/// Handle `assay spec promote <name> [--to <status>]`.
+fn handle_spec_promote(name: &str, to: Option<&str>) -> anyhow::Result<i32> {
+    let root = project_root()?;
+    let config = assay_core::config::load(&root)?;
+    let specs_dir = assay_dir(&root).join(&config.specs_dir);
+
+    let target = match to {
+        Some(s) => match parse_spec_status(s) {
+            Some(status) => Some(status),
+            None => bail!(
+                "invalid status '{}'. Valid values: draft, proposed, planned, in-progress, verified, deprecated",
+                s
+            ),
+        },
+        None => None,
+    };
+
+    let (old, new) = assay_core::spec::promote::promote_spec(&specs_dir, name, target)?;
+    println!("{name}: {old} → {new}");
     Ok(0)
 }
 
@@ -921,5 +974,113 @@ cmd = "echo ok"
         assert_eq!(parsed.covered, report.covered);
         assert_eq!(parsed.uncovered, report.uncovered);
         assert_eq!(parsed.orphaned, report.orphaned);
+    }
+
+    // --- Promote tests ---
+
+    /// Testable core of handle_spec_promote that takes explicit specs_dir.
+    fn promote_and_result(
+        name: &str,
+        to: Option<&str>,
+        specs_dir: &std::path::Path,
+    ) -> anyhow::Result<(i32, SpecStatus, SpecStatus)> {
+        let target = match to {
+            Some(s) => match parse_spec_status(s) {
+                Some(status) => Some(status),
+                None => anyhow::bail!(
+                    "invalid status '{}'. Valid values: draft, proposed, planned, in-progress, verified, deprecated",
+                    s
+                ),
+            },
+            None => None,
+        };
+
+        let (old, new) = assay_core::spec::promote::promote_spec(specs_dir, name, target)?;
+        Ok((0, old, new))
+    }
+
+    /// Create a directory spec with spec.toml for promote testing.
+    fn write_promote_dir_spec(dir: &std::path::Path, name: &str, status: &str) {
+        let spec_dir = dir.join(name);
+        std::fs::create_dir_all(&spec_dir).unwrap();
+        let spec_toml = format!(
+            r#"name = "{name}"
+status = "{status}"
+version = "0.1"
+
+[overview]
+description = "Test spec for promote"
+functions = []
+
+[[requirements]]
+id = "REQ-TEST-001"
+title = "Test requirement"
+statement = "The system shall do something"
+"#
+        );
+        let gates_toml = format!(
+            r#"name = "{name}"
+
+[[criteria]]
+name = "check"
+description = "Basic check"
+cmd = "echo ok"
+"#
+        );
+        std::fs::write(spec_dir.join("spec.toml"), spec_toml).unwrap();
+        std::fs::write(spec_dir.join("gates.toml"), gates_toml).unwrap();
+    }
+
+    #[test]
+    fn test_spec_promote_advance() {
+        let tmp = tempfile::tempdir().unwrap();
+        let specs_dir = tmp.path();
+        write_promote_dir_spec(specs_dir, "auth-flow", "draft");
+
+        let (exit_code, old, new) = promote_and_result("auth-flow", None, specs_dir).unwrap();
+        assert_eq!(exit_code, 0);
+        assert_eq!(old, SpecStatus::Draft);
+        assert_eq!(new, SpecStatus::Proposed);
+    }
+
+    #[test]
+    fn test_spec_promote_to_flag() {
+        let tmp = tempfile::tempdir().unwrap();
+        let specs_dir = tmp.path();
+        write_promote_dir_spec(specs_dir, "auth-flow", "draft");
+
+        let (exit_code, old, new) =
+            promote_and_result("auth-flow", Some("planned"), specs_dir).unwrap();
+        assert_eq!(exit_code, 0);
+        assert_eq!(old, SpecStatus::Draft);
+        assert_eq!(new, SpecStatus::Planned);
+    }
+
+    #[test]
+    fn test_spec_promote_invalid_to() {
+        let tmp = tempfile::tempdir().unwrap();
+        let specs_dir = tmp.path();
+        write_promote_dir_spec(specs_dir, "auth-flow", "draft");
+
+        let err = promote_and_result("auth-flow", Some("bogus"), specs_dir).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("invalid status") && msg.contains("Valid values"),
+            "Expected invalid status error with valid values list, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_spec_promote_unsupported_spec() {
+        let tmp = tempfile::tempdir().unwrap();
+        let specs_dir = tmp.path();
+        write_gates_only_dir_spec(specs_dir, "gates-only");
+
+        let err = promote_and_result("gates-only", None, specs_dir).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("spec.toml"),
+            "Expected spec.toml error, got: {msg}"
+        );
     }
 }
