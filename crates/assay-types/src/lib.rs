@@ -22,6 +22,7 @@ pub mod harness;
 pub mod manifest;
 pub mod merge;
 pub mod milestone;
+pub mod review;
 pub mod schema_registry;
 pub mod session;
 pub mod signal;
@@ -61,6 +62,7 @@ pub use merge::{
     MergeConflict, MergeExecuteResult, MergeProposal, MergeProposeConfig,
 };
 pub use milestone::{ChunkRef, Milestone, MilestoneStatus};
+pub use review::{ReviewCheck, ReviewCheckKind, ReviewReport};
 pub use session::{AgentEvaluation, Confidence, EvaluatorRole, GateEvalContext};
 pub use signal::{
     AssayServerState, GateSummary, PeerInfo, PeerUpdate, PollSignalsResult, RunSummary,

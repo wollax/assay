@@ -533,3 +533,21 @@ fn coverage_report_schema_snapshot() {
     let schema = schemars::schema_for!(assay_types::CoverageReport);
     assert_json_snapshot!("coverage-report-schema", schema.to_value());
 }
+
+#[test]
+fn review_check_kind_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::ReviewCheckKind);
+    assert_json_snapshot!("review-check-kind-schema", schema.to_value());
+}
+
+#[test]
+fn review_check_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::ReviewCheck);
+    assert_json_snapshot!("review-check-schema", schema.to_value());
+}
+
+#[test]
+fn review_report_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::ReviewReport);
+    assert_json_snapshot!("review-report-schema", schema.to_value());
+}

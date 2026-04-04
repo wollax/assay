@@ -585,7 +585,7 @@ pub fn validate_gates_spec(spec: &GatesSpec) -> std::result::Result<(), Vec<Spec
 /// - Followed by an uppercase-alpha area segment (1+ chars)
 /// - Then `-`
 /// - Then digits (1+ chars)
-fn is_valid_req_id(id: &str) -> bool {
+pub(crate) fn is_valid_req_id(id: &str) -> bool {
     let rest = match id.strip_prefix("REQ-") {
         Some(r) => r,
         None => return false,
