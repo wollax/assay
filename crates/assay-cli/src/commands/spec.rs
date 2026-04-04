@@ -638,9 +638,25 @@ fn handle_spec_review(name: &str, json: bool, list: bool) -> anyhow::Result<i32>
         SpecEntry::Directory {
             gates, spec_path, ..
         } => {
-            let feature = spec_path
-                .as_ref()
-                .and_then(|p| assay_core::spec::load_feature_spec(p).ok());
+            let feature = spec_path.as_ref().and_then(|p| {
+                match assay_core::spec::load_feature_spec(p) {
+                    Ok(f) => Some(f),
+                    Err(ref e)
+                        if matches!(
+                            e,
+                            assay_core::error::AssayError::Io { .. }
+                        ) && p.exists() =>
+                    {
+                        tracing::warn!(
+                            path = %p.display(),
+                            error = %e,
+                            "spec.toml exists but could not be loaded — structural checks that require FeatureSpec will be skipped"
+                        );
+                        None
+                    }
+                    Err(_) => None,
+                }
+            });
             assay_core::review::run_structural_review(name, gates, feature.as_ref())
         }
     };
@@ -1376,7 +1392,10 @@ cmd = "echo ok"
         let reviews = assay_core::review::list_reviews(&assay_dir, "review-list").unwrap();
         assert_eq!(reviews.len(), 2);
         // Most recent first.
-        assert!(reviews[0].timestamp >= reviews[1].timestamp);
+        assert!(
+            reviews[0].timestamp > reviews[1].timestamp,
+            "expected most-recent review first"
+        );
     }
 
     #[test]
