@@ -4,6 +4,7 @@
 //! that define what should be built and their acceptance criteria.
 
 pub mod coverage;
+pub mod promote;
 pub mod validate;
 
 use std::collections::HashSet;
