@@ -22,6 +22,9 @@ pub mod opencode;
 /// Scope enforcement and multi-agent prompt generation.
 pub mod scope;
 
+/// Claude streaming NDJSON parser.
+pub mod claude_stream;
+
 /// Harness provider trait and built-in implementations.
 pub mod provider;
 

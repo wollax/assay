@@ -14,6 +14,8 @@ use assay_types::HarnessProfile;
 // existing consumers that import from `assay_harness::provider` continue to work.
 pub use assay_types::provider::{HarnessError, HarnessProvider, NullProvider};
 
+use assay_types::AgentEvent;
+
 use crate::{claude, codex, opencode};
 
 /// Claude Code adapter.
@@ -31,6 +33,17 @@ impl HarnessProvider for ClaudeProvider {
         let config = claude::generate_config(profile);
         claude::write_config(&config, working_dir)?;
         Ok(claude::build_cli_args(&config))
+    }
+}
+
+impl ClaudeProvider {
+    /// Parse Claude streaming NDJSON output into typed agent events.
+    ///
+    /// Convenience wrapper around [`crate::claude_stream::parse_claude_events`]
+    /// so callers can use the provider as the single entry point for
+    /// Claude-related operations.
+    pub fn parse_streaming_output(reader: impl std::io::BufRead) -> Vec<AgentEvent> {
+        crate::claude_stream::parse_claude_events(reader)
     }
 }
 
