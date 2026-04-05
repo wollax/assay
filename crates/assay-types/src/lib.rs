@@ -7,6 +7,7 @@
 
 #![deny(missing_docs)]
 
+pub mod agent_event;
 pub mod checkpoint;
 pub mod context;
 pub mod coverage;
@@ -35,6 +36,7 @@ pub mod worktree;
 #[cfg(feature = "orchestrate")]
 pub mod orchestrate;
 
+pub use agent_event::AgentEvent;
 pub use checkpoint::{
     AgentState, AgentStatus, ContextHealthSnapshot, TaskState, TaskStatus, TeamCheckpoint,
 };

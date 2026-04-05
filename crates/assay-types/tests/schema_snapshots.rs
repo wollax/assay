@@ -551,3 +551,9 @@ fn review_report_schema_snapshot() {
     let schema = schemars::schema_for!(assay_types::ReviewReport);
     assert_json_snapshot!("review-report-schema", schema.to_value());
 }
+
+#[test]
+fn agent_event_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::AgentEvent);
+    assert_json_snapshot!("agent-event-schema", schema.to_value());
+}

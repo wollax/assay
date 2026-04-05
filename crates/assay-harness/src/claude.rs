@@ -149,16 +149,12 @@ pub fn write_config(config: &ClaudeConfig, dir: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-/// Build CLI arguments for a `claude --print` invocation.
+/// Build the shared argument set common to both JSON and streaming invocations.
 ///
-/// The returned vector contains flags only (no binary name). Callers prepend
-/// the `claude` binary path themselves.
-pub fn build_cli_args(config: &ClaudeConfig) -> Vec<String> {
-    let mut args = vec![
-        "--print".to_string(),
-        "--output-format".to_string(),
-        "json".to_string(),
-    ];
+/// Includes model, system prompt, MCP config, and settings — everything except
+/// the output format flags.
+fn build_common_args(config: &ClaudeConfig) -> Vec<String> {
+    let mut args = Vec::new();
 
     if let Some(ref model) = config.model {
         args.push("--model".to_string());
@@ -176,6 +172,35 @@ pub fn build_cli_args(config: &ClaudeConfig) -> Vec<String> {
     args.push("--settings".to_string());
     args.push(".claude/settings.json".to_string());
 
+    args
+}
+
+/// Build CLI arguments for a `claude --print` invocation.
+///
+/// The returned vector contains flags only (no binary name). Callers prepend
+/// the `claude` binary path themselves.
+pub fn build_cli_args(config: &ClaudeConfig) -> Vec<String> {
+    let mut args = vec![
+        "--print".to_string(),
+        "--output-format".to_string(),
+        "json".to_string(),
+    ];
+    args.extend(build_common_args(config));
+    args
+}
+
+/// Build CLI arguments for a `claude --output-format stream-json --verbose --print` invocation.
+///
+/// Like [`build_cli_args`] but requests NDJSON streaming output. The returned
+/// events can be parsed by [`crate::claude_stream::parse_claude_events`].
+pub fn build_streaming_cli_args(config: &ClaudeConfig) -> Vec<String> {
+    let mut args = vec![
+        "--print".to_string(),
+        "--output-format".to_string(),
+        "stream-json".to_string(),
+        "--verbose".to_string(),
+    ];
+    args.extend(build_common_args(config));
     args
 }
 
@@ -441,6 +466,79 @@ mod tests {
         assert!(!args.contains(&"--model".to_string()));
         assert!(args.contains(&"--print".to_string()));
         assert!(args.contains(&"--system-prompt".to_string()));
+    }
+
+    /// Streaming CLI args include stream-json, --verbose, --print.
+    #[test]
+    fn build_streaming_cli_args_full() {
+        let config = ClaudeConfig {
+            claude_md: "You are a coding agent.".to_string(),
+            mcp_json: "{}".to_string(),
+            settings_json: "{}".to_string(),
+            hooks_json: "{}".to_string(),
+            model: Some("sonnet".to_string()),
+        };
+
+        let args = build_streaming_cli_args(&config);
+        assert!(
+            args.contains(&"stream-json".to_string()),
+            "must contain stream-json"
+        );
+        assert!(
+            args.contains(&"--verbose".to_string()),
+            "must contain --verbose"
+        );
+        assert!(
+            args.contains(&"--print".to_string()),
+            "must contain --print"
+        );
+        // Must NOT contain bare "json" as a standalone arg.
+        assert!(
+            !args.contains(&"json".to_string()),
+            "must not contain bare json"
+        );
+        // Must contain common args.
+        assert!(
+            args.contains(&"--model".to_string()),
+            "must contain --model"
+        );
+        assert!(
+            args.contains(&"--system-prompt".to_string()),
+            "must contain --system-prompt"
+        );
+    }
+
+    /// Streaming args without model omits --model.
+    #[test]
+    fn build_streaming_cli_args_no_model() {
+        let config = ClaudeConfig {
+            claude_md: "Instructions.".to_string(),
+            mcp_json: "{}".to_string(),
+            settings_json: "{}".to_string(),
+            hooks_json: "{}".to_string(),
+            model: None,
+        };
+
+        let args = build_streaming_cli_args(&config);
+        assert!(args.contains(&"stream-json".to_string()));
+        assert!(args.contains(&"--verbose".to_string()));
+        assert!(!args.contains(&"--model".to_string()));
+    }
+
+    /// Refactored build_cli_args still produces identical output.
+    #[test]
+    fn build_cli_args_refactored_unchanged() {
+        let config = ClaudeConfig {
+            claude_md: "You are a coding agent.".to_string(),
+            mcp_json: "{}".to_string(),
+            settings_json: "{}".to_string(),
+            hooks_json: "{}".to_string(),
+            model: Some("sonnet".to_string()),
+        };
+
+        let args = build_cli_args(&config);
+        // Verify the existing snapshot still matches.
+        assert_snapshot!("cli_args_full", args.join("\n"));
     }
 
     /// Empty claude_md omits --system-prompt flag.
