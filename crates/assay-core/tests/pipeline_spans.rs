@@ -38,13 +38,8 @@ fn session_for_missing_spec() -> ManifestSession {
     }
 }
 
-/// A no-op harness writer — never reached because `setup_session` fails first.
-fn noop_harness_writer(
-    _profile: &assay_types::HarnessProfile,
-    _path: &std::path::Path,
-) -> Result<Vec<String>, String> {
-    Ok(vec![])
-}
+/// A no-op provider — never reached because `setup_session` fails first.
+use assay_types::NullProvider;
 
 // ── Function-level span tests ────────────────────────────────────────
 
@@ -66,7 +61,7 @@ fn test_run_session_emits_span() {
     let config = config_with_missing_specs();
     let session = session_for_missing_spec();
 
-    let _ = pipeline::run_session(&session, &config, &noop_harness_writer);
+    let _ = pipeline::run_session(&session, &config, &NullProvider);
 
     assert!(logs_contain("pipeline::run_session"));
 }
@@ -87,7 +82,7 @@ fn test_run_manifest_emits_span() {
     };
     let config = config_with_missing_specs();
 
-    let _ = pipeline::run_manifest(&manifest, &config, &noop_harness_writer);
+    let _ = pipeline::run_manifest(&manifest, &config, &NullProvider);
 
     assert!(logs_contain("pipeline::run_manifest"));
 }

@@ -858,8 +858,8 @@ impl App {
                         if std::fs::create_dir_all(&run_dir).is_err() {
                             return false;
                         }
-                        let writer = provider_harness_writer(self.config.as_ref());
-                        let cli_args = match writer(&profile, &run_dir) {
+                        let provider = provider_harness_writer(self.config.as_ref());
+                        let cli_args = match provider.write_harness(&profile, &run_dir) {
                             Ok(args) => args,
                             Err(_) => return false,
                         };

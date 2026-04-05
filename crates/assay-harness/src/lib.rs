@@ -21,3 +21,8 @@ pub mod opencode;
 
 /// Scope enforcement and multi-agent prompt generation.
 pub mod scope;
+
+/// Harness provider trait and built-in implementations.
+pub mod provider;
+
+pub use assay_types::{HarnessError, HarnessProvider};

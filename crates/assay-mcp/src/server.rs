@@ -3260,15 +3260,8 @@ impl AssayServer {
 
         // Wrap the sync pipeline in spawn_blocking (D007).
         let results = tokio::task::spawn_blocking(move || {
-            let harness_writer: Box<assay_core::pipeline::HarnessWriter> = Box::new(
-                |profile: &assay_types::HarnessProfile, worktree_path: &std::path::Path| {
-                    let claude_config = assay_harness::claude::generate_config(profile);
-                    assay_harness::claude::write_config(&claude_config, worktree_path)
-                        .map_err(|e| format!("Failed to write claude config: {e}"))?;
-                    Ok(assay_harness::claude::build_cli_args(&claude_config))
-                },
-            );
-            assay_core::pipeline::run_manifest(&manifest, &pipeline_config, &harness_writer)
+            let provider = assay_harness::provider::ClaudeProvider;
+            assay_core::pipeline::run_manifest(&manifest, &pipeline_config, &provider)
         })
         .await
         .map_err(|e| McpError::internal_error(format!("pipeline task panicked: {e}"), None))?;
@@ -3759,24 +3752,15 @@ impl AssayServer {
         let dag_run_id_clone = dag_run_id.clone();
         // Wrap the sync orchestration + merge in spawn_blocking (D007).
         let result = tokio::task::spawn_blocking(move || {
-            // Session runner closure uses plain function calls (D035):
-            // constructs HarnessWriter from generate_config/write_config/build_cli_args
-            // rather than receiving a HarnessWriter dyn from the caller.
+            // Session runner closure: delegates to run_session with ClaudeProvider.
+            let provider = assay_harness::provider::ClaudeProvider;
             let session_runner = |session: &assay_types::ManifestSession,
                                   pipe_cfg: &assay_core::pipeline::PipelineConfig|
              -> std::result::Result<
                 assay_core::pipeline::PipelineResult,
                 assay_core::pipeline::PipelineError,
             > {
-                let harness_writer: Box<assay_core::pipeline::HarnessWriter> = Box::new(
-                    |profile: &assay_types::HarnessProfile, worktree_path: &std::path::Path| {
-                        let claude_config = assay_harness::claude::generate_config(profile);
-                        assay_harness::claude::write_config(&claude_config, worktree_path)
-                            .map_err(|e| format!("Failed to write claude config: {e}"))?;
-                        Ok(assay_harness::claude::build_cli_args(&claude_config))
-                    },
-                );
-                assay_core::pipeline::run_session(session, pipe_cfg, &harness_writer)
+                assay_core::pipeline::run_session(session, pipe_cfg, &provider)
             };
 
             // Execute orchestration with the pre-generated run_id so the
