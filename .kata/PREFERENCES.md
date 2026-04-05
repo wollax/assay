@@ -21,7 +21,7 @@ workflow:
   mode: linear
 linear:
   teamKey: WOL
-  projectId: fdb234ce-bc6e-47db-ba8f-2bc6df4fd39f
+  projectId: 5cdee838-05eb-400c-990d-ccd0f413b129
 ---
 
 # Kata Skill Preferences
