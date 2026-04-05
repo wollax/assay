@@ -239,18 +239,11 @@ fn execute_sequential(
     manifest: &assay_types::RunManifest,
     pipeline_config: &assay_core::pipeline::PipelineConfig,
 ) -> anyhow::Result<i32> {
-    // Concrete harness writer: composes assay_harness::claude functions
-    let harness_writer: Box<assay_core::pipeline::HarnessWriter> = Box::new(
-        |profile: &assay_types::HarnessProfile, worktree_path: &std::path::Path| {
-            let claude_config = assay_harness::claude::generate_config(profile);
-            assay_harness::claude::write_config(&claude_config, worktree_path)
-                .map_err(|e| format!("Failed to write claude config: {e}"))?;
-            Ok(assay_harness::claude::build_cli_args(&claude_config))
-        },
-    );
+    // Concrete harness provider: delegates to assay_harness::claude
+    let provider = assay_harness::provider::ClaudeProvider;
 
     // Run the pipeline
-    let results = assay_core::pipeline::run_manifest(manifest, pipeline_config, &harness_writer);
+    let results = assay_core::pipeline::run_manifest(manifest, pipeline_config, &provider);
 
     // Process results
     let mut session_results = Vec::new();
@@ -387,24 +380,14 @@ fn execute_orchestrated(
         ),
     };
 
-    // Session runner closure: constructs HarnessWriter from plain function
-    // calls (D035), delegates to run_session.
+    // Session runner closure: delegates to run_session with ClaudeProvider.
+    let provider = assay_harness::provider::ClaudeProvider;
     let session_runner = |session: &assay_types::ManifestSession,
                           pipe_cfg: &assay_core::pipeline::PipelineConfig|
      -> Result<
         assay_core::pipeline::PipelineResult,
         assay_core::pipeline::PipelineError,
-    > {
-        let harness_writer: Box<assay_core::pipeline::HarnessWriter> = Box::new(
-            |profile: &assay_types::HarnessProfile, worktree_path: &std::path::Path| {
-                let claude_config = assay_harness::claude::generate_config(profile);
-                assay_harness::claude::write_config(&claude_config, worktree_path)
-                    .map_err(|e| format!("Failed to write claude config: {e}"))?;
-                Ok(assay_harness::claude::build_cli_args(&claude_config))
-            },
-        );
-        assay_core::pipeline::run_session(session, pipe_cfg, &harness_writer)
-    };
+    > { assay_core::pipeline::run_session(session, pipe_cfg, &provider) };
 
     tracing::info!("Phase 1: Executing sessions");
     let orch_result = assay_core::orchestrate::executor::run_orchestrated(
@@ -617,24 +600,14 @@ fn execute_mesh(
         ),
     };
 
-    // Session runner closure: constructs HarnessWriter from plain function
-    // calls (D035), delegates to run_session.
+    // Session runner closure: delegates to run_session with ClaudeProvider.
+    let provider = assay_harness::provider::ClaudeProvider;
     let session_runner = |session: &assay_types::ManifestSession,
                           pipe_cfg: &assay_core::pipeline::PipelineConfig|
      -> Result<
         assay_core::pipeline::PipelineResult,
         assay_core::pipeline::PipelineError,
-    > {
-        let harness_writer: Box<assay_core::pipeline::HarnessWriter> = Box::new(
-            |profile: &assay_types::HarnessProfile, worktree_path: &std::path::Path| {
-                let claude_config = assay_harness::claude::generate_config(profile);
-                assay_harness::claude::write_config(&claude_config, worktree_path)
-                    .map_err(|e| format!("Failed to write claude config: {e}"))?;
-                Ok(assay_harness::claude::build_cli_args(&claude_config))
-            },
-        );
-        assay_core::pipeline::run_session(session, pipe_cfg, &harness_writer)
-    };
+    > { assay_core::pipeline::run_session(session, pipe_cfg, &provider) };
 
     let orch_result = assay_core::orchestrate::mesh::run_mesh(
         manifest,
@@ -763,24 +736,14 @@ fn execute_gossip(
         ),
     };
 
-    // Session runner closure: constructs HarnessWriter from plain function
-    // calls (D035), delegates to run_session.
+    // Session runner closure: delegates to run_session with ClaudeProvider.
+    let provider = assay_harness::provider::ClaudeProvider;
     let session_runner = |session: &assay_types::ManifestSession,
                           pipe_cfg: &assay_core::pipeline::PipelineConfig|
      -> Result<
         assay_core::pipeline::PipelineResult,
         assay_core::pipeline::PipelineError,
-    > {
-        let harness_writer: Box<assay_core::pipeline::HarnessWriter> = Box::new(
-            |profile: &assay_types::HarnessProfile, worktree_path: &std::path::Path| {
-                let claude_config = assay_harness::claude::generate_config(profile);
-                assay_harness::claude::write_config(&claude_config, worktree_path)
-                    .map_err(|e| format!("Failed to write claude config: {e}"))?;
-                Ok(assay_harness::claude::build_cli_args(&claude_config))
-            },
-        );
-        assay_core::pipeline::run_session(session, pipe_cfg, &harness_writer)
-    };
+    > { assay_core::pipeline::run_session(session, pipe_cfg, &provider) };
 
     let orch_result = assay_core::orchestrate::gossip::run_gossip(
         manifest,

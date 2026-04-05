@@ -6,7 +6,7 @@
 //!
 //! # Architecture
 //!
-//! The pipeline is parameterized over a `HarnessWriter` function that
+//! The pipeline is parameterized over a [`HarnessProvider`] trait that
 //! generates and writes harness configuration files to the worktree,
 //! returning CLI arguments for the agent subprocess. This keeps `assay-core`
 //! independent of the specific harness adapter (`assay-harness::claude`).
@@ -569,9 +569,14 @@ const _: () = {
 /// Takes a `HarnessProfile` and a worktree path, writes configuration
 /// files to disk, and returns the CLI arguments for the agent subprocess.
 ///
-/// The concrete implementation is typically `claude::generate_config` +
-/// `claude::write_config` + `claude::build_cli_args` from `assay-harness`.
-pub type HarnessWriter = dyn Fn(&HarnessProfile, &Path) -> std::result::Result<Vec<String>, String>;
+/// The concrete implementation is typically `ClaudeProvider` from
+/// `assay-harness::provider`.
+// `HarnessProvider` is canonical at `assay_types::provider::HarnessProvider`.
+// This re-export exists for backward compatibility with code that previously
+// imported `assay_core::pipeline::HarnessWriter`. Prefer importing from
+// `assay_types` directly.
+#[doc(hidden)]
+pub use assay_types::HarnessProvider;
 
 /// Execute the setup phase of a pipeline session (stages 1-2).
 ///
@@ -712,7 +717,7 @@ pub fn setup_session(
 pub fn execute_session(
     manifest_session: &ManifestSession,
     config: &PipelineConfig,
-    harness_writer: &HarnessWriter,
+    harness_writer: &dyn HarnessProvider,
     setup: SetupResult,
 ) -> std::result::Result<PipelineResult, PipelineError> {
     let SetupResult {
@@ -732,20 +737,22 @@ pub fn execute_session(
     let cli_args = info_span!("harness_config", spec = %manifest_session.spec).in_scope(|| {
         let stage_start = Instant::now();
         let profile = build_harness_profile(manifest_session);
-        let args = harness_writer(&profile, &worktree_info.path).map_err(|e| {
-            let elapsed = stage_start.elapsed();
-            abandon(&config.assay_dir, &format!("HarnessConfig failed: {e}"));
-            warn!(stage = "harness_config", error = %e, "stage failed");
-            PipelineError {
-                stage: PipelineStage::HarnessConfig,
-                message: format!("Failed to write harness config: {e}"),
-                recovery: format!(
-                    "Check worktree path '{}' is writable",
-                    worktree_info.path.display()
-                ),
-                elapsed,
-            }
-        })?;
+        let args = harness_writer
+            .write_harness(&profile, &worktree_info.path)
+            .map_err(|e| {
+                let elapsed = stage_start.elapsed();
+                abandon(&config.assay_dir, &format!("HarnessConfig failed: {e}"));
+                warn!(stage = "harness_config", error = %e, "stage failed");
+                PipelineError {
+                    stage: PipelineStage::HarnessConfig,
+                    message: format!("Failed to write harness config: {e}"),
+                    recovery: format!(
+                        "Check worktree path '{}' is writable",
+                        worktree_info.path.display()
+                    ),
+                    elapsed,
+                }
+            })?;
         let duration = stage_start.elapsed();
         info!("stage completed");
         stage_timings.push(StageTiming {
@@ -983,7 +990,7 @@ pub fn execute_session(
 pub fn run_session(
     manifest_session: &ManifestSession,
     config: &PipelineConfig,
-    harness_writer: &HarnessWriter,
+    harness_writer: &dyn HarnessProvider,
 ) -> std::result::Result<PipelineResult, PipelineError> {
     crate::telemetry::record_session_launched();
     let setup = setup_session(manifest_session, config)?;
@@ -999,7 +1006,7 @@ pub fn run_session(
 pub fn run_manifest(
     manifest: &RunManifest,
     config: &PipelineConfig,
-    harness_writer: &HarnessWriter,
+    harness_writer: &dyn HarnessProvider,
 ) -> Vec<std::result::Result<PipelineResult, PipelineError>> {
     manifest
         .sessions
@@ -1235,10 +1242,9 @@ mod tests {
             ..Default::default()
         };
         let config = PipelineConfig::default();
-        let writer: Box<HarnessWriter> =
-            Box::new(|_profile: &HarnessProfile, _path: &Path| Ok(vec![]));
+        let provider = assay_types::NullProvider;
 
-        let results = run_manifest(&manifest, &config, &writer);
+        let results = run_manifest(&manifest, &config, &provider);
         assert!(results.is_empty());
     }
 
@@ -1270,10 +1276,9 @@ mod tests {
             depends_on: vec![],
         };
 
-        let writer: Box<HarnessWriter> =
-            Box::new(|_profile: &HarnessProfile, _path: &Path| Ok(vec![]));
+        let provider = assay_types::NullProvider;
 
-        let result = run_session(&session, &config, &writer);
+        let result = run_session(&session, &config, &provider);
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert_eq!(err.stage, PipelineStage::SpecLoad);
@@ -1286,6 +1291,134 @@ mod tests {
             err.recovery.contains("nonexistent-spec"),
             "recovery should mention spec name, got: {}",
             err.recovery
+        );
+    }
+
+    // ── NullProvider integration tests ─────────────────────────────
+
+    /// Create a minimal git repository with a committed spec file.
+    ///
+    /// Returns the `TempDir` (must stay alive for the test) and the
+    /// [`PipelineConfig`] pointing into it.  Returns `None` if `git` is
+    /// not on `PATH`, allowing callers to skip rather than panic.
+    fn make_git_fixture() -> Option<(tempfile::TempDir, PipelineConfig)> {
+        // Probe for git before doing any work.
+        let git_ok = std::process::Command::new("git")
+            .arg("--version")
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false);
+        if !git_ok {
+            return None;
+        }
+
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+
+        let run = |args: &[&str]| {
+            std::process::Command::new("git")
+                .args(args)
+                .current_dir(root)
+                .output()
+                .unwrap_or_else(|e| panic!("git {args:?} failed: {e}"))
+        };
+
+        run(&["init", "-b", "main"]);
+        run(&["config", "user.email", "test@test.com"]);
+        run(&["config", "user.name", "Test"]);
+
+        let assay_dir = root.join(".assay");
+        let specs_dir = assay_dir.join("specs");
+        std::fs::create_dir_all(&specs_dir).unwrap();
+
+        std::fs::write(
+            specs_dir.join("null-spec.toml"),
+            r#"
+name = "null-spec"
+description = "Fixture spec for NullProvider pipeline test"
+
+[[criteria]]
+name = "Check"
+description = "check"
+cmd = "echo ok"
+"#,
+        )
+        .unwrap();
+
+        run(&["add", "-A"]);
+        run(&["commit", "-m", "initial"]);
+
+        let config = PipelineConfig {
+            project_root: root.to_path_buf(),
+            assay_dir: assay_dir.clone(),
+            specs_dir,
+            worktree_base: root.join("worktrees"),
+            timeout_secs: 5,
+            base_branch: Some("main".into()),
+        };
+
+        Some((dir, config))
+    }
+
+    /// Proves R022-01: a fourth adapter (`NullProvider`) passes through
+    /// the pipeline with zero changes to pipeline code.  The pipeline
+    /// accepts the provider, runs through SpecLoad and WorktreeCreate,
+    /// then proceeds to HarnessConfig (which succeeds because NullProvider
+    /// returns `Ok(vec![])`) and fails at AgentLaunch because there is
+    /// no real agent binary.  The key proof: the pipeline accepted any
+    /// `HarnessProvider` implementor without panicking.
+    ///
+    /// Requires `git` on `PATH`; skipped gracefully otherwise.
+    #[test]
+    fn test_null_provider_passes_through_pipeline() {
+        let Some((_dir, config)) = make_git_fixture() else {
+            eprintln!("SKIP test_null_provider_passes_through_pipeline — git not found");
+            return;
+        };
+
+        let session = ManifestSession {
+            spec: "null-spec".into(),
+            name: None,
+            settings: None,
+            hooks: vec![],
+            prompt_layers: vec![],
+            file_scope: vec![],
+            shared_files: vec![],
+            depends_on: vec![],
+        };
+
+        let provider = assay_types::NullProvider;
+        let result = run_session(&session, &config, &provider);
+
+        assert!(result.is_err(), "NullProvider should fail (no real agent)");
+        let err = result.unwrap_err();
+        // NullProvider returns Ok(vec![]) → HarnessConfig passes.
+        // AgentLaunch fails because the empty arg list cannot be spawned
+        // as a real agent process.
+        assert_eq!(
+            err.stage,
+            PipelineStage::AgentLaunch,
+            "expected AgentLaunch failure (NullProvider produces no agent), got: {}",
+            err
+        );
+    }
+
+    /// `run_manifest` with an empty sessions list returns an empty Vec
+    /// when called with `NullProvider` — proving the trait boundary
+    /// works for the manifest execution path without requiring git.
+    #[test]
+    fn test_run_manifest_with_null_provider_empty() {
+        let manifest = RunManifest {
+            sessions: vec![],
+            ..Default::default()
+        };
+        let config = PipelineConfig::default();
+        let provider = assay_types::NullProvider;
+
+        let results = run_manifest(&manifest, &config, &provider);
+        assert!(
+            results.is_empty(),
+            "empty manifest should produce empty results"
         );
     }
 
@@ -1332,10 +1465,9 @@ cmd = "echo ok"
             depends_on: vec![],
         };
 
-        let writer: Box<HarnessWriter> =
-            Box::new(|_profile: &HarnessProfile, _path: &Path| Ok(vec![]));
+        let provider = assay_types::NullProvider;
 
-        let result = run_session(&session, &config, &writer);
+        let result = run_session(&session, &config, &provider);
         assert!(result.is_err());
         let err = result.unwrap_err();
         // Should fail at WorktreeCreate (not a git repo).

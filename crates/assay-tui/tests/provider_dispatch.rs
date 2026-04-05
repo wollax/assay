@@ -33,7 +33,9 @@ fn run_writer(config: &Config) -> Vec<String> {
         working_dir: None,
     };
     let writer = provider_harness_writer(Some(config));
-    writer(&profile, tmp.path()).expect("writer should succeed")
+    writer
+        .write_harness(&profile, tmp.path())
+        .expect("writer should succeed")
 }
 
 #[test]
@@ -41,9 +43,21 @@ fn provider_dispatch_anthropic_uses_claude_binary() {
     let config = config_with_provider(ProviderKind::Anthropic);
     let args = run_writer(&config);
     assert!(
-        args[0].contains("claude"),
-        "expected first arg to contain 'claude', got: {:?}",
+        !args.is_empty(),
+        "expected non-empty args from AnthropicStreamingProvider"
+    );
+    // provider_harness_writer returns a full command line for launch_agent_streaming:
+    // args[0] must be the binary name, args[1..] are its arguments.
+    assert_eq!(
+        args[0], "claude",
+        "expected first element to be 'claude' (binary), got: {:?}",
         args[0]
+    );
+    // The actual flags follow — at minimum --print should be present.
+    assert!(
+        args.contains(&"--print".to_string()),
+        "expected '--print' in args, got: {:?}",
+        args
     );
 }
 
