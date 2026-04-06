@@ -22,7 +22,8 @@ use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use assay_types::{
-    GateRunSummary, HarnessProfile, ManifestSession, MergeCheck, RunManifest, SettingsOverride,
+    AgentEvent, GateRunSummary, HarnessProfile, ManifestSession, MergeCheck, RunManifest,
+    SettingsOverride,
 };
 
 use tracing::{info, info_span, instrument, warn};
@@ -844,6 +845,27 @@ pub fn execute_session(
             Ok::<_, PipelineError>(output)
         })?;
     crate::telemetry::record_agent_run_duration_ms(agent_start.elapsed().as_secs_f64() * 1000.0);
+
+    // ── Event log + tool call summary ────────────────────────────
+    // Currently, events are empty — streaming event collection is a
+    // future pipeline enhancement. Non-Claude adapters also produce
+    // empty events, which yields a default (all-zeros) summary.
+    let events: Vec<AgentEvent> = vec![];
+    let tool_call_summary = crate::work_session::compute_tool_call_summary(&events);
+    tracing::trace!(
+        total = tool_call_summary.total,
+        error_count = tool_call_summary.error_count,
+        "tool_call_summary populated (events empty until streaming is wired)"
+    );
+
+    // Persist tool_call_summary to the work session on disk.
+    if let Err(e) = crate::work_session::with_session(&config.assay_dir, &session_id, |session| {
+        session.tool_call_summary = tool_call_summary;
+        Ok(())
+    }) {
+        tracing::warn!(error = %e, session_id = %session_id, "failed to persist tool_call_summary to work session");
+    }
+
     // agent_output.stdout/stderr not used downstream — gate evaluation reads from the worktree filesystem.
     drop(agent_output);
 
@@ -854,11 +876,21 @@ pub fn execute_session(
                 crate::telemetry::record_gate_evaluated();
                 let stage_start = Instant::now();
                 let summary = match &spec_entry {
-                    SpecEntry::Legacy { spec, .. } => {
-                        crate::gate::evaluate_all(spec, &worktree_info.path, None, None)
-                    }
+                    SpecEntry::Legacy { spec, .. } => crate::gate::evaluate_all_with_events(
+                        spec,
+                        &worktree_info.path,
+                        None,
+                        None,
+                        &events,
+                    ),
                     SpecEntry::Directory { gates, .. } => {
-                        crate::gate::evaluate_all_gates(gates, &worktree_info.path, None, None)
+                        crate::gate::evaluate_all_gates_with_events(
+                            gates,
+                            &worktree_info.path,
+                            None,
+                            None,
+                            &events,
+                        )
                     }
                 };
 

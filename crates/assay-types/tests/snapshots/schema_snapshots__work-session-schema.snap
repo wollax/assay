@@ -1,0 +1,194 @@
+---
+source: crates/assay-types/tests/schema_snapshots.rs
+expression: schema.to_value()
+---
+{
+  "$defs": {
+    "AgentInvocation": {
+      "description": "Details about the agent invocation for this session.",
+      "properties": {
+        "command": {
+          "description": "The command used to invoke the agent.",
+          "type": "string"
+        },
+        "model": {
+          "description": "The model used by the agent, if known.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "command"
+      ],
+      "type": "object"
+    },
+    "PhaseTransition": {
+      "description": "A recorded phase transition within a work session.",
+      "properties": {
+        "from": {
+          "$ref": "#/$defs/SessionPhase",
+          "description": "The phase transitioned from."
+        },
+        "notes": {
+          "description": "Optional notes about the transition.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "timestamp": {
+          "description": "When the transition occurred.",
+          "format": "date-time",
+          "type": "string"
+        },
+        "to": {
+          "$ref": "#/$defs/SessionPhase",
+          "description": "The phase transitioned to."
+        },
+        "trigger": {
+          "description": "What triggered the transition (e.g., \"agent_started\", \"gate_passed\").",
+          "type": "string"
+        }
+      },
+      "required": [
+        "from",
+        "to",
+        "timestamp",
+        "trigger"
+      ],
+      "type": "object"
+    },
+    "SessionPhase": {
+      "description": "Phase of a work session lifecycle.\n\nSessions follow a linear pipeline: Created → AgentRunning → GateEvaluated → Completed.\nAny phase can transition to Abandoned (the escape hatch).",
+      "oneOf": [
+        {
+          "const": "created",
+          "description": "Session created, not yet started.",
+          "type": "string"
+        },
+        {
+          "const": "agent_running",
+          "description": "Agent is actively running.",
+          "type": "string"
+        },
+        {
+          "const": "gate_evaluated",
+          "description": "Gate evaluation has completed.",
+          "type": "string"
+        },
+        {
+          "const": "completed",
+          "description": "Session completed successfully.",
+          "type": "string"
+        },
+        {
+          "const": "abandoned",
+          "description": "Session was abandoned.",
+          "type": "string"
+        }
+      ]
+    },
+    "ToolCallSummary": {
+      "description": "Summary of tool calls during an agent session.",
+      "properties": {
+        "by_tool": {
+          "additionalProperties": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "description": "Tool call counts by tool name (e.g. {\"bash\": 5, \"edit\": 3}).",
+          "type": "object"
+        },
+        "error_count": {
+          "description": "Number of tool calls that resulted in an error.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "total": {
+          "description": "Total number of tool calls made by the agent.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "total",
+        "by_tool",
+        "error_count"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "An on-disk work session linking worktrees, agent invocations, and gate runs.\n\nThis is distinct from [`GateEvalContext`](crate::session::GateEvalContext), which is\nan in-memory crash-recoverable context for gate evaluation. `WorkSession` is the\npersistent record of an entire spec evaluation lifecycle.\n\n# Schema policy\n\nUnknown JSON fields are intentionally tolerated (no `deny_unknown_fields`) to allow\nforward-compatible schema evolution. Phases 41/42 may add fields without breaking\nsessions persisted by earlier versions. Contrast with [`GateRunRecord`] which uses\nstrict validation for its immutable-after-creation semantics.",
+  "properties": {
+    "agent": {
+      "$ref": "#/$defs/AgentInvocation",
+      "description": "Details about the agent invocation."
+    },
+    "assay_version": {
+      "description": "Version of assay that created this session.",
+      "type": "string"
+    },
+    "created_at": {
+      "description": "When the session was created.",
+      "format": "date-time",
+      "type": "string"
+    },
+    "gate_runs": {
+      "description": "IDs of gate runs associated with this session.\n\nEach entry is a `GateRunRecord.run_id` in format `<timestamp>-<6-char-hex>`\n(e.g., `20260304T223015Z-a3f1b2`). Entries are deduplicated on insertion.",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "id": {
+      "description": "Unique session identifier (ULID stored as string).",
+      "type": "string"
+    },
+    "phase": {
+      "$ref": "#/$defs/SessionPhase",
+      "description": "Current phase of the session lifecycle."
+    },
+    "spec_name": {
+      "description": "Name of the spec this session is for.",
+      "type": "string"
+    },
+    "tool_call_summary": {
+      "$ref": "#/$defs/ToolCallSummary",
+      "default": {
+        "by_tool": {},
+        "error_count": 0,
+        "total": 0
+      },
+      "description": "Summary of tool calls during the agent session.\nPopulated from the agent event log on session completion.\nDefaults to zeros for non-streaming agents."
+    },
+    "transitions": {
+      "description": "History of phase transitions.",
+      "items": {
+        "$ref": "#/$defs/PhaseTransition"
+      },
+      "type": "array"
+    },
+    "worktree_path": {
+      "description": "Path to the worktree associated with this session.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "spec_name",
+    "worktree_path",
+    "phase",
+    "created_at",
+    "transitions",
+    "agent",
+    "assay_version"
+  ],
+  "title": "WorkSession",
+  "type": "object"
+}
