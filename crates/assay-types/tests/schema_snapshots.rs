@@ -553,6 +553,18 @@ fn review_report_schema_snapshot() {
 }
 
 #[test]
+fn failed_criterion_summary_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::FailedCriterionSummary);
+    assert_json_snapshot!("failed-criterion-summary-schema", schema.to_value());
+}
+
+#[test]
+fn gate_diagnostic_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::GateDiagnostic);
+    assert_json_snapshot!("gate-diagnostic-schema", schema.to_value());
+}
+
+#[test]
 fn agent_event_schema_snapshot() {
     let schema = schemars::schema_for!(assay_types::AgentEvent);
     assert_json_snapshot!("agent-event-schema", schema.to_value());

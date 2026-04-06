@@ -14,7 +14,11 @@ use std::path::{Path, PathBuf};
 
 use assay_types::GatesSpec;
 use assay_types::feature_spec::{FeatureSpec, Obligation, SpecStatus};
-use assay_types::review::{ReviewCheck, ReviewCheckKind, ReviewReport};
+use assay_types::gate::GateKind;
+use assay_types::gate_run::GateRunSummary;
+use assay_types::review::{
+    FailedCriterionSummary, GateDiagnostic, ReviewCheck, ReviewCheckKind, ReviewReport,
+};
 use chrono::Utc;
 use tempfile::NamedTempFile;
 
@@ -515,6 +519,164 @@ fn check_status_consistency(feature: Option<&FeatureSpec>) -> ReviewCheck {
             details: Some(format!("non-verified: {}", non_verified.join(", "))),
         }
     }
+}
+
+/// Truncate a string to at most `max_chars` Unicode scalar values.
+///
+/// Unlike byte-index slicing, this is safe for all UTF-8 input.
+fn truncate_chars(s: &str, max_chars: usize) -> String {
+    s.chars().take(max_chars).collect()
+}
+
+/// Build a `GateDiagnostic` from a `GateRunSummary` by extracting failed criteria.
+///
+/// Iterates the summary results, filters to those with a result that did not pass,
+/// and extracts the criterion name, command, exit code, and stderr (truncated to
+/// 500 Unicode characters) into `FailedCriterionSummary` entries.
+///
+/// Note: `passed` and `failed` counts are taken from `summary` directly, which
+/// reflects the full gate run including any agent-evaluated criteria that may not
+/// yet have a result. `failed_criteria.len()` counts only command-style criteria
+/// with a concrete failed result; these can differ when agent criteria are pending.
+pub fn build_gate_diagnostic(spec: &str, run_id: &str, summary: &GateRunSummary) -> GateDiagnostic {
+    let failed_criteria: Vec<FailedCriterionSummary> = summary
+        .results
+        .iter()
+        .filter_map(|cr| {
+            cr.result.as_ref().filter(|r| !r.passed).map(|gate_result| {
+                let command = match &gate_result.kind {
+                    GateKind::Command { cmd } => Some(cmd.clone()),
+                    _ => None,
+                };
+                let stderr_snippet = truncate_chars(&gate_result.stderr, 500);
+                FailedCriterionSummary {
+                    criterion_name: cr.criterion_name.clone(),
+                    command,
+                    exit_code: gate_result.exit_code,
+                    stderr_snippet,
+                }
+            })
+        })
+        .collect();
+
+    GateDiagnostic {
+        spec: spec.to_string(),
+        run_id: run_id.to_string(),
+        timestamp: Utc::now(),
+        passed: summary.passed,
+        failed: summary.failed,
+        failed_criteria,
+    }
+}
+
+/// Persist a `GateDiagnostic` to `.assay/reviews/<spec>/<run-id>-gates.json`.
+///
+/// Uses atomic tempfile-then-rename writes. The `-gates.json` suffix distinguishes
+/// gate diagnostic files from structural review files.
+///
+/// Returns the path of the written file.
+pub fn save_gate_diagnostic(
+    assay_dir: &Path,
+    spec: &str,
+    diagnostic: &GateDiagnostic,
+) -> Result<PathBuf> {
+    validate_path_component(spec, "spec slug")?;
+    validate_path_component(&diagnostic.run_id, "run id")?;
+
+    let reviews_dir = assay_dir.join("reviews").join(spec);
+    std::fs::create_dir_all(&reviews_dir).map_err(|e| AssayError::Io {
+        operation: "creating reviews directory".to_string(),
+        path: reviews_dir.clone(),
+        source: e,
+    })?;
+
+    let target = reviews_dir.join(format!("{}-gates.json", diagnostic.run_id));
+    let json = serde_json::to_string_pretty(diagnostic).map_err(|e| AssayError::Io {
+        operation: "serializing GateDiagnostic".to_string(),
+        path: target.clone(),
+        source: std::io::Error::new(std::io::ErrorKind::InvalidData, e),
+    })?;
+
+    let mut tmp = NamedTempFile::new_in(&reviews_dir).map_err(|e| AssayError::Io {
+        operation: "creating tempfile for gate diagnostic".to_string(),
+        path: reviews_dir.clone(),
+        source: e,
+    })?;
+    tmp.write_all(json.as_bytes()).map_err(|e| AssayError::Io {
+        operation: "writing gate diagnostic tempfile".to_string(),
+        path: target.clone(),
+        source: e,
+    })?;
+    tmp.as_file().sync_all().map_err(|e| AssayError::Io {
+        operation: "syncing gate diagnostic tempfile".to_string(),
+        path: target.clone(),
+        source: e,
+    })?;
+    tmp.persist(&target).map_err(|e| AssayError::Io {
+        operation: "persisting gate diagnostic file".to_string(),
+        path: target.clone(),
+        source: e.error,
+    })?;
+    tracing::info!(
+        spec = %spec,
+        run_id = %diagnostic.run_id,
+        failed = diagnostic.failed,
+        path = %target.display(),
+        "gate diagnostic saved"
+    );
+    Ok(target)
+}
+
+/// List past gate diagnostics for a spec, sorted by timestamp descending.
+///
+/// Only reads files ending in `-gates.json`, ignoring structural review files.
+/// Returns an empty `Vec` if the reviews directory does not exist.
+pub fn list_gate_diagnostics(assay_dir: &Path, spec_slug: &str) -> Result<Vec<GateDiagnostic>> {
+    validate_path_component(spec_slug, "spec slug")?;
+
+    let reviews_dir = assay_dir.join("reviews").join(spec_slug);
+
+    let mut diagnostics = Vec::new();
+    // Use read_dir directly and treat NotFound as "no diagnostics yet",
+    // avoiding the TOCTOU window of an is_dir() pre-check.
+    let entries = match std::fs::read_dir(&reviews_dir) {
+        Ok(e) => e,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(vec![]),
+        Err(e) => {
+            return Err(AssayError::Io {
+                operation: "reading reviews directory".to_string(),
+                path: reviews_dir.clone(),
+                source: e,
+            });
+        }
+    };
+
+    for entry in entries {
+        let entry = entry.map_err(|e| AssayError::Io {
+            operation: "iterating reviews directory".to_string(),
+            path: reviews_dir.clone(),
+            source: e,
+        })?;
+        let path = entry.path();
+        let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        if file_name.ends_with("-gates.json") {
+            let content = std::fs::read_to_string(&path).map_err(|e| AssayError::Io {
+                operation: "reading gate diagnostic file".to_string(),
+                path: path.clone(),
+                source: e,
+            })?;
+            match serde_json::from_str::<GateDiagnostic>(&content) {
+                Ok(diag) => diagnostics.push(diag),
+                Err(e) => {
+                    tracing::warn!(path = %path.display(), error = %e, "skipping unreadable gate diagnostic file");
+                }
+            }
+        }
+    }
+
+    // Sort by timestamp descending (most recent first).
+    diagnostics.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+    Ok(diagnostics)
 }
 
 #[cfg(test)]
@@ -1020,5 +1182,375 @@ mod tests {
             !check.passed,
             "60% without requirements should fail (>50% threshold)"
         );
+    }
+
+    // ── Gate diagnostic tests ────────────────────────────────────────
+
+    use super::{build_gate_diagnostic, list_gate_diagnostics, save_gate_diagnostic};
+    use assay_types::enforcement::{Enforcement, EnforcementSummary};
+    use assay_types::gate::{GateKind, GateResult};
+    use assay_types::gate_run::{CriterionResult, GateRunSummary};
+    use assay_types::review::{FailedCriterionSummary, GateDiagnostic};
+
+    fn make_gate_result(
+        passed: bool,
+        cmd: &str,
+        exit_code: Option<i32>,
+        stderr: &str,
+    ) -> GateResult {
+        GateResult {
+            passed,
+            kind: GateKind::Command {
+                cmd: cmd.to_string(),
+            },
+            stdout: String::new(),
+            stderr: stderr.to_string(),
+            exit_code,
+            duration_ms: 100,
+            timestamp: Utc::now(),
+            truncated: false,
+            original_bytes: None,
+            evidence: None,
+            reasoning: None,
+            confidence: None,
+            evaluator_role: None,
+        }
+    }
+
+    fn make_gate_run_summary(results: Vec<CriterionResult>) -> GateRunSummary {
+        let passed = results
+            .iter()
+            .filter(|r| r.result.as_ref().is_some_and(|g| g.passed))
+            .count();
+        let failed = results
+            .iter()
+            .filter(|r| r.result.as_ref().is_some_and(|g| !g.passed))
+            .count();
+        let skipped = results.iter().filter(|r| r.result.is_none()).count();
+        GateRunSummary {
+            spec_name: "test-spec".to_string(),
+            results,
+            passed,
+            failed,
+            skipped,
+            total_duration_ms: 200,
+            enforcement: EnforcementSummary::default(),
+        }
+    }
+
+    #[test]
+    fn test_save_gate_diagnostic_creates_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let assay_dir = dir.path();
+
+        let diag = GateDiagnostic {
+            spec: "my-spec".to_string(),
+            run_id: "20260406T120000Z-abc123".to_string(),
+            timestamp: Utc::now(),
+            failed_criteria: vec![FailedCriterionSummary {
+                criterion_name: "check-build".to_string(),
+                command: Some("cargo build".to_string()),
+                exit_code: Some(1),
+                stderr_snippet: "error[E0308]".to_string(),
+            }],
+            passed: 2,
+            failed: 1,
+        };
+
+        let path = save_gate_diagnostic(assay_dir, "my-spec", &diag).unwrap();
+        assert!(path.exists());
+        assert!(
+            path.file_name()
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .ends_with("-gates.json")
+        );
+
+        // Verify the file is valid JSON that deserializes.
+        let content = std::fs::read_to_string(&path).unwrap();
+        let loaded: GateDiagnostic = serde_json::from_str(&content).unwrap();
+        assert_eq!(loaded.spec, "my-spec");
+        assert_eq!(loaded.failed_criteria.len(), 1);
+    }
+
+    #[test]
+    fn test_save_gate_diagnostic_validates_slug() {
+        let dir = tempfile::tempdir().unwrap();
+        let assay_dir = dir.path();
+
+        let diag = GateDiagnostic {
+            spec: "../escape".to_string(),
+            run_id: "20260406T120000Z-abc123".to_string(),
+            timestamp: Utc::now(),
+            failed_criteria: vec![],
+            passed: 0,
+            failed: 0,
+        };
+
+        let result = save_gate_diagnostic(assay_dir, "../escape", &diag);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_list_gate_diagnostics_returns_sorted() {
+        let dir = tempfile::tempdir().unwrap();
+        let assay_dir = dir.path();
+
+        let diag1 = GateDiagnostic {
+            spec: "my-spec".to_string(),
+            run_id: "20260406T110000Z-aaa111".to_string(),
+            timestamp: chrono::DateTime::parse_from_rfc3339("2026-04-06T11:00:00Z")
+                .unwrap()
+                .with_timezone(&Utc),
+            failed_criteria: vec![],
+            passed: 1,
+            failed: 0,
+        };
+        save_gate_diagnostic(assay_dir, "my-spec", &diag1).unwrap();
+
+        let diag2 = GateDiagnostic {
+            spec: "my-spec".to_string(),
+            run_id: "20260406T120000Z-bbb222".to_string(),
+            timestamp: chrono::DateTime::parse_from_rfc3339("2026-04-06T12:00:00Z")
+                .unwrap()
+                .with_timezone(&Utc),
+            failed_criteria: vec![],
+            passed: 0,
+            failed: 1,
+        };
+        save_gate_diagnostic(assay_dir, "my-spec", &diag2).unwrap();
+
+        let diagnostics = list_gate_diagnostics(assay_dir, "my-spec").unwrap();
+        assert_eq!(diagnostics.len(), 2);
+        // Most recent first.
+        assert!(diagnostics[0].timestamp > diagnostics[1].timestamp);
+        assert_eq!(diagnostics[0].run_id, "20260406T120000Z-bbb222");
+    }
+
+    #[test]
+    fn test_list_gate_diagnostics_ignores_structural_reviews() {
+        let dir = tempfile::tempdir().unwrap();
+        let assay_dir = dir.path();
+
+        // Save a structural review.
+        let feature = make_feature(vec![make_requirement_with_ac("REQ-AUTH-001")]);
+        let gates_spec = make_gates(vec![make_criterion("c1", &["REQ-AUTH-001"])]);
+        let report = run_structural_review("my-spec", &gates_spec, Some(&feature));
+        save_review(assay_dir, &report).unwrap();
+
+        // Save a gate diagnostic.
+        let diag = GateDiagnostic {
+            spec: "my-spec".to_string(),
+            run_id: "20260406T120000Z-abc123".to_string(),
+            timestamp: Utc::now(),
+            failed_criteria: vec![],
+            passed: 1,
+            failed: 0,
+        };
+        save_gate_diagnostic(assay_dir, "my-spec", &diag).unwrap();
+
+        // list_gate_diagnostics should return only the gate diagnostic.
+        let diagnostics = list_gate_diagnostics(assay_dir, "my-spec").unwrap();
+        assert_eq!(diagnostics.len(), 1, "should only return -gates.json files");
+        assert_eq!(diagnostics[0].run_id, "20260406T120000Z-abc123");
+    }
+
+    #[test]
+    fn test_list_gate_diagnostics_empty_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let diagnostics = list_gate_diagnostics(dir.path(), "nonexistent").unwrap();
+        assert!(diagnostics.is_empty());
+    }
+
+    #[test]
+    fn test_build_gate_diagnostic_extracts_failures() {
+        let results = vec![
+            CriterionResult {
+                criterion_name: "check-build".to_string(),
+                result: Some(make_gate_result(true, "cargo build", Some(0), "")),
+                enforcement: Enforcement::Required,
+            },
+            CriterionResult {
+                criterion_name: "check-lint".to_string(),
+                result: Some(make_gate_result(
+                    false,
+                    "cargo clippy",
+                    Some(1),
+                    "warning: unused var",
+                )),
+                enforcement: Enforcement::Required,
+            },
+        ];
+        let summary = make_gate_run_summary(results);
+
+        let diag = build_gate_diagnostic("my-spec", "run-1", &summary);
+        assert_eq!(diag.spec, "my-spec");
+        assert_eq!(diag.run_id, "run-1");
+        assert_eq!(diag.passed, 1);
+        assert_eq!(diag.failed, 1);
+        assert_eq!(diag.failed_criteria.len(), 1);
+        assert_eq!(diag.failed_criteria[0].criterion_name, "check-lint");
+        assert_eq!(
+            diag.failed_criteria[0].command.as_deref(),
+            Some("cargo clippy")
+        );
+        assert_eq!(diag.failed_criteria[0].exit_code, Some(1));
+        assert_eq!(
+            diag.failed_criteria[0].stderr_snippet,
+            "warning: unused var"
+        );
+    }
+
+    #[test]
+    fn test_build_gate_diagnostic_all_pass() {
+        let results = vec![
+            CriterionResult {
+                criterion_name: "check-build".to_string(),
+                result: Some(make_gate_result(true, "cargo build", Some(0), "")),
+                enforcement: Enforcement::Required,
+            },
+            CriterionResult {
+                criterion_name: "check-test".to_string(),
+                result: Some(make_gate_result(true, "cargo test", Some(0), "")),
+                enforcement: Enforcement::Required,
+            },
+        ];
+        let summary = make_gate_run_summary(results);
+        let diag = build_gate_diagnostic("my-spec", "run-all-pass", &summary);
+        assert_eq!(
+            diag.failed_criteria.len(),
+            0,
+            "no failed criteria when all pass"
+        );
+        assert_eq!(diag.passed, 2);
+        assert_eq!(diag.failed, 0);
+    }
+
+    #[test]
+    fn test_build_gate_diagnostic_non_command_gate_has_no_command() {
+        // Agent-evaluated criteria have a non-Command GateKind; command should be None.
+        let gate_result = GateResult {
+            passed: false,
+            kind: GateKind::AgentReport,
+            stdout: String::new(),
+            stderr: String::new(),
+            exit_code: None,
+            duration_ms: 0,
+            timestamp: Utc::now(),
+            truncated: false,
+            original_bytes: None,
+            evidence: None,
+            reasoning: Some("did not meet criterion".to_string()),
+            confidence: None,
+            evaluator_role: None,
+        };
+        let results = vec![CriterionResult {
+            criterion_name: "quality-check".to_string(),
+            result: Some(gate_result),
+            enforcement: Enforcement::Required,
+        }];
+        let summary = make_gate_run_summary(results);
+        let diag = build_gate_diagnostic("my-spec", "run-agent", &summary);
+        assert_eq!(diag.failed_criteria.len(), 1);
+        assert_eq!(
+            diag.failed_criteria[0].command, None,
+            "agent-evaluated gate should have no command"
+        );
+        assert_eq!(diag.failed_criteria[0].exit_code, None);
+    }
+
+    #[test]
+    fn test_build_gate_diagnostic_truncates_stderr_by_char_not_byte() {
+        // Build a stderr string with a multi-byte unicode char at position 499.
+        // A string of 499 ASCII chars + a 3-byte emoji + more ASCII chars.
+        let long_stderr = "a".repeat(499) + "🦀" + &"b".repeat(200);
+        assert!(
+            long_stderr.len() > 500,
+            "test setup: string is longer than 500 bytes"
+        );
+
+        let gate_result = GateResult {
+            passed: false,
+            kind: GateKind::Command {
+                cmd: "cargo build".to_string(),
+            },
+            stdout: String::new(),
+            stderr: long_stderr.clone(),
+            exit_code: Some(1),
+            duration_ms: 100,
+            timestamp: Utc::now(),
+            truncated: false,
+            original_bytes: None,
+            evidence: None,
+            reasoning: None,
+            confidence: None,
+            evaluator_role: None,
+        };
+        let results = vec![CriterionResult {
+            criterion_name: "check-build".to_string(),
+            result: Some(gate_result),
+            enforcement: Enforcement::Required,
+        }];
+        let summary = make_gate_run_summary(results);
+        let diag = build_gate_diagnostic("my-spec", "run-unicode", &summary);
+        let snippet = &diag.failed_criteria[0].stderr_snippet;
+        // Should truncate to exactly 500 chars (not panic on byte boundary)
+        assert_eq!(snippet.chars().count(), 500);
+        // Should end with the emoji (char 499 = index 499, 0-based), not a 'b'
+        assert!(
+            snippet.ends_with('🦀'),
+            "emoji at position 499 should be included"
+        );
+    }
+
+    #[test]
+    fn test_save_gate_diagnostic_validates_run_id() {
+        let dir = tempfile::tempdir().unwrap();
+        let assay_dir = dir.path();
+
+        let diag = GateDiagnostic {
+            spec: "my-spec".to_string(),
+            run_id: "../evil-run-id".to_string(),
+            timestamp: Utc::now(),
+            failed_criteria: vec![],
+            passed: 0,
+            failed: 0,
+        };
+
+        // Valid spec, invalid run_id — should be rejected.
+        let result = save_gate_diagnostic(assay_dir, "my-spec", &diag);
+        assert!(result.is_err(), "path-traversal run_id must be rejected");
+    }
+
+    #[test]
+    fn test_list_gate_diagnostics_skips_corrupted_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let assay_dir = dir.path();
+        let reviews_dir = assay_dir.join("reviews").join("my-spec");
+        std::fs::create_dir_all(&reviews_dir).unwrap();
+
+        // Write a corrupted -gates.json file.
+        std::fs::write(reviews_dir.join("run-1-gates.json"), b"not valid json").unwrap();
+
+        // Also write a valid one.
+        let valid_diag = GateDiagnostic {
+            spec: "my-spec".to_string(),
+            run_id: "20260406T120000Z-abc123".to_string(),
+            timestamp: Utc::now(),
+            failed_criteria: vec![],
+            passed: 1,
+            failed: 0,
+        };
+        save_gate_diagnostic(assay_dir, "my-spec", &valid_diag).unwrap();
+
+        // list should return only the valid one, not error on the corrupted file.
+        let diagnostics = list_gate_diagnostics(assay_dir, "my-spec").unwrap();
+        assert_eq!(
+            diagnostics.len(),
+            1,
+            "corrupted file should be skipped, not error"
+        );
+        assert_eq!(diagnostics[0].run_id, "20260406T120000Z-abc123");
     }
 }

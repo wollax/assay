@@ -929,6 +929,24 @@ pub fn execute_session(
             });
 
     if !gate_passed {
+        // Persist gate diagnostics for spec review (best-effort).
+        let diagnostic =
+            crate::review::build_gate_diagnostic(&spec_name, &session_id, &gate_summary);
+        match crate::review::save_gate_diagnostic(&config.assay_dir, &spec_name, &diagnostic) {
+            Ok(path) => info!(
+                spec = %spec_name,
+                run_id = %session_id,
+                failed = gate_summary.failed,
+                path = %path.display(),
+                "gate diagnostic saved"
+            ),
+            Err(e) => warn!(
+                spec = %spec_name,
+                error = %e,
+                "failed to save gate diagnostic"
+            ),
+        }
+
         // Gates failed — session stays in GateEvaluated, outcome is GateFailed.
         return Ok(PipelineResult {
             session_id,
@@ -1509,5 +1527,236 @@ cmd = "echo ok"
             "expected WorktreeCreate failure, got: {}",
             err
         );
+    }
+
+    // ── Gate diagnostic pipeline integration tests ────────────────
+
+    /// Build a git fixture with a spec whose gate command always fails.
+    ///
+    /// Returns `None` if `git` is not on PATH (test is skipped gracefully).
+    fn make_git_fixture_failing_gate() -> Option<(tempfile::TempDir, PipelineConfig)> {
+        let git_ok = std::process::Command::new("git")
+            .arg("--version")
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false);
+        if !git_ok {
+            return None;
+        }
+
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+
+        let run = |args: &[&str]| {
+            std::process::Command::new("git")
+                .args(args)
+                .current_dir(root)
+                .output()
+                .unwrap_or_else(|e| panic!("git {args:?} failed: {e}"))
+        };
+
+        run(&["init", "-b", "main"]);
+        run(&["config", "user.email", "test@test.com"]);
+        run(&["config", "user.name", "Test"]);
+
+        let assay_dir = root.join(".assay");
+        let specs_dir = assay_dir.join("specs");
+        std::fs::create_dir_all(&specs_dir).unwrap();
+
+        // Gate command intentionally exits non-zero so gate evaluation fails.
+        std::fs::write(
+            specs_dir.join("fail-spec.toml"),
+            r#"
+name = "fail-spec"
+description = "Fixture spec with a gate that always fails"
+
+[[criteria]]
+name = "AlwaysFail"
+description = "This gate always fails"
+cmd = "exit 1"
+"#,
+        )
+        .unwrap();
+
+        run(&["add", "-A"]);
+        run(&["commit", "-m", "initial"]);
+
+        let config = PipelineConfig {
+            project_root: root.to_path_buf(),
+            assay_dir: assay_dir.clone(),
+            specs_dir,
+            worktree_base: root.join("worktrees"),
+            timeout_secs: 10,
+            base_branch: Some("main".into()),
+        };
+
+        Some((dir, config))
+    }
+
+    /// TEST-006: A failing gate run writes a `-gates.json` diagnostic file
+    /// into `.assay/reviews/<spec>/`, and the file contains the expected
+    /// failure details.  This is the contract that `assay spec review`
+    /// depends on to show gate diagnostics.
+    #[test]
+    fn test_gate_failure_writes_diagnostic_file() {
+        let Some((_dir, config)) = make_git_fixture_failing_gate() else {
+            eprintln!("SKIP test_gate_failure_writes_diagnostic_file — git not found");
+            return;
+        };
+
+        let session = ManifestSession {
+            spec: "fail-spec".into(),
+            name: None,
+            settings: None,
+            hooks: vec![],
+            prompt_layers: vec![],
+            file_scope: vec![],
+            shared_files: vec![],
+            depends_on: vec![],
+        };
+
+        let provider = assay_types::NullProvider;
+        let result = run_session(&session, &config, &provider);
+
+        // The pipeline should succeed (return Ok) with GateFailed outcome.
+        // NullProvider produces empty CLI args, so the agent exits immediately
+        // (exit 0 with no output). Gate evaluation then runs the failing cmd.
+        match result {
+            Ok(pipeline_result) => {
+                assert_eq!(
+                    pipeline_result.outcome,
+                    PipelineOutcome::GateFailed,
+                    "expected GateFailed outcome"
+                );
+
+                // Diagnostic file must exist in .assay/reviews/fail-spec/.
+                let reviews_dir = config.assay_dir.join("reviews").join("fail-spec");
+                assert!(
+                    reviews_dir.is_dir(),
+                    "reviews/fail-spec/ directory should have been created"
+                );
+
+                let gate_files: Vec<_> = std::fs::read_dir(&reviews_dir)
+                    .unwrap()
+                    .filter_map(|e| e.ok())
+                    .filter(|e| {
+                        e.file_name()
+                            .to_str()
+                            .map(|n| n.ends_with("-gates.json"))
+                            .unwrap_or(false)
+                    })
+                    .collect();
+
+                assert_eq!(
+                    gate_files.len(),
+                    1,
+                    "exactly one -gates.json file should have been written, found: {:?}",
+                    gate_files.iter().map(|e| e.file_name()).collect::<Vec<_>>()
+                );
+
+                // The file should deserialize as a valid GateDiagnostic.
+                let content = std::fs::read_to_string(gate_files[0].path()).expect("readable file");
+                let diag: assay_types::GateDiagnostic =
+                    serde_json::from_str(&content).expect("valid JSON");
+
+                assert_eq!(diag.spec, "fail-spec");
+                assert_eq!(diag.failed, 1, "one criterion should have failed");
+                assert_eq!(
+                    diag.failed_criteria.len(),
+                    1,
+                    "one FailedCriterionSummary expected"
+                );
+                assert_eq!(diag.failed_criteria[0].criterion_name, "AlwaysFail");
+            }
+            Err(err) if err.stage == PipelineStage::AgentLaunch => {
+                // NullProvider can fail at AgentLaunch on some platforms — skip.
+                eprintln!(
+                    "SKIP test_gate_failure_writes_diagnostic_file — \
+                     AgentLaunch failed (NullProvider not viable on this platform): {err}"
+                );
+            }
+            Err(err) => {
+                panic!("unexpected pipeline error at stage {}: {}", err.stage, err);
+            }
+        }
+    }
+
+    /// TEST-007: A diagnostic save failure (read-only reviews directory) does
+    /// NOT change the pipeline result — the run still returns `GateFailed`,
+    /// not an IO error.  This proves the best-effort invariant.
+    ///
+    /// Only runs on Unix because `std::fs::Permissions::readonly` is
+    /// not reliably enforced on Windows without ACLs.
+    #[cfg(unix)]
+    #[test]
+    fn test_gate_failure_diagnostic_save_error_does_not_abort_pipeline() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let Some((_dir, config)) = make_git_fixture_failing_gate() else {
+            eprintln!(
+                "SKIP test_gate_failure_diagnostic_save_error_does_not_abort_pipeline \
+                 — git not found"
+            );
+            return;
+        };
+
+        // Pre-create the reviews/fail-spec directory as read-only so that
+        // save_gate_diagnostic cannot write a file into it.
+        let reviews_dir = config.assay_dir.join("reviews").join("fail-spec");
+        std::fs::create_dir_all(&reviews_dir).unwrap();
+        std::fs::set_permissions(&reviews_dir, std::fs::Permissions::from_mode(0o444)).unwrap();
+
+        let session = ManifestSession {
+            spec: "fail-spec".into(),
+            name: None,
+            settings: None,
+            hooks: vec![],
+            prompt_layers: vec![],
+            file_scope: vec![],
+            shared_files: vec![],
+            depends_on: vec![],
+        };
+
+        let provider = assay_types::NullProvider;
+        let result = run_session(&session, &config, &provider);
+
+        // Restore permissions so tempdir cleanup can succeed.
+        let _ = std::fs::set_permissions(&reviews_dir, std::fs::Permissions::from_mode(0o755));
+
+        match result {
+            Ok(pipeline_result) => {
+                // Save failed silently, but the pipeline outcome is still GateFailed.
+                assert_eq!(
+                    pipeline_result.outcome,
+                    PipelineOutcome::GateFailed,
+                    "best-effort save failure must not change the pipeline outcome"
+                );
+
+                // No diagnostic file should have been written.
+                let gate_files: Vec<_> = std::fs::read_dir(&reviews_dir)
+                    .unwrap_or_else(|_| panic!("reviews dir should exist"))
+                    .filter_map(|e| e.ok())
+                    .filter(|e| {
+                        e.file_name()
+                            .to_str()
+                            .map(|n| n.ends_with("-gates.json"))
+                            .unwrap_or(false)
+                    })
+                    .collect();
+                assert!(
+                    gate_files.is_empty(),
+                    "no gate file should have been written to a read-only dir"
+                );
+            }
+            Err(err) if err.stage == PipelineStage::AgentLaunch => {
+                eprintln!(
+                    "SKIP test_gate_failure_diagnostic_save_error_does_not_abort_pipeline \
+                     — AgentLaunch failed (NullProvider): {err}"
+                );
+            }
+            Err(err) => {
+                panic!("unexpected pipeline error at stage {}: {}", err.stage, err);
+            }
+        }
     }
 }

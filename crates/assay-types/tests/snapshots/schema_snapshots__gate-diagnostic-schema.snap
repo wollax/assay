@@ -1,0 +1,89 @@
+---
+source: crates/assay-types/tests/schema_snapshots.rs
+expression: schema.to_value()
+---
+{
+  "$defs": {
+    "FailedCriterionSummary": {
+      "additionalProperties": false,
+      "description": "Summary of a single failed gate criterion for diagnostic persistence.",
+      "properties": {
+        "command": {
+          "description": "The command that was executed (if any).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "criterion_name": {
+          "description": "Name of the criterion that failed.",
+          "type": "string"
+        },
+        "exit_code": {
+          "description": "Exit code from the command (if applicable).",
+          "format": "int32",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "stderr_snippet": {
+          "default": "",
+          "description": "Stderr snippet from the failed command (truncated).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "criterion_name"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Persistent record of gate failures from a pipeline run.\n\nWritten to `.assay/reviews/<spec>/<run-id>-gates.json` when a run\ncompletes with gate failures. Read by `assay spec review` to show\nfailure details alongside structural checks.\n\n# Security note\n\nDiagnostic files may contain output captured from gate commands (see\n[`FailedCriterionSummary::stderr_snippet`]). Gate commands are arbitrary\nshell commands, so their output could theoretically include sensitive data\n(API keys, tokens, passwords) if a failing command printed them to stderr.\nTreat `.assay/reviews/` with the same access controls as `.assay/sessions/`.",
+  "properties": {
+    "failed": {
+      "description": "Number of criteria that failed.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "failed_criteria": {
+      "description": "Details of each failed criterion.",
+      "items": {
+        "$ref": "#/$defs/FailedCriterionSummary"
+      },
+      "type": "array"
+    },
+    "passed": {
+      "description": "Number of criteria that passed.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "run_id": {
+      "description": "Run identifier (matches the session's run_id).",
+      "type": "string"
+    },
+    "spec": {
+      "description": "Spec slug this diagnostic is for.",
+      "type": "string"
+    },
+    "timestamp": {
+      "description": "When the gate evaluation completed.",
+      "format": "date-time",
+      "type": "string"
+    }
+  },
+  "required": [
+    "spec",
+    "run_id",
+    "timestamp",
+    "failed_criteria",
+    "passed",
+    "failed"
+  ],
+  "title": "GateDiagnostic",
+  "type": "object"
+}
