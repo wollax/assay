@@ -694,6 +694,31 @@ fn handle_spec_review(name: &str, json: bool, list: bool) -> anyhow::Result<i32>
             "Passed: {}  Failed: {}  Skipped: {}",
             report.passed, report.failed, report.skipped
         );
+
+        // Show gate diagnostics from the most recent run (if any).
+        let diagnostics = assay_core::review::list_gate_diagnostics(&ad, name)?;
+        if let Some(diag) = diagnostics.first() {
+            println!();
+            println!("Gate Diagnostics (most recent run):");
+            println!(
+                "  Run: {} ({})",
+                diag.run_id,
+                diag.timestamp.format("%Y-%m-%d %H:%M:%S UTC")
+            );
+            println!("  Passed: {}  Failed: {}", diag.passed, diag.failed);
+            for fc in &diag.failed_criteria {
+                println!("  ✗ {}", fc.criterion_name);
+                if let Some(cmd) = &fc.command {
+                    println!("    cmd: {cmd}");
+                }
+                if let Some(code) = fc.exit_code {
+                    println!("    exit: {code}");
+                }
+                if !fc.stderr_snippet.is_empty() {
+                    println!("    stderr: {}", fc.stderr_snippet);
+                }
+            }
+        }
     }
 
     // Exit 0 if all pass, 1 if any fail.

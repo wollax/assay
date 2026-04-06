@@ -66,7 +66,9 @@ pub use merge::{
 };
 pub use milestone::{ChunkRef, Milestone, MilestoneStatus};
 pub use provider::{HarnessError, HarnessProvider, NullProvider};
-pub use review::{ReviewCheck, ReviewCheckKind, ReviewReport};
+pub use review::{
+    FailedCriterionSummary, GateDiagnostic, ReviewCheck, ReviewCheckKind, ReviewReport,
+};
 pub use session::{AgentEvaluation, Confidence, EvaluatorRole, GateEvalContext};
 pub use signal::{
     AssayServerState, GateSummary, PeerInfo, PeerUpdate, PollSignalsResult, RunSummary,

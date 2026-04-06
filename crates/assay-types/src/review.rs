@@ -77,6 +77,53 @@ pub struct ReviewReport {
     pub skipped: usize,
 }
 
+/// Summary of a single failed gate criterion for diagnostic persistence.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct FailedCriterionSummary {
+    /// Name of the criterion that failed.
+    pub criterion_name: String,
+    /// The command that was executed (if any).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub command: Option<String>,
+    /// Exit code from the command (if applicable).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exit_code: Option<i32>,
+    /// Stderr snippet from the failed command (truncated).
+    #[serde(default)]
+    pub stderr_snippet: String,
+}
+
+/// Persistent record of gate failures from a pipeline run.
+///
+/// Written to `.assay/reviews/<spec>/<run-id>-gates.json` when a run
+/// completes with gate failures. Read by `assay spec review` to show
+/// failure details alongside structural checks.
+///
+/// # Security note
+///
+/// Diagnostic files may contain output captured from gate commands (see
+/// [`FailedCriterionSummary::stderr_snippet`]). Gate commands are arbitrary
+/// shell commands, so their output could theoretically include sensitive data
+/// (API keys, tokens, passwords) if a failing command printed them to stderr.
+/// Treat `.assay/reviews/` with the same access controls as `.assay/sessions/`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct GateDiagnostic {
+    /// Spec slug this diagnostic is for.
+    pub spec: String,
+    /// Run identifier (matches the session's run_id).
+    pub run_id: String,
+    /// When the gate evaluation completed.
+    pub timestamp: DateTime<Utc>,
+    /// Details of each failed criterion.
+    pub failed_criteria: Vec<FailedCriterionSummary>,
+    /// Number of criteria that passed.
+    pub passed: usize,
+    /// Number of criteria that failed.
+    pub failed: usize,
+}
+
 inventory::submit! {
     crate::schema_registry::SchemaEntry {
         name: "review-check-kind",
@@ -95,5 +142,19 @@ inventory::submit! {
     crate::schema_registry::SchemaEntry {
         name: "review-report",
         generate: || schemars::schema_for!(ReviewReport),
+    }
+}
+
+inventory::submit! {
+    crate::schema_registry::SchemaEntry {
+        name: "failed-criterion-summary",
+        generate: || schemars::schema_for!(FailedCriterionSummary),
+    }
+}
+
+inventory::submit! {
+    crate::schema_registry::SchemaEntry {
+        name: "gate-diagnostic",
+        generate: || schemars::schema_for!(GateDiagnostic),
     }
 }
