@@ -9,7 +9,10 @@ use std::path::{Path, PathBuf};
 use chrono::Utc;
 use tempfile::NamedTempFile;
 
-use assay_types::work_session::{AgentInvocation, PhaseTransition, SessionPhase, WorkSession};
+use assay_types::agent_event::AgentEvent;
+use assay_types::work_session::{
+    AgentInvocation, PhaseTransition, SessionPhase, ToolCallSummary, WorkSession,
+};
 
 use crate::error::{AssayError, Result};
 
@@ -39,6 +42,7 @@ pub fn create_work_session(
             model: agent_model.map(String::from),
         },
         gate_runs: vec![],
+        tool_call_summary: ToolCallSummary::default(),
         assay_version: env!("CARGO_PKG_VERSION").to_string(),
     }
 }
@@ -407,6 +411,31 @@ pub fn recover_stale_sessions(assay_dir: &Path, stale_threshold_secs: u64) -> Re
         );
     }
 
+    summary
+}
+
+/// Compute a tool call summary from agent events.
+///
+/// Counts [`AgentEvent::ToolCalled`] events for `by_tool` (not
+/// [`AgentEvent::ToolResult`], which carries `tool_use_id` rather than the
+/// real tool name — see WOL-248).
+///
+/// Counts [`AgentEvent::ToolResult`] events where `is_error` is `true` for
+/// `error_count`.
+pub fn compute_tool_call_summary(events: &[AgentEvent]) -> ToolCallSummary {
+    let mut summary = ToolCallSummary::default();
+    for event in events {
+        match event {
+            AgentEvent::ToolCalled { name, .. } => {
+                summary.total += 1;
+                *summary.by_tool.entry(name.clone()).or_insert(0) += 1;
+            }
+            AgentEvent::ToolResult { is_error: true, .. } => {
+                summary.error_count += 1;
+            }
+            _ => {}
+        }
+    }
     summary
 }
 
@@ -1331,5 +1360,101 @@ mod tests {
         // Stale session recovered
         let loaded_stale = load_session(dir.path(), &stale.id).unwrap();
         assert_eq!(loaded_stale.phase, SessionPhase::Abandoned);
+    }
+
+    // ── compute_tool_call_summary ────────────────────────────────────────
+
+    #[test]
+    fn test_compute_tool_call_summary_empty() {
+        let summary = compute_tool_call_summary(&[]);
+        assert_eq!(summary, ToolCallSummary::default());
+        assert_eq!(summary.total, 0);
+        assert_eq!(summary.error_count, 0);
+        assert!(summary.by_tool.is_empty());
+    }
+
+    #[test]
+    fn test_compute_tool_call_summary_counts_tool_called() {
+        let events = vec![
+            AgentEvent::ToolCalled {
+                name: "bash".into(),
+                input_json: "{}".into(),
+            },
+            AgentEvent::ToolCalled {
+                name: "edit".into(),
+                input_json: "{}".into(),
+            },
+            AgentEvent::ToolCalled {
+                name: "bash".into(),
+                input_json: "{}".into(),
+            },
+            AgentEvent::ToolResult {
+                name: "tool_use_abc".into(),
+                output: "ok".into(),
+                is_error: false,
+            },
+        ];
+        let summary = compute_tool_call_summary(&events);
+        assert_eq!(summary.total, 3);
+        assert_eq!(summary.by_tool.get("bash"), Some(&2));
+        assert_eq!(summary.by_tool.get("edit"), Some(&1));
+        assert_eq!(summary.error_count, 0);
+    }
+
+    #[test]
+    fn test_compute_tool_call_summary_counts_errors() {
+        let events = vec![
+            AgentEvent::ToolCalled {
+                name: "bash".into(),
+                input_json: "{}".into(),
+            },
+            AgentEvent::ToolCalled {
+                name: "read".into(),
+                input_json: "{}".into(),
+            },
+            AgentEvent::ToolResult {
+                name: "tool_use_123".into(),
+                output: "error".into(),
+                is_error: true,
+            },
+            AgentEvent::ToolResult {
+                name: "tool_use_456".into(),
+                output: "ok".into(),
+                is_error: false,
+            },
+        ];
+        let summary = compute_tool_call_summary(&events);
+        assert_eq!(summary.total, 2);
+        assert_eq!(summary.error_count, 1);
+    }
+
+    /// WOL-248 regression guard: `ToolResult` events must NOT increment
+    /// `by_tool` because `ToolResult.name` carries a `tool_use_id`, not the
+    /// real tool name.
+    #[test]
+    fn test_compute_tool_call_summary_ignores_tool_result_for_by_tool() {
+        let events = vec![
+            AgentEvent::ToolResult {
+                name: "toolu_abc123".into(),
+                output: "done".into(),
+                is_error: false,
+            },
+            AgentEvent::ToolResult {
+                name: "toolu_def456".into(),
+                output: "done".into(),
+                is_error: false,
+            },
+            AgentEvent::TurnEnded { turn_index: 0 },
+            AgentEvent::SessionStopped {
+                reason: "success".into(),
+                cost_usd: Some(0.05),
+                num_turns: 1,
+            },
+        ];
+        let summary = compute_tool_call_summary(&events);
+        // No ToolCalled events, so total and by_tool must be zero/empty.
+        assert_eq!(summary.total, 0);
+        assert!(summary.by_tool.is_empty());
+        assert_eq!(summary.error_count, 0);
     }
 }

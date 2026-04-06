@@ -557,3 +557,15 @@ fn agent_event_schema_snapshot() {
     let schema = schemars::schema_for!(assay_types::AgentEvent);
     assert_json_snapshot!("agent-event-schema", schema.to_value());
 }
+
+#[test]
+fn tool_call_summary_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::work_session::ToolCallSummary);
+    assert_json_snapshot!("tool-call-summary-schema", schema.to_value());
+}
+
+#[test]
+fn work_session_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::work_session::WorkSession);
+    assert_json_snapshot!("work-session-schema", schema.to_value());
+}

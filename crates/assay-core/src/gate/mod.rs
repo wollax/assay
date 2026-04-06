@@ -25,8 +25,8 @@ use std::time::{Duration, Instant};
 use chrono::Utc;
 
 use assay_types::{
-    Criterion, CriterionKind, CriterionResult, Enforcement, EnforcementSummary, GateCriterion,
-    GateKind, GateResult, GateRunSummary, GateSection, GatesSpec, Spec,
+    AgentEvent, Criterion, CriterionKind, CriterionResult, Enforcement, EnforcementSummary,
+    GateCriterion, GateKind, GateResult, GateRunSummary, GateSection, GatesSpec, Spec,
 };
 
 use crate::error::{AssayError, Result};
@@ -160,6 +160,49 @@ pub fn evaluate_all(
         cli_timeout,
         config_timeout,
     )
+}
+
+/// Evaluate all gate criteria with agent event context.
+///
+/// Currently delegates to [`evaluate_all`] — the event log is accepted but
+/// not consumed by any criterion type yet. This is the extension point for
+/// future event-based criteria (e.g. "bash was called at least once").
+///
+/// # Async Usage
+///
+/// This function is synchronous. From async code, use:
+/// ```ignore
+/// tokio::task::spawn_blocking(move || {
+///     gate::evaluate_all_with_events(&spec, &dir, cli_timeout, config_timeout, &events)
+/// }).await?
+/// ```
+pub fn evaluate_all_with_events(
+    spec: &Spec,
+    working_dir: &Path,
+    cli_timeout: Option<u64>,
+    config_timeout: Option<u64>,
+    _events: &[AgentEvent],
+) -> GateRunSummary {
+    // S04+ will use events for criteria evaluation.
+    // For now, delegate to the existing implementation.
+    evaluate_all(spec, working_dir, cli_timeout, config_timeout)
+}
+
+/// Evaluate all criteria in a `GatesSpec` with agent event context.
+///
+/// Currently delegates to [`evaluate_all_gates()`] — the event log is accepted
+/// but not consumed by any criterion type yet. This is the extension point for
+/// future event-based criteria (e.g. "bash was called at least once").
+pub fn evaluate_all_gates_with_events(
+    gates: &GatesSpec,
+    working_dir: &Path,
+    cli_timeout: Option<u64>,
+    config_timeout: Option<u64>,
+    _events: &[AgentEvent],
+) -> GateRunSummary {
+    // S04+ will use events for criteria evaluation.
+    // For now, delegate to the existing implementation.
+    evaluate_all_gates(gates, working_dir, cli_timeout, config_timeout)
 }
 
 /// Evaluate all criteria in a `GatesSpec` sequentially.
@@ -1819,6 +1862,100 @@ mod tests {
         assert_eq!(summary.enforcement.required_failed, 0);
         assert_eq!(summary.enforcement.advisory_passed, 0);
         assert_eq!(summary.enforcement.advisory_failed, 1);
+    }
+
+    #[test]
+    fn evaluate_all_with_events_delegates_to_evaluate_all() {
+        let dir = tempfile::tempdir().unwrap();
+        let spec = Spec {
+            name: "events-test".to_string(),
+            description: String::new(),
+            gate: None,
+            depends: vec![],
+            criteria: vec![Criterion {
+                name: "cmd-pass".to_string(),
+                description: "command that passes".to_string(),
+                cmd: Some("true".to_string()),
+                path: None,
+                timeout: None,
+                enforcement: Some(Enforcement::Required),
+                kind: None,
+                prompt: None,
+                requirements: vec![],
+            }],
+        };
+
+        let without_events = evaluate_all(&spec, dir.path(), None, None);
+        let with_events = evaluate_all_with_events(&spec, dir.path(), None, None, &[]);
+
+        assert_eq!(without_events.passed, with_events.passed);
+        assert_eq!(without_events.failed, with_events.failed);
+        assert_eq!(without_events.skipped, with_events.skipped);
+        assert_eq!(without_events.results.len(), with_events.results.len());
+        assert_eq!(with_events.passed, 1);
+    }
+
+    #[test]
+    fn evaluate_all_with_events_accepts_non_empty_events() {
+        let dir = tempfile::tempdir().unwrap();
+        let spec = Spec {
+            name: "events-nonempty".to_string(),
+            description: String::new(),
+            gate: None,
+            depends: vec![],
+            criteria: vec![],
+        };
+
+        let events = vec![
+            AgentEvent::ToolCalled {
+                name: "bash".to_string(),
+                input_json: "{}".to_string(),
+            },
+            AgentEvent::SessionStopped {
+                reason: "success".to_string(),
+                cost_usd: Some(0.01),
+                num_turns: 1,
+            },
+        ];
+
+        let summary = evaluate_all_with_events(&spec, dir.path(), None, None, &events);
+        // No criteria → 0 passed, 0 failed, 0 skipped
+        assert_eq!(summary.passed, 0);
+        assert_eq!(summary.failed, 0);
+        assert_eq!(summary.skipped, 0);
+    }
+
+    #[test]
+    fn evaluate_all_gates_with_events_delegates_to_evaluate_all_gates() {
+        let dir = tempfile::tempdir().unwrap();
+        let gates = GatesSpec {
+            name: "gates-events-test".to_string(),
+            description: String::new(),
+            gate: None,
+            depends: vec![],
+            milestone: None,
+            order: None,
+            criteria: vec![GateCriterion {
+                name: "cmd-pass".to_string(),
+                description: "command that passes".to_string(),
+                cmd: Some("true".to_string()),
+                path: None,
+                timeout: None,
+                enforcement: Some(Enforcement::Required),
+                kind: None,
+                prompt: None,
+                requirements: vec![],
+            }],
+        };
+
+        let without_events = evaluate_all_gates(&gates, dir.path(), None, None);
+        let with_events = evaluate_all_gates_with_events(&gates, dir.path(), None, None, &[]);
+
+        assert_eq!(without_events.passed, with_events.passed);
+        assert_eq!(without_events.failed, with_events.failed);
+        assert_eq!(without_events.skipped, with_events.skipped);
+        assert_eq!(without_events.results.len(), with_events.results.len());
+        assert_eq!(with_events.passed, 1);
     }
 
     #[test]

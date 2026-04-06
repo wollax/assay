@@ -4,6 +4,7 @@
 //! linking worktrees, agent invocations, and gate runs through a linear
 //! state machine ([`SessionPhase`]).
 
+use std::collections::HashMap;
 use std::fmt;
 use std::path::PathBuf;
 
@@ -147,8 +148,31 @@ pub struct WorkSession {
     /// (e.g., `20260304T223015Z-a3f1b2`). Entries are deduplicated on insertion.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub gate_runs: Vec<String>,
+    /// Summary of tool calls during the agent session.
+    /// Populated from the agent event log on session completion.
+    /// Defaults to zeros for non-streaming agents.
+    #[serde(default)]
+    pub tool_call_summary: ToolCallSummary,
     /// Version of assay that created this session.
     pub assay_version: String,
+}
+
+/// Summary of tool calls during an agent session.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ToolCallSummary {
+    /// Total number of tool calls made by the agent.
+    pub total: u32,
+    /// Tool call counts by tool name (e.g. {"bash": 5, "edit": 3}).
+    pub by_tool: HashMap<String, u32>,
+    /// Number of tool calls that resulted in an error.
+    pub error_count: u32,
+}
+
+inventory::submit! {
+    crate::schema_registry::SchemaEntry {
+        name: "tool-call-summary",
+        generate: || schemars::schema_for!(ToolCallSummary),
+    }
 }
 
 inventory::submit! {
@@ -274,6 +298,7 @@ mod tests {
                 model: Some("claude-sonnet-4-20250514".to_string()),
             },
             gate_runs: vec!["run-001".to_string(), "run-002".to_string()],
+            tool_call_summary: ToolCallSummary::default(),
             assay_version: "0.4.0".to_string(),
         };
 
@@ -417,6 +442,7 @@ mod tests {
                 model: None,
             },
             gate_runs: vec![],
+            tool_call_summary: ToolCallSummary::default(),
             assay_version: "0.4.0".to_string(),
         };
 
@@ -425,5 +451,50 @@ mod tests {
             !json.contains("gate_runs"),
             "JSON should omit empty gate_runs, got:\n{json}"
         );
+    }
+
+    #[test]
+    fn tool_call_summary_default_is_zeros() {
+        let summary = ToolCallSummary::default();
+        assert_eq!(summary.total, 0);
+        assert!(summary.by_tool.is_empty());
+        assert_eq!(summary.error_count, 0);
+    }
+
+    #[test]
+    fn tool_call_summary_round_trip() {
+        let mut by_tool = std::collections::HashMap::new();
+        by_tool.insert("bash".to_string(), 5);
+        by_tool.insert("edit".to_string(), 3);
+        let summary = ToolCallSummary {
+            total: 8,
+            by_tool,
+            error_count: 1,
+        };
+        let json = serde_json::to_string(&summary).expect("serialize");
+        let roundtripped: ToolCallSummary = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(summary, roundtripped);
+    }
+
+    #[test]
+    fn work_session_backward_compat_without_tool_call_summary() {
+        // Simulate an old-format WorkSession JSON without the tool_call_summary field.
+        let json = r#"{
+            "id": "01HTXYZ",
+            "spec_name": "test",
+            "worktree_path": "/tmp/wt",
+            "phase": "created",
+            "created_at": "2026-03-15T12:00:00Z",
+            "transitions": [],
+            "agent": { "command": "echo" },
+            "assay_version": "0.4.0"
+        }"#;
+
+        let session: WorkSession =
+            serde_json::from_str(json).expect("should deserialize without tool_call_summary");
+        assert_eq!(session.tool_call_summary, ToolCallSummary::default());
+        assert_eq!(session.tool_call_summary.total, 0);
+        assert!(session.tool_call_summary.by_tool.is_empty());
+        assert_eq!(session.tool_call_summary.error_count, 0);
     }
 }
