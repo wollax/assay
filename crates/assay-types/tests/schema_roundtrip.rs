@@ -686,6 +686,7 @@ shared_files = ["Cargo.lock"]
     assert_eq!(session.shared_files, vec!["Cargo.lock"]);
 }
 
+#[cfg(feature = "orchestrate")]
 #[test]
 fn run_manifest_with_scoped_sessions_validates() {
     validate(&RunManifest {
