@@ -8,14 +8,51 @@ use std::io::BufRead;
 
 use assay_types::AgentEvent;
 
-/// Parse Claude streaming NDJSON into typed agent events.
+/// Parse Claude streaming NDJSON into typed agent events (batch).
 ///
-/// Reads lines from `reader`, parses each as JSON, and maps recognized event
-/// types to [`AgentEvent`] variants. Unknown event types and malformed lines
-/// are logged at warn level and skipped. The function never errors — an empty
-/// `Vec` is a valid outcome (agent ran but produced nothing recognizable).
+/// Thin wrapper around [`parse_claude_events_streaming`] that collects all
+/// emitted events into a `Vec`. Preserved for callers that want the full
+/// event log up front (gates, summaries, tests). For real-time / per-token
+/// delivery, use [`parse_claude_events_streaming`] directly.
 pub fn parse_claude_events(reader: impl BufRead) -> Vec<AgentEvent> {
     let mut events = Vec::new();
+    parse_claude_events_streaming(reader, |e| events.push(e));
+    events
+}
+
+/// Parse Claude streaming NDJSON into typed agent events via a callback.
+///
+/// Reads lines from `reader`, parses each as JSON, maps recognized event
+/// types to [`AgentEvent`] variants, and invokes `callback` once per emitted
+/// event in stream order. Unknown event types and malformed lines are logged
+/// at warn level and skipped. The function never errors — zero callback
+/// invocations is a valid outcome (agent ran but produced nothing
+/// recognizable).
+///
+/// This is the canonical parser implementation. It enables real-time delivery
+/// of events as they arrive on `stdout`, which is what the pipeline relay
+/// thread (S03) needs to forward `TextDelta` tokens to the TUI live.
+///
+/// # Double-emit behaviour with `--include-partial-messages`
+///
+/// When Claude is invoked with `--include-partial-messages`, the same text
+/// content appears **twice** in the event stream:
+///
+/// * [`AgentEvent::TextDelta`] — emitted incrementally from `stream_event`
+///   `content_block_delta` lines as tokens arrive.
+/// * [`AgentEvent::TextBlock`] — emitted once from the complete `assistant`
+///   message when the block is finished.
+///
+/// Consumers must decide which granularity to use. The recommended split:
+/// - TUI live rendering → consume `TextDelta` for per-token display.
+/// - Batch consumers (gates, summaries) → consume `TextBlock` for the
+///   complete, authoritative text.
+/// - Do **not** concatenate both — that doubles the text content.
+pub fn parse_claude_events_streaming<R, F>(reader: R, mut callback: F)
+where
+    R: BufRead,
+    F: FnMut(AgentEvent),
+{
     let mut turn_index: u32 = 0;
     let mut seen_first_assistant = false;
 
@@ -56,7 +93,7 @@ pub fn parse_claude_events(reader: impl BufRead) -> Vec<AgentEvent> {
             "assistant" => {
                 // Emit TurnEnded before processing subsequent assistant events.
                 if seen_first_assistant {
-                    events.push(AgentEvent::TurnEnded { turn_index });
+                    callback(AgentEvent::TurnEnded { turn_index });
                     turn_index += 1;
                 }
                 seen_first_assistant = true;
@@ -73,7 +110,7 @@ pub fn parse_claude_events(reader: impl BufRead) -> Vec<AgentEvent> {
                                     name = %name,
                                     "parsed ToolCalled event"
                                 );
-                                events.push(AgentEvent::ToolCalled { name, input_json });
+                                callback(AgentEvent::ToolCalled { name, input_json });
                             }
                             Some("tool_result") => {
                                 // Real Claude NDJSON `tool_result` blocks carry
@@ -100,14 +137,26 @@ pub fn parse_claude_events(reader: impl BufRead) -> Vec<AgentEvent> {
                                     is_error,
                                     "parsed ToolResult event"
                                 );
-                                events.push(AgentEvent::ToolResult {
+                                callback(AgentEvent::ToolResult {
                                     name,
                                     output,
                                     is_error,
                                 });
                             }
-                            // Text blocks and other content types are not
-                            // relevant for tool-level event tracking.
+                            Some("text") => {
+                                let text = block["text"].as_str().unwrap_or("").to_string();
+                                if text.is_empty() {
+                                    // Skip empty text blocks — they carry no
+                                    // information and add noise to the event
+                                    // stream (e.g. the opening content_block_start
+                                    // in assistant messages sometimes precedes an
+                                    // empty text block).
+                                    continue;
+                                }
+                                tracing::debug!(text_len = text.len(), "parsed TextBlock event");
+                                callback(AgentEvent::TextBlock { text });
+                            }
+                            // Other content types are not relevant.
                             _ => {}
                         }
                     }
@@ -123,19 +172,60 @@ pub fn parse_claude_events(reader: impl BufRead) -> Vec<AgentEvent> {
                     num_turns,
                     "parsed SessionStopped event"
                 );
-                events.push(AgentEvent::SessionStopped {
+                callback(AgentEvent::SessionStopped {
                     reason,
                     cost_usd,
                     num_turns,
                 });
+            }
+            "stream_event" => {
+                let inner = &value["event"];
+                match inner["type"].as_str() {
+                    Some("content_block_delta") => {
+                        if inner["delta"]["type"].as_str() == Some("text_delta") {
+                            let text = inner["delta"]["text"].as_str().unwrap_or("").to_string();
+                            // Saturating cast: block indices > u32::MAX are
+                            // not realistic in practice but we never want a
+                            // silent wraparound.
+                            let raw_index = inner["index"].as_u64().unwrap_or(0);
+                            let block_index = u32::try_from(raw_index).unwrap_or(u32::MAX);
+                            tracing::debug!(
+                                block_index,
+                                text_len = text.len(),
+                                "parsed TextDelta event"
+                            );
+                            callback(AgentEvent::TextDelta { text, block_index });
+                        }
+                        // Non-text_delta deltas (e.g. input_json_delta for tool
+                        // streaming) are silently skipped — not relevant for
+                        // text event consumers.
+                    }
+                    Some("content_block_start")
+                    | Some("content_block_stop")
+                    | Some("message_start")
+                    | Some("message_delta")
+                    | Some("message_stop") => {
+                        // Expected noise — skip silently.
+                    }
+                    Some(other) => {
+                        tracing::debug!(
+                            stream_event_subtype = other,
+                            "skipping unknown stream_event subtype"
+                        );
+                    }
+                    None => {
+                        // Include a snippet for debuggability — mirrors the
+                        // malformed NDJSON handler's 80-char truncation.
+                        let snippet: String = trimmed.chars().take(80).collect();
+                        tracing::warn!(line = %snippet, "stream_event missing inner event.type");
+                    }
+                }
             }
             other => {
                 tracing::warn!(event_type = other, "skipping unknown claude event type");
             }
         }
     }
-
-    events
 }
 
 #[cfg(test)]
@@ -173,6 +263,28 @@ mod tests {
 
     /// A `result` event with `subtype: "success"`.
     const FIXTURE_RESULT_SUCCESS: &str = r#"{"type":"result","subtype":"success","total_cost_usd":0.0042,"num_turns":3,"session_id":"sess_abc","is_error":false}"#;
+
+    /// A `stream_event` with a `content_block_delta` text_delta payload.
+    const FIXTURE_STREAM_EVENT_TEXT_DELTA: &str = r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello "}}}"#;
+
+    /// A `stream_event` text_delta with non-zero block index.
+    const FIXTURE_STREAM_EVENT_TEXT_DELTA_INDEX_2: &str = r#"{"type":"stream_event","event":{"type":"content_block_delta","index":2,"delta":{"type":"text_delta","text":"chunk"}}}"#;
+
+    /// A `stream_event` content_block_start (should be skipped).
+    const FIXTURE_STREAM_EVENT_BLOCK_START: &str = r#"{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}}"#;
+
+    /// A `stream_event` content_block_stop (should be skipped).
+    const FIXTURE_STREAM_EVENT_BLOCK_STOP: &str =
+        r#"{"type":"stream_event","event":{"type":"content_block_stop","index":0}}"#;
+
+    /// A `stream_event` message_start (should be skipped).
+    const FIXTURE_STREAM_EVENT_MESSAGE_START: &str = r#"{"type":"stream_event","event":{"type":"message_start","message":{"id":"msg_x","role":"assistant"}}}"#;
+
+    /// An assistant message with both a text block and a tool_use block.
+    const FIXTURE_ASSISTANT_TEXT_AND_TOOL: &str = r#"{"type":"assistant","message":{"id":"msg_05","type":"message","role":"assistant","content":[{"type":"text","text":"I will run ls."},{"type":"tool_use","id":"toolu_05","name":"bash","input":{"command":"ls"}}],"model":"claude-sonnet-4-20250514","stop_reason":"tool_use","usage":{"input_tokens":10,"output_tokens":10}},"session_id":"sess_abc"}"#;
+
+    /// A malformed `stream_event` line (missing inner `event` object).
+    const FIXTURE_STREAM_EVENT_MALFORMED: &str = r#"{"type":"stream_event"}"#;
 
     /// A malformed line (not valid JSON).
     const FIXTURE_MALFORMED: &str = r#"this is not json at all {{{ garbage"#;
@@ -264,21 +376,26 @@ mod tests {
     }
 
     #[test]
-    fn test_text_only_assistant_produces_no_tool_events() {
-        // A plain text assistant response should produce no events on its own
-        // (it's the first assistant, so no TurnEnded either).
+    fn test_text_only_assistant_emits_one_text_block() {
+        // After M023/S02, a plain text assistant response emits exactly one
+        // TextBlock event from the assistant handler (no TurnEnded — it's
+        // the first assistant message in this stream).
         let reader = Cursor::new(FIXTURE_ASSISTANT_TEXT_ONLY);
         let events = parse_claude_events(reader);
-        assert!(
-            events.is_empty(),
-            "text-only assistant should produce no events"
-        );
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            AgentEvent::TextBlock { text } => {
+                assert_eq!(text, "I will now read the file.")
+            }
+            other => panic!("expected TextBlock, got {other:?}"),
+        }
     }
 
     #[test]
     fn test_text_only_assistant_does_emit_turn_ended_as_second_event() {
         // When a text-only assistant is the second assistant event in a stream,
-        // it should still emit TurnEnded for the turn that just completed.
+        // it should still emit TurnEnded for the turn that just completed,
+        // followed by the TextBlock from its text content.
         let stream = format!(
             "{}
 {}
@@ -288,12 +405,90 @@ mod tests {
         let reader = Cursor::new(stream);
         let events = parse_claude_events(reader);
         // ToolCalled from first assistant + TurnEnded before second assistant
-        assert_eq!(events.len(), 2, "events: {events:?}");
+        // + TextBlock from second assistant's text content.
+        assert_eq!(events.len(), 3, "events: {events:?}");
         assert!(matches!(&events[0], AgentEvent::ToolCalled { .. }));
         assert!(matches!(
             &events[1],
             AgentEvent::TurnEnded { turn_index: 0 }
         ));
+        match &events[2] {
+            AgentEvent::TextBlock { text } => {
+                assert_eq!(text, "I will now read the file.")
+            }
+            other => panic!("expected TextBlock, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_parse_text_delta_event() {
+        let reader = Cursor::new(FIXTURE_STREAM_EVENT_TEXT_DELTA);
+        let events = parse_claude_events(reader);
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            AgentEvent::TextDelta { text, block_index } => {
+                assert_eq!(text, "Hello ");
+                assert_eq!(*block_index, 0);
+            }
+            other => panic!("expected TextDelta, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_parse_text_delta_with_nonzero_index() {
+        let reader = Cursor::new(FIXTURE_STREAM_EVENT_TEXT_DELTA_INDEX_2);
+        let events = parse_claude_events(reader);
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            AgentEvent::TextDelta { text, block_index } => {
+                assert_eq!(text, "chunk");
+                assert_eq!(*block_index, 2);
+            }
+            other => panic!("expected TextDelta, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_stream_event_block_start_skipped() {
+        let reader = Cursor::new(FIXTURE_STREAM_EVENT_BLOCK_START);
+        let events = parse_claude_events(reader);
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn test_stream_event_block_stop_skipped() {
+        let reader = Cursor::new(FIXTURE_STREAM_EVENT_BLOCK_STOP);
+        let events = parse_claude_events(reader);
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn test_stream_event_message_start_skipped() {
+        let reader = Cursor::new(FIXTURE_STREAM_EVENT_MESSAGE_START);
+        let events = parse_claude_events(reader);
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn test_stream_event_malformed_skipped_without_panic() {
+        let reader = Cursor::new(FIXTURE_STREAM_EVENT_MALFORMED);
+        let events = parse_claude_events(reader);
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn test_assistant_text_and_tool_preserves_order() {
+        let reader = Cursor::new(FIXTURE_ASSISTANT_TEXT_AND_TOOL);
+        let events = parse_claude_events(reader);
+        assert_eq!(events.len(), 2, "events: {events:?}");
+        match &events[0] {
+            AgentEvent::TextBlock { text } => assert_eq!(text, "I will run ls."),
+            other => panic!("expected TextBlock first, got {other:?}"),
+        }
+        match &events[1] {
+            AgentEvent::ToolCalled { name, .. } => assert_eq!(name, "bash"),
+            other => panic!("expected ToolCalled second, got {other:?}"),
+        }
     }
 
     #[test]
@@ -345,6 +540,52 @@ mod tests {
         let reader = Cursor::new("");
         let events = parse_claude_events(reader);
         assert!(events.is_empty());
+    }
+
+    #[test]
+    fn test_streaming_callback_invokes_per_event() {
+        // Two assistant tool_use messages — the streaming parser must invoke
+        // the callback once per emitted event in stream order, not all at
+        // once at the end. We capture each invocation timestamp via a counter
+        // bumped on every call so we can assert ordering and per-event
+        // delivery without relying on real time.
+        let stream = format!(
+            "{}\n{}\n",
+            FIXTURE_ASSISTANT_TOOL_USE, FIXTURE_ASSISTANT_TWO_TOOL_USE,
+        );
+        let reader = Cursor::new(stream);
+
+        let mut received: Vec<AgentEvent> = Vec::new();
+        let mut call_count: usize = 0;
+        parse_claude_events_streaming(reader, |event| {
+            call_count += 1;
+            received.push(event);
+        });
+
+        // First assistant: ToolCalled(bash)
+        // Second assistant: TurnEnded(0) before, then ToolCalled(read), ToolCalled(edit)
+        // = 4 callback invocations in this exact order.
+        assert_eq!(
+            call_count, 4,
+            "callback invoked per event, got {call_count}"
+        );
+        assert_eq!(received.len(), 4);
+        match &received[0] {
+            AgentEvent::ToolCalled { name, .. } => assert_eq!(name, "bash"),
+            other => panic!("expected ToolCalled(bash), got {other:?}"),
+        }
+        assert!(matches!(
+            &received[1],
+            AgentEvent::TurnEnded { turn_index: 0 }
+        ));
+        match &received[2] {
+            AgentEvent::ToolCalled { name, .. } => assert_eq!(name, "read"),
+            other => panic!("expected ToolCalled(read), got {other:?}"),
+        }
+        match &received[3] {
+            AgentEvent::ToolCalled { name, .. } => assert_eq!(name, "edit"),
+            other => panic!("expected ToolCalled(edit), got {other:?}"),
+        }
     }
 
     #[test]

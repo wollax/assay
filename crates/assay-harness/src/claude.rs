@@ -199,6 +199,7 @@ pub fn build_streaming_cli_args(config: &ClaudeConfig) -> Vec<String> {
         "--output-format".to_string(),
         "stream-json".to_string(),
         "--verbose".to_string(),
+        "--include-partial-messages".to_string(),
     ];
     args.extend(build_common_args(config));
     args
@@ -492,6 +493,10 @@ mod tests {
             args.contains(&"--print".to_string()),
             "must contain --print"
         );
+        assert!(
+            args.contains(&"--include-partial-messages".to_string()),
+            "must contain --include-partial-messages"
+        );
         // Must NOT contain bare "json" as a standalone arg.
         assert!(
             !args.contains(&"json".to_string()),
@@ -522,6 +527,7 @@ mod tests {
         let args = build_streaming_cli_args(&config);
         assert!(args.contains(&"stream-json".to_string()));
         assert!(args.contains(&"--verbose".to_string()));
+        assert!(args.contains(&"--include-partial-messages".to_string()));
         assert!(!args.contains(&"--model".to_string()));
     }
 
