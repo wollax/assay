@@ -163,6 +163,7 @@ dependencies = [
 name = "assay-core"
 version = "0.5.0"
 dependencies = [
+ "assay-harness",
  "assay-types",
  "chrono",
  "cupel",
@@ -197,7 +198,6 @@ dependencies = [
 name = "assay-harness"
 version = "0.5.0"
 dependencies = [
- "assay-core",
  "assay-types",
  "globset",
  "insta",

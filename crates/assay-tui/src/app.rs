@@ -19,8 +19,8 @@ use assay_core::pr::PrStatusInfo;
 use assay_core::spec::{SpecEntry, load_spec_entry_with_diagnostics};
 use assay_core::wizard::create_from_inputs;
 use assay_types::{
-    Criterion, Enforcement, GateRunRecord, GatesSpec, HarnessProfile, Milestone, MilestoneStatus,
-    ProviderConfig, ProviderKind, SettingsOverride,
+    AgentEvent, Criterion, Enforcement, GateRunRecord, GatesSpec, HarnessProfile, Milestone,
+    MilestoneStatus, ProviderConfig, ProviderKind, SettingsOverride,
 };
 use crossterm::event::KeyCode;
 use ratatui::layout::{Constraint, Layout, Rect};
@@ -42,15 +42,17 @@ use crate::wizard::{WizardAction, WizardState, draw_wizard, handle_wizard_event}
 /// Events that flow through the TUI event channel.
 ///
 /// `Key` and `Resize` come from the crossterm input thread;
-/// `AgentLine` and `AgentDone` come from the relay-wrapper thread that
-/// monitors a live agent subprocess (see `launch_agent_streaming`).
+/// `AgentEvent` and `AgentDone` come from the relay-wrapper thread that
+/// monitors a live agent subprocess (see `launch_agent_streaming`). Typed
+/// [`assay_types::AgentEvent`] values are reconstructed into display lines
+/// by [`App::handle_agent_event`].
 pub enum TuiEvent {
     /// A keyboard event from the terminal.
     Key(crossterm::event::KeyEvent),
     /// Terminal was resized to (cols, rows).
     Resize(u16, u16),
-    /// One line of stdout from the running agent subprocess.
-    AgentLine(String),
+    /// A typed agent event from the running subprocess relay thread.
+    AgentEvent(AgentEvent),
     /// Agent subprocess has exited. `exit_code` is the process return value
     /// (or -1 on spawn error).
     AgentDone { exit_code: i32 },
@@ -114,6 +116,10 @@ pub enum Screen {
         chunk_slug: String,
         /// Accumulated stdout lines from the agent subprocess (capped at 10 000).
         lines: Vec<String>,
+        /// Internal accumulation buffer for `TextDelta` events between newline
+        /// boundaries; flushed into `lines` as complete lines are produced.
+        /// Not displayed directly.
+        line_buffer: String,
         /// Scroll offset for the line list.
         scroll_offset: usize,
         /// Current run status.
@@ -178,7 +184,7 @@ pub struct App {
     /// Loaded project config (used by status bar and settings screen).
     pub config: Option<assay_types::Config>,
     /// Sender side of the TUI event channel. `None` until the channel is wired
-    /// in `main.rs`. Used by the relay-wrapper thread to push `AgentLine` and
+    /// in `main.rs`. Used by the relay-wrapper thread to push `AgentEvent` and
     /// `AgentDone` events into the main loop.
     pub event_tx: Option<mpsc::Sender<TuiEvent>>,
     /// Join handle for a live agent subprocess thread. `None` when no agent
@@ -283,16 +289,104 @@ impl App {
         })
     }
 
-    /// Accumulate a line of agent stdout into `Screen::AgentRun`.
+    /// Maximum byte length of the internal `line_buffer` before it is
+    /// force-flushed as a single (possibly truncated) display line. This
+    /// prevents unbounded memory growth if an agent emits `TextDelta` events
+    /// with no newlines for an extended period (e.g. a very long tool output
+    /// or a misbehaving adapter).
+    const LINE_BUFFER_MAX_BYTES: usize = 1024 * 1024; // 1 MiB
+
+    /// Reconstruct display lines from a typed [`AgentEvent`] into
+    /// `Screen::AgentRun`.
     ///
     /// No-op if the current screen is not `Screen::AgentRun`.
-    /// Lines are capped at 10 000 to prevent unbounded memory growth.
-    pub fn handle_agent_line(&mut self, line: String) {
-        if let Screen::AgentRun { ref mut lines, .. } = self.screen {
-            lines.push(line);
+    /// The accumulated `lines` vector is capped at 10 000 entries to prevent
+    /// unbounded memory growth; `TextDelta` text is buffered in `line_buffer`
+    /// until a `\n` boundary flushes one complete line. The `line_buffer`
+    /// itself is capped at [`Self::LINE_BUFFER_MAX_BYTES`] bytes.
+    pub fn handle_agent_event(&mut self, event: AgentEvent) {
+        let Screen::AgentRun {
+            ref mut lines,
+            ref mut line_buffer,
+            ..
+        } = self.screen
+        else {
+            return;
+        };
+        /// Strip ASCII control characters (except tab) from a display string
+        /// to prevent ANSI escape sequences or cursor-control codes from
+        /// corrupting terminal state or enabling terminal injection.
+        /// Applied at display time; raw event data is preserved upstream.
+        fn sanitize(s: String) -> String {
+            if s.bytes().any(|b| b < 0x20 && b != b'\t') {
+                s.chars()
+                    .map(|c| {
+                        if (c as u32) < 0x20 && c != '\t' {
+                            '\u{FFFD}'
+                        } else {
+                            c
+                        }
+                    })
+                    .collect()
+            } else {
+                s
+            }
+        }
+        fn push_line(lines: &mut Vec<String>, line: String) {
+            lines.push(sanitize(line));
             if lines.len() > 10_000 {
                 lines.remove(0);
             }
+        }
+        match event {
+            AgentEvent::TextDelta { text, .. } => {
+                line_buffer.push_str(&text);
+                // Flush complete lines.
+                while let Some(idx) = line_buffer.find('\n') {
+                    let line: String = line_buffer.drain(..=idx).collect();
+                    push_line(lines, line.trim_end_matches('\n').to_string());
+                }
+                // Guard against unbounded buffering: if a TextDelta stream
+                // never emits a newline (e.g. a very long tool output or a
+                // misbehaving adapter), flush the buffer once it exceeds the
+                // cap so we don't exhaust memory.
+                if line_buffer.len() > Self::LINE_BUFFER_MAX_BYTES {
+                    let flushed = std::mem::take(line_buffer);
+                    push_line(lines, flushed);
+                }
+            }
+            // TextBlock carries the same content as the preceding TextDelta
+            // stream when `--include-partial-messages` is active (both are
+            // emitted for the same assistant turn). Rendering TextBlock in
+            // the TUI would duplicate every line of reasoning text. Since
+            // TextDelta already provides live per-token display, we ignore
+            // TextBlock here.
+            //
+            // Batch consumers (gate evaluation, session summaries) should
+            // use TextBlock directly from the event stream — it is the
+            // canonical single-block representation of the turn's text.
+            AgentEvent::TextBlock { .. } => {}
+            AgentEvent::ToolCalled { name, input_json } => {
+                let truncated: String = input_json.chars().take(200).collect();
+                push_line(lines, format!("[tool] {name}: {truncated}"));
+            }
+            AgentEvent::ToolResult {
+                name,
+                output,
+                is_error,
+            } => {
+                let truncated: String = output.chars().take(200).collect();
+                let prefix = if is_error { "[error] " } else { "" };
+                push_line(lines, format!("[result] {prefix}{name}: {truncated}"));
+            }
+            AgentEvent::TurnEnded { turn_index } => {
+                push_line(lines, format!("--- turn {turn_index} ---"));
+            }
+            AgentEvent::SessionStopped { reason, .. } => {
+                push_line(lines, format!("[session] {reason}"));
+            }
+            // `AgentEvent` is `#[non_exhaustive]`; ignore any future variants.
+            _ => {}
         }
     }
 
@@ -673,6 +767,7 @@ impl App {
             Screen::AgentRun {
                 chunk_slug,
                 lines,
+                line_buffer: _,
                 scroll_offset,
                 status,
             } => {
@@ -868,19 +963,21 @@ impl App {
                         self.screen = Screen::AgentRun {
                             chunk_slug: chunk_slug.clone(),
                             lines: vec![],
+                            line_buffer: String::new(),
                             scroll_offset: 0,
                             status: AgentRunStatus::Running,
                         };
                         // Spawn relay-wrapper thread: inner launch_agent_streaming +
-                        // outer drain loop. Serializes AgentLine before AgentDone to
-                        // prevent line loss.
+                        // outer drain loop. Serializes AgentEvent messages before
+                        // AgentDone to prevent event loss.
                         let tui_tx = tx.clone();
                         let handle = std::thread::spawn(move || {
-                            let (str_tx, str_rx) = std::sync::mpsc::channel::<String>();
-                            let inner = launch_agent_streaming(&cli_args, &working_dir, str_tx);
-                            // Drain lines → TuiEvent::AgentLine.
-                            for line in str_rx {
-                                let _ = tui_tx.send(TuiEvent::AgentLine(line));
+                            let (evt_tx, evt_rx) = std::sync::mpsc::channel::<AgentEvent>();
+                            let inner = launch_agent_streaming(&cli_args, &working_dir, evt_tx);
+                            // Drain events → TuiEvent::AgentEvent (typed pass-through;
+                            // display reconstruction happens in handle_agent_event).
+                            for event in evt_rx {
+                                let _ = tui_tx.send(TuiEvent::AgentEvent(event));
                             }
                             // All lines sent; get exit code from inner thread.
                             let exit_code = inner.join().unwrap_or(-1);

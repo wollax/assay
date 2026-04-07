@@ -3,14 +3,14 @@
 //! Tests 1–2 exercise `launch_agent_streaming` with real subprocesses and
 //! should pass immediately after T01.
 //!
-//! Tests 3–8 drive `App::handle_agent_line` / `App::handle_agent_done` and
-//! assert on `Screen::AgentRun` state. These are written RED — they will
-//! fail until T02 implements the real state machine methods.
+//! Tests 3–8 drive `App::handle_agent_event` / `App::handle_agent_done` and
+//! assert on `Screen::AgentRun` state.
 
 use std::sync::mpsc;
 
 use assay_core::pipeline::launch_agent_streaming;
 use assay_tui::app::{AgentRunStatus, App, Screen};
+use assay_types::AgentEvent;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -25,6 +25,7 @@ fn app_in_agent_run(chunk_slug: &str) -> App {
     app.screen = Screen::AgentRun {
         chunk_slug: chunk_slug.to_string(),
         lines: Vec::new(),
+        line_buffer: String::new(),
         scroll_offset: 0,
         status: AgentRunStatus::Running,
     };
@@ -35,7 +36,7 @@ fn app_in_agent_run(chunk_slug: &str) -> App {
 
 #[test]
 fn launch_agent_streaming_delivers_all_lines() {
-    let (line_tx, line_rx) = mpsc::channel::<String>();
+    let (event_tx, event_rx) = mpsc::channel::<AgentEvent>();
 
     // Print 5 lines via echo.
     let args: Vec<String> = vec![
@@ -44,10 +45,23 @@ fn launch_agent_streaming_delivers_all_lines() {
         "printf 'line1\\nline2\\nline3\\nline4\\nline5\\n'".to_string(),
     ];
 
-    let handle = launch_agent_streaming(&args, std::path::Path::new("/tmp"), line_tx);
+    let handle = launch_agent_streaming(&args, std::path::Path::new("/tmp"), event_tx);
 
-    // Collect all lines before joining.
-    let lines: Vec<String> = line_rx.iter().collect();
+    // Collect all events before joining. Plain-text stdout lines become
+    // synthetic TextDelta events via the relay fallback path (S03/T01).
+    let lines: Vec<String> = event_rx
+        .iter()
+        .map(|e| match e {
+            AgentEvent::TextDelta { text, block_index } => {
+                assert_eq!(
+                    block_index, 0,
+                    "fallback TextDelta should have block_index 0"
+                );
+                text
+            }
+            other => panic!("expected TextDelta, got {other:?}"),
+        })
+        .collect();
     let exit_code = handle.join().expect("thread panicked");
 
     assert_eq!(exit_code, 0, "expected exit code 0");
@@ -64,33 +78,44 @@ fn launch_agent_streaming_delivers_all_lines() {
 fn launch_agent_streaming_delivers_exit_code() {
     // Zero exit from `true`
     {
-        let (line_tx, line_rx) = mpsc::channel::<String>();
+        let (event_tx, event_rx) = mpsc::channel::<AgentEvent>();
         let args: Vec<String> = vec!["true".to_string()];
-        let handle = launch_agent_streaming(&args, std::path::Path::new("/tmp"), line_tx);
-        let _: Vec<String> = line_rx.iter().collect();
+        let handle = launch_agent_streaming(&args, std::path::Path::new("/tmp"), event_tx);
+        let _: Vec<AgentEvent> = event_rx.iter().collect();
         let exit_code = handle.join().expect("thread panicked");
         assert_eq!(exit_code, 0, "`true` should exit 0");
     }
 
     // Non-zero exit from `false`
     {
-        let (line_tx, line_rx) = mpsc::channel::<String>();
+        let (event_tx, event_rx) = mpsc::channel::<AgentEvent>();
         let args: Vec<String> = vec!["false".to_string()];
-        let handle = launch_agent_streaming(&args, std::path::Path::new("/tmp"), line_tx);
-        let _: Vec<String> = line_rx.iter().collect();
+        let handle = launch_agent_streaming(&args, std::path::Path::new("/tmp"), event_tx);
+        let _: Vec<AgentEvent> = event_rx.iter().collect();
         let exit_code = handle.join().expect("thread panicked");
         assert_ne!(exit_code, 0, "`false` should exit non-zero");
     }
 }
 
-// ── Test 3: handle_agent_line accumulates in AgentRun screen ─────────────────
+// ── Test 3: handle_agent_event TextDelta (newline-terminated) pushes lines ───
 
+/// TextBlock is now ignored in the TUI (WOL-366): it would duplicate lines
+/// already rendered via the preceding TextDelta stream. This test replaces the
+/// old `textblock_pushes_lines` test and drives the same assertion through
+/// TextDelta + newlines, which is the canonical TUI rendering path.
 #[test]
-fn handle_agent_line_accumulates_in_agent_run_screen() {
+fn handle_agent_event_textdelta_newline_pushes_lines() {
     let mut app = app_in_agent_run("my-chunk");
 
-    app.handle_agent_line("hello".to_string());
-    app.handle_agent_line("world".to_string());
+    // Each "hello\n" / "world\n" flushes one complete line from the buffer.
+    app.handle_agent_event(AgentEvent::TextDelta {
+        text: "hello\n".into(),
+        block_index: 0,
+    });
+    app.handle_agent_event(AgentEvent::TextDelta {
+        text: "world\n".into(),
+        block_index: 0,
+    });
 
     match &app.screen {
         Screen::AgentRun { lines, .. } => {
@@ -99,6 +124,90 @@ fn handle_agent_line_accumulates_in_agent_run_screen() {
             assert_eq!(lines[1], "world");
         }
         _other => panic!("expected Screen::AgentRun, got a different screen variant"),
+    }
+}
+
+/// TextBlock is a no-op in the TUI — verify it does NOT push any lines.
+#[test]
+fn handle_agent_event_textblock_is_noop_in_tui() {
+    let mut app = app_in_agent_run("my-chunk");
+
+    app.handle_agent_event(AgentEvent::TextBlock {
+        text: "this should not appear".into(),
+    });
+
+    match &app.screen {
+        Screen::AgentRun { lines, .. } => {
+            assert!(lines.is_empty(), "TextBlock must not push lines in the TUI");
+        }
+        _other => panic!("expected Screen::AgentRun"),
+    }
+}
+
+#[test]
+fn handle_agent_event_textdelta_accumulates_across_newlines() {
+    let mut app = app_in_agent_run("my-chunk");
+
+    app.handle_agent_event(AgentEvent::TextDelta {
+        text: "hello ".into(),
+        block_index: 0,
+    });
+    match &app.screen {
+        Screen::AgentRun { lines, .. } => assert!(lines.is_empty(), "no newline yet"),
+        _ => panic!("expected Screen::AgentRun"),
+    }
+
+    app.handle_agent_event(AgentEvent::TextDelta {
+        text: "world\n".into(),
+        block_index: 0,
+    });
+    match &app.screen {
+        Screen::AgentRun { lines, .. } => assert_eq!(lines, &vec!["hello world".to_string()]),
+        _ => panic!("expected Screen::AgentRun"),
+    }
+
+    app.handle_agent_event(AgentEvent::TextDelta {
+        text: "partial".into(),
+        block_index: 0,
+    });
+    match &app.screen {
+        Screen::AgentRun { lines, .. } => assert_eq!(
+            lines,
+            &vec!["hello world".to_string()],
+            "partial still buffered"
+        ),
+        _ => panic!("expected Screen::AgentRun"),
+    }
+
+    app.handle_agent_event(AgentEvent::TextDelta {
+        text: " line\nfinal\n".into(),
+        block_index: 0,
+    });
+    match &app.screen {
+        Screen::AgentRun { lines, .. } => assert_eq!(
+            lines,
+            &vec![
+                "hello world".to_string(),
+                "partial line".to_string(),
+                "final".to_string(),
+            ]
+        ),
+        _ => panic!("expected Screen::AgentRun"),
+    }
+}
+
+#[test]
+fn handle_agent_event_formats_tool_called() {
+    let mut app = app_in_agent_run("c");
+    app.handle_agent_event(AgentEvent::ToolCalled {
+        name: "bash".into(),
+        input_json: r#"{"command":"ls"}"#.into(),
+    });
+    match &app.screen {
+        Screen::AgentRun { lines, .. } => {
+            assert_eq!(lines, &vec![r#"[tool] bash: {"command":"ls"}"#.to_string()])
+        }
+        _ => panic!("expected Screen::AgentRun"),
     }
 }
 
@@ -150,14 +259,19 @@ fn handle_agent_done_nonzero_exit_transitions_to_failed() {
     }
 }
 
-// ── Test 6: handle_agent_line caps at 10 000 ─────────────────────────────────
+// ── Test 6: handle_agent_event caps lines at 10 000 ──────────────────────────
 
 #[test]
-fn handle_agent_line_caps_at_ten_thousand() {
+fn handle_agent_event_caps_lines_at_ten_thousand() {
     let mut app = app_in_agent_run("my-chunk");
 
+    // Drive via TextDelta (the active rendering path) — TextBlock is now a
+    // no-op in the TUI (WOL-366), so using it here would never reach 10k lines.
     for i in 0..=10_000 {
-        app.handle_agent_line(format!("line {i}"));
+        app.handle_agent_event(AgentEvent::TextDelta {
+            text: format!("line {i}\n"),
+            block_index: 0,
+        });
     }
 
     match &app.screen {
@@ -173,15 +287,15 @@ fn handle_agent_line_caps_at_ten_thousand() {
     }
 }
 
-// ── Test 7: handle_agent_line is a no-op on non-AgentRun screen ──────────────
+// ── Test 7: handle_agent_event is a no-op on non-AgentRun screen ─────────────
 
 #[test]
-fn handle_agent_line_noops_on_non_agent_run_screen() {
-    // Start on Dashboard (the default when project_root is None → NoProject,
-    // but let's use a real project or just assert it doesn't panic on any screen).
+fn handle_agent_event_noops_on_non_agent_run_screen() {
     let mut app = App::with_project_root(None).expect("App::with_project_root failed");
-    // app.screen is Screen::NoProject here — pumping lines should not panic.
-    app.handle_agent_line("should be ignored".to_string());
+    // app.screen is Screen::NoProject here — pumping events should not panic.
+    app.handle_agent_event(AgentEvent::TextBlock {
+        text: "should be ignored".into(),
+    });
     // No assertion needed — the test passes if it doesn't panic.
 }
 

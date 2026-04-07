@@ -7,6 +7,7 @@ repository.workspace = true
 description = "Domain logic for Assay: specs, gates, reviews, and workflows"
 
 [dependencies]
+assay-harness.workspace = true
 assay-types.workspace = true
 chrono.workspace = true
 cupel.workspace = true
