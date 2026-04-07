@@ -391,24 +391,30 @@ pub fn launch_agent(
     }
 }
 
-/// Launch an agent subprocess and stream its stdout line-by-line.
+/// Launch an agent subprocess and stream its stdout as typed [`AgentEvent`]s.
 ///
-/// Spawns a background thread that reads stdout from the subprocess and
-/// sends each line via `line_tx`. When all lines have been sent (EOF),
-/// the thread waits for the process to exit and returns the exit code
-/// as `i32`. The caller receives this exit code by joining the returned
-/// `JoinHandle`.
+/// Spawns a background thread that reads stdout from the subprocess
+/// line-by-line. Each line is first attempted as a Claude NDJSON event via
+/// [`assay_harness::claude_stream::parse_claude_events_streaming`]; if that
+/// yields one or more events, they are forwarded through `event_tx` in
+/// order. If the line is not valid JSON — or JSON that the parser does not
+/// recognize — it is forwarded as a synthetic
+/// [`AgentEvent::TextDelta { text: line, block_index: 0 }`], so non-Claude
+/// adapters (Codex, OpenCode, plain stdout) keep working without losing
+/// output. When all events have been sent (EOF), the thread waits for the
+/// process to exit and returns the exit code as `i32`. The caller receives
+/// this exit code by joining the returned `JoinHandle`.
 ///
-/// Uses an unbounded `mpsc::channel()` for `line_tx` to avoid deadlock:
-/// the subprocess can produce lines faster than the TUI consumes them,
-/// and a bounded channel would block the background thread while holding
-/// the stdout pipe open (which would stall the process).
+/// Uses an unbounded `mpsc::channel()` for `event_tx` to avoid deadlock:
+/// the subprocess can produce events faster than the consumer processes
+/// them, and a bounded channel would block the background thread while
+/// holding the stdout pipe open (which would stall the process).
 ///
 /// # Failure handling
 ///
-/// If the subprocess cannot be spawned, `line_tx` is dropped (signalling
+/// If the subprocess cannot be spawned, `event_tx` is dropped (signalling
 /// EOF to the receiver) and the thread returns `-1`. The relay-wrapper
-/// thread (T03) observes channel disconnect and emits
+/// thread in the TUI observes channel disconnect and emits
 /// `TuiEvent::AgentDone { exit_code: -1 }`.
 ///
 /// # Arguments
@@ -416,20 +422,22 @@ pub fn launch_agent(
 /// * `cli_args` — Full command line: `cli_args[0]` is the binary,
 ///   `cli_args[1..]` are its arguments.
 /// * `working_dir` — Working directory for the subprocess.
-/// * `line_tx` — Sender side of the line channel; one `String` per stdout line.
+/// * `event_tx` — Sender side of the event channel; one [`AgentEvent`]
+///   per parsed NDJSON event, or one synthetic `TextDelta` per plain-text
+///   stdout line.
 pub fn launch_agent_streaming(
     cli_args: &[String],
     working_dir: &std::path::Path,
-    line_tx: std::sync::mpsc::Sender<String>,
+    event_tx: std::sync::mpsc::Sender<AgentEvent>,
 ) -> std::thread::JoinHandle<i32> {
-    use std::io::{BufRead, BufReader};
+    use std::io::{BufRead, BufReader, Cursor};
     use std::process::Stdio;
 
     // Guard: an empty cli_args would panic on cli_args[0].
     // Return a thread that immediately signals EOF and exits with -1.
     if cli_args.is_empty() {
         return std::thread::spawn(move || {
-            drop(line_tx);
+            drop(event_tx);
             -1
         });
     }
@@ -466,24 +474,87 @@ pub fn launch_agent_streaming(
                     "Failed to spawn agent subprocess in streaming mode; \
                      ensure the agent binary is installed and the working directory exists"
                 );
-                // Drop line_tx — signals EOF to receiver.
-                drop(line_tx);
+                // Drop event_tx — signals EOF to receiver.
+                drop(event_tx);
                 return -1;
             }
         };
 
-        // Drain stdout line-by-line, forwarding each line to the channel.
+        // Drain stdout line-by-line, parsing each line as NDJSON or
+        // falling back to a synthetic TextDelta.
         if let Some(stdout) = child.stdout.take() {
             let reader = BufReader::new(stdout);
             let mut receiver_alive = true;
             for line in reader.lines() {
                 match line {
                     Ok(l) => {
-                        if receiver_alive && line_tx.send(l).is_err() {
-                            // Receiver dropped. Stop forwarding but keep reading
-                            // until EOF so the child can drain its pipe and exit
-                            // cleanly — otherwise the child blocks on a full pipe
-                            // and child.wait() below hangs indefinitely.
+                        if !receiver_alive {
+                            // Receiver dropped — keep reading stdout until
+                            // EOF so the child can drain its pipe and exit
+                            // cleanly, but don't bother parsing.
+                            continue;
+                        }
+
+                        // Feed the line through the streaming parser. If
+                        // it emits one or more events, those are forwarded
+                        // directly. If it emits nothing we distinguish two
+                        // cases:
+                        //   • Valid JSON that the parser recognises but
+                        //     silently skips (e.g. known-noisy subtypes
+                        //     like message_start) — drop it, do NOT fall
+                        //     through to the plain-text path.
+                        //   • Non-JSON (parse_claude_events_streaming skips
+                        //     non-JSON lines internally) — fall through and
+                        //     emit a synthetic TextDelta so plain-text
+                        //     adapters (Codex, OpenCode, raw stdout) keep
+                        //     working.
+                        //
+                        // Check whether the line is valid JSON before
+                        // invoking the streaming parser. We use `Value`
+                        // rather than `RawValue` because the workspace
+                        // does not enable the `raw_value` serde_json
+                        // feature. The allocation is modest (typically
+                        // one object per NDJSON line) and avoids running
+                        // the full parser on plain-text adapter output.
+                        let is_json = serde_json::from_str::<serde_json::Value>(&l).is_ok();
+                        if is_json {
+                            let mut emitted_any = false;
+                            let mut send_failed = false;
+                            assay_harness::claude_stream::parse_claude_events_streaming(
+                                Cursor::new(l.as_bytes()),
+                                |event| {
+                                    emitted_any = true;
+                                    if !send_failed && event_tx.send(event).is_err() {
+                                        send_failed = true;
+                                    }
+                                },
+                            );
+                            if send_failed {
+                                receiver_alive = false;
+                                continue;
+                            }
+                            if emitted_any {
+                                continue;
+                            }
+                            // Parser saw valid JSON but emitted zero events
+                            // (e.g. a known-noisy stream_event subtype such
+                            // as message_start). Drop the line silently — do
+                            // not fall through to the plain-text path.
+                            continue;
+                        }
+
+                        // Non-JSON line: fall back to a synthetic TextDelta
+                        // so plain-text adapters (Codex, OpenCode, raw
+                        // stdout) still reach the consumer.
+                        tracing::debug!(
+                            line = %l,
+                            "non-JSON stdout line forwarded as TextDelta"
+                        );
+                        let event = AgentEvent::TextDelta {
+                            text: l,
+                            block_index: 0,
+                        };
+                        if event_tx.send(event).is_err() {
                             receiver_alive = false;
                         }
                     }
@@ -497,7 +568,7 @@ pub fn launch_agent_streaming(
 
         // Drop the sender explicitly before waiting, so the receiver sees EOF
         // before this thread blocks on wait().
-        drop(line_tx);
+        drop(event_tx);
 
         // Wait for subprocess exit and return the exit code.
         child.wait().map(|s| s.code().unwrap_or(-1)).unwrap_or(-1)
@@ -1248,38 +1319,82 @@ mod tests {
 
     #[test]
     fn launch_agent_streaming_delivers_all_lines() {
-        let (line_tx, line_rx) = std::sync::mpsc::channel::<String>();
+        let (event_tx, event_rx) = std::sync::mpsc::channel::<AgentEvent>();
         let args: Vec<String> = vec![
             "sh".to_string(),
             "-c".to_string(),
             "printf 'line1\\nline2\\nline3\\nline4\\nline5\\n'".to_string(),
         ];
-        let handle = launch_agent_streaming(&args, Path::new("/tmp"), line_tx);
-        let lines: Vec<String> = line_rx.iter().collect();
+        let handle = launch_agent_streaming(&args, Path::new("/tmp"), event_tx);
+        let events: Vec<AgentEvent> = event_rx.iter().collect();
         let exit_code = handle.join().expect("thread panicked");
         assert_eq!(exit_code, 0);
-        assert_eq!(lines, vec!["line1", "line2", "line3", "line4", "line5"]);
+        assert_eq!(
+            events.len(),
+            5,
+            "expected 5 TextDelta events, got {events:?}"
+        );
+        let expected = ["line1", "line2", "line3", "line4", "line5"];
+        for (event, expected_text) in events.iter().zip(expected.iter()) {
+            match event {
+                AgentEvent::TextDelta { text, block_index } => {
+                    assert_eq!(text, expected_text);
+                    assert_eq!(*block_index, 0);
+                }
+                other => panic!("expected TextDelta, got {other:?}"),
+            }
+        }
     }
 
     #[test]
     fn launch_agent_streaming_delivers_exit_code() {
         // Zero exit.
         {
-            let (line_tx, line_rx) = std::sync::mpsc::channel::<String>();
+            let (event_tx, event_rx) = std::sync::mpsc::channel::<AgentEvent>();
             let args: Vec<String> = vec!["true".to_string()];
-            let handle = launch_agent_streaming(&args, Path::new("/tmp"), line_tx);
-            let _: Vec<String> = line_rx.iter().collect();
+            let handle = launch_agent_streaming(&args, Path::new("/tmp"), event_tx);
+            let _: Vec<AgentEvent> = event_rx.iter().collect();
             let exit_code = handle.join().expect("thread panicked");
             assert_eq!(exit_code, 0, "`true` should exit 0");
         }
         // Non-zero exit.
         {
-            let (line_tx, line_rx) = std::sync::mpsc::channel::<String>();
+            let (event_tx, event_rx) = std::sync::mpsc::channel::<AgentEvent>();
             let args: Vec<String> = vec!["false".to_string()];
-            let handle = launch_agent_streaming(&args, Path::new("/tmp"), line_tx);
-            let _: Vec<String> = line_rx.iter().collect();
+            let handle = launch_agent_streaming(&args, Path::new("/tmp"), event_tx);
+            let _: Vec<AgentEvent> = event_rx.iter().collect();
             let exit_code = handle.join().expect("thread panicked");
             assert_ne!(exit_code, 0, "`false` should exit non-zero");
+        }
+    }
+
+    #[test]
+    fn launch_agent_streaming_parses_ndjson_to_textdelta() {
+        // Emit a single Claude NDJSON stream_event line with a
+        // content_block_delta / text_delta payload. The relay thread
+        // should parse it via parse_claude_events_streaming and forward a
+        // typed TextDelta event, NOT the raw line as a fallback.
+        let (event_tx, event_rx) = std::sync::mpsc::channel::<AgentEvent>();
+        let args: Vec<String> = vec![
+            "sh".to_string(),
+            "-c".to_string(),
+            r#"printf '%s\n' '{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"hello"}}}'"#.to_string(),
+        ];
+        let handle = launch_agent_streaming(&args, Path::new("/tmp"), event_tx);
+        let events: Vec<AgentEvent> = event_rx.iter().collect();
+        let exit_code = handle.join().expect("thread panicked");
+        assert_eq!(exit_code, 0);
+        assert_eq!(
+            events.len(),
+            1,
+            "expected exactly one TextDelta, got {events:?}"
+        );
+        match &events[0] {
+            AgentEvent::TextDelta { text, block_index } => {
+                assert_eq!(text, "hello");
+                assert_eq!(*block_index, 0);
+            }
+            other => panic!("expected TextDelta, got {other:?}"),
         }
     }
 

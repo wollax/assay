@@ -114,8 +114,8 @@ fn run(mut terminal: DefaultTerminal) -> color_eyre::Result<()> {
             Ok(TuiEvent::Resize(..)) => {
                 terminal.clear()?;
             }
-            Ok(TuiEvent::AgentLine(line)) => {
-                app.handle_agent_line(line);
+            Ok(TuiEvent::AgentEvent(event)) => {
+                app.handle_agent_event(event);
             }
             Ok(TuiEvent::AgentDone { exit_code }) => {
                 app.handle_agent_done(exit_code);
