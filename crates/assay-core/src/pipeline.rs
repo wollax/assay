@@ -611,6 +611,40 @@ pub fn launch_agent_streaming(
 
 /// Construct a [`HarnessProfile`] from a manifest session's inline overrides.
 ///
+/// Adapt harness-provided CLI args for the streaming launch path.
+///
+/// `HarnessProvider::write_harness` returns arguments *after* the binary name
+/// and typically uses `--output-format json` (matching the non-streaming
+/// `launch_agent` contract). `launch_agent_streaming` expects `cli_args[0]`
+/// to be the binary name and needs `--output-format stream-json` for NDJSON
+/// event parsing.
+///
+/// This function:
+/// 1. Prepends `"claude"` as the binary name
+/// 2. Replaces `"json"` with `"stream-json"` after `--output-format`
+/// 3. Adds `--verbose` and `--include-partial-messages` if not already present
+fn adapt_args_for_streaming(harness_args: &[String]) -> Vec<String> {
+    let mut args = vec!["claude".to_string()];
+    let mut i = 0;
+    while i < harness_args.len() {
+        if harness_args[i] == "--output-format" && i + 1 < harness_args.len() {
+            args.push("--output-format".to_string());
+            args.push("stream-json".to_string());
+            i += 2; // skip original format value
+        } else {
+            args.push(harness_args[i].clone());
+            i += 1;
+        }
+    }
+    if !args.contains(&"--verbose".to_string()) {
+        args.push("--verbose".to_string());
+    }
+    if !args.contains(&"--include-partial-messages".to_string()) {
+        args.push("--include-partial-messages".to_string());
+    }
+    args
+}
+
 /// Per D014, the manifest session contains inline settings/hooks/prompt_layers
 /// rather than an embedded `HarnessProfile`. This function assembles them
 /// into a complete profile suitable for the harness adapter.
@@ -875,8 +909,19 @@ pub fn execute_session(
             let timeout = Duration::from_secs(config.timeout_secs);
 
             // Set up streaming channel and launch agent.
+            //
+            // `write_harness` returns args *after* the binary name and uses
+            // `--output-format json` (matching the non-streaming `launch_agent`
+            // contract). `launch_agent_streaming` expects:
+            //   1. cli_args[0] = binary name
+            //   2. `--output-format stream-json` for NDJSON events
+            //
+            // Adapt the args for streaming: prepend "claude", swap json→stream-json,
+            // and add --verbose + --include-partial-messages for event granularity.
+            let streaming_args = adapt_args_for_streaming(&cli_args);
             let (event_tx, event_rx) = std::sync::mpsc::channel::<AgentEvent>();
-            let agent_handle = launch_agent_streaming(&cli_args, &worktree_info.path, event_tx);
+            let agent_handle =
+                launch_agent_streaming(&streaming_args, &worktree_info.path, event_tx);
 
             // Run checkpoint driver (consumes events until channel disconnect or failure).
             let mut event_buffer = Vec::new();
@@ -1367,6 +1412,40 @@ mod tests {
         assert_eq!(PipelineOutcome::Success.to_string(), "Success");
         assert_eq!(PipelineOutcome::GateFailed.to_string(), "GateFailed");
         assert_eq!(PipelineOutcome::MergeConflict.to_string(), "MergeConflict");
+    }
+
+    // ── adapt_args_for_streaming ──────────────────────────────────
+
+    #[test]
+    fn adapt_args_for_streaming_prepends_binary_and_swaps_format() {
+        let harness_args: Vec<String> =
+            vec!["--print", "--output-format", "json", "--model", "sonnet"]
+                .into_iter()
+                .map(String::from)
+                .collect();
+        let result = adapt_args_for_streaming(&harness_args);
+        assert_eq!(result[0], "claude", "must prepend binary");
+        let fmt_idx = result.iter().position(|a| a == "--output-format").unwrap();
+        assert_eq!(
+            result[fmt_idx + 1],
+            "stream-json",
+            "must swap to stream-json"
+        );
+        assert!(result.contains(&"--verbose".to_string()));
+        assert!(result.contains(&"--include-partial-messages".to_string()));
+        assert!(
+            !result.iter().any(|a| a == "json"),
+            "original 'json' must be replaced"
+        );
+    }
+
+    #[test]
+    fn adapt_args_for_streaming_no_output_format() {
+        let harness_args: Vec<String> = vec!["--print"].into_iter().map(String::from).collect();
+        let result = adapt_args_for_streaming(&harness_args);
+        assert_eq!(result[0], "claude");
+        assert!(result.contains(&"--print".to_string()));
+        assert!(result.contains(&"--verbose".to_string()));
     }
 
     // ── HarnessProfile from ManifestSession ──────────────────────
