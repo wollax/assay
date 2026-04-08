@@ -45,6 +45,7 @@ fn spec_validates() {
             kind: None,
             prompt: None,
             requirements: vec![],
+            when: None,
         }],
     });
 }
@@ -85,6 +86,7 @@ fn workflow_validates() {
                 kind: None,
                 prompt: None,
                 requirements: vec![],
+                when: None,
             }],
         }],
         gates: vec![Gate {
@@ -190,6 +192,7 @@ fn criterion_with_cmd_validates() {
         kind: None,
         prompt: None,
         requirements: vec![],
+        when: None,
     });
 }
 
@@ -205,6 +208,7 @@ fn criterion_without_cmd_validates() {
         kind: None,
         prompt: None,
         requirements: vec![],
+        when: None,
     });
 }
 
@@ -220,6 +224,7 @@ fn criterion_with_timeout_validates() {
         kind: None,
         prompt: None,
         requirements: vec![],
+        when: None,
     });
 }
 
@@ -298,6 +303,7 @@ fn gates_spec_validates() {
             kind: None,
             prompt: None,
             requirements: vec!["REQ-FUNC-001".to_string()],
+            when: None,
         }],
     });
 }
@@ -314,6 +320,7 @@ fn gate_criterion_without_cmd_validates() {
         kind: None,
         prompt: None,
         requirements: vec![],
+        when: None,
     });
 }
 

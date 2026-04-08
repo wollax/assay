@@ -935,6 +935,7 @@ unknown_crit_key = true
                 kind: None,
                 prompt: None,
                 requirements: vec![],
+                when: None,
             }],
         }
     }
@@ -1007,6 +1008,7 @@ unknown_crit_key = true
                     kind: None,
                     prompt: None,
                     requirements: vec![],
+                    when: None,
                 },
                 Criterion {
                     name: "dup".to_string(),
@@ -1018,6 +1020,7 @@ unknown_crit_key = true
                     kind: None,
                     prompt: None,
                     requirements: vec![],
+                    when: None,
                 },
             ],
         };
@@ -1047,6 +1050,7 @@ unknown_crit_key = true
                 kind: None,
                 prompt: None,
                 requirements: vec![],
+                when: None,
             }],
         };
 
@@ -1837,6 +1841,7 @@ cmd = "true"
                 kind: None,
                 prompt: None,
                 requirements: vec![],
+                when: None,
             }],
         };
         assert!(validate_gates_spec(&spec).is_ok());
@@ -1877,6 +1882,7 @@ cmd = "true"
                     kind: None,
                     prompt: None,
                     requirements: vec![],
+                    when: None,
                 },
                 assay_types::GateCriterion {
                     name: "dup".into(),
@@ -1888,6 +1894,7 @@ cmd = "true"
                     kind: None,
                     prompt: None,
                     requirements: vec![],
+                    when: None,
                 },
             ],
         };
@@ -1918,6 +1925,7 @@ cmd = "true"
                 kind: None,
                 prompt: None,
                 requirements: vec![],
+                when: None,
             }],
         };
         let errors = validate(&spec).unwrap_err();
@@ -1949,6 +1957,7 @@ cmd = "true"
                 kind: None,
                 prompt: None,
                 requirements: vec![],
+                when: None,
             }],
         };
         assert!(validate(&spec).is_ok());
@@ -1972,6 +1981,7 @@ cmd = "true"
                 kind: None,
                 prompt: None,
                 requirements: vec![],
+                when: None,
             }],
         };
         assert!(validate(&spec).is_ok());
@@ -2000,6 +2010,7 @@ cmd = "true"
                 kind: None,
                 prompt: None,
                 requirements: vec![],
+                when: None,
             }],
         };
         let errors = validate_gates_spec(&spec).unwrap_err();
@@ -2032,6 +2043,7 @@ cmd = "true"
                     kind: None,
                     prompt: None,
                     requirements: vec![],
+                    when: None,
                 },
                 Criterion {
                     name: "advisory-executable".to_string(),
@@ -2043,6 +2055,7 @@ cmd = "true"
                     kind: None,
                     prompt: None,
                     requirements: vec![],
+                    when: None,
                 },
             ],
         };
@@ -2073,6 +2086,7 @@ cmd = "true"
                 kind: Some(CriterionKind::AgentReport),
                 prompt: Some("Review code".to_string()),
                 requirements: vec![],
+                when: None,
             }],
         };
 
@@ -2102,6 +2116,7 @@ cmd = "true"
                 kind: Some(CriterionKind::AgentReport),
                 prompt: Some("Check file".to_string()),
                 requirements: vec![],
+                when: None,
             }],
         };
 

@@ -158,3 +158,31 @@ inventory::submit! {
         generate: || schemars::schema_for!(GateDiagnostic),
     }
 }
+
+/// The phase in a pipeline session at which a checkpoint gate was evaluated.
+///
+/// Lives in `review` (not `gate` or `pipeline`) per D029 — phase is a
+/// diagnostic concern that belongs next to [`GateDiagnostic`].
+///
+/// Accessed as `assay_types::review::SessionPhase` — deliberately NOT
+/// re-exported at the crate root to avoid collision with the workflow
+/// `SessionPhase` in `work_session`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum SessionPhase {
+    /// Gate was evaluated at a tool-call checkpoint (`n` = tool call count).
+    AtToolCall {
+        /// Number of tool calls emitted when the checkpoint fired.
+        n: u32,
+    },
+    /// Gate was evaluated at the end of the session.
+    #[default]
+    SessionEnd,
+}
+
+inventory::submit! {
+    crate::schema_registry::SchemaEntry {
+        name: "checkpoint-session-phase",
+        generate: || schemars::schema_for!(SessionPhase),
+    }
+}

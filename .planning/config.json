@@ -4,17 +4,22 @@
   "parallelization": true,
   "commit_docs": true,
   "pr_workflow": true,
-  "model_profile": "quality",
+  "model_profile": "balanced",
   "display": {
     "statusline": true
   },
   "workflow": {
     "research": true,
     "plan_check": true,
-    "verifier": true
+    "verifier": true,
+    "auto_advance": true,
+    "nyquist_validation": true
   },
   "github": {
     "enabled": true,
     "issueMode": "auto"
+  },
+  "git": {
+    "branching_strategy": "none"
   }
 }

@@ -83,6 +83,7 @@ mod tests {
             kind: None,
             prompt: None,
             requirements: reqs.iter().map(|s| s.to_string()).collect(),
+            when: None,
         }
     }
 
