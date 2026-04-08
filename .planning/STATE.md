@@ -5,14 +5,14 @@
 See: .planning/PROJECT.md (updated 2026-03-15)
 
 **Core value:** Dual-track quality gates (deterministic + agent-evaluated) for AI coding agents
-**Current focus:** v0.4.1 Merge Tools — Phase 48 complete, Phase 49 next
+**Current focus:** v0.4.1 Merge Tools — Phase 49 complete, Phase 50 next
 
 ## Current Position
 
-Phase: 48 (Gate Evidence Formatting)
-Plan: 02 of 02
+Phase: 49 (Forge-Agnostic Env Vars)
+Plan: N/A (implemented as part of merge_propose)
 Status: Complete
-Last activity: 2026-03-16 — Completed 48-02-PLAN.md (comprehensive test coverage)
+Last activity: 2026-04-08 — Phase 49 verified complete (env vars, gh preflight, schema docs already implemented)
 
 ## Milestone Progress
 
@@ -104,7 +104,7 @@ None. v0.4.1 must ship before v0.5.0 work begins.
 
 ### Next Actions
 
-Phase 48 complete. Proceed to Phase 49 or Phase 50 per milestone roadmap.
+Phase 49 complete (already implemented). Proceed to Phase 50 (Merge Propose).
 
 ### Session Continuity
 
