@@ -96,7 +96,7 @@ cli *ARGS:
 tui:
     cargo run -p assay-tui
 
-# Run the close-the-loop demo (M024 checkpoint + auto-promote)
+# Run the close-the-loop demo (M024 auto-promote path)
 demo-close-the-loop:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -105,13 +105,7 @@ demo-close-the-loop:
     # Setup
     ./examples/close-the-loop/setup.sh
     echo ""
-    # Abort path
-    ./examples/close-the-loop/run-abort.sh
-    echo ""
-    # Reset for clean path
-    ./examples/close-the-loop/reset.sh
-    echo ""
-    # Promote path
+    # Promote path (--print mode, auto-promotes on clean run)
     ./examples/close-the-loop/run-promote.sh
 
 # Generate JSON Schema files for all public types
