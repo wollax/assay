@@ -5,14 +5,14 @@
 See: .planning/PROJECT.md (updated 2026-03-15)
 
 **Core value:** Dual-track quality gates (deterministic + agent-evaluated) for AI coding agents
-**Current focus:** v0.5.0 Single-Agent Harness E2E — Phase 51 next
+**Current focus:** v0.6.0 Multi-Agent Orchestration (or reassess — much already built via Linear milestones)
 
 ## Current Position
 
-Phase: 50 (Merge Propose)
-Plan: N/A (already implemented)
-Status: Complete — v0.4.1 milestone shipped
-Last activity: 2026-04-08 — Phases 49-50 verified complete, v0.4.1 closed
+Phase: 59 (End-to-End Pipeline)
+Plan: N/A (implemented via Linear milestones M014-M024)
+Status: Complete — v0.4.1 and v0.5.0 milestones shipped
+Last activity: 2026-04-08 — Phases 49-59 verified complete against codebase
 
 ## Milestone Progress
 
@@ -23,16 +23,13 @@ Last activity: 2026-04-08 — Phases 49-50 verified complete, v0.4.1 closed
 | v0.3.0 | 9 (26-34) | 43 | 100% (shipped) |
 | v0.4.0 | 11 (35-45) | 28 | 100% (shipped) |
 | v0.4.1 | 5 (46-50) | 8 | 100% (shipped) |
-| v0.5.0 | 9 (51-59) | 19 | 0% (planned) |
+| v0.5.0 | 9 (51-59) | 19 | 100% (shipped) |
 
 ## Accumulated Context
 
 ### Decisions
 
-v0.1.0 decisions archived to .planning/milestones/v0.1.0-ROADMAP.md
-v0.2.0 decisions archived to .planning/milestones/v0.2.0-ROADMAP.md
-v0.3.0 decisions archived to .planning/milestones/v0.3.0-ROADMAP.md
-v0.4.0 decisions archived to .planning/milestones/v0.4.0-ROADMAP.md
+v0.1.0–v0.4.0 decisions archived to .planning/milestones/
 
 v0.4.1 decisions (from brainstorm):
 - PR creation over direct merge for v0.4.x — maps to `autonomous: false`
@@ -42,72 +39,36 @@ v0.4.1 decisions (from brainstorm):
 - Auto-revert killed permanently — contradicts `autonomous: false`
 - Investigate GitHub merge queue before building multi-worktree ordering
 
-v0.5.0 decisions (from brainstorm 2026-03-15T16-14):
+v0.5.0 decisions (from brainstorm + Linear execution):
 - Absorb Smelt orchestration into Assay; Smelt pivots to infrastructure-only
 - Closures for control inversion, not traits (zero-trait codebase convention)
 - Orchestration as `assay-core::orchestrate` module, not separate crate
 - `assay-harness` as new leaf crate for adapter implementations
-- `OrchestratorSession` composes `Vec<WorkSession>` (v0.6.0)
-- Additive `orchestrate_*` MCP tools, don't modify existing tools (v0.6.0)
-- Worktrees stay spec-scoped; session linkage is additive
+- `WorktreeConfig.base_dir` intentionally kept as `String` to avoid schema-breaking change
 - `[[sessions]]` array in RunManifest from day one (forward-compatible)
 - Session vocabulary cleanup: `AgentSession` → `GateEvalContext`
-- Struct composition (`SessionCore`) over traits for type unification (v0.6.1)
-
-### Phase-Requirement Mapping
-
-| Phase | Requirements | Theme |
-|-------|-------------|-------|
-| 51 | PREREQ-02 | Session vocabulary cleanup |
-| 52 | PREREQ-01 | GateEvalContext persistence |
-| 53 | WTREE-01, WTREE-02, WTREE-03 | Worktree session linkage |
-| 54 | WTREE-04 | Worktree tech debt (15 issues) |
-| 55 | HARNESS-01, HARNESS-02 | Harness crate + HarnessProfile type |
-| 56 | HARNESS-03, HARNESS-04 | Prompt builder + settings merger |
-| 57 | HARNESS-05, HARNESS-06, HARNESS-07 | Hook contract + Claude Code adapter |
-| 58 | MANIFEST-01, MANIFEST-02, MANIFEST-03 | RunManifest type + parsing |
-| 59 | E2E-01, E2E-02, E2E-03 | End-to-end pipeline |
-
-### Milestone Scope Issues
-
-Issues pulled into v0.4.1 scope:
-- "Default branch fallback to main gives confusing errors" (from: .planning/issues/open/2026-03-09-worktree-detect-default-branch-fallback.md)
-- "Git worktree prune failure silently discarded" (from: .planning/issues/open/2026-03-09-worktree-prune-failure-silent.md)
-
-### Milestone Scope Issues (v0.5.0)
-
-Issues pulled into v0.5.0 scope (worktree tech debt to clean up during enhancements):
-- "CLI worktree handlers discard error source chain" (from: .planning/issues/open/2026-03-09-worktree-cli-error-chain-lost.md)
-- "WorktreeConfig.base_dir uses String where Option<String> is idiomatic" (from: .planning/issues/open/2026-03-09-worktree-config-base-dir-type.md)
-- "detect_main_worktree conflates errors with is main worktree" (from: .planning/issues/open/2026-03-09-worktree-detect-main-error-handling.md)
-- "WorktreeDirty error contains CLI-specific advice" (from: .planning/issues/open/2026-03-09-worktree-dirty-error-cli-advice.md)
-- "ASSAY_WORKTREE_DIR env var not documented in CLI help" (from: .planning/issues/open/2026-03-09-worktree-env-var-undocumented.md)
-- "MCP worktree_cleanup tool has no --all equivalent" (from: .planning/issues/open/2026-03-09-worktree-mcp-cleanup-no-all.md)
-- "WorktreeInfo and WorktreeStatus missing deny_unknown_fields" (from: .planning/issues/open/2026-03-09-worktree-missing-deny-unknown-fields.md)
-- "Git worktree prune failure silently discarded" (from: .planning/issues/open/2026-03-09-worktree-prune-failure-silent.md)
-- "Missing test for resolve_worktree_dir with empty base_dir config" (from: .planning/issues/open/2026-03-09-worktree-test-empty-base-dir.md)
-- "Missing test for cleanup with force=true on clean worktree" (from: .planning/issues/open/2026-03-09-worktree-test-force-clean.md)
-- "Missing test for parse_worktree_list with malformed input" (from: .planning/issues/open/2026-03-09-worktree-test-parse-malformed.md)
-- "Worktree path uses to_string_lossy which corrupts non-UTF-8 paths" (from: .planning/issues/open/2026-03-09-worktree-to-string-lossy-non-utf8.md)
-- "WorktreeInfo and WorktreeStatus field duplication" (from: .planning/issues/open/2026-03-09-worktree-types-field-duplication.md)
-- "WorktreeInfo and WorktreeStatus not registered in schema registry" (from: .planning/issues/open/2026-03-09-worktree-types-not-in-schema-registry.md)
-- "Worktree ahead/behind use platform-dependent usize" (from: .planning/issues/open/2026-03-09-worktree-usize-serialization.md)
-
-### Pending Issues
-
-126 remaining open issues in .planning/issues/open/ (non-blocking tech debt carried from v0.2.0–v0.4.1)
-See .planning/issues/ for full backlog.
+- HarnessProvider trait + Claude/Codex/OpenCode adapters (went beyond original plan)
+- Streaming event pipeline + checkpoint gates + auto-promote (beyond v0.5.0 scope)
 
 ### Blockers
 
-None. v0.4.1 shipped. v0.5.0 work can begin.
+None.
 
 ### Next Actions
 
-v0.4.1 complete. Proceed to v0.5.0 Phase 51 (Session Vocabulary Cleanup).
+v0.5.0 complete. Kata roadmap phases 1-59 fully implemented.
+
+Linear milestones M014-M024 have implemented work well beyond the Kata roadmap scope, including:
+- Multi-agent orchestration (DAG/mesh/gossip) — originally v0.6.0
+- Conflict resolution — originally v0.6.1
+- Smelt monorepo integration
+- Streaming event pipeline + checkpoint gates
+- Forgejo CI + GitHub mirror pipeline
+
+**Recommendation:** Audit v0.6.0/v0.6.1 against codebase before planning further, as they may also be complete.
 
 ### Session Continuity
 
-Last session: 2026-03-16T21:50Z
-Stopped at: Completed 48-02-PLAN.md (comprehensive test coverage for evidence formatting)
+Last session: 2026-04-08
+Stopped at: Audited v0.5.0 phases against codebase, marked complete
 Resume file: None
