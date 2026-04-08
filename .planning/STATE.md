@@ -5,7 +5,7 @@
 See: .planning/PROJECT.md (updated 2026-03-15)
 
 **Core value:** Dual-track quality gates (deterministic + agent-evaluated) for AI coding agents
-**Current focus:** v0.6.0 Multi-Agent Orchestration (or reassess — much already built via Linear milestones)
+**Current focus:** All planned milestones (v0.1.0–v0.6.1) complete. Ready for next milestone definition.
 
 ## Current Position
 
@@ -65,7 +65,8 @@ Linear milestones M014-M024 have implemented work well beyond the Kata roadmap s
 - Streaming event pipeline + checkpoint gates
 - Forgejo CI + GitHub mirror pipeline
 
-**Recommendation:** Audit v0.6.0/v0.6.1 against codebase before planning further, as they may also be complete.
+v0.6.0 and v0.6.1 also verified complete. All 8 planned milestones shipped.
+Only deferred item: `SessionCore` struct composition (cosmetic refactor, not a feature gap).
 
 ### Session Continuity
 
