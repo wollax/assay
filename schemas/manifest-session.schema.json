@@ -1,0 +1,212 @@
+{
+  "$id": "https://assay.dev/schemas/manifest-session.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ManifestSession",
+  "description": "A single session entry within a run manifest.\n\nReferences a spec by name and optionally overrides harness configuration.\nThe pipeline merges these overrides with spec defaults and project config\nto produce a complete [`HarnessProfile`](crate::HarnessProfile).",
+  "type": "object",
+  "properties": {
+    "depends_on": {
+      "description": "Sessions that must complete before this one can start.\n\nEach entry is an effective session name (i.e. `name` if set, otherwise `spec`)\nof another session in the same manifest. Used by the orchestrator to build an\nexecution DAG. Empty means no dependencies — the session can run immediately.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "file_scope": {
+      "description": "Glob patterns defining the file scope for this session.\n\nWhen set, the harness enforces that the agent only modifies files\nmatching these patterns. Empty means no scope restriction.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "hooks": {
+      "description": "Lifecycle hooks for this session. Empty by default.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/HookContract"
+      }
+    },
+    "name": {
+      "description": "Optional display name for this session. Defaults to the spec name if omitted.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "prompt_layers": {
+      "description": "Prompt layers injected into this session's prompt assembly. Empty by default.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/PromptLayer"
+      }
+    },
+    "settings": {
+      "description": "Optional settings overrides applied to this session's harness profile.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/SettingsOverride"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "shared_files": {
+      "description": "Glob patterns for files shared with other sessions.\n\nFiles matching these patterns are expected to be touched by multiple\nagents. The harness uses this to detect shared-file conflicts during\nscope enforcement. Empty means no shared files declared.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "spec": {
+      "description": "Name of the spec to run (required). Must match a spec file in the project.",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "spec"
+  ],
+  "$defs": {
+    "HookContract": {
+      "description": "A lifecycle hook that runs an external command at a specific event.",
+      "type": "object",
+      "properties": {
+        "command": {
+          "description": "Shell command to execute when the event fires.",
+          "type": "string"
+        },
+        "event": {
+          "description": "The lifecycle event that triggers this hook.",
+          "$ref": "#/$defs/HookEvent"
+        },
+        "timeout_secs": {
+          "description": "Maximum seconds to wait for the command to complete.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "event",
+        "command"
+      ]
+    },
+    "HookEvent": {
+      "description": "Lifecycle event that the harness can hook into.\n\nHooks fire at specific points during agent execution:\n- `PreTool`: before a tool invocation\n- `PostTool`: after a tool invocation completes\n- `Stop`: when the agent session is stopping",
+      "oneOf": [
+        {
+          "description": "Fires before a tool invocation.",
+          "type": "string",
+          "const": "pre-tool"
+        },
+        {
+          "description": "Fires after a tool invocation completes.",
+          "type": "string",
+          "const": "post-tool"
+        },
+        {
+          "description": "Fires when the agent session is stopping.",
+          "type": "string",
+          "const": "stop"
+        }
+      ]
+    },
+    "PromptLayer": {
+      "description": "A single prompt layer contributing to the assembled agent prompt.\n\nPrompt layers are assembled in priority order (lowest `priority` value first)\nto build the final system prompt for an agent session.",
+      "type": "object",
+      "properties": {
+        "content": {
+          "description": "The prompt text content.",
+          "type": "string"
+        },
+        "kind": {
+          "description": "Category of this prompt layer.",
+          "$ref": "#/$defs/PromptLayerKind"
+        },
+        "name": {
+          "description": "Human-readable name for identification and debugging.",
+          "type": "string"
+        },
+        "priority": {
+          "description": "Ordering hint for assembly (lower values assemble first).",
+          "type": "integer",
+          "format": "int32"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "name",
+        "content",
+        "priority"
+      ]
+    },
+    "PromptLayerKind": {
+      "description": "Category of a prompt layer, determining its priority tier in assembly.\n\nVariants are ordered from highest built-in priority to custom:\n- `System`: foundational agent instructions\n- `Project`: project-level context and conventions\n- `Spec`: spec-specific acceptance criteria and constraints\n- `Custom`: user-defined layers injected at arbitrary priority",
+      "oneOf": [
+        {
+          "description": "Foundational agent instructions (highest built-in priority).",
+          "type": "string",
+          "const": "system"
+        },
+        {
+          "description": "Project-level context and conventions.",
+          "type": "string",
+          "const": "project"
+        },
+        {
+          "description": "Spec-specific acceptance criteria and constraints.",
+          "type": "string",
+          "const": "spec"
+        },
+        {
+          "description": "User-defined layer injected at arbitrary priority.",
+          "type": "string",
+          "const": "custom"
+        }
+      ]
+    },
+    "SettingsOverride": {
+      "description": "Settings overrides applied to an agent session.\n\nAll fields are optional or default-empty — only specified values override\nthe base configuration.",
+      "type": "object",
+      "properties": {
+        "max_turns": {
+          "description": "Maximum number of agent turns before forced stop.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0
+        },
+        "model": {
+          "description": "Model identifier to use (e.g., `\"sonnet\"`, `\"opus\"`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "permissions": {
+          "description": "Permissions granted to the agent (e.g., `\"filesystem\"`, `\"network\"`).",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "tools": {
+          "description": "Tools available to the agent (e.g., `\"bash\"`, `\"browser\"`).",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

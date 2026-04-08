@@ -1,0 +1,38 @@
+{
+  "$id": "https://assay.dev/schemas/merge-proposal.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "MergeProposal",
+  "description": "Result of a merge proposal (push branch + create PR).\n\nReturned by `merge_propose()` in `assay-core`. When `dry_run` is true,\n`pr_url` and `pr_number` are `None` and no side effects occur.",
+  "type": "object",
+  "properties": {
+    "dry_run": {
+      "description": "Whether this was a dry run (no side effects).",
+      "type": "boolean"
+    },
+    "gate_summary": {
+      "description": "Formatted gate evidence used as the PR body.",
+      "type": "string"
+    },
+    "pr_number": {
+      "description": "Number of the created pull request (absent in dry-run mode).",
+      "type": [
+        "integer",
+        "null"
+      ],
+      "format": "uint64",
+      "minimum": 0
+    },
+    "pr_url": {
+      "description": "URL of the created pull request (absent in dry-run mode).",
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "gate_summary",
+    "dry_run"
+  ]
+}

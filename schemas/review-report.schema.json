@@ -1,0 +1,117 @@
+{
+  "$id": "https://assay.dev/schemas/review-report.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ReviewReport",
+  "description": "A complete review report for a spec.\n\nContains the results of all checks (structural and optionally agent-quality),\nalong with summary counts and metadata for persistence.",
+  "type": "object",
+  "properties": {
+    "checks": {
+      "description": "All check results in execution order.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ReviewCheck"
+      }
+    },
+    "failed": {
+      "description": "Number of checks that failed.",
+      "type": "integer",
+      "format": "uint",
+      "minimum": 0
+    },
+    "passed": {
+      "description": "Number of checks that passed.",
+      "type": "integer",
+      "format": "uint",
+      "minimum": 0
+    },
+    "run_id": {
+      "description": "Unique run identifier (timestamp-based, set by `save_review()`).\n`None` for unsaved in-memory reports; always `Some` after persistence.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "skipped": {
+      "description": "Number of checks that were skipped (not applicable).",
+      "type": "integer",
+      "format": "uint",
+      "minimum": 0
+    },
+    "spec": {
+      "description": "Spec slug this review was generated for.",
+      "type": "string"
+    },
+    "timestamp": {
+      "description": "When the review was executed.",
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "spec",
+    "timestamp",
+    "checks",
+    "passed",
+    "failed",
+    "skipped"
+  ],
+  "$defs": {
+    "ReviewCheck": {
+      "description": "A single review check result.",
+      "type": "object",
+      "properties": {
+        "details": {
+          "description": "Optional detailed evidence (e.g. list of uncovered REQ-IDs).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kind": {
+          "description": "Whether this is a structural or agent-quality check.",
+          "$ref": "#/$defs/ReviewCheckKind"
+        },
+        "message": {
+          "description": "Human-readable summary of the check result.",
+          "type": "string"
+        },
+        "name": {
+          "description": "Check identifier, e.g. \"req-coverage\", \"acceptance-criteria\".",
+          "type": "string"
+        },
+        "passed": {
+          "description": "Whether the check passed (always true when `skipped` is true).",
+          "type": "boolean"
+        },
+        "skipped": {
+          "description": "Whether the check was skipped (not applicable for this spec type).\nWhen true, `passed` is also true and the result should not count\nagainst the failure tally.",
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "kind",
+        "passed",
+        "message"
+      ]
+    },
+    "ReviewCheckKind": {
+      "description": "The kind of review check: structural (machine-checkable) or\nagent quality (LLM-evaluated).",
+      "oneOf": [
+        {
+          "description": "Machine-checkable structural completeness check.",
+          "type": "string",
+          "const": "structural"
+        },
+        {
+          "description": "LLM-evaluated quality assessment (via evaluator subprocess).",
+          "type": "string",
+          "const": "agent_quality"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "$id": "https://assay.dev/schemas/review-check-kind.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ReviewCheckKind",
+  "description": "The kind of review check: structural (machine-checkable) or\nagent quality (LLM-evaluated).",
+  "oneOf": [
+    {
+      "description": "Machine-checkable structural completeness check.",
+      "type": "string",
+      "const": "structural"
+    },
+    {
+      "description": "LLM-evaluated quality assessment (via evaluator subprocess).",
+      "type": "string",
+      "const": "agent_quality"
+    }
+  ]
+}

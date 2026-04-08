@@ -16,14 +16,58 @@
         }
       ]
     },
+    "guard": {
+      "description": "Guard daemon configuration.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/GuardConfig"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "project_name": {
       "description": "Project name (required, non-empty after trim).",
       "type": "string"
+    },
+    "provider": {
+      "description": "AI provider configuration (Anthropic, OpenAI, Ollama).\nOmit to use the default provider (Anthropic).",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ProviderConfig"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "sessions": {
+      "description": "Session management configuration.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/SessionsConfig"
+        },
+        {
+          "type": "null"
+        }
+      ]
     },
     "specs_dir": {
       "description": "Directory containing spec files, relative to `.assay/`.\nDefaults to `\"specs/\"`.",
       "type": "string",
       "default": "specs/"
+    },
+    "worktree": {
+      "description": "Worktree management configuration.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/WorktreeConfig"
+        },
+        {
+          "type": "null"
+        }
+      ]
     }
   },
   "additionalProperties": false,
@@ -42,12 +86,177 @@
           "default": 300,
           "minimum": 0
         },
+        "evaluator_model": {
+          "description": "Default model for the evaluator subprocess. Defaults to `\"sonnet\"`.",
+          "type": "string",
+          "default": "sonnet"
+        },
+        "evaluator_retries": {
+          "description": "Maximum retries for transient evaluator subprocess failures. Defaults to 1.",
+          "type": "integer",
+          "format": "uint32",
+          "default": 1,
+          "minimum": 0
+        },
+        "evaluator_timeout": {
+          "description": "Evaluator subprocess timeout in seconds. Defaults to 120.",
+          "type": "integer",
+          "format": "uint64",
+          "default": 120,
+          "minimum": 0
+        },
+        "max_history": {
+          "description": "Maximum number of run history files to retain per spec.\nWhen set, oldest files beyond this limit are pruned on each save.\nA value of `0` means unlimited (no pruning). Defaults to `None` (no pruning).",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint",
+          "minimum": 0
+        },
         "working_dir": {
           "description": "Working directory for gate execution.",
           "type": [
             "string",
             "null"
           ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "GuardConfig": {
+      "description": "Guard daemon configuration.\n\nControls thresholds, polling interval, and circuit breaker behavior\nfor the background context protection daemon.",
+      "type": "object",
+      "properties": {
+        "hard_threshold": {
+          "description": "Hard threshold as percentage of context window (0.0-1.0). Default: 0.8.",
+          "type": "number",
+          "format": "double",
+          "default": 0.8
+        },
+        "hard_threshold_bytes": {
+          "description": "Hard threshold as file size in bytes. Optional, whichever fires first wins.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0
+        },
+        "max_recoveries": {
+          "description": "Maximum recovery attempts before circuit breaker trips. Default: 3.",
+          "type": "integer",
+          "format": "uint32",
+          "default": 3,
+          "minimum": 0
+        },
+        "poll_interval_secs": {
+          "description": "Polling interval in seconds. Default: 5.",
+          "type": "integer",
+          "format": "uint64",
+          "default": 5,
+          "minimum": 0
+        },
+        "recovery_window_secs": {
+          "description": "Time window in seconds for counting recoveries. Default: 600 (10 minutes).",
+          "type": "integer",
+          "format": "uint64",
+          "default": 600,
+          "minimum": 0
+        },
+        "soft_threshold": {
+          "description": "Soft threshold as percentage of context window (0.0-1.0). Default: 0.6.",
+          "type": "number",
+          "format": "double",
+          "default": 0.6
+        },
+        "soft_threshold_bytes": {
+          "description": "Soft threshold as file size in bytes. Optional, whichever fires first wins.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "ProviderConfig": {
+      "description": "AI provider and model configuration.\n\nAll fields are optional and omitted from serialized output when absent.",
+      "type": "object",
+      "properties": {
+        "execution_model": {
+          "description": "Model to use for execution tasks.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "planning_model": {
+          "description": "Model to use for planning tasks (e.g. \"claude-opus-4-5\").",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "provider": {
+          "description": "Which AI provider to use. Defaults to Anthropic.",
+          "$ref": "#/$defs/ProviderKind",
+          "default": "anthropic"
+        },
+        "review_model": {
+          "description": "Model to use for review tasks.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "ProviderKind": {
+      "description": "AI provider selection.",
+      "oneOf": [
+        {
+          "description": "Anthropic (Claude).",
+          "type": "string",
+          "const": "anthropic"
+        },
+        {
+          "description": "OpenAI (GPT).",
+          "type": "string",
+          "const": "open_ai"
+        },
+        {
+          "description": "Ollama (local models).",
+          "type": "string",
+          "const": "ollama"
+        }
+      ]
+    },
+    "SessionsConfig": {
+      "description": "Session management configuration.",
+      "type": "object",
+      "properties": {
+        "stale_threshold_secs": {
+          "description": "Staleness threshold in seconds for recovery sweep.\nSessions in the `AgentRunning` phase older than this are marked abandoned on startup.\nDefault: 3600 (1 hour). Must be greater than zero.",
+          "type": "integer",
+          "format": "uint64",
+          "default": 3600,
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "WorktreeConfig": {
+      "description": "Configuration for worktree management.\n\nLoaded from the `[worktree]` section of `.assay/config.toml`.",
+      "type": "object",
+      "properties": {
+        "base_dir": {
+          "description": "Base directory for worktrees.\nRelative paths are resolved from the project root.\nDefault: `\"../<project-name>-worktrees/\"` (computed at runtime when empty).\n\nStored as `String` rather than `PathBuf` because this is a serialized config field\nand changing the type would be a schema-breaking change.",
+          "type": "string",
+          "default": ""
         }
       },
       "additionalProperties": false

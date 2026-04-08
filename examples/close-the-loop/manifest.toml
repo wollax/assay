@@ -1,0 +1,7 @@
+# Run manifest for the close-the-loop example.
+#
+# Usage:
+#   assay run examples/close-the-loop/manifest.toml
+
+[[sessions]]
+spec = "close-the-loop"

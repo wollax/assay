@@ -1,0 +1,195 @@
+{
+  "$id": "https://assay.dev/schemas/merge-check.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "MergeCheck",
+  "description": "Result of a merge check between two refs.\n\nContains conflict information, file changes, and divergence metadata.\nProduced by `merge_check()` in `assay-core`.",
+  "type": "object",
+  "properties": {
+    "ahead": {
+      "description": "Number of commits in head not in base.",
+      "type": "integer",
+      "format": "uint32",
+      "minimum": 0
+    },
+    "base_sha": {
+      "description": "Resolved SHA of the base ref.",
+      "type": "string"
+    },
+    "behind": {
+      "description": "Number of commits in base not in head.",
+      "type": "integer",
+      "format": "uint32",
+      "minimum": 0
+    },
+    "clean": {
+      "description": "Whether the merge is clean (no conflicts).",
+      "type": "boolean"
+    },
+    "conflicts": {
+      "description": "Conflicts detected in a conflicted merge.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/MergeConflict"
+      }
+    },
+    "fast_forward": {
+      "description": "Whether the head is a direct descendant of base (fast-forward possible).",
+      "type": "boolean"
+    },
+    "files": {
+      "description": "Files changed in a clean merge.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/FileChange"
+      }
+    },
+    "head_sha": {
+      "description": "Resolved SHA of the head ref.",
+      "type": "string"
+    },
+    "merge_base_sha": {
+      "description": "SHA of the merge base (common ancestor). `None` for unrelated histories.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "truncated": {
+      "description": "Whether the conflict list was truncated by `max_conflicts`.",
+      "type": "boolean"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "clean",
+    "base_sha",
+    "head_sha",
+    "fast_forward",
+    "ahead",
+    "behind",
+    "truncated"
+  ],
+  "$defs": {
+    "ChangeType": {
+      "description": "Change type for files in a clean merge.",
+      "oneOf": [
+        {
+          "description": "File was added.",
+          "type": "string",
+          "const": "added"
+        },
+        {
+          "description": "File was modified.",
+          "type": "string",
+          "const": "modified"
+        },
+        {
+          "description": "File was deleted.",
+          "type": "string",
+          "const": "deleted"
+        }
+      ]
+    },
+    "ConflictType": {
+      "description": "Classification of a merge conflict.",
+      "oneOf": [
+        {
+          "description": "Both sides modified the same file differently.",
+          "type": "string",
+          "const": "content"
+        },
+        {
+          "description": "One side renamed, other deleted.",
+          "type": "string",
+          "const": "rename_delete"
+        },
+        {
+          "description": "Both sides renamed the same file differently.",
+          "type": "string",
+          "const": "rename_rename"
+        },
+        {
+          "description": "One side modified, other deleted.",
+          "type": "string",
+          "const": "modify_delete"
+        },
+        {
+          "description": "Both sides added a file at the same path.",
+          "type": "string",
+          "const": "add_add"
+        },
+        {
+          "description": "One side has a file, other has a directory at the same path.",
+          "type": "string",
+          "const": "file_directory"
+        },
+        {
+          "description": "Binary file modified on both sides.",
+          "type": "string",
+          "const": "binary"
+        },
+        {
+          "description": "Submodule conflict.",
+          "type": "string",
+          "const": "submodule"
+        },
+        {
+          "description": "Unknown or future conflict type.",
+          "type": "object",
+          "properties": {
+            "other": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "other"
+          ]
+        }
+      ]
+    },
+    "FileChange": {
+      "description": "A file changed in a clean merge.",
+      "type": "object",
+      "properties": {
+        "change_type": {
+          "description": "Type of change (added, modified, or deleted).",
+          "$ref": "#/$defs/ChangeType"
+        },
+        "path": {
+          "description": "Path of the changed file relative to the repository root.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "change_type"
+      ]
+    },
+    "MergeConflict": {
+      "description": "A single merge conflict.",
+      "type": "object",
+      "properties": {
+        "conflict_type": {
+          "description": "Classification of the conflict.",
+          "$ref": "#/$defs/ConflictType"
+        },
+        "message": {
+          "description": "Raw git conflict message.",
+          "type": "string"
+        },
+        "path": {
+          "description": "Path of the conflicted file relative to the repository root.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "conflict_type",
+        "message"
+      ]
+    }
+  }
+}

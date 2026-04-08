@@ -1,0 +1,17 @@
+{
+  "$id": "https://assay.dev/schemas/sessions-config.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SessionsConfig",
+  "description": "Session management configuration.",
+  "type": "object",
+  "properties": {
+    "stale_threshold_secs": {
+      "description": "Staleness threshold in seconds for recovery sweep.\nSessions in the `AgentRunning` phase older than this are marked abandoned on startup.\nDefault: 3600 (1 hour). Must be greater than zero.",
+      "type": "integer",
+      "format": "uint64",
+      "default": 3600,
+      "minimum": 0
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,108 @@
+{
+  "$id": "https://assay.dev/schemas/validation-result.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ValidationResult",
+  "description": "Result of validating one or more specs.",
+  "type": "object",
+  "properties": {
+    "diagnostics": {
+      "description": "All diagnostics found.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Diagnostic"
+      }
+    },
+    "spec": {
+      "description": "The spec name/slug that was validated.",
+      "type": "string"
+    },
+    "summary": {
+      "description": "Summary counts by severity.",
+      "$ref": "#/$defs/DiagnosticSummary"
+    },
+    "valid": {
+      "description": "Whether the spec is valid (no error-severity diagnostics).\nInvariant: `valid == (summary.errors == 0)`. Maintained by construction.",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "spec",
+    "valid",
+    "diagnostics",
+    "summary"
+  ],
+  "$defs": {
+    "Diagnostic": {
+      "description": "A single validation diagnostic with location, severity, and message.",
+      "type": "object",
+      "properties": {
+        "location": {
+          "description": "Location reference (e.g., \"name\", \"criteria[2].cmd\", \"depends\").",
+          "type": "string"
+        },
+        "message": {
+          "description": "Human-readable diagnostic message.",
+          "type": "string"
+        },
+        "severity": {
+          "description": "Severity level.",
+          "$ref": "#/$defs/Severity"
+        }
+      },
+      "required": [
+        "severity",
+        "location",
+        "message"
+      ]
+    },
+    "DiagnosticSummary": {
+      "description": "Counts of diagnostics by severity level.",
+      "type": "object",
+      "properties": {
+        "errors": {
+          "description": "Number of error-level diagnostics.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "infos": {
+          "description": "Number of info-level diagnostics.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "warnings": {
+          "description": "Number of warning-level diagnostics.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "errors",
+        "warnings",
+        "infos"
+      ]
+    },
+    "Severity": {
+      "description": "Severity level of a validation diagnostic.",
+      "oneOf": [
+        {
+          "description": "Informational — suggestion or note.",
+          "type": "string",
+          "const": "info"
+        },
+        {
+          "description": "Advisory — spec is usable but has issues worth addressing.",
+          "type": "string",
+          "const": "warning"
+        },
+        {
+          "description": "Blocks validity — spec cannot be used.",
+          "type": "string",
+          "const": "error"
+        }
+      ]
+    }
+  }
+}

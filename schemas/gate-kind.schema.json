@@ -52,6 +52,68 @@
         "kind",
         "path"
       ]
+    },
+    {
+      "description": "A gate evaluated by an agent via structured reasoning.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "AgentReport"
+        }
+      },
+      "required": [
+        "kind"
+      ]
+    },
+    {
+      "description": "A gate that counts events of a specific type in the agent session log.\n\n`event_type` must match the serde tag of an `AgentEvent` variant:\n`\"tool_called\"`, `\"tool_result\"`, `\"turn_ended\"`, `\"session_stopped\"`,\n`\"text_delta\"`, `\"text_block\"`.\n\nPasses when `count >= min.unwrap_or(0) && count <= max.unwrap_or(u32::MAX)`.",
+      "type": "object",
+      "properties": {
+        "event_type": {
+          "description": "The event type to count, matching an `AgentEvent` serde tag.",
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "const": "EventCount"
+        },
+        "max": {
+          "description": "Inclusive upper bound on the matched event count. `None` means no upper bound.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0
+        },
+        "min": {
+          "description": "Inclusive lower bound on the matched event count. `None` means no lower bound.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "kind",
+        "event_type"
+      ]
+    },
+    {
+      "description": "A gate that passes only when no tool invocation in the session returned an error.\n\nFails if any `AgentEvent::ToolResult { is_error: true, .. }` is present.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "NoToolErrors"
+        }
+      },
+      "required": [
+        "kind"
+      ]
     }
   ]
 }

@@ -1,0 +1,60 @@
+{
+  "$id": "https://assay.dev/schemas/prompt-layer.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PromptLayer",
+  "description": "A single prompt layer contributing to the assembled agent prompt.\n\nPrompt layers are assembled in priority order (lowest `priority` value first)\nto build the final system prompt for an agent session.",
+  "type": "object",
+  "properties": {
+    "content": {
+      "description": "The prompt text content.",
+      "type": "string"
+    },
+    "kind": {
+      "description": "Category of this prompt layer.",
+      "$ref": "#/$defs/PromptLayerKind"
+    },
+    "name": {
+      "description": "Human-readable name for identification and debugging.",
+      "type": "string"
+    },
+    "priority": {
+      "description": "Ordering hint for assembly (lower values assemble first).",
+      "type": "integer",
+      "format": "int32"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "kind",
+    "name",
+    "content",
+    "priority"
+  ],
+  "$defs": {
+    "PromptLayerKind": {
+      "description": "Category of a prompt layer, determining its priority tier in assembly.\n\nVariants are ordered from highest built-in priority to custom:\n- `System`: foundational agent instructions\n- `Project`: project-level context and conventions\n- `Spec`: spec-specific acceptance criteria and constraints\n- `Custom`: user-defined layers injected at arbitrary priority",
+      "oneOf": [
+        {
+          "description": "Foundational agent instructions (highest built-in priority).",
+          "type": "string",
+          "const": "system"
+        },
+        {
+          "description": "Project-level context and conventions.",
+          "type": "string",
+          "const": "project"
+        },
+        {
+          "description": "Spec-specific acceptance criteria and constraints.",
+          "type": "string",
+          "const": "spec"
+        },
+        {
+          "description": "User-defined layer injected at arbitrary priority.",
+          "type": "string",
+          "const": "custom"
+        }
+      ]
+    }
+  }
+}

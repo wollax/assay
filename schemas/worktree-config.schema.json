@@ -1,0 +1,15 @@
+{
+  "$id": "https://assay.dev/schemas/worktree-config.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "WorktreeConfig",
+  "description": "Configuration for worktree management.\n\nLoaded from the `[worktree]` section of `.assay/config.toml`.",
+  "type": "object",
+  "properties": {
+    "base_dir": {
+      "description": "Base directory for worktrees.\nRelative paths are resolved from the project root.\nDefault: `\"../<project-name>-worktrees/\"` (computed at runtime when empty).\n\nStored as `String` rather than `PathBuf` because this is a serialized config field\nand changing the type would be a schema-breaking change.",
+      "type": "string",
+      "default": ""
+    }
+  },
+  "additionalProperties": false
+}

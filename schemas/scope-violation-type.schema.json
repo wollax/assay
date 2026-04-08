@@ -1,0 +1,18 @@
+{
+  "$id": "https://assay.dev/schemas/scope-violation-type.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ScopeViolationType",
+  "description": "Type of scope violation detected during enforcement.\n\nUsed by the harness to classify file-access violations so agents and\nhumans can distinguish between out-of-scope writes and shared-file\nconflicts in multi-agent sessions.",
+  "oneOf": [
+    {
+      "description": "File is outside the session's declared `file_scope` globs.",
+      "type": "string",
+      "const": "out-of-scope"
+    },
+    {
+      "description": "File matches a `shared_files` glob claimed by another session.",
+      "type": "string",
+      "const": "shared-file-conflict"
+    }
+  ]
+}

@@ -100,6 +100,16 @@ plugins/
 schemas/         JSON Schemas (generated from assay-types)
 ```
 
+## Examples
+
+### [Close the Loop](examples/close-the-loop/) — Mid-Session Checkpoints + Auto-Promote
+
+Demonstrates the M024 gate/spec loop: mid-session checkpoint evaluation with early abort on tool-budget violations, and automatic spec promotion (`in-progress` → `verified`) on clean runs. Exercises `EventCount` checkpoint criteria, `NoToolErrors` session-end gates, and `auto_promote` against a real `claude` CLI subprocess.
+
+```bash
+just demo-close-the-loop
+```
+
 ## Development
 
 ```bash

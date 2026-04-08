@@ -1,0 +1,28 @@
+{
+  "$id": "https://assay.dev/schemas/milestone-status.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "MilestoneStatus",
+  "description": "Lifecycle status of a milestone.\n\nTransitions follow the canonical path:\n`Draft` → `InProgress` → `Verify` → `Complete`",
+  "oneOf": [
+    {
+      "description": "Milestone is being defined but not yet in active development.",
+      "type": "string",
+      "const": "draft"
+    },
+    {
+      "description": "Development is actively in progress.",
+      "type": "string",
+      "const": "in_progress"
+    },
+    {
+      "description": "All chunks pass gates; awaiting human or automated verification.",
+      "type": "string",
+      "const": "verify"
+    },
+    {
+      "description": "Milestone is fully complete and merged.",
+      "type": "string",
+      "const": "complete"
+    }
+  ]
+}

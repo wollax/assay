@@ -1,0 +1,35 @@
+{
+  "$id": "https://assay.dev/schemas/tool-call-summary.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ToolCallSummary",
+  "description": "Summary of tool calls during an agent session.",
+  "type": "object",
+  "properties": {
+    "by_tool": {
+      "description": "Tool call counts by tool name (e.g. {\"bash\": 5, \"edit\": 3}).",
+      "type": "object",
+      "additionalProperties": {
+        "type": "integer",
+        "format": "uint32",
+        "minimum": 0
+      }
+    },
+    "error_count": {
+      "description": "Number of tool calls that resulted in an error.",
+      "type": "integer",
+      "format": "uint32",
+      "minimum": 0
+    },
+    "total": {
+      "description": "Total number of tool calls made by the agent.",
+      "type": "integer",
+      "format": "uint32",
+      "minimum": 0
+    }
+  },
+  "required": [
+    "total",
+    "by_tool",
+    "error_count"
+  ]
+}

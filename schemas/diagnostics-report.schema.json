@@ -1,0 +1,207 @@
+{
+  "$id": "https://assay.dev/schemas/diagnostics-report.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DiagnosticsReport",
+  "description": "Full diagnostics report for a session file.\n\nOutput of the `context diagnose` CLI command and `context_diagnose` MCP tool.",
+  "type": "object",
+  "properties": {
+    "bloat": {
+      "description": "Bloat breakdown by category.",
+      "$ref": "#/$defs/BloatBreakdown"
+    },
+    "context_utilization_pct": {
+      "description": "Context utilization as a percentage of the context window.",
+      "type": [
+        "number",
+        "null"
+      ],
+      "format": "double"
+    },
+    "context_window": {
+      "description": "Context window size for the detected model.",
+      "type": "integer",
+      "format": "uint64",
+      "minimum": 0
+    },
+    "file_path": {
+      "description": "Path to the JSONL session file.",
+      "type": "string"
+    },
+    "file_size_bytes": {
+      "description": "Size of the session file in bytes.",
+      "type": "integer",
+      "format": "uint64",
+      "minimum": 0
+    },
+    "message_count": {
+      "description": "Number of user + assistant message entries.",
+      "type": "integer",
+      "format": "uint64",
+      "minimum": 0
+    },
+    "model": {
+      "description": "Model identifier from the last assistant message.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "session_id": {
+      "description": "Session UUID.",
+      "type": "string"
+    },
+    "system_overhead": {
+      "description": "Estimated system overhead tokens (system prompt, tool definitions).",
+      "type": "integer",
+      "format": "uint64",
+      "minimum": 0
+    },
+    "total_entries": {
+      "description": "Total number of JSONL entries parsed.",
+      "type": "integer",
+      "format": "uint64",
+      "minimum": 0
+    },
+    "usage": {
+      "description": "Token usage from the last assistant message.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/UsageData"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "session_id",
+    "file_path",
+    "file_size_bytes",
+    "total_entries",
+    "message_count",
+    "context_window",
+    "system_overhead",
+    "bloat"
+  ],
+  "$defs": {
+    "BloatBreakdown": {
+      "description": "Breakdown of bloat by category.",
+      "type": "object",
+      "properties": {
+        "entries": {
+          "description": "Individual bloat entries by category.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/BloatEntry"
+          }
+        }
+      },
+      "required": [
+        "entries"
+      ]
+    },
+    "BloatCategory": {
+      "description": "Categories of token bloat in session files.\n\nEach category represents a class of content that inflates session size\nwithout proportional value to the conversation.",
+      "oneOf": [
+        {
+          "description": "Progress tick entries (hook, agent, bash progress).",
+          "type": "string",
+          "const": "progress_ticks"
+        },
+        {
+          "description": "Extended thinking blocks (ephemeral, not in context window).",
+          "type": "string",
+          "const": "thinking_blocks"
+        },
+        {
+          "description": "Re-reads of files already in context.",
+          "type": "string",
+          "const": "stale_reads"
+        },
+        {
+          "description": "Tool result content (often large output).",
+          "type": "string",
+          "const": "tool_output"
+        },
+        {
+          "description": "Structural metadata entries (file-history-snapshot, queue-operation, etc.).",
+          "type": "string",
+          "const": "metadata"
+        },
+        {
+          "description": "Injected system reminder tags within message content.",
+          "type": "string",
+          "const": "system_reminders"
+        }
+      ]
+    },
+    "BloatEntry": {
+      "description": "A single bloat category measurement.",
+      "type": "object",
+      "properties": {
+        "bytes": {
+          "description": "Total bytes attributed to this category.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "category": {
+          "description": "The bloat category.",
+          "$ref": "#/$defs/BloatCategory"
+        },
+        "count": {
+          "description": "Number of occurrences.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "percentage": {
+          "description": "Percentage of total file size.",
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "required": [
+        "category",
+        "bytes",
+        "count",
+        "percentage"
+      ]
+    },
+    "UsageData": {
+      "description": "Token usage data from the Anthropic API response.\n\nPresent on the final assistant entry of each turn (the one with `stop_reason`).",
+      "type": "object",
+      "properties": {
+        "cache_creation_input_tokens": {
+          "description": "Tokens written to the cache during this call.",
+          "type": "integer",
+          "format": "uint64",
+          "default": 0,
+          "minimum": 0
+        },
+        "cache_read_input_tokens": {
+          "description": "Tokens read from cache during this call.",
+          "type": "integer",
+          "format": "uint64",
+          "default": 0,
+          "minimum": 0
+        },
+        "input_tokens": {
+          "description": "Fresh (non-cached) input tokens.",
+          "type": "integer",
+          "format": "uint64",
+          "default": 0,
+          "minimum": 0
+        },
+        "output_tokens": {
+          "description": "Output tokens generated.",
+          "type": "integer",
+          "format": "uint64",
+          "default": 0,
+          "minimum": 0
+        }
+      }
+    }
+  }
+}

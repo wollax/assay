@@ -1,0 +1,91 @@
+{
+  "$id": "https://assay.dev/schemas/signal-request.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SignalRequest",
+  "description": "Envelope for routing a [`PeerUpdate`] to a specific session.\n\nPosted to `POST /api/v1/signal` on the Assay signal endpoint.",
+  "type": "object",
+  "properties": {
+    "target_session": {
+      "description": "Name of the target session that should receive this update.",
+      "type": "string"
+    },
+    "update": {
+      "description": "The peer update payload to deliver.",
+      "$ref": "#/$defs/PeerUpdate"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "target_session",
+    "update"
+  ],
+  "$defs": {
+    "GateSummary": {
+      "description": "Lightweight gate pass/fail/skip counts included in a [`PeerUpdate`].\n\nThis is a signal-specific summary — not the same as the full gate types\nin [`crate::gate_run`].",
+      "type": "object",
+      "properties": {
+        "failed": {
+          "description": "Number of gate criteria that failed.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "passed": {
+          "description": "Number of gate criteria that passed.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "skipped": {
+          "description": "Number of gate criteria that were skipped.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "passed",
+        "failed",
+        "skipped"
+      ]
+    },
+    "PeerUpdate": {
+      "description": "A cross-job status update sent from one Smelt job to another via the\nAssay signal endpoint.\n\nSmelt's `notify` section triggers a POST of this payload to\n`POST /api/v1/signal` when a source session completes.",
+      "type": "object",
+      "properties": {
+        "branch": {
+          "description": "Git branch the source session worked on.",
+          "type": "string"
+        },
+        "changed_files": {
+          "description": "Files changed by the source session (relative paths).",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "gate_summary": {
+          "description": "Lightweight gate result summary from the source session.",
+          "$ref": "#/$defs/GateSummary"
+        },
+        "source_job": {
+          "description": "Smelt job identifier of the sending job.",
+          "type": "string"
+        },
+        "source_session": {
+          "description": "Session name within the source job that produced this update.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "source_job",
+        "source_session",
+        "changed_files",
+        "gate_summary",
+        "branch"
+      ]
+    }
+  }
+}

@@ -6,15 +6,18 @@
   "type": "object",
   "properties": {
     "approved": {
+      "description": "Whether the review approved the work.",
       "type": "boolean"
     },
     "comments": {
+      "description": "Reviewer comments. Omitted from serialized output when empty.",
       "type": "array",
       "items": {
         "type": "string"
       }
     },
     "spec_name": {
+      "description": "Name of the spec that was reviewed.",
       "type": "string"
     }
   },

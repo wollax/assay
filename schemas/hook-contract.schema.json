@@ -1,0 +1,53 @@
+{
+  "$id": "https://assay.dev/schemas/hook-contract.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "HookContract",
+  "description": "A lifecycle hook that runs an external command at a specific event.",
+  "type": "object",
+  "properties": {
+    "command": {
+      "description": "Shell command to execute when the event fires.",
+      "type": "string"
+    },
+    "event": {
+      "description": "The lifecycle event that triggers this hook.",
+      "$ref": "#/$defs/HookEvent"
+    },
+    "timeout_secs": {
+      "description": "Maximum seconds to wait for the command to complete.",
+      "type": [
+        "integer",
+        "null"
+      ],
+      "format": "uint64",
+      "minimum": 0
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "event",
+    "command"
+  ],
+  "$defs": {
+    "HookEvent": {
+      "description": "Lifecycle event that the harness can hook into.\n\nHooks fire at specific points during agent execution:\n- `PreTool`: before a tool invocation\n- `PostTool`: after a tool invocation completes\n- `Stop`: when the agent session is stopping",
+      "oneOf": [
+        {
+          "description": "Fires before a tool invocation.",
+          "type": "string",
+          "const": "pre-tool"
+        },
+        {
+          "description": "Fires after a tool invocation completes.",
+          "type": "string",
+          "const": "post-tool"
+        },
+        {
+          "description": "Fires when the agent session is stopping.",
+          "type": "string",
+          "const": "stop"
+        }
+      ]
+    }
+  }
+}

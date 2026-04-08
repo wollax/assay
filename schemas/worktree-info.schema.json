@@ -1,0 +1,39 @@
+{
+  "$id": "https://assay.dev/schemas/worktree-info.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "WorktreeInfo",
+  "description": "Information about a single git worktree.\n\nReturned by worktree create and list operations.",
+  "type": "object",
+  "properties": {
+    "base_branch": {
+      "description": "The base branch this worktree was created from.\nPopulated on create and list (from metadata), `None` when metadata is missing.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "branch": {
+      "description": "The git branch checked out in this worktree (e.g., `assay/auth-flow`).",
+      "type": "string"
+    },
+    "is_orphan": {
+      "description": "Whether this worktree is orphaned (no linked active WorkSession).\nPopulated by `worktree::list()` when cross-referencing sessions.",
+      "type": "boolean",
+      "default": false
+    },
+    "path": {
+      "description": "Absolute path to the worktree directory.",
+      "type": "string"
+    },
+    "spec_slug": {
+      "description": "The spec slug this worktree is associated with.",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "spec_slug",
+    "path",
+    "branch"
+  ]
+}

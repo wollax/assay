@@ -12,6 +12,11 @@
         "$ref": "#/$defs/Assumption"
       }
     },
+    "auto_promote": {
+      "description": "Whether to auto-promote from `InProgress` to `Verified` on a clean pipeline run.\n\nWhen `true` and all checkpoints pass, all session-end gates pass, and the current\nstatus is `InProgress`, the pipeline calls `promote_spec` to advance to `Verified`.",
+      "type": "boolean",
+      "default": false
+    },
     "constraints": {
       "description": "Implementation constraints.",
       "anyOf": [
@@ -124,11 +129,22 @@
     },
     "AcceptanceCriterionType": {
       "description": "Acceptance criterion type for a requirement.",
-      "type": "string",
-      "enum": [
-        "gherkin",
-        "ears",
-        "plain"
+      "oneOf": [
+        {
+          "description": "Given/When/Then format (BDD-style).",
+          "type": "string",
+          "const": "gherkin"
+        },
+        {
+          "description": "Easy Approach to Requirements Syntax format.",
+          "type": "string",
+          "const": "ears"
+        },
+        {
+          "description": "Free-form plain text.",
+          "type": "string",
+          "const": "plain"
+        }
       ]
     },
     "Assumption": {
@@ -223,40 +239,92 @@
     },
     "ImpactLevel": {
       "description": "Impact level for risk assessment.",
-      "type": "string",
-      "enum": [
-        "low",
-        "medium",
-        "high",
-        "critical"
+      "oneOf": [
+        {
+          "description": "Minimal impact on the feature or project.",
+          "type": "string",
+          "const": "low"
+        },
+        {
+          "description": "Moderate impact; workarounds may exist.",
+          "type": "string",
+          "const": "medium"
+        },
+        {
+          "description": "Significant impact on functionality or timeline.",
+          "type": "string",
+          "const": "high"
+        },
+        {
+          "description": "Severe impact; may block the entire feature.",
+          "type": "string",
+          "const": "critical"
+        }
       ]
     },
     "LikelihoodLevel": {
       "description": "Likelihood level for risk assessment.",
-      "type": "string",
-      "enum": [
-        "low",
-        "medium",
-        "high"
+      "oneOf": [
+        {
+          "description": "Unlikely to occur.",
+          "type": "string",
+          "const": "low"
+        },
+        {
+          "description": "May occur under certain conditions.",
+          "type": "string",
+          "const": "medium"
+        },
+        {
+          "description": "Likely to occur without mitigation.",
+          "type": "string",
+          "const": "high"
+        }
       ]
     },
     "Obligation": {
       "description": "RFC 2119 obligation level for a requirement.",
-      "type": "string",
-      "enum": [
-        "shall",
-        "should",
-        "may"
+      "oneOf": [
+        {
+          "description": "Mandatory requirement (MUST/SHALL in RFC 2119).",
+          "type": "string",
+          "const": "shall"
+        },
+        {
+          "description": "Recommended requirement (SHOULD in RFC 2119).",
+          "type": "string",
+          "const": "should"
+        },
+        {
+          "description": "Optional requirement (MAY in RFC 2119).",
+          "type": "string",
+          "const": "may"
+        }
       ]
     },
     "Priority": {
       "description": "MoSCoW priority for a requirement.",
-      "type": "string",
-      "enum": [
-        "must",
-        "should",
-        "could",
-        "wont"
+      "oneOf": [
+        {
+          "description": "Non-negotiable for the current release.",
+          "type": "string",
+          "const": "must"
+        },
+        {
+          "description": "Important but not critical; can be deferred if necessary.",
+          "type": "string",
+          "const": "should"
+        },
+        {
+          "description": "Desirable if time and resources permit.",
+          "type": "string",
+          "const": "could"
+        },
+        {
+          "description": "Explicitly excluded from the current release.",
+          "type": "string",
+          "const": "wont"
+        }
       ]
     },
     "QualityAttribute": {
@@ -421,14 +489,37 @@
     },
     "SpecStatus": {
       "description": "Status of a feature spec or individual requirement through its lifecycle.",
-      "type": "string",
-      "enum": [
-        "draft",
-        "proposed",
-        "planned",
-        "in-progress",
-        "verified",
-        "deprecated"
+      "oneOf": [
+        {
+          "description": "Initial authoring state; not yet ready for review.",
+          "type": "string",
+          "const": "draft"
+        },
+        {
+          "description": "Submitted for review but not yet approved.",
+          "type": "string",
+          "const": "proposed"
+        },
+        {
+          "description": "Approved and scheduled for implementation.",
+          "type": "string",
+          "const": "planned"
+        },
+        {
+          "description": "Currently being implemented.",
+          "type": "string",
+          "const": "in-progress"
+        },
+        {
+          "description": "Implementation verified against acceptance criteria.",
+          "type": "string",
+          "const": "verified"
+        },
+        {
+          "description": "No longer active; superseded or removed.",
+          "type": "string",
+          "const": "deprecated"
+        }
       ]
     },
     "UserClass": {
@@ -462,12 +553,27 @@
     },
     "VerificationMethod": {
       "description": "Verification method for a requirement.",
-      "type": "string",
-      "enum": [
-        "test",
-        "analysis",
-        "inspection",
-        "demonstration"
+      "oneOf": [
+        {
+          "description": "Verified by automated or manual tests.",
+          "type": "string",
+          "const": "test"
+        },
+        {
+          "description": "Verified by static analysis or formal review.",
+          "type": "string",
+          "const": "analysis"
+        },
+        {
+          "description": "Verified by visual or manual inspection.",
+          "type": "string",
+          "const": "inspection"
+        },
+        {
+          "description": "Verified by running the feature and observing behavior.",
+          "type": "string",
+          "const": "demonstration"
+        }
       ]
     },
     "VerificationStrategy": {

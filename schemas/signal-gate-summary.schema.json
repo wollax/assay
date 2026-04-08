@@ -1,0 +1,33 @@
+{
+  "$id": "https://assay.dev/schemas/signal-gate-summary.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "GateSummary",
+  "description": "Lightweight gate pass/fail/skip counts included in a [`PeerUpdate`].\n\nThis is a signal-specific summary — not the same as the full gate types\nin [`crate::gate_run`].",
+  "type": "object",
+  "properties": {
+    "failed": {
+      "description": "Number of gate criteria that failed.",
+      "type": "integer",
+      "format": "uint32",
+      "minimum": 0
+    },
+    "passed": {
+      "description": "Number of gate criteria that passed.",
+      "type": "integer",
+      "format": "uint32",
+      "minimum": 0
+    },
+    "skipped": {
+      "description": "Number of gate criteria that were skipped.",
+      "type": "integer",
+      "format": "uint32",
+      "minimum": 0
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "passed",
+    "failed",
+    "skipped"
+  ]
+}

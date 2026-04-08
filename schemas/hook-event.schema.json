@@ -1,0 +1,23 @@
+{
+  "$id": "https://assay.dev/schemas/hook-event.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "HookEvent",
+  "description": "Lifecycle event that the harness can hook into.\n\nHooks fire at specific points during agent execution:\n- `PreTool`: before a tool invocation\n- `PostTool`: after a tool invocation completes\n- `Stop`: when the agent session is stopping",
+  "oneOf": [
+    {
+      "description": "Fires before a tool invocation.",
+      "type": "string",
+      "const": "pre-tool"
+    },
+    {
+      "description": "Fires after a tool invocation completes.",
+      "type": "string",
+      "const": "post-tool"
+    },
+    {
+      "description": "Fires when the agent session is stopping.",
+      "type": "string",
+      "const": "stop"
+    }
+  ]
+}

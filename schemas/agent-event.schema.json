@@ -1,0 +1,155 @@
+{
+  "$id": "https://assay.dev/schemas/agent-event.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AgentEvent",
+  "description": "A normalized event from an agent session.\n\nProduced by parsing the streaming output of an agent CLI (e.g. Claude's\nNDJSON stream). Non-Claude adapters emit a single synthetic\n[`AgentEvent::SessionStopped`] on exit.",
+  "oneOf": [
+    {
+      "description": "A tool was invoked by the agent.",
+      "type": "object",
+      "properties": {
+        "input_json": {
+          "description": "JSON-encoded tool input parameters.",
+          "type": "string"
+        },
+        "name": {
+          "description": "Tool name (e.g. `\"bash\"`, `\"edit\"`, `\"read\"`).",
+          "type": "string"
+        },
+        "type": {
+          "type": "string",
+          "const": "tool_called"
+        }
+      },
+      "required": [
+        "type",
+        "name",
+        "input_json"
+      ]
+    },
+    {
+      "description": "A tool returned a result to the agent.",
+      "type": "object",
+      "properties": {
+        "is_error": {
+          "description": "Whether the tool invocation resulted in an error.",
+          "type": "boolean"
+        },
+        "name": {
+          "description": "Tool name that produced this result.",
+          "type": "string"
+        },
+        "output": {
+          "description": "Tool output content (may be truncated by the caller).",
+          "type": "string"
+        },
+        "type": {
+          "type": "string",
+          "const": "tool_result"
+        }
+      },
+      "required": [
+        "type",
+        "name",
+        "output",
+        "is_error"
+      ]
+    },
+    {
+      "description": "A conversation turn boundary.",
+      "type": "object",
+      "properties": {
+        "turn_index": {
+          "description": "Zero-based turn index within the session.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "type": {
+          "type": "string",
+          "const": "turn_ended"
+        }
+      },
+      "required": [
+        "type",
+        "turn_index"
+      ]
+    },
+    {
+      "description": "The agent session has stopped.",
+      "type": "object",
+      "properties": {
+        "cost_usd": {
+          "description": "Total API cost in USD, if reported by the agent.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "num_turns": {
+          "description": "Number of conversation turns completed.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "reason": {
+          "description": "Stop reason (e.g. `\"success\"`, `\"error\"`, `\"max_turns\"`).",
+          "type": "string"
+        },
+        "type": {
+          "type": "string",
+          "const": "session_stopped"
+        }
+      },
+      "required": [
+        "type",
+        "reason",
+        "num_turns"
+      ]
+    },
+    {
+      "description": "An incremental text chunk from a content block delta.\n\nEmitted per-token during streaming for live display consumers (TUI).\nEach delta carries the content block index so consumers can reconstruct\nper-block text streams.",
+      "type": "object",
+      "properties": {
+        "block_index": {
+          "description": "The content block index this delta belongs to (0-based).",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "text": {
+          "description": "The text content of this delta.",
+          "type": "string"
+        },
+        "type": {
+          "type": "string",
+          "const": "text_delta"
+        }
+      },
+      "required": [
+        "type",
+        "text",
+        "block_index"
+      ]
+    },
+    {
+      "description": "A complete text content block from an assistant message.\n\nEmitted once per text block for batch consumers (gates, summaries).\nContains the full text of the block — no reconstruction needed.",
+      "type": "object",
+      "properties": {
+        "text": {
+          "description": "The full text content of the block.",
+          "type": "string"
+        },
+        "type": {
+          "type": "string",
+          "const": "text_block"
+        }
+      },
+      "required": [
+        "type",
+        "text"
+      ]
+    }
+  ]
+}

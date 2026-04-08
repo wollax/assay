@@ -1,0 +1,23 @@
+{
+  "$id": "https://assay.dev/schemas/provider_kind.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ProviderKind",
+  "description": "AI provider selection.",
+  "oneOf": [
+    {
+      "description": "Anthropic (Claude).",
+      "type": "string",
+      "const": "anthropic"
+    },
+    {
+      "description": "OpenAI (GPT).",
+      "type": "string",
+      "const": "open_ai"
+    },
+    {
+      "description": "Ollama (local models).",
+      "type": "string",
+      "const": "ollama"
+    }
+  ]
+}

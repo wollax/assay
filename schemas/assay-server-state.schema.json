@@ -1,0 +1,61 @@
+{
+  "$id": "https://assay.dev/schemas/assay-server-state.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AssayServerState",
+  "description": "Global server state returned by `GET /api/v1/state`.",
+  "type": "object",
+  "properties": {
+    "active_runs": {
+      "description": "Currently active orchestrator runs.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/RunSummary"
+      }
+    },
+    "uptime_secs": {
+      "description": "Seconds since the MCP server started.",
+      "type": "integer",
+      "format": "uint64",
+      "minimum": 0
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "active_runs",
+    "uptime_secs"
+  ],
+  "$defs": {
+    "RunSummary": {
+      "description": "Summary of a single active orchestrator run, reported in\n[`AssayServerState`].",
+      "type": "object",
+      "properties": {
+        "run_id": {
+          "description": "Unique run identifier.",
+          "type": "string"
+        },
+        "session_count": {
+          "description": "Number of sessions in this run.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "spec_name": {
+          "description": "Spec name being executed.",
+          "type": "string"
+        },
+        "started_at": {
+          "description": "When the run started (UTC).",
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "run_id",
+        "spec_name",
+        "session_count",
+        "started_at"
+      ]
+    }
+  }
+}

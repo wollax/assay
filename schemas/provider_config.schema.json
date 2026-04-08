@@ -1,0 +1,58 @@
+{
+  "$id": "https://assay.dev/schemas/provider_config.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ProviderConfig",
+  "description": "AI provider and model configuration.\n\nAll fields are optional and omitted from serialized output when absent.",
+  "type": "object",
+  "properties": {
+    "execution_model": {
+      "description": "Model to use for execution tasks.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "planning_model": {
+      "description": "Model to use for planning tasks (e.g. \"claude-opus-4-5\").",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "provider": {
+      "description": "Which AI provider to use. Defaults to Anthropic.",
+      "$ref": "#/$defs/ProviderKind",
+      "default": "anthropic"
+    },
+    "review_model": {
+      "description": "Model to use for review tasks.",
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "ProviderKind": {
+      "description": "AI provider selection.",
+      "oneOf": [
+        {
+          "description": "Anthropic (Claude).",
+          "type": "string",
+          "const": "anthropic"
+        },
+        {
+          "description": "OpenAI (GPT).",
+          "type": "string",
+          "const": "open_ai"
+        },
+        {
+          "description": "Ollama (local models).",
+          "type": "string",
+          "const": "ollama"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,58 @@
+{
+  "$id": "https://assay.dev/schemas/session-info.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SessionInfo",
+  "description": "Summary metadata for a session file (used by `context list`).",
+  "type": "object",
+  "properties": {
+    "entry_count": {
+      "description": "Number of JSONL entries in the file.",
+      "type": "integer",
+      "format": "uint64",
+      "minimum": 0
+    },
+    "file_path": {
+      "description": "Path to the JSONL session file.",
+      "type": "string"
+    },
+    "file_size_bytes": {
+      "description": "Size of the session file in bytes.",
+      "type": "integer",
+      "format": "uint64",
+      "minimum": 0
+    },
+    "last_modified": {
+      "description": "Last modification time (ISO 8601).",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "project": {
+      "description": "Project path (if resolved from history).",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "session_id": {
+      "description": "Session UUID.",
+      "type": "string"
+    },
+    "token_count": {
+      "description": "Token count from last assistant usage (only populated with `--tokens` flag).",
+      "type": [
+        "integer",
+        "null"
+      ],
+      "format": "uint64",
+      "minimum": 0
+    }
+  },
+  "required": [
+    "session_id",
+    "file_path",
+    "file_size_bytes",
+    "entry_count"
+  ]
+}

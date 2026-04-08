@@ -1,0 +1,99 @@
+{
+  "$id": "https://assay.dev/schemas/evaluator-output.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "EvaluatorOutput",
+  "description": "Complete evaluator output: per-criterion results plus overall summary.\n\nThis struct defines the JSON Schema used with the `--json-schema` flag\nwhen spawning the Claude Code evaluator subprocess.",
+  "type": "object",
+  "properties": {
+    "criteria": {
+      "description": "Per-criterion evaluation results.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/EvaluatorCriterionResult"
+      }
+    },
+    "summary": {
+      "description": "Overall summary with aggregate judgment.",
+      "$ref": "#/$defs/EvaluatorSummary"
+    }
+  },
+  "required": [
+    "criteria",
+    "summary"
+  ],
+  "$defs": {
+    "CriterionOutcome": {
+      "description": "Outcome of evaluating a single criterion.\n\nFour-state outcome: pass, fail, skip (could not assess), or warn (soft concern).",
+      "oneOf": [
+        {
+          "description": "Criterion satisfied.",
+          "type": "string",
+          "const": "pass"
+        },
+        {
+          "description": "Criterion not satisfied.",
+          "type": "string",
+          "const": "fail"
+        },
+        {
+          "description": "Evaluator could not assess this criterion.",
+          "type": "string",
+          "const": "skip"
+        },
+        {
+          "description": "Soft concern — does not fail the gate.",
+          "type": "string",
+          "const": "warn"
+        }
+      ]
+    },
+    "EvaluatorCriterionResult": {
+      "description": "Per-criterion evaluation result from the evaluator subprocess.",
+      "type": "object",
+      "properties": {
+        "evidence": {
+          "description": "Concrete evidence observed (optional but encouraged).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "description": "Criterion name as reported by the evaluator.\n\nExpected to match a criterion name in the spec, but this is not enforced\nat the type level — mismatches surface as warnings during result mapping.",
+          "type": "string"
+        },
+        "outcome": {
+          "description": "Four-state outcome of the evaluation.",
+          "$ref": "#/$defs/CriterionOutcome"
+        },
+        "reasoning": {
+          "description": "Free-text reasoning explaining the judgment.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "outcome",
+        "reasoning"
+      ]
+    },
+    "EvaluatorSummary": {
+      "description": "Aggregate summary from the evaluator.",
+      "type": "object",
+      "properties": {
+        "passed": {
+          "description": "Whether the gate passed overall.",
+          "type": "boolean"
+        },
+        "rationale": {
+          "description": "Brief rationale for the overall judgment.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "passed",
+        "rationale"
+      ]
+    }
+  }
+}

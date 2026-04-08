@@ -1,0 +1,41 @@
+{
+  "$id": "https://assay.dev/schemas/diff-truncation.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DiffTruncation",
+  "description": "Truncation metadata when the diff was truncated to fit the evaluator's token budget.\n\nPresent only when truncation occurred (diff exceeded token budget).\nOmitted entirely when the diff fit within budget (clean passthrough).",
+  "type": "object",
+  "properties": {
+    "included_files": {
+      "description": "Files included in the truncated diff.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "omitted_files": {
+      "description": "Files omitted from the truncated diff (present in original, absent after truncation).",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "original_bytes": {
+      "description": "Byte size of the original diff before truncation.",
+      "type": "integer",
+      "format": "uint64",
+      "minimum": 0
+    },
+    "truncated_bytes": {
+      "description": "Byte size of the diff after truncation.",
+      "type": "integer",
+      "format": "uint64",
+      "minimum": 0
+    }
+  },
+  "required": [
+    "original_bytes",
+    "truncated_bytes",
+    "included_files",
+    "omitted_files"
+  ]
+}

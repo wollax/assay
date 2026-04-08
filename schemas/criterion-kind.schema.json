@@ -1,0 +1,58 @@
+{
+  "$id": "https://assay.dev/schemas/criterion-kind.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CriterionKind",
+  "description": "The kind of evaluation a criterion uses.\n\nWhen set on a criterion, determines how it is evaluated.\n`AgentReport` means the criterion is evaluated by an agent\nvia structured reasoning rather than a shell command.",
+  "oneOf": [
+    {
+      "description": "Evaluated by an agent via structured reasoning.",
+      "type": "string",
+      "const": "AgentReport"
+    },
+    {
+      "description": "Criterion evaluated by counting events of a given type in the agent\nsession log. Parameters mirror `GateKind::EventCount`.",
+      "type": "object",
+      "properties": {
+        "EventCount": {
+          "type": "object",
+          "properties": {
+            "event_type": {
+              "description": "The event type to count, matching an `AgentEvent` serde tag.",
+              "type": "string"
+            },
+            "max": {
+              "description": "Inclusive upper bound on the matched event count. `None` means no upper bound.",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint32",
+              "minimum": 0
+            },
+            "min": {
+              "description": "Inclusive lower bound on the matched event count. `None` means no lower bound.",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint32",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "event_type"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "EventCount"
+      ]
+    },
+    {
+      "description": "Criterion that passes only when no tool returned an error during the session.",
+      "type": "string",
+      "const": "NoToolErrors"
+    }
+  ]
+}

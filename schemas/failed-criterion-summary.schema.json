@@ -1,0 +1,37 @@
+{
+  "$id": "https://assay.dev/schemas/failed-criterion-summary.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "FailedCriterionSummary",
+  "description": "Summary of a single failed gate criterion for diagnostic persistence.",
+  "type": "object",
+  "properties": {
+    "command": {
+      "description": "The command that was executed (if any).",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "criterion_name": {
+      "description": "Name of the criterion that failed.",
+      "type": "string"
+    },
+    "exit_code": {
+      "description": "Exit code from the command (if applicable).",
+      "type": [
+        "integer",
+        "null"
+      ],
+      "format": "int32"
+    },
+    "stderr_snippet": {
+      "description": "Stderr snippet from the failed command (truncated).",
+      "type": "string",
+      "default": ""
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "criterion_name"
+  ]
+}

@@ -12,6 +12,34 @@
       "default": 300,
       "minimum": 0
     },
+    "evaluator_model": {
+      "description": "Default model for the evaluator subprocess. Defaults to `\"sonnet\"`.",
+      "type": "string",
+      "default": "sonnet"
+    },
+    "evaluator_retries": {
+      "description": "Maximum retries for transient evaluator subprocess failures. Defaults to 1.",
+      "type": "integer",
+      "format": "uint32",
+      "default": 1,
+      "minimum": 0
+    },
+    "evaluator_timeout": {
+      "description": "Evaluator subprocess timeout in seconds. Defaults to 120.",
+      "type": "integer",
+      "format": "uint64",
+      "default": 120,
+      "minimum": 0
+    },
+    "max_history": {
+      "description": "Maximum number of run history files to retain per spec.\nWhen set, oldest files beyond this limit are pruned on each save.\nA value of `0` means unlimited (no pruning). Defaults to `None` (no pruning).",
+      "type": [
+        "integer",
+        "null"
+      ],
+      "format": "uint",
+      "minimum": 0
+    },
     "working_dir": {
       "description": "Working directory for gate execution.",
       "type": [
