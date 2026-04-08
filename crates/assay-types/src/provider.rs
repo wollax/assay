@@ -41,6 +41,38 @@ pub trait HarnessProvider {
         profile: &HarnessProfile,
         working_dir: &Path,
     ) -> Result<Vec<String>, HarnessError>;
+
+    /// Write config files and return a **full streaming command line**.
+    ///
+    /// Unlike [`write_harness`](Self::write_harness), the returned vec includes
+    /// the binary name as `args[0]` and uses streaming-compatible flags (e.g.
+    /// `--output-format stream-json` for Claude). This matches the contract of
+    /// [`launch_agent_streaming`](https://docs.rs/assay-core) which treats
+    /// `cli_args[0]` as the binary.
+    ///
+    /// When `prompt` is `Some`, the provider appends it as a user message
+    /// using the provider-specific flag (e.g. `-p` for Claude).
+    ///
+    /// The default implementation prepends an empty binary placeholder and
+    /// delegates to [`write_harness`](Self::write_harness). Providers should
+    /// override this to supply the correct binary name and streaming flags.
+    fn write_harness_streaming(
+        &self,
+        profile: &HarnessProfile,
+        working_dir: &Path,
+        prompt: Option<&str>,
+    ) -> Result<Vec<String>, HarnessError> {
+        let args = self.write_harness(profile, working_dir)?;
+        // Default: prepend empty binary (will fail at spawn — providers
+        // should override with their actual binary name).
+        let mut full = vec!["agent".to_string()];
+        full.extend(args);
+        if let Some(p) = prompt {
+            full.push("-p".to_string());
+            full.push(p.to_string());
+        }
+        Ok(full)
+    }
 }
 
 /// No-op provider for testing.

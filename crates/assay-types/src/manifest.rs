@@ -156,6 +156,51 @@ mod tests {
     }
 
     #[test]
+    fn manifest_session_prompt_toml_roundtrip() {
+        let toml_str = r#"
+            [[sessions]]
+            spec = "close-the-loop"
+            prompt = "Summarize the project in one sentence."
+        "#;
+        let manifest: RunManifest = toml::from_str(toml_str).unwrap();
+        let session = &manifest.sessions[0];
+        assert_eq!(session.spec, "close-the-loop");
+        assert_eq!(
+            session.prompt.as_deref(),
+            Some("Summarize the project in one sentence.")
+        );
+
+        // Roundtrip: serialize back and reparse.
+        let re_serialized = toml::to_string(&manifest).unwrap();
+        assert!(
+            re_serialized.contains("prompt"),
+            "serialized output must include prompt"
+        );
+        let reparsed: RunManifest = toml::from_str(&re_serialized).unwrap();
+        assert_eq!(reparsed.sessions[0].prompt, session.prompt);
+    }
+
+    #[test]
+    fn manifest_session_prompt_none_omitted_in_toml() {
+        let session = ManifestSession {
+            spec: "test".to_string(),
+            name: None,
+            settings: None,
+            hooks: vec![],
+            prompt_layers: vec![],
+            file_scope: vec![],
+            shared_files: vec![],
+            depends_on: vec![],
+            prompt: None,
+        };
+        let toml_str = toml::to_string(&session).unwrap();
+        assert!(
+            !toml_str.contains("prompt"),
+            "TOML should omit absent prompt, got:\n{toml_str}"
+        );
+    }
+
+    #[test]
     fn manifest_session_without_scope_fields_backward_compat() {
         let toml_str = r#"
             [[sessions]]

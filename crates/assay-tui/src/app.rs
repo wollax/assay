@@ -954,10 +954,11 @@ impl App {
                             return false;
                         }
                         let provider = provider_harness_writer(self.config.as_ref());
-                        let cli_args = match provider.write_harness(&profile, &run_dir) {
-                            Ok(args) => args,
-                            Err(_) => return false,
-                        };
+                        let cli_args =
+                            match provider.write_harness_streaming(&profile, &run_dir, None) {
+                                Ok(args) => args,
+                                Err(_) => return false,
+                            };
                         let working_dir = run_dir.clone();
                         // Transition to AgentRun screen.
                         self.screen = Screen::AgentRun {
