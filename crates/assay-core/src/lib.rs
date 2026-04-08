@@ -51,6 +51,9 @@ pub mod merge;
 /// End-to-end pipeline orchestrator: manifest → worktree → harness → agent → gate → merge.
 pub mod pipeline;
 
+/// Checkpoint driver: consumes agent events, fires mid-session gate evaluation, tracks budget.
+pub mod pipeline_checkpoint;
+
 /// Milestone I/O: scan, load, and save milestones under `.assay/milestones/`.
 pub mod milestone;
 

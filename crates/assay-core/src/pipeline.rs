@@ -417,6 +417,16 @@ pub fn launch_agent(
 /// thread in the TUI observes channel disconnect and emits
 /// `TuiEvent::AgentDone { exit_code: -1 }`.
 ///
+/// Handle returned by [`launch_agent_streaming`] that provides both the
+/// relay thread join handle and the subprocess PID for signal delivery.
+pub struct StreamingAgentHandle {
+    /// Join handle for the relay thread. Returns the subprocess exit code.
+    pub relay: std::thread::JoinHandle<i32>,
+    /// PID of the subprocess (0 if spawn failed or args were empty).
+    /// Use with `libc::kill(-pid, signal)` to signal the process group.
+    pub pid: u32,
+}
+
 /// # Arguments
 ///
 /// * `cli_args` — Full command line: `cli_args[0]` is the binary,
@@ -429,17 +439,20 @@ pub fn launch_agent_streaming(
     cli_args: &[String],
     working_dir: &std::path::Path,
     event_tx: std::sync::mpsc::Sender<AgentEvent>,
-) -> std::thread::JoinHandle<i32> {
+) -> StreamingAgentHandle {
     use std::io::{BufRead, BufReader, Cursor};
     use std::process::Stdio;
 
     // Guard: an empty cli_args would panic on cli_args[0].
     // Return a thread that immediately signals EOF and exits with -1.
     if cli_args.is_empty() {
-        return std::thread::spawn(move || {
-            drop(event_tx);
-            -1
-        });
+        return StreamingAgentHandle {
+            relay: std::thread::spawn(move || {
+                drop(event_tx);
+                -1
+            }),
+            pid: 0,
+        };
     }
 
     // Clone the args + path before moving into the thread.
@@ -452,34 +465,48 @@ pub fn launch_agent_streaming(
     #[cfg(feature = "telemetry")]
     let traceparent_value = extract_traceparent();
 
-    std::thread::spawn(move || {
-        let mut cmd = std::process::Command::new(&binary);
-        cmd.args(&args)
-            .current_dir(&working_dir)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::inherit());
+    // Spawn the child process in the main thread so we can capture the PID
+    // before moving the Child into the relay thread.
+    let mut cmd = std::process::Command::new(&binary);
+    cmd.args(&args)
+        .current_dir(&working_dir)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit());
 
-        #[cfg(feature = "telemetry")]
-        if let Some(ref tp) = traceparent_value {
-            cmd.env("TRACEPARENT", tp);
+    // Put child in its own process group so the pipeline can kill the
+    // entire tree (agent + any tool subprocesses) via killpg.
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        cmd.process_group(0);
+    }
+
+    #[cfg(feature = "telemetry")]
+    if let Some(ref tp) = traceparent_value {
+        cmd.env("TRACEPARENT", tp);
+    }
+
+    let mut child = match cmd.spawn() {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::error!(
+                binary = %binary,
+                working_dir = %working_dir.display(),
+                error = %e,
+                "Failed to spawn agent subprocess in streaming mode; \
+                 ensure the agent binary is installed and the working directory exists"
+            );
+            drop(event_tx);
+            return StreamingAgentHandle {
+                relay: std::thread::spawn(move || -1),
+                pid: 0,
+            };
         }
+    };
 
-        let mut child = match cmd.spawn() {
-            Ok(c) => c,
-            Err(e) => {
-                tracing::error!(
-                    binary = %binary,
-                    working_dir = %working_dir.display(),
-                    error = %e,
-                    "Failed to spawn agent subprocess in streaming mode; \
-                     ensure the agent binary is installed and the working directory exists"
-                );
-                // Drop event_tx — signals EOF to receiver.
-                drop(event_tx);
-                return -1;
-            }
-        };
+    let child_pid = child.id();
 
+    let relay = std::thread::spawn(move || {
         // Drain stdout line-by-line, parsing each line as NDJSON or
         // falling back to a synthetic TextDelta.
         if let Some(stdout) = child.stdout.take() {
@@ -572,7 +599,12 @@ pub fn launch_agent_streaming(
 
         // Wait for subprocess exit and return the exit code.
         child.wait().map(|s| s.code().unwrap_or(-1)).unwrap_or(-1)
-    })
+    });
+
+    StreamingAgentHandle {
+        relay,
+        pid: child_pid,
+    }
 }
 
 // ── Harness profile construction ─────────────────────────────────────
@@ -834,24 +866,62 @@ pub fn execute_session(
         Ok::<_, PipelineError>(args)
     })?;
 
-    // ── Stage 4: AgentLaunch ─────────────────────────────────────
+    // ── Stage 4: AgentLaunch (streaming) + Checkpoint Driver ─────
     let agent_start = Instant::now();
-    let agent_output =
-        info_span!("agent_launch", spec = %manifest_session.spec).in_scope(|| {
+    let checkpoint_spec = spec_entry.to_spec();
+    let (events, checkpoint_outcome) = info_span!("agent_launch", spec = %manifest_session.spec)
+        .in_scope(|| {
             let stage_start = Instant::now();
             let timeout = Duration::from_secs(config.timeout_secs);
-            let output =
-                launch_agent(&cli_args, &worktree_info.path, timeout).map_err(|mut e| {
-                    abandon(
-                        &config.assay_dir,
-                        &format!("AgentLaunch failed: {}", e.message),
-                    );
-                    warn!(stage = "agent_launch", error = %e.message, "stage failed");
-                    e.elapsed = stage_start.elapsed();
-                    e
-                })?;
 
-            if output.timed_out {
+            // Set up streaming channel and launch agent.
+            let (event_tx, event_rx) = std::sync::mpsc::channel::<AgentEvent>();
+            let agent_handle = launch_agent_streaming(&cli_args, &worktree_info.path, event_tx);
+
+            // Run checkpoint driver (consumes events until channel disconnect or failure).
+            let mut event_buffer = Vec::new();
+            let checkpoint_outcome = crate::pipeline_checkpoint::drive_checkpoints(
+                &event_rx,
+                &checkpoint_spec,
+                &worktree_info.path,
+                crate::pipeline_checkpoint::DEFAULT_CHECKPOINT_BUDGET,
+                timeout,
+                &mut event_buffer,
+            );
+
+            // Handle checkpoint failure: kill subprocess via process group signal,
+            // then drain channel so the relay thread can exit cleanly.
+            if let Some(ref failed) = checkpoint_outcome.failed {
+                eprintln!(
+                    "Checkpoint failed at {:?}: {} — aborting agent",
+                    failed.phase, failed.summary.spec_name,
+                );
+
+                if agent_handle.pid > 0 {
+                    #[cfg(unix)]
+                    {
+                        // Send SIGTERM to the process group (negative PID).
+                        // SAFETY: pid is valid, process_group(0) was set at spawn.
+                        unsafe {
+                            libc::kill(-(agent_handle.pid as i32), libc::SIGTERM);
+                        }
+                        tracing::info!(
+                            pid = agent_handle.pid,
+                            "sent SIGTERM to agent process group"
+                        );
+                    }
+                    #[cfg(not(unix))]
+                    tracing::warn!("cannot send SIGTERM on non-Unix platform");
+                }
+                // Drain remaining events so the relay thread can exit.
+                crate::pipeline_checkpoint::drain_channel(&event_rx, &mut event_buffer);
+            }
+
+            // Join relay thread to get exit code.
+            let exit_code = agent_handle.relay.join().unwrap_or(-1);
+
+            // Check timeout.
+            if stage_start.elapsed() > timeout {
                 let elapsed = stage_start.elapsed();
                 abandon(
                     &config.assay_dir,
@@ -872,16 +942,14 @@ pub fn execute_session(
                 });
             }
 
-            if output.exit_code != Some(0) {
+            // Check agent exit code (skip if we aborted via checkpoint — signal
+            // death exit codes are expected after kill).
+            if checkpoint_outcome.failed.is_none() && exit_code != 0 {
                 let elapsed = stage_start.elapsed();
-                let exit_info = output
-                    .exit_code
-                    .map(|c| format!("exit code {c}"))
-                    .unwrap_or_else(|| "killed by signal".to_string());
-                let stderr_excerpt = if output.stderr.len() > 500 {
-                    format!("...{}", &output.stderr[output.stderr.len() - 500..])
+                let exit_info = if exit_code == -1 {
+                    "killed by signal".to_string()
                 } else {
-                    output.stderr.clone()
+                    format!("exit code {exit_code}")
                 };
                 abandon(
                     &config.assay_dir,
@@ -891,13 +959,8 @@ pub fn execute_session(
                 return Err(PipelineError {
                     stage: PipelineStage::AgentLaunch,
                     message: format!(
-                        "Agent crashed with {exit_info} for spec '{}': {}",
+                        "Agent crashed with {exit_info} for spec '{}'",
                         manifest_session.spec,
-                        stderr_excerpt
-                            .lines()
-                            .take(3)
-                            .collect::<Vec<_>>()
-                            .join(" | ")
                     ),
                     recovery: format!(
                         "Inspect agent stderr. Check that Claude Code CLI is properly configured. \
@@ -907,21 +970,51 @@ pub fn execute_session(
                     elapsed,
                 });
             }
+
             let duration = stage_start.elapsed();
             info!("stage completed");
             stage_timings.push(StageTiming {
                 stage: PipelineStage::AgentLaunch,
                 duration,
             });
-            Ok::<_, PipelineError>(output)
+
+            Ok::<_, PipelineError>((event_buffer, checkpoint_outcome))
         })?;
     crate::telemetry::record_agent_run_duration_ms(agent_start.elapsed().as_secs_f64() * 1000.0);
 
+    // ── Checkpoint failure early return ──────────────────────────
+    if let Some(failed) = checkpoint_outcome.failed {
+        // Use the actual failed checkpoint's summary and metadata for the diagnostic.
+        let mut diagnostic =
+            crate::review::build_gate_diagnostic(&spec_name, &session_id, &failed.summary);
+        diagnostic.checkpoint_index = Some(failed.index);
+        diagnostic.session_phase = failed.phase.clone();
+        match crate::review::save_gate_diagnostic(&config.assay_dir, &spec_name, &diagnostic) {
+            Ok(path) => info!(
+                spec = %spec_name,
+                run_id = %session_id,
+                checkpoint_index = failed.index,
+                path = %path.display(),
+                "checkpoint gate diagnostic saved"
+            ),
+            Err(e) => warn!(
+                spec = %spec_name,
+                error = %e,
+                "failed to save checkpoint gate diagnostic"
+            ),
+        }
+
+        return Ok(PipelineResult {
+            session_id,
+            spec_name,
+            gate_summary: Some(failed.summary),
+            merge_check: None,
+            stage_timings,
+            outcome: PipelineOutcome::GateFailed,
+        });
+    }
+
     // ── Event log + tool call summary ────────────────────────────
-    // Currently, events are empty — streaming event collection is a
-    // future pipeline enhancement. Non-Claude adapters also produce
-    // empty events, which yields a default (all-zeros) summary.
-    let events: Vec<AgentEvent> = vec![];
     let tool_call_summary = crate::work_session::compute_tool_call_summary(&events);
     tracing::trace!(
         total = tool_call_summary.total,
@@ -936,9 +1029,6 @@ pub fn execute_session(
     }) {
         tracing::warn!(error = %e, session_id = %session_id, "failed to persist tool_call_summary to work session");
     }
-
-    // agent_output.stdout/stderr not used downstream — gate evaluation reads from the worktree filesystem.
-    drop(agent_output);
 
     // ── Stage 5: GateEvaluate ────────────────────────────────────
     let (gate_summary, gate_passed) =
@@ -1327,7 +1417,7 @@ mod tests {
         ];
         let handle = launch_agent_streaming(&args, Path::new("/tmp"), event_tx);
         let events: Vec<AgentEvent> = event_rx.iter().collect();
-        let exit_code = handle.join().expect("thread panicked");
+        let exit_code = handle.relay.join().expect("thread panicked");
         assert_eq!(exit_code, 0);
         assert_eq!(
             events.len(),
@@ -1354,7 +1444,7 @@ mod tests {
             let args: Vec<String> = vec!["true".to_string()];
             let handle = launch_agent_streaming(&args, Path::new("/tmp"), event_tx);
             let _: Vec<AgentEvent> = event_rx.iter().collect();
-            let exit_code = handle.join().expect("thread panicked");
+            let exit_code = handle.relay.join().expect("thread panicked");
             assert_eq!(exit_code, 0, "`true` should exit 0");
         }
         // Non-zero exit.
@@ -1363,7 +1453,7 @@ mod tests {
             let args: Vec<String> = vec!["false".to_string()];
             let handle = launch_agent_streaming(&args, Path::new("/tmp"), event_tx);
             let _: Vec<AgentEvent> = event_rx.iter().collect();
-            let exit_code = handle.join().expect("thread panicked");
+            let exit_code = handle.relay.join().expect("thread panicked");
             assert_ne!(exit_code, 0, "`false` should exit non-zero");
         }
     }
@@ -1382,7 +1472,7 @@ mod tests {
         ];
         let handle = launch_agent_streaming(&args, Path::new("/tmp"), event_tx);
         let events: Vec<AgentEvent> = event_rx.iter().collect();
-        let exit_code = handle.join().expect("thread panicked");
+        let exit_code = handle.relay.join().expect("thread panicked");
         assert_eq!(exit_code, 0);
         assert_eq!(
             events.len(),

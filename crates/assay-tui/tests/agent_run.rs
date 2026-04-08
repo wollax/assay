@@ -62,7 +62,7 @@ fn launch_agent_streaming_delivers_all_lines() {
             other => panic!("expected TextDelta, got {other:?}"),
         })
         .collect();
-    let exit_code = handle.join().expect("thread panicked");
+    let exit_code = handle.relay.join().expect("thread panicked");
 
     assert_eq!(exit_code, 0, "expected exit code 0");
     assert_eq!(
@@ -82,7 +82,7 @@ fn launch_agent_streaming_delivers_exit_code() {
         let args: Vec<String> = vec!["true".to_string()];
         let handle = launch_agent_streaming(&args, std::path::Path::new("/tmp"), event_tx);
         let _: Vec<AgentEvent> = event_rx.iter().collect();
-        let exit_code = handle.join().expect("thread panicked");
+        let exit_code = handle.relay.join().expect("thread panicked");
         assert_eq!(exit_code, 0, "`true` should exit 0");
     }
 
@@ -92,7 +92,7 @@ fn launch_agent_streaming_delivers_exit_code() {
         let args: Vec<String> = vec!["false".to_string()];
         let handle = launch_agent_streaming(&args, std::path::Path::new("/tmp"), event_tx);
         let _: Vec<AgentEvent> = event_rx.iter().collect();
-        let exit_code = handle.join().expect("thread panicked");
+        let exit_code = handle.relay.join().expect("thread panicked");
         assert_ne!(exit_code, 0, "`false` should exit non-zero");
     }
 }

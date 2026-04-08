@@ -38,7 +38,7 @@ fn streaming_delivers_lines_to_receiver() {
     );
 
     let events: Vec<AgentEvent> = event_rx.into_iter().collect();
-    let exit_code = handle.join().expect("thread should not panic");
+    let exit_code = handle.relay.join().expect("thread should not panic");
 
     assert_eq!(text_delta_texts(&events), vec!["alpha", "beta", "gamma"]);
     assert_eq!(exit_code, 0);
@@ -56,7 +56,7 @@ fn streaming_join_handle_returns_exit_code() {
         event_tx,
     );
 
-    let exit_code = handle.join().expect("thread should not panic");
+    let exit_code = handle.relay.join().expect("thread should not panic");
     assert_eq!(exit_code, 42);
 }
 
@@ -75,7 +75,7 @@ fn streaming_failed_process_returns_nonzero() {
         event_tx,
     );
 
-    let exit_code = handle.join().expect("thread should not panic");
+    let exit_code = handle.relay.join().expect("thread should not panic");
     assert_eq!(exit_code, 1);
 }
 
@@ -90,6 +90,6 @@ fn streaming_nonexistent_binary_returns_negative_one() {
         event_tx,
     );
 
-    let exit_code = handle.join().expect("thread should not panic");
+    let exit_code = handle.relay.join().expect("thread should not panic");
     assert_eq!(exit_code, -1, "expected -1 for nonexistent binary");
 }

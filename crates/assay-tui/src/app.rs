@@ -980,7 +980,7 @@ impl App {
                                 let _ = tui_tx.send(TuiEvent::AgentEvent(event));
                             }
                             // All lines sent; get exit code from inner thread.
-                            let exit_code = inner.join().unwrap_or(-1);
+                            let exit_code = inner.relay.join().unwrap_or(-1);
                             let _ = tui_tx.send(TuiEvent::AgentDone { exit_code });
                             exit_code
                         });
