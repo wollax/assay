@@ -90,6 +90,41 @@ expression: schema.to_value()
         }
       ]
     },
+    "SpecStatus": {
+      "description": "Status of a feature spec or individual requirement through its lifecycle.",
+      "oneOf": [
+        {
+          "const": "draft",
+          "description": "Initial authoring state; not yet ready for review.",
+          "type": "string"
+        },
+        {
+          "const": "proposed",
+          "description": "Submitted for review but not yet approved.",
+          "type": "string"
+        },
+        {
+          "const": "planned",
+          "description": "Approved and scheduled for implementation.",
+          "type": "string"
+        },
+        {
+          "const": "in-progress",
+          "description": "Currently being implemented.",
+          "type": "string"
+        },
+        {
+          "const": "verified",
+          "description": "Implementation verified against acceptance criteria.",
+          "type": "string"
+        },
+        {
+          "const": "deprecated",
+          "description": "No longer active; superseded or removed.",
+          "type": "string"
+        }
+      ]
+    },
     "ToolCallSummary": {
       "description": "Summary of tool calls during an agent session.",
       "properties": {
@@ -134,6 +169,11 @@ expression: schema.to_value()
       "description": "Version of assay that created this session.",
       "type": "string"
     },
+    "auto_promoted": {
+      "default": false,
+      "description": "Whether the pipeline auto-promoted the spec on a clean run.",
+      "type": "boolean"
+    },
     "created_at": {
       "description": "When the session was created.",
       "format": "date-time",
@@ -153,6 +193,17 @@ expression: schema.to_value()
     "phase": {
       "$ref": "#/$defs/SessionPhase",
       "description": "Current phase of the session lifecycle."
+    },
+    "promoted_to": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/SpecStatus"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "The status the spec was promoted to, if auto-promotion fired."
     },
     "spec_name": {
       "description": "Name of the spec this session is for.",

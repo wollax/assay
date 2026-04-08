@@ -51,7 +51,7 @@ pub use evaluator::{
     CriterionOutcome, EvaluatorCriterionResult, EvaluatorOutput, EvaluatorSummary,
 };
 pub use evidence::FormattedEvidence;
-pub use feature_spec::FeatureSpec;
+pub use feature_spec::{FeatureSpec, SpecStatus};
 pub use gate::{GateKind, GateResult};
 pub use gate_run::{CriterionResult, DiffTruncation, GateRunRecord, GateRunSummary};
 pub use gates_spec::{GateCriterion, GatesSpec};

@@ -113,6 +113,7 @@ mod tests {
             dependencies: vec![],
             risks: vec![],
             verification: None,
+            auto_promote: false,
         }
     }
 

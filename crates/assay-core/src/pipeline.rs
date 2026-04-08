@@ -1119,6 +1119,78 @@ pub fn execute_session(
         });
     }
 
+    // ── Auto-promote on clean run (S04) ────────────────────────────
+    //
+    // Preconditions (ALL must hold):
+    // 1. No checkpoint failures AND budget not exhausted
+    // 2. Session-end gates passed (gate_summary.failed == 0 — guaranteed here)
+    // 3. FeatureSpec.auto_promote == true
+    // 4. Current SpecStatus == InProgress
+    // 5. Directory spec (not flat legacy)
+    if checkpoint_outcome.failed.is_none()
+        && !checkpoint_outcome.budget_exhausted
+        && let SpecEntry::Directory {
+            slug,
+            spec_path: Some(ref spec_toml_path),
+            ..
+        } = spec_entry
+    {
+        match crate::spec::load_feature_spec(spec_toml_path) {
+            Ok(feature_spec)
+                if feature_spec.auto_promote
+                    && feature_spec.status == assay_types::feature_spec::SpecStatus::InProgress =>
+            {
+                match crate::spec::promote::promote_spec(
+                    &config.specs_dir,
+                    &slug,
+                    Some(assay_types::feature_spec::SpecStatus::Verified),
+                ) {
+                    Ok((old, new)) => {
+                        info!(
+                            spec = %spec_name,
+                            old_status = %old,
+                            new_status = %new,
+                            "auto-promoted spec on clean run"
+                        );
+                        if let Err(e) = crate::work_session::with_session(
+                            &config.assay_dir,
+                            &session_id,
+                            |session| {
+                                session.auto_promoted = true;
+                                session.promoted_to =
+                                    Some(assay_types::feature_spec::SpecStatus::Verified);
+                                Ok(())
+                            },
+                        ) {
+                            warn!(
+                                error = %e,
+                                "failed to persist auto_promoted flag to work session"
+                            );
+                        }
+                    }
+                    Err(e) => {
+                        // AlreadyTerminal or any other error — warn and continue.
+                        warn!(
+                            spec = %spec_name,
+                            error = %e,
+                            "auto-promote failed (non-fatal); continuing pipeline"
+                        );
+                    }
+                }
+            }
+            Ok(_) => {
+                // auto_promote is false or status is not InProgress — no-op
+            }
+            Err(e) => {
+                warn!(
+                    spec = %spec_name,
+                    error = %e,
+                    "failed to load feature spec for auto-promote check"
+                );
+            }
+        }
+    }
+
     // ── Stage 6: MergeCheck ──────────────────────────────────────
     let merge_result =
         info_span!("merge_check", spec = %manifest_session.spec, spec_name = %spec_name).in_scope(

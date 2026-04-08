@@ -502,6 +502,11 @@ expression: schema.to_value()
       },
       "type": "array"
     },
+    "auto_promote": {
+      "default": false,
+      "description": "Whether to auto-promote from `InProgress` to `Verified` on a clean pipeline run.\n\nWhen `true` and all checkpoints pass, all session-end gates pass, and the current\nstatus is `InProgress`, the pipeline calls `promote_spec` to advance to `Verified`.",
+      "type": "boolean"
+    },
     "constraints": {
       "anyOf": [
         {

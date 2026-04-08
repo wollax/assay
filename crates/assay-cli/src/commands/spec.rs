@@ -719,6 +719,62 @@ fn handle_spec_review(name: &str, json: bool, list: bool) -> anyhow::Result<i32>
                 }
             }
         }
+
+        // Show checkpoint metadata from diagnostics (S04).
+        let checkpoint_diags: Vec<_> = diagnostics
+            .iter()
+            .filter(|d| d.checkpoint_index.is_some())
+            .collect();
+        if !checkpoint_diags.is_empty() {
+            println!();
+            println!("Checkpoints:");
+            for d in &checkpoint_diags {
+                let idx = d.checkpoint_index.unwrap();
+                let phase_str = match &d.session_phase {
+                    assay_types::review::SessionPhase::AtToolCall { n } => {
+                        format!("at_tool_call({n})")
+                    }
+                    assay_types::review::SessionPhase::AtEvent { event_type } => {
+                        format!("at_event({event_type})")
+                    }
+                    assay_types::review::SessionPhase::SessionEnd => "session_end".to_string(),
+                };
+                println!(
+                    "  [{idx}] phase: {phase_str}  passed: {passed}  failed: {failed}",
+                    passed = d.passed,
+                    failed = d.failed,
+                );
+                for fc in &d.failed_criteria {
+                    println!("      ✗ {}", fc.criterion_name);
+                }
+            }
+        }
+
+        // Show auto-promotion from the most recent work session (S04).
+        if let Ok(session_ids) = assay_core::work_session::list_sessions(&ad) {
+            let mut recent_session: Option<assay_types::WorkSession> = None;
+            for sid in &session_ids {
+                if let Ok(s) = assay_core::work_session::load_session(&ad, sid)
+                    && s.spec_name == name
+                    && recent_session
+                        .as_ref()
+                        .is_none_or(|prev| s.created_at > prev.created_at)
+                {
+                    recent_session = Some(s);
+                }
+            }
+            if let Some(session) = recent_session
+                && session.auto_promoted
+            {
+                let target = session
+                    .promoted_to
+                    .as_ref()
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| "unknown".to_string());
+                println!();
+                println!("Auto-promotion: in-progress → {target}");
+            }
+        }
     }
 
     // Exit 0 if all pass, 1 if any fail.
@@ -1440,5 +1496,86 @@ cmd = "echo ok"
         // The gates-only spec has 1 criterion with no requirements → 100% → fails.
         assert_eq!(report.failed, 1);
         assert_eq!(report.checks.len(), 6);
+    }
+
+    #[test]
+    fn test_spec_review_auto_promotion_session_data() {
+        // Verify that a work session with auto_promoted=true and promoted_to=Verified
+        // can be loaded for spec review display (S04 data path).
+        let tmp = tempfile::tempdir().unwrap();
+        let assay_dir = tmp.path().join(".assay");
+        std::fs::create_dir_all(&assay_dir).unwrap();
+
+        let session = assay_core::work_session::start_session(
+            &assay_dir,
+            "auto-promo",
+            std::path::PathBuf::from("/tmp/wt"),
+            "claude",
+            None,
+        )
+        .unwrap();
+
+        let session_id = session.id.clone();
+
+        // Set auto-promote fields.
+        assay_core::work_session::with_session(&assay_dir, &session_id, |s| {
+            s.auto_promoted = true;
+            s.promoted_to = Some(assay_types::feature_spec::SpecStatus::Verified);
+            Ok(())
+        })
+        .unwrap();
+
+        // Verify the session can be found by listing and filtering.
+        let ids = assay_core::work_session::list_sessions(&assay_dir).unwrap();
+        assert!(!ids.is_empty());
+
+        let loaded = assay_core::work_session::load_session(&assay_dir, &session_id).unwrap();
+        assert!(loaded.auto_promoted);
+        assert_eq!(
+            loaded.promoted_to,
+            Some(assay_types::feature_spec::SpecStatus::Verified)
+        );
+        assert_eq!(loaded.spec_name, "auto-promo");
+    }
+
+    #[test]
+    fn test_spec_review_checkpoint_diagnostic_data() {
+        // Verify that a GateDiagnostic with checkpoint metadata can be
+        // saved and loaded for spec review display (S04 data path).
+        let tmp = tempfile::tempdir().unwrap();
+        let assay_dir = tmp.path().join(".assay");
+        std::fs::create_dir_all(&assay_dir).unwrap();
+
+        let diag = assay_types::GateDiagnostic {
+            spec: "ckpt-spec".to_string(),
+            run_id: "test-run-001".to_string(),
+            timestamp: chrono::Utc::now(),
+            failed_criteria: vec![assay_types::FailedCriterionSummary {
+                criterion_name: "too-many-errors".to_string(),
+                command: Some("check errors".to_string()),
+                exit_code: Some(1),
+                stderr_snippet: "threshold exceeded".to_string(),
+            }],
+            passed: 2,
+            failed: 1,
+            checkpoint_index: Some(0),
+            session_phase: assay_types::review::SessionPhase::AtToolCall { n: 5 },
+        };
+
+        let path =
+            assay_core::review::save_gate_diagnostic(&assay_dir, "ckpt-spec", &diag).unwrap();
+        assert!(path.exists());
+
+        let diagnostics =
+            assay_core::review::list_gate_diagnostics(&assay_dir, "ckpt-spec").unwrap();
+        assert_eq!(diagnostics.len(), 1);
+        let loaded = &diagnostics[0];
+        assert_eq!(loaded.checkpoint_index, Some(0));
+        assert!(matches!(
+            loaded.session_phase,
+            assay_types::review::SessionPhase::AtToolCall { n: 5 }
+        ));
+        assert_eq!(loaded.failed_criteria.len(), 1);
+        assert_eq!(loaded.failed_criteria[0].criterion_name, "too-many-errors");
     }
 }
