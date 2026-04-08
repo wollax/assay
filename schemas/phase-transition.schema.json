@@ -1,0 +1,71 @@
+{
+  "$id": "https://assay.dev/schemas/phase-transition.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PhaseTransition",
+  "description": "A recorded phase transition within a work session.",
+  "type": "object",
+  "properties": {
+    "from": {
+      "description": "The phase transitioned from.",
+      "$ref": "#/$defs/SessionPhase"
+    },
+    "notes": {
+      "description": "Optional notes about the transition.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "timestamp": {
+      "description": "When the transition occurred.",
+      "type": "string",
+      "format": "date-time"
+    },
+    "to": {
+      "description": "The phase transitioned to.",
+      "$ref": "#/$defs/SessionPhase"
+    },
+    "trigger": {
+      "description": "What triggered the transition (e.g., \"agent_started\", \"gate_passed\").",
+      "type": "string"
+    }
+  },
+  "required": [
+    "from",
+    "to",
+    "timestamp",
+    "trigger"
+  ],
+  "$defs": {
+    "SessionPhase": {
+      "description": "Phase of a work session lifecycle.\n\nSessions follow a linear pipeline: Created → AgentRunning → GateEvaluated → Completed.\nAny phase can transition to Abandoned (the escape hatch).",
+      "oneOf": [
+        {
+          "description": "Session created, not yet started.",
+          "type": "string",
+          "const": "created"
+        },
+        {
+          "description": "Agent is actively running.",
+          "type": "string",
+          "const": "agent_running"
+        },
+        {
+          "description": "Gate evaluation has completed.",
+          "type": "string",
+          "const": "gate_evaluated"
+        },
+        {
+          "description": "Session completed successfully.",
+          "type": "string",
+          "const": "completed"
+        },
+        {
+          "description": "Session was abandoned.",
+          "type": "string",
+          "const": "abandoned"
+        }
+      ]
+    }
+  }
+}

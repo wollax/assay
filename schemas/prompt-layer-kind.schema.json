@@ -1,0 +1,28 @@
+{
+  "$id": "https://assay.dev/schemas/prompt-layer-kind.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PromptLayerKind",
+  "description": "Category of a prompt layer, determining its priority tier in assembly.\n\nVariants are ordered from highest built-in priority to custom:\n- `System`: foundational agent instructions\n- `Project`: project-level context and conventions\n- `Spec`: spec-specific acceptance criteria and constraints\n- `Custom`: user-defined layers injected at arbitrary priority",
+  "oneOf": [
+    {
+      "description": "Foundational agent instructions (highest built-in priority).",
+      "type": "string",
+      "const": "system"
+    },
+    {
+      "description": "Project-level context and conventions.",
+      "type": "string",
+      "const": "project"
+    },
+    {
+      "description": "Spec-specific acceptance criteria and constraints.",
+      "type": "string",
+      "const": "spec"
+    },
+    {
+      "description": "User-defined layer injected at arbitrary priority.",
+      "type": "string",
+      "const": "custom"
+    }
+  ]
+}

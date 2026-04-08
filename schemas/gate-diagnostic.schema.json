@@ -1,0 +1,158 @@
+{
+  "$id": "https://assay.dev/schemas/gate-diagnostic.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "GateDiagnostic",
+  "description": "Persistent record of gate failures from a pipeline run.\n\nWritten to `.assay/reviews/<spec>/<run-id>-gates.json` when a run\ncompletes with gate failures. Read by `assay spec review` to show\nfailure details alongside structural checks.\n\n# Security note\n\nDiagnostic files may contain output captured from gate commands (see\n[`FailedCriterionSummary::stderr_snippet`]). Gate commands are arbitrary\nshell commands, so their output could theoretically include sensitive data\n(API keys, tokens, passwords) if a failing command printed them to stderr.\nTreat `.assay/reviews/` with the same access controls as `.assay/sessions/`.",
+  "type": "object",
+  "properties": {
+    "checkpoint_index": {
+      "description": "Index of the checkpoint that failed (0-based). `None` for session-end gates.",
+      "type": [
+        "integer",
+        "null"
+      ],
+      "format": "uint32",
+      "minimum": 0
+    },
+    "failed": {
+      "description": "Number of criteria that failed.",
+      "type": "integer",
+      "format": "uint",
+      "minimum": 0
+    },
+    "failed_criteria": {
+      "description": "Details of each failed criterion.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/FailedCriterionSummary"
+      }
+    },
+    "passed": {
+      "description": "Number of criteria that passed.",
+      "type": "integer",
+      "format": "uint",
+      "minimum": 0
+    },
+    "run_id": {
+      "description": "Run identifier (matches the session's run_id).",
+      "type": "string"
+    },
+    "session_phase": {
+      "description": "The pipeline phase at which the gate was evaluated.\nDefaults to `SessionEnd` for pre-M024 diagnostics (D028).",
+      "$ref": "#/$defs/SessionPhase",
+      "default": {
+        "type": "session_end"
+      }
+    },
+    "spec": {
+      "description": "Spec slug this diagnostic is for.",
+      "type": "string"
+    },
+    "timestamp": {
+      "description": "When the gate evaluation completed.",
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "spec",
+    "run_id",
+    "timestamp",
+    "failed_criteria",
+    "passed",
+    "failed"
+  ],
+  "$defs": {
+    "FailedCriterionSummary": {
+      "description": "Summary of a single failed gate criterion for diagnostic persistence.",
+      "type": "object",
+      "properties": {
+        "command": {
+          "description": "The command that was executed (if any).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "criterion_name": {
+          "description": "Name of the criterion that failed.",
+          "type": "string"
+        },
+        "exit_code": {
+          "description": "Exit code from the command (if applicable).",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int32"
+        },
+        "stderr_snippet": {
+          "description": "Stderr snippet from the failed command (truncated).",
+          "type": "string",
+          "default": ""
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "criterion_name"
+      ]
+    },
+    "SessionPhase": {
+      "description": "The phase in a pipeline session at which a checkpoint gate was evaluated.\n\nLives in `review` (not `gate` or `pipeline`) per D029 — phase is a\ndiagnostic concern that belongs next to [`GateDiagnostic`].\n\nAccessed as `assay_types::review::SessionPhase` — deliberately NOT\nre-exported at the crate root to avoid collision with the workflow\n`SessionPhase` in `work_session`.",
+      "oneOf": [
+        {
+          "description": "Gate was evaluated at a tool-call checkpoint (`n` = tool call count).",
+          "type": "object",
+          "properties": {
+            "n": {
+              "description": "Number of tool calls emitted when the checkpoint fired.",
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            },
+            "type": {
+              "type": "string",
+              "const": "at_tool_call"
+            }
+          },
+          "required": [
+            "type",
+            "n"
+          ]
+        },
+        {
+          "description": "Gate was evaluated when a specific event type was observed.",
+          "type": "object",
+          "properties": {
+            "event_type": {
+              "description": "The event type tag that triggered the checkpoint.",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "at_event"
+            }
+          },
+          "required": [
+            "type",
+            "event_type"
+          ]
+        },
+        {
+          "description": "Gate was evaluated at the end of the session.",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "session_end"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        }
+      ]
+    }
+  }
+}

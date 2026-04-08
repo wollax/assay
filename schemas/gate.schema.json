@@ -6,9 +6,11 @@
   "type": "object",
   "properties": {
     "name": {
+      "description": "Name of this quality gate.",
       "type": "string"
     },
     "passed": {
+      "description": "Whether this gate passed.",
       "type": "boolean"
     }
   },

@@ -1,0 +1,179 @@
+{
+  "$id": "https://assay.dev/schemas/milestone.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Milestone",
+  "description": "A milestone, tracking a named feature delivery across one or more gate spec chunks.\n\nPersisted to `.assay/milestones/<slug>.toml`. The `slug` field in the file\nmust match the filename (e.g. `my-feature.toml` → `slug = \"my-feature\"`).",
+  "type": "object",
+  "properties": {
+    "chunks": {
+      "description": "Ordered list of chunk references included in this milestone.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ChunkRef"
+      }
+    },
+    "completed_chunks": {
+      "description": "Slugs of chunks that have been verified and advanced past in the development cycle.\n\nThis is the central state for the cycle state machine: the \"active chunk\" is\nderived at runtime as the lowest-`order` `ChunkRef` whose slug is not in this list.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "created_at": {
+      "description": "When this milestone record was first created.",
+      "type": "string",
+      "format": "date-time"
+    },
+    "depends_on": {
+      "description": "Milestone slugs that must be `Complete` before this one can start.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "description": {
+      "description": "Optional longer description of the milestone.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "name": {
+      "description": "Human-readable display name.",
+      "type": "string"
+    },
+    "pr_base": {
+      "description": "Target base branch for the pull request (e.g. `\"main\"`).",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "pr_body_template": {
+      "description": "Template for the PR body with placeholder substitution.\n\nSupported placeholders: `{milestone_name}`, `{milestone_slug}`,\n`{chunk_list}` (bulleted chunk names), `{gate_summary}` (pass/fail per chunk).",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "pr_branch": {
+      "description": "Feature branch name for this milestone's pull request (e.g. `\"feat/my-feature\"`).",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "pr_labels": {
+      "description": "Labels to apply to the GitHub pull request (e.g. `[\"ready-for-review\", \"feature\"]`).",
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "string"
+      }
+    },
+    "pr_number": {
+      "description": "GitHub pull request number, set after successful PR creation.",
+      "type": [
+        "integer",
+        "null"
+      ],
+      "format": "uint64",
+      "minimum": 0
+    },
+    "pr_reviewers": {
+      "description": "GitHub usernames to request as reviewers on the pull request.",
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "string"
+      }
+    },
+    "pr_url": {
+      "description": "GitHub pull request URL, set after successful PR creation.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "slug": {
+      "description": "Unique identifier for this milestone; must match the TOML filename without extension.",
+      "type": "string"
+    },
+    "status": {
+      "description": "Current lifecycle status. Defaults to `Draft`.",
+      "$ref": "#/$defs/MilestoneStatus",
+      "default": "draft"
+    },
+    "updated_at": {
+      "description": "When this milestone record was last updated.",
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "slug",
+    "name",
+    "created_at",
+    "updated_at"
+  ],
+  "$defs": {
+    "ChunkRef": {
+      "description": "A reference to a `GatesSpec` chunk within a milestone, identified by slug and scheduling constraints.\n\nEach `ChunkRef` corresponds to a directory-based spec (a \"chunk\") that\ncontributes to the parent milestone. The `order` field is cosmetic display ordering only;\nuse `depends_on` to declare scheduling constraints between chunks.",
+      "type": "object",
+      "properties": {
+        "depends_on": {
+          "description": "Dependencies: slugs of other chunks **within the same milestone** that must complete before this one.\nValues must match `ChunkRef.slug` values in the parent `Milestone.chunks` list.\nCross-milestone dependencies are not supported.\n\nUsed during manifest generation to emit scheduling constraints in the output TOML.\nSlug references are not validated at this layer — validation of dangling refs and cycles\nis the responsibility of `manifest_gen::generate_manifest`.\nEmpty by default — chunks without explicit deps execute in parallel.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "order": {
+          "description": "Cosmetic display order only. Use `depends_on` to declare scheduling constraints.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "slug": {
+          "description": "Slug of the referenced `GatesSpec` (matches the spec directory/file name).",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "slug",
+        "order"
+      ]
+    },
+    "MilestoneStatus": {
+      "description": "Lifecycle status of a milestone.\n\nTransitions follow the canonical path:\n`Draft` → `InProgress` → `Verify` → `Complete`",
+      "oneOf": [
+        {
+          "description": "Milestone is being defined but not yet in active development.",
+          "type": "string",
+          "const": "draft"
+        },
+        {
+          "description": "Development is actively in progress.",
+          "type": "string",
+          "const": "in_progress"
+        },
+        {
+          "description": "All chunks pass gates; awaiting human or automated verification.",
+          "type": "string",
+          "const": "verify"
+        },
+        {
+          "description": "Milestone is fully complete and merged.",
+          "type": "string",
+          "const": "complete"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "$id": "https://assay.dev/schemas/criterion-outcome.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CriterionOutcome",
+  "description": "Outcome of evaluating a single criterion.\n\nFour-state outcome: pass, fail, skip (could not assess), or warn (soft concern).",
+  "oneOf": [
+    {
+      "description": "Criterion satisfied.",
+      "type": "string",
+      "const": "pass"
+    },
+    {
+      "description": "Criterion not satisfied.",
+      "type": "string",
+      "const": "fail"
+    },
+    {
+      "description": "Evaluator could not assess this criterion.",
+      "type": "string",
+      "const": "skip"
+    },
+    {
+      "description": "Soft concern — does not fail the gate.",
+      "type": "string",
+      "const": "warn"
+    }
+  ]
+}

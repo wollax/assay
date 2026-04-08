@@ -1,12 +1,12 @@
 {
   "$id": "https://assay.dev/schemas/gate-criterion.schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "GateCriterion",
-  "description": "A single gate criterion with optional requirement traceability.\n\nExtends the concept of [`crate::Criterion`] with a `requirements` field\nthat links criteria to specific requirement IDs (e.g., `REQ-FUNC-001`).",
+  "title": "Criterion",
+  "description": "A single acceptance criterion attached to a spec.\n\nEach criterion has a name, description, and an optional shell command\nthat can verify it programmatically. When `kind` is `AgentReport`, the\ncriterion is evaluated by an agent using the `prompt` field for guidance.",
   "type": "object",
   "properties": {
     "cmd": {
-      "description": "Optional shell command to verify this criterion.",
+      "description": "Optional shell command to verify this criterion.\nOmitted from serialized output when `None`.\nMutually exclusive with `kind = AgentReport`.",
       "type": [
         "string",
         "null"
@@ -27,12 +27,30 @@
         }
       ]
     },
+    "kind": {
+      "description": "Criterion evaluation kind. When set to `AgentReport`, this criterion\nis evaluated by an agent (not a shell command). Mutually exclusive\nwith `cmd` and `path`.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/CriterionKind"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "name": {
       "description": "Human-readable name for this criterion.",
       "type": "string"
     },
     "path": {
       "description": "Optional file path to check for existence.\nWhen set (and `cmd` is `None`), the criterion evaluates as a `FileExists` gate.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "prompt": {
+      "description": "Instruction prompt for agent-evaluated criteria.\nProvides guidance to the agent on what to evaluate.",
       "type": [
         "string",
         "null"
@@ -46,13 +64,24 @@
       }
     },
     "timeout": {
-      "description": "Optional timeout in seconds for this criterion's command.",
+      "description": "Optional timeout in seconds for this criterion's command.\nOverrides the global default but is overridden by CLI `--timeout`.",
       "type": [
         "integer",
         "null"
       ],
       "format": "uint64",
       "minimum": 0
+    },
+    "when": {
+      "description": "Declares when this criterion is evaluated. `None` is equivalent to\n`Some(When::SessionEnd)` — evaluation happens at session end. When\nset to `Some(When::AfterToolCalls { .. })` or `Some(When::OnEvent { .. })`,\nthe criterion becomes a mid-session checkpoint.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/When"
+        },
+        {
+          "type": "null"
+        }
+      ]
     }
   },
   "additionalProperties": false,
@@ -61,6 +90,61 @@
     "description"
   ],
   "$defs": {
+    "CriterionKind": {
+      "description": "The kind of evaluation a criterion uses.\n\nWhen set on a criterion, determines how it is evaluated.\n`AgentReport` means the criterion is evaluated by an agent\nvia structured reasoning rather than a shell command.",
+      "oneOf": [
+        {
+          "description": "Evaluated by an agent via structured reasoning.",
+          "type": "string",
+          "const": "AgentReport"
+        },
+        {
+          "description": "Criterion evaluated by counting events of a given type in the agent\nsession log. Parameters mirror `GateKind::EventCount`.",
+          "type": "object",
+          "properties": {
+            "EventCount": {
+              "type": "object",
+              "properties": {
+                "event_type": {
+                  "description": "The event type to count, matching an `AgentEvent` serde tag.",
+                  "type": "string"
+                },
+                "max": {
+                  "description": "Inclusive upper bound on the matched event count. `None` means no upper bound.",
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "format": "uint32",
+                  "minimum": 0
+                },
+                "min": {
+                  "description": "Inclusive lower bound on the matched event count. `None` means no lower bound.",
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "format": "uint32",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "event_type"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "EventCount"
+          ]
+        },
+        {
+          "description": "Criterion that passes only when no tool returned an error during the session.",
+          "type": "string",
+          "const": "NoToolErrors"
+        }
+      ]
+    },
     "Enforcement": {
       "description": "Enforcement level for a gate criterion.\n\nDetermines whether a criterion failure blocks the gate (required)\nor is informational only (advisory).",
       "oneOf": [
@@ -73,6 +157,62 @@
           "description": "Failure is informational; does not block the gate.",
           "type": "string",
           "const": "advisory"
+        }
+      ]
+    },
+    "When": {
+      "description": "Declares when a gate criterion is evaluated.\n\nSpec authors use this to designate cheap event-based criteria as\nmid-session checkpoints while keeping expensive command/file gates\nat session end.\n\n# Warning on command/file gates at checkpoints\n\nUsing `AfterToolCalls` or `OnEvent` with a `cmd`- or `path`-based\ncriterion evaluates against a **partial working directory**. Prefer\n`EventCount` and `NoToolErrors` criteria for checkpoints.",
+      "oneOf": [
+        {
+          "description": "Evaluate at the end of the session (default behavior).",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "session_end"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "description": "Evaluate each time the agent has emitted N tool calls since the\nlast evaluation. The pipeline fires this trigger at the Nth tool\ncall (exact match, not \"at least N\").",
+          "type": "object",
+          "properties": {
+            "n": {
+              "description": "Tool-call threshold at which to evaluate.",
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            },
+            "type": {
+              "type": "string",
+              "const": "after_tool_calls"
+            }
+          },
+          "required": [
+            "type",
+            "n"
+          ]
+        },
+        {
+          "description": "Evaluate when the most-recent event in the stream has a serde\ntype tag matching `event_type` (e.g. `\"tool_called\"`).",
+          "type": "object",
+          "properties": {
+            "event_type": {
+              "description": "Event type tag to match (matches `AgentEvent` serde tag).",
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "const": "on_event"
+            }
+          },
+          "required": [
+            "type",
+            "event_type"
+          ]
         }
       ]
     }

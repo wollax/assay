@@ -1,0 +1,59 @@
+{
+  "$id": "https://assay.dev/schemas/checkpoint-session-phase.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SessionPhase",
+  "description": "The phase in a pipeline session at which a checkpoint gate was evaluated.\n\nLives in `review` (not `gate` or `pipeline`) per D029 — phase is a\ndiagnostic concern that belongs next to [`GateDiagnostic`].\n\nAccessed as `assay_types::review::SessionPhase` — deliberately NOT\nre-exported at the crate root to avoid collision with the workflow\n`SessionPhase` in `work_session`.",
+  "oneOf": [
+    {
+      "description": "Gate was evaluated at a tool-call checkpoint (`n` = tool call count).",
+      "type": "object",
+      "properties": {
+        "n": {
+          "description": "Number of tool calls emitted when the checkpoint fired.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "type": {
+          "type": "string",
+          "const": "at_tool_call"
+        }
+      },
+      "required": [
+        "type",
+        "n"
+      ]
+    },
+    {
+      "description": "Gate was evaluated when a specific event type was observed.",
+      "type": "object",
+      "properties": {
+        "event_type": {
+          "description": "The event type tag that triggered the checkpoint.",
+          "type": "string"
+        },
+        "type": {
+          "type": "string",
+          "const": "at_event"
+        }
+      },
+      "required": [
+        "type",
+        "event_type"
+      ]
+    },
+    {
+      "description": "Gate was evaluated at the end of the session.",
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "session_end"
+        }
+      },
+      "required": [
+        "type"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,31 @@
+{
+  "$id": "https://assay.dev/schemas/chunk-ref.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ChunkRef",
+  "description": "A reference to a `GatesSpec` chunk within a milestone, identified by slug and scheduling constraints.\n\nEach `ChunkRef` corresponds to a directory-based spec (a \"chunk\") that\ncontributes to the parent milestone. The `order` field is cosmetic display ordering only;\nuse `depends_on` to declare scheduling constraints between chunks.",
+  "type": "object",
+  "properties": {
+    "depends_on": {
+      "description": "Dependencies: slugs of other chunks **within the same milestone** that must complete before this one.\nValues must match `ChunkRef.slug` values in the parent `Milestone.chunks` list.\nCross-milestone dependencies are not supported.\n\nUsed during manifest generation to emit scheduling constraints in the output TOML.\nSlug references are not validated at this layer — validation of dangling refs and cycles\nis the responsibility of `manifest_gen::generate_manifest`.\nEmpty by default — chunks without explicit deps execute in parallel.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "order": {
+      "description": "Cosmetic display order only. Use `depends_on` to declare scheduling constraints.",
+      "type": "integer",
+      "format": "uint32",
+      "minimum": 0
+    },
+    "slug": {
+      "description": "Slug of the referenced `GatesSpec` (matches the spec directory/file name).",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "slug",
+    "order"
+  ]
+}

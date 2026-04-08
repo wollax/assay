@@ -1,0 +1,40 @@
+{
+  "$id": "https://assay.dev/schemas/settings-override.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SettingsOverride",
+  "description": "Settings overrides applied to an agent session.\n\nAll fields are optional or default-empty — only specified values override\nthe base configuration.",
+  "type": "object",
+  "properties": {
+    "max_turns": {
+      "description": "Maximum number of agent turns before forced stop.",
+      "type": [
+        "integer",
+        "null"
+      ],
+      "format": "uint32",
+      "minimum": 0
+    },
+    "model": {
+      "description": "Model identifier to use (e.g., `\"sonnet\"`, `\"opus\"`).",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "permissions": {
+      "description": "Permissions granted to the agent (e.g., `\"filesystem\"`, `\"network\"`).",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "tools": {
+      "description": "Tools available to the agent (e.g., `\"bash\"`, `\"browser\"`).",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "additionalProperties": false
+}

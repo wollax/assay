@@ -1,0 +1,254 @@
+{
+  "$id": "https://assay.dev/schemas/team-checkpoint.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TeamCheckpoint",
+  "description": "A point-in-time snapshot of the agent team state.\n\nCaptures which agents are active, what tasks are in progress,\nand the health of the context window. Written to `.assay/checkpoints/`\nas JSON frontmatter + markdown.",
+  "type": "object",
+  "properties": {
+    "agents": {
+      "description": "All agents discovered in the session.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/AgentState"
+      }
+    },
+    "context_health": {
+      "description": "Context window health snapshot, if usage data was available.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ContextHealthSnapshot"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "project": {
+      "description": "Absolute path to the project directory.",
+      "type": "string"
+    },
+    "session_id": {
+      "description": "Session UUID from the Claude Code JSONL file.",
+      "type": "string"
+    },
+    "tasks": {
+      "description": "All tasks discovered from TaskCreate/TaskUpdate tool uses.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/TaskState"
+      }
+    },
+    "timestamp": {
+      "description": "ISO 8601 timestamp of when this checkpoint was captured.",
+      "type": "string"
+    },
+    "trigger": {
+      "description": "What triggered this checkpoint (e.g., \"manual\", \"hook:PostToolUse:TaskUpdate\").",
+      "type": "string"
+    },
+    "version": {
+      "description": "Schema version (always 1).",
+      "type": "integer",
+      "format": "uint32",
+      "minimum": 0
+    }
+  },
+  "required": [
+    "version",
+    "session_id",
+    "project",
+    "timestamp",
+    "trigger",
+    "agents",
+    "tasks"
+  ],
+  "$defs": {
+    "AgentState": {
+      "description": "State of a single agent (primary or subagent) in the session.",
+      "type": "object",
+      "properties": {
+        "agent_id": {
+          "description": "Agent identifier. `\"primary\"` for the main agent, or the `agentId`\nfrom JSONL entries for subagents.",
+          "type": "string"
+        },
+        "current_task": {
+          "description": "Task this agent is currently working on, if any.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "is_sidechain": {
+          "description": "Whether this agent is a sidechain (subagent).",
+          "type": "boolean"
+        },
+        "last_activity": {
+          "description": "ISO 8601 timestamp of this agent's last activity.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "model": {
+          "description": "Model identifier (e.g., \"claude-opus-4-6\").",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "status": {
+          "description": "Current status of this agent.",
+          "$ref": "#/$defs/AgentStatus"
+        },
+        "working_dir": {
+          "description": "Working directory at the time of the agent's last entry.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "agent_id",
+        "status",
+        "is_sidechain"
+      ]
+    },
+    "AgentStatus": {
+      "description": "Operational status of an agent.",
+      "oneOf": [
+        {
+          "description": "Agent is actively processing.",
+          "type": "string",
+          "const": "active"
+        },
+        {
+          "description": "Agent exists but is not currently processing.",
+          "type": "string",
+          "const": "idle"
+        },
+        {
+          "description": "Agent has completed its work.",
+          "type": "string",
+          "const": "done"
+        },
+        {
+          "description": "Agent status could not be determined.",
+          "type": "string",
+          "const": "unknown"
+        }
+      ]
+    },
+    "ContextHealthSnapshot": {
+      "description": "Snapshot of the context window health at checkpoint time.",
+      "type": "object",
+      "properties": {
+        "compaction_trigger": {
+          "description": "What triggered the last compaction (e.g., \"auto\", \"manual\").",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "context_tokens": {
+          "description": "Total tokens currently in the context window.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "context_window": {
+          "description": "Maximum context window size for the model.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "last_compaction": {
+          "description": "ISO 8601 timestamp of the last compaction, if any.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "utilization_pct": {
+          "description": "Context utilization as a percentage (0.0 - 100.0).",
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "required": [
+        "context_tokens",
+        "context_window",
+        "utilization_pct"
+      ]
+    },
+    "TaskState": {
+      "description": "State of a task discovered from TaskCreate/TaskUpdate tool uses.",
+      "type": "object",
+      "properties": {
+        "assigned_agent": {
+          "description": "Agent assigned to this task, if known.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "description": {
+          "description": "Optional task description.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "last_update": {
+          "description": "ISO 8601 timestamp of the last status update.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "status": {
+          "description": "Current task status.",
+          "$ref": "#/$defs/TaskStatus"
+        },
+        "subject": {
+          "description": "Task subject line.",
+          "type": "string"
+        },
+        "task_id": {
+          "description": "Task identifier (sequential index from TaskCreate order, or taskId from TaskUpdate).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "task_id",
+        "subject",
+        "status"
+      ]
+    },
+    "TaskStatus": {
+      "description": "Status of a task.",
+      "oneOf": [
+        {
+          "description": "Task has been created but not started.",
+          "type": "string",
+          "const": "pending"
+        },
+        {
+          "description": "Task is actively being worked on.",
+          "type": "string",
+          "const": "in_progress"
+        },
+        {
+          "description": "Task has been completed.",
+          "type": "string",
+          "const": "completed"
+        },
+        {
+          "description": "Task has been cancelled.",
+          "type": "string",
+          "const": "cancelled"
+        }
+      ]
+    }
+  }
+}

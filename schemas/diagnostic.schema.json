@@ -1,0 +1,48 @@
+{
+  "$id": "https://assay.dev/schemas/diagnostic.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Diagnostic",
+  "description": "A single validation diagnostic with location, severity, and message.",
+  "type": "object",
+  "properties": {
+    "location": {
+      "description": "Location reference (e.g., \"name\", \"criteria[2].cmd\", \"depends\").",
+      "type": "string"
+    },
+    "message": {
+      "description": "Human-readable diagnostic message.",
+      "type": "string"
+    },
+    "severity": {
+      "description": "Severity level.",
+      "$ref": "#/$defs/Severity"
+    }
+  },
+  "required": [
+    "severity",
+    "location",
+    "message"
+  ],
+  "$defs": {
+    "Severity": {
+      "description": "Severity level of a validation diagnostic.",
+      "oneOf": [
+        {
+          "description": "Informational — suggestion or note.",
+          "type": "string",
+          "const": "info"
+        },
+        {
+          "description": "Advisory — spec is usable but has issues worth addressing.",
+          "type": "string",
+          "const": "warning"
+        },
+        {
+          "description": "Blocks validity — spec cannot be used.",
+          "type": "string",
+          "const": "error"
+        }
+      ]
+    }
+  }
+}

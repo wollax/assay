@@ -1,0 +1,170 @@
+{
+  "$id": "https://assay.dev/schemas/prune-report.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PruneReport",
+  "description": "Full pruning report for a session file.",
+  "type": "object",
+  "properties": {
+    "executed": {
+      "description": "Whether the pruning was actually executed (true) or dry-run (false).",
+      "type": "boolean"
+    },
+    "final_entries": {
+      "description": "Final number of JSONL entries.",
+      "type": "integer",
+      "format": "uint",
+      "minimum": 0
+    },
+    "final_size": {
+      "description": "Final file size in bytes (after pruning).",
+      "type": "integer",
+      "format": "uint64",
+      "minimum": 0
+    },
+    "original_entries": {
+      "description": "Original number of JSONL entries.",
+      "type": "integer",
+      "format": "uint",
+      "minimum": 0
+    },
+    "original_size": {
+      "description": "Original file size in bytes.",
+      "type": "integer",
+      "format": "uint64",
+      "minimum": 0
+    },
+    "session_id": {
+      "description": "Session UUID.",
+      "type": "string"
+    },
+    "strategies": {
+      "description": "Per-strategy summaries.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/PruneSummary"
+      }
+    }
+  },
+  "required": [
+    "session_id",
+    "original_size",
+    "final_size",
+    "original_entries",
+    "final_entries",
+    "strategies",
+    "executed"
+  ],
+  "$defs": {
+    "PruneSample": {
+      "description": "A sample of what was pruned, for dry-run display.",
+      "type": "object",
+      "properties": {
+        "bytes": {
+          "description": "Bytes saved by removing/trimming this entry.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "description": {
+          "description": "Human-readable description of what was pruned.",
+          "type": "string"
+        },
+        "line_number": {
+          "description": "1-based line number in the original file.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "line_number",
+        "description",
+        "bytes"
+      ]
+    },
+    "PruneStrategy": {
+      "description": "A pruning strategy that can be applied to session JSONL entries.\n\nEach strategy targets a specific category of bloat. Strategies compose\nsequentially in a pipeline: line-deletion strategies run first, then\ncontent-modification strategies.",
+      "oneOf": [
+        {
+          "description": "Remove all progress tick entries (hook, agent, bash progress).",
+          "type": "string",
+          "const": "progress-collapse"
+        },
+        {
+          "description": "Keep only the last occurrence of each system reminder.",
+          "type": "string",
+          "const": "system-reminder-dedup"
+        },
+        {
+          "description": "Strip metadata entries (file-history-snapshot, queue-operation, system boilerplate).",
+          "type": "string",
+          "const": "metadata-strip"
+        },
+        {
+          "description": "Remove all but the last read of each file path.",
+          "type": "string",
+          "const": "stale-reads"
+        },
+        {
+          "description": "Remove extended thinking blocks entirely.",
+          "type": "string",
+          "const": "thinking-blocks"
+        },
+        {
+          "description": "Trim large tool output to first/last N lines.",
+          "type": "string",
+          "const": "tool-output-trim"
+        }
+      ]
+    },
+    "PruneSummary": {
+      "description": "Summary of a single strategy's effect during pruning.",
+      "type": "object",
+      "properties": {
+        "bytes_saved": {
+          "description": "Total bytes saved by this strategy.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "lines_modified": {
+          "description": "Number of lines modified (content trimmed).",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "lines_removed": {
+          "description": "Number of lines removed entirely.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "protected_skipped": {
+          "description": "Number of protected lines skipped.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "samples": {
+          "description": "Sample removals for dry-run display (up to 3).",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PruneSample"
+          }
+        },
+        "strategy": {
+          "description": "The strategy that was applied.",
+          "$ref": "#/$defs/PruneStrategy"
+        }
+      },
+      "required": [
+        "strategy",
+        "lines_removed",
+        "lines_modified",
+        "bytes_saved",
+        "protected_skipped",
+        "samples"
+      ]
+    }
+  }
+}

@@ -1,0 +1,424 @@
+{
+  "$id": "https://assay.dev/schemas/gate-eval-context.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "GateEvalContext",
+  "description": "A crash-recoverable context for gate evaluation.\n\nTracks in-progress evaluations so that a session can be resumed\nafter an unexpected interruption without losing completed work.",
+  "type": "object",
+  "properties": {
+    "agent_evaluations": {
+      "description": "Agent evaluations keyed by criterion name. Multiple evaluations\nper criterion are allowed (e.g., re-evaluation after fix).",
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "$ref": "#/$defs/AgentEvaluation"
+        }
+      }
+    },
+    "command_results": {
+      "description": "Results from deterministic (command-based) criterion evaluations.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/CriterionResult"
+      }
+    },
+    "created_at": {
+      "description": "When this session was created.",
+      "type": "string",
+      "format": "date-time"
+    },
+    "criteria_names": {
+      "description": "Names of all criteria in the spec (for completeness tracking).",
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "diff": {
+      "description": "Git diff captured at gate_run time (staged + unstaged changes relative to HEAD).\nNone when the worktree is clean or diff capture failed.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "diff_bytes_original": {
+      "description": "Original byte size of the diff before truncation.\nPresent only when a diff was captured (even if not truncated).",
+      "type": [
+        "integer",
+        "null"
+      ],
+      "format": "uint",
+      "minimum": 0
+    },
+    "diff_truncated": {
+      "description": "Whether the captured diff was truncated to fit the 32 KiB budget.",
+      "type": "boolean",
+      "default": false
+    },
+    "session_id": {
+      "description": "Unique session identifier.",
+      "type": "string"
+    },
+    "spec_enforcement": {
+      "description": "Resolved enforcement level per criterion name.",
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/Enforcement"
+      }
+    },
+    "spec_name": {
+      "description": "Name of the spec being evaluated.",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "session_id",
+    "spec_name",
+    "created_at"
+  ],
+  "$defs": {
+    "AgentEvaluation": {
+      "description": "A structured evaluation produced by an agent for a single criterion.",
+      "type": "object",
+      "properties": {
+        "confidence": {
+          "description": "Agent's confidence level in the evaluation.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Confidence"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "evaluator_role": {
+          "description": "Role of the evaluator who produced this evaluation.",
+          "$ref": "#/$defs/EvaluatorRole"
+        },
+        "evidence": {
+          "description": "Concrete facts the agent observed (what was seen).",
+          "type": "string"
+        },
+        "passed": {
+          "description": "Whether the criterion passed according to this evaluation.",
+          "type": "boolean"
+        },
+        "reasoning": {
+          "description": "Why those facts lead to pass/fail (the agent's reasoning chain).",
+          "type": "string"
+        },
+        "timestamp": {
+          "description": "When this evaluation was produced.",
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "passed",
+        "evidence",
+        "reasoning",
+        "evaluator_role",
+        "timestamp"
+      ]
+    },
+    "Confidence": {
+      "description": "Agent confidence level in an evaluation.",
+      "oneOf": [
+        {
+          "description": "High confidence — clear evidence supports the conclusion.",
+          "type": "string",
+          "const": "high"
+        },
+        {
+          "description": "Medium confidence — evidence is suggestive but not conclusive.",
+          "type": "string",
+          "const": "medium"
+        },
+        {
+          "description": "Low confidence — uncertain; evaluation may need human review.",
+          "type": "string",
+          "const": "low"
+        }
+      ]
+    },
+    "CriterionResult": {
+      "description": "A criterion paired with its evaluation result.",
+      "type": "object",
+      "properties": {
+        "criterion_name": {
+          "description": "The name of the criterion that was evaluated.",
+          "type": "string"
+        },
+        "enforcement": {
+          "description": "Resolved enforcement level for this criterion (Required or Advisory).",
+          "$ref": "#/$defs/Enforcement",
+          "default": "required"
+        },
+        "result": {
+          "description": "The gate result, or `None` if skipped (no cmd).",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/GateResult"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "criterion_name"
+      ]
+    },
+    "Enforcement": {
+      "description": "Enforcement level for a gate criterion.\n\nDetermines whether a criterion failure blocks the gate (required)\nor is informational only (advisory).",
+      "oneOf": [
+        {
+          "description": "Failure blocks the gate. This is the default.",
+          "type": "string",
+          "const": "required"
+        },
+        {
+          "description": "Failure is informational; does not block the gate.",
+          "type": "string",
+          "const": "advisory"
+        }
+      ]
+    },
+    "EvaluatorRole": {
+      "description": "The role of the evaluator who produced a gate result.\n\nDetermines trust level and audit requirements:\n- `SelfEval` (\"self\"): the coding agent evaluates its own work (default for v0.2).\n- `Independent`: a separate agent evaluates (planned for v0.3).\n- `Human`: a human performed the evaluation.",
+      "oneOf": [
+        {
+          "description": "The coding agent evaluates its own work.",
+          "type": "string",
+          "const": "self"
+        },
+        {
+          "description": "A separate, independent agent evaluates.",
+          "type": "string",
+          "const": "independent"
+        },
+        {
+          "description": "A human performed the evaluation.",
+          "type": "string",
+          "const": "human"
+        }
+      ]
+    },
+    "GateKind": {
+      "description": "The kind of gate to evaluate.\n\nUses internal tagging (`#[serde(tag = \"kind\")]`) so TOML output includes\na `kind = \"Command\"` or `kind = \"AlwaysPass\"` discriminator field.",
+      "oneOf": [
+        {
+          "description": "A gate that runs a shell command and checks its exit code.",
+          "type": "object",
+          "properties": {
+            "cmd": {
+              "description": "The shell command to execute.",
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "const": "Command"
+            }
+          },
+          "required": [
+            "kind",
+            "cmd"
+          ]
+        },
+        {
+          "description": "A gate that always passes — useful for placeholder or manual gates.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "AlwaysPass"
+            }
+          },
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "description": "A gate that checks whether a file exists at the given path.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "FileExists"
+            },
+            "path": {
+              "description": "Path to check, relative to the working directory.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "path"
+          ]
+        },
+        {
+          "description": "A gate evaluated by an agent via structured reasoning.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "AgentReport"
+            }
+          },
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "description": "A gate that counts events of a specific type in the agent session log.\n\n`event_type` must match the serde tag of an `AgentEvent` variant:\n`\"tool_called\"`, `\"tool_result\"`, `\"turn_ended\"`, `\"session_stopped\"`,\n`\"text_delta\"`, `\"text_block\"`.\n\nPasses when `count >= min.unwrap_or(0) && count <= max.unwrap_or(u32::MAX)`.",
+          "type": "object",
+          "properties": {
+            "event_type": {
+              "description": "The event type to count, matching an `AgentEvent` serde tag.",
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "const": "EventCount"
+            },
+            "max": {
+              "description": "Inclusive upper bound on the matched event count. `None` means no upper bound.",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint32",
+              "minimum": 0
+            },
+            "min": {
+              "description": "Inclusive lower bound on the matched event count. `None` means no lower bound.",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint32",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "kind",
+            "event_type"
+          ]
+        },
+        {
+          "description": "A gate that passes only when no tool invocation in the session returned an error.\n\nFails if any `AgentEvent::ToolResult { is_error: true, .. }` is present.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "NoToolErrors"
+            }
+          },
+          "required": [
+            "kind"
+          ]
+        }
+      ]
+    },
+    "GateResult": {
+      "description": "The result of evaluating a gate.\n\nCaptures whether the gate passed, the command output (if any), timing,\nand which kind of gate produced this result (self-describing via `kind`).",
+      "type": "object",
+      "properties": {
+        "confidence": {
+          "description": "Agent's confidence level in the evaluation.\nOnly populated for `AgentReport` gates.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Confidence"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "duration_ms": {
+          "description": "How long the gate took to evaluate, in milliseconds.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "evaluator_role": {
+          "description": "Role of the evaluator who produced this result.\nOnly populated for `AgentReport` gates.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EvaluatorRole"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "evidence": {
+          "description": "What the agent observed (concrete facts).\nOnly populated for `AgentReport` gates.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "exit_code": {
+          "description": "Exit code from the gate command, if applicable.\nOmitted from serialized output when `None` (e.g., for `AlwaysPass` gates).",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int32"
+        },
+        "kind": {
+          "description": "Which gate kind produced this result.",
+          "$ref": "#/$defs/GateKind"
+        },
+        "original_bytes": {
+          "description": "Original byte count before truncation.\nOmitted from serialized output when `None`.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0
+        },
+        "passed": {
+          "description": "Whether the gate passed.",
+          "type": "boolean"
+        },
+        "reasoning": {
+          "description": "Why those facts lead to pass/fail.\nOnly populated for `AgentReport` gates.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "stderr": {
+          "description": "Standard error captured from the gate command.\nOmitted from serialized output when empty.",
+          "type": "string"
+        },
+        "stdout": {
+          "description": "Standard output captured from the gate command.\nOmitted from serialized output when empty.",
+          "type": "string"
+        },
+        "timestamp": {
+          "description": "When the gate evaluation completed.",
+          "type": "string",
+          "format": "date-time"
+        },
+        "truncated": {
+          "description": "Whether stdout or stderr was truncated due to size limits.\nOmitted from serialized output when false.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "passed",
+        "kind",
+        "duration_ms",
+        "timestamp"
+      ]
+    }
+  }
+}

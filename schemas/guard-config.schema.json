@@ -1,0 +1,61 @@
+{
+  "$id": "https://assay.dev/schemas/guard-config.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "GuardConfig",
+  "description": "Guard daemon configuration.\n\nControls thresholds, polling interval, and circuit breaker behavior\nfor the background context protection daemon.",
+  "type": "object",
+  "properties": {
+    "hard_threshold": {
+      "description": "Hard threshold as percentage of context window (0.0-1.0). Default: 0.8.",
+      "type": "number",
+      "format": "double",
+      "default": 0.8
+    },
+    "hard_threshold_bytes": {
+      "description": "Hard threshold as file size in bytes. Optional, whichever fires first wins.",
+      "type": [
+        "integer",
+        "null"
+      ],
+      "format": "uint64",
+      "minimum": 0
+    },
+    "max_recoveries": {
+      "description": "Maximum recovery attempts before circuit breaker trips. Default: 3.",
+      "type": "integer",
+      "format": "uint32",
+      "default": 3,
+      "minimum": 0
+    },
+    "poll_interval_secs": {
+      "description": "Polling interval in seconds. Default: 5.",
+      "type": "integer",
+      "format": "uint64",
+      "default": 5,
+      "minimum": 0
+    },
+    "recovery_window_secs": {
+      "description": "Time window in seconds for counting recoveries. Default: 600 (10 minutes).",
+      "type": "integer",
+      "format": "uint64",
+      "default": 600,
+      "minimum": 0
+    },
+    "soft_threshold": {
+      "description": "Soft threshold as percentage of context window (0.0-1.0). Default: 0.6.",
+      "type": "number",
+      "format": "double",
+      "default": 0.6
+    },
+    "soft_threshold_bytes": {
+      "description": "Soft threshold as file size in bytes. Optional, whichever fires first wins.",
+      "type": [
+        "integer",
+        "null"
+      ],
+      "format": "uint64",
+      "minimum": 0
+    }
+  },
+  "additionalProperties": false
+}

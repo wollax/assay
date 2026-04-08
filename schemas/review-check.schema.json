@@ -1,0 +1,61 @@
+{
+  "$id": "https://assay.dev/schemas/review-check.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ReviewCheck",
+  "description": "A single review check result.",
+  "type": "object",
+  "properties": {
+    "details": {
+      "description": "Optional detailed evidence (e.g. list of uncovered REQ-IDs).",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "kind": {
+      "description": "Whether this is a structural or agent-quality check.",
+      "$ref": "#/$defs/ReviewCheckKind"
+    },
+    "message": {
+      "description": "Human-readable summary of the check result.",
+      "type": "string"
+    },
+    "name": {
+      "description": "Check identifier, e.g. \"req-coverage\", \"acceptance-criteria\".",
+      "type": "string"
+    },
+    "passed": {
+      "description": "Whether the check passed (always true when `skipped` is true).",
+      "type": "boolean"
+    },
+    "skipped": {
+      "description": "Whether the check was skipped (not applicable for this spec type).\nWhen true, `passed` is also true and the result should not count\nagainst the failure tally.",
+      "type": "boolean",
+      "default": false
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "name",
+    "kind",
+    "passed",
+    "message"
+  ],
+  "$defs": {
+    "ReviewCheckKind": {
+      "description": "The kind of review check: structural (machine-checkable) or\nagent quality (LLM-evaluated).",
+      "oneOf": [
+        {
+          "description": "Machine-checkable structural completeness check.",
+          "type": "string",
+          "const": "structural"
+        },
+        {
+          "description": "LLM-evaluated quality assessment (via evaluator subprocess).",
+          "type": "string",
+          "const": "agent_quality"
+        }
+      ]
+    }
+  }
+}

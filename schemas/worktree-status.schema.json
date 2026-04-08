@@ -1,0 +1,69 @@
+{
+  "$id": "https://assay.dev/schemas/worktree-status.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "WorktreeStatus",
+  "description": "Status of a worktree including runtime state.\n\nExtends worktree information with dirty state, HEAD commit, and ahead/behind counts.",
+  "type": "object",
+  "properties": {
+    "ahead": {
+      "description": "Number of commits ahead of base branch. `None` when the base ref is missing.",
+      "type": [
+        "integer",
+        "null"
+      ],
+      "format": "uint32",
+      "minimum": 0
+    },
+    "base_branch": {
+      "description": "The base branch this worktree was created from (from metadata).",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "behind": {
+      "description": "Number of commits behind base branch. `None` when the base ref is missing.",
+      "type": [
+        "integer",
+        "null"
+      ],
+      "format": "uint32",
+      "minimum": 0
+    },
+    "branch": {
+      "description": "The git branch checked out in this worktree.",
+      "type": "string"
+    },
+    "dirty": {
+      "description": "Whether the worktree has uncommitted changes.",
+      "type": "boolean"
+    },
+    "head": {
+      "description": "The abbreviated HEAD commit SHA.",
+      "type": "string"
+    },
+    "path": {
+      "description": "Absolute path to the worktree directory.",
+      "type": "string"
+    },
+    "spec_slug": {
+      "description": "The spec slug this worktree is associated with.",
+      "type": "string"
+    },
+    "warnings": {
+      "description": "Warnings about degraded status (e.g., missing base ref).",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "spec_slug",
+    "path",
+    "branch",
+    "head",
+    "dirty"
+  ]
+}

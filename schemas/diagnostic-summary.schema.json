@@ -1,0 +1,32 @@
+{
+  "$id": "https://assay.dev/schemas/diagnostic-summary.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DiagnosticSummary",
+  "description": "Counts of diagnostics by severity level.",
+  "type": "object",
+  "properties": {
+    "errors": {
+      "description": "Number of error-level diagnostics.",
+      "type": "integer",
+      "format": "uint",
+      "minimum": 0
+    },
+    "infos": {
+      "description": "Number of info-level diagnostics.",
+      "type": "integer",
+      "format": "uint",
+      "minimum": 0
+    },
+    "warnings": {
+      "description": "Number of warning-level diagnostics.",
+      "type": "integer",
+      "format": "uint",
+      "minimum": 0
+    }
+  },
+  "required": [
+    "errors",
+    "warnings",
+    "infos"
+  ]
+}

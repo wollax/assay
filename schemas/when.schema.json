@@ -1,0 +1,59 @@
+{
+  "$id": "https://assay.dev/schemas/when.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "When",
+  "description": "Declares when a gate criterion is evaluated.\n\nSpec authors use this to designate cheap event-based criteria as\nmid-session checkpoints while keeping expensive command/file gates\nat session end.\n\n# Warning on command/file gates at checkpoints\n\nUsing `AfterToolCalls` or `OnEvent` with a `cmd`- or `path`-based\ncriterion evaluates against a **partial working directory**. Prefer\n`EventCount` and `NoToolErrors` criteria for checkpoints.",
+  "oneOf": [
+    {
+      "description": "Evaluate at the end of the session (default behavior).",
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "session_end"
+        }
+      },
+      "required": [
+        "type"
+      ]
+    },
+    {
+      "description": "Evaluate each time the agent has emitted N tool calls since the\nlast evaluation. The pipeline fires this trigger at the Nth tool\ncall (exact match, not \"at least N\").",
+      "type": "object",
+      "properties": {
+        "n": {
+          "description": "Tool-call threshold at which to evaluate.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "type": {
+          "type": "string",
+          "const": "after_tool_calls"
+        }
+      },
+      "required": [
+        "type",
+        "n"
+      ]
+    },
+    {
+      "description": "Evaluate when the most-recent event in the stream has a serde\ntype tag matching `event_type` (e.g. `\"tool_called\"`).",
+      "type": "object",
+      "properties": {
+        "event_type": {
+          "description": "Event type tag to match (matches `AgentEvent` serde tag).",
+          "type": "string"
+        },
+        "type": {
+          "type": "string",
+          "const": "on_event"
+        }
+      },
+      "required": [
+        "type",
+        "event_type"
+      ]
+    }
+  ]
+}

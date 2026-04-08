@@ -1,0 +1,175 @@
+{
+  "$id": "https://assay.dev/schemas/state-backend-config.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "StateBackendConfig",
+  "description": "Backend configuration for state persistence.\n\nSerializes with `snake_case` tag keys:\n- `LocalFs` → `\"local_fs\"`\n- `Linear` → `{\"linear\": {...}}`\n- `GitHub` → `{\"github\": {...}}` — note: `rename_all = \"snake_case\"` would\n  produce `\"git_hub\"`, so the `GitHub` variant carries an explicit\n  `#[serde(rename = \"github\")]` attribute to override this\n- `Ssh` → `{\"ssh\": {...}}`\n- `Custom` → `{\"custom\": {...}}`",
+  "oneOf": [
+    {
+      "description": "Local filesystem backend (default). No additional config needed.",
+      "type": "string",
+      "const": "local_fs"
+    },
+    {
+      "description": "Linear backend for syncing state to Linear projects.",
+      "type": "object",
+      "properties": {
+        "linear": {
+          "type": "object",
+          "properties": {
+            "project_id": {
+              "description": "Optional Linear project to scope state within.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "team_id": {
+              "description": "Linear team identifier.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "team_id"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "linear"
+      ]
+    },
+    {
+      "description": "GitHub backend for syncing state to GitHub issues/projects.",
+      "type": "object",
+      "properties": {
+        "github": {
+          "type": "object",
+          "properties": {
+            "label": {
+              "description": "Optional label to scope state issues.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "repo": {
+              "description": "GitHub repository in `owner/repo` format.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "repo"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "github"
+      ]
+    },
+    {
+      "description": "SSH backend for syncing state to a remote host.",
+      "type": "object",
+      "properties": {
+        "ssh": {
+          "type": "object",
+          "properties": {
+            "host": {
+              "description": "Remote host to connect to.",
+              "type": "string"
+            },
+            "port": {
+              "description": "SSH port (defaults to 22 if omitted).",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint16",
+              "maximum": 65535,
+              "minimum": 0
+            },
+            "remote_assay_dir": {
+              "description": "Path to the assay directory on the remote host.",
+              "type": "string"
+            },
+            "user": {
+              "description": "SSH user (defaults to current user if omitted).",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "host",
+            "remote_assay_dir"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "ssh"
+      ]
+    },
+    {
+      "description": "Smelt backend for pushing session events to Smelt's HTTP server.",
+      "type": "object",
+      "properties": {
+        "smelt": {
+          "type": "object",
+          "properties": {
+            "job_id": {
+              "description": "Job identifier for scoping events.",
+              "type": "string"
+            },
+            "token": {
+              "description": "Optional bearer token for authentication.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "url": {
+              "description": "Smelt server URL (e.g. `http://localhost:9000`).",
+              "type": "string"
+            }
+          },
+          "required": [
+            "url",
+            "job_id"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "smelt"
+      ]
+    },
+    {
+      "description": "Custom third-party backend identified by name.",
+      "type": "object",
+      "properties": {
+        "custom": {
+          "type": "object",
+          "properties": {
+            "config": {
+              "description": "Backend-specific configuration payload."
+            },
+            "name": {
+              "description": "Identifier for the backend implementation.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "config"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "custom"
+      ]
+    }
+  ]
+}

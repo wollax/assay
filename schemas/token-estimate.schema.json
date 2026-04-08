@@ -1,0 +1,110 @@
+{
+  "$id": "https://assay.dev/schemas/token-estimate.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TokenEstimate",
+  "description": "Token estimate for an active session (MCP `estimate_tokens` response).",
+  "type": "object",
+  "properties": {
+    "context_tokens": {
+      "description": "Total context tokens (input + cache).",
+      "type": "integer",
+      "format": "uint64",
+      "minimum": 0
+    },
+    "context_utilization_pct": {
+      "description": "Context utilization as a percentage.",
+      "type": "number",
+      "format": "double"
+    },
+    "context_window": {
+      "description": "Context window size for the detected model.",
+      "type": "integer",
+      "format": "uint64",
+      "minimum": 0
+    },
+    "growth_rate": {
+      "description": "Growth rate metrics. Absent when fewer than 5 assistant turns exist.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/GrowthRate"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "health": {
+      "description": "Health assessment based on utilization.",
+      "$ref": "#/$defs/ContextHealth"
+    },
+    "output_tokens": {
+      "description": "Output tokens from the last turn.",
+      "type": "integer",
+      "format": "uint64",
+      "minimum": 0
+    },
+    "session_id": {
+      "description": "Session UUID.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "session_id",
+    "context_tokens",
+    "output_tokens",
+    "context_window",
+    "context_utilization_pct",
+    "health"
+  ],
+  "$defs": {
+    "ContextHealth": {
+      "description": "Context health assessment based on utilization percentage.",
+      "oneOf": [
+        {
+          "description": "Utilization is within normal range.",
+          "type": "string",
+          "const": "healthy"
+        },
+        {
+          "description": "Utilization is elevated — consider compaction.",
+          "type": "string",
+          "const": "warning"
+        },
+        {
+          "description": "Utilization is near or at the context window limit.",
+          "type": "string",
+          "const": "critical"
+        }
+      ]
+    },
+    "GrowthRate": {
+      "description": "Growth rate metrics for a session's context usage.\n\nComputed from non-sidechain assistant turns with usage data.\nOnly available when 5 or more qualifying turns exist.",
+      "type": "object",
+      "properties": {
+        "avg_tokens_per_turn": {
+          "description": "Average context tokens added per assistant turn.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "estimated_turns_remaining": {
+          "description": "Estimated assistant turns remaining before context window is full.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "turn_count": {
+          "description": "Number of assistant turns used to compute these metrics.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "avg_tokens_per_turn",
+        "estimated_turns_remaining",
+        "turn_count"
+      ]
+    }
+  }
+}

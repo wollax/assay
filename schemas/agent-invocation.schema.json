@@ -1,0 +1,23 @@
+{
+  "$id": "https://assay.dev/schemas/agent-invocation.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AgentInvocation",
+  "description": "Details about the agent invocation for this session.",
+  "type": "object",
+  "properties": {
+    "command": {
+      "description": "The command used to invoke the agent.",
+      "type": "string"
+    },
+    "model": {
+      "description": "The model used by the agent, if known.",
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "command"
+  ]
+}

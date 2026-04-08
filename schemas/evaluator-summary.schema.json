@@ -1,0 +1,21 @@
+{
+  "$id": "https://assay.dev/schemas/evaluator-summary.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "EvaluatorSummary",
+  "description": "Aggregate summary from the evaluator.",
+  "type": "object",
+  "properties": {
+    "passed": {
+      "description": "Whether the gate passed overall.",
+      "type": "boolean"
+    },
+    "rationale": {
+      "description": "Brief rationale for the overall judgment.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "passed",
+    "rationale"
+  ]
+}

@@ -1,0 +1,77 @@
+{
+  "$id": "https://assay.dev/schemas/conflict-scan.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ConflictScan",
+  "description": "Result of scanning files for conflict markers.",
+  "type": "object",
+  "properties": {
+    "has_markers": {
+      "description": "Whether any conflict markers were found.",
+      "type": "boolean"
+    },
+    "markers": {
+      "description": "Individual markers found (may be empty).",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ConflictMarker"
+      }
+    },
+    "truncated": {
+      "description": "Whether the scan was truncated (too many files or markers).",
+      "type": "boolean"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "has_markers",
+    "truncated"
+  ],
+  "$defs": {
+    "ConflictMarker": {
+      "description": "A single conflict marker found in a file.",
+      "type": "object",
+      "properties": {
+        "file": {
+          "description": "File path relative to the repository root.",
+          "type": "string"
+        },
+        "line": {
+          "description": "1-based line number where the marker was found.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "marker_type": {
+          "description": "Type of marker (`<<<<<<<`, `=======`, or `>>>>>>>`).",
+          "$ref": "#/$defs/MarkerType"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "file",
+        "line",
+        "marker_type"
+      ]
+    },
+    "MarkerType": {
+      "description": "Type of a conflict marker found in a file.",
+      "oneOf": [
+        {
+          "description": "Start of \"ours\" side: `<<<<<<<`",
+          "type": "string",
+          "const": "ours"
+        },
+        {
+          "description": "Separator between sides: `=======`",
+          "type": "string",
+          "const": "separator"
+        },
+        {
+          "description": "Start of \"theirs\" side: `>>>>>>>`",
+          "type": "string",
+          "const": "theirs"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "$id": "https://assay.dev/schemas/severity.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Severity",
+  "description": "Severity level of a validation diagnostic.",
+  "oneOf": [
+    {
+      "description": "Informational — suggestion or note.",
+      "type": "string",
+      "const": "info"
+    },
+    {
+      "description": "Advisory — spec is usable but has issues worth addressing.",
+      "type": "string",
+      "const": "warning"
+    },
+    {
+      "description": "Blocks validity — spec cannot be used.",
+      "type": "string",
+      "const": "error"
+    }
+  ]
+}
