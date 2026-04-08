@@ -1,0 +1,53 @@
+{
+  "spec": "close-the-loop",
+  "run_id": "20260408T223122Z-38a491",
+  "timestamp": "2026-04-08T22:31:22.601592Z",
+  "checks": [
+    {
+      "name": "req-coverage",
+      "kind": "structural",
+      "skipped": false,
+      "passed": true,
+      "message": "all 0 requirements covered by criteria"
+    },
+    {
+      "name": "acceptance-criteria",
+      "kind": "structural",
+      "skipped": false,
+      "passed": true,
+      "message": "all SHALL requirements have acceptance criteria"
+    },
+    {
+      "name": "req-id-format",
+      "kind": "structural",
+      "skipped": false,
+      "passed": true,
+      "message": "all 0 requirement IDs follow REQ-AREA-NNN format"
+    },
+    {
+      "name": "criterion-traceability",
+      "kind": "structural",
+      "skipped": false,
+      "passed": false,
+      "message": "2 of 2 criteria (100%) lack requirements — exceeds 50% threshold",
+      "details": "criteria without requirements: tool-budget, no-tool-errors"
+    },
+    {
+      "name": "no-orphaned-criteria",
+      "kind": "structural",
+      "skipped": false,
+      "passed": true,
+      "message": "no orphaned criterion requirement references"
+    },
+    {
+      "name": "status-consistency",
+      "kind": "structural",
+      "skipped": false,
+      "passed": true,
+      "message": "spec is Verified and all requirements are Verified"
+    }
+  ],
+  "passed": 5,
+  "failed": 1,
+  "skipped": 0
+}

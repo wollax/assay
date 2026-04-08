@@ -1,0 +1,136 @@
+[
+  {
+    "name": "pipeline::run_session",
+    "target": "assay_core::pipeline",
+    "level": "INFO",
+    "span_id": 2,
+    "parent_id": 1,
+    "start_time": "2026-04-08T22:30:59.903Z",
+    "end_time": "2026-04-08T22:31:09.730Z",
+    "duration_ms": 9827.0,
+    "fields": {
+      "manifest_session": "ManifestSession { spec: \"close-the-loop\", name: None, settings: None, hooks: [], prompt_layers: [], file_scope: [], shared_files: [], depends_on: [], prompt: Some(\"You are working on a file analysis task. For each file you find, use a separate tool call to read it, then use another tool call to write your analysis. Be thorough — read multiple files and analyze each one individually. Start by listing the directory, then read at least two files, then summarize your findings.\") }",
+      "spec": "close-the-loop"
+    }
+  },
+  {
+    "name": "spec_load",
+    "target": "assay_core::pipeline",
+    "level": "INFO",
+    "span_id": 4,
+    "parent_id": 3,
+    "start_time": "2026-04-08T22:30:59.903Z",
+    "end_time": "2026-04-08T22:30:59.903Z",
+    "duration_ms": 0.0,
+    "fields": {
+      "spec": "close-the-loop"
+    }
+  },
+  {
+    "name": "worktree_create",
+    "target": "assay_core::pipeline",
+    "level": "INFO",
+    "span_id": 2251799813685252,
+    "parent_id": 3,
+    "start_time": "2026-04-08T22:30:59.903Z",
+    "end_time": "2026-04-08T22:31:00.180Z",
+    "duration_ms": 277.0,
+    "fields": {
+      "spec": "close-the-loop"
+    }
+  },
+  {
+    "name": "pipeline::setup_session",
+    "target": "assay_core::pipeline",
+    "level": "INFO",
+    "span_id": 3,
+    "parent_id": 2,
+    "start_time": "2026-04-08T22:30:59.903Z",
+    "end_time": "2026-04-08T22:31:00.180Z",
+    "duration_ms": 277.0,
+    "fields": {
+      "spec": "close-the-loop"
+    }
+  },
+  {
+    "name": "pipeline::run_manifest",
+    "target": "assay_core::pipeline",
+    "level": "INFO",
+    "span_id": 1,
+    "parent_id": null,
+    "start_time": "2026-04-08T22:30:59.903Z",
+    "end_time": "2026-04-08T22:31:09.730Z",
+    "duration_ms": 9827.0,
+    "fields": {
+      "session_count": 1
+    }
+  },
+  {
+    "name": "pipeline::execute_session",
+    "target": "assay_core::pipeline",
+    "level": "INFO",
+    "span_id": 2251799813685251,
+    "parent_id": 2,
+    "start_time": "2026-04-08T22:31:00.181Z",
+    "end_time": "2026-04-08T22:31:09.730Z",
+    "duration_ms": 9549.0,
+    "fields": {
+      "session_id": "01KNQKGS1ZSD3GJS1T5VEXHX5G",
+      "spec": "close-the-loop"
+    }
+  },
+  {
+    "name": "agent_launch",
+    "target": "assay_core::pipeline",
+    "level": "INFO",
+    "span_id": 6755399441055748,
+    "parent_id": 2251799813685251,
+    "start_time": "2026-04-08T22:31:00.181Z",
+    "end_time": "2026-04-08T22:31:09.634Z",
+    "duration_ms": 9453.0,
+    "fields": {
+      "spec": "close-the-loop"
+    }
+  },
+  {
+    "name": "harness_config",
+    "target": "assay_core::pipeline",
+    "level": "INFO",
+    "span_id": 4503599627370500,
+    "parent_id": 2251799813685251,
+    "start_time": "2026-04-08T22:31:00.181Z",
+    "end_time": "2026-04-08T22:31:00.181Z",
+    "duration_ms": 0.0,
+    "fields": {
+      "spec": "close-the-loop"
+    }
+  },
+  {
+    "name": "gate_evaluate",
+    "target": "assay_core::pipeline",
+    "level": "INFO",
+    "span_id": 9007199254740996,
+    "parent_id": 2251799813685251,
+    "start_time": "2026-04-08T22:31:09.643Z",
+    "end_time": "2026-04-08T22:31:09.648Z",
+    "duration_ms": 5.0,
+    "fields": {
+      "spec": "close-the-loop",
+      "spec_name": "close-the-loop"
+    }
+  },
+  {
+    "name": "merge_check",
+    "target": "assay_core::pipeline",
+    "level": "INFO",
+    "span_id": 11258999068426244,
+    "parent_id": 2251799813685251,
+    "start_time": "2026-04-08T22:31:09.661Z",
+    "end_time": "2026-04-08T22:31:09.724Z",
+    "duration_ms": 63.0,
+    "fields": {
+      "spec_name": "close-the-loop",
+      "spec": "close-the-loop"
+    }
+  }
+]

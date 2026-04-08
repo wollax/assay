@@ -34,6 +34,23 @@ impl HarnessProvider for ClaudeProvider {
         claude::write_config(&config, working_dir)?;
         Ok(claude::build_cli_args(&config))
     }
+
+    fn write_harness_streaming(
+        &self,
+        profile: &HarnessProfile,
+        working_dir: &Path,
+        prompt: Option<&str>,
+    ) -> Result<Vec<String>, HarnessError> {
+        let config = claude::generate_config(profile);
+        claude::write_config(&config, working_dir)?;
+        let mut args = vec!["claude".to_string()];
+        args.extend(claude::build_streaming_cli_args(&config));
+        if let Some(p) = prompt {
+            args.push("-p".to_string());
+            args.push(p.to_string());
+        }
+        Ok(args)
+    }
 }
 
 impl ClaudeProvider {
@@ -63,6 +80,22 @@ impl HarnessProvider for CodexProvider {
         codex::write_config(&config, working_dir)?;
         Ok(codex::build_cli_args(&config))
     }
+
+    fn write_harness_streaming(
+        &self,
+        profile: &HarnessProfile,
+        working_dir: &Path,
+        prompt: Option<&str>,
+    ) -> Result<Vec<String>, HarnessError> {
+        let args = self.write_harness(profile, working_dir)?;
+        let mut full = vec!["codex".to_string()];
+        full.extend(args);
+        if let Some(p) = prompt {
+            full.push("--prompt".to_string());
+            full.push(p.to_string());
+        }
+        Ok(full)
+    }
 }
 
 /// OpenCode adapter.
@@ -80,6 +113,22 @@ impl HarnessProvider for OpenCodeProvider {
         let config = opencode::generate_config(profile);
         opencode::write_config(&config, working_dir)?;
         Ok(opencode::build_cli_args(&config))
+    }
+
+    fn write_harness_streaming(
+        &self,
+        profile: &HarnessProfile,
+        working_dir: &Path,
+        prompt: Option<&str>,
+    ) -> Result<Vec<String>, HarnessError> {
+        let args = self.write_harness(profile, working_dir)?;
+        let mut full = vec!["opencode".to_string()];
+        full.extend(args);
+        if let Some(p) = prompt {
+            full.push("--prompt".to_string());
+            full.push(p.to_string());
+        }
+        Ok(full)
     }
 }
 
@@ -153,5 +202,59 @@ mod tests {
             !args.is_empty(),
             "OpenCodeProvider should produce non-empty args"
         );
+    }
+
+    #[test]
+    fn test_claude_streaming_prepends_binary_and_uses_stream_json() {
+        let dir = TempDir::new().unwrap();
+        let profile = minimal_profile();
+        let args = ClaudeProvider
+            .write_harness_streaming(&profile, dir.path(), None)
+            .expect("streaming harness failed");
+        assert_eq!(args[0], "claude", "first arg must be binary name");
+        assert!(
+            args.contains(&"stream-json".to_string()),
+            "must use stream-json format"
+        );
+        assert!(
+            args.contains(&"--verbose".to_string()),
+            "must include --verbose"
+        );
+        assert!(
+            !args.iter().any(|a| a == "-p"),
+            "must not include -p when prompt is None"
+        );
+    }
+
+    #[test]
+    fn test_claude_streaming_with_prompt() {
+        let dir = TempDir::new().unwrap();
+        let profile = minimal_profile();
+        let args = ClaudeProvider
+            .write_harness_streaming(&profile, dir.path(), Some("Do the task"))
+            .expect("streaming harness failed");
+        assert_eq!(args[0], "claude");
+        let p_idx = args.iter().position(|a| a == "-p").expect("-p not found");
+        assert_eq!(args[p_idx + 1], "Do the task");
+    }
+
+    #[test]
+    fn test_codex_streaming_prepends_binary() {
+        let dir = TempDir::new().unwrap();
+        let profile = minimal_profile();
+        let args = CodexProvider
+            .write_harness_streaming(&profile, dir.path(), None)
+            .expect("streaming harness failed");
+        assert_eq!(args[0], "codex", "first arg must be codex binary");
+    }
+
+    #[test]
+    fn test_opencode_streaming_prepends_binary() {
+        let dir = TempDir::new().unwrap();
+        let profile = minimal_profile();
+        let args = OpenCodeProvider
+            .write_harness_streaming(&profile, dir.path(), None)
+            .expect("streaming harness failed");
+        assert_eq!(args[0], "opencode", "first arg must be opencode binary");
     }
 }

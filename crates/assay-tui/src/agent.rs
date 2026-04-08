@@ -6,37 +6,14 @@
 //!
 //! # Binary name convention
 //!
-//! Unlike the pipeline path (where `launch_agent` hard-codes `"claude"`),
-//! the TUI uses `launch_agent_streaming`, which expects `cli_args[0]` to be
-//! the binary name and `cli_args[1..]` to be its arguments.  Every provider
-//! returned by `provider_harness_writer` therefore includes the binary as the
-//! first element.
+//! Both the TUI and the pipeline use `launch_agent_streaming`, which expects
+//! `cli_args[0]` to be the binary name. All providers implement
+//! [`HarnessProvider::write_harness_streaming`] which returns the full
+//! command line including the binary.
 
 use assay_harness::{HarnessError, HarnessProvider};
 use assay_types::{Config, HarnessProfile, ProviderKind};
 use std::path::Path;
-
-/// TUI wrapper around [`assay_harness::provider::ClaudeProvider`] for streaming.
-///
-/// `launch_agent_streaming` interprets `cli_args[0]` as the binary name.
-/// `ClaudeProvider::write_harness` returns only the *arguments* (no binary),
-/// which is correct for the pipeline path where `launch_agent` hard-codes
-/// `"claude"`.  This wrapper prepends `"claude"` so the TUI path works
-/// correctly.
-struct AnthropicStreamingProvider;
-
-impl HarnessProvider for AnthropicStreamingProvider {
-    fn write_harness(
-        &self,
-        profile: &HarnessProfile,
-        working_dir: &Path,
-    ) -> Result<Vec<String>, HarnessError> {
-        let args = assay_harness::provider::ClaudeProvider.write_harness(profile, working_dir)?;
-        let mut full = vec!["claude".to_string()];
-        full.extend(args);
-        Ok(full)
-    }
-}
 
 /// TUI-local Ollama provider.
 ///
@@ -53,6 +30,16 @@ impl HarnessProvider for OllamaProvider {
         _working_dir: &Path,
     ) -> Result<Vec<String>, HarnessError> {
         Ok(vec!["ollama".into(), "run".into(), self.model.clone()])
+    }
+
+    fn write_harness_streaming(
+        &self,
+        profile: &HarnessProfile,
+        working_dir: &Path,
+        _prompt: Option<&str>,
+    ) -> Result<Vec<String>, HarnessError> {
+        // Ollama CLI args already include the binary name.
+        self.write_harness(profile, working_dir)
     }
 }
 
@@ -78,6 +65,16 @@ impl HarnessProvider for OpenAiProvider {
             self.model.clone(),
         ])
     }
+
+    fn write_harness_streaming(
+        &self,
+        profile: &HarnessProfile,
+        working_dir: &Path,
+        _prompt: Option<&str>,
+    ) -> Result<Vec<String>, HarnessError> {
+        // OpenAI CLI args already include the binary name.
+        self.write_harness(profile, working_dir)
+    }
 }
 
 /// Return a boxed [`HarnessProvider`] that dispatches to the correct provider
@@ -100,7 +97,7 @@ pub fn provider_harness_writer(config: Option<&Config>) -> Box<dyn HarnessProvid
         .and_then(|p| p.execution_model.clone());
 
     match provider {
-        ProviderKind::Anthropic => Box::new(AnthropicStreamingProvider),
+        ProviderKind::Anthropic => Box::new(assay_harness::provider::ClaudeProvider),
         ProviderKind::Ollama => {
             let model = model_opt.unwrap_or_else(|| "llama3".into());
             Box::new(OllamaProvider { model })

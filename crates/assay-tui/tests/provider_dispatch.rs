@@ -34,7 +34,7 @@ fn run_writer(config: &Config) -> Vec<String> {
     };
     let writer = provider_harness_writer(Some(config));
     writer
-        .write_harness(&profile, tmp.path())
+        .write_harness_streaming(&profile, tmp.path(), None)
         .expect("writer should succeed")
 }
 
