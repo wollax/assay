@@ -33,6 +33,13 @@
         "null"
       ]
     },
+    "prompt": {
+      "description": "User prompt passed to the agent. When set, the pipeline provides this\ntext as the user message (e.g. via `-p` flag for Claude). When absent,\nthe agent receives only the system prompt from CLAUDE.md.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "prompt_layers": {
       "description": "Prompt layers injected into this session's prompt assembly. Empty by default.",
       "type": "array",

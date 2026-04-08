@@ -44,25 +44,26 @@ The feature spec (`spec.toml`) sets `auto_promote = true` and
 # 1. Install spec into .assay/specs/
 ./examples/close-the-loop/setup.sh
 
-# 2. Run the abort path (misbehaving agent)
-./examples/close-the-loop/run-abort.sh
-
-# 3. Inspect the result
-assay spec review close-the-loop
-# → Shows Checkpoints section with failed tool-budget criterion
-
-# 4. Reset state for the clean path
-./examples/close-the-loop/reset.sh
-
-# 5. Run the promote path (well-behaved agent)
+# 2. Run the promote path (auto-promotion demo)
 ./examples/close-the-loop/run-promote.sh
 
-# 6. Inspect the result
+# 3. Inspect the result
 assay spec review close-the-loop
 # → Shows "Auto-promotion: in-progress → verified"
 ```
 
-Or use the justfile recipe to run both paths automatically:
+### About the Abort Path
+
+The abort path (`run-abort.sh`) exercises the checkpoint failure scenario.
+In `--print` mode, the `claude` CLI runs single-pass inference without tool
+calls, so the `AfterToolCalls { n: 2 }` checkpoint does not fire.
+
+To trigger the checkpoint abort, run the agent in **interactive/agentic mode**
+(e.g., via MCP or the TUI), where tool calls produce `tool_called` streaming
+events. The checkpoint driver monitors these events and fires `evaluate_checkpoint`
+when the tool call count reaches the threshold.
+
+Or use the justfile recipe to run the promote path:
 
 ```bash
 just demo-close-the-loop
