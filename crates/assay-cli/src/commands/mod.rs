@@ -59,6 +59,8 @@ pub(crate) fn gate_kind_label(kind: &assay_types::GateKind) -> &'static str {
         assay_types::GateKind::FileExists { .. } => "[file]",
         assay_types::GateKind::AlwaysPass => "[auto]",
         assay_types::GateKind::AgentReport => "[agent]",
+        assay_types::GateKind::EventCount { .. } => "[events]",
+        assay_types::GateKind::NoToolErrors => "[no-tool-errors]",
     }
 }
 

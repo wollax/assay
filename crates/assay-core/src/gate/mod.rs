@@ -109,7 +109,16 @@ pub fn evaluate(
 ) -> Result<GateResult> {
     // AgentReport criteria cannot be evaluated standalone — they are
     // evaluated through the session lifecycle (gate_report + gate_finalize).
-    if criterion.kind == Some(CriterionKind::AgentReport) {
+    // Event-based criteria (EventCount, NoToolErrors) require an `&[AgentEvent]`
+    // log and are routed through `evaluate_all_with_events` instead.
+    if matches!(
+        criterion.kind,
+        Some(
+            CriterionKind::AgentReport
+                | CriterionKind::EventCount { .. }
+                | CriterionKind::NoToolErrors
+        )
+    ) {
         return Err(AssayError::InvalidCriterion {
             spec_name: String::new(),
             criterion_name: criterion.name.clone(),
@@ -159,6 +168,7 @@ pub fn evaluate_all(
         working_dir,
         cli_timeout,
         config_timeout,
+        &[],
     )
 }
 
@@ -181,11 +191,24 @@ pub fn evaluate_all_with_events(
     working_dir: &Path,
     cli_timeout: Option<u64>,
     config_timeout: Option<u64>,
-    _events: &[AgentEvent],
+    events: &[AgentEvent],
 ) -> GateRunSummary {
-    // S04+ will use events for criteria evaluation.
-    // For now, delegate to the existing implementation.
-    evaluate_all(spec, working_dir, cli_timeout, config_timeout)
+    let criteria: Vec<(Criterion, Enforcement)> = spec
+        .criteria
+        .iter()
+        .map(|c| {
+            let enforcement = resolve_enforcement(c.enforcement, spec.gate.as_ref());
+            (c.clone(), enforcement)
+        })
+        .collect();
+    evaluate_criteria(
+        &spec.name,
+        criteria,
+        working_dir,
+        cli_timeout,
+        config_timeout,
+        events,
+    )
 }
 
 /// Evaluate all criteria in a `GatesSpec` with agent event context.
@@ -198,11 +221,24 @@ pub fn evaluate_all_gates_with_events(
     working_dir: &Path,
     cli_timeout: Option<u64>,
     config_timeout: Option<u64>,
-    _events: &[AgentEvent],
+    events: &[AgentEvent],
 ) -> GateRunSummary {
-    // S04+ will use events for criteria evaluation.
-    // For now, delegate to the existing implementation.
-    evaluate_all_gates(gates, working_dir, cli_timeout, config_timeout)
+    let criteria: Vec<(Criterion, Enforcement)> = gates
+        .criteria
+        .iter()
+        .map(|gc| {
+            let enforcement = resolve_enforcement(gc.enforcement, gates.gate.as_ref());
+            (to_criterion(gc), enforcement)
+        })
+        .collect();
+    evaluate_criteria(
+        &gates.name,
+        criteria,
+        working_dir,
+        cli_timeout,
+        config_timeout,
+        events,
+    )
 }
 
 /// Evaluate all criteria in a `GatesSpec` sequentially.
@@ -231,6 +267,7 @@ pub fn evaluate_all_gates(
         working_dir,
         cli_timeout,
         config_timeout,
+        &[],
     )
 }
 
@@ -245,6 +282,7 @@ fn evaluate_criteria(
     working_dir: &Path,
     cli_timeout: Option<u64>,
     config_timeout: Option<u64>,
+    events: &[AgentEvent],
 ) -> GateRunSummary {
     let start = Instant::now();
     let mut results = Vec::with_capacity(criteria.len());
@@ -254,13 +292,91 @@ fn evaluate_criteria(
     let mut enforcement_summary = EnforcementSummary::default();
 
     for (criterion, resolved_enforcement) in &criteria {
-        // AgentReport criteria are evaluated through the session lifecycle,
-        // not the synchronous evaluate path. Mark as skipped (pending).
-        if criterion.kind == Some(CriterionKind::AgentReport) {
+        // AgentReport criteria are evaluated through the session lifecycle
+        // (gate_report + gate_finalize). Mark as skipped (pending) here.
+        if matches!(criterion.kind, Some(CriterionKind::AgentReport)) {
             skipped += 1;
             results.push(CriterionResult {
                 criterion_name: criterion.name.clone(),
                 result: None,
+                enforcement: *resolved_enforcement,
+            });
+            continue;
+        }
+
+        // Event-based criteria (EventCount, NoToolErrors) are evaluated
+        // in-memory against the event log via `evaluate_event_criterion`.
+        // When called from `evaluate_all` with an empty event slice, treat
+        // them like AgentReport — mark as skipped (pending) so the caller
+        // does not see spurious pass/fail from an absent event log.
+        if matches!(
+            criterion.kind,
+            Some(CriterionKind::EventCount { .. } | CriterionKind::NoToolErrors)
+        ) {
+            if events.is_empty() {
+                tracing::debug!(
+                    criterion_name = %criterion.name,
+                    "event-based criterion skipped: no event log available (use evaluate_all_with_events)"
+                );
+                skipped += 1;
+                results.push(CriterionResult {
+                    criterion_name: criterion.name.clone(),
+                    result: None,
+                    enforcement: *resolved_enforcement,
+                });
+                continue;
+            }
+            let gate_result = match evaluate_event_criterion(&gate_kind_for(criterion), events) {
+                Ok(r) => r,
+                Err(e) => {
+                    tracing::error!(
+                        criterion_name = %criterion.name,
+                        error = %e,
+                        "event criterion evaluation error"
+                    );
+                    failed += 1;
+                    match resolved_enforcement {
+                        Enforcement::Required => enforcement_summary.required_failed += 1,
+                        Enforcement::Advisory => enforcement_summary.advisory_failed += 1,
+                    }
+                    results.push(CriterionResult {
+                        criterion_name: criterion.name.clone(),
+                        result: Some(GateResult {
+                            passed: false,
+                            kind: gate_kind_for(criterion),
+                            stdout: String::new(),
+                            stderr: e.to_string(),
+                            exit_code: None,
+                            duration_ms: 0,
+                            timestamp: Utc::now(),
+                            truncated: false,
+                            original_bytes: None,
+                            evidence: None,
+                            reasoning: None,
+                            confidence: None,
+                            evaluator_role: None,
+                        }),
+                        enforcement: *resolved_enforcement,
+                    });
+                    continue;
+                }
+            };
+            if gate_result.passed {
+                passed += 1;
+                match resolved_enforcement {
+                    Enforcement::Required => enforcement_summary.required_passed += 1,
+                    Enforcement::Advisory => enforcement_summary.advisory_passed += 1,
+                }
+            } else {
+                failed += 1;
+                match resolved_enforcement {
+                    Enforcement::Required => enforcement_summary.required_failed += 1,
+                    Enforcement::Advisory => enforcement_summary.advisory_failed += 1,
+                }
+            }
+            results.push(CriterionResult {
+                criterion_name: criterion.name.clone(),
+                result: Some(gate_result),
                 enforcement: *resolved_enforcement,
             });
             continue;
@@ -388,13 +504,133 @@ pub fn to_criterion(gc: &GateCriterion) -> Criterion {
 /// carry the correct gate kind even when evaluation fails before
 /// producing a `GateResult`.
 fn gate_kind_for(criterion: &Criterion) -> GateKind {
-    if criterion.kind == Some(CriterionKind::AgentReport) {
-        return GateKind::AgentReport;
+    match &criterion.kind {
+        Some(CriterionKind::AgentReport) => return GateKind::AgentReport,
+        Some(CriterionKind::NoToolErrors) => return GateKind::NoToolErrors,
+        Some(CriterionKind::EventCount {
+            event_type,
+            min,
+            max,
+        }) => {
+            return GateKind::EventCount {
+                event_type: event_type.clone(),
+                min: *min,
+                max: *max,
+            };
+        }
+        None => {}
     }
     match (&criterion.cmd, &criterion.path) {
         (Some(cmd), _) => GateKind::Command { cmd: cmd.clone() },
         (None, Some(path)) => GateKind::FileExists { path: path.clone() },
         (None, None) => GateKind::AlwaysPass,
+    }
+}
+
+/// Evaluate an event-based gate criterion against the agent session event log.
+///
+/// Performs in-memory evaluation — no subprocess spawned, no filesystem access.
+/// Safe to call repeatedly on a growing event slice (stateless).
+///
+/// # Panics
+///
+/// Panics if called with a non-event `GateKind`. Callers must only pass
+/// `GateKind::EventCount` or `GateKind::NoToolErrors`.
+/// Evaluate an event-based gate criterion against the agent session event log.
+///
+/// Returns `Ok(GateResult)` for `EventCount` and `NoToolErrors` kinds.
+/// Returns `Err(AssayError::InvalidCriterion)` if called with a non-event
+/// `GateKind` (e.g. `Command`, `FileExists`, `AgentReport`). Callers
+/// **must** guard with a `CriterionKind` check before calling this function.
+///
+/// Performs in-memory evaluation only — no subprocess spawns, no filesystem
+/// access. Safe to call repeatedly on a growing event slice (stateless).
+pub fn evaluate_event_criterion(kind: &GateKind, events: &[AgentEvent]) -> Result<GateResult> {
+    let start = Instant::now();
+    match kind {
+        GateKind::EventCount {
+            event_type,
+            min,
+            max,
+        } => {
+            let count = events
+                .iter()
+                .filter(|e| event_serde_tag(e) == event_type.as_str())
+                .count() as u32;
+            let min_v = min.unwrap_or(0);
+            let max_v = max.unwrap_or(u32::MAX);
+            let passed = count >= min_v && count <= max_v;
+            let stderr = if !passed {
+                format!(
+                    "EventCount({event_type}): found {count}, expected [{min_v}, {}]",
+                    max.map(|m| m.to_string()).unwrap_or_else(|| "∞".into())
+                )
+            } else {
+                String::new()
+            };
+            Ok(GateResult {
+                passed,
+                kind: kind.clone(),
+                stdout: String::new(),
+                stderr,
+                exit_code: None,
+                duration_ms: start.elapsed().as_millis() as u64,
+                timestamp: Utc::now(),
+                truncated: false,
+                original_bytes: None,
+                evidence: None,
+                reasoning: None,
+                confidence: None,
+                evaluator_role: None,
+            })
+        }
+        GateKind::NoToolErrors => {
+            let error_count = events
+                .iter()
+                .filter(|e| matches!(e, AgentEvent::ToolResult { is_error: true, .. }))
+                .count();
+            let passed = error_count == 0;
+            let stderr = if !passed {
+                format!("NoToolErrors: {error_count} tool error(s) found")
+            } else {
+                String::new()
+            };
+            Ok(GateResult {
+                passed,
+                kind: kind.clone(),
+                stdout: String::new(),
+                stderr,
+                exit_code: None,
+                duration_ms: start.elapsed().as_millis() as u64,
+                timestamp: Utc::now(),
+                truncated: false,
+                original_bytes: None,
+                evidence: None,
+                reasoning: None,
+                confidence: None,
+                evaluator_role: None,
+            })
+        }
+        other => Err(AssayError::InvalidCriterion {
+            spec_name: String::new(),
+            criterion_name: format!("<non-event GateKind: {other}>"),
+        }),
+    }
+}
+
+/// Returns the serde tag string for an `AgentEvent` variant.
+///
+/// Matches the `#[serde(tag = "type", rename_all = "snake_case")]` tags on
+/// `AgentEvent` variants.
+fn event_serde_tag(event: &AgentEvent) -> &'static str {
+    match event {
+        AgentEvent::ToolCalled { .. } => "tool_called",
+        AgentEvent::ToolResult { .. } => "tool_result",
+        AgentEvent::TurnEnded { .. } => "turn_ended",
+        AgentEvent::SessionStopped { .. } => "session_stopped",
+        AgentEvent::TextDelta { .. } => "text_delta",
+        AgentEvent::TextBlock { .. } => "text_block",
+        _ => "unknown",
     }
 }
 
@@ -2440,5 +2676,393 @@ mod tests {
             !msg.contains("PATH"),
             "should not contain hint when cmd is None, got: {msg}"
         );
+    }
+
+    // ------------------------------------------------------------------
+    // Event-based criterion evaluation (S01/T02)
+    // ------------------------------------------------------------------
+
+    fn tool_called(name: &str) -> AgentEvent {
+        AgentEvent::ToolCalled {
+            name: name.to_string(),
+            input_json: "{}".to_string(),
+        }
+    }
+
+    fn tool_result(name: &str, is_error: bool) -> AgentEvent {
+        AgentEvent::ToolResult {
+            name: name.to_string(),
+            output: String::new(),
+            is_error,
+        }
+    }
+
+    #[test]
+    fn evaluate_event_count_empty_slice_with_no_min_max_passes() {
+        let kind = GateKind::EventCount {
+            event_type: "tool_called".to_string(),
+            min: None,
+            max: None,
+        };
+        let result =
+            evaluate_event_criterion(&kind, &[]).expect("event criterion should not fail in tests");
+        assert!(result.passed);
+        assert!(result.stderr.is_empty());
+    }
+
+    #[test]
+    fn evaluate_event_count_satisfies_min_only() {
+        let events = vec![
+            tool_called("bash"),
+            tool_called("bash"),
+            tool_called("edit"),
+        ];
+        let kind = GateKind::EventCount {
+            event_type: "tool_called".to_string(),
+            min: Some(1),
+            max: None,
+        };
+        let result = evaluate_event_criterion(&kind, &events)
+            .expect("event criterion should not fail in tests");
+        assert!(result.passed);
+    }
+
+    #[test]
+    fn evaluate_event_count_violates_max() {
+        let events = vec![
+            tool_called("bash"),
+            tool_called("bash"),
+            tool_called("edit"),
+        ];
+        let kind = GateKind::EventCount {
+            event_type: "tool_called".to_string(),
+            min: None,
+            max: Some(2),
+        };
+        let result = evaluate_event_criterion(&kind, &events)
+            .expect("event criterion should not fail in tests");
+        assert!(!result.passed);
+        assert!(
+            result.stderr.contains("found 3"),
+            "stderr should include count: {}",
+            result.stderr
+        );
+    }
+
+    #[test]
+    fn evaluate_event_count_satisfies_both() {
+        let events = vec![tool_called("bash"), tool_called("bash")];
+        let kind = GateKind::EventCount {
+            event_type: "tool_called".to_string(),
+            min: Some(1),
+            max: Some(3),
+        };
+        let result = evaluate_event_criterion(&kind, &events)
+            .expect("event criterion should not fail in tests");
+        assert!(result.passed);
+    }
+
+    #[test]
+    fn evaluate_event_count_wrong_type_counts_zero() {
+        let events = vec![
+            tool_called("bash"),
+            tool_called("bash"),
+            tool_called("edit"),
+        ];
+        let kind = GateKind::EventCount {
+            event_type: "turn_ended".to_string(),
+            min: Some(1),
+            max: None,
+        };
+        let result = evaluate_event_criterion(&kind, &events)
+            .expect("event criterion should not fail in tests");
+        assert!(!result.passed);
+        assert!(result.stderr.contains("found 0"));
+    }
+
+    #[test]
+    fn evaluate_no_tool_errors_passes_empty() {
+        let result = evaluate_event_criterion(&GateKind::NoToolErrors, &[])
+            .expect("event criterion should not fail in tests");
+        assert!(result.passed);
+        assert!(result.stderr.is_empty());
+    }
+
+    #[test]
+    fn evaluate_no_tool_errors_passes_no_errors() {
+        let events = vec![tool_result("bash", false), tool_result("edit", false)];
+        let result = evaluate_event_criterion(&GateKind::NoToolErrors, &events)
+            .expect("event criterion should not fail in tests");
+        assert!(result.passed);
+    }
+
+    #[test]
+    fn evaluate_no_tool_errors_fails_on_error() {
+        let events = vec![tool_result("bash", false), tool_result("edit", true)];
+        let result = evaluate_event_criterion(&GateKind::NoToolErrors, &events)
+            .expect("event criterion should not fail in tests");
+        assert!(!result.passed);
+        assert!(
+            result.stderr.contains("1 tool error"),
+            "stderr: {}",
+            result.stderr
+        );
+    }
+
+    #[test]
+    fn evaluate_all_with_events_routes_event_count_criterion() {
+        let dir = tempfile::tempdir().unwrap();
+        let spec = Spec {
+            name: "event-count-routed".to_string(),
+            description: String::new(),
+            gate: None,
+            depends: vec![],
+            criteria: vec![Criterion {
+                name: "max-two-tools".to_string(),
+                description: String::new(),
+                cmd: None,
+                path: None,
+                timeout: None,
+                enforcement: Some(Enforcement::Required),
+                kind: Some(CriterionKind::EventCount {
+                    event_type: "tool_called".to_string(),
+                    min: None,
+                    max: Some(2),
+                }),
+                prompt: None,
+                requirements: vec![],
+            }],
+        };
+        let events = vec![
+            tool_called("bash"),
+            tool_called("bash"),
+            tool_called("edit"),
+        ];
+        let summary = evaluate_all_with_events(&spec, dir.path(), None, None, &events);
+        assert_eq!(summary.failed, 1);
+        assert_eq!(summary.passed, 0);
+        assert_eq!(summary.skipped, 0);
+        let result = summary.results[0]
+            .result
+            .as_ref()
+            .expect("event criterion produces a result");
+        assert!(!result.passed);
+        assert!(matches!(result.kind, GateKind::EventCount { .. }));
+    }
+
+    #[test]
+    fn evaluate_all_gates_with_events_routes_no_tool_errors_criterion() {
+        let dir = tempfile::tempdir().unwrap();
+        let gates = GatesSpec {
+            name: "no-errors-routed".to_string(),
+            description: String::new(),
+            gate: None,
+            depends: vec![],
+            milestone: None,
+            order: None,
+            criteria: vec![GateCriterion {
+                name: "no-tool-errors".to_string(),
+                description: String::new(),
+                cmd: None,
+                path: None,
+                timeout: None,
+                enforcement: Some(Enforcement::Required),
+                kind: Some(CriterionKind::NoToolErrors),
+                prompt: None,
+                requirements: vec![],
+            }],
+        };
+        let events = vec![tool_result("bash", true)];
+        let summary = evaluate_all_gates_with_events(&gates, dir.path(), None, None, &events);
+        assert_eq!(summary.failed, 1);
+        assert_eq!(summary.passed, 0);
+        let result = summary.results[0]
+            .result
+            .as_ref()
+            .expect("event criterion produces a result");
+        assert!(!result.passed);
+        assert!(matches!(result.kind, GateKind::NoToolErrors));
+    }
+
+    #[test]
+    fn evaluate_event_count_at_exact_min_boundary_passes() {
+        // count == min: inclusive lower bound, should pass
+        let events = vec![tool_called("bash")];
+        let kind = GateKind::EventCount {
+            event_type: "tool_called".to_string(),
+            min: Some(1),
+            max: None,
+        };
+        let result = evaluate_event_criterion(&kind, &events)
+            .expect("event criterion should not fail in tests");
+        assert!(result.passed, "count == min should pass");
+    }
+
+    #[test]
+    fn evaluate_event_count_at_exact_max_boundary_passes() {
+        // count == max: inclusive upper bound, should pass
+        let events = vec![tool_called("bash"), tool_called("edit")];
+        let kind = GateKind::EventCount {
+            event_type: "tool_called".to_string(),
+            min: None,
+            max: Some(2),
+        };
+        let result = evaluate_event_criterion(&kind, &events)
+            .expect("event criterion should not fail in tests");
+        assert!(result.passed, "count == max should pass (inclusive)");
+    }
+
+    #[test]
+    fn evaluate_event_count_just_below_min_fails() {
+        // count == min - 1: must fail
+        let events: Vec<AgentEvent> = vec![];
+        let kind = GateKind::EventCount {
+            event_type: "tool_called".to_string(),
+            min: Some(1),
+            max: None,
+        };
+        let result = evaluate_event_criterion(&kind, &events)
+            .expect("event criterion should not fail in tests");
+        assert!(!result.passed, "count < min should fail");
+        assert!(
+            result.stderr.contains("found 0"),
+            "stderr should show count: {}",
+            result.stderr
+        );
+    }
+
+    #[test]
+    fn evaluate_event_count_failure_stderr_format() {
+        // Verify the stderr message contains the event type, count, and bound info
+        let events = vec![
+            tool_called("bash"),
+            tool_called("edit"),
+            tool_called("view"),
+        ];
+        let kind = GateKind::EventCount {
+            event_type: "tool_called".to_string(),
+            min: Some(1),
+            max: Some(2),
+        };
+        let result = evaluate_event_criterion(&kind, &events)
+            .expect("event criterion should not fail in tests");
+        assert!(!result.passed);
+        assert!(
+            result.stderr.contains("tool_called"),
+            "stderr should contain event type: {}",
+            result.stderr
+        );
+        assert!(
+            result.stderr.contains("found 3"),
+            "stderr should contain count: {}",
+            result.stderr
+        );
+        assert!(
+            result.stderr.contains('2') || result.stderr.contains("max"),
+            "stderr should reference max bound: {}",
+            result.stderr
+        );
+    }
+
+    // WOL-424: evaluate_event_criterion returns Err for non-event GateKind
+    #[test]
+    fn evaluate_event_criterion_returns_err_for_non_event_kind() {
+        let non_event_kinds = [
+            GateKind::Command {
+                cmd: "echo hi".to_string(),
+            },
+            GateKind::FileExists {
+                path: "./foo".to_string(),
+            },
+            GateKind::AlwaysPass,
+            GateKind::AgentReport,
+        ];
+        for kind in &non_event_kinds {
+            let result = evaluate_event_criterion(kind, &[]);
+            assert!(result.is_err(), "expected Err for GateKind::{kind}, got Ok");
+        }
+    }
+
+    // WOL-428: evaluate_all skips event criteria when events is empty
+    #[test]
+    fn evaluate_all_skips_event_criteria_when_no_event_log() {
+        let dir = tempfile::tempdir().unwrap();
+        // A spec with an EventCount criterion that would FAIL if evaluated
+        // against empty events (min=1, count=0).
+        let spec = Spec {
+            name: "event-skip-test".to_string(),
+            description: String::new(),
+            gate: None,
+            depends: vec![],
+            criteria: vec![Criterion {
+                name: "tool-called-check".to_string(),
+                description: String::new(),
+                cmd: None,
+                path: None,
+                kind: Some(CriterionKind::EventCount {
+                    event_type: "tool_called".to_string(),
+                    min: Some(1),
+                    max: None,
+                }),
+                enforcement: None,
+                timeout: None,
+                prompt: None,
+                requirements: vec![],
+            }],
+        };
+        // evaluate_all passes &[] for events -- criterion should be skipped, not failed
+        let summary = evaluate_all(&spec, dir.path(), None, None);
+        assert_eq!(
+            summary.failed, 0,
+            "event criterion should be skipped, not failed"
+        );
+        assert_eq!(summary.passed, 0);
+        assert_eq!(
+            summary.skipped, 1,
+            "event criterion should be counted as skipped"
+        );
+        // result entry should have no GateResult (pending)
+        let cr = &summary.results[0];
+        assert!(
+            cr.result.is_none(),
+            "skipped event criterion should have no GateResult"
+        );
+    }
+
+    // WOL-428: evaluate_all_with_events evaluates event criteria when events present
+    #[test]
+    fn evaluate_all_with_events_evaluates_event_criteria_when_events_present() {
+        let dir = tempfile::tempdir().unwrap();
+        let spec = Spec {
+            name: "event-eval-test".to_string(),
+            description: String::new(),
+            gate: None,
+            depends: vec![],
+            criteria: vec![Criterion {
+                name: "tool-called-check".to_string(),
+                description: String::new(),
+                cmd: None,
+                path: None,
+                kind: Some(CriterionKind::EventCount {
+                    event_type: "tool_called".to_string(),
+                    min: Some(1),
+                    max: None,
+                }),
+                enforcement: None,
+                timeout: None,
+                prompt: None,
+                requirements: vec![],
+            }],
+        };
+        // With real events, criterion should be evaluated and pass
+        let events = vec![tool_called("bash")];
+        let summary = evaluate_all_with_events(&spec, dir.path(), None, None, &events);
+        assert_eq!(summary.passed, 1);
+        assert_eq!(summary.failed, 0);
+        assert_eq!(summary.skipped, 0);
+        // With empty events via evaluate_all, same criterion is skipped
+        let summary_no_events = evaluate_all(&spec, dir.path(), None, None);
+        assert_eq!(summary_no_events.skipped, 1);
+        assert_eq!(summary_no_events.failed, 0);
     }
 }

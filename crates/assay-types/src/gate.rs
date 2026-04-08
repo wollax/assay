@@ -30,6 +30,29 @@ pub enum GateKind {
 
     /// A gate evaluated by an agent via structured reasoning.
     AgentReport,
+
+    /// A gate that counts events of a specific type in the agent session log.
+    ///
+    /// `event_type` must match the serde tag of an `AgentEvent` variant:
+    /// `"tool_called"`, `"tool_result"`, `"turn_ended"`, `"session_stopped"`,
+    /// `"text_delta"`, `"text_block"`.
+    ///
+    /// Passes when `count >= min.unwrap_or(0) && count <= max.unwrap_or(u32::MAX)`.
+    EventCount {
+        /// The event type to count, matching an `AgentEvent` serde tag.
+        event_type: String,
+        /// Inclusive lower bound on the matched event count. `None` means no lower bound.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        min: Option<u32>,
+        /// Inclusive upper bound on the matched event count. `None` means no upper bound.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        max: Option<u32>,
+    },
+
+    /// A gate that passes only when no tool invocation in the session returned an error.
+    ///
+    /// Fails if any `AgentEvent::ToolResult { is_error: true, .. }` is present.
+    NoToolErrors,
 }
 
 impl std::fmt::Display for GateKind {
@@ -39,6 +62,8 @@ impl std::fmt::Display for GateKind {
             Self::AlwaysPass => write!(f, "AlwaysPass"),
             Self::FileExists { .. } => write!(f, "FileExists"),
             Self::AgentReport => write!(f, "AgentReport"),
+            Self::EventCount { .. } => write!(f, "EventCount"),
+            Self::NoToolErrors => write!(f, "NoToolErrors"),
         }
     }
 }
@@ -471,5 +496,75 @@ mod tests {
             "FileExists"
         );
         assert_eq!(GateKind::AgentReport.to_string(), "AgentReport");
+        assert_eq!(
+            GateKind::EventCount {
+                event_type: "tool_called".into(),
+                min: Some(1),
+                max: None,
+            }
+            .to_string(),
+            "EventCount"
+        );
+        assert_eq!(GateKind::NoToolErrors.to_string(), "NoToolErrors");
+    }
+
+    #[test]
+    fn gate_kind_event_count_json_roundtrip() {
+        let kind = GateKind::EventCount {
+            event_type: "tool_called".to_string(),
+            min: Some(1),
+            max: Some(5),
+        };
+        let json = serde_json::to_string(&kind).expect("serialize");
+        let roundtripped: GateKind = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(kind, roundtripped);
+    }
+
+    #[test]
+    fn gate_kind_event_count_omits_none_fields() {
+        let kind = GateKind::EventCount {
+            event_type: "tool_called".to_string(),
+            min: None,
+            max: None,
+        };
+        let json = serde_json::to_string(&kind).expect("serialize");
+        assert!(
+            !json.contains("\"min\""),
+            "min should be omitted when None: {json}"
+        );
+        assert!(
+            !json.contains("\"max\""),
+            "max should be omitted when None: {json}"
+        );
+        assert!(json.contains("\"kind\":\"EventCount\""));
+        assert!(json.contains("\"event_type\":\"tool_called\""));
+    }
+
+    #[test]
+    fn gate_kind_no_tool_errors_toml_roundtrip() {
+        let kind = GateKind::NoToolErrors;
+        let toml_str = toml::to_string(&kind).expect("serialize to TOML");
+        assert!(
+            toml_str.contains(r#"kind = "NoToolErrors""#),
+            "TOML should contain kind = \"NoToolErrors\", got:\n{toml_str}"
+        );
+        let roundtripped: GateKind = toml::from_str(&toml_str).expect("deserialize from TOML");
+        assert_eq!(kind, roundtripped);
+    }
+
+    #[test]
+    fn gate_kind_event_count_toml_roundtrip() {
+        let kind = GateKind::EventCount {
+            event_type: "tool_called".to_string(),
+            min: Some(0),
+            max: Some(2),
+        };
+        let toml_str = toml::to_string(&kind).expect("serialize to TOML");
+        assert!(
+            toml_str.contains(r#"kind = "EventCount""#),
+            "TOML should contain kind = \"EventCount\", got:\n{toml_str}"
+        );
+        let roundtripped: GateKind = toml::from_str(&toml_str).expect("deserialize from TOML");
+        assert_eq!(kind, roundtripped);
     }
 }
