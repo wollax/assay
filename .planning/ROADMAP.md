@@ -87,55 +87,20 @@
 
 </details>
 
-### ○ v0.4.1 Merge Tools
+<details>
+<summary>✅ v0.4.1 Merge Tools — SHIPPED 2026-04-08</summary>
 
 **Goal:** Ship merge conflict detection and PR-based merge proposal as MCP tools — enabling agents to safely check for conflicts and propose merges through pull requests with gate evidence, backed by forge-agnostic env vars and worktree fixes.
 
 - [x] Phase 46: Worktree Fixes (3 plans, 3 waves — sequential, shared file) — 2026-03-16
-  - WFIX-01: Cleanup `--all` uses canonical path from git (Plan 01, Wave 1)
-  - WFIX-02: Default branch detection provides actionable error (Plan 02, Wave 2)
-  - WFIX-03: Prune failures surfaced as warnings (Plan 03, Wave 3)
-
 - [x] Phase 47: Merge Check (2 plans, 2 waves — sequential) — 2026-03-16
-  - MERGE-01: `merge_check` MCP tool
-  - Plan 01 (Wave 1): Types in assay-types + core logic in assay-core (merge_check function, git CLI orchestration, conflict parsing)
-  - Plan 02 (Wave 2): MCP tool wiring on AssayServer + handler tests
-  - **Goal:** Standalone conflict detection via `git merge-tree --write-tree` with zero side effects
-  - **Success criteria:**
-    1. `merge_check` MCP tool accepts `base` and `head` refs and returns `MergeCheck { clean, conflicts, base_sha, head_sha }`
-    2. Uses `git merge-tree --write-tree` (Git 2.38+) — no index mutation, no working tree changes
-    3. When merge is clean, `conflicts` is empty and `clean` is true
-    4. When merge has conflicts, `conflicts` lists affected file paths and `clean` is false
-
 - [x] Phase 48: Gate Evidence Formatting — 2026-03-16
-  - MERGE-04: Gate evidence formatting for PR body
-  - **Goal:** Format gate results as markdown suitable for PR bodies with GitHub character limit handling
-  - **Success criteria:**
-    1. Gate results are formatted as markdown with per-criterion pass/fail status and evaluator reasoning
-    2. PR body is truncated at 65,536 chars with a link to the full gate report path
-    3. Truncation preserves the summary section and truncates individual criterion details
-    4. When gate results fit within limit, full content is included without truncation markers
-  - **Plans:**
-    - Plan 01 (Wave 1): FormattedEvidence type + format_gate_evidence() with semantic truncation + save_report()
-    - Plan 02 (Wave 2): Comprehensive test coverage — formatting variants, truncation edge cases, persistence
-
 - [x] Phase 49: Forge-Agnostic Env Vars — 2026-04-08
-  - MERGE-05: Forge-agnostic extensibility via env vars
-  - **Goal:** Set env vars for downstream tooling and validate `gh` CLI availability
-  - **Success criteria:**
-    1. `merge_propose` sets `$ASSAY_BRANCH`, `$ASSAY_SPEC`, and `$ASSAY_GATE_REPORT_PATH` env vars before invoking forge CLI
-    2. Clear error message when `gh` CLI is not found on PATH, naming the dependency and linking to installation docs
-    3. Env vars are documented in MCP tool schema descriptions
+- [x] Phase 50: Merge Propose — 2026-04-08
 
-- [ ] Phase 50: Merge Propose
-  - MERGE-02: `merge_propose` MCP tool
-  - MERGE-03: `dry_run: bool` parameter
-  - **Goal:** Push branch and create PR with gate evidence — the agent's path to merging work
-  - **Success criteria:**
-    1. `merge_propose` pushes worktree branch to remote and creates PR via `gh pr create`, returning `MergeProposal { pr_url, pr_number, gate_summary, dry_run }`
-    2. PR body includes formatted gate evidence from Phase 48
-    3. `dry_run: true` previews the PR (branch, title, body) without pushing or creating — returns the same `MergeProposal` shape with `dry_run: true` and no `pr_url`/`pr_number`
-    4. Push-to-remote is documented as a side effect in the MCP tool schema description
+[Full archive](milestones/v0.4.1-ROADMAP.md)
+
+</details>
 
 ### v0.5.0 Single-Agent Harness End-to-End
 
@@ -250,7 +215,7 @@
 | v0.2.0 Dual-Track Gates & Hardening | ✅ Shipped | 15 | 52 | 100% |
 | v0.3.0 Orchestration Foundation | ✅ Shipped | 9 | 43 | 100% |
 | v0.4.0 Headless Orchestration | ✅ Shipped | 11 | 28 | 100% |
-| v0.4.1 Merge Tools | ○ In Progress | 5 | 8 | 80% |
+| v0.4.1 Merge Tools | ✅ Shipped | 5 | 8 | 100% |
 | v0.5.0 Single-Agent Harness E2E | ○ Planned | 9 | 19 | 0% |
 | v0.6.0 Multi-Agent Orchestration | ○ Planned | TBD | TBD | — |
 | v0.6.1 Conflict Resolution & Polish | ○ Planned | TBD | TBD | — |
