@@ -108,6 +108,7 @@ fn make_manifest(sessions: Vec<(&str, Option<&str>, Vec<&str>)>) -> RunManifest 
                 file_scope: vec![],
                 shared_files: vec![],
                 depends_on: deps.into_iter().map(|d| d.to_string()).collect(),
+                prompt: None,
             })
             .collect(),
         mode: assay_types::OrchestratorMode::Dag,

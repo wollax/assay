@@ -121,6 +121,12 @@ pub struct ManifestSession {
     /// execution DAG. Empty means no dependencies — the session can run immediately.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub depends_on: Vec<String>,
+
+    /// User prompt passed to the agent. When set, the pipeline provides this
+    /// text as the user message (e.g. via `-p` flag for Claude). When absent,
+    /// the agent receives only the system prompt from CLAUDE.md.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompt: Option<String>,
 }
 
 inventory::submit! {
@@ -174,6 +180,7 @@ mod tests {
             file_scope: vec![],
             shared_files: vec![],
             depends_on: vec![],
+            prompt: None,
         };
         let manifest = RunManifest {
             sessions: vec![session],
@@ -223,6 +230,7 @@ mod tests {
                 file_scope: vec![],
                 shared_files: vec![],
                 depends_on: vec![],
+                prompt: None,
             }],
             mode: OrchestratorMode::Dag,
             mesh_config: None,
@@ -247,6 +255,7 @@ mod tests {
                 file_scope: vec![],
                 shared_files: vec![],
                 depends_on: vec![],
+                prompt: None,
             }],
             mode: OrchestratorMode::Mesh,
             mesh_config: None,

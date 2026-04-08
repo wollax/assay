@@ -1041,6 +1041,7 @@ mod tests {
                     file_scope: vec![],
                     shared_files: vec![],
                     depends_on: deps.into_iter().map(|d| d.to_string()).collect(),
+                    prompt: None,
                 })
                 .collect(),
             ..Default::default()
@@ -1207,6 +1208,7 @@ mod tests {
                     file_scope: vec![],
                     shared_files: vec![],
                     depends_on: vec![],
+                    prompt: None,
                 },
                 assay_types::ManifestSession {
                     spec: "spec-b".to_string(),
@@ -1217,6 +1219,7 @@ mod tests {
                     file_scope: vec![],
                     shared_files: vec![],
                     depends_on: vec![],
+                    prompt: None,
                 },
             ],
             mode,

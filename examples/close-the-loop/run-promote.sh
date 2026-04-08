@@ -21,7 +21,7 @@ echo "Running manifest with clean prompt (expects successful promotion)..."
 echo ""
 
 cd "$PROJECT_ROOT"
-assay run "$SCRIPT_DIR/manifest.toml" --timeout 120
+assay run "$SCRIPT_DIR/manifest-promote.toml" --timeout 120
 
 echo ""
 echo "=== Review ==="

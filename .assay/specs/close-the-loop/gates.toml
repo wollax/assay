@@ -1,0 +1,33 @@
+# Gate criteria for the close-the-loop example.
+#
+# Two criteria demonstrate the checkpoint + session-end split:
+#
+# 1. tool-budget (checkpoint) — fires after 2 tool calls and checks that
+#    at most 1 tool_called event has occurred. A misbehaving agent that
+#    reaches 2 tool calls will fail this checkpoint (count=2 > max=1),
+#    triggering early abort.
+#
+# 2. no-tool-errors (session-end) — trivially satisfied when the agent
+#    completes without tool errors. Only evaluated at session end.
+
+name = "close-the-loop"
+description = "Checkpoint + auto-promote demo gates"
+
+[gate]
+enforcement = "required"
+
+[[criteria]]
+name = "tool-budget"
+description = "Agent must complete its task in at most 1 tool call. Evaluated as a mid-session checkpoint after 2 tool calls — if the agent reaches this point, the budget is already blown."
+
+[criteria.kind]
+EventCount = { event_type = "tool_called", max = 1 }
+
+[criteria.when]
+type = "after_tool_calls"
+n = 2
+
+[[criteria]]
+name = "no-tool-errors"
+description = "No tool errors during the session (evaluated at session end)."
+kind = "NoToolErrors"

@@ -1,0 +1,108 @@
+[
+  {
+    "name": "pipeline::run_manifest",
+    "target": "assay_core::pipeline",
+    "level": "INFO",
+    "span_id": 1,
+    "parent_id": null,
+    "start_time": "2026-04-08T22:22:40.324Z",
+    "end_time": "2026-04-08T22:22:47.338Z",
+    "duration_ms": 7014.0,
+    "fields": {
+      "session_count": 1
+    }
+  },
+  {
+    "name": "spec_load",
+    "target": "assay_core::pipeline",
+    "level": "INFO",
+    "span_id": 4,
+    "parent_id": 3,
+    "start_time": "2026-04-08T22:22:40.325Z",
+    "end_time": "2026-04-08T22:22:40.326Z",
+    "duration_ms": 1.0,
+    "fields": {
+      "spec": "close-the-loop"
+    }
+  },
+  {
+    "name": "pipeline::run_session",
+    "target": "assay_core::pipeline",
+    "level": "INFO",
+    "span_id": 2,
+    "parent_id": 1,
+    "start_time": "2026-04-08T22:22:40.325Z",
+    "end_time": "2026-04-08T22:22:47.338Z",
+    "duration_ms": 7013.0,
+    "fields": {
+      "manifest_session": "ManifestSession { spec: \"close-the-loop\", name: None, settings: None, hooks: [], prompt_layers: [], file_scope: [], shared_files: [], depends_on: [] }",
+      "spec": "close-the-loop"
+    }
+  },
+  {
+    "name": "pipeline::setup_session",
+    "target": "assay_core::pipeline",
+    "level": "INFO",
+    "span_id": 3,
+    "parent_id": 2,
+    "start_time": "2026-04-08T22:22:40.325Z",
+    "end_time": "2026-04-08T22:22:40.607Z",
+    "duration_ms": 282.0,
+    "fields": {
+      "spec": "close-the-loop"
+    }
+  },
+  {
+    "name": "worktree_create",
+    "target": "assay_core::pipeline",
+    "level": "INFO",
+    "span_id": 2251799813685252,
+    "parent_id": 3,
+    "start_time": "2026-04-08T22:22:40.326Z",
+    "end_time": "2026-04-08T22:22:40.607Z",
+    "duration_ms": 281.0,
+    "fields": {
+      "spec": "close-the-loop"
+    }
+  },
+  {
+    "name": "pipeline::execute_session",
+    "target": "assay_core::pipeline",
+    "level": "INFO",
+    "span_id": 2251799813685251,
+    "parent_id": 2,
+    "start_time": "2026-04-08T22:22:40.607Z",
+    "end_time": "2026-04-08T22:22:47.338Z",
+    "duration_ms": 6731.0,
+    "fields": {
+      "spec": "close-the-loop",
+      "session_id": "01KNQK1H66YQ0JVQT1ZZ8X0JM0"
+    }
+  },
+  {
+    "name": "harness_config",
+    "target": "assay_core::pipeline",
+    "level": "INFO",
+    "span_id": 4503599627370500,
+    "parent_id": 2251799813685251,
+    "start_time": "2026-04-08T22:22:40.607Z",
+    "end_time": "2026-04-08T22:22:40.607Z",
+    "duration_ms": 0.0,
+    "fields": {
+      "spec": "close-the-loop"
+    }
+  },
+  {
+    "name": "agent_launch",
+    "target": "assay_core::pipeline",
+    "level": "INFO",
+    "span_id": 6755399441055748,
+    "parent_id": 2251799813685251,
+    "start_time": "2026-04-08T22:22:40.607Z",
+    "end_time": "2026-04-08T22:22:47.338Z",
+    "duration_ms": 6731.0,
+    "fields": {
+      "spec": "close-the-loop"
+    }
+  }
+]

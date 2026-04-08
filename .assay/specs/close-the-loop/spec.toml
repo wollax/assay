@@ -1,0 +1,13 @@
+# Feature spec for the close-the-loop example.
+#
+# This spec demonstrates M024's checkpoint + auto-promote flow:
+# - status = "in-progress" so auto-promote can fire
+# - auto_promote = true enables InProgress → Verified on clean runs
+
+name = "close-the-loop"
+status = "in-progress"
+auto_promote = true
+
+[overview]
+description = "Demonstrates mid-session checkpoints with early abort and auto-promotion."
+functions = ["Checkpoint-gated agent session", "Automatic spec promotion on clean run"]

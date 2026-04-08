@@ -559,6 +559,7 @@ mod tests {
             file_scope: vec![],
             shared_files: vec![],
             depends_on: vec![],
+            prompt: None,
         }
     }
 

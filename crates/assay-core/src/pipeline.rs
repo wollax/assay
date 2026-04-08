@@ -623,7 +623,8 @@ pub fn launch_agent_streaming(
 /// 1. Prepends `"claude"` as the binary name
 /// 2. Replaces `"json"` with `"stream-json"` after `--output-format`
 /// 3. Adds `--verbose` and `--include-partial-messages` if not already present
-fn adapt_args_for_streaming(harness_args: &[String]) -> Vec<String> {
+/// 4. Appends `-p <prompt>` if a user prompt is provided
+fn adapt_args_for_streaming(harness_args: &[String], prompt: Option<&str>) -> Vec<String> {
     let mut args = vec!["claude".to_string()];
     let mut i = 0;
     while i < harness_args.len() {
@@ -641,6 +642,10 @@ fn adapt_args_for_streaming(harness_args: &[String]) -> Vec<String> {
     }
     if !args.contains(&"--include-partial-messages".to_string()) {
         args.push("--include-partial-messages".to_string());
+    }
+    if let Some(p) = prompt {
+        args.push("-p".to_string());
+        args.push(p.to_string());
     }
     args
 }
@@ -918,7 +923,8 @@ pub fn execute_session(
             //
             // Adapt the args for streaming: prepend "claude", swap json→stream-json,
             // and add --verbose + --include-partial-messages for event granularity.
-            let streaming_args = adapt_args_for_streaming(&cli_args);
+            let streaming_args =
+                adapt_args_for_streaming(&cli_args, manifest_session.prompt.as_deref());
             let (event_tx, event_rx) = std::sync::mpsc::channel::<AgentEvent>();
             let agent_handle =
                 launch_agent_streaming(&streaming_args, &worktree_info.path, event_tx);
@@ -1423,7 +1429,7 @@ mod tests {
                 .into_iter()
                 .map(String::from)
                 .collect();
-        let result = adapt_args_for_streaming(&harness_args);
+        let result = adapt_args_for_streaming(&harness_args, None);
         assert_eq!(result[0], "claude", "must prepend binary");
         let fmt_idx = result.iter().position(|a| a == "--output-format").unwrap();
         assert_eq!(
@@ -1442,10 +1448,21 @@ mod tests {
     #[test]
     fn adapt_args_for_streaming_no_output_format() {
         let harness_args: Vec<String> = vec!["--print"].into_iter().map(String::from).collect();
-        let result = adapt_args_for_streaming(&harness_args);
+        let result = adapt_args_for_streaming(&harness_args, None);
         assert_eq!(result[0], "claude");
         assert!(result.contains(&"--print".to_string()));
         assert!(result.contains(&"--verbose".to_string()));
+    }
+
+    #[test]
+    fn adapt_args_for_streaming_with_prompt() {
+        let harness_args: Vec<String> = vec!["--print", "--output-format", "json"]
+            .into_iter()
+            .map(String::from)
+            .collect();
+        let result = adapt_args_for_streaming(&harness_args, Some("Do the task"));
+        assert!(result.contains(&"-p".to_string()));
+        assert!(result.contains(&"Do the task".to_string()));
     }
 
     // ── HarnessProfile from ManifestSession ──────────────────────
@@ -1461,6 +1478,7 @@ mod tests {
             file_scope: vec![],
             shared_files: vec![],
             depends_on: vec![],
+            prompt: None,
         };
 
         let profile = build_harness_profile(&session);
@@ -1499,6 +1517,7 @@ mod tests {
             file_scope: vec![],
             shared_files: vec![],
             depends_on: vec![],
+            prompt: None,
         };
 
         let profile = build_harness_profile(&session);
@@ -1680,6 +1699,7 @@ mod tests {
             file_scope: vec![],
             shared_files: vec![],
             depends_on: vec![],
+            prompt: None,
         };
 
         let provider = assay_types::NullProvider;
@@ -1791,6 +1811,7 @@ cmd = "echo ok"
             file_scope: vec![],
             shared_files: vec![],
             depends_on: vec![],
+            prompt: None,
         };
 
         let provider = assay_types::NullProvider;
@@ -1869,6 +1890,7 @@ cmd = "echo ok"
             file_scope: vec![],
             shared_files: vec![],
             depends_on: vec![],
+            prompt: None,
         };
 
         let provider = assay_types::NullProvider;
@@ -1969,6 +1991,7 @@ cmd = "exit 1"
             file_scope: vec![],
             shared_files: vec![],
             depends_on: vec![],
+            prompt: None,
         };
 
         let provider = assay_types::NullProvider;
@@ -2071,6 +2094,7 @@ cmd = "exit 1"
             file_scope: vec![],
             shared_files: vec![],
             depends_on: vec![],
+            prompt: None,
         };
 
         let provider = assay_types::NullProvider;
