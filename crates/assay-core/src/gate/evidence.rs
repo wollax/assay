@@ -277,6 +277,27 @@ fn write_failure_detail(buf: &mut String, result: &assay_types::GateResult) {
             // AlwaysPass should never fail, but handle defensively.
             let _ = writeln!(buf, "AlwaysPass gate reported failure (unexpected).");
         }
+        GateKind::EventCount {
+            event_type,
+            min,
+            max,
+        } => {
+            let _ = writeln!(buf, "**Event type:** `{event_type}`");
+            if let Some(min) = min {
+                let _ = writeln!(buf, "**Min:** {min}");
+            }
+            if let Some(max) = max {
+                let _ = writeln!(buf, "**Max:** {max}");
+            }
+            if !result.stderr.is_empty() {
+                let _ = writeln!(buf, "\n**stderr:**\n```\n{}\n```", result.stderr);
+            }
+        }
+        GateKind::NoToolErrors => {
+            if !result.stderr.is_empty() {
+                let _ = writeln!(buf, "\n**stderr:**\n```\n{}\n```", result.stderr);
+            }
+        }
     }
 }
 

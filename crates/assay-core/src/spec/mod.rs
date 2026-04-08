@@ -291,12 +291,47 @@ fn validate_criteria(
                 });
             }
         }
+
+        // Event-based criteria (EventCount, NoToolErrors) evaluate against the
+        // live agent event log; they must not have cmd or path.
+        if matches!(
+            criterion.kind,
+            Some(CriterionKind::EventCount { .. } | CriterionKind::NoToolErrors)
+        ) {
+            if criterion.cmd.is_some() {
+                errors.push(SpecError {
+                    field: format!("criteria[{i}]"),
+                    message: format!(
+                        "criterion `{}` has an event-based kind with `cmd`; event criteria evaluate against the agent event log, not a shell command",
+                        criterion.name
+                    ),
+                });
+            }
+            if criterion.path.is_some() {
+                errors.push(SpecError {
+                    field: format!("criteria[{i}]"),
+                    message: format!(
+                        "criterion `{}` has an event-based kind with `path`; event criteria evaluate against the agent event log, not a file path",
+                        criterion.name
+                    ),
+                });
+            }
+        }
     }
 
     // Verify at least one executable criterion is required.
     // AgentReport criteria count as "executable" (evaluated through sessions).
     let is_executable = |c: &assay_types::Criterion| {
-        c.cmd.is_some() || c.path.is_some() || c.kind == Some(CriterionKind::AgentReport)
+        c.cmd.is_some()
+            || c.path.is_some()
+            || matches!(
+                c.kind,
+                Some(
+                    CriterionKind::AgentReport
+                        | CriterionKind::EventCount { .. }
+                        | CriterionKind::NoToolErrors
+                )
+            )
     };
     let has_executable = criteria.iter().any(&is_executable);
     let has_required_executable = criteria.iter().any(|c| {

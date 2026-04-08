@@ -237,19 +237,49 @@ fn stream_criterion(
     counters: &mut StreamCounters,
     gate_section: Option<&assay_types::GateSection>,
 ) {
+    // Event-based criteria (EventCount, NoToolErrors) have no cmd/path but are
+    // evaluable -- fall through to the evaluate() call below which will return
+    // Err(InvalidCriterion) for them, surfacing "[events] skipped" rather than
+    // silently dropping them. TODO(M024/S02): stream_criterion should accept an
+    // events slice and call evaluate_event_criterion directly once the pipeline
+    // wires event streaming to the CLI gate run path.
     if criterion.cmd.is_none()
         && criterion.path.is_none()
-        && criterion.kind != Some(assay_types::CriterionKind::AgentReport)
+        && !matches!(
+            criterion.kind,
+            Some(
+                assay_types::CriterionKind::AgentReport
+                    | assay_types::CriterionKind::EventCount { .. }
+                    | assay_types::CriterionKind::NoToolErrors
+            )
+        )
     {
         counters.skipped += 1;
         return;
     }
 
-    // AgentReport criteria are pending (not evaluable via CLI)
+    // AgentReport criteria are pending (not evaluable via CLI gate run).
     if criterion.kind == Some(assay_types::CriterionKind::AgentReport) {
         counters.skipped += 1;
         let label = criterion_label(criterion);
         tracing::info!(criterion_name = %criterion.name, kind = %label, status = "pending", "Criterion pending (agent-report)");
+        return;
+    }
+
+    // Event-based criteria (EventCount, NoToolErrors) require the live agent
+    // event log produced by a running pipeline session. The CLI gate-run path
+    // has no event stream, so these are marked pending. Use `assay run` to
+    // exercise them through the full pipeline.
+    if matches!(
+        criterion.kind,
+        Some(
+            assay_types::CriterionKind::EventCount { .. }
+                | assay_types::CriterionKind::NoToolErrors
+        )
+    ) {
+        counters.skipped += 1;
+        let label = criterion_label(criterion);
+        tracing::info!(criterion_name = %criterion.name, kind = %label, status = "pending", "Criterion pending (event-based, requires pipeline session)");
         return;
     }
 

@@ -4717,7 +4717,7 @@ fn extract_agent_criteria_info(entry: &SpecEntry) -> Option<AgentCriteriaInfo> {
             Box::new(
                 spec.criteria
                     .iter()
-                    .map(|c| (c.name.as_str(), c.kind, c.enforcement)),
+                    .map(|c| (c.name.as_str(), c.kind.clone(), c.enforcement)),
             ),
             spec.gate.as_ref(),
         ),
@@ -4726,7 +4726,7 @@ fn extract_agent_criteria_info(entry: &SpecEntry) -> Option<AgentCriteriaInfo> {
                 gates
                     .criteria
                     .iter()
-                    .map(|c| (c.name.as_str(), c.kind, c.enforcement)),
+                    .map(|c| (c.name.as_str(), c.kind.clone(), c.enforcement)),
             ),
             gates.gate.as_ref(),
         ),
@@ -4736,7 +4736,7 @@ fn extract_agent_criteria_info(entry: &SpecEntry) -> Option<AgentCriteriaInfo> {
     let mut spec_enforcement = HashMap::new();
 
     for (name, kind, enforcement) in criteria_iter {
-        if kind == Some(CriterionKind::AgentReport) {
+        if matches!(kind, Some(CriterionKind::AgentReport)) {
             agent_criteria_names.insert(name.to_string());
         }
         let resolved = assay_core::gate::resolve_enforcement(enforcement, gate_section);
@@ -4759,6 +4759,8 @@ fn kind_label(kind: &assay_types::GateKind) -> Option<String> {
         assay_types::GateKind::Command { .. } => Some("cmd".to_string()),
         assay_types::GateKind::FileExists { .. } => Some("file".to_string()),
         assay_types::GateKind::AgentReport => Some("agent".to_string()),
+        assay_types::GateKind::EventCount { .. } => Some("event_count".to_string()),
+        assay_types::GateKind::NoToolErrors => Some("no_tool_errors".to_string()),
         assay_types::GateKind::AlwaysPass => None,
     }
 }

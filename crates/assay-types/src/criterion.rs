@@ -10,16 +10,34 @@ use crate::Enforcement;
 /// When set on a criterion, determines how it is evaluated.
 /// `AgentReport` means the criterion is evaluated by an agent
 /// via structured reasoning rather than a shell command.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub enum CriterionKind {
     /// Evaluated by an agent via structured reasoning.
     AgentReport,
+
+    /// Criterion evaluated by counting events of a given type in the agent
+    /// session log. Parameters mirror `GateKind::EventCount`.
+    EventCount {
+        /// The event type to count, matching an `AgentEvent` serde tag.
+        event_type: String,
+        /// Inclusive lower bound on the matched event count. `None` means no lower bound.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        min: Option<u32>,
+        /// Inclusive upper bound on the matched event count. `None` means no upper bound.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        max: Option<u32>,
+    },
+
+    /// Criterion that passes only when no tool returned an error during the session.
+    NoToolErrors,
 }
 
 impl std::fmt::Display for CriterionKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::AgentReport => write!(f, "AgentReport"),
+            Self::EventCount { .. } => write!(f, "EventCount"),
+            Self::NoToolErrors => write!(f, "NoToolErrors"),
         }
     }
 }

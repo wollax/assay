@@ -188,6 +188,55 @@ expression: schema.to_value()
             "kind"
           ],
           "type": "object"
+        },
+        {
+          "description": "A gate that counts events of a specific type in the agent session log.\n\n`event_type` must match the serde tag of an `AgentEvent` variant:\n`\"tool_called\"`, `\"tool_result\"`, `\"turn_ended\"`, `\"session_stopped\"`,\n`\"text_delta\"`, `\"text_block\"`.\n\nPasses when `count >= min.unwrap_or(0) && count <= max.unwrap_or(u32::MAX)`.",
+          "properties": {
+            "event_type": {
+              "description": "The event type to count, matching an `AgentEvent` serde tag.",
+              "type": "string"
+            },
+            "kind": {
+              "const": "EventCount",
+              "type": "string"
+            },
+            "max": {
+              "description": "Inclusive upper bound on the matched event count. `None` means no upper bound.",
+              "format": "uint32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "min": {
+              "description": "Inclusive lower bound on the matched event count. `None` means no lower bound.",
+              "format": "uint32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "event_type"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A gate that passes only when no tool invocation in the session returned an error.\n\nFails if any `AgentEvent::ToolResult { is_error: true, .. }` is present.",
+          "properties": {
+            "kind": {
+              "const": "NoToolErrors",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
         }
       ]
     },
