@@ -443,6 +443,13 @@ pub struct FeatureSpec {
     /// Verification strategy for the feature.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub verification: Option<VerificationStrategy>,
+
+    /// Whether to auto-promote from `InProgress` to `Verified` on a clean pipeline run.
+    ///
+    /// When `true` and all checkpoints pass, all session-end gates pass, and the current
+    /// status is `InProgress`, the pipeline calls `promote_spec` to advance to `Verified`.
+    #[serde(default)]
+    pub auto_promote: bool,
 }
 
 inventory::submit! {
@@ -470,6 +477,7 @@ mod tests {
             dependencies: vec![],
             risks: vec![],
             verification: None,
+            auto_promote: false,
         }
     }
 
@@ -630,5 +638,31 @@ status = "in-progress"
     fn priority_wont_serde() {
         let json = serde_json::to_string(&Priority::Wont).unwrap();
         assert_eq!(json, r#""wont""#);
+    }
+
+    #[test]
+    fn feature_spec_auto_promote_defaults_false() {
+        let toml_str = r#"
+name = "test"
+status = "in-progress"
+"#;
+        let spec: FeatureSpec = toml::from_str(toml_str).expect("parse without auto_promote");
+        assert!(!spec.auto_promote, "auto_promote should default to false");
+    }
+
+    #[test]
+    fn feature_spec_auto_promote_roundtrip() {
+        let toml_str = r#"
+name = "test"
+status = "in-progress"
+auto_promote = true
+"#;
+        let spec: FeatureSpec = toml::from_str(toml_str).expect("parse with auto_promote");
+        assert!(spec.auto_promote);
+
+        let re_serialized = toml::to_string(&spec).expect("re-serialize");
+        let roundtripped: FeatureSpec =
+            toml::from_str(&re_serialized).expect("roundtrip deserialize");
+        assert_eq!(spec, roundtripped);
     }
 }

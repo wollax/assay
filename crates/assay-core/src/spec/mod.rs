@@ -1727,6 +1727,7 @@ cmd = "true"
             dependencies: vec![],
             risks: vec![],
             verification: None,
+            auto_promote: false,
         };
         assert!(validate_feature_spec(&spec).is_ok());
     }
@@ -1746,6 +1747,7 @@ cmd = "true"
             dependencies: vec![],
             risks: vec![],
             verification: None,
+            auto_promote: false,
         };
         let errors = validate_feature_spec(&spec).unwrap_err();
         assert!(errors.iter().any(|e| e.field == "name"));
@@ -1777,6 +1779,7 @@ cmd = "true"
             dependencies: vec![],
             risks: vec![],
             verification: None,
+            auto_promote: false,
         };
         let errors = validate_feature_spec(&spec).unwrap_err();
         assert!(errors.iter().any(|e| e.message.contains("duplicate")));
@@ -1807,6 +1810,7 @@ cmd = "true"
             dependencies: vec![],
             risks: vec![],
             verification: None,
+            auto_promote: false,
         };
         let errors = validate_feature_spec(&spec).unwrap_err();
         assert!(

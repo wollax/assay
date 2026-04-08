@@ -12,6 +12,8 @@ use chrono::{DateTime, Utc};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::feature_spec::SpecStatus;
+
 /// Phase of a work session lifecycle.
 ///
 /// Sessions follow a linear pipeline: Created → AgentRunning → GateEvaluated → Completed.
@@ -155,6 +157,12 @@ pub struct WorkSession {
     pub tool_call_summary: ToolCallSummary,
     /// Version of assay that created this session.
     pub assay_version: String,
+    /// Whether the pipeline auto-promoted the spec on a clean run.
+    #[serde(default)]
+    pub auto_promoted: bool,
+    /// The status the spec was promoted to, if auto-promotion fired.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub promoted_to: Option<SpecStatus>,
 }
 
 /// Summary of tool calls during an agent session.
@@ -300,6 +308,8 @@ mod tests {
             gate_runs: vec!["run-001".to_string(), "run-002".to_string()],
             tool_call_summary: ToolCallSummary::default(),
             assay_version: "0.4.0".to_string(),
+            auto_promoted: false,
+            promoted_to: None,
         };
 
         let json = serde_json::to_string_pretty(&session).expect("serialize");
@@ -444,6 +454,8 @@ mod tests {
             gate_runs: vec![],
             tool_call_summary: ToolCallSummary::default(),
             assay_version: "0.4.0".to_string(),
+            auto_promoted: false,
+            promoted_to: None,
         };
 
         let json = serde_json::to_string(&session).expect("serialize");
@@ -496,5 +508,57 @@ mod tests {
         assert_eq!(session.tool_call_summary.total, 0);
         assert!(session.tool_call_summary.by_tool.is_empty());
         assert_eq!(session.tool_call_summary.error_count, 0);
+        // New fields also default correctly from old JSON
+        assert!(!session.auto_promoted);
+        assert_eq!(session.promoted_to, None);
+    }
+
+    #[test]
+    fn work_session_auto_promoted_round_trip() {
+        use crate::feature_spec::SpecStatus;
+        let json = r#"{
+            "id": "01HTXYZ",
+            "spec_name": "test",
+            "worktree_path": "/tmp/wt",
+            "phase": "completed",
+            "created_at": "2026-03-15T12:00:00Z",
+            "transitions": [],
+            "agent": { "command": "echo" },
+            "assay_version": "0.4.0",
+            "auto_promoted": true,
+            "promoted_to": "verified"
+        }"#;
+
+        let session: WorkSession = serde_json::from_str(json).expect("deserialize");
+        assert!(session.auto_promoted);
+        assert_eq!(session.promoted_to, Some(SpecStatus::Verified));
+
+        // Round-trip
+        let re_serialized = serde_json::to_string(&session).expect("re-serialize");
+        let roundtripped: WorkSession =
+            serde_json::from_str(&re_serialized).expect("roundtrip deserialize");
+        assert_eq!(session, roundtripped);
+    }
+
+    #[test]
+    fn work_session_promoted_to_omitted_when_none() {
+        let json = r#"{
+            "id": "01HTXYZ",
+            "spec_name": "test",
+            "worktree_path": "/tmp/wt",
+            "phase": "completed",
+            "created_at": "2026-03-15T12:00:00Z",
+            "transitions": [],
+            "agent": { "command": "echo" },
+            "assay_version": "0.4.0",
+            "auto_promoted": false
+        }"#;
+
+        let session: WorkSession = serde_json::from_str(json).expect("deserialize");
+        let re_serialized = serde_json::to_string(&session).expect("serialize");
+        assert!(
+            !re_serialized.contains("promoted_to"),
+            "promoted_to should be omitted when None, got:\n{re_serialized}"
+        );
     }
 }

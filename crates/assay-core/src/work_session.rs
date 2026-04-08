@@ -44,6 +44,8 @@ pub fn create_work_session(
         gate_runs: vec![],
         tool_call_summary: ToolCallSummary::default(),
         assay_version: env!("CARGO_PKG_VERSION").to_string(),
+        auto_promoted: false,
+        promoted_to: None,
     }
 }
 

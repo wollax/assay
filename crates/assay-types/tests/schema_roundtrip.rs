@@ -281,6 +281,7 @@ fn feature_spec_minimal_validates() {
         dependencies: vec![],
         risks: vec![],
         verification: None,
+        auto_promote: false,
     });
 }
 
