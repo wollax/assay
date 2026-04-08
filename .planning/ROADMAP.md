@@ -121,13 +121,23 @@
 
 </details>
 
-### ○ v0.6.0 Multi-Agent Orchestration
+<details>
+<summary>✅ v0.6.0 Multi-Agent Orchestration — SHIPPED 2026-04-08</summary>
 
 **Goal:** DAG executor, parallel sessions, `OrchestratorSession` composing `Vec<WorkSession>`, sequential merge, and `orchestrate_*` MCP tools.
 
-### ○ v0.6.1 Conflict Resolution & Polish
+**Note:** Implemented via Linear milestones. Exceeded original scope with Mesh (SWIM heartbeat) and Gossip (coordinator broadcast) coordination modes in addition to DAG. 168 orchestration tests. `orchestrate_run` and `orchestrate_status` MCP tools shipped.
+
+</details>
+
+<details>
+<summary>✅ v0.6.1 Conflict Resolution & Polish — SHIPPED 2026-04-08</summary>
 
 **Goal:** AI conflict resolution via evaluator, Cupel integration for orchestrated sessions, Codex/OpenCode adapter stubs, `SessionCore` struct composition for type unification.
+
+**Note:** AI conflict resolution (32.5K, Claude subprocess with validation command), Codex + OpenCode adapters (full implementations, not stubs), scope enforcement module shipped. `SessionCore` struct composition deferred — cosmetic refactor, not a feature gap.
+
+</details>
 
 ## Progress Summary
 
@@ -139,5 +149,5 @@
 | v0.4.0 Headless Orchestration | ✅ Shipped | 11 | 28 | 100% |
 | v0.4.1 Merge Tools | ✅ Shipped | 5 | 8 | 100% |
 | v0.5.0 Single-Agent Harness E2E | ✅ Shipped | 9 | 19 | 100% |
-| v0.6.0 Multi-Agent Orchestration | ○ Planned | TBD | TBD | — |
-| v0.6.1 Conflict Resolution & Polish | ○ Planned | TBD | TBD | — |
+| v0.6.0 Multi-Agent Orchestration | ✅ Shipped | — | — | 100% |
+| v0.6.1 Conflict Resolution & Polish | ✅ Shipped | — | — | 100% |

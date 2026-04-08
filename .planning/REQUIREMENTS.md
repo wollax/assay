@@ -36,14 +36,14 @@
 
 ---
 
-## Future Requirements (deferred to v0.6.0+)
+## v0.6.0+ Requirements (verified 2026-04-08)
 
-- [ ] Multi-agent orchestration: OrchestratorSession, DAG executor, parallel sessions
-- [ ] `orchestrate_*` MCP tools (additive, no changes to existing tools)
-- [ ] Harness orchestration layer: scope enforcement, multi-agent prompt generation
-- [ ] MergeRunner with sequential merge and AI conflict resolution
-- [ ] Codex and OpenCode harness adapters
-- [ ] SessionCore struct composition for type unification
+- [x] Multi-agent orchestration: DAG executor + Mesh + Gossip parallel sessions
+- [x] `orchestrate_run` + `orchestrate_status` MCP tools (additive)
+- [x] Harness orchestration layer: scope enforcement (`check_scope`), multi-agent prompt generation
+- [x] MergeRunner with sequential merge + AI conflict resolution (Claude subprocess, validation command)
+- [x] Codex and OpenCode harness adapters (full implementations)
+- [ ] SessionCore struct composition for type unification (deferred — cosmetic refactor)
 
 ## Out of Scope
 
