@@ -60,6 +60,7 @@ fn make_mesh_manifest(names: &[(&str, &str)]) -> RunManifest {
                 file_scope: vec![],
                 shared_files: vec![],
                 depends_on: vec![],
+                prompt: None,
             })
             .collect(),
         mode: OrchestratorMode::Mesh,

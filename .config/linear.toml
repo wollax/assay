@@ -1,0 +1,6 @@
+# linear cli
+# https://github.com/schpet/linear-cli
+
+workspace = "wollax"
+team_id = "WOL"
+issue_sort = "priority"

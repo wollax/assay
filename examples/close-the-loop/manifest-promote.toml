@@ -1,0 +1,8 @@
+# Run manifest for the promote path (well-behaved agent).
+#
+# Usage:
+#   assay run examples/close-the-loop/manifest-promote.toml
+
+[[sessions]]
+spec = "close-the-loop"
+prompt = "Summarize this project in one sentence. Do not read any files — just respond based on the project name and directory structure visible in your initial context. Keep your answer to a single short paragraph."

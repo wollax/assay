@@ -104,6 +104,7 @@ fn make_dag_manifest(names: &[(&str, &str)]) -> RunManifest {
                 file_scope: vec![],
                 shared_files: vec![],
                 depends_on: vec![],
+                prompt: None,
             })
             .collect(),
         mode: OrchestratorMode::Dag,
@@ -127,6 +128,7 @@ fn make_mesh_manifest(names: &[(&str, &str)]) -> RunManifest {
                 file_scope: vec![],
                 shared_files: vec![],
                 depends_on: vec![],
+                prompt: None,
             })
             .collect(),
         mode: OrchestratorMode::Mesh,
@@ -150,6 +152,7 @@ fn make_gossip_manifest(names: &[(&str, &str)]) -> RunManifest {
                 file_scope: vec![],
                 shared_files: vec![],
                 depends_on: vec![],
+                prompt: None,
             })
             .collect(),
         mode: OrchestratorMode::Gossip,

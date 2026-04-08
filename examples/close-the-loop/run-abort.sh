@@ -21,7 +21,7 @@ echo "Running manifest with misbehaving prompt (expects checkpoint failure)..."
 echo ""
 
 cd "$PROJECT_ROOT"
-assay run "$SCRIPT_DIR/manifest.toml" --timeout 120 || true
+assay run "$SCRIPT_DIR/manifest-abort.toml" --timeout 120 || true
 
 echo ""
 echo "=== Review ==="

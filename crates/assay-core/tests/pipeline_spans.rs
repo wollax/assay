@@ -35,6 +35,7 @@ fn session_for_missing_spec() -> ManifestSession {
         file_scope: vec![],
         shared_files: vec![],
         depends_on: vec![],
+        prompt: None,
     }
 }
 
