@@ -5,14 +5,14 @@
 See: .planning/PROJECT.md (updated 2026-03-15)
 
 **Core value:** Dual-track quality gates (deterministic + agent-evaluated) for AI coding agents
-**Current focus:** v0.4.1 Merge Tools — Phase 49 complete, Phase 50 next
+**Current focus:** v0.5.0 Single-Agent Harness E2E — Phase 51 next
 
 ## Current Position
 
-Phase: 49 (Forge-Agnostic Env Vars)
-Plan: N/A (implemented as part of merge_propose)
-Status: Complete
-Last activity: 2026-04-08 — Phase 49 verified complete (env vars, gh preflight, schema docs already implemented)
+Phase: 50 (Merge Propose)
+Plan: N/A (already implemented)
+Status: Complete — v0.4.1 milestone shipped
+Last activity: 2026-04-08 — Phases 49-50 verified complete, v0.4.1 closed
 
 ## Milestone Progress
 
@@ -22,7 +22,7 @@ Last activity: 2026-04-08 — Phase 49 verified complete (env vars, gh preflight
 | v0.2.0 | 15 (11-25) | 52 | 100% (shipped) |
 | v0.3.0 | 9 (26-34) | 43 | 100% (shipped) |
 | v0.4.0 | 11 (35-45) | 28 | 100% (shipped) |
-| v0.4.1 | 5 (46-50) | 8 | 60% (in progress) |
+| v0.4.1 | 5 (46-50) | 8 | 100% (shipped) |
 | v0.5.0 | 9 (51-59) | 19 | 0% (planned) |
 
 ## Accumulated Context
@@ -100,11 +100,11 @@ See .planning/issues/ for full backlog.
 
 ### Blockers
 
-None. v0.4.1 must ship before v0.5.0 work begins.
+None. v0.4.1 shipped. v0.5.0 work can begin.
 
 ### Next Actions
 
-Phase 49 complete (already implemented). Proceed to Phase 50 (Merge Propose).
+v0.4.1 complete. Proceed to v0.5.0 Phase 51 (Session Vocabulary Cleanup).
 
 ### Session Continuity
 
