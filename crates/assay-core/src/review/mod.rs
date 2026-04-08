@@ -566,6 +566,8 @@ pub fn build_gate_diagnostic(spec: &str, run_id: &str, summary: &GateRunSummary)
         passed: summary.passed,
         failed: summary.failed,
         failed_criteria,
+        checkpoint_index: None,
+        session_phase: Default::default(),
     }
 }
 
@@ -1256,6 +1258,8 @@ mod tests {
             }],
             passed: 2,
             failed: 1,
+            checkpoint_index: None,
+            session_phase: Default::default(),
         };
 
         let path = save_gate_diagnostic(assay_dir, "my-spec", &diag).unwrap();
@@ -1287,6 +1291,8 @@ mod tests {
             failed_criteria: vec![],
             passed: 0,
             failed: 0,
+            checkpoint_index: None,
+            session_phase: Default::default(),
         };
 
         let result = save_gate_diagnostic(assay_dir, "../escape", &diag);
@@ -1307,6 +1313,8 @@ mod tests {
             failed_criteria: vec![],
             passed: 1,
             failed: 0,
+            checkpoint_index: None,
+            session_phase: Default::default(),
         };
         save_gate_diagnostic(assay_dir, "my-spec", &diag1).unwrap();
 
@@ -1319,6 +1327,8 @@ mod tests {
             failed_criteria: vec![],
             passed: 0,
             failed: 1,
+            checkpoint_index: None,
+            session_phase: Default::default(),
         };
         save_gate_diagnostic(assay_dir, "my-spec", &diag2).unwrap();
 
@@ -1348,6 +1358,8 @@ mod tests {
             failed_criteria: vec![],
             passed: 1,
             failed: 0,
+            checkpoint_index: None,
+            session_phase: Default::default(),
         };
         save_gate_diagnostic(assay_dir, "my-spec", &diag).unwrap();
 
@@ -1517,6 +1529,8 @@ mod tests {
             failed_criteria: vec![],
             passed: 0,
             failed: 0,
+            checkpoint_index: None,
+            session_phase: Default::default(),
         };
 
         // Valid spec, invalid run_id — should be rejected.
@@ -1542,6 +1556,8 @@ mod tests {
             failed_criteria: vec![],
             passed: 1,
             failed: 0,
+            checkpoint_index: None,
+            session_phase: Default::default(),
         };
         save_gate_diagnostic(assay_dir, "my-spec", &valid_diag).unwrap();
 
@@ -1553,5 +1569,37 @@ mod tests {
             "corrupted file should be skipped, not error"
         );
         assert_eq!(diagnostics[0].run_id, "20260406T120000Z-abc123");
+    }
+
+    #[test]
+    fn test_pre_m024_diagnostic_roundtrip() {
+        // Pre-M024 diagnostic JSON has no checkpoint_index or session_phase.
+        // Must deserialize with defaults and re-serialize without adding them.
+        let fixture = r#"{
+  "spec": "self-check",
+  "run_id": "20260401T100000Z-old",
+  "timestamp": "2026-04-01T10:00:00Z",
+  "failed_criteria": [],
+  "passed": 3,
+  "failed": 0
+}"#;
+        let parsed: GateDiagnostic = serde_json::from_str(fixture).expect("deserialize pre-M024");
+        assert_eq!(parsed.checkpoint_index, None);
+        assert_eq!(
+            parsed.session_phase,
+            assay_types::review::SessionPhase::SessionEnd
+        );
+
+        // Re-serialize: checkpoint_index (None) should be omitted via skip_serializing_if.
+        // session_phase (SessionEnd) will be present since it has no skip_serializing_if.
+        let output = serde_json::to_string_pretty(&parsed).expect("reserialize");
+        assert!(
+            !output.contains("checkpoint_index"),
+            "checkpoint_index should be omitted when None, got:\n{output}"
+        );
+
+        // Round-trip: deserialize again and assert equality.
+        let reparsed: GateDiagnostic = serde_json::from_str(&output).expect("round-trip");
+        assert_eq!(parsed, reparsed);
     }
 }

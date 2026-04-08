@@ -27,6 +27,24 @@ expression: schema.to_value()
       "type": "object"
     },
     {
+      "description": "Gate was evaluated when a specific event type was observed.",
+      "properties": {
+        "event_type": {
+          "description": "The event type tag that triggered the checkpoint.",
+          "type": "string"
+        },
+        "type": {
+          "const": "at_event",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "event_type"
+      ],
+      "type": "object"
+    },
+    {
       "description": "Gate was evaluated at the end of the session.",
       "properties": {
         "type": {

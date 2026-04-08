@@ -1,6 +1,5 @@
 {
   "mode": "yolo",
-  "depth": "comprehensive",
   "parallelization": true,
   "commit_docs": true,
   "pr_workflow": true,
@@ -21,5 +20,6 @@
   },
   "git": {
     "branching_strategy": "none"
-  }
+  },
+  "granularity": "fine"
 }

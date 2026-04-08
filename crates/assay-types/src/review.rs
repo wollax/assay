@@ -122,6 +122,13 @@ pub struct GateDiagnostic {
     pub passed: usize,
     /// Number of criteria that failed.
     pub failed: usize,
+    /// Index of the checkpoint that failed (0-based). `None` for session-end gates.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub checkpoint_index: Option<u32>,
+    /// The pipeline phase at which the gate was evaluated.
+    /// Defaults to `SessionEnd` for pre-M024 diagnostics (D028).
+    #[serde(default)]
+    pub session_phase: SessionPhase,
 }
 
 inventory::submit! {
@@ -174,6 +181,11 @@ pub enum SessionPhase {
     AtToolCall {
         /// Number of tool calls emitted when the checkpoint fired.
         n: u32,
+    },
+    /// Gate was evaluated when a specific event type was observed.
+    AtEvent {
+        /// The event type tag that triggered the checkpoint.
+        event_type: String,
     },
     /// Gate was evaluated at the end of the session.
     #[default]

@@ -179,6 +179,23 @@ impl SpecEntry {
             Self::Directory { gates, .. } => &gates.name,
         }
     }
+
+    /// Build a `Spec` suitable for checkpoint evaluation from either variant.
+    ///
+    /// For `Legacy`, returns a clone. For `Directory`, converts the `GatesSpec`
+    /// into a `Spec` with matching criteria and gate section.
+    pub fn to_spec(&self) -> Spec {
+        match self {
+            Self::Legacy { spec, .. } => spec.clone(),
+            Self::Directory { gates, .. } => Spec {
+                name: gates.name.clone(),
+                description: gates.description.clone(),
+                gate: gates.gate.clone(),
+                depends: gates.depends.clone(),
+                criteria: gates.criteria.clone(),
+            },
+        }
+    }
 }
 
 /// Result of scanning a directory for spec files.
