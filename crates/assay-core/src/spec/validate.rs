@@ -408,6 +408,7 @@ mod tests {
             kind: Some(CriterionKind::AgentReport),
             prompt: None,
             requirements: vec![],
+            when: None,
         }];
 
         let diagnostics = validate_agent_prompts(&criteria);
@@ -429,6 +430,7 @@ mod tests {
             kind: Some(CriterionKind::AgentReport),
             prompt: Some("   ".to_string()),
             requirements: vec![],
+            when: None,
         }];
 
         let diagnostics = validate_agent_prompts(&criteria);
@@ -447,6 +449,7 @@ mod tests {
             kind: Some(CriterionKind::AgentReport),
             prompt: Some("Check for security issues".to_string()),
             requirements: vec![],
+            when: None,
         }];
 
         let diagnostics = validate_agent_prompts(&criteria);
@@ -468,6 +471,7 @@ mod tests {
             kind: None,
             prompt: None,
             requirements: vec![],
+            when: None,
         }];
 
         let diagnostics = validate_agent_prompts(&criteria);
@@ -486,6 +490,7 @@ mod tests {
             kind: None,
             prompt: None,
             requirements: vec![],
+            when: None,
         }];
 
         let diagnostics = validate_commands(&criteria);
@@ -511,6 +516,7 @@ mod tests {
             kind: None,
             prompt: None,
             requirements: vec![],
+            when: None,
         }];
 
         let diagnostics = validate_commands(&criteria);
@@ -529,6 +535,7 @@ mod tests {
             kind: None,
             prompt: None,
             requirements: vec![],
+            when: None,
         }];
 
         let diagnostics = validate_commands(&criteria);
@@ -643,6 +650,7 @@ mod tests {
                     kind: None,
                     prompt: None,
                     requirements: vec![],
+                    when: None,
                 }],
             },
         };
@@ -674,6 +682,7 @@ mod tests {
                     kind: Some(CriterionKind::AgentReport),
                     prompt: None,
                     requirements: vec![],
+                    when: None,
                 }],
             },
         };
@@ -706,6 +715,7 @@ mod tests {
                 kind: None,
                 prompt: None,
                 requirements: vec![],
+                when: None,
             },
             Criterion {
                 name: "review".to_string(),
@@ -717,6 +727,7 @@ mod tests {
                 kind: Some(CriterionKind::AgentReport),
                 prompt: None,
                 requirements: vec![],
+                when: None,
             },
         ];
 
@@ -790,6 +801,7 @@ mod tests {
                     kind: None,
                     prompt: None,
                     requirements: vec![],
+                    when: None,
                 }],
             },
         };
@@ -819,6 +831,7 @@ mod tests {
                     kind: None,
                     prompt: None,
                     requirements: vec![],
+                    when: None,
                 }],
             },
         };

@@ -1,0 +1,62 @@
+---
+source: crates/assay-types/tests/schema_snapshots.rs
+expression: schema.to_value()
+---
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Declares when a gate criterion is evaluated.\n\nSpec authors use this to designate cheap event-based criteria as\nmid-session checkpoints while keeping expensive command/file gates\nat session end.\n\n# Warning on command/file gates at checkpoints\n\nUsing `AfterToolCalls` or `OnEvent` with a `cmd`- or `path`-based\ncriterion evaluates against a **partial working directory**. Prefer\n`EventCount` and `NoToolErrors` criteria for checkpoints.",
+  "oneOf": [
+    {
+      "description": "Evaluate at the end of the session (default behavior).",
+      "properties": {
+        "type": {
+          "const": "session_end",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "type": "object"
+    },
+    {
+      "description": "Evaluate each time the agent has emitted N tool calls since the\nlast evaluation. The pipeline fires this trigger at the Nth tool\ncall (exact match, not \"at least N\").",
+      "properties": {
+        "n": {
+          "description": "Tool-call threshold at which to evaluate.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "type": {
+          "const": "after_tool_calls",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "n"
+      ],
+      "type": "object"
+    },
+    {
+      "description": "Evaluate when the most-recent event in the stream has a serde\ntype tag matching `event_type` (e.g. `\"tool_called\"`).",
+      "properties": {
+        "event_type": {
+          "description": "Event type tag to match (matches `AgentEvent` serde tag).",
+          "type": "string"
+        },
+        "type": {
+          "const": "on_event",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "event_type"
+      ],
+      "type": "object"
+    }
+  ],
+  "title": "When"
+}

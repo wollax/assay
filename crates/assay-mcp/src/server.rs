@@ -6080,6 +6080,7 @@ cmd = "echo ok"
                     kind: None,
                     prompt: None,
                     requirements: vec![],
+                    when: None,
                 }],
             },
         };
@@ -6110,6 +6111,7 @@ cmd = "echo ok"
                         kind: None,
                         prompt: None,
                         requirements: vec![],
+                        when: None,
                     },
                     assay_types::Criterion {
                         name: "code-review".to_string(),
@@ -6121,6 +6123,7 @@ cmd = "echo ok"
                         kind: Some(CriterionKind::AgentReport),
                         prompt: Some("Review for issues".to_string()),
                         requirements: vec![],
+                        when: None,
                     },
                 ],
             },

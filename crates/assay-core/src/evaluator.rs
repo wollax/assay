@@ -610,6 +610,7 @@ mod tests {
                 kind: None,
                 prompt: Some("Run cargo test".to_string()),
                 requirements: vec![],
+                when: None,
             },
             Criterion {
                 name: "lint-clean".to_string(),
@@ -621,6 +622,7 @@ mod tests {
                 kind: None,
                 prompt: None,
                 requirements: vec![],
+                when: None,
             },
         ];
 

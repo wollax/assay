@@ -97,6 +97,7 @@ mod tests {
                 kind: None,
                 prompt: None,
                 requirements: vec![],
+                when: None,
             }],
         };
 
@@ -192,6 +193,7 @@ unknown_crit_key = true
             kind: None,
             prompt: None,
             requirements: vec![],
+            when: None,
         };
 
         let toml_str = toml::to_string(&criterion).expect("serialize to TOML");
@@ -221,6 +223,7 @@ unknown_crit_key = true
             kind: None,
             prompt: None,
             requirements: vec!["REQ-FUNC-001".to_string()],
+            when: None,
         };
 
         let toml_str = toml::to_string(&criterion).expect("serialize to TOML");
@@ -245,6 +248,7 @@ unknown_crit_key = true
             kind: Some(CriterionKind::AgentReport),
             prompt: Some("Check for SQL injection in all DB queries".to_string()),
             requirements: vec!["REQ-SEC-001".to_string()],
+            when: None,
         };
 
         let toml_str = toml::to_string(&criterion).expect("serialize to TOML");
@@ -281,6 +285,7 @@ unknown_crit_key = true
                     kind: None,
                     prompt: None,
                     requirements: vec![],
+                    when: None,
                 },
                 GateCriterion {
                     name: "architecture-review".to_string(),
@@ -292,6 +297,7 @@ unknown_crit_key = true
                     kind: Some(CriterionKind::AgentReport),
                     prompt: Some("Evaluate module coupling and cohesion".to_string()),
                     requirements: vec!["REQ-ARCH-001".to_string()],
+                    when: None,
                 },
             ],
         };
@@ -371,6 +377,7 @@ description = "A check"
                 kind: None,
                 prompt: None,
                 requirements: vec![],
+                when: None,
             }],
         };
 

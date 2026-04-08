@@ -565,6 +565,18 @@ fn gate_diagnostic_schema_snapshot() {
 }
 
 #[test]
+fn checkpoint_session_phase_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::review::SessionPhase);
+    assert_json_snapshot!("checkpoint-session-phase-schema", schema.to_value());
+}
+
+#[test]
+fn when_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::criterion::When);
+    assert_json_snapshot!("when-schema", schema.to_value());
+}
+
+#[test]
 fn agent_event_schema_snapshot() {
     let schema = schemars::schema_for!(assay_types::AgentEvent);
     assert_json_snapshot!("agent-event-schema", schema.to_value());

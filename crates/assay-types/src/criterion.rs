@@ -49,6 +49,45 @@ inventory::submit! {
     }
 }
 
+/// Declares when a gate criterion is evaluated.
+///
+/// Spec authors use this to designate cheap event-based criteria as
+/// mid-session checkpoints while keeping expensive command/file gates
+/// at session end.
+///
+/// # Warning on command/file gates at checkpoints
+///
+/// Using `AfterToolCalls` or `OnEvent` with a `cmd`- or `path`-based
+/// criterion evaluates against a **partial working directory**. Prefer
+/// `EventCount` and `NoToolErrors` criteria for checkpoints.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum When {
+    /// Evaluate at the end of the session (default behavior).
+    #[default]
+    SessionEnd,
+    /// Evaluate each time the agent has emitted N tool calls since the
+    /// last evaluation. The pipeline fires this trigger at the Nth tool
+    /// call (exact match, not "at least N").
+    AfterToolCalls {
+        /// Tool-call threshold at which to evaluate.
+        n: u32,
+    },
+    /// Evaluate when the most-recent event in the stream has a serde
+    /// type tag matching `event_type` (e.g. `"tool_called"`).
+    OnEvent {
+        /// Event type tag to match (matches `AgentEvent` serde tag).
+        event_type: String,
+    },
+}
+
+inventory::submit! {
+    crate::schema_registry::SchemaEntry {
+        name: "when",
+        generate: || schemars::schema_for!(When),
+    }
+}
+
 /// A single acceptance criterion attached to a spec.
 ///
 /// Each criterion has a name, description, and an optional shell command
@@ -98,6 +137,13 @@ pub struct Criterion {
     /// Requirement IDs this criterion traces to (e.g., `["REQ-FUNC-001"]`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub requirements: Vec<String>,
+
+    /// Declares when this criterion is evaluated. `None` is equivalent to
+    /// `Some(When::SessionEnd)` — evaluation happens at session end. When
+    /// set to `Some(When::AfterToolCalls { .. })` or `Some(When::OnEvent { .. })`,
+    /// the criterion becomes a mid-session checkpoint.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub when: Option<When>,
 }
 
 inventory::submit! {
@@ -123,6 +169,7 @@ mod tests {
             kind: None,
             prompt: None,
             requirements: vec![],
+            when: None,
         };
 
         let toml_str = toml::to_string(&criterion).expect("serialize to TOML");
@@ -151,6 +198,7 @@ mod tests {
             kind: None,
             prompt: None,
             requirements: vec![],
+            when: None,
         };
 
         let toml_str = toml::to_string(&criterion).expect("serialize to TOML");
@@ -175,6 +223,7 @@ mod tests {
             kind: None,
             prompt: None,
             requirements: vec![],
+            when: None,
         };
 
         let toml_str = toml::to_string(&criterion).expect("serialize to TOML");
@@ -199,6 +248,7 @@ mod tests {
             kind: Some(CriterionKind::AgentReport),
             prompt: Some("Review the auth module for SQL injection vulnerabilities".to_string()),
             requirements: vec![],
+            when: None,
         };
 
         let toml_str = toml::to_string(&criterion).expect("serialize to TOML");
@@ -235,6 +285,7 @@ mod tests {
             kind: None,
             prompt: None,
             requirements: vec![],
+            when: None,
         };
 
         let toml_str = toml::to_string(&criterion).expect("serialize to TOML");
@@ -260,6 +311,7 @@ mod tests {
             kind: None,
             prompt: None,
             requirements: vec![],
+            when: None,
         };
 
         let toml_str = toml::to_string(&criterion).expect("serialize to TOML");
@@ -269,6 +321,144 @@ mod tests {
         );
         let roundtripped: Criterion = toml::from_str(&toml_str).expect("deserialize from TOML");
         assert_eq!(criterion, roundtripped);
+    }
+
+    #[test]
+    fn when_defaults_to_session_end() {
+        assert_eq!(When::default(), When::SessionEnd);
+    }
+
+    #[test]
+    fn when_serde_tagged_roundtrip() {
+        use serde_json::json;
+        // SessionEnd
+        let w = When::SessionEnd;
+        let v = serde_json::to_value(&w).unwrap();
+        assert_eq!(v, json!({ "type": "session_end" }));
+        let back: When = serde_json::from_value(v).unwrap();
+        assert_eq!(back, When::SessionEnd);
+
+        // AfterToolCalls { n: 2 }
+        let w = When::AfterToolCalls { n: 2 };
+        let v = serde_json::to_value(&w).unwrap();
+        assert_eq!(v, json!({ "type": "after_tool_calls", "n": 2 }));
+        let back: When = serde_json::from_value(v).unwrap();
+        assert_eq!(back, When::AfterToolCalls { n: 2 });
+
+        // OnEvent { event_type: "tool_called" }
+        let w = When::OnEvent {
+            event_type: "tool_called".to_string(),
+        };
+        let v = serde_json::to_value(&w).unwrap();
+        assert_eq!(
+            v,
+            json!({ "type": "on_event", "event_type": "tool_called" })
+        );
+        let back: When = serde_json::from_value(v).unwrap();
+        assert_eq!(
+            back,
+            When::OnEvent {
+                event_type: "tool_called".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn criterion_when_omitted_when_none() {
+        let criterion = Criterion {
+            name: "basic".to_string(),
+            description: "plain".to_string(),
+            cmd: Some("echo ok".to_string()),
+            path: None,
+            timeout: None,
+            enforcement: None,
+            kind: None,
+            prompt: None,
+            requirements: vec![],
+            when: None,
+        };
+        let toml_str = toml::to_string(&criterion).expect("serialize");
+        assert!(
+            !toml_str.contains("when"),
+            "TOML should omit absent when, got:\n{toml_str}"
+        );
+        let roundtripped: Criterion = toml::from_str(&toml_str).expect("deserialize");
+        assert_eq!(criterion, roundtripped);
+    }
+
+    #[test]
+    fn criterion_when_after_tool_calls_roundtrip() {
+        let criterion = Criterion {
+            name: "event-check".to_string(),
+            description: "checkpoint criterion".to_string(),
+            cmd: None,
+            path: None,
+            timeout: None,
+            enforcement: None,
+            kind: Some(CriterionKind::NoToolErrors),
+            prompt: None,
+            requirements: vec![],
+            when: Some(When::AfterToolCalls { n: 3 }),
+        };
+        let toml_str = toml::to_string(&criterion).expect("serialize");
+        let roundtripped: Criterion = toml::from_str(&toml_str).expect("deserialize");
+        assert_eq!(criterion, roundtripped);
+        assert_eq!(roundtripped.when, Some(When::AfterToolCalls { n: 3 }));
+    }
+
+    #[test]
+    fn criterion_when_roundtrip_pre_m024_fixture() {
+        // Real pre-M024 fixture: .assay/specs/self-check.toml. Embedded inline
+        // to keep this test independent of workspace layout. The goal is to
+        // prove that a spec with no `when` field anywhere still deserializes,
+        // serializes back without introducing `when`, and round-trips to an
+        // equal struct (D028: zero-regression on pre-M024 fixtures).
+        let fixture = r#"name = "self-check"
+description = "Assay's own quality gates — dogfooding spec"
+
+[gate]
+enforcement = "required"
+
+[[criteria]]
+name = "formatting"
+description = "Code is formatted with rustfmt"
+cmd = "cargo fmt --check"
+
+[[criteria]]
+name = "linting"
+description = "No clippy warnings"
+cmd = "cargo clippy --workspace -- -D warnings"
+
+[[criteria]]
+name = "tests"
+description = "All tests pass"
+cmd = "cargo test --workspace"
+"#;
+
+        #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+        struct TinySpec {
+            name: String,
+            #[serde(default)]
+            description: String,
+            #[serde(default)]
+            gate: Option<crate::GateSection>,
+            criteria: Vec<Criterion>,
+        }
+
+        let parsed: TinySpec = toml::from_str(fixture).expect("parse fixture");
+        // All criteria must have when == None (backward compat).
+        for c in &parsed.criteria {
+            assert_eq!(c.when, None, "pre-M024 fixture must not introduce when");
+        }
+        // Re-serialize: output must not contain the string "when".
+        let out = toml::to_string(&parsed).expect("serialize back");
+        assert!(
+            !out.contains("when"),
+            "serialized output should omit `when` field, got:\n{out}"
+        );
+        // Round-trip must produce an equal struct.
+        let reparsed: TinySpec = toml::from_str(&out).expect("reparse");
+        assert_eq!(parsed, reparsed);
     }
 
     #[test]

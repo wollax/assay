@@ -373,6 +373,7 @@ fn write_gates_toml(
             kind: None,
             prompt: None,
             requirements: vec![],
+            when: None,
         })
         .collect();
 
