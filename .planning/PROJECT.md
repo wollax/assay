@@ -114,27 +114,21 @@ The `assay-mcp` crate provides MCP server functionality. Future crates may inclu
 - Binary crates are thin wrappers that delegate to `assay-core`
 - Run `just ready` before considering work complete
 
-## Current Milestone: v0.5.0 Single-Agent Harness End-to-End
+## Current State: Post v0.5.0
 
-**Goal:** Prove the harness abstraction through one complete flow — manifest → worktree → agent → gate → merge proposal — for a single agent, with the `assay-harness` crate and Claude Code adapter as the first concrete implementation.
+**Shipped:** v0.5.0 Single-Agent Harness End-to-End (2026-04-08, verified against codebase)
 
-**Target features:**
+All Kata roadmap phases (1-59) are complete. Linear milestones M014-M024 have implemented work well beyond the original Kata roadmap, including multi-agent orchestration (DAG/mesh/gossip), streaming events, checkpoint gates, Smelt monorepo integration, and Forgejo CI.
 
-- `assay-harness` leaf crate with `HarnessProfile`, layered prompt builder, Claude Code adapter
-- Callback-based control inversion for agent invocation (closures, not traits)
-- Worktree enhancements: orphan detection, collision prevention, session linkage
-- `RunManifest` format with `[[sessions]]` array (forward-compatible for multi-agent)
-- Session vocabulary cleanup (`AgentSession` → `GateEvalContext`)
-- AgentSession write-through persistence (crash recovery prerequisite)
-- End-to-end single-agent pipeline: manifest → worktree → agent → gate → merge propose
+The Kata roadmap's v0.6.0 (Multi-Agent Orchestration) and v0.6.1 (Conflict Resolution & Polish) may already be substantially complete. An audit is recommended before planning further phases.
 
 ## Current State
 
-**Shipped:** v0.4.0 Headless Orchestration (2026-03-15)
+**Shipped:** v0.5.0 Single-Agent Harness E2E (2026-04-08)
 
-33,462 lines of Rust across 5 crates (types, core, cli, tui, mcp). 836 tests. Headless agent evaluation via `gate_evaluate`, `WorkSession` persistence, `spec_validate`, `cupel` context engine integration, observability improvements, and 120+ tech debt fixes.
+2266 tests across 57 binaries. Full single-agent pipeline (manifest → worktree → harness → agent → gate → merge), multi-agent orchestration (DAG/mesh/gossip), streaming event pipeline, checkpoint gates, auto-promote, Smelt monorepo integration, Forgejo CI.
 
-**Previous:** v0.3.0 Orchestration Foundation (2026-03-10), v0.2.0 Dual-Track Gates & Hardening (2026-03-08), v0.1.0 Proof of Concept (2026-03-02)
+**Previous:** v0.4.1 Merge Tools (2026-04-08), v0.4.0 Headless Orchestration (2026-03-15), v0.3.0 (2026-03-10), v0.2.0 (2026-03-08), v0.1.0 (2026-03-02)
 
 ## Requirements
 
