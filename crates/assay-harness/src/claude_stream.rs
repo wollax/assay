@@ -193,7 +193,7 @@ where
                                     max = MAX_TEXT_DELTA_BYTES,
                                     "truncating oversized TextDelta"
                                 );
-                                raw[..MAX_TEXT_DELTA_BYTES].to_string()
+                                raw[..raw.floor_char_boundary(MAX_TEXT_DELTA_BYTES)].to_string()
                             } else {
                                 raw.to_string()
                             };
@@ -696,7 +696,6 @@ mod tests {
 
     #[test]
     fn oversized_text_delta_is_truncated() {
-        // Build a stream_event with a text_delta payload exceeding 64 KiB.
         let big_text = "x".repeat(70_000);
         let json = format!(
             r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"text_delta","text":"{big_text}"}}}}}}"#,
@@ -708,6 +707,33 @@ mod tests {
         match &events[0] {
             AgentEvent::TextDelta { text, .. } => {
                 assert_eq!(text.len(), 64 * 1024, "text should be truncated to 64 KiB");
+            }
+            other => panic!("expected TextDelta, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn oversized_text_delta_truncates_at_char_boundary() {
+        // 🦀 is 4 bytes. Fill just past 64 KiB with multi-byte chars to
+        // verify truncation doesn't split a codepoint.
+        let crab = "🦀";
+        let count = (64 * 1024) / crab.len() + 10; // slightly over limit
+        let big_text = crab.repeat(count);
+        assert!(big_text.len() > 64 * 1024);
+
+        let json = format!(
+            r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"text_delta","text":"{big_text}"}}}}}}"#,
+        );
+        let reader = Cursor::new(json);
+        let events = parse_claude_events(reader);
+
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            AgentEvent::TextDelta { text, .. } => {
+                assert!(text.len() <= 64 * 1024);
+                // Must be a multiple of 4 (each 🦀 is 4 bytes)
+                assert_eq!(text.len() % 4, 0, "truncation must be at char boundary");
+                assert!(text.is_char_boundary(text.len()));
             }
             other => panic!("expected TextDelta, got {other:?}"),
         }

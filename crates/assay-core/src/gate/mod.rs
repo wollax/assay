@@ -622,7 +622,7 @@ pub fn evaluate_event_criterion(kind: &GateKind, events: &[AgentEvent]) -> Resul
 ///
 /// Matches the `#[serde(tag = "type", rename_all = "snake_case")]` tags on
 /// `AgentEvent` variants.
-fn event_serde_tag(event: &AgentEvent) -> &'static str {
+pub(crate) fn event_serde_tag(event: &AgentEvent) -> &'static str {
     match event {
         AgentEvent::ToolCalled { .. } => "tool_called",
         AgentEvent::ToolResult { .. } => "tool_result",
