@@ -1034,7 +1034,7 @@ pub fn truncate_diff(raw: &str, budget: usize) -> (Option<String>, bool, Option<
 }
 
 use assay_types::criterion::When;
-use assay_types::review::SessionPhase as CheckpointPhase;
+use assay_types::review::CheckpointPhase;
 
 /// Evaluate gate criteria scheduled for a given checkpoint phase.
 ///
@@ -1044,28 +1044,41 @@ use assay_types::review::SessionPhase as CheckpointPhase;
 ///
 /// # Phase matching rules
 ///
-/// - `when: None` or `when: Some(SessionEnd)` → **skipped** (belongs to
+/// - `when: When::SessionEnd` → **skipped** (belongs to
 ///   the session-end path via [`evaluate_all_with_events`])
-/// - `when: Some(AfterToolCalls { n })` → evaluated when
+/// - `when: When::AfterToolCalls { n }` → evaluated when
 ///   `phase == AtToolCall { n: current }` and `current == n` (exact match)
-/// - `when: Some(OnEvent { event_type })` → evaluated when the most-recent
+/// - `when: When::OnEvent { event_type }` → evaluated when the most-recent
 ///   event in `events` has a serde type-tag matching `event_type`
 ///
 /// This function is pure (stateless, no I/O beyond criterion evaluation).
 /// S03 may call it repeatedly on a growing `events` slice.
 ///
-/// # Note for S03 consumers
+/// # Timeout precedence
 ///
-/// `CheckpointPhase` is `assay_types::review::SessionPhase` — **not** the
-/// workflow `SessionPhase` from `work_session`. Import it as
-/// `use assay_types::review::SessionPhase as CheckpointPhase;` to avoid
-/// collision.
+/// `cli_timeout` > `config_timeout` > per-criterion `timeout` field > built-in default.
+/// Pass `None` for both when no CLI or config overrides are active.
+///
+/// # SessionEnd is a no-op
+///
+/// This function **never** evaluates criteria when `phase` is
+/// `CheckpointPhase::SessionEnd` — `criterion_matches_phase` returns `false`
+/// for all criteria in that case. Callers should use [`evaluate_all_with_events`]
+/// for session-end evaluation. Passing `SessionEnd` here is a logic error and
+/// will fire a `debug_assert!` in debug builds.
 pub fn evaluate_checkpoint(
     spec: &Spec,
     working_dir: &Path,
+    cli_timeout: Option<u64>,
+    config_timeout: Option<u64>,
     events: &[AgentEvent],
     phase: CheckpointPhase,
 ) -> GateRunSummary {
+    debug_assert!(
+        !matches!(phase, CheckpointPhase::SessionEnd),
+        "evaluate_checkpoint called with SessionEnd phase — this is a no-op; \
+         use evaluate_all_with_events for session-end evaluation"
+    );
     let matching: Vec<Criterion> = spec
         .criteria
         .iter()
@@ -1089,7 +1102,13 @@ pub fn evaluate_checkpoint(
         criteria: matching,
         ..spec.clone()
     };
-    evaluate_all_with_events(&checkpoint_spec, working_dir, None, None, events)
+    evaluate_all_with_events(
+        &checkpoint_spec,
+        working_dir,
+        cli_timeout,
+        config_timeout,
+        events,
+    )
 }
 
 /// Returns `true` if `criterion` should be evaluated at the current checkpoint phase.
@@ -1098,12 +1117,12 @@ fn criterion_matches_phase(
     phase: &CheckpointPhase,
     events: &[AgentEvent],
 ) -> bool {
-    match criterion.when.as_ref() {
-        None | Some(When::SessionEnd) => false,
-        Some(When::AfterToolCalls { n }) => {
-            matches!(phase, CheckpointPhase::AtToolCall { n: current } if current == n)
+    match &criterion.when {
+        When::SessionEnd => false,
+        When::AfterToolCalls { n } => {
+            matches!(phase, CheckpointPhase::AtToolCall { n: current } if *current == n.get())
         }
-        Some(When::OnEvent { event_type }) => events
+        When::OnEvent { event_type } => events
             .last()
             .is_some_and(|last| event_serde_tag(last) == event_type),
     }
@@ -1111,6 +1130,8 @@ fn criterion_matches_phase(
 
 #[cfg(test)]
 mod tests {
+    use std::num::NonZeroU32;
+
     use super::*;
 
     // ── extract_diff_files ─────────────────────────────────────────
@@ -1171,7 +1192,7 @@ mod tests {
             kind: None,
             prompt: None,
             requirements: vec![],
-            when: None,
+            when: When::default(),
         };
 
         let result = evaluate(&criterion, dir.path(), Duration::from_secs(10)).unwrap();
@@ -1203,7 +1224,7 @@ mod tests {
             kind: None,
             prompt: None,
             requirements: vec![],
-            when: None,
+            when: When::default(),
         };
 
         let result = evaluate(&criterion, dir.path(), Duration::from_secs(10)).unwrap();
@@ -1231,7 +1252,7 @@ mod tests {
             kind: None,
             prompt: None,
             requirements: vec![],
-            when: None,
+            when: When::default(),
         };
 
         let result = evaluate(&criterion, dir.path(), Duration::from_secs(1)).unwrap();
@@ -1260,7 +1281,7 @@ mod tests {
             kind: None,
             prompt: None,
             requirements: vec![],
-            when: None,
+            when: When::default(),
         };
 
         let result = evaluate(&criterion, dir.path(), Duration::from_secs(10)).unwrap();
@@ -1316,7 +1337,7 @@ mod tests {
             kind: None,
             prompt: None,
             requirements: vec![],
-            when: None,
+            when: When::default(),
         };
 
         let result = evaluate(&criterion, dir.path(), Duration::from_secs(10)).unwrap();
@@ -1355,7 +1376,7 @@ mod tests {
             kind: None,
             prompt: None,
             requirements: vec![],
-            when: None,
+            when: When::default(),
         };
 
         let result = evaluate(&criterion, dir.path(), Duration::from_secs(30)).unwrap();
@@ -1433,7 +1454,7 @@ mod tests {
                     kind: None,
                     prompt: None,
                     requirements: vec![],
-                    when: None,
+                    when: When::default(),
                 },
                 Criterion {
                     name: "descriptive".to_string(),
@@ -1445,7 +1466,7 @@ mod tests {
                     kind: None,
                     prompt: None,
                     requirements: vec![],
-                    when: None,
+                    when: When::default(),
                 },
                 Criterion {
                     name: "fails".to_string(),
@@ -1457,7 +1478,7 @@ mod tests {
                     kind: None,
                     prompt: None,
                     requirements: vec![],
-                    when: None,
+                    when: When::default(),
                 },
             ],
         };
@@ -1492,7 +1513,7 @@ mod tests {
                 kind: None,
                 prompt: None,
                 requirements: vec![],
-                when: None,
+                when: When::default(),
             }],
         };
 
@@ -1527,7 +1548,7 @@ mod tests {
                     kind: None,
                     prompt: None,
                     requirements: vec!["REQ-FUNC-001".to_string()],
-                    when: None,
+                    when: When::default(),
                 },
                 GateCriterion {
                     name: "descriptive".to_string(),
@@ -1539,7 +1560,7 @@ mod tests {
                     kind: None,
                     prompt: None,
                     requirements: vec![],
-                    when: None,
+                    when: When::default(),
                 },
                 GateCriterion {
                     name: "fails".to_string(),
@@ -1551,7 +1572,7 @@ mod tests {
                     kind: None,
                     prompt: None,
                     requirements: vec!["REQ-SEC-001".to_string()],
-                    when: None,
+                    when: When::default(),
                 },
             ],
         };
@@ -1586,7 +1607,7 @@ mod tests {
                 kind: None,
                 prompt: None,
                 requirements: vec![],
-                when: None,
+                when: When::default(),
             }],
         };
 
@@ -1607,7 +1628,7 @@ mod tests {
                 kind: None,
                 prompt: None,
                 requirements: vec![],
-                when: None,
+                when: When::default(),
             }],
         };
 
@@ -1638,7 +1659,7 @@ mod tests {
             kind: None,
             prompt: None,
             requirements: vec!["REQ-FUNC-001".to_string()],
-            when: None,
+            when: When::default(),
         };
 
         let c = to_criterion(&gc);
@@ -1661,7 +1682,7 @@ mod tests {
             kind: None,
             prompt: None,
             requirements: vec![],
-            when: None,
+            when: When::default(),
         };
 
         let c = to_criterion(&gc);
@@ -1686,7 +1707,7 @@ mod tests {
             kind: None,
             prompt: None,
             requirements: vec![],
-            when: None,
+            when: When::default(),
         };
 
         let result = evaluate(&criterion, dir.path(), Duration::from_secs(10)).unwrap();
@@ -1709,7 +1730,7 @@ mod tests {
             kind: None,
             prompt: None,
             requirements: vec![],
-            when: None,
+            when: When::default(),
         };
 
         let result = evaluate(&criterion, dir.path(), Duration::from_secs(10)).unwrap();
@@ -1739,7 +1760,7 @@ mod tests {
                     kind: None,
                     prompt: None,
                     requirements: vec![],
-                    when: None,
+                    when: When::default(),
                 },
                 Criterion {
                     name: "descriptive only".to_string(),
@@ -1751,7 +1772,7 @@ mod tests {
                     kind: None,
                     prompt: None,
                     requirements: vec![],
-                    when: None,
+                    when: When::default(),
                 },
             ],
         };
@@ -1780,7 +1801,7 @@ mod tests {
             kind: None,
             prompt: None,
             requirements: vec![],
-            when: None,
+            when: When::default(),
         };
 
         let result = evaluate(&criterion, dir.path(), Duration::from_secs(10)).unwrap();
@@ -1814,7 +1835,7 @@ mod tests {
                 kind: None,
                 prompt: None,
                 requirements: vec![],
-                when: None,
+                when: When::default(),
             }],
         };
 
@@ -1905,7 +1926,7 @@ mod tests {
                     kind: None,
                     prompt: None,
                     requirements: vec![],
-                    when: None,
+                    when: When::default(),
                 },
                 Criterion {
                     name: "advisory-fail".to_string(),
@@ -1917,7 +1938,7 @@ mod tests {
                     kind: None,
                     prompt: None,
                     requirements: vec![],
-                    when: None,
+                    when: When::default(),
                 },
             ],
         };
@@ -1958,7 +1979,7 @@ mod tests {
                     kind: None,
                     prompt: None,
                     requirements: vec![],
-                    when: None,
+                    when: When::default(),
                 },
                 Criterion {
                     name: "descriptive-only".to_string(),
@@ -1970,7 +1991,7 @@ mod tests {
                     kind: None,
                     prompt: None,
                     requirements: vec![],
-                    when: None,
+                    when: When::default(),
                 },
             ],
         };
@@ -2013,7 +2034,7 @@ mod tests {
                     kind: None,
                     prompt: None,
                     requirements: vec![],
-                    when: None,
+                    when: When::default(),
                 },
                 GateCriterion {
                     name: "inherits-advisory".to_string(),
@@ -2025,7 +2046,7 @@ mod tests {
                     kind: None,
                     prompt: None,
                     requirements: vec![],
-                    when: None,
+                    when: When::default(),
                 },
             ],
         };
@@ -2063,7 +2084,7 @@ mod tests {
                     kind: None,
                     prompt: None,
                     requirements: vec![],
-                    when: None,
+                    when: When::default(),
                 },
                 Criterion {
                     name: "advisory-fail".to_string(),
@@ -2075,7 +2096,7 @@ mod tests {
                     kind: None,
                     prompt: None,
                     requirements: vec![],
-                    when: None,
+                    when: When::default(),
                 },
                 Criterion {
                     name: "advisory-pass".to_string(),
@@ -2087,7 +2108,7 @@ mod tests {
                     kind: None,
                     prompt: None,
                     requirements: vec![],
-                    when: None,
+                    when: When::default(),
                 },
             ],
         };
@@ -2120,7 +2141,7 @@ mod tests {
             kind: Some(CriterionKind::AgentReport),
             prompt: Some("Review the auth module".to_string()),
             requirements: vec![],
-            when: None,
+            when: When::default(),
         };
 
         let result = evaluate(&criterion, dir.path(), Duration::from_secs(10));
@@ -2156,7 +2177,7 @@ mod tests {
                     kind: None,
                     prompt: None,
                     requirements: vec![],
-                    when: None,
+                    when: When::default(),
                 },
                 Criterion {
                     name: "agent-review".to_string(),
@@ -2168,7 +2189,7 @@ mod tests {
                     kind: Some(CriterionKind::AgentReport),
                     prompt: Some("Check code quality".to_string()),
                     requirements: vec![],
-                    when: None,
+                    when: When::default(),
                 },
                 Criterion {
                     name: "cmd-fail".to_string(),
@@ -2180,7 +2201,7 @@ mod tests {
                     kind: None,
                     prompt: None,
                     requirements: vec![],
-                    when: None,
+                    when: When::default(),
                 },
             ],
         };
@@ -2230,7 +2251,7 @@ mod tests {
                 kind: None,
                 prompt: None,
                 requirements: vec![],
-                when: None,
+                when: When::default(),
             }],
         };
 
@@ -2294,7 +2315,7 @@ mod tests {
                 kind: None,
                 prompt: None,
                 requirements: vec![],
-                when: None,
+                when: When::default(),
             }],
         };
 
@@ -2328,7 +2349,7 @@ mod tests {
                 kind: None,
                 prompt: None,
                 requirements: vec![],
-                when: None,
+                when: When::default(),
             }],
         };
 
@@ -2946,7 +2967,7 @@ mod tests {
                 }),
                 prompt: None,
                 requirements: vec![],
-                when: None,
+                when: When::default(),
             }],
         };
         let events = vec![
@@ -2986,7 +3007,7 @@ mod tests {
                 kind: Some(CriterionKind::NoToolErrors),
                 prompt: None,
                 requirements: vec![],
-                when: None,
+                when: When::default(),
             }],
         };
         let events = vec![tool_result("bash", true)];
@@ -3125,7 +3146,7 @@ mod tests {
                 timeout: None,
                 prompt: None,
                 requirements: vec![],
-                when: None,
+                when: When::default(),
             }],
         };
         // evaluate_all passes &[] for events -- criterion should be skipped, not failed
@@ -3170,7 +3191,7 @@ mod tests {
                 timeout: None,
                 prompt: None,
                 requirements: vec![],
-                when: None,
+                when: When::default(),
             }],
         };
         // With real events, criterion should be evaluated and pass
@@ -3189,7 +3210,7 @@ mod tests {
     // evaluate_checkpoint (S02/T02)
     // ------------------------------------------------------------------
 
-    fn checkpoint_spec(when: Option<When>, cmd: Option<&str>) -> Spec {
+    fn checkpoint_spec(when: When, cmd: Option<&str>) -> Spec {
         Spec {
             name: "checkpoint-test".to_string(),
             description: String::new(),
@@ -3217,27 +3238,50 @@ mod tests {
     #[test]
     fn criterion_with_no_when_skipped_at_tool_call_phase() {
         let dir = tempfile::tempdir().unwrap();
-        let spec = checkpoint_spec(None, Some("echo ok"));
-        let summary =
-            evaluate_checkpoint(&spec, dir.path(), &[], CheckpointPhase::AtToolCall { n: 2 });
+        let spec = checkpoint_spec(When::SessionEnd, Some("echo ok"));
+        let summary = evaluate_checkpoint(
+            &spec,
+            dir.path(),
+            None,
+            None,
+            &[],
+            CheckpointPhase::AtToolCall { n: 2 },
+        );
         assert_eq!(summary.results.len(), 0);
     }
 
     #[test]
     fn criterion_with_session_end_when_skipped_at_tool_call_phase() {
         let dir = tempfile::tempdir().unwrap();
-        let spec = checkpoint_spec(Some(When::SessionEnd), Some("echo ok"));
-        let summary =
-            evaluate_checkpoint(&spec, dir.path(), &[], CheckpointPhase::AtToolCall { n: 2 });
+        let spec = checkpoint_spec(When::SessionEnd, Some("echo ok"));
+        let summary = evaluate_checkpoint(
+            &spec,
+            dir.path(),
+            None,
+            None,
+            &[],
+            CheckpointPhase::AtToolCall { n: 2 },
+        );
         assert_eq!(summary.results.len(), 0);
     }
 
     #[test]
     fn criterion_with_after_tool_calls_when_evaluated_at_matching_phase() {
         let dir = tempfile::tempdir().unwrap();
-        let spec = checkpoint_spec(Some(When::AfterToolCalls { n: 2 }), Some("echo ok"));
-        let summary =
-            evaluate_checkpoint(&spec, dir.path(), &[], CheckpointPhase::AtToolCall { n: 2 });
+        let spec = checkpoint_spec(
+            When::AfterToolCalls {
+                n: NonZeroU32::new(2).unwrap(),
+            },
+            Some("echo ok"),
+        );
+        let summary = evaluate_checkpoint(
+            &spec,
+            dir.path(),
+            None,
+            None,
+            &[],
+            CheckpointPhase::AtToolCall { n: 2 },
+        );
         assert_eq!(summary.results.len(), 1);
         assert!(summary.results[0].result.as_ref().unwrap().passed);
     }
@@ -3245,9 +3289,20 @@ mod tests {
     #[test]
     fn criterion_with_after_tool_calls_when_skipped_at_non_matching_phase() {
         let dir = tempfile::tempdir().unwrap();
-        let spec = checkpoint_spec(Some(When::AfterToolCalls { n: 2 }), Some("echo ok"));
-        let summary =
-            evaluate_checkpoint(&spec, dir.path(), &[], CheckpointPhase::AtToolCall { n: 1 });
+        let spec = checkpoint_spec(
+            When::AfterToolCalls {
+                n: NonZeroU32::new(2).unwrap(),
+            },
+            Some("echo ok"),
+        );
+        let summary = evaluate_checkpoint(
+            &spec,
+            dir.path(),
+            None,
+            None,
+            &[],
+            CheckpointPhase::AtToolCall { n: 1 },
+        );
         assert_eq!(summary.results.len(), 0);
     }
 
@@ -3255,15 +3310,17 @@ mod tests {
     fn criterion_with_on_event_when_evaluated_when_last_event_matches() {
         let dir = tempfile::tempdir().unwrap();
         let spec = checkpoint_spec(
-            Some(When::OnEvent {
+            When::OnEvent {
                 event_type: "tool_called".to_string(),
-            }),
+            },
             Some("echo ok"),
         );
         let events = vec![tool_called("bash")];
         let summary = evaluate_checkpoint(
             &spec,
             dir.path(),
+            None,
+            None,
             &events,
             CheckpointPhase::AtToolCall { n: 1 },
         );
@@ -3281,9 +3338,62 @@ mod tests {
             depends: vec![],
             criteria: vec![],
         };
-        let summary = evaluate_checkpoint(&spec, dir.path(), &[], CheckpointPhase::SessionEnd);
+        // Use a valid (non-SessionEnd) phase to avoid triggering the debug_assert.
+        let summary = evaluate_checkpoint(
+            &spec,
+            dir.path(),
+            None,
+            None,
+            &[],
+            CheckpointPhase::AtToolCall { n: 1 },
+        );
         assert_eq!(summary.results.len(), 0);
         assert_eq!(summary.passed, 0);
         assert_eq!(summary.failed, 0);
+    }
+
+    #[test]
+    fn criterion_matches_phase_returns_false_for_session_end() {
+        // Verify that criterion_matches_phase always returns false for SessionEnd,
+        // which is the invariant that makes evaluate_checkpoint a no-op for that phase.
+        let criterion_no_when = Criterion {
+            name: "c".to_string(),
+            description: String::new(),
+            cmd: Some("echo ok".to_string()),
+            path: None,
+            timeout: None,
+            enforcement: None,
+            kind: None,
+            prompt: None,
+            requirements: vec![],
+            when: When::default(),
+        };
+        assert!(!criterion_matches_phase(
+            &criterion_no_when,
+            &CheckpointPhase::SessionEnd,
+            &[]
+        ));
+
+        let criterion_session_end = Criterion {
+            when: When::SessionEnd,
+            ..criterion_no_when.clone()
+        };
+        assert!(!criterion_matches_phase(
+            &criterion_session_end,
+            &CheckpointPhase::SessionEnd,
+            &[]
+        ));
+
+        let criterion_tool_calls = Criterion {
+            when: When::AfterToolCalls {
+                n: NonZeroU32::new(1).unwrap(),
+            },
+            ..criterion_no_when
+        };
+        assert!(!criterion_matches_phase(
+            &criterion_tool_calls,
+            &CheckpointPhase::SessionEnd,
+            &[]
+        ));
     }
 }

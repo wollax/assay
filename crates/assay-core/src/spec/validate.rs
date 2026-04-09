@@ -372,6 +372,7 @@ pub fn validate_spec_with_dependencies(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use assay_types::criterion::When;
     use assay_types::{Criterion, CriterionKind, Spec};
 
     #[test]
@@ -408,7 +409,7 @@ mod tests {
             kind: Some(CriterionKind::AgentReport),
             prompt: None,
             requirements: vec![],
-            when: None,
+            when: When::default(),
         }];
 
         let diagnostics = validate_agent_prompts(&criteria);
@@ -430,7 +431,7 @@ mod tests {
             kind: Some(CriterionKind::AgentReport),
             prompt: Some("   ".to_string()),
             requirements: vec![],
-            when: None,
+            when: When::default(),
         }];
 
         let diagnostics = validate_agent_prompts(&criteria);
@@ -449,7 +450,7 @@ mod tests {
             kind: Some(CriterionKind::AgentReport),
             prompt: Some("Check for security issues".to_string()),
             requirements: vec![],
-            when: None,
+            when: When::default(),
         }];
 
         let diagnostics = validate_agent_prompts(&criteria);
@@ -471,7 +472,7 @@ mod tests {
             kind: None,
             prompt: None,
             requirements: vec![],
-            when: None,
+            when: When::default(),
         }];
 
         let diagnostics = validate_agent_prompts(&criteria);
@@ -490,7 +491,7 @@ mod tests {
             kind: None,
             prompt: None,
             requirements: vec![],
-            when: None,
+            when: When::default(),
         }];
 
         let diagnostics = validate_commands(&criteria);
@@ -516,7 +517,7 @@ mod tests {
             kind: None,
             prompt: None,
             requirements: vec![],
-            when: None,
+            when: When::default(),
         }];
 
         let diagnostics = validate_commands(&criteria);
@@ -535,7 +536,7 @@ mod tests {
             kind: None,
             prompt: None,
             requirements: vec![],
-            when: None,
+            when: When::default(),
         }];
 
         let diagnostics = validate_commands(&criteria);
@@ -650,7 +651,7 @@ mod tests {
                     kind: None,
                     prompt: None,
                     requirements: vec![],
-                    when: None,
+                    when: When::default(),
                 }],
             },
         };
@@ -682,7 +683,7 @@ mod tests {
                     kind: Some(CriterionKind::AgentReport),
                     prompt: None,
                     requirements: vec![],
-                    when: None,
+                    when: When::default(),
                 }],
             },
         };
@@ -715,7 +716,7 @@ mod tests {
                 kind: None,
                 prompt: None,
                 requirements: vec![],
-                when: None,
+                when: When::default(),
             },
             Criterion {
                 name: "review".to_string(),
@@ -727,7 +728,7 @@ mod tests {
                 kind: Some(CriterionKind::AgentReport),
                 prompt: None,
                 requirements: vec![],
-                when: None,
+                when: When::default(),
             },
         ];
 
@@ -801,7 +802,7 @@ mod tests {
                     kind: None,
                     prompt: None,
                     requirements: vec![],
-                    when: None,
+                    when: When::default(),
                 }],
             },
         };
@@ -831,7 +832,7 @@ mod tests {
                     kind: None,
                     prompt: None,
                     requirements: vec![],
-                    when: None,
+                    when: When::default(),
                 }],
             },
         };

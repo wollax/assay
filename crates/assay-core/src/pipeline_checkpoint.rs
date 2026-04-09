@@ -16,7 +16,7 @@ use std::process::Child;
 use std::sync::mpsc::Receiver;
 use std::time::{Duration, Instant};
 
-use assay_types::review::SessionPhase as CheckpointPhase;
+use assay_types::review::CheckpointPhase;
 use assay_types::{AgentEvent, GateRunSummary, Spec};
 
 use crate::gate::evaluate_checkpoint;
@@ -50,6 +50,19 @@ pub struct CheckpointOutcome {
     pub budget_exhausted: bool,
 }
 
+/// Configuration for the checkpoint driver.
+#[derive(Debug, Clone)]
+pub struct CheckpointDriverConfig {
+    /// Maximum number of checkpoint evaluations before the driver stops.
+    pub budget: u32,
+    /// Wall-clock deadline for the entire checkpoint loop.
+    pub timeout: Duration,
+    /// CLI-level timeout override (highest precedence).
+    pub cli_timeout: Option<u64>,
+    /// Config-file timeout override (second precedence).
+    pub config_timeout: Option<u64>,
+}
+
 /// Consume events from `event_rx`, firing `evaluate_checkpoint` at trigger
 /// points, and return the aggregate outcome.
 ///
@@ -70,16 +83,15 @@ pub fn drive_checkpoints(
     event_rx: &Receiver<AgentEvent>,
     spec: &Spec,
     working_dir: &Path,
-    budget: u32,
-    timeout: Duration,
+    cfg: &CheckpointDriverConfig,
     buffer: &mut Vec<AgentEvent>,
 ) -> CheckpointOutcome {
     let mut passed = Vec::new();
-    let mut remaining_budget = budget;
+    let mut remaining_budget = cfg.budget;
     let mut tool_call_count: u32 = 0;
     let mut checkpoint_index: u32 = 0;
     let mut budget_exhausted = false;
-    let deadline = Instant::now() + timeout;
+    let deadline = Instant::now() + cfg.timeout;
 
     loop {
         let remaining = deadline.saturating_duration_since(Instant::now());
@@ -112,7 +124,14 @@ pub fn drive_checkpoints(
         }
 
         let phase = CheckpointPhase::AtToolCall { n: tool_call_count };
-        let summary = evaluate_checkpoint(spec, working_dir, buffer, phase.clone());
+        let summary = evaluate_checkpoint(
+            spec,
+            working_dir,
+            cfg.cli_timeout,
+            cfg.config_timeout,
+            buffer,
+            phase.clone(),
+        );
 
         // If no criteria matched this phase, no evaluation happened.
         if summary.results.is_empty() {
@@ -158,12 +177,9 @@ pub fn drive_checkpoints(
 /// Returns `true` if the spec has any criteria with a non-session-end `when` field.
 fn has_checkpoint_criteria(spec: &Spec) -> bool {
     use assay_types::criterion::When;
-    spec.criteria.iter().any(|c| {
-        matches!(
-            c.when,
-            Some(When::AfterToolCalls { .. } | When::OnEvent { .. })
-        )
-    })
+    spec.criteria
+        .iter()
+        .any(|c| matches!(c.when, When::AfterToolCalls { .. } | When::OnEvent { .. }))
 }
 
 // ── Subprocess kill helper ───────────────────────────────────────────
@@ -198,12 +214,14 @@ pub fn kill_agent_subprocess(
     // Step 1: Send SIGTERM.
     #[cfg(unix)]
     {
-        // SAFETY: child.id() returns a valid PID. Sending SIGTERM is a
-        // standard POSIX operation to request graceful shutdown.
+        // SAFETY: child.id() returns a valid u32 PID; the subprocess was
+        // spawned with process_group(0) so its pgid == pid. killpg sends
+        // SIGTERM to the entire process group, terminating child processes
+        // that would otherwise be orphaned.
         unsafe {
-            libc::kill(pid as i32, libc::SIGTERM);
+            libc::killpg(pid as libc::pid_t, libc::SIGTERM);
         }
-        tracing::info!(pid, "sent SIGTERM to agent subprocess");
+        tracing::info!(pid, "sent SIGTERM to agent process group");
     }
 
     #[cfg(not(unix))]
@@ -249,8 +267,11 @@ pub fn kill_agent_subprocess(
     );
 
     #[cfg(unix)]
+    // SAFETY: pid is still valid (process exists, just didn't exit cleanly);
+    // pgid == pid because process_group(0) was set at spawn. killpg ensures
+    // the entire process group is killed, not just the direct child.
     unsafe {
-        libc::kill(pid as i32, libc::SIGKILL);
+        libc::killpg(pid as libc::pid_t, libc::SIGKILL);
     }
 
     #[cfg(not(unix))]
@@ -275,12 +296,23 @@ pub fn drain_channel(event_rx: &Receiver<AgentEvent>, buffer: &mut Vec<AgentEven
 
 #[cfg(test)]
 mod tests {
+    use std::num::NonZeroU32;
+    use std::sync::mpsc;
+
     use super::*;
     use assay_types::criterion::When;
     use assay_types::{Criterion, CriterionKind};
-    use std::sync::mpsc;
 
     const TEST_TIMEOUT: Duration = Duration::from_secs(30);
+
+    fn test_config() -> CheckpointDriverConfig {
+        CheckpointDriverConfig {
+            budget: 16,
+            timeout: TEST_TIMEOUT,
+            cli_timeout: None,
+            config_timeout: None,
+        }
+    }
 
     fn make_spec_with_checkpoint(when: When, kind: Option<CriterionKind>) -> Spec {
         Spec {
@@ -298,7 +330,7 @@ mod tests {
                 kind,
                 prompt: None,
                 requirements: vec![],
-                when: Some(when),
+                when,
             }],
         }
     }
@@ -319,7 +351,7 @@ mod tests {
                 kind: None,
                 prompt: None,
                 requirements: vec![],
-                when: None,
+                when: When::default(),
             }],
         }
     }
@@ -346,7 +378,7 @@ mod tests {
         drop(tx);
 
         let mut buffer = Vec::new();
-        let outcome = drive_checkpoints(&rx, &spec, dir.path(), 16, TEST_TIMEOUT, &mut buffer);
+        let outcome = drive_checkpoints(&rx, &spec, dir.path(), &test_config(), &mut buffer);
 
         assert!(outcome.failed.is_none());
         assert!(outcome.passed.is_empty());
@@ -357,13 +389,18 @@ mod tests {
     #[test]
     fn checkpoint_passes_at_matching_tool_call_count() {
         let dir = tempfile::tempdir().unwrap();
-        let spec = make_spec_with_checkpoint(When::AfterToolCalls { n: 2 }, None);
+        let spec = make_spec_with_checkpoint(
+            When::AfterToolCalls {
+                n: NonZeroU32::new(2).unwrap(),
+            },
+            None,
+        );
         let (tx, rx) = mpsc::channel();
         send_events(&tx, vec![tool_called("bash"), tool_called("read")]);
         drop(tx);
 
         let mut buffer = Vec::new();
-        let outcome = drive_checkpoints(&rx, &spec, dir.path(), 16, TEST_TIMEOUT, &mut buffer);
+        let outcome = drive_checkpoints(&rx, &spec, dir.path(), &test_config(), &mut buffer);
 
         assert!(outcome.failed.is_none());
         assert_eq!(outcome.passed.len(), 1);
@@ -390,7 +427,9 @@ mod tests {
                 kind: None,
                 prompt: None,
                 requirements: vec![],
-                when: Some(When::AfterToolCalls { n: 2 }),
+                when: When::AfterToolCalls {
+                    n: NonZeroU32::new(2).unwrap(),
+                },
             }],
         };
 
@@ -407,7 +446,7 @@ mod tests {
         drop(tx);
 
         let mut buffer = Vec::new();
-        let outcome = drive_checkpoints(&rx, &spec, dir.path(), 16, TEST_TIMEOUT, &mut buffer);
+        let outcome = drive_checkpoints(&rx, &spec, dir.path(), &test_config(), &mut buffer);
 
         assert!(outcome.failed.is_some());
         let failed = outcome.failed.unwrap();
@@ -438,7 +477,9 @@ mod tests {
                     kind: None,
                     prompt: None,
                     requirements: vec![],
-                    when: Some(When::AfterToolCalls { n: 1 }),
+                    when: When::AfterToolCalls {
+                        n: NonZeroU32::new(1).unwrap(),
+                    },
                 },
                 Criterion {
                     name: "at-2".to_string(),
@@ -450,7 +491,9 @@ mod tests {
                     kind: None,
                     prompt: None,
                     requirements: vec![],
-                    when: Some(When::AfterToolCalls { n: 2 }),
+                    when: When::AfterToolCalls {
+                        n: NonZeroU32::new(2).unwrap(),
+                    },
                 },
                 Criterion {
                     name: "at-3".to_string(),
@@ -462,7 +505,9 @@ mod tests {
                     kind: None,
                     prompt: None,
                     requirements: vec![],
-                    when: Some(When::AfterToolCalls { n: 3 }),
+                    when: When::AfterToolCalls {
+                        n: NonZeroU32::new(3).unwrap(),
+                    },
                 },
             ],
         };
@@ -476,7 +521,16 @@ mod tests {
         drop(tx);
 
         let mut buffer = Vec::new();
-        let outcome = drive_checkpoints(&rx, &spec, dir.path(), 2, TEST_TIMEOUT, &mut buffer);
+        let outcome = drive_checkpoints(
+            &rx,
+            &spec,
+            dir.path(),
+            &CheckpointDriverConfig {
+                budget: 2,
+                ..test_config()
+            },
+            &mut buffer,
+        );
 
         assert!(outcome.failed.is_none());
         assert!(outcome.budget_exhausted);
@@ -489,12 +543,17 @@ mod tests {
     #[test]
     fn empty_event_stream_returns_clean_outcome() {
         let dir = tempfile::tempdir().unwrap();
-        let spec = make_spec_with_checkpoint(When::AfterToolCalls { n: 1 }, None);
+        let spec = make_spec_with_checkpoint(
+            When::AfterToolCalls {
+                n: NonZeroU32::new(1).unwrap(),
+            },
+            None,
+        );
         let (tx, rx) = mpsc::channel();
         drop(tx); // Immediate disconnect
 
         let mut buffer = Vec::new();
-        let outcome = drive_checkpoints(&rx, &spec, dir.path(), 16, TEST_TIMEOUT, &mut buffer);
+        let outcome = drive_checkpoints(&rx, &spec, dir.path(), &test_config(), &mut buffer);
 
         assert!(outcome.failed.is_none());
         assert!(outcome.passed.is_empty());
@@ -506,7 +565,12 @@ mod tests {
     fn non_tool_events_do_not_increment_counter() {
         let dir = tempfile::tempdir().unwrap();
         // Checkpoint fires at n=2 tool calls
-        let spec = make_spec_with_checkpoint(When::AfterToolCalls { n: 2 }, None);
+        let spec = make_spec_with_checkpoint(
+            When::AfterToolCalls {
+                n: NonZeroU32::new(2).unwrap(),
+            },
+            None,
+        );
 
         let (tx, rx) = mpsc::channel();
         // Send 1 tool call + 5 non-tool events + 1 tool call = 2 tool calls total
@@ -528,7 +592,7 @@ mod tests {
         drop(tx);
 
         let mut buffer = Vec::new();
-        let outcome = drive_checkpoints(&rx, &spec, dir.path(), 16, TEST_TIMEOUT, &mut buffer);
+        let outcome = drive_checkpoints(&rx, &spec, dir.path(), &test_config(), &mut buffer);
 
         assert!(outcome.failed.is_none());
         // Should have triggered at tool_call_count == 2
@@ -543,15 +607,24 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn kill_helper_terminates_long_running_process() {
+        use std::os::unix::process::CommandExt as _;
         use std::process::Command;
 
         // Spawn a long-running process that would outlive the test.
-        let mut child = Command::new("sh")
-            .args(["-c", "sleep 300"])
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::null())
-            .spawn()
-            .expect("spawn sleep");
+        // process_group(0) puts the child in its own process group (pgid == pid),
+        // so killpg(pid, SIG) terminates only this child, not the test runner.
+        let mut child = unsafe {
+            Command::new("sh")
+                .args(["-c", "sleep 300"])
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::null())
+                .pre_exec(|| {
+                    libc::setpgid(0, 0);
+                    Ok(())
+                })
+                .spawn()
+                .expect("spawn sleep")
+        };
 
         let pid = child.id();
 
@@ -588,14 +661,23 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn kill_helper_handles_already_exited_process() {
+        use std::os::unix::process::CommandExt as _;
         use std::process::Command;
 
         // Spawn a process that exits immediately.
-        let mut child = Command::new("true")
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .spawn()
-            .expect("spawn true");
+        // SAFETY: setpgid is async-signal-safe; isolates the child in its own
+        // process group so killpg targets only this child, not the test runner.
+        let mut child = unsafe {
+            Command::new("true")
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .pre_exec(|| {
+                    libc::setpgid(0, 0);
+                    Ok(())
+                })
+                .spawn()
+                .expect("spawn true")
+        };
 
         // Wait for it to finish.
         let _ = child.wait();

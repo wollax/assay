@@ -565,9 +565,9 @@ fn gate_diagnostic_schema_snapshot() {
 }
 
 #[test]
-fn checkpoint_session_phase_schema_snapshot() {
-    let schema = schemars::schema_for!(assay_types::review::SessionPhase);
-    assert_json_snapshot!("checkpoint-session-phase-schema", schema.to_value());
+fn checkpoint_phase_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::review::CheckpointPhase);
+    assert_json_snapshot!("checkpoint-phase-schema", schema.to_value());
 }
 
 #[test]

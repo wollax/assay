@@ -1,5 +1,7 @@
 //! Criterion types for defining acceptance criteria on specs.
 
+use std::num::NonZeroU32;
+
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -10,13 +12,21 @@ use crate::Enforcement;
 /// When set on a criterion, determines how it is evaluated.
 /// `AgentReport` means the criterion is evaluated by an agent
 /// via structured reasoning rather than a shell command.
+///
+/// Serializes using an internally tagged format with `type` as the tag key,
+/// using `snake_case` for variant names (e.g. `{"type":"agent_report"}`).
+/// Old PascalCase format (`{"type":"AgentReport"}`) is accepted via aliases
+/// for backward compatibility.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "type", rename_all = "snake_case")]
 pub enum CriterionKind {
     /// Evaluated by an agent via structured reasoning.
+    #[serde(alias = "AgentReport")]
     AgentReport,
 
     /// Criterion evaluated by counting events of a given type in the agent
     /// session log. Parameters mirror `GateKind::EventCount`.
+    #[serde(alias = "EventCount")]
     EventCount {
         /// The event type to count, matching an `AgentEvent` serde tag.
         event_type: String,
@@ -29,6 +39,7 @@ pub enum CriterionKind {
     },
 
     /// Criterion that passes only when no tool returned an error during the session.
+    #[serde(alias = "NoToolErrors")]
     NoToolErrors,
 }
 
@@ -70,8 +81,9 @@ pub enum When {
     /// last evaluation. The pipeline fires this trigger at the Nth tool
     /// call (exact match, not "at least N").
     AfterToolCalls {
-        /// Tool-call threshold at which to evaluate.
-        n: u32,
+        /// Tool-call threshold at which to evaluate. Enforced non-zero at
+        /// both the type level (`NonZeroU32`) and the serde boundary.
+        n: NonZeroU32,
     },
     /// Evaluate when the most-recent event in the stream has a serde
     /// type tag matching `event_type` (e.g. `"tool_called"`).
@@ -79,6 +91,13 @@ pub enum When {
         /// Event type tag to match (matches `AgentEvent` serde tag).
         event_type: String,
     },
+}
+
+impl When {
+    /// Returns `true` if this is `When::SessionEnd`.
+    pub fn is_session_end(&self) -> bool {
+        matches!(self, Self::SessionEnd)
+    }
 }
 
 inventory::submit! {
@@ -138,12 +157,11 @@ pub struct Criterion {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub requirements: Vec<String>,
 
-    /// Declares when this criterion is evaluated. `None` is equivalent to
-    /// `Some(When::SessionEnd)` — evaluation happens at session end. When
-    /// set to `Some(When::AfterToolCalls { .. })` or `Some(When::OnEvent { .. })`,
-    /// the criterion becomes a mid-session checkpoint.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub when: Option<When>,
+    /// Declares when this criterion is evaluated. Defaults to `When::SessionEnd`
+    /// (evaluation at session end). When set to `When::AfterToolCalls { .. }` or
+    /// `When::OnEvent { .. }`, the criterion becomes a mid-session checkpoint.
+    #[serde(default, skip_serializing_if = "When::is_session_end")]
+    pub when: When,
 }
 
 inventory::submit! {
@@ -169,7 +187,7 @@ mod tests {
             kind: None,
             prompt: None,
             requirements: vec![],
-            when: None,
+            when: When::default(),
         };
 
         let toml_str = toml::to_string(&criterion).expect("serialize to TOML");
@@ -198,7 +216,7 @@ mod tests {
             kind: None,
             prompt: None,
             requirements: vec![],
-            when: None,
+            when: When::default(),
         };
 
         let toml_str = toml::to_string(&criterion).expect("serialize to TOML");
@@ -223,7 +241,7 @@ mod tests {
             kind: None,
             prompt: None,
             requirements: vec![],
-            when: None,
+            when: When::default(),
         };
 
         let toml_str = toml::to_string(&criterion).expect("serialize to TOML");
@@ -248,13 +266,13 @@ mod tests {
             kind: Some(CriterionKind::AgentReport),
             prompt: Some("Review the auth module for SQL injection vulnerabilities".to_string()),
             requirements: vec![],
-            when: None,
+            when: When::default(),
         };
 
         let toml_str = toml::to_string(&criterion).expect("serialize to TOML");
         assert!(
-            toml_str.contains("kind = \"AgentReport\""),
-            "TOML should include kind, got:\n{toml_str}"
+            toml_str.contains("agent_report"),
+            "TOML should include kind with snake_case type tag, got:\n{toml_str}"
         );
         assert!(
             toml_str.contains("prompt = \"Review"),
@@ -285,7 +303,7 @@ mod tests {
             kind: None,
             prompt: None,
             requirements: vec![],
-            when: None,
+            when: When::default(),
         };
 
         let toml_str = toml::to_string(&criterion).expect("serialize to TOML");
@@ -311,7 +329,7 @@ mod tests {
             kind: None,
             prompt: None,
             requirements: vec![],
-            when: None,
+            when: When::default(),
         };
 
         let toml_str = toml::to_string(&criterion).expect("serialize to TOML");
@@ -338,12 +356,19 @@ mod tests {
         let back: When = serde_json::from_value(v).unwrap();
         assert_eq!(back, When::SessionEnd);
 
-        // AfterToolCalls { n: 2 }
-        let w = When::AfterToolCalls { n: 2 };
+        // AfterToolCalls { n: NonZeroU32::new(2).unwrap() }
+        let w = When::AfterToolCalls {
+            n: NonZeroU32::new(2).unwrap(),
+        };
         let v = serde_json::to_value(&w).unwrap();
         assert_eq!(v, json!({ "type": "after_tool_calls", "n": 2 }));
         let back: When = serde_json::from_value(v).unwrap();
-        assert_eq!(back, When::AfterToolCalls { n: 2 });
+        assert_eq!(
+            back,
+            When::AfterToolCalls {
+                n: NonZeroU32::new(2).unwrap()
+            }
+        );
 
         // OnEvent { event_type: "tool_called" }
         let w = When::OnEvent {
@@ -364,7 +389,7 @@ mod tests {
     }
 
     #[test]
-    fn criterion_when_omitted_when_none() {
+    fn criterion_when_omitted_when_session_end() {
         let criterion = Criterion {
             name: "basic".to_string(),
             description: "plain".to_string(),
@@ -375,12 +400,12 @@ mod tests {
             kind: None,
             prompt: None,
             requirements: vec![],
-            when: None,
+            when: When::SessionEnd,
         };
         let toml_str = toml::to_string(&criterion).expect("serialize");
         assert!(
             !toml_str.contains("when"),
-            "TOML should omit absent when, got:\n{toml_str}"
+            "TOML should omit when=SessionEnd, got:\n{toml_str}"
         );
         let roundtripped: Criterion = toml::from_str(&toml_str).expect("deserialize");
         assert_eq!(criterion, roundtripped);
@@ -398,12 +423,19 @@ mod tests {
             kind: Some(CriterionKind::NoToolErrors),
             prompt: None,
             requirements: vec![],
-            when: Some(When::AfterToolCalls { n: 3 }),
+            when: When::AfterToolCalls {
+                n: NonZeroU32::new(3).unwrap(),
+            },
         };
         let toml_str = toml::to_string(&criterion).expect("serialize");
         let roundtripped: Criterion = toml::from_str(&toml_str).expect("deserialize");
         assert_eq!(criterion, roundtripped);
-        assert_eq!(roundtripped.when, Some(When::AfterToolCalls { n: 3 }));
+        assert_eq!(
+            roundtripped.when,
+            When::AfterToolCalls {
+                n: NonZeroU32::new(3).unwrap()
+            }
+        );
     }
 
     #[test]
@@ -446,9 +478,13 @@ cmd = "cargo test --workspace"
         }
 
         let parsed: TinySpec = toml::from_str(fixture).expect("parse fixture");
-        // All criteria must have when == None (backward compat).
+        // All criteria must have when == When::SessionEnd (backward compat — omitted `when` defaults to SessionEnd).
         for c in &parsed.criteria {
-            assert_eq!(c.when, None, "pre-M024 fixture must not introduce when");
+            assert_eq!(
+                c.when,
+                When::SessionEnd,
+                "pre-M024 fixture must deserialize omitted when as SessionEnd"
+            );
         }
         // Re-serialize: output must not contain the string "when".
         let out = toml::to_string(&parsed).expect("serialize back");
@@ -469,6 +505,136 @@ cmd = "cargo test --workspace"
         assert!(
             result.is_err(),
             "criterion without description should fail deserialization"
+        );
+    }
+
+    #[test]
+    fn when_after_tool_calls_zero_rejected() {
+        let json = r#"{"type":"after_tool_calls","n":0}"#;
+        let result = serde_json::from_str::<When>(json);
+        assert!(
+            result.is_err(),
+            "AfterToolCalls n=0 should fail deserialization"
+        );
+    }
+
+    #[test]
+    fn when_after_tool_calls_one_accepted() {
+        let json = r#"{"type":"after_tool_calls","n":1}"#;
+        let result = serde_json::from_str::<When>(json);
+        assert!(
+            result.is_ok(),
+            "AfterToolCalls n=1 should succeed, got: {:?}",
+            result
+        );
+        assert_eq!(
+            result.unwrap(),
+            When::AfterToolCalls {
+                n: NonZeroU32::new(1).unwrap()
+            }
+        );
+    }
+
+    #[test]
+    fn when_is_session_end_method() {
+        assert!(When::SessionEnd.is_session_end());
+        assert!(
+            !When::AfterToolCalls {
+                n: NonZeroU32::new(1).unwrap()
+            }
+            .is_session_end()
+        );
+        assert!(
+            !When::OnEvent {
+                event_type: "x".to_string()
+            }
+            .is_session_end()
+        );
+    }
+
+    // ── CriterionKind internally tagged serde ──────────────────────────
+
+    #[test]
+    fn criterion_kind_internally_tagged_roundtrip() {
+        use serde_json::json;
+
+        // AgentReport → {"type":"agent_report"}
+        let v = serde_json::to_value(&CriterionKind::AgentReport).unwrap();
+        assert_eq!(v, json!({"type": "agent_report"}));
+        let back: CriterionKind = serde_json::from_value(v).unwrap();
+        assert_eq!(back, CriterionKind::AgentReport);
+
+        // NoToolErrors → {"type":"no_tool_errors"}
+        let v = serde_json::to_value(&CriterionKind::NoToolErrors).unwrap();
+        assert_eq!(v, json!({"type": "no_tool_errors"}));
+        let back: CriterionKind = serde_json::from_value(v).unwrap();
+        assert_eq!(back, CriterionKind::NoToolErrors);
+    }
+
+    #[test]
+    fn criterion_kind_alias_roundtrip() {
+        // Old PascalCase format must still deserialize via alias.
+        let agent_report: CriterionKind =
+            serde_json::from_str(r#"{"type":"AgentReport"}"#).unwrap();
+        assert_eq!(agent_report, CriterionKind::AgentReport);
+
+        let no_tool_errors: CriterionKind =
+            serde_json::from_str(r#"{"type":"NoToolErrors"}"#).unwrap();
+        assert_eq!(no_tool_errors, CriterionKind::NoToolErrors);
+    }
+
+    #[test]
+    fn criterion_kind_event_count_roundtrip() {
+        use serde_json::json;
+
+        // New snake_case format
+        let kind = CriterionKind::EventCount {
+            event_type: "tool_called".to_string(),
+            min: Some(1),
+            max: Some(5),
+        };
+        let v = serde_json::to_value(&kind).unwrap();
+        assert_eq!(
+            v,
+            json!({"type": "event_count", "event_type": "tool_called", "min": 1, "max": 5})
+        );
+        let back: CriterionKind = serde_json::from_value(v).unwrap();
+        assert_eq!(back, kind);
+
+        // Old PascalCase alias format
+        let old_format: CriterionKind = serde_json::from_str(
+            r#"{"type":"EventCount","event_type":"tool_called","min":1,"max":5}"#,
+        )
+        .unwrap();
+        assert_eq!(old_format, kind);
+    }
+
+    #[test]
+    fn criterion_kind_toml_pascal_case_alias_roundtrip() {
+        // Old TOML with PascalCase variant in internally-tagged format.
+        // This is the format that `#[serde(alias)]` preserves for backward compat.
+        let toml_agent: CriterionKind =
+            toml::from_str(r#"type = "AgentReport""#).expect("AgentReport alias");
+        assert_eq!(toml_agent, CriterionKind::AgentReport);
+
+        let toml_no_errors: CriterionKind =
+            toml::from_str(r#"type = "NoToolErrors""#).expect("NoToolErrors alias");
+        assert_eq!(toml_no_errors, CriterionKind::NoToolErrors);
+
+        let toml_event: CriterionKind = toml::from_str(
+            r#"type = "EventCount"
+event_type = "tool_called"
+min = 1
+"#,
+        )
+        .expect("EventCount alias");
+        assert_eq!(
+            toml_event,
+            CriterionKind::EventCount {
+                event_type: "tool_called".to_string(),
+                min: Some(1),
+                max: None,
+            }
         );
     }
 }

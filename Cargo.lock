@@ -248,6 +248,7 @@ dependencies = [
  "color-eyre",
  "crossterm 0.28.1",
  "ratatui",
+ "regex-lite",
  "serde",
  "serde_json",
  "tempfile",

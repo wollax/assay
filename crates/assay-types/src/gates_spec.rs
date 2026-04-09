@@ -75,7 +75,7 @@ inventory::submit! {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::criterion::CriterionKind;
+    use crate::criterion::{CriterionKind, When};
     use crate::enforcement::Enforcement;
 
     #[test]
@@ -97,7 +97,7 @@ mod tests {
                 kind: None,
                 prompt: None,
                 requirements: vec![],
-                when: None,
+                when: When::default(),
             }],
         };
 
@@ -193,7 +193,7 @@ unknown_crit_key = true
             kind: None,
             prompt: None,
             requirements: vec![],
-            when: None,
+            when: When::default(),
         };
 
         let toml_str = toml::to_string(&criterion).expect("serialize to TOML");
@@ -223,7 +223,7 @@ unknown_crit_key = true
             kind: None,
             prompt: None,
             requirements: vec!["REQ-FUNC-001".to_string()],
-            when: None,
+            when: When::default(),
         };
 
         let toml_str = toml::to_string(&criterion).expect("serialize to TOML");
@@ -248,13 +248,13 @@ unknown_crit_key = true
             kind: Some(CriterionKind::AgentReport),
             prompt: Some("Check for SQL injection in all DB queries".to_string()),
             requirements: vec!["REQ-SEC-001".to_string()],
-            when: None,
+            when: When::default(),
         };
 
         let toml_str = toml::to_string(&criterion).expect("serialize to TOML");
         assert!(
-            toml_str.contains("kind = \"AgentReport\""),
-            "TOML should include kind, got:\n{toml_str}"
+            toml_str.contains("agent_report"),
+            "TOML should include kind with snake_case type tag, got:\n{toml_str}"
         );
         assert!(
             toml_str.contains("prompt ="),
@@ -285,7 +285,7 @@ unknown_crit_key = true
                     kind: None,
                     prompt: None,
                     requirements: vec![],
-                    when: None,
+                    when: When::default(),
                 },
                 GateCriterion {
                     name: "architecture-review".to_string(),
@@ -297,7 +297,7 @@ unknown_crit_key = true
                     kind: Some(CriterionKind::AgentReport),
                     prompt: Some("Evaluate module coupling and cohesion".to_string()),
                     requirements: vec!["REQ-ARCH-001".to_string()],
-                    when: None,
+                    when: When::default(),
                 },
             ],
         };
@@ -377,7 +377,7 @@ description = "A check"
                 kind: None,
                 prompt: None,
                 requirements: vec![],
-                when: None,
+                when: When::default(),
             }],
         };
 

@@ -13,6 +13,7 @@ use std::path::{Path, PathBuf};
 use chrono::Utc;
 use tempfile::NamedTempFile;
 
+use assay_types::criterion::When;
 use assay_types::{ChunkRef, Criterion, GatesSpec, Milestone, MilestoneStatus};
 
 use crate::error::{AssayError, Result};
@@ -373,7 +374,7 @@ fn write_gates_toml(
             kind: None,
             prompt: None,
             requirements: vec![],
-            when: None,
+            when: When::default(),
         })
         .collect();
 

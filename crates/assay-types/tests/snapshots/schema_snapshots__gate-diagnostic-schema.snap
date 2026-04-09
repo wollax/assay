@@ -4,6 +4,62 @@ expression: schema.to_value()
 ---
 {
   "$defs": {
+    "CheckpointPhase": {
+      "description": "The phase in a pipeline session at which a checkpoint gate was evaluated.\n\nLives in `review` (not `gate` or `pipeline`) per D029 — phase is a\ndiagnostic concern that belongs next to [`GateDiagnostic`].\n\nAccessed as `assay_types::review::CheckpointPhase` — deliberately NOT\nre-exported at the crate root to avoid collision with the workflow\n`SessionPhase` in `work_session`.",
+      "oneOf": [
+        {
+          "description": "Gate was evaluated at a tool-call checkpoint (`n` = tool call count).",
+          "properties": {
+            "n": {
+              "description": "Number of tool calls emitted when the checkpoint fired.",
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": {
+              "const": "at_tool_call",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "n"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Gate was evaluated when a specific event type was observed.\n\nDeserializes from both `on_event` (canonical) and `at_event` (legacy alias)\nJSON tags for backward compatibility with persisted [`GateDiagnostic`] JSON.",
+          "properties": {
+            "event_type": {
+              "description": "The event type tag that triggered the checkpoint.",
+              "type": "string"
+            },
+            "type": {
+              "const": "on_event",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "event_type"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Gate was evaluated at the end of the session.",
+          "properties": {
+            "type": {
+              "const": "session_end",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        }
+      ]
+    },
     "FailedCriterionSummary": {
       "additionalProperties": false,
       "description": "Summary of a single failed gate criterion for diagnostic persistence.",
@@ -37,62 +93,6 @@ expression: schema.to_value()
         "criterion_name"
       ],
       "type": "object"
-    },
-    "SessionPhase": {
-      "description": "The phase in a pipeline session at which a checkpoint gate was evaluated.\n\nLives in `review` (not `gate` or `pipeline`) per D029 — phase is a\ndiagnostic concern that belongs next to [`GateDiagnostic`].\n\nAccessed as `assay_types::review::SessionPhase` — deliberately NOT\nre-exported at the crate root to avoid collision with the workflow\n`SessionPhase` in `work_session`.",
-      "oneOf": [
-        {
-          "description": "Gate was evaluated at a tool-call checkpoint (`n` = tool call count).",
-          "properties": {
-            "n": {
-              "description": "Number of tool calls emitted when the checkpoint fired.",
-              "format": "uint32",
-              "minimum": 0,
-              "type": "integer"
-            },
-            "type": {
-              "const": "at_tool_call",
-              "type": "string"
-            }
-          },
-          "required": [
-            "type",
-            "n"
-          ],
-          "type": "object"
-        },
-        {
-          "description": "Gate was evaluated when a specific event type was observed.",
-          "properties": {
-            "event_type": {
-              "description": "The event type tag that triggered the checkpoint.",
-              "type": "string"
-            },
-            "type": {
-              "const": "at_event",
-              "type": "string"
-            }
-          },
-          "required": [
-            "type",
-            "event_type"
-          ],
-          "type": "object"
-        },
-        {
-          "description": "Gate was evaluated at the end of the session.",
-          "properties": {
-            "type": {
-              "const": "session_end",
-              "type": "string"
-            }
-          },
-          "required": [
-            "type"
-          ],
-          "type": "object"
-        }
-      ]
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -132,7 +132,7 @@ expression: schema.to_value()
       "type": "string"
     },
     "session_phase": {
-      "$ref": "#/$defs/SessionPhase",
+      "$ref": "#/$defs/CheckpointPhase",
       "default": {
         "type": "session_end"
       },

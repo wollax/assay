@@ -6080,7 +6080,7 @@ cmd = "echo ok"
                     kind: None,
                     prompt: None,
                     requirements: vec![],
-                    when: None,
+                    when: assay_types::criterion::When::default(),
                 }],
             },
         };
@@ -6111,7 +6111,7 @@ cmd = "echo ok"
                         kind: None,
                         prompt: None,
                         requirements: vec![],
-                        when: None,
+                        when: assay_types::criterion::When::default(),
                     },
                     assay_types::Criterion {
                         name: "code-review".to_string(),
@@ -6123,7 +6123,7 @@ cmd = "echo ok"
                         kind: Some(CriterionKind::AgentReport),
                         prompt: Some("Review for issues".to_string()),
                         requirements: vec![],
-                        when: None,
+                        when: assay_types::criterion::When::default(),
                     },
                 ],
             },
@@ -9475,7 +9475,7 @@ cmd = "echo ok"
 [[criteria]]
 name = "agent-review"
 description = "Agent-evaluated criterion"
-kind = "AgentReport"
+kind = { type = "agent_report" }
 prompt = "Review the code"
 "#,
         );
@@ -9609,7 +9609,7 @@ cmd = "echo ok"
 [[criteria]]
 name = "agent-review"
 description = "Agent-evaluated criterion"
-kind = "AgentReport"
+kind = { type = "agent_report" }
 prompt = "Review the code"
 "#,
         );
@@ -9718,7 +9718,7 @@ cmd = "echo ok"
 [[criteria]]
 name = "agent-review"
 description = "Agent-evaluated criterion"
-kind = "AgentReport"
+kind = { type = "agent_report" }
 prompt = "Review the code"
 "#,
         );

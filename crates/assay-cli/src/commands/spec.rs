@@ -731,13 +731,13 @@ fn handle_spec_review(name: &str, json: bool, list: bool) -> anyhow::Result<i32>
             for d in &checkpoint_diags {
                 let idx = d.checkpoint_index.unwrap();
                 let phase_str = match &d.session_phase {
-                    assay_types::review::SessionPhase::AtToolCall { n } => {
+                    assay_types::review::CheckpointPhase::AtToolCall { n } => {
                         format!("at_tool_call({n})")
                     }
-                    assay_types::review::SessionPhase::AtEvent { event_type } => {
-                        format!("at_event({event_type})")
+                    assay_types::review::CheckpointPhase::OnEvent { event_type } => {
+                        format!("on_event({event_type})")
                     }
-                    assay_types::review::SessionPhase::SessionEnd => "session_end".to_string(),
+                    assay_types::review::CheckpointPhase::SessionEnd => "session_end".to_string(),
                 };
                 println!(
                     "  [{idx}] phase: {phase_str}  passed: {passed}  failed: {failed}",
@@ -960,7 +960,7 @@ enforcement = "required"
 [[criteria]]
 name = "agent-check"
 description = "agent report"
-kind = "AgentReport"
+kind = {{ type = "agent_report" }}
 "#
         );
         std::fs::write(spec_dir.join("gates.toml"), gates).unwrap();
@@ -1559,7 +1559,7 @@ cmd = "echo ok"
             passed: 2,
             failed: 1,
             checkpoint_index: Some(0),
-            session_phase: assay_types::review::SessionPhase::AtToolCall { n: 5 },
+            session_phase: assay_types::review::CheckpointPhase::AtToolCall { n: 5 },
         };
 
         let path =
@@ -1573,7 +1573,7 @@ cmd = "echo ok"
         assert_eq!(loaded.checkpoint_index, Some(0));
         assert!(matches!(
             loaded.session_phase,
-            assay_types::review::SessionPhase::AtToolCall { n: 5 }
+            assay_types::review::CheckpointPhase::AtToolCall { n: 5 }
         ));
         assert_eq!(loaded.failed_criteria.len(), 1);
         assert_eq!(loaded.failed_criteria[0].criterion_name, "too-many-errors");

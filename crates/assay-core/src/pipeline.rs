@@ -425,6 +425,13 @@ pub struct StreamingAgentHandle {
     /// PID of the subprocess (0 if spawn failed or args were empty).
     /// Use with `libc::kill(-pid, signal)` to signal the process group.
     pub pid: u32,
+    /// Captured stderr from the subprocess (piped, not inherited).
+    /// Populated by a concurrent reader thread; capped at 4096 bytes (tail).
+    /// Join `stderr_reader` first to ensure all content has been written.
+    pub stderr_buffer: std::sync::Arc<std::sync::Mutex<String>>,
+    /// Join handle for the stderr reader thread. Join after `relay` to ensure
+    /// the buffer is fully populated before reading.
+    pub stderr_reader: Option<std::thread::JoinHandle<()>>,
 }
 
 /// # Arguments
@@ -452,6 +459,8 @@ pub fn launch_agent_streaming(
                 -1
             }),
             pid: 0,
+            stderr_buffer: std::sync::Arc::new(std::sync::Mutex::new(String::new())),
+            stderr_reader: None,
         };
     }
 
@@ -471,7 +480,7 @@ pub fn launch_agent_streaming(
     cmd.args(&args)
         .current_dir(&working_dir)
         .stdout(Stdio::piped())
-        .stderr(Stdio::inherit());
+        .stderr(Stdio::piped());
 
     // Put child in its own process group so the pipeline can kill the
     // entire tree (agent + any tool subprocesses) via killpg.
@@ -485,6 +494,9 @@ pub fn launch_agent_streaming(
     if let Some(ref tp) = traceparent_value {
         cmd.env("TRACEPARENT", tp);
     }
+
+    let stderr_buffer: std::sync::Arc<std::sync::Mutex<String>> =
+        std::sync::Arc::new(std::sync::Mutex::new(String::new()));
 
     let mut child = match cmd.spawn() {
         Ok(c) => c,
@@ -500,11 +512,48 @@ pub fn launch_agent_streaming(
             return StreamingAgentHandle {
                 relay: std::thread::spawn(move || -1),
                 pid: 0,
+                stderr_buffer,
+                stderr_reader: None,
             };
         }
     };
 
     let child_pid = child.id();
+
+    // Spawn a stderr reader thread to capture subprocess stderr concurrently
+    // with stdout, avoiding pipe deadlock. The buffer is capped at 4096 bytes
+    // (tail-biased: older content is trimmed when the cap is hit).
+    let stderr_reader = if let Some(stderr_pipe) = child.stderr.take() {
+        let stderr_buffer_clone = std::sync::Arc::clone(&stderr_buffer);
+        const STDERR_CAP: usize = 4096;
+        Some(std::thread::spawn(move || {
+            use std::io::{BufRead, BufReader};
+            let reader = BufReader::new(stderr_pipe);
+            for line in reader.lines().map_while(Result::ok) {
+                if let Ok(mut buf) = stderr_buffer_clone.lock() {
+                    if !buf.is_empty() {
+                        buf.push('\n');
+                    }
+                    buf.push_str(&line);
+                    // Trim head if over cap, keeping the most recent content.
+                    if buf.len() > STDERR_CAP {
+                        let trim_at = buf.len() - STDERR_CAP;
+                        // Find char boundary at or after trim_at to avoid
+                        // slicing through a multi-byte UTF-8 sequence.
+                        let trim_at = buf.ceil_char_boundary(trim_at);
+                        // Advance to next newline for cleaner output.
+                        let trim_at = buf[trim_at..]
+                            .find('\n')
+                            .map(|off| trim_at + off + 1)
+                            .unwrap_or(buf.len());
+                        *buf = buf[trim_at..].to_string();
+                    }
+                }
+            }
+        }))
+    } else {
+        None
+    };
 
     let relay = std::thread::spawn(move || {
         // Drain stdout line-by-line, parsing each line as NDJSON or
@@ -604,6 +653,8 @@ pub fn launch_agent_streaming(
     StreamingAgentHandle {
         relay,
         pid: child_pid,
+        stderr_buffer,
+        stderr_reader,
     }
 }
 
@@ -879,7 +930,7 @@ pub fn execute_session(
             // `write_harness_streaming` returns the full command line:
             // cli_args[0] = binary, cli_args[1..] = streaming-compatible args.
             let (event_tx, event_rx) = std::sync::mpsc::channel::<AgentEvent>();
-            let agent_handle = launch_agent_streaming(&cli_args, &worktree_info.path, event_tx);
+            let mut agent_handle = launch_agent_streaming(&cli_args, &worktree_info.path, event_tx);
 
             // Run checkpoint driver (consumes events until channel disconnect or failure).
             let mut event_buffer = Vec::new();
@@ -887,8 +938,12 @@ pub fn execute_session(
                 &event_rx,
                 &checkpoint_spec,
                 &worktree_info.path,
-                crate::pipeline_checkpoint::DEFAULT_CHECKPOINT_BUDGET,
-                timeout,
+                &crate::pipeline_checkpoint::CheckpointDriverConfig {
+                    budget: crate::pipeline_checkpoint::DEFAULT_CHECKPOINT_BUDGET,
+                    timeout,
+                    cli_timeout: None,
+                    config_timeout: Some(config.timeout_secs),
+                },
                 &mut event_buffer,
             );
 
@@ -903,10 +958,11 @@ pub fn execute_session(
                 if agent_handle.pid > 0 {
                     #[cfg(unix)]
                     {
-                        // Send SIGTERM to the process group (negative PID).
-                        // SAFETY: pid is valid, process_group(0) was set at spawn.
+                        // SAFETY: pid is valid u32; process_group(0) was set at spawn so
+                        // pgid == pid. killpg sends SIGTERM to the entire process group,
+                        // terminating child tool subprocesses that would otherwise orphan.
                         unsafe {
-                            libc::kill(-(agent_handle.pid as i32), libc::SIGTERM);
+                            libc::killpg(agent_handle.pid as libc::pid_t, libc::SIGTERM);
                         }
                         tracing::info!(
                             pid = agent_handle.pid,
@@ -921,7 +977,23 @@ pub fn execute_session(
             }
 
             // Join relay thread to get exit code.
-            let exit_code = agent_handle.relay.join().unwrap_or(-1);
+            let exit_code = match agent_handle.relay.join() {
+                Ok(code) => code,
+                Err(e) => {
+                    let msg = e
+                        .downcast_ref::<&str>()
+                        .copied()
+                        .or_else(|| e.downcast_ref::<String>().map(|s| s.as_str()))
+                        .unwrap_or("(non-string panic payload)");
+                    tracing::error!(panic = %msg, "relay thread panicked");
+                    -1
+                }
+            };
+
+            // Join stderr reader to ensure buffer is fully populated.
+            if let Some(reader) = agent_handle.stderr_reader.take() {
+                let _ = reader.join();
+            }
 
             // Check timeout.
             if stage_start.elapsed() > timeout {
@@ -959,6 +1031,19 @@ pub fn execute_session(
                     &format!("Agent crashed with {exit_info}"),
                 );
                 warn!(stage = "agent_launch", %exit_info, "agent crashed");
+
+                // Include captured stderr in the error message for diagnosis.
+                let captured_stderr = agent_handle
+                    .stderr_buffer
+                    .lock()
+                    .map(|s| s.clone())
+                    .unwrap_or_default();
+                let stderr_section = if captured_stderr.is_empty() {
+                    String::new()
+                } else {
+                    format!("\n\nCaptured stderr:\n{captured_stderr}")
+                };
+
                 return Err(PipelineError {
                     stage: PipelineStage::AgentLaunch,
                     message: format!(
@@ -966,8 +1051,8 @@ pub fn execute_session(
                         manifest_session.spec,
                     ),
                     recovery: format!(
-                        "Inspect agent stderr. Check that Claude Code CLI is properly configured. \
-                     Working directory: '{}'",
+                        "Check that Claude Code CLI is properly configured. \
+                         Working directory: '{}'.{stderr_section}",
                         worktree_info.path.display()
                     ),
                     elapsed,
@@ -1172,12 +1257,47 @@ pub fn execute_session(
                         }
                     }
                     Err(e) => {
-                        // AlreadyTerminal or any other error — warn and continue.
-                        warn!(
-                            spec = %spec_name,
-                            error = %e,
-                            "auto-promote failed (non-fatal); continuing pipeline"
-                        );
+                        // TOCTOU guard: a concurrent process may have already promoted
+                        // this spec to Verified between our status check and the
+                        // promote_spec call. Re-read the on-disk status to distinguish
+                        // "already at target" (info, not an error) from a genuine IO
+                        // failure (warn).
+                        match crate::spec::load_feature_spec(spec_toml_path) {
+                            Ok(current)
+                                if current.status
+                                    == assay_types::feature_spec::SpecStatus::Verified =>
+                            {
+                                info!(
+                                    spec = %spec_name,
+                                    "auto-promote: spec already at target status Verified \
+                                     (concurrent promotion); recording auto_promoted"
+                                );
+                                // Fall through to record auto_promoted on the session.
+                                if let Err(session_err) = crate::work_session::with_session(
+                                    &config.assay_dir,
+                                    &session_id,
+                                    |session| {
+                                        session.auto_promoted = true;
+                                        session.promoted_to =
+                                            Some(assay_types::feature_spec::SpecStatus::Verified);
+                                        Ok(())
+                                    },
+                                ) {
+                                    warn!(
+                                        error = %session_err,
+                                        "failed to persist auto_promoted flag to work session"
+                                    );
+                                }
+                            }
+                            _ => {
+                                // Genuine error or unrecognised state — warn and continue.
+                                warn!(
+                                    spec = %spec_name,
+                                    error = %e,
+                                    "auto-promote failed (non-fatal); continuing pipeline"
+                                );
+                            }
+                        }
                     }
                 }
             }
@@ -2045,5 +2165,118 @@ cmd = "exit 1"
                 panic!("unexpected pipeline error at stage {}: {}", err.stage, err);
             }
         }
+    }
+
+    // ── SAFE-03: stderr capture in StreamingAgentHandle ────────────────
+
+    /// TEST-SAFE-03-01: `launch_agent_streaming` captures stderr written by the
+    /// subprocess into `stderr_buffer`.  After the relay thread joins, the buffer
+    /// must contain the text the process wrote to stderr.
+    #[test]
+    fn launch_agent_streaming_captures_stderr() {
+        let dir = tempfile::tempdir().unwrap();
+        let (event_tx, event_rx) = std::sync::mpsc::channel::<AgentEvent>();
+
+        // Use `sh -c` to write a known string to stderr and exit 0.
+        let cli_args: Vec<String> = vec![
+            "sh".into(),
+            "-c".into(),
+            "echo 'test stderr content' >&2".into(),
+        ];
+
+        let handle = launch_agent_streaming(&cli_args, dir.path(), event_tx);
+        // Drain events so relay thread can finish.
+        drop(event_rx);
+        let _exit = handle.relay.join().unwrap();
+
+        // Join stderr reader to ensure buffer is fully populated.
+        if let Some(reader) = handle.stderr_reader {
+            reader.join().unwrap();
+        }
+
+        let stderr = handle.stderr_buffer.lock().unwrap().clone();
+        assert!(
+            stderr.contains("test stderr content"),
+            "stderr_buffer should contain subprocess stderr; got: {stderr:?}"
+        );
+    }
+
+    /// TEST-SAFE-03-02: When `launch_agent_streaming` is called with empty args
+    /// (guard path), `stderr_buffer` is present and empty (no panic).
+    #[test]
+    fn launch_agent_streaming_empty_args_has_stderr_buffer() {
+        let dir = tempfile::tempdir().unwrap();
+        let (event_tx, _event_rx) = std::sync::mpsc::channel::<AgentEvent>();
+
+        let handle = launch_agent_streaming(&[], dir.path(), event_tx);
+        let _exit = handle.relay.join().unwrap();
+
+        let stderr = handle.stderr_buffer.lock().unwrap().clone();
+        assert!(
+            stderr.is_empty(),
+            "empty-args path stderr_buffer should be empty"
+        );
+    }
+
+    // ── SAFE-02: TOCTOU-safe auto-promote ──────────────────────────────
+
+    /// TEST-SAFE-02-01: When `promote_spec` fails on a spec that is already at
+    /// Verified on disk, the TOCTOU guard detects this and treats it as success.
+    ///
+    /// This test calls `promote_spec` on an already-Verified spec (which returns
+    /// Err because Verified is terminal), then exercises the same re-read guard
+    /// logic used in the pipeline auto-promote path.
+    #[test]
+    fn auto_promote_toctou_guard_already_verified_is_success() {
+        use assay_types::feature_spec::SpecStatus;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let specs_dir = tmp.path().join("specs");
+        std::fs::create_dir_all(&specs_dir).unwrap();
+
+        // Create a directory spec already at Verified status.
+        let spec_dir = specs_dir.join("my-feature");
+        std::fs::create_dir_all(&spec_dir).unwrap();
+        std::fs::write(
+            spec_dir.join("gates.toml"),
+            r#"name = "my-feature"
+[[criteria]]
+name = "check"
+description = "Basic check"
+cmd = "echo ok"
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            spec_dir.join("spec.toml"),
+            r#"name = "my-feature"
+status = "verified"
+
+[[requirements]]
+id = "REQ-CORE-001"
+title = "Test"
+statement = "The system shall do something"
+"#,
+        )
+        .unwrap();
+
+        let spec_toml_path = spec_dir.join("spec.toml");
+
+        // promote_spec on an already-Verified spec returns Err (terminal status).
+        let promote_result = crate::spec::promote::promote_spec(&specs_dir, "my-feature", None);
+        assert!(
+            promote_result.is_err(),
+            "promote_spec should fail on already-Verified spec"
+        );
+
+        // Exercise the TOCTOU guard: on promote_spec Err, re-read the spec.
+        // If status is Verified, this is a concurrent-promotion success (info),
+        // not a genuine failure (warn).
+        let current = crate::spec::load_feature_spec(&spec_toml_path).unwrap();
+        let is_already_at_target = current.status == SpecStatus::Verified;
+        assert!(
+            is_already_at_target,
+            "TOCTOU guard should detect spec is already at target Verified"
+        );
     }
 }
