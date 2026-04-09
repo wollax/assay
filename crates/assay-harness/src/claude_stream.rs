@@ -183,7 +183,20 @@ where
                 match inner["type"].as_str() {
                     Some("content_block_delta") => {
                         if inner["delta"]["type"].as_str() == Some("text_delta") {
-                            let text = inner["delta"]["text"].as_str().unwrap_or("").to_string();
+                            let raw = inner["delta"]["text"].as_str().unwrap_or("");
+                            // Cap individual TextDelta tokens to 64 KiB to prevent
+                            // unbounded per-token allocations from oversized payloads.
+                            const MAX_TEXT_DELTA_BYTES: usize = 64 * 1024;
+                            let text = if raw.len() > MAX_TEXT_DELTA_BYTES {
+                                tracing::warn!(
+                                    len = raw.len(),
+                                    max = MAX_TEXT_DELTA_BYTES,
+                                    "truncating oversized TextDelta"
+                                );
+                                raw[..MAX_TEXT_DELTA_BYTES].to_string()
+                            } else {
+                                raw.to_string()
+                            };
                             // Saturating cast: block indices > u32::MAX are
                             // not realistic in practice but we never want a
                             // silent wraparound.
@@ -634,5 +647,69 @@ mod tests {
             ),
             "fourth event should be SessionStopped"
         );
+    }
+
+    // ── WOL-345: non-text_delta content_block_delta ───────────────────
+
+    /// A `stream_event` with `input_json_delta` (tool input streaming).
+    const FIXTURE_STREAM_EVENT_INPUT_JSON_DELTA: &str = r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"command\""}}}"#;
+
+    #[test]
+    fn input_json_delta_silently_skipped() {
+        let reader = Cursor::new(FIXTURE_STREAM_EVENT_INPUT_JSON_DELTA);
+        let events = parse_claude_events(reader);
+        assert!(
+            events.is_empty(),
+            "input_json_delta should produce no events, got {events:?}"
+        );
+    }
+
+    // ── WOL-346: mixed TextDelta + TextBlock double-emit ─────────────
+
+    #[test]
+    fn mixed_text_delta_and_text_block_both_emitted() {
+        // When --include-partial-messages is active, the same text appears
+        // as incremental TextDelta tokens AND as a final TextBlock.
+        let ndjson = [
+            FIXTURE_STREAM_EVENT_TEXT_DELTA,         // TextDelta "Hello "
+            FIXTURE_STREAM_EVENT_TEXT_DELTA_INDEX_2, // TextDelta "chunk" (different block)
+            FIXTURE_ASSISTANT_TEXT_ONLY,             // TextBlock "I will now read the file."
+        ]
+        .join("\n");
+        let reader = Cursor::new(ndjson);
+        let events = parse_claude_events(reader);
+
+        let text_deltas: Vec<_> = events
+            .iter()
+            .filter(|e| matches!(e, AgentEvent::TextDelta { .. }))
+            .collect();
+        let text_blocks: Vec<_> = events
+            .iter()
+            .filter(|e| matches!(e, AgentEvent::TextBlock { .. }))
+            .collect();
+
+        assert_eq!(text_deltas.len(), 2, "expected 2 TextDelta events");
+        assert_eq!(text_blocks.len(), 1, "expected 1 TextBlock event");
+    }
+
+    // ── WOL-347: TextDelta text length cap ───────────────────────────
+
+    #[test]
+    fn oversized_text_delta_is_truncated() {
+        // Build a stream_event with a text_delta payload exceeding 64 KiB.
+        let big_text = "x".repeat(70_000);
+        let json = format!(
+            r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"text_delta","text":"{big_text}"}}}}}}"#,
+        );
+        let reader = Cursor::new(json);
+        let events = parse_claude_events(reader);
+
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            AgentEvent::TextDelta { text, .. } => {
+                assert_eq!(text.len(), 64 * 1024, "text should be truncated to 64 KiB");
+            }
+            other => panic!("expected TextDelta, got {other:?}"),
+        }
     }
 }

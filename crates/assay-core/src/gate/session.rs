@@ -391,7 +391,35 @@ pub fn save_context(assay_dir: &Path, context: &GateEvalContext) -> Result<PathB
         .persist(&final_path)
         .map_err(|e| AssayError::io("persisting gate eval context", &final_path, e.error))?;
 
+    // Evict old sessions to prevent unbounded directory growth.
+    // Session IDs are ULID-like (chronologically sortable), so lexicographic
+    // order == chronological order. Keep the 50 most recent.
+    const MAX_GATE_SESSIONS: usize = 50;
+    evict_old_sessions(&sessions_dir, MAX_GATE_SESSIONS);
+
     Ok(final_path)
+}
+
+/// Remove oldest gate session files, keeping at most `keep` entries.
+fn evict_old_sessions(sessions_dir: &Path, keep: usize) {
+    let entries: Vec<_> = match std::fs::read_dir(sessions_dir) {
+        Ok(rd) => rd
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path().extension().is_some_and(|ext| ext == "json"))
+            .collect(),
+        Err(_) => return,
+    };
+    if entries.len() <= keep {
+        return;
+    }
+    let mut paths: Vec<_> = entries.into_iter().map(|e| e.path()).collect();
+    paths.sort();
+    let to_remove = paths.len() - keep;
+    for path in paths.into_iter().take(to_remove) {
+        if let Err(e) = std::fs::remove_file(&path) {
+            tracing::warn!(path = %path.display(), error = %e, "failed to evict old gate session");
+        }
+    }
 }
 
 /// Load a gate eval context by ID from `.assay/gate_sessions/<session_id>.json`.
