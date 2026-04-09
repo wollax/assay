@@ -89,7 +89,8 @@ pub fn generate_manifest(
                     file_scope: vec![],
                     shared_files: vec![],
                     depends_on: chunk.depends_on.clone(),
-                    prompt: None,
+                    user_prompt: None,
+                    prompt_file: None,
                 })
                 .collect()
         }
@@ -126,7 +127,8 @@ pub fn generate_manifest(
                     file_scope: vec![],
                     shared_files: vec![],
                     depends_on: vec![],
-                    prompt: None,
+                    user_prompt: None,
+                    prompt_file: None,
                 })
                 .collect()
         }

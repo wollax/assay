@@ -56,7 +56,7 @@ assay spec review close-the-loop
 
 The abort path (`run-abort.sh`) exercises the checkpoint failure scenario.
 In `--print` mode, the `claude` CLI runs single-pass inference without tool
-calls, so the `AfterToolCalls { n: 2 }` checkpoint does not fire.
+calls, so the `after_tool_calls` checkpoint (n = 2) does not fire.
 
 To trigger the checkpoint abort, run the agent in **interactive/agentic mode**
 (e.g., via MCP or the TUI), where tool calls produce `tool_called` streaming
@@ -124,7 +124,7 @@ in-memory against the buffered event stream. They add negligible overhead and
 are safe to use at any checkpoint frequency.
 
 **Command/file gates are dangerous at checkpoints.** A `cmd`-based criterion
-with `when = AfterToolCalls` runs a shell command against a **partial working
+with `when = { type = "after_tool_calls", ... }` runs a shell command against a **partial working
 directory** — the agent is still writing files. This can produce flaky results
 (partial writes, missing files) and adds real wall-clock latency to every
 checkpoint. **Prefer event criteria for mid-session checkpoints.**

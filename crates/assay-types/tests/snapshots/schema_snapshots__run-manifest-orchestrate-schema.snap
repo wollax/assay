@@ -99,7 +99,14 @@ expression: schema.to_value()
           ]
         },
         "prompt": {
-          "description": "User prompt passed to the agent. When set, the pipeline provides this\ntext as the user message (e.g. via `-p` flag for Claude). When absent,\nthe agent receives only the system prompt from CLAUDE.md.",
+          "description": "User prompt passed to the agent as the initial message (e.g. via `-p`\nflag for Claude). Distinct from `prompt_layers`, which are structured\nprompt assembly components injected at specific points. When absent,\nthe agent receives only the system prompt from CLAUDE.md.\n\nMutually exclusive with `prompt_file` — set one or neither.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "prompt_file": {
+          "description": "Path to a file containing the user prompt. The file content is read at\npipeline launch time and used as the user message. Relative paths are\nresolved from the manifest file's parent directory.\n\nMutually exclusive with `prompt` — set one or neither.",
           "type": [
             "string",
             "null"

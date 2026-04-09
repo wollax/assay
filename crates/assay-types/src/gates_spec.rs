@@ -398,4 +398,18 @@ description = "A check"
             Enforcement::Advisory
         );
     }
+
+    #[test]
+    fn example_close_the_loop_gates_toml_parses() {
+        let toml_str = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../examples/close-the-loop/gates.toml"
+        ))
+        .expect("read example gates.toml");
+        let spec: GatesSpec = toml::from_str(&toml_str).expect("parse example gates.toml");
+        assert_eq!(spec.name, "close-the-loop");
+        assert_eq!(spec.criteria.len(), 2);
+        assert_eq!(spec.criteria[0].name, "tool-budget");
+        assert_eq!(spec.criteria[1].name, "no-tool-errors");
+    }
 }

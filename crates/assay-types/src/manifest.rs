@@ -122,11 +122,22 @@ pub struct ManifestSession {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub depends_on: Vec<String>,
 
-    /// User prompt passed to the agent. When set, the pipeline provides this
-    /// text as the user message (e.g. via `-p` flag for Claude). When absent,
+    /// User prompt passed to the agent as the initial message (e.g. via `-p`
+    /// flag for Claude). Distinct from `prompt_layers`, which are structured
+    /// prompt assembly components injected at specific points. When absent,
     /// the agent receives only the system prompt from CLAUDE.md.
+    ///
+    /// Mutually exclusive with `prompt_file` — set one or neither.
+    #[serde(default, rename = "prompt", skip_serializing_if = "Option::is_none")]
+    pub user_prompt: Option<String>,
+
+    /// Path to a file containing the user prompt. The file content is read at
+    /// pipeline launch time and used as the user message. Relative paths are
+    /// resolved from the manifest file's parent directory.
+    ///
+    /// Mutually exclusive with `prompt` — set one or neither.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub prompt: Option<String>,
+    pub prompt_file: Option<std::path::PathBuf>,
 }
 
 inventory::submit! {
@@ -166,7 +177,7 @@ mod tests {
         let session = &manifest.sessions[0];
         assert_eq!(session.spec, "close-the-loop");
         assert_eq!(
-            session.prompt.as_deref(),
+            session.user_prompt.as_deref(),
             Some("Summarize the project in one sentence.")
         );
 
@@ -177,7 +188,7 @@ mod tests {
             "serialized output must include prompt"
         );
         let reparsed: RunManifest = toml::from_str(&re_serialized).unwrap();
-        assert_eq!(reparsed.sessions[0].prompt, session.prompt);
+        assert_eq!(reparsed.sessions[0].user_prompt, session.user_prompt);
     }
 
     #[test]
@@ -191,7 +202,8 @@ mod tests {
             file_scope: vec![],
             shared_files: vec![],
             depends_on: vec![],
-            prompt: None,
+            user_prompt: None,
+            prompt_file: None,
         };
         let toml_str = toml::to_string(&session).unwrap();
         assert!(
@@ -225,7 +237,8 @@ mod tests {
             file_scope: vec![],
             shared_files: vec![],
             depends_on: vec![],
-            prompt: None,
+            user_prompt: None,
+            prompt_file: None,
         };
         let manifest = RunManifest {
             sessions: vec![session],
@@ -275,7 +288,8 @@ mod tests {
                 file_scope: vec![],
                 shared_files: vec![],
                 depends_on: vec![],
-                prompt: None,
+                user_prompt: None,
+                prompt_file: None,
             }],
             mode: OrchestratorMode::Dag,
             mesh_config: None,
@@ -300,7 +314,8 @@ mod tests {
                 file_scope: vec![],
                 shared_files: vec![],
                 depends_on: vec![],
-                prompt: None,
+                user_prompt: None,
+                prompt_file: None,
             }],
             mode: OrchestratorMode::Mesh,
             mesh_config: None,

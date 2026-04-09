@@ -887,15 +887,32 @@ pub fn execute_session(
     };
 
     // ── Stage 3: HarnessConfig (streaming) ────────────────────────
+    // Resolve user prompt: inline string takes priority, then prompt_file.
+    let resolved_prompt = match (&manifest_session.user_prompt, &manifest_session.prompt_file) {
+        (Some(inline), _) => Some(inline.clone()),
+        (None, Some(path)) => {
+            let resolved = if path.is_absolute() {
+                path.clone()
+            } else {
+                config.assay_dir.join(path)
+            };
+            Some(
+                std::fs::read_to_string(&resolved).map_err(|e| PipelineError {
+                    stage: PipelineStage::HarnessConfig,
+                    message: format!("failed to read prompt_file {}: {e}", resolved.display()),
+                    recovery: "check that the prompt_file path exists and is readable".into(),
+                    elapsed: Duration::ZERO,
+                })?,
+            )
+        }
+        (None, None) => None,
+    };
+
     let cli_args = info_span!("harness_config", spec = %manifest_session.spec).in_scope(|| {
         let stage_start = Instant::now();
         let profile = build_harness_profile(manifest_session);
         let args = harness_writer
-            .write_harness_streaming(
-                &profile,
-                &worktree_info.path,
-                manifest_session.prompt.as_deref(),
-            )
+            .write_harness_streaming(&profile, &worktree_info.path, resolved_prompt.as_deref())
             .map_err(|e| {
                 let elapsed = stage_start.elapsed();
                 abandon(&config.assay_dir, &format!("HarnessConfig failed: {e}"));
@@ -1505,7 +1522,8 @@ mod tests {
             file_scope: vec![],
             shared_files: vec![],
             depends_on: vec![],
-            prompt: None,
+            user_prompt: None,
+            prompt_file: None,
         };
 
         let profile = build_harness_profile(&session);
@@ -1544,7 +1562,8 @@ mod tests {
             file_scope: vec![],
             shared_files: vec![],
             depends_on: vec![],
-            prompt: None,
+            user_prompt: None,
+            prompt_file: None,
         };
 
         let profile = build_harness_profile(&session);
@@ -1726,7 +1745,8 @@ mod tests {
             file_scope: vec![],
             shared_files: vec![],
             depends_on: vec![],
-            prompt: None,
+            user_prompt: None,
+            prompt_file: None,
         };
 
         let provider = assay_types::NullProvider;
@@ -1838,7 +1858,8 @@ cmd = "echo ok"
             file_scope: vec![],
             shared_files: vec![],
             depends_on: vec![],
-            prompt: None,
+            user_prompt: None,
+            prompt_file: None,
         };
 
         let provider = assay_types::NullProvider;
@@ -1917,7 +1938,8 @@ cmd = "echo ok"
             file_scope: vec![],
             shared_files: vec![],
             depends_on: vec![],
-            prompt: None,
+            user_prompt: None,
+            prompt_file: None,
         };
 
         let provider = assay_types::NullProvider;
@@ -2018,7 +2040,8 @@ cmd = "exit 1"
             file_scope: vec![],
             shared_files: vec![],
             depends_on: vec![],
-            prompt: None,
+            user_prompt: None,
+            prompt_file: None,
         };
 
         let provider = assay_types::NullProvider;
@@ -2121,7 +2144,8 @@ cmd = "exit 1"
             file_scope: vec![],
             shared_files: vec![],
             depends_on: vec![],
-            prompt: None,
+            user_prompt: None,
+            prompt_file: None,
         };
 
         let provider = assay_types::NullProvider;

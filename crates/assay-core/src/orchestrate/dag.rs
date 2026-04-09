@@ -305,7 +305,8 @@ mod tests {
                     file_scope: vec![],
                     shared_files: vec![],
                     depends_on: deps.into_iter().map(|d| d.to_string()).collect(),
-                    prompt: None,
+                    user_prompt: None,
+                    prompt_file: None,
                 })
                 .collect(),
             ..Default::default()

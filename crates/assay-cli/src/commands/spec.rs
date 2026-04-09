@@ -751,16 +751,16 @@ fn handle_spec_review(name: &str, json: bool, list: bool) -> anyhow::Result<i32>
         }
 
         // Show auto-promotion from the most recent work session (S04).
+        // Session IDs are ULID-sorted (chronological), so iterate in reverse
+        // to find the most recent session for this spec without loading all.
         if let Ok(session_ids) = assay_core::work_session::list_sessions(&ad) {
             let mut recent_session: Option<assay_types::WorkSession> = None;
-            for sid in &session_ids {
+            for sid in session_ids.iter().rev() {
                 if let Ok(s) = assay_core::work_session::load_session(&ad, sid)
                     && s.spec_name == name
-                    && recent_session
-                        .as_ref()
-                        .is_none_or(|prev| s.created_at > prev.created_at)
                 {
                     recent_session = Some(s);
+                    break;
                 }
             }
             if let Some(session) = recent_session
