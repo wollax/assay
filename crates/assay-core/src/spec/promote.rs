@@ -41,6 +41,9 @@ pub fn next_status(current: &SpecStatus) -> Option<SpecStatus> {
 ///
 /// - If `target` is `Some`, sets the status directly.
 /// - If `target` is `None`, advances to the next status in [`PROMOTION_ORDER`].
+/// - If `expected_status` is `Some`, the on-disk status must match before
+///   promotion proceeds. This provides a compare-and-swap guard against
+///   TOCTOU races when the caller has already checked the status.
 ///
 /// Returns `(old_status, new_status)` on success.
 ///
@@ -50,10 +53,21 @@ pub fn next_status(current: &SpecStatus) -> Option<SpecStatus> {
 /// - Directory specs without `spec.toml` (gates-only) are not supported.
 /// - Terminal statuses (Verified, Deprecated) without an explicit `target`
 ///   return an error with guidance to use `--to`.
+/// - If `expected_status` is `Some` and doesn't match the on-disk status.
 pub fn promote_spec(
     specs_dir: &Path,
     slug: &str,
     target: Option<SpecStatus>,
+) -> crate::Result<(SpecStatus, SpecStatus)> {
+    promote_spec_if(specs_dir, slug, target, None)
+}
+
+/// Like [`promote_spec`] but with an optional compare-and-swap guard.
+pub fn promote_spec_if(
+    specs_dir: &Path,
+    slug: &str,
+    target: Option<SpecStatus>,
+    expected_status: Option<SpecStatus>,
 ) -> crate::Result<(SpecStatus, SpecStatus)> {
     let entry = load_spec_entry_with_diagnostics(slug, specs_dir)?;
 
@@ -88,6 +102,18 @@ pub fn promote_spec(
 
     let mut feature_spec = load_feature_spec(&spec_toml_path)?;
     let old_status = feature_spec.status.clone();
+
+    // Compare-and-swap guard: reject if on-disk status diverged.
+    if let Some(expected) = expected_status.filter(|e| *e != old_status) {
+        return Err(AssayError::Io {
+            operation: format!(
+                "promote: '{}' status is '{}' but expected '{}' — concurrent modification detected",
+                slug, old_status, expected
+            ),
+            path: spec_toml_path,
+            source: std::io::Error::new(std::io::ErrorKind::InvalidInput, "status mismatch"),
+        });
+    }
 
     let new_status = match target {
         Some(t) => t,
@@ -428,5 +454,43 @@ cmd = "echo ok"
             before, after,
             "spec.toml must not be modified when promotion fails"
         );
+    }
+
+    #[test]
+    fn promote_spec_if_rejects_status_mismatch() {
+        let tmp = TempDir::new().unwrap();
+        let specs_dir = tmp.path();
+        create_dir_spec(specs_dir, "auth-flow", "draft");
+
+        // Expect InProgress but on-disk is Draft → should fail.
+        let err = promote_spec_if(
+            specs_dir,
+            "auth-flow",
+            Some(SpecStatus::Verified),
+            Some(SpecStatus::InProgress),
+        )
+        .unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("concurrent modification"),
+            "expected CAS error, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn promote_spec_if_succeeds_when_status_matches() {
+        let tmp = TempDir::new().unwrap();
+        let specs_dir = tmp.path();
+        create_dir_spec(specs_dir, "auth-flow", "in-progress");
+
+        let (old, new) = promote_spec_if(
+            specs_dir,
+            "auth-flow",
+            Some(SpecStatus::Verified),
+            Some(SpecStatus::InProgress),
+        )
+        .unwrap();
+        assert_eq!(old, SpecStatus::InProgress);
+        assert_eq!(new, SpecStatus::Verified);
     }
 }
