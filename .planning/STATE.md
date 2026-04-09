@@ -2,17 +2,17 @@
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-03-15)
+See: .planning/PROJECT.md (updated 2026-04-08)
 
 **Core value:** Dual-track quality gates (deterministic + agent-evaluated) for AI coding agents
-**Current focus:** All planned milestones (v0.1.0–v0.6.1) complete. Ready for next milestone definition.
+**Current focus:** v0.6.2 P0 Cleanup — 27 issues from post-M024 review findings
 
 ## Current Position
 
-Phase: 59 (End-to-End Pipeline)
-Plan: N/A (implemented via Linear milestones M014-M024)
-Status: Complete — v0.4.1 and v0.5.0 milestones shipped
-Last activity: 2026-04-08 — Phases 49-59 verified complete against codebase
+Phase: Not started (defining roadmap)
+Plan: —
+Status: Defining roadmap
+Last activity: 2026-04-08 — Milestone v0.6.2 started
 
 ## Milestone Progress
 
@@ -24,31 +24,19 @@ Last activity: 2026-04-08 — Phases 49-59 verified complete against codebase
 | v0.4.0 | 11 (35-45) | 28 | 100% (shipped) |
 | v0.4.1 | 5 (46-50) | 8 | 100% (shipped) |
 | v0.5.0 | 9 (51-59) | 19 | 100% (shipped) |
+| v0.6.0 | — | — | 100% (shipped) |
+| v0.6.1 | — | — | 100% (shipped) |
+| v0.6.2 | TBD | 27 | 0% (planning) |
 
 ## Accumulated Context
 
 ### Decisions
 
-v0.1.0–v0.4.0 decisions archived to .planning/milestones/
+v0.1.0–v0.6.1 decisions archived. See ROADMAP.md collapsed sections.
 
-v0.4.1 decisions (from brainstorm):
-- PR creation over direct merge for v0.4.x — maps to `autonomous: false`
-- `git merge-tree --write-tree` for conflict detection — zero side effects
-- GitHub-first via `gh` CLI, env vars for forge-agnostic extensibility
-- Hardcode merge defaults, extract config from usage (YAGNI)
-- Auto-revert killed permanently — contradicts `autonomous: false`
-- Investigate GitHub merge queue before building multi-worktree ordering
+### Linear Mapping
 
-v0.5.0 decisions (from brainstorm + Linear execution):
-- Absorb Smelt orchestration into Assay; Smelt pivots to infrastructure-only
-- Closures for control inversion, not traits (zero-trait codebase convention)
-- Orchestration as `assay-core::orchestrate` module, not separate crate
-- `assay-harness` as new leaf crate for adapter implementations
-- `WorktreeConfig.base_dir` intentionally kept as `String` to avoid schema-breaking change
-- `[[sessions]]` array in RunManifest from day one (forward-compatible)
-- Session vocabulary cleanup: `AgentSession` → `GateEvalContext`
-- HarnessProvider trait + Claude/Codex/OpenCode adapters (went beyond original plan)
-- Streaming event pipeline + checkpoint gates + auto-promote (beyond v0.5.0 scope)
+Linear milestone M025 maps to Kata v0.6.2. All 27 P0 issues assigned to M025 in Linear.
 
 ### Blockers
 
@@ -56,20 +44,10 @@ None.
 
 ### Next Actions
 
-v0.5.0 complete. Kata roadmap phases 1-59 fully implemented.
-
-Linear milestones M014-M024 have implemented work well beyond the Kata roadmap scope, including:
-- Multi-agent orchestration (DAG/mesh/gossip) — originally v0.6.0
-- Conflict resolution — originally v0.6.1
-- Smelt monorepo integration
-- Streaming event pipeline + checkpoint gates
-- Forgejo CI + GitHub mirror pipeline
-
-v0.6.0 and v0.6.1 also verified complete. All 8 planned milestones shipped.
-Only deferred item: `SessionCore` struct composition (cosmetic refactor, not a feature gap).
+Create roadmap phases for v0.6.2 requirements.
 
 ### Session Continuity
 
 Last session: 2026-04-08
-Stopped at: Audited v0.5.0 phases against codebase, marked complete
+Stopped at: Defining v0.6.2 milestone requirements
 Resume file: None

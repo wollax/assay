@@ -114,17 +114,20 @@ The `assay-mcp` crate provides MCP server functionality. Future crates may inclu
 - Binary crates are thin wrappers that delegate to `assay-core`
 - Run `just ready` before considering work complete
 
-## Current State: Post v0.5.0
+## Current Milestone: v0.6.2 P0 Cleanup
 
-**Shipped:** v0.5.0 Single-Agent Harness End-to-End (2026-04-08, verified against codebase)
+**Goal:** Resolve 27 P0 issues from post-M024 review findings — process safety, type correctness, serde consistency, and test coverage gaps.
 
-All Kata roadmap phases (1-59) are complete. Linear milestones M014-M024 have implemented work well beyond the original Kata roadmap, including multi-agent orchestration (DAG/mesh/gossip), streaming events, checkpoint gates, Smelt monorepo integration, and Forgejo CI.
+**Target fixes:**
 
-The Kata roadmap's v0.6.0 (Multi-Agent Orchestration) and v0.6.1 (Conflict Resolution & Polish) may already be substantially complete. An audit is recommended before planning further phases.
+- Process safety: `killpg` for process groups, TOCTOU race fix, stderr capture, relay panic logging, terminal injection prevention
+- Type correctness: `Option<When>` ambiguity, `SessionPhase` collision rename, `AfterToolCalls{0}` validation, checkpoint timeout override
+- Review findings: S04 (auto-promote test name, session lookup perf) and S05 (README fixes, prompt rename, file-path references, serde consistency)
+- Test coverage: gate_sessions eviction, pipeline integration tests, claude_stream edge cases, checkpoint Windows portability
 
 ## Current State
 
-**Shipped:** v0.5.0 Single-Agent Harness E2E (2026-04-08)
+**Shipped:** v0.6.1 Conflict Resolution & Polish (2026-04-08)
 
 2266 tests across 57 binaries. Full single-agent pipeline (manifest → worktree → harness → agent → gate → merge), multi-agent orchestration (DAG/mesh/gossip), streaming event pipeline, checkpoint gates, auto-promote, Smelt monorepo integration, Forgejo CI.
 
