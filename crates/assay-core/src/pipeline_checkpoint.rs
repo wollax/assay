@@ -19,7 +19,9 @@ use std::time::{Duration, Instant};
 use assay_types::review::CheckpointPhase;
 use assay_types::{AgentEvent, GateRunSummary, Spec};
 
-use crate::gate::evaluate_checkpoint;
+use assay_types::criterion::When;
+
+use crate::gate::{evaluate_checkpoint, event_serde_tag};
 
 /// Maximum number of checkpoint evaluations per session before the driver
 /// stops firing and lets the session run to completion. Budget exhaustion
@@ -123,7 +125,26 @@ pub fn drive_checkpoints(
             continue;
         }
 
-        let phase = CheckpointPhase::AtToolCall { n: tool_call_count };
+        // Determine the checkpoint phase for this event. If the last event
+        // matches an OnEvent criterion, record that phase; otherwise use
+        // the cumulative tool-call count.
+        let last_event = buffer.last();
+        let phase = if let Some(last) = last_event {
+            let tag = event_serde_tag(last);
+            if spec
+                .criteria
+                .iter()
+                .any(|c| matches!(&c.when, When::OnEvent { event_type } if event_type == tag))
+            {
+                CheckpointPhase::OnEvent {
+                    event_type: tag.to_string(),
+                }
+            } else {
+                CheckpointPhase::AtToolCall { n: tool_call_count }
+            }
+        } else {
+            CheckpointPhase::AtToolCall { n: tool_call_count }
+        };
         let summary = evaluate_checkpoint(
             spec,
             working_dir,
@@ -623,6 +644,15 @@ mod tests {
         assert!(outcome.failed.is_none());
         assert_eq!(outcome.passed.len(), 1, "OnEvent checkpoint should fire");
         assert_eq!(buffer.len(), 1);
+        // Verify the recorded phase is OnEvent, not AtToolCall.
+        assert!(
+            matches!(
+                &outcome.passed[0].phase,
+                CheckpointPhase::OnEvent { event_type } if event_type == "tool_called"
+            ),
+            "phase should be OnEvent, got: {:?}",
+            outcome.passed[0].phase
+        );
     }
 
     #[test]
