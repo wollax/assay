@@ -139,6 +139,53 @@
 
 </details>
 
+### v0.6.2 P0 Cleanup
+
+**Goal:** Resolve 27 P0 issues from post-M024 review findings — process safety, type correctness, serde consistency, and test coverage gaps.
+
+- [ ] Phase 60: Process Safety (5 requirements — SAFE-01 through SAFE-05)
+  - **Goal:** Fix process lifecycle and output safety issues
+  - **Success criteria:**
+    1. `kill_agent_subprocess` uses `killpg` for process group termination
+    2. Auto-promote path handles TOCTOU race between status check and promotion
+    3. Pipeline crash error messages include stderr content
+    4. Relay thread panics are logged instead of silently swallowed
+    5. TUI strips ANSI/control characters from TextDelta/TextBlock content
+
+- [ ] Phase 61: Type Correctness & Serde Consistency (7 requirements — TYPE-01 through TYPE-07)
+  - **Goal:** Fix representational ambiguities and serde tagging inconsistencies in checkpoint/criterion types
+  - **Success criteria:**
+    1. `Criterion.when: Option<When>` ambiguity resolved (None vs Some(SessionEnd))
+    2. `review::SessionPhase` renamed to `CheckpointPhase` (no name collision)
+    3. `When::AfterToolCalls { n: 0 }` rejected by validation
+    4. `evaluate_checkpoint` respects CLI/config timeout overrides
+    5. `review::SessionPhase` includes `OnEvent` variant
+    6. `CriterionKind` serde tagging consistent with `When` enum
+    7. `evaluate_checkpoint` at `SessionEnd` documents no-op behavior
+
+- [ ] Phase 62: Review Findings (7 requirements — S04-01, S04-02, S05-01 through S05-05)
+  - **Goal:** Address S04 and S05 code review findings
+  - **Success criteria:**
+    1. Auto-promote test name corrected to match behavior
+    2. Session lookup in spec review avoids iterating all sessions
+    3. `close-the-loop` README inaccuracies fixed
+    4. `ManifestSession.prompt` renamed to clarify vs `prompt_layers`
+    5. Low-severity review findings batch addressed
+    6. `ManifestSession.prompt` supports file-path references
+    7. Parse test added for example `gates.toml` against `GatesSpec`
+
+- [ ] Phase 63: Test Coverage Gaps (8 requirements — TEST-01 through TEST-08)
+  - **Goal:** Fill test coverage gaps and add missing eviction/validation
+  - **Success criteria:**
+    1. `gate_sessions` directory has eviction/cleanup for unbounded growth
+    2. `find_context_for_spec` handles corrupted/unreadable session files
+    3. `gate_run` tracing field naming standardized across handlers
+    4. 3 pipeline integration tests added with synthetic provider
+    5. `claude_stream` test for non-`text_delta` content_block_delta
+    6. `claude_stream` test for mixed TextDelta + TextBlock double-emit
+    7. TextDelta text length cap prevents unbounded allocations
+    8. `pipeline_checkpoint` tests: Windows portability + OnEvent coverage
+
 ## Progress Summary
 
 | Milestone | Status | Phases | Requirements | Complete |
@@ -151,3 +198,4 @@
 | v0.5.0 Single-Agent Harness E2E | ✅ Shipped | 9 | 19 | 100% |
 | v0.6.0 Multi-Agent Orchestration | ✅ Shipped | — | — | 100% |
 | v0.6.1 Conflict Resolution & Polish | ✅ Shipped | — | — | 100% |
+| v0.6.2 P0 Cleanup | ○ In Progress | 4 | 27 | 0% |
