@@ -143,12 +143,12 @@
 
 **Goal:** Resolve 27 P0 issues from post-M024 review findings — process safety, type correctness, serde consistency, and test coverage gaps.
 
-- [ ] Phase 60: Process Safety (5 requirements — SAFE-01 through SAFE-05)
+- [x] Phase 60: Process Safety (5 requirements — SAFE-01 through SAFE-05) — 2026-04-08
   - **Goal:** Fix process lifecycle and output safety issues
   - **Plans:** 3 plans
-    - [ ] 60-01-PLAN.md — TUI ANSI escape sequence stripping (SAFE-05)
-    - [ ] 60-02-PLAN.md — Process group termination + relay panic logging (SAFE-01, SAFE-04)
-    - [ ] 60-03-PLAN.md — TOCTOU-safe auto-promote + stderr capture (SAFE-02, SAFE-03)
+    - [x] 60-01-PLAN.md — TUI ANSI escape sequence stripping (SAFE-05)
+    - [x] 60-02-PLAN.md — Process group termination + relay panic logging (SAFE-01, SAFE-04)
+    - [x] 60-03-PLAN.md — TOCTOU-safe auto-promote + stderr capture (SAFE-02, SAFE-03)
   - **Success criteria:**
     1. `kill_agent_subprocess` uses `killpg` for process group termination
     2. Auto-promote path handles TOCTOU race between status check and promotion
@@ -156,8 +156,12 @@
     4. Relay thread panics are logged instead of silently swallowed
     5. TUI strips ANSI/control characters from TextDelta/TextBlock content
 
-- [ ] Phase 61: Type Correctness & Serde Consistency (7 requirements — TYPE-01 through TYPE-07)
+- [x] Phase 61: Type Correctness & Serde Consistency (7 requirements — TYPE-01 through TYPE-07) — 2026-04-09
   - **Goal:** Fix representational ambiguities and serde tagging inconsistencies in checkpoint/criterion types
+  - **Plans:** 3 plans
+    - [x] 61-01-PLAN.md — Rename SessionPhase to CheckpointPhase, merge AtEvent/OnEvent, SessionEnd no-op docs (TYPE-02, TYPE-05, TYPE-07)
+    - [x] 61-02-PLAN.md — Option<When> to When type change + AfterToolCalls validation (TYPE-01, TYPE-03)
+    - [x] 61-03-PLAN.md — CriterionKind serde tagging alignment + timeout threading (TYPE-04, TYPE-06)
   - **Success criteria:**
     1. `Criterion.when: Option<When>` ambiguity resolved (None vs Some(SessionEnd))
     2. `review::SessionPhase` renamed to `CheckpointPhase` (no name collision)
@@ -202,4 +206,4 @@
 | v0.5.0 Single-Agent Harness E2E | ✅ Shipped | 9 | 19 | 100% |
 | v0.6.0 Multi-Agent Orchestration | ✅ Shipped | — | — | 100% |
 | v0.6.1 Conflict Resolution & Polish | ✅ Shipped | — | — | 100% |
-| v0.6.2 P0 Cleanup | ○ In Progress | 4 | 27 | 0% |
+| v0.6.2 P0 Cleanup | ○ In Progress | 4 | 27 | 50% |

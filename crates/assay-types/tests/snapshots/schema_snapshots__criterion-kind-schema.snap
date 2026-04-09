@@ -4,57 +4,69 @@ expression: schema.to_value()
 ---
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "description": "The kind of evaluation a criterion uses.\n\nWhen set on a criterion, determines how it is evaluated.\n`AgentReport` means the criterion is evaluated by an agent\nvia structured reasoning rather than a shell command.",
+  "description": "The kind of evaluation a criterion uses.\n\nWhen set on a criterion, determines how it is evaluated.\n`AgentReport` means the criterion is evaluated by an agent\nvia structured reasoning rather than a shell command.\n\nSerializes using an internally tagged format with `type` as the tag key,\nusing `snake_case` for variant names (e.g. `{\"type\":\"agent_report\"}`).\nOld PascalCase format (`{\"type\":\"AgentReport\"}`) is accepted via aliases\nfor backward compatibility.",
   "oneOf": [
     {
-      "const": "AgentReport",
       "description": "Evaluated by an agent via structured reasoning.",
-      "type": "string"
-    },
-    {
-      "additionalProperties": false,
-      "description": "Criterion evaluated by counting events of a given type in the agent\nsession log. Parameters mirror `GateKind::EventCount`.",
       "properties": {
-        "EventCount": {
-          "properties": {
-            "event_type": {
-              "description": "The event type to count, matching an `AgentEvent` serde tag.",
-              "type": "string"
-            },
-            "max": {
-              "description": "Inclusive upper bound on the matched event count. `None` means no upper bound.",
-              "format": "uint32",
-              "minimum": 0,
-              "type": [
-                "integer",
-                "null"
-              ]
-            },
-            "min": {
-              "description": "Inclusive lower bound on the matched event count. `None` means no lower bound.",
-              "format": "uint32",
-              "minimum": 0,
-              "type": [
-                "integer",
-                "null"
-              ]
-            }
-          },
-          "required": [
-            "event_type"
-          ],
-          "type": "object"
+        "type": {
+          "const": "agent_report",
+          "type": "string"
         }
       },
       "required": [
-        "EventCount"
+        "type"
       ],
       "type": "object"
     },
     {
-      "const": "NoToolErrors",
+      "description": "Criterion evaluated by counting events of a given type in the agent\nsession log. Parameters mirror `GateKind::EventCount`.",
+      "properties": {
+        "event_type": {
+          "description": "The event type to count, matching an `AgentEvent` serde tag.",
+          "type": "string"
+        },
+        "max": {
+          "description": "Inclusive upper bound on the matched event count. `None` means no upper bound.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "min": {
+          "description": "Inclusive lower bound on the matched event count. `None` means no lower bound.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "type": {
+          "const": "event_count",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "event_type"
+      ],
+      "type": "object"
+    },
+    {
       "description": "Criterion that passes only when no tool returned an error during the session.",
-      "type": "string"
+      "properties": {
+        "type": {
+          "const": "no_tool_errors",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "type": "object"
     }
   ],
   "title": "CriterionKind"

@@ -1,6 +1,7 @@
 //! Roundtrip validation tests: serialize known-good instances to JSON,
 //! validate against the generated schema for each type.
 
+use assay_types::criterion::When;
 use assay_types::feature_spec::*;
 use assay_types::*;
 use chrono::Utc;
@@ -45,7 +46,7 @@ fn spec_validates() {
             kind: None,
             prompt: None,
             requirements: vec![],
-            when: None,
+            when: When::default(),
         }],
     });
 }
@@ -86,7 +87,7 @@ fn workflow_validates() {
                 kind: None,
                 prompt: None,
                 requirements: vec![],
-                when: None,
+                when: When::default(),
             }],
         }],
         gates: vec![Gate {
@@ -192,7 +193,7 @@ fn criterion_with_cmd_validates() {
         kind: None,
         prompt: None,
         requirements: vec![],
-        when: None,
+        when: When::default(),
     });
 }
 
@@ -208,7 +209,7 @@ fn criterion_without_cmd_validates() {
         kind: None,
         prompt: None,
         requirements: vec![],
-        when: None,
+        when: When::default(),
     });
 }
 
@@ -224,7 +225,7 @@ fn criterion_with_timeout_validates() {
         kind: None,
         prompt: None,
         requirements: vec![],
-        when: None,
+        when: When::default(),
     });
 }
 
@@ -304,7 +305,7 @@ fn gates_spec_validates() {
             kind: None,
             prompt: None,
             requirements: vec!["REQ-FUNC-001".to_string()],
-            when: None,
+            when: When::default(),
         }],
     });
 }
@@ -321,7 +322,7 @@ fn gate_criterion_without_cmd_validates() {
         kind: None,
         prompt: None,
         requirements: vec![],
-        when: None,
+        when: When::default(),
     });
 }
 

@@ -27,6 +27,6 @@ cmd = "cargo deny check"
 [[criteria]]
 name = "code-quality-review"
 description = "Agent reviews code quality and architecture"
-kind = "AgentReport"
+kind = { type = "agent_report" }
 enforcement = "advisory"
 prompt = "Review the codebase for architectural issues, code smells, and potential improvements. Focus on module boundaries, error handling patterns, and test coverage."

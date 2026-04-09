@@ -56,6 +56,7 @@ pub fn compute_coverage(
 mod tests {
     use super::*;
     use assay_types::Criterion;
+    use assay_types::criterion::When;
     use assay_types::feature_spec::{Obligation, Priority, Requirement};
 
     fn make_requirement(id: &str) -> Requirement {
@@ -83,7 +84,7 @@ mod tests {
             kind: None,
             prompt: None,
             requirements: reqs.iter().map(|s| s.to_string()).collect(),
-            when: None,
+            when: When::default(),
         }
     }
 

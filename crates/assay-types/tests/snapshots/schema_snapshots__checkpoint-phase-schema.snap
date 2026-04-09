@@ -4,7 +4,7 @@ expression: schema.to_value()
 ---
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "description": "The phase in a pipeline session at which a checkpoint gate was evaluated.\n\nLives in `review` (not `gate` or `pipeline`) per D029 — phase is a\ndiagnostic concern that belongs next to [`GateDiagnostic`].\n\nAccessed as `assay_types::review::SessionPhase` — deliberately NOT\nre-exported at the crate root to avoid collision with the workflow\n`SessionPhase` in `work_session`.",
+  "description": "The phase in a pipeline session at which a checkpoint gate was evaluated.\n\nLives in `review` (not `gate` or `pipeline`) per D029 — phase is a\ndiagnostic concern that belongs next to [`GateDiagnostic`].\n\nAccessed as `assay_types::review::CheckpointPhase` — deliberately NOT\nre-exported at the crate root to avoid collision with the workflow\n`SessionPhase` in `work_session`.",
   "oneOf": [
     {
       "description": "Gate was evaluated at a tool-call checkpoint (`n` = tool call count).",
@@ -27,14 +27,14 @@ expression: schema.to_value()
       "type": "object"
     },
     {
-      "description": "Gate was evaluated when a specific event type was observed.",
+      "description": "Gate was evaluated when a specific event type was observed.\n\nDeserializes from both `on_event` (canonical) and `at_event` (legacy alias)\nJSON tags for backward compatibility with persisted [`GateDiagnostic`] JSON.",
       "properties": {
         "event_type": {
           "description": "The event type tag that triggered the checkpoint.",
           "type": "string"
         },
         "type": {
-          "const": "at_event",
+          "const": "on_event",
           "type": "string"
         }
       },
@@ -58,5 +58,5 @@ expression: schema.to_value()
       "type": "object"
     }
   ],
-  "title": "SessionPhase"
+  "title": "CheckpointPhase"
 }

@@ -5,57 +5,69 @@ expression: schema.to_value()
 {
   "$defs": {
     "CriterionKind": {
-      "description": "The kind of evaluation a criterion uses.\n\nWhen set on a criterion, determines how it is evaluated.\n`AgentReport` means the criterion is evaluated by an agent\nvia structured reasoning rather than a shell command.",
+      "description": "The kind of evaluation a criterion uses.\n\nWhen set on a criterion, determines how it is evaluated.\n`AgentReport` means the criterion is evaluated by an agent\nvia structured reasoning rather than a shell command.\n\nSerializes using an internally tagged format with `type` as the tag key,\nusing `snake_case` for variant names (e.g. `{\"type\":\"agent_report\"}`).\nOld PascalCase format (`{\"type\":\"AgentReport\"}`) is accepted via aliases\nfor backward compatibility.",
       "oneOf": [
         {
-          "const": "AgentReport",
           "description": "Evaluated by an agent via structured reasoning.",
-          "type": "string"
-        },
-        {
-          "additionalProperties": false,
-          "description": "Criterion evaluated by counting events of a given type in the agent\nsession log. Parameters mirror `GateKind::EventCount`.",
           "properties": {
-            "EventCount": {
-              "properties": {
-                "event_type": {
-                  "description": "The event type to count, matching an `AgentEvent` serde tag.",
-                  "type": "string"
-                },
-                "max": {
-                  "description": "Inclusive upper bound on the matched event count. `None` means no upper bound.",
-                  "format": "uint32",
-                  "minimum": 0,
-                  "type": [
-                    "integer",
-                    "null"
-                  ]
-                },
-                "min": {
-                  "description": "Inclusive lower bound on the matched event count. `None` means no lower bound.",
-                  "format": "uint32",
-                  "minimum": 0,
-                  "type": [
-                    "integer",
-                    "null"
-                  ]
-                }
-              },
-              "required": [
-                "event_type"
-              ],
-              "type": "object"
+            "type": {
+              "const": "agent_report",
+              "type": "string"
             }
           },
           "required": [
-            "EventCount"
+            "type"
           ],
           "type": "object"
         },
         {
-          "const": "NoToolErrors",
+          "description": "Criterion evaluated by counting events of a given type in the agent\nsession log. Parameters mirror `GateKind::EventCount`.",
+          "properties": {
+            "event_type": {
+              "description": "The event type to count, matching an `AgentEvent` serde tag.",
+              "type": "string"
+            },
+            "max": {
+              "description": "Inclusive upper bound on the matched event count. `None` means no upper bound.",
+              "format": "uint32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "min": {
+              "description": "Inclusive lower bound on the matched event count. `None` means no lower bound.",
+              "format": "uint32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "type": {
+              "const": "event_count",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "event_type"
+          ],
+          "type": "object"
+        },
+        {
           "description": "Criterion that passes only when no tool returned an error during the session.",
-          "type": "string"
+          "properties": {
+            "type": {
+              "const": "no_tool_errors",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
         }
       ]
     },
@@ -94,9 +106,9 @@ expression: schema.to_value()
           "description": "Evaluate each time the agent has emitted N tool calls since the\nlast evaluation. The pipeline fires this trigger at the Nth tool\ncall (exact match, not \"at least N\").",
           "properties": {
             "n": {
-              "description": "Tool-call threshold at which to evaluate.",
+              "description": "Tool-call threshold at which to evaluate. Enforced non-zero at\nboth the type level (`NonZeroU32`) and the serde boundary.",
               "format": "uint32",
-              "minimum": 0,
+              "minimum": 1,
               "type": "integer"
             },
             "type": {
@@ -203,15 +215,8 @@ expression: schema.to_value()
       ]
     },
     "when": {
-      "anyOf": [
-        {
-          "$ref": "#/$defs/When"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "description": "Declares when this criterion is evaluated. `None` is equivalent to\n`Some(When::SessionEnd)` — evaluation happens at session end. When\nset to `Some(When::AfterToolCalls { .. })` or `Some(When::OnEvent { .. })`,\nthe criterion becomes a mid-session checkpoint."
+      "$ref": "#/$defs/When",
+      "description": "Declares when this criterion is evaluated. Defaults to `When::SessionEnd`\n(evaluation at session end). When set to `When::AfterToolCalls { .. }` or\n`When::OnEvent { .. }`, the criterion becomes a mid-session checkpoint."
     }
   },
   "required": [

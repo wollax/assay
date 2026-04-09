@@ -807,6 +807,7 @@ pub fn scan(specs_dir: &Path) -> Result<ScanResult> {
 mod tests {
     use super::*;
     use assay_types::Criterion;
+    use assay_types::criterion::When;
     use std::io::Write as _;
 
     // ── from_str tests ──────────────────────────────────────────────
@@ -952,7 +953,7 @@ unknown_crit_key = true
                 kind: None,
                 prompt: None,
                 requirements: vec![],
-                when: None,
+                when: When::default(),
             }],
         }
     }
@@ -1025,7 +1026,7 @@ unknown_crit_key = true
                     kind: None,
                     prompt: None,
                     requirements: vec![],
-                    when: None,
+                    when: When::default(),
                 },
                 Criterion {
                     name: "dup".to_string(),
@@ -1037,7 +1038,7 @@ unknown_crit_key = true
                     kind: None,
                     prompt: None,
                     requirements: vec![],
-                    when: None,
+                    when: When::default(),
                 },
             ],
         };
@@ -1067,7 +1068,7 @@ unknown_crit_key = true
                 kind: None,
                 prompt: None,
                 requirements: vec![],
-                when: None,
+                when: When::default(),
             }],
         };
 
@@ -1862,7 +1863,7 @@ cmd = "true"
                 kind: None,
                 prompt: None,
                 requirements: vec![],
-                when: None,
+                when: When::default(),
             }],
         };
         assert!(validate_gates_spec(&spec).is_ok());
@@ -1903,7 +1904,7 @@ cmd = "true"
                     kind: None,
                     prompt: None,
                     requirements: vec![],
-                    when: None,
+                    when: When::default(),
                 },
                 assay_types::GateCriterion {
                     name: "dup".into(),
@@ -1915,7 +1916,7 @@ cmd = "true"
                     kind: None,
                     prompt: None,
                     requirements: vec![],
-                    when: None,
+                    when: When::default(),
                 },
             ],
         };
@@ -1946,7 +1947,7 @@ cmd = "true"
                 kind: None,
                 prompt: None,
                 requirements: vec![],
-                when: None,
+                when: When::default(),
             }],
         };
         let errors = validate(&spec).unwrap_err();
@@ -1978,7 +1979,7 @@ cmd = "true"
                 kind: None,
                 prompt: None,
                 requirements: vec![],
-                when: None,
+                when: When::default(),
             }],
         };
         assert!(validate(&spec).is_ok());
@@ -2002,7 +2003,7 @@ cmd = "true"
                 kind: None,
                 prompt: None,
                 requirements: vec![],
-                when: None,
+                when: When::default(),
             }],
         };
         assert!(validate(&spec).is_ok());
@@ -2031,7 +2032,7 @@ cmd = "true"
                 kind: None,
                 prompt: None,
                 requirements: vec![],
-                when: None,
+                when: When::default(),
             }],
         };
         let errors = validate_gates_spec(&spec).unwrap_err();
@@ -2064,7 +2065,7 @@ cmd = "true"
                     kind: None,
                     prompt: None,
                     requirements: vec![],
-                    when: None,
+                    when: When::default(),
                 },
                 Criterion {
                     name: "advisory-executable".to_string(),
@@ -2076,7 +2077,7 @@ cmd = "true"
                     kind: None,
                     prompt: None,
                     requirements: vec![],
-                    when: None,
+                    when: When::default(),
                 },
             ],
         };
@@ -2107,7 +2108,7 @@ cmd = "true"
                 kind: Some(CriterionKind::AgentReport),
                 prompt: Some("Review code".to_string()),
                 requirements: vec![],
-                when: None,
+                when: When::default(),
             }],
         };
 
@@ -2137,7 +2138,7 @@ cmd = "true"
                 kind: Some(CriterionKind::AgentReport),
                 prompt: Some("Check file".to_string()),
                 requirements: vec![],
-                when: None,
+                when: When::default(),
             }],
         };
 

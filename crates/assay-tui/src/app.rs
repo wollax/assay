@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use std::sync::mpsc;
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use assay_core::config::save as config_save;
 use assay_core::history;
@@ -313,25 +313,6 @@ impl App {
         else {
             return;
         };
-        /// Strip ASCII control characters (except tab) from a display string
-        /// to prevent ANSI escape sequences or cursor-control codes from
-        /// corrupting terminal state or enabling terminal injection.
-        /// Applied at display time; raw event data is preserved upstream.
-        fn sanitize(s: String) -> String {
-            if s.bytes().any(|b| b < 0x20 && b != b'\t') {
-                s.chars()
-                    .map(|c| {
-                        if (c as u32) < 0x20 && c != '\t' {
-                            '\u{FFFD}'
-                        } else {
-                            c
-                        }
-                    })
-                    .collect()
-            } else {
-                s
-            }
-        }
         fn push_line(lines: &mut Vec<String>, line: String) {
             lines.push(sanitize(line));
             if lines.len() > 10_000 {
@@ -2313,6 +2294,40 @@ fn draw_help_overlay(frame: &mut ratatui::Frame, area: Rect) {
 
 // ── Project discovery ─────────────────────────────────────────────────────────
 
+/// Strip ANSI/CSI escape sequences and control characters (except tab) from a
+/// display string to prevent terminal injection.
+///
+/// - Full CSI sequences (`ESC [ params letter`) are removed entirely.
+/// - Single-char Fe sequences (`ESC` + any non-`[` byte) are removed entirely.
+/// - Remaining control characters (< 0x20, except tab) are replaced with U+FFFD.
+/// - Plain text and tabs pass through unchanged.
+///
+/// Applied at display time; raw event data is preserved upstream.
+pub(crate) fn sanitize(s: String) -> String {
+    static ANSI_RE: OnceLock<regex_lite::Regex> = OnceLock::new();
+    let re = ANSI_RE.get_or_init(|| {
+        // Covers:
+        //   \x1b\[[0-9;?]*[A-Za-z]  — CSI sequences (including private-mode ?25l etc.)
+        //   \x1b[^\[]               — single-char Fe sequences (OSC intro, etc.)
+        regex_lite::Regex::new(r"\x1b\[[0-9;?]*[A-Za-z]|\x1b[^\[]").unwrap()
+    });
+    let stripped = re.replace_all(&s, "");
+    if stripped.bytes().any(|b| b < 0x20 && b != b'\t') {
+        stripped
+            .chars()
+            .map(|c| {
+                if (c as u32) < 0x20 && c != '\t' {
+                    '\u{FFFD}'
+                } else {
+                    c
+                }
+            })
+            .collect()
+    } else {
+        stripped.into_owned()
+    }
+}
+
 /// Walk from the current directory upward looking for a `.assay/` directory.
 /// Returns the directory that *contains* `.assay/`, or `None`.
 fn find_project_root() -> Option<PathBuf> {
@@ -2323,5 +2338,54 @@ fn find_project_root() -> Option<PathBuf> {
             return Some(dir.to_path_buf());
         }
         dir = dir.parent()?;
+    }
+}
+
+#[cfg(test)]
+mod sanitize_tests {
+    use super::sanitize;
+
+    #[test]
+    fn sanitize_strips_ansi() {
+        assert_eq!(sanitize("\x1b[31mred\x1b[0m".to_string()), "red");
+    }
+
+    #[test]
+    fn sanitize_strips_csi_color() {
+        assert_eq!(sanitize("\x1b[1;34mblue\x1b[0m".to_string()), "blue");
+    }
+
+    #[test]
+    fn sanitize_strips_cursor_hide() {
+        assert_eq!(sanitize("\x1b[?25l".to_string()), "");
+    }
+
+    #[test]
+    fn sanitize_strips_single_char_fe() {
+        // OSC intro without full sequence — single-char Fe (ESC + non-bracket)
+        assert_eq!(sanitize("\x1b]".to_string()), "");
+    }
+
+    #[test]
+    fn sanitize_preserves_plain_text() {
+        assert_eq!(sanitize("hello world".to_string()), "hello world");
+    }
+
+    #[test]
+    fn sanitize_preserves_tabs() {
+        assert_eq!(sanitize("col1\tcol2".to_string()), "col1\tcol2");
+    }
+
+    #[test]
+    fn sanitize_replaces_remaining_control_chars() {
+        assert_eq!(sanitize("a\x01b".to_string()), "a\u{FFFD}b");
+    }
+
+    #[test]
+    fn sanitize_mixed() {
+        assert_eq!(
+            sanitize("\x1b[31mred\x01bad\x1b[0m".to_string()),
+            "red\u{FFFD}bad"
+        );
     }
 }

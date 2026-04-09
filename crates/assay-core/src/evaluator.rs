@@ -573,6 +573,7 @@ async fn spawn_and_collect(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use assay_types::criterion::When;
 
     // ── Schema generation ──────────────────────────────────────────
 
@@ -610,7 +611,7 @@ mod tests {
                 kind: None,
                 prompt: Some("Run cargo test".to_string()),
                 requirements: vec![],
-                when: None,
+                when: When::default(),
             },
             Criterion {
                 name: "lint-clean".to_string(),
@@ -622,7 +623,7 @@ mod tests {
                 kind: None,
                 prompt: None,
                 requirements: vec![],
-                when: None,
+                when: When::default(),
             },
         ];
 

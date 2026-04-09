@@ -23,9 +23,9 @@ expression: schema.to_value()
       "description": "Evaluate each time the agent has emitted N tool calls since the\nlast evaluation. The pipeline fires this trigger at the Nth tool\ncall (exact match, not \"at least N\").",
       "properties": {
         "n": {
-          "description": "Tool-call threshold at which to evaluate.",
+          "description": "Tool-call threshold at which to evaluate. Enforced non-zero at\nboth the type level (`NonZeroU32`) and the serde boundary.",
           "format": "uint32",
-          "minimum": 0,
+          "minimum": 1,
           "type": "integer"
         },
         "type": {

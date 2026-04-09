@@ -686,6 +686,7 @@ mod tests {
     use super::*;
     use crate::spec::coverage::compute_coverage;
     use assay_types::Criterion;
+    use assay_types::criterion::When;
     use assay_types::feature_spec::{
         AcceptanceCriterion, AcceptanceCriterionType, Obligation, Priority, Requirement,
     };
@@ -732,7 +733,7 @@ mod tests {
             kind: None,
             prompt: None,
             requirements: reqs.iter().map(|s| s.to_string()).collect(),
-            when: None,
+            when: When::default(),
         }
     }
 
@@ -1588,7 +1589,7 @@ mod tests {
         assert_eq!(parsed.checkpoint_index, None);
         assert_eq!(
             parsed.session_phase,
-            assay_types::review::SessionPhase::SessionEnd
+            assay_types::review::CheckpointPhase::SessionEnd
         );
 
         // Re-serialize: checkpoint_index (None) should be omitted via skip_serializing_if.

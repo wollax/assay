@@ -128,7 +128,7 @@ pub struct GateDiagnostic {
     /// The pipeline phase at which the gate was evaluated.
     /// Defaults to `SessionEnd` for pre-M024 diagnostics (D028).
     #[serde(default)]
-    pub session_phase: SessionPhase,
+    pub session_phase: CheckpointPhase,
 }
 
 inventory::submit! {
@@ -171,19 +171,23 @@ inventory::submit! {
 /// Lives in `review` (not `gate` or `pipeline`) per D029 — phase is a
 /// diagnostic concern that belongs next to [`GateDiagnostic`].
 ///
-/// Accessed as `assay_types::review::SessionPhase` — deliberately NOT
+/// Accessed as `assay_types::review::CheckpointPhase` — deliberately NOT
 /// re-exported at the crate root to avoid collision with the workflow
 /// `SessionPhase` in `work_session`.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
-pub enum SessionPhase {
+pub enum CheckpointPhase {
     /// Gate was evaluated at a tool-call checkpoint (`n` = tool call count).
     AtToolCall {
         /// Number of tool calls emitted when the checkpoint fired.
         n: u32,
     },
     /// Gate was evaluated when a specific event type was observed.
-    AtEvent {
+    ///
+    /// Deserializes from both `on_event` (canonical) and `at_event` (legacy alias)
+    /// JSON tags for backward compatibility with persisted [`GateDiagnostic`] JSON.
+    #[serde(alias = "at_event")]
+    OnEvent {
         /// The event type tag that triggered the checkpoint.
         event_type: String,
     },
@@ -194,7 +198,45 @@ pub enum SessionPhase {
 
 inventory::submit! {
     crate::schema_registry::SchemaEntry {
+        name: "checkpoint-phase",
+        generate: || schemars::schema_for!(CheckpointPhase),
+    }
+}
+
+// Legacy alias so consumers looking up the old registry key still find it.
+inventory::submit! {
+    crate::schema_registry::SchemaEntry {
         name: "checkpoint-session-phase",
-        generate: || schemars::schema_for!(SessionPhase),
+        generate: || schemars::schema_for!(CheckpointPhase),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn checkpoint_phase_on_event_alias_roundtrip() {
+        // Legacy JSON uses `at_event` tag; must deserialize to OnEvent variant.
+        let json = r#"{"type":"at_event","event_type":"foo"}"#;
+        let phase: CheckpointPhase =
+            serde_json::from_str(json).expect("deserialize at_event alias");
+        assert_eq!(
+            phase,
+            CheckpointPhase::OnEvent {
+                event_type: "foo".to_string()
+            }
+        );
+
+        // Canonical JSON uses `on_event` tag.
+        let canonical = r#"{"type":"on_event","event_type":"foo"}"#;
+        let phase2: CheckpointPhase =
+            serde_json::from_str(canonical).expect("deserialize on_event");
+        assert_eq!(
+            phase2,
+            CheckpointPhase::OnEvent {
+                event_type: "foo".to_string()
+            }
+        );
     }
 }

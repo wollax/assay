@@ -71,7 +71,7 @@ cmd = "echo ok"
 [[criteria]]
 name = "code-review"
 description = "Agent reviews code quality"
-kind = "AgentReport"
+kind = { type = "agent_report" }
 prompt = "Review the code for quality issues"
 "#,
     );
@@ -528,7 +528,7 @@ description = "Agent spec for error testing"
 [[criteria]]
 name = "real-criterion"
 description = "Agent reviews code"
-kind = "AgentReport"
+kind = { type = "agent_report" }
 prompt = "Review the code"
 "#,
     );
@@ -591,7 +591,7 @@ description = "Agent spec for duplicate test"
 [[criteria]]
 name = "review"
 description = "Agent review"
-kind = "AgentReport"
+kind = { type = "agent_report" }
 prompt = "Review code"
 "#,
     );
@@ -757,7 +757,7 @@ cmd = "echo ok"
 [[criteria]]
 name = "code-review"
 description = "Agent reviews code quality"
-kind = "AgentReport"
+kind = { type = "agent_report" }
 prompt = "Review the code for quality issues"
 "#,
     );
@@ -869,7 +869,7 @@ cmd = "echo ok"
 [[criteria]]
 name = "code-review"
 description = "Agent reviews code"
-kind = "AgentReport"
+kind = { type = "agent_report" }
 prompt = "Review the code"
 "#,
     );
@@ -1491,7 +1491,7 @@ description = "Has agent criteria without prompt"
 [[criteria]]
 name = "review"
 description = "Agent review"
-kind = "AgentReport"
+kind = { type = "agent_report" }
 "#,
     );
     std::env::set_current_dir(dir.path()).unwrap();
