@@ -192,7 +192,7 @@ fn test_auto_promote_skipped_on_checkpoint_failure() {
 // ── Test 4: Already-verified spec handles gracefully ────────────────
 
 #[test]
-fn test_auto_promote_already_verified_is_noop() {
+fn test_promote_verified_to_verified_is_idempotent() {
     let tmp = tempfile::tempdir().unwrap();
     let specs_dir = tmp.path().join("specs");
     fs::create_dir_all(&specs_dir).unwrap();

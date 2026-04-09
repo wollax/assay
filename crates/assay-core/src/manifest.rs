@@ -296,7 +296,8 @@ unknown_session_key = true
                 depends_on: vec![],
                 file_scope: vec![],
                 shared_files: vec![],
-                prompt: None,
+                user_prompt: None,
+                prompt_file: None,
             }],
             ..Default::default()
         };
@@ -323,7 +324,8 @@ unknown_session_key = true
                     depends_on: vec![],
                     file_scope: vec![],
                     shared_files: vec![],
-                    prompt: None,
+                    user_prompt: None,
+                    prompt_file: None,
                 },
                 assay_types::ManifestSession {
                     spec: "   ".into(),
@@ -334,7 +336,8 @@ unknown_session_key = true
                     depends_on: vec![],
                     file_scope: vec![],
                     shared_files: vec![],
-                    prompt: None,
+                    user_prompt: None,
+                    prompt_file: None,
                 },
             ],
             ..Default::default()
@@ -445,7 +448,8 @@ spec = "auth-flow"
             file_scope: vec![],
             shared_files: vec![],
             depends_on: depends_on.into_iter().map(|s| s.into()).collect(),
-            prompt: None,
+            user_prompt: None,
+            prompt_file: None,
         }
     }
 

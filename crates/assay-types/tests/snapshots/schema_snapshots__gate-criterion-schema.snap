@@ -103,7 +103,7 @@ expression: schema.to_value()
           "type": "object"
         },
         {
-          "description": "Evaluate each time the agent has emitted N tool calls since the\nlast evaluation. The pipeline fires this trigger at the Nth tool\ncall (exact match, not \"at least N\").",
+          "description": "Evaluate when the agent has emitted exactly N total tool calls.\nThe pipeline fires this trigger once when the cumulative tool-call\ncount reaches N.",
           "properties": {
             "n": {
               "description": "Tool-call threshold at which to evaluate. Enforced non-zero at\nboth the type level (`NonZeroU32`) and the serde boundary.",

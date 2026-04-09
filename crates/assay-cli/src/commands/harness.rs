@@ -158,7 +158,8 @@ fn resolve_profile(adapter: &str, spec_name: Option<&str>) -> anyhow::Result<Har
         file_scope: Vec::new(),
         shared_files: Vec::new(),
         depends_on: Vec::new(),
-        prompt: None,
+        user_prompt: None,
+        prompt_file: None,
     };
 
     Ok(assay_core::pipeline::build_harness_profile(&session))

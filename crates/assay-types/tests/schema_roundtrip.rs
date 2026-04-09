@@ -654,7 +654,8 @@ fn manifest_session_with_scope_validates() {
         file_scope: vec!["crates/auth/**".to_string(), "tests/auth_*".to_string()],
         shared_files: vec!["Cargo.lock".to_string(), "Cargo.toml".to_string()],
         depends_on: vec![],
-        prompt: None,
+        user_prompt: None,
+        prompt_file: None,
     });
 }
 
@@ -669,7 +670,8 @@ fn manifest_session_without_scope_validates() {
         file_scope: vec![],
         shared_files: vec![],
         depends_on: vec![],
-        prompt: None,
+        user_prompt: None,
+        prompt_file: None,
     });
 }
 
@@ -711,7 +713,8 @@ fn run_manifest_with_scoped_sessions_validates() {
                 file_scope: vec!["crates/auth/**".to_string()],
                 shared_files: vec!["Cargo.lock".to_string()],
                 depends_on: vec![],
-                prompt: None,
+                user_prompt: None,
+                prompt_file: None,
             },
             ManifestSession {
                 spec: "checkout".to_string(),
@@ -722,7 +725,8 @@ fn run_manifest_with_scoped_sessions_validates() {
                 file_scope: vec![],
                 shared_files: vec![],
                 depends_on: vec!["auth".to_string()],
-                prompt: None,
+                user_prompt: None,
+                prompt_file: None,
             },
         ],
         mode: assay_types::orchestrate::OrchestratorMode::Dag,

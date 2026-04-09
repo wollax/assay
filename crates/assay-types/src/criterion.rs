@@ -77,9 +77,9 @@ pub enum When {
     /// Evaluate at the end of the session (default behavior).
     #[default]
     SessionEnd,
-    /// Evaluate each time the agent has emitted N tool calls since the
-    /// last evaluation. The pipeline fires this trigger at the Nth tool
-    /// call (exact match, not "at least N").
+    /// Evaluate when the agent has emitted exactly N total tool calls.
+    /// The pipeline fires this trigger once when the cumulative tool-call
+    /// count reaches N.
     AfterToolCalls {
         /// Tool-call threshold at which to evaluate. Enforced non-zero at
         /// both the type level (`NonZeroU32`) and the serde boundary.
