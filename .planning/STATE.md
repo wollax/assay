@@ -1,3 +1,18 @@
+---
+kata_state_version: 1.0
+milestone: v0.6
+milestone_name: milestone
+status: planning
+stopped_at: Phase 60 context gathered
+last_updated: "2026-04-09T00:22:58.754Z"
+last_activity: 2026-04-08 — Milestone v0.6.2 roadmap created (4 phases, 27 requirements)
+progress:
+  total_phases: 3
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+---
+
 # State
 
 ## Project Reference
@@ -48,6 +63,6 @@ Plan and execute Phase 60 (Process Safety).
 
 ### Session Continuity
 
-Last session: 2026-04-08
-Stopped at: Defining v0.6.2 milestone requirements
-Resume file: None
+Last session: 2026-04-09T00:22:58.752Z
+Stopped at: Phase 60 context gathered
+Resume file: .planning/phases/active/60-process-safety/60-CONTEXT.md
