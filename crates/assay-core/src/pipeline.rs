@@ -1245,10 +1245,11 @@ pub fn execute_session(
                 if feature_spec.auto_promote
                     && feature_spec.status == assay_types::feature_spec::SpecStatus::InProgress =>
             {
-                match crate::spec::promote::promote_spec(
+                match crate::spec::promote::promote_spec_if(
                     &config.specs_dir,
                     &slug,
                     Some(assay_types::feature_spec::SpecStatus::Verified),
+                    Some(assay_types::feature_spec::SpecStatus::InProgress),
                 ) {
                     Ok((old, new)) => {
                         info!(
