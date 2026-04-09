@@ -145,6 +145,10 @@
 
 - [ ] Phase 60: Process Safety (5 requirements — SAFE-01 through SAFE-05)
   - **Goal:** Fix process lifecycle and output safety issues
+  - **Plans:** 3 plans
+    - [ ] 60-01-PLAN.md — TUI ANSI escape sequence stripping (SAFE-05)
+    - [ ] 60-02-PLAN.md — Process group termination + relay panic logging (SAFE-01, SAFE-04)
+    - [ ] 60-03-PLAN.md — TOCTOU-safe auto-promote + stderr capture (SAFE-02, SAFE-03)
   - **Success criteria:**
     1. `kill_agent_subprocess` uses `killpg` for process group termination
     2. Auto-promote path handles TOCTOU race between status check and promotion
