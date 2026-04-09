@@ -601,6 +601,65 @@ mod tests {
     }
 
     // ------------------------------------------------------------------
+    // OnEvent checkpoint coverage (WOL-467)
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn on_event_checkpoint_fires_for_matching_event() {
+        let dir = tempfile::tempdir().unwrap();
+        let spec = make_spec_with_checkpoint(
+            When::OnEvent {
+                event_type: "tool_called".to_string(),
+            },
+            None,
+        );
+        let (tx, rx) = mpsc::channel();
+        send_events(&tx, vec![tool_called("bash")]);
+        drop(tx);
+
+        let mut buffer = Vec::new();
+        let outcome = drive_checkpoints(&rx, &spec, dir.path(), &test_config(), &mut buffer);
+
+        assert!(outcome.failed.is_none());
+        assert_eq!(outcome.passed.len(), 1, "OnEvent checkpoint should fire");
+        assert_eq!(buffer.len(), 1);
+    }
+
+    #[test]
+    fn on_event_checkpoint_skips_non_matching_events() {
+        let dir = tempfile::tempdir().unwrap();
+        let spec = make_spec_with_checkpoint(
+            When::OnEvent {
+                event_type: "tool_called".to_string(),
+            },
+            None,
+        );
+        let (tx, rx) = mpsc::channel();
+        // Send non-matching events only
+        send_events(
+            &tx,
+            vec![
+                AgentEvent::TextDelta {
+                    text: "hello".to_string(),
+                    block_index: 0,
+                },
+                AgentEvent::TurnEnded { turn_index: 1 },
+            ],
+        );
+        drop(tx);
+
+        let mut buffer = Vec::new();
+        let outcome = drive_checkpoints(&rx, &spec, dir.path(), &test_config(), &mut buffer);
+
+        assert!(outcome.failed.is_none());
+        assert!(
+            outcome.passed.is_empty(),
+            "no matching events, no checkpoint should fire"
+        );
+        assert_eq!(buffer.len(), 2);
+    }
+
+    // ------------------------------------------------------------------
     // kill_agent_subprocess (T03)
     // ------------------------------------------------------------------
 

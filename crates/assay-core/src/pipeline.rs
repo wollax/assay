@@ -2303,4 +2303,107 @@ statement = "The system shall do something"
             "TOCTOU guard should detect spec is already at target Verified"
         );
     }
+
+    // ── WOL-463: Pipeline integration tests with synthetic provider ──
+
+    /// NullProvider with a spec that doesn't exist produces SpecLoad failure.
+    #[test]
+    fn null_provider_missing_spec_fails_at_spec_load() {
+        let Some((_dir, config)) = make_git_fixture() else {
+            eprintln!("SKIP — git not found");
+            return;
+        };
+        let session = ManifestSession {
+            spec: "nonexistent-spec".into(),
+            name: None,
+            settings: None,
+            hooks: vec![],
+            prompt_layers: vec![],
+            file_scope: vec![],
+            shared_files: vec![],
+            depends_on: vec![],
+            user_prompt: None,
+            prompt_file: None,
+        };
+        let result = run_session(&session, &config, &assay_types::NullProvider);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert_eq!(
+            err.stage,
+            PipelineStage::SpecLoad,
+            "missing spec should fail at SpecLoad, got: {err}"
+        );
+    }
+
+    /// NullProvider with user_prompt set still reaches AgentLaunch (prompt doesn't
+    /// change pipeline stages before agent spawn).
+    #[test]
+    fn null_provider_with_user_prompt_reaches_agent_launch() {
+        let Some((_dir, config)) = make_git_fixture() else {
+            eprintln!("SKIP — git not found");
+            return;
+        };
+        let session = ManifestSession {
+            spec: "null-spec".into(),
+            name: None,
+            settings: None,
+            hooks: vec![],
+            prompt_layers: vec![],
+            file_scope: vec![],
+            shared_files: vec![],
+            depends_on: vec![],
+            user_prompt: Some("test prompt".into()),
+            prompt_file: None,
+        };
+        let result = run_session(&session, &config, &assay_types::NullProvider);
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().stage,
+            PipelineStage::AgentLaunch,
+            "user_prompt should not change pipeline flow"
+        );
+    }
+
+    /// run_manifest with multiple sessions processes each independently.
+    #[test]
+    fn run_manifest_multiple_sessions_all_fail_independently() {
+        let Some((_dir, config)) = make_git_fixture() else {
+            eprintln!("SKIP — git not found");
+            return;
+        };
+        let manifest = RunManifest {
+            sessions: vec![
+                ManifestSession {
+                    spec: "null-spec".into(),
+                    name: Some("session-a".into()),
+                    settings: None,
+                    hooks: vec![],
+                    prompt_layers: vec![],
+                    file_scope: vec![],
+                    shared_files: vec![],
+                    depends_on: vec![],
+                    user_prompt: None,
+                    prompt_file: None,
+                },
+                ManifestSession {
+                    spec: "null-spec".into(),
+                    name: Some("session-b".into()),
+                    settings: None,
+                    hooks: vec![],
+                    prompt_layers: vec![],
+                    file_scope: vec![],
+                    shared_files: vec![],
+                    depends_on: vec![],
+                    user_prompt: None,
+                    prompt_file: None,
+                },
+            ],
+            ..Default::default()
+        };
+        let results = run_manifest(&manifest, &config, &assay_types::NullProvider);
+        assert_eq!(results.len(), 2, "each session should produce a result");
+        for r in &results {
+            assert!(r.is_err(), "NullProvider sessions should all fail");
+        }
+    }
 }
