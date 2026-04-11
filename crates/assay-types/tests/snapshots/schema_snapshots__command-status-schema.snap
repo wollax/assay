@@ -1,0 +1,31 @@
+---
+source: crates/assay-types/tests/schema_snapshots.rs
+expression: schema.to_value()
+---
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Status of a single shell command listed in [`SpecPreconditions::commands`].",
+  "properties": {
+    "command": {
+      "description": "The shell command that was executed.",
+      "type": "string"
+    },
+    "output": {
+      "description": "Captured stdout/stderr output. Omitted from serialized output when absent.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "passed": {
+      "description": "Whether the command exited with code 0.",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "command",
+    "passed"
+  ],
+  "title": "CommandStatus",
+  "type": "object"
+}

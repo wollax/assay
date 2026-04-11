@@ -256,6 +256,38 @@ fn gates_spec_schema_updated_snapshot() {
     assert_json_snapshot!("gates-spec-schema", schema.to_value());
 }
 
+// ── Composability types (v0.7.0) ─────────────────────────────────────
+
+#[test]
+fn criteria_library_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::CriteriaLibrary);
+    assert_json_snapshot!("criteria-library-schema", schema.to_value());
+}
+
+#[test]
+fn spec_preconditions_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::SpecPreconditions);
+    assert_json_snapshot!("spec-preconditions-schema", schema.to_value());
+}
+
+#[test]
+fn precondition_status_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::PreconditionStatus);
+    assert_json_snapshot!("precondition-status-schema", schema.to_value());
+}
+
+#[test]
+fn require_status_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::RequireStatus);
+    assert_json_snapshot!("require-status-schema", schema.to_value());
+}
+
+#[test]
+fn command_status_schema_snapshot() {
+    let schema = schemars::schema_for!(assay_types::CommandStatus);
+    assert_json_snapshot!("command-status-schema", schema.to_value());
+}
+
 // ── Merge execution types ────────────────────────────────────────────
 
 #[test]
