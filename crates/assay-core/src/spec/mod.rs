@@ -3,6 +3,7 @@
 //! Handles loading, parsing, and validating specifications
 //! that define what should be built and their acceptance criteria.
 
+pub mod compose;
 pub mod coverage;
 pub mod promote;
 pub mod validate;

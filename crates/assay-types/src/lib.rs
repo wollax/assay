@@ -26,6 +26,7 @@ pub mod merge;
 pub mod milestone;
 pub mod precondition;
 pub mod provider;
+pub mod resolved_gate;
 pub mod review;
 pub mod schema_registry;
 pub mod session;
@@ -70,6 +71,7 @@ pub use merge::{
 pub use milestone::{ChunkRef, Milestone, MilestoneStatus};
 pub use precondition::{CommandStatus, PreconditionStatus, RequireStatus, SpecPreconditions};
 pub use provider::{HarnessError, HarnessProvider, NullProvider};
+pub use resolved_gate::{CriterionSource, ResolvedCriterion, ResolvedGate};
 pub use review::{
     FailedCriterionSummary, GateDiagnostic, ReviewCheck, ReviewCheckKind, ReviewReport,
 };

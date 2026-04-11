@@ -464,6 +464,68 @@ pub enum AssayError {
         /// The session ID that was looked up.
         session_id: String,
     },
+
+    /// A criteria library TOML file failed to parse (invalid TOML or schema mismatch).
+    #[error("parsing criteria library `{path}`: {message}")]
+    LibraryParse {
+        /// The library file that failed to parse.
+        path: PathBuf,
+        /// The parse error message (includes line/column from toml crate).
+        message: String,
+    },
+
+    /// A criteria library was not found by slug in the criteria directory.
+    #[error("{}", format_library_not_found(.slug, .criteria_dir, .suggestion.as_deref()))]
+    LibraryNotFound {
+        /// The slug that was looked up.
+        slug: String,
+        /// The directory that was searched.
+        criteria_dir: PathBuf,
+        /// A fuzzy-match suggestion, if one unambiguous match was found.
+        suggestion: Option<String>,
+    },
+
+    /// A parent gate referenced via `extends` was not found during resolution.
+    #[error("parent gate `{parent_slug}` not found (referenced from `{gate_slug}`)")]
+    ParentGateNotFound {
+        /// The gate that references the missing parent.
+        gate_slug: String,
+        /// The parent slug that was not found.
+        parent_slug: String,
+    },
+
+    /// Circular `extends` chain detected between two gates.
+    #[error("circular extends detected: `{gate_slug}` and `{parent_slug}` extend each other")]
+    CycleDetected {
+        /// The gate where the cycle was detected.
+        gate_slug: String,
+        /// The parent that closes the cycle.
+        parent_slug: String,
+    },
+
+    /// A slug (library name or gate directory name) is syntactically invalid.
+    #[error("invalid slug `{slug}`: {reason}")]
+    InvalidSlug {
+        /// The slug that failed validation.
+        slug: String,
+        /// Human-readable description of why it is invalid.
+        reason: String,
+    },
+}
+
+fn format_library_not_found(
+    slug: &str,
+    criteria_dir: &std::path::Path,
+    suggestion: Option<&str>,
+) -> String {
+    let mut msg = format!(
+        "criteria library `{slug}` not found in {}",
+        criteria_dir.display()
+    );
+    if let Some(s) = suggestion {
+        msg.push_str(&format!(" Did you mean '{s}'?"));
+    }
+    msg
 }
 
 impl AssayError {
