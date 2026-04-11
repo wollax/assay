@@ -180,8 +180,8 @@ Post-review fix: UTF-8 safe TextDelta truncation (floor_char_boundary) + correct
 **Plans:** 2/2 plans complete
 
 Plans:
-- [ ] 64-01-PLAN.md — New composability types (CriteriaLibrary, SpecPreconditions, PreconditionStatus) + GatesSpec fields + TDD tests
-- [ ] 64-02-PLAN.md — Schema snapshot tests, roundtrip validation, workspace-wide verification
+- [x] 64-01-PLAN.md — New composability types (CriteriaLibrary, SpecPreconditions, PreconditionStatus) + GatesSpec fields + TDD tests
+- [x] 64-02-PLAN.md — Schema snapshot tests, roundtrip validation, workspace-wide verification
 
 ### Phase 65: Resolution Core
 **Goal**: The `assay-core` crate can load, save, and scan criteria libraries from `.assay/criteria/`, and `spec::compose::resolve()` merges parent criteria into child gates with own-wins semantics, cycle detection, and per-criterion source tracking.
@@ -192,7 +192,11 @@ Plans:
   2. Calling `resolve()` on a gate with `extends = "parent"` produces `effective_criteria` where parent criteria are present and own criteria override matching parent criteria by name
   3. A circular `extends` chain (A extends B extends A) causes `resolve()` to return a cycle-detection error rather than hang or panic
   4. Each criterion in resolved output carries a source annotation indicating whether it originated from the parent gate or the child gate
-**Plans**: TBD
+**Plans:** 2 plans
+
+Plans:
+- [ ] 65-01-PLAN.md — Resolution types, error variants, slug validation, criteria library I/O
+- [ ] 65-02-PLAN.md — resolve() function with TDD: cycle detection, own-wins merge, source annotations
 
 ### Phase 66: Evaluation Integration + Validation
 **Goal**: Gate evaluation runs resolved (flattened) criteria through the existing evaluator, precondition checks gate execution before criteria run, `PreconditionFailed` is a distinct non-failure result, and `spec_validate` reports composability errors.
@@ -247,7 +251,7 @@ Phases execute in numeric order. Phases 68 and 69 are independent and can execut
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 64. Type Foundation | 2/2 | Complete    | 2026-04-11 |
-| 65. Resolution Core | 0/TBD | Not started | - |
+| 65. Resolution Core | 0/2 | Not started | - |
 | 66. Evaluation Integration + Validation | 0/TBD | Not started | - |
 | 67. Wizard Core + CLI Surface | 0/TBD | Not started | - |
 | 68. MCP Surface | 0/TBD | Not started | - |
