@@ -114,16 +114,17 @@ The `assay-mcp` crate provides MCP server functionality. Future crates may inclu
 - Binary crates are thin wrappers that delegate to `assay-core`
 - Run `just ready` before considering work complete
 
-## Current Milestone: v0.6.2 P0 Cleanup
+## Current Milestone: v0.7.0 Gate Composability
 
-**Goal:** Resolve 27 P0 issues from post-M024 review findings — process safety, type correctness, serde consistency, and test coverage gaps.
+**Goal:** Make gate definitions reusable, modular, and user-friendly — composability primitives plus a guided wizard across all surfaces.
 
-**Target fixes:**
+**Target features:**
 
-- Process safety: `killpg` for process groups, TOCTOU race fix, stderr capture, relay panic logging, terminal injection prevention
-- Type correctness: `Option<When>` ambiguity, `SessionPhase` collision rename, `AfterToolCalls{0}` validation, checkpoint timeout override
-- Review findings: S04 (auto-promote test name, session lookup perf) and S05 (README fixes, prompt rename, file-path references, serde consistency)
-- Test coverage: gate_sessions eviction, pipeline integration tests, claude_stream edge cases, checkpoint Windows portability
+- Gate inheritance via `gate.extends` — gates inherit criteria from parent gates
+- Criteria libraries with `include` field — shared criteria sets referenced by name
+- Spec preconditions — conditions that must hold before a spec's gates can run
+- Guided wizard for creating, editing, and applying gate definitions across specs
+- Wizard available on CLI (interactive), MCP (agent-driven), and TUI (human dashboard)
 
 ## Current State
 
@@ -257,4 +258,4 @@ The `assay-mcp` crate provides MCP server functionality. Future crates may inclu
 - [Cozempic](https://github.com/Ruya-AI/cozempic) — Reference for token-aware diagnostics and agent team context loss protection
 
 ---
-*Last updated: 2026-03-15 after v0.5.0 milestone defined*
+*Last updated: 2026-04-11 after v0.7.0 milestone started*
