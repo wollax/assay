@@ -153,7 +153,7 @@ Post-review fix: UTF-8 safe TextDelta truncation (floor_char_boundary) + correct
 
 </details>
 
-### 🚧 v0.7.0 Gate Composability (In Progress)
+### v0.7.0 Gate Composability (In Progress)
 
 **Milestone Goal:** Make gate definitions reusable, modular, and user-friendly — gate inheritance via `extends`, criteria libraries via `include`, spec preconditions, and a guided wizard across CLI, MCP, and TUI surfaces.
 
@@ -177,7 +177,11 @@ Post-review fix: UTF-8 safe TextDelta truncation (floor_char_boundary) + correct
   2. A gate TOML file with `include = ["lib-name"]` deserializes without error into `GatesSpec`
   3. An existing pre-v0.7.0 TOML file (no composability fields) parses cleanly — no unknown-field errors, no missing defaults
   4. JSON schema snapshots include all new fields and compile without drift
-**Plans**: TBD
+**Plans:** 2 plans
+
+Plans:
+- [ ] 64-01-PLAN.md — New composability types (CriteriaLibrary, SpecPreconditions, PreconditionStatus) + GatesSpec fields + TDD tests
+- [ ] 64-02-PLAN.md — Schema snapshot tests, roundtrip validation, workspace-wide verification
 
 ### Phase 65: Resolution Core
 **Goal**: The `assay-core` crate can load, save, and scan criteria libraries from `.assay/criteria/`, and `spec::compose::resolve()` merges parent criteria into child gates with own-wins semantics, cycle detection, and per-criterion source tracking.
@@ -242,7 +246,7 @@ Phases execute in numeric order. Phases 68 and 69 are independent and can execut
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 64. Type Foundation | 0/TBD | Not started | - |
+| 64. Type Foundation | 0/2 | Planning complete | - |
 | 65. Resolution Core | 0/TBD | Not started | - |
 | 66. Evaluation Integration + Validation | 0/TBD | Not started | - |
 | 67. Wizard Core + CLI Surface | 0/TBD | Not started | - |
