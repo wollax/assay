@@ -128,11 +128,13 @@ The `assay-mcp` crate provides MCP server functionality. Future crates may inclu
 
 ## Current State
 
-**Shipped:** v0.6.1 Conflict Resolution & Polish (2026-04-08)
+**Shipped:** v0.6.2 P0 Cleanup (2026-04-09)
 
-2266 tests across 57 binaries. Full single-agent pipeline (manifest → worktree → harness → agent → gate → merge), multi-agent orchestration (DAG/mesh/gossip), streaming event pipeline, checkpoint gates, auto-promote, Smelt monorepo integration, Forgejo CI.
+2324 tests across workspace. Full single-agent pipeline (manifest → worktree → harness → agent → gate → merge), multi-agent orchestration (DAG/mesh/gossip), streaming event pipeline, checkpoint gates, auto-promote, Smelt monorepo integration, Forgejo CI.
 
-**Previous:** v0.4.1 Merge Tools (2026-04-08), v0.4.0 Headless Orchestration (2026-03-15), v0.3.0 (2026-03-10), v0.2.0 (2026-03-08), v0.1.0 (2026-03-02)
+**In progress:** v0.7.0 Gate Composability — Phase 64 (type foundation) complete: CriteriaLibrary, SpecPreconditions, PreconditionStatus types + GatesSpec extends/include/preconditions fields. Next: Phase 65 (resolution core).
+
+**Previous:** v0.6.1 Conflict Resolution & Polish (2026-04-08), v0.4.1 Merge Tools (2026-04-08), v0.4.0 Headless Orchestration (2026-03-15), v0.3.0 (2026-03-10), v0.2.0 (2026-03-08), v0.1.0 (2026-03-02)
 
 ## Requirements
 
@@ -258,4 +260,4 @@ The `assay-mcp` crate provides MCP server functionality. Future crates may inclu
 - [Cozempic](https://github.com/Ruya-AI/cozempic) — Reference for token-aware diagnostics and agent team context loss protection
 
 ---
-*Last updated: 2026-04-11 after v0.7.0 milestone started*
+*Last updated: 2026-04-11 after Phase 64 (type-foundation)*
