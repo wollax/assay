@@ -3,14 +3,14 @@ kata_state_version: 1.0
 milestone: v0.7
 milestone_name: milestone
 status: planning
-stopped_at: Completed 65-01-PLAN.md
-last_updated: "2026-04-11T17:05:34.920Z"
+stopped_at: Completed 65-02-PLAN.md
+last_updated: "2026-04-11T17:11:49.668Z"
 last_activity: 2026-04-11 — v0.7.0 roadmap created (6 phases, 22 requirements)
 progress:
   total_phases: 6
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 4
-  completed_plans: 3
+  completed_plans: 4
   percent: 0
 ---
 
@@ -65,6 +65,8 @@ Recent decisions affecting current work:
 - [Phase 65-01]: ResolvedCriterion uses named field not flatten to avoid serde deny_unknown_fields pitfall
 - [Phase 65-01]: Runtime output types (ResolvedGate, ResolvedCriterion) do NOT use deny_unknown_fields for forward-compatibility
 - [Phase 65-01]: save_library validates slug before any I/O for fail-fast semantics
+- [Phase 65-02]: Reverse-dedup algorithm chosen for own-wins merge (avoid indexmap dependency)
+- [Phase 65-02]: resolve() closures (not traits) consistent with zero-trait convention
 
 ### Blockers
 
@@ -76,6 +78,6 @@ Plan Phase 65: Resolution Core (INHR-03, INHR-04, CLIB-01, CLIB-02, CLIB-03)
 
 ### Session Continuity
 
-Last session: 2026-04-11T17:05:34.918Z
-Stopped at: Completed 65-01-PLAN.md
+Last session: 2026-04-11T17:11:49.667Z
+Stopped at: Completed 65-02-PLAN.md
 Resume file: None

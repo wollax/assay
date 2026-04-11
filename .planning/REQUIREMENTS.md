@@ -11,13 +11,13 @@ Requirements for gate composability milestone. Each maps to roadmap phases.
 
 - [x] **INHR-01**: User can define a gate that extends another gate via `gate.extends` field
 - [x] **INHR-02**: Extended gate inherits parent criteria with own-wins merge semantics
-- [ ] **INHR-03**: Circular `extends` chains are detected and reported as validation errors
-- [ ] **INHR-04**: Gate run output shows per-criterion source annotation (parent vs own)
+- [x] **INHR-03**: Circular `extends` chains are detected and reported as validation errors
+- [x] **INHR-04**: Gate run output shows per-criterion source annotation (parent vs own)
 
 ### Criteria Libraries
 
 - [x] **CLIB-01**: User can define shared criteria sets in `.assay/criteria/<slug>.toml`
-- [ ] **CLIB-02**: User can reference criteria libraries via `include` field in gate definitions
+- [x] **CLIB-02**: User can reference criteria libraries via `include` field in gate definitions
 - [x] **CLIB-03**: Core API supports load, save, and scan operations for criteria libraries
 - [ ] **CLIB-04**: Agent can create criteria libraries programmatically via `criteria_create` MCP tool
 
@@ -74,10 +74,10 @@ Requirements for gate composability milestone. Each maps to roadmap phases.
 |-------------|-------|--------|
 | INHR-01 | Phase 64 | Complete |
 | INHR-02 | Phase 64 | Complete |
-| INHR-03 | Phase 65 | Pending |
-| INHR-04 | Phase 65 | Pending |
+| INHR-03 | Phase 65 | Complete |
+| INHR-04 | Phase 65 | Complete |
 | CLIB-01 | Phase 65 | Complete |
-| CLIB-02 | Phase 65 | Pending |
+| CLIB-02 | Phase 65 | Complete |
 | CLIB-03 | Phase 65 | Complete |
 | CLIB-04 | Phase 68 | Pending |
 | PREC-01 | Phase 66 | Pending |

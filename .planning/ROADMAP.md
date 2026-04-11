@@ -160,7 +160,7 @@ Post-review fix: UTF-8 safe TextDelta truncation (floor_char_boundary) + correct
 ## Phases
 
 - [x] **Phase 64: Type Foundation** - Add composability types and backward-compat fields to `assay-types` (completed 2026-04-11)
-- [ ] **Phase 65: Resolution Core** - Criteria library I/O and `spec::compose::resolve()` with cycle detection
+- [x] **Phase 65: Resolution Core** - Criteria library I/O and `spec::compose::resolve()` with cycle detection (completed 2026-04-11)
 - [ ] **Phase 66: Evaluation Integration + Validation** - Wire resolution into gate evaluation, precondition enforcement, and `spec_validate` composability diagnostics
 - [ ] **Phase 67: Wizard Core + CLI Surface** - Shared wizard logic in `assay-core` and interactive CLI commands
 - [ ] **Phase 68: MCP Surface** - Five new MCP tools for agent-driven gate composition
@@ -192,7 +192,7 @@ Plans:
   2. Calling `resolve()` on a gate with `extends = "parent"` produces `effective_criteria` where parent criteria are present and own criteria override matching parent criteria by name
   3. A circular `extends` chain (A extends B extends A) causes `resolve()` to return a cycle-detection error rather than hang or panic
   4. Each criterion in resolved output carries a source annotation indicating whether it originated from the parent gate or the child gate
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 
 Plans:
 - [ ] 65-01-PLAN.md — Resolution types, error variants, slug validation, criteria library I/O
@@ -251,7 +251,7 @@ Phases execute in numeric order. Phases 68 and 69 are independent and can execut
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 64. Type Foundation | 2/2 | Complete    | 2026-04-11 |
-| 65. Resolution Core | 1/2 | In Progress|  |
+| 65. Resolution Core | 2/2 | Complete   | 2026-04-11 |
 | 66. Evaluation Integration + Validation | 0/TBD | Not started | - |
 | 67. Wizard Core + CLI Surface | 0/TBD | Not started | - |
 | 68. MCP Surface | 0/TBD | Not started | - |
