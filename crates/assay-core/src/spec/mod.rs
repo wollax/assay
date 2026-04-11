@@ -1853,6 +1853,9 @@ cmd = "true"
             depends: vec![],
             milestone: None,
             order: None,
+            extends: None,
+            include: vec![],
+            preconditions: None,
             criteria: vec![assay_types::GateCriterion {
                 name: "c1".into(),
                 description: "d1".into(),
@@ -1878,6 +1881,9 @@ cmd = "true"
             depends: vec![],
             milestone: None,
             order: None,
+            extends: None,
+            include: vec![],
+            preconditions: None,
             criteria: vec![],
         };
         let errors = validate_gates_spec(&spec).unwrap_err();
@@ -1893,6 +1899,9 @@ cmd = "true"
             depends: vec![],
             milestone: None,
             order: None,
+            extends: None,
+            include: vec![],
+            preconditions: None,
             criteria: vec![
                 assay_types::GateCriterion {
                     name: "dup".into(),
@@ -2022,6 +2031,9 @@ cmd = "true"
             depends: vec![],
             milestone: None,
             order: None,
+            extends: None,
+            include: vec![],
+            preconditions: None,
             criteria: vec![assay_types::GateCriterion {
                 name: "lint".into(),
                 description: "lint".into(),

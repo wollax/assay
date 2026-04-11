@@ -389,6 +389,9 @@ fn write_gates_toml(
             Some(milestone_slug.to_string())
         },
         order,
+        extends: None,
+        include: vec![],
+        preconditions: None,
         criteria,
     };
 

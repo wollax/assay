@@ -295,6 +295,9 @@ fn gates_spec_validates() {
         depends: vec![],
         milestone: None,
         order: None,
+        extends: None,
+        include: vec![],
+        preconditions: None,
         criteria: vec![GateCriterion {
             name: "auth-compiles".to_string(),
             description: "Auth module compiles".to_string(),

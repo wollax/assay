@@ -264,6 +264,7 @@ dependencies = [
  "inventory",
  "jsonschema",
  "schemars",
+ "semver",
  "serde",
  "serde_json",
  "toml",

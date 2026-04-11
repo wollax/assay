@@ -96,6 +96,9 @@ mod tests {
             depends: vec![],
             milestone: None,
             order: None,
+            extends: None,
+            include: vec![],
+            preconditions: None,
             criteria,
         }
     }

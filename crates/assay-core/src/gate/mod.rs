@@ -1537,6 +1537,9 @@ mod tests {
             depends: vec![],
             milestone: None,
             order: None,
+            extends: None,
+            include: vec![],
+            preconditions: None,
             criteria: vec![
                 GateCriterion {
                     name: "passes".to_string(),
@@ -1618,6 +1621,9 @@ mod tests {
             depends: vec![],
             milestone: None,
             order: None,
+            extends: None,
+            include: vec![],
+            preconditions: None,
             criteria: vec![GateCriterion {
                 name: "echo".to_string(),
                 description: "echo test".to_string(),
@@ -1825,6 +1831,9 @@ mod tests {
             depends: vec![],
             milestone: None,
             order: None,
+            extends: None,
+            include: vec![],
+            preconditions: None,
             criteria: vec![GateCriterion {
                 name: "readme exists".to_string(),
                 description: "check readme".to_string(),
@@ -2023,6 +2032,9 @@ mod tests {
             depends: vec![],
             milestone: None,
             order: None,
+            extends: None,
+            include: vec![],
+            preconditions: None,
             criteria: vec![
                 GateCriterion {
                     name: "required-override".to_string(),
@@ -2305,6 +2317,9 @@ mod tests {
             depends: vec![],
             milestone: None,
             order: None,
+            extends: None,
+            include: vec![],
+            preconditions: None,
             criteria: vec![GateCriterion {
                 name: "cmd-pass".to_string(),
                 description: "command that passes".to_string(),
@@ -2339,6 +2354,9 @@ mod tests {
             depends: vec![],
             milestone: None,
             order: None,
+            extends: None,
+            include: vec![],
+            preconditions: None,
             criteria: vec![GateCriterion {
                 name: "impossible".to_string(),
                 description: "nonexistent binary".to_string(),
@@ -2997,6 +3015,9 @@ mod tests {
             depends: vec![],
             milestone: None,
             order: None,
+            extends: None,
+            include: vec![],
+            preconditions: None,
             criteria: vec![GateCriterion {
                 name: "no-tool-errors".to_string(),
                 description: String::new(),

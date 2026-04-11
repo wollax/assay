@@ -180,6 +180,27 @@ expression: schema.to_value()
       },
       "type": "object"
     },
+    "SpecPreconditions": {
+      "additionalProperties": false,
+      "description": "Preconditions declared in a `gates.toml` `[preconditions]` section.\n\nWhen present, the gate runner checks all `requires` slugs (other gate specs\nwhose last run must have passed) and runs all `commands` before evaluating\nany criteria.",
+      "properties": {
+        "commands": {
+          "description": "Shell commands that must exit 0 before gate evaluation proceeds.\n\nOmitted from serialized output when empty.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "requires": {
+          "description": "Slugs of other gate specs that must have passed their last recorded run.\n\nOmitted from serialized output when empty.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
     "When": {
       "description": "Declares when a gate criterion is evaluated.\n\nSpec authors use this to designate cheap event-based criteria as\nmid-session checkpoints while keeping expensive command/file gates\nat session end.\n\n# Warning on command/file gates at checkpoints\n\nUsing `AfterToolCalls` or `OnEvent` with a `cmd`- or `path`-based\ncriterion evaluates against a **partial working directory**. Prefer\n`EventCount` and `NoToolErrors` criteria for checkpoints.",
       "oneOf": [
@@ -259,6 +280,13 @@ expression: schema.to_value()
       "description": "Human-readable description. Defaults to empty string.",
       "type": "string"
     },
+    "extends": {
+      "description": "Slug of the parent gate spec this one extends. When set, the parent's\ncriteria are inherited with own-wins merge semantics.\n\nOmitted from serialized output when absent.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "gate": {
       "anyOf": [
         {
@@ -269,6 +297,13 @@ expression: schema.to_value()
         }
       ],
       "description": "Gate configuration section (enforcement defaults)."
+    },
+    "include": {
+      "description": "Criteria library slugs to include. Criteria from each library are\nmerged flat into this gate's criteria list.\n\nOmitted from serialized output when empty.",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
     },
     "milestone": {
       "description": "Optional milestone slug this spec belongs to (e.g. `\"my-feature\"`).\n\nWhen set, this spec is associated with a milestone tracked in\n`.assay/milestones/<slug>.toml`. Omitted from serialized output when absent.",
@@ -289,6 +324,17 @@ expression: schema.to_value()
         "integer",
         "null"
       ]
+    },
+    "preconditions": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/SpecPreconditions"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Preconditions that must be met before gate evaluation proceeds.\n\nOmitted from serialized output when absent."
     }
   },
   "required": [

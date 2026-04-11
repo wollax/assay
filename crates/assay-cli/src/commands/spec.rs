@@ -631,6 +631,9 @@ fn handle_spec_review(name: &str, json: bool, list: bool) -> anyhow::Result<i32>
                 depends: vec![],
                 milestone: None,
                 order: None,
+                extends: None,
+                include: vec![],
+                preconditions: None,
                 criteria: spec.criteria.clone(),
             };
             assay_core::review::run_structural_review(name, &gates_spec, None)
@@ -1335,6 +1338,9 @@ cmd = "echo ok"
                     depends: vec![],
                     milestone: None,
                     order: None,
+                    extends: None,
+                    include: vec![],
+                    preconditions: None,
                     criteria: spec.criteria.clone(),
                 };
                 assay_core::review::run_structural_review(name, &gates_spec, None)

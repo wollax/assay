@@ -8,6 +8,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::enforcement::GateSection;
+use crate::precondition::SpecPreconditions;
 
 /// Backward-compatible alias: `GateCriterion` is now [`crate::Criterion`].
 ///
@@ -54,6 +55,26 @@ pub struct GatesSpec {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub order: Option<u32>,
 
+    /// Slug of the parent gate spec this one extends. When set, the parent's
+    /// criteria are inherited with own-wins merge semantics.
+    ///
+    /// Omitted from serialized output when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extends: Option<String>,
+
+    /// Criteria library slugs to include. Criteria from each library are
+    /// merged flat into this gate's criteria list.
+    ///
+    /// Omitted from serialized output when empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub include: Vec<String>,
+
+    /// Preconditions that must be met before gate evaluation proceeds.
+    ///
+    /// Omitted from serialized output when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preconditions: Option<SpecPreconditions>,
+
     /// Gate criteria that must be satisfied.
     pub criteria: Vec<GateCriterion>,
 }
@@ -87,6 +108,9 @@ mod tests {
             depends: vec![],
             milestone: None,
             order: None,
+            extends: None,
+            include: vec![],
+            preconditions: None,
             criteria: vec![GateCriterion {
                 name: "compiles".to_string(),
                 description: "Code compiles".to_string(),
@@ -274,6 +298,9 @@ unknown_crit_key = true
             depends: vec![],
             milestone: None,
             order: None,
+            extends: None,
+            include: vec![],
+            preconditions: None,
             criteria: vec![
                 GateCriterion {
                     name: "compiles".to_string(),
@@ -367,6 +394,9 @@ description = "A check"
             depends: vec![],
             milestone: None,
             order: None,
+            extends: None,
+            include: vec![],
+            preconditions: None,
             criteria: vec![GateCriterion {
                 name: "check".to_string(),
                 description: "A check".to_string(),
@@ -411,5 +441,162 @@ description = "A check"
         assert_eq!(spec.criteria.len(), 2);
         assert_eq!(spec.criteria[0].name, "tool-budget");
         assert_eq!(spec.criteria[1].name, "no-tool-errors");
+    }
+
+    // ── Composability fields (v0.7.0) ────────────────────────────────────────
+
+    #[test]
+    fn gates_spec_with_extends_roundtrip() {
+        let toml_str = r#"
+name = "child-gate"
+extends = "parent-gate"
+
+[[criteria]]
+name = "compiles"
+description = "Code compiles"
+"#;
+        let spec: GatesSpec = toml::from_str(toml_str).expect("parse gates spec with extends");
+        assert_eq!(spec.extends, Some("parent-gate".to_string()));
+
+        let re_serialized = toml::to_string(&spec).expect("re-serialize");
+        let roundtripped: GatesSpec =
+            toml::from_str(&re_serialized).expect("roundtrip deserialize");
+        assert_eq!(spec, roundtripped);
+        assert_eq!(roundtripped.extends, Some("parent-gate".to_string()));
+    }
+
+    #[test]
+    fn gates_spec_with_include_roundtrip() {
+        let toml_str = r#"
+name = "full-gate"
+include = ["lib-a", "lib-b"]
+
+[[criteria]]
+name = "own-check"
+description = "An own criterion"
+"#;
+        let spec: GatesSpec = toml::from_str(toml_str).expect("parse gates spec with include");
+        assert_eq!(spec.include, vec!["lib-a", "lib-b"]);
+
+        let re_serialized = toml::to_string(&spec).expect("re-serialize");
+        let roundtripped: GatesSpec =
+            toml::from_str(&re_serialized).expect("roundtrip deserialize");
+        assert_eq!(spec, roundtripped);
+        assert_eq!(roundtripped.include, vec!["lib-a", "lib-b"]);
+    }
+
+    #[test]
+    fn gates_spec_with_extends_and_include_roundtrip() {
+        let toml_str = r#"
+name = "combined-gate"
+extends = "base-gate"
+include = ["security-lib", "perf-lib"]
+
+[[criteria]]
+name = "specific-check"
+description = "A spec-specific criterion"
+cmd = "echo ok"
+"#;
+        let spec: GatesSpec =
+            toml::from_str(toml_str).expect("parse gates spec with extends and include");
+        assert_eq!(spec.extends, Some("base-gate".to_string()));
+        assert_eq!(spec.include, vec!["security-lib", "perf-lib"]);
+
+        let re_serialized = toml::to_string(&spec).expect("re-serialize");
+        let roundtripped: GatesSpec =
+            toml::from_str(&re_serialized).expect("roundtrip deserialize");
+        assert_eq!(spec, roundtripped);
+    }
+
+    #[test]
+    fn gates_spec_with_preconditions_roundtrip() {
+        let toml_str = r#"
+name = "guarded-gate"
+
+[preconditions]
+requires = ["auth-flow", "db-schema"]
+commands = ["docker ps", "pg_isready"]
+
+[[criteria]]
+name = "integration-test"
+description = "Integration tests pass"
+cmd = "cargo test --test integration"
+"#;
+        let spec: GatesSpec =
+            toml::from_str(toml_str).expect("parse gates spec with preconditions");
+        let preconds = spec
+            .preconditions
+            .as_ref()
+            .expect("preconditions should be set");
+        assert_eq!(preconds.requires, vec!["auth-flow", "db-schema"]);
+        assert_eq!(preconds.commands, vec!["docker ps", "pg_isready"]);
+
+        let re_serialized = toml::to_string(&spec).expect("re-serialize");
+        let roundtripped: GatesSpec =
+            toml::from_str(&re_serialized).expect("roundtrip deserialize");
+        assert_eq!(spec, roundtripped);
+    }
+
+    #[test]
+    fn gates_spec_legacy_toml_without_composability_fields_parses_cleanly() {
+        // A pre-v0.7.0 TOML with no extends, include, or preconditions fields.
+        let toml_str = r#"
+name = "legacy-gate"
+description = "A legacy gate spec"
+
+[[criteria]]
+name = "compiles"
+description = "Code compiles"
+cmd = "cargo build"
+requirements = ["REQ-FUNC-001"]
+"#;
+        let spec: GatesSpec =
+            toml::from_str(toml_str).expect("pre-v0.7.0 TOML should parse cleanly");
+        assert_eq!(spec.name, "legacy-gate");
+        assert!(spec.extends.is_none(), "extends should be None");
+        assert!(spec.include.is_empty(), "include should be empty");
+        assert!(spec.preconditions.is_none(), "preconditions should be None");
+        assert_eq!(spec.criteria.len(), 1);
+    }
+
+    #[test]
+    fn gates_spec_new_fields_omitted_when_default() {
+        let spec = GatesSpec {
+            name: "minimal".to_string(),
+            description: String::new(),
+            gate: None,
+            depends: vec![],
+            milestone: None,
+            order: None,
+            extends: None,
+            include: vec![],
+            preconditions: None,
+            criteria: vec![GateCriterion {
+                name: "check".to_string(),
+                description: "A check".to_string(),
+                cmd: None,
+                path: None,
+                timeout: None,
+                enforcement: None,
+                kind: None,
+                prompt: None,
+                requirements: vec![],
+                when: When::default(),
+            }],
+        };
+
+        let toml_str = toml::to_string(&spec).expect("serialize to TOML");
+        assert!(
+            !toml_str.contains("extends"),
+            "TOML should omit absent extends, got:\n{toml_str}"
+        );
+        assert!(
+            !toml_str.contains("include"),
+            "TOML should omit empty include, got:\n{toml_str}"
+        );
+        assert!(
+            !toml_str.contains("preconditions"),
+            "TOML should omit absent preconditions, got:\n{toml_str}"
+        );
     }
 }

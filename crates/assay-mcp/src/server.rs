@@ -697,6 +697,7 @@ pub struct MilestoneChunkInput {
     /// Slug for this chunk (used as the spec directory name in `spec_create`).
     pub slug: String,
     /// Human-readable display name.
+    #[allow(dead_code)]
     pub name: String,
     /// Criteria for this chunk. Accepts plain strings (backward-compatible) or objects with optional `cmd` field.
     pub criteria: Vec<CriterionOrString>,
@@ -723,6 +724,7 @@ pub struct SpecCreateParams {
     /// Human-readable spec name.
     pub name: String,
     /// Optional longer description.
+    #[allow(dead_code)]
     pub description: Option<String>,
     /// Optionally link the spec to a milestone by slug. Patches the milestone's chunk list.
     pub milestone_slug: Option<String>,
