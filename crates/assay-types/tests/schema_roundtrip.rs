@@ -702,6 +702,66 @@ shared_files = ["Cargo.lock"]
     assert_eq!(session.shared_files, vec!["Cargo.lock"]);
 }
 
+// ── Composability types (v0.7.0) ─────────────────────────────────────
+
+#[test]
+fn criteria_library_schema_roundtrip() {
+    validate(&assay_types::CriteriaLibrary {
+        name: "rust-basics".to_string(),
+        description: "Standard Rust quality gates".to_string(),
+        version: Some("1.0.0".to_string()),
+        tags: vec!["rust".to_string(), "build".to_string()],
+        criteria: vec![Criterion {
+            name: "compiles".to_string(),
+            description: "Project compiles without errors".to_string(),
+            cmd: Some("cargo build".to_string()),
+            path: None,
+            timeout: None,
+            enforcement: None,
+            kind: None,
+            prompt: None,
+            requirements: vec![],
+            when: When::default(),
+        }],
+    });
+}
+
+#[test]
+fn spec_preconditions_schema_roundtrip() {
+    validate(&assay_types::SpecPreconditions {
+        requires: vec!["auth-flow".to_string(), "db-schema".to_string()],
+        commands: vec!["docker ps".to_string(), "pg_isready".to_string()],
+    });
+}
+
+#[test]
+fn precondition_status_schema_roundtrip() {
+    validate(&assay_types::PreconditionStatus {
+        requires: vec![
+            assay_types::RequireStatus {
+                spec_slug: "auth-flow".to_string(),
+                passed: true,
+            },
+            assay_types::RequireStatus {
+                spec_slug: "db-schema".to_string(),
+                passed: false,
+            },
+        ],
+        commands: vec![
+            assay_types::CommandStatus {
+                command: "docker ps".to_string(),
+                passed: true,
+                output: Some("CONTAINER ID   IMAGE\n".to_string()),
+            },
+            assay_types::CommandStatus {
+                command: "pg_isready".to_string(),
+                passed: true,
+                output: None,
+            },
+        ],
+    });
+}
+
 #[cfg(feature = "orchestrate")]
 #[test]
 fn run_manifest_with_scoped_sessions_validates() {
