@@ -72,34 +72,34 @@ Requirements for gate composability milestone. Each maps to roadmap phases.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| INHR-01 | — | Pending |
-| INHR-02 | — | Pending |
-| INHR-03 | — | Pending |
-| INHR-04 | — | Pending |
-| CLIB-01 | — | Pending |
-| CLIB-02 | — | Pending |
-| CLIB-03 | — | Pending |
-| CLIB-04 | — | Pending |
-| PREC-01 | — | Pending |
-| PREC-02 | — | Pending |
-| PREC-03 | — | Pending |
-| WIZC-01 | — | Pending |
-| WIZC-02 | — | Pending |
-| WIZC-03 | — | Pending |
-| WIZM-01 | — | Pending |
-| WIZM-02 | — | Pending |
-| WIZM-03 | — | Pending |
-| WIZT-01 | — | Pending |
-| WIZT-02 | — | Pending |
-| SAFE-01 | — | Pending |
-| SAFE-02 | — | Pending |
-| SAFE-03 | — | Pending |
+| INHR-01 | Phase 64 | Pending |
+| INHR-02 | Phase 64 | Pending |
+| INHR-03 | Phase 65 | Pending |
+| INHR-04 | Phase 65 | Pending |
+| CLIB-01 | Phase 65 | Pending |
+| CLIB-02 | Phase 65 | Pending |
+| CLIB-03 | Phase 65 | Pending |
+| CLIB-04 | Phase 68 | Pending |
+| PREC-01 | Phase 66 | Pending |
+| PREC-02 | Phase 66 | Pending |
+| PREC-03 | Phase 66 | Pending |
+| WIZC-01 | Phase 67 | Pending |
+| WIZC-02 | Phase 67 | Pending |
+| WIZC-03 | Phase 67 | Pending |
+| WIZM-01 | Phase 68 | Pending |
+| WIZM-02 | Phase 68 | Pending |
+| WIZM-03 | Phase 68 | Pending |
+| WIZT-01 | Phase 69 | Pending |
+| WIZT-02 | Phase 69 | Pending |
+| SAFE-01 | Phase 66 | Pending |
+| SAFE-02 | Phase 66 | Pending |
+| SAFE-03 | Phase 64 | Pending |
 
 **Coverage:**
 - v0.7.0 requirements: 22 total
-- Mapped to phases: 0
-- Unmapped: 22 ⚠️
+- Mapped to phases: 22
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-04-11*
-*Last updated: 2026-04-11 after initial definition*
+*Last updated: 2026-04-11 after roadmap creation*

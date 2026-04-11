@@ -2,11 +2,11 @@
 kata_state_version: 1.0
 milestone: v0.7.0
 milestone_name: Gate Composability
-status: defining_requirements
+status: ready_to_plan
 last_updated: "2026-04-11T00:00:00Z"
-last_activity: 2026-04-11 — Milestone v0.7.0 started
+last_activity: 2026-04-11 — Roadmap created, 6 phases, 22 requirements mapped
 progress:
-  total_phases: 0
+  total_phases: 6
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -19,14 +19,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-11)
 
 **Core value:** Dual-track quality gates (deterministic + agent-evaluated) for AI coding agents
-**Current focus:** v0.7.0 Gate Composability
+**Current focus:** Phase 64 — Type Foundation (v0.7.0 Gate Composability)
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-04-11 — Milestone v0.7.0 started
+Phase: 64 of 69 (Type Foundation)
+Plan: 0 of TBD in current phase
+Status: Ready to plan
+Last activity: 2026-04-11 — v0.7.0 roadmap created (6 phases, 22 requirements)
+
+Progress: [░░░░░░░░░░] 0% (v0.7.0)
 
 ## Milestone Progress
 
@@ -41,7 +43,7 @@ Last activity: 2026-04-11 — Milestone v0.7.0 started
 | v0.6.0 | — | — | 100% (shipped) |
 | v0.6.1 | — | — | 100% (shipped) |
 | v0.6.2 | 4 (60-63) | 27 | 100% (shipped) |
-| v0.7.0 | — | — | Defining requirements |
+| v0.7.0 | 6 (64-69) | 22 | 0% (in progress) |
 
 ## Accumulated Context
 
@@ -49,9 +51,12 @@ Last activity: 2026-04-11 — Milestone v0.7.0 started
 
 v0.1.0–v0.6.2 decisions archived. See ROADMAP.md collapsed sections.
 
-### Linear Mapping
-
-Linear milestone M025 maps to Kata v0.6.2. All M025 issues closed.
+Recent decisions affecting current work:
+- All composability types use `#[serde(default, skip_serializing_if)]` — backward compat mandatory (P-66)
+- Resolution is load-time static only — no runtime/dynamic composition
+- Zero-trait convention preserved — `resolve()` takes closures, not traits
+- "Own wins silently" merge semantics for criteria name conflicts
+- Precondition temporal definition: "last recorded gate run passed" (no staleness window in v0.7.0)
 
 ### Blockers
 
@@ -59,10 +64,10 @@ None.
 
 ### Next Actions
 
-Define requirements for v0.7.0 Gate Composability.
+Plan Phase 64: Type Foundation (INHR-01, INHR-02, SAFE-03)
 
 ### Session Continuity
 
 Last session: 2026-04-11
-Stopped at: Milestone v0.7.0 — defining requirements
+Stopped at: Roadmap created, phases 64-69 defined. Ready to plan Phase 64.
 Resume file: None
