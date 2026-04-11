@@ -208,7 +208,12 @@ Plans:
   3. `spec_validate` returns a structured diagnostic when `extends` references a non-existent parent gate
   4. `spec_validate` returns a structured diagnostic when `include` references a non-existent criteria library
   5. An `extends` or `include` value containing path traversal characters (e.g., `../evil`) is rejected by slug validation before any file I/O occurs
-**Plans**: TBD
+**Plans:** 3 plans
+
+Plans:
+- [ ] 66-01-PLAN.md — GateEvalOutcome type, CriterionResult.source field, last_gate_passed() helper
+- [ ] 66-02-PLAN.md — check_preconditions() and evaluate_all_resolved() functions
+- [ ] 66-03-PLAN.md — Composability and precondition diagnostics in validate_spec_with_dependencies()
 
 ### Phase 67: Wizard Core + CLI Surface
 **Goal**: `assay-core::wizard` exposes `apply_gate_wizard()` usable by any surface, and the CLI provides `assay gate wizard` (create/edit) and `assay criteria list/new` commands backed entirely by core validation logic.
@@ -252,7 +257,7 @@ Phases execute in numeric order. Phases 68 and 69 are independent and can execut
 |-------|----------------|--------|-----------|
 | 64. Type Foundation | 2/2 | Complete    | 2026-04-11 |
 | 65. Resolution Core | 2/2 | Complete    | 2026-04-11 |
-| 66. Evaluation Integration + Validation | 0/TBD | Not started | - |
+| 66. Evaluation Integration + Validation | 0/3 | Planning complete | - |
 | 67. Wizard Core + CLI Surface | 0/TBD | Not started | - |
 | 68. MCP Surface | 0/TBD | Not started | - |
 | 69. TUI Surface | 0/TBD | Not started | - |
