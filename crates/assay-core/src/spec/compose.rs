@@ -1,8 +1,9 @@
 //! Gate composition: slug validation, criteria library I/O, and resolution.
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
-use assay_types::CriteriaLibrary;
+use assay_types::{CriteriaLibrary, CriterionSource, GatesSpec, ResolvedCriterion, ResolvedGate};
 
 use crate::error::{AssayError, Result};
 
@@ -207,9 +208,627 @@ pub fn load_library_by_slug(assay_dir: &Path, slug: &str) -> Result<CriteriaLibr
     load_library(&path)
 }
 
+/// Resolve a gate's effective criteria by merging parent, library, and own criteria.
+///
+/// Given a `gate` (loaded from `gates.toml`) and its `gate_slug` (the directory name,
+/// used as its identity), this function:
+///
+/// 1. Validates any `extends` and `include` slugs.
+/// 2. Detects circular `extends` chains (self-extend and mutual extend).
+/// 3. Loads the parent gate's criteria via `load_gate` (if `extends` is set).
+/// 4. Loads each library's criteria via `load_library` (for each `include` slug).
+/// 5. Merges all criteria in order: **parent → libraries → own**.
+///    Name collisions are resolved with **own-wins** semantics (the later entry overwrites
+///    an earlier one with the same `name`).
+///
+/// # Single-level inheritance
+///
+/// Only one level of `extends` is followed. The parent's own `extends` and `include`
+/// fields are **ignored** — parent criteria are taken as-is from the parent's own
+/// `criteria` list.
+///
+/// # Closure interfaces
+///
+/// Both closures return errors directly; `resolve` propagates them unchanged.
+/// - `load_gate(slug) -> Result<GatesSpec>`: Load a gate by its slug.
+/// - `load_library(slug) -> Result<CriteriaLibrary>`: Load a library by its slug.
+///
+/// # Errors
+///
+/// - [`AssayError::InvalidSlug`] — `extends` or an `include` slug is syntactically invalid.
+/// - [`AssayError::CycleDetected`] — `extends` creates a cycle (self or mutual).
+/// - [`AssayError::ParentGateNotFound`] — the `extends` slug was not found (propagated
+///   from `load_gate`; callers should return this error type).
+/// - Any error returned from `load_gate` or `load_library` closures.
+pub fn resolve(
+    gate: &GatesSpec,
+    gate_slug: &str,
+    load_gate: impl Fn(&str) -> Result<GatesSpec>,
+    load_library: impl Fn(&str) -> Result<CriteriaLibrary>,
+) -> Result<ResolvedGate> {
+    // ── 1. Validate slugs ─────────────────────────────────────────────────────
+    if let Some(extends_slug) = &gate.extends {
+        validate_slug(extends_slug)?;
+    }
+    for include_slug in &gate.include {
+        validate_slug(include_slug)?;
+    }
+
+    // ── 2. Cycle detection + parent loading ───────────────────────────────────
+    let parent_criteria: Vec<(assay_types::Criterion, CriterionSource)> =
+        if let Some(extends_slug) = &gate.extends {
+            // Self-extend: gate_slug == extends_slug
+            if extends_slug == gate_slug {
+                return Err(AssayError::CycleDetected {
+                    gate_slug: gate_slug.to_string(),
+                    parent_slug: extends_slug.clone(),
+                });
+            }
+
+            let parent = load_gate(extends_slug)?;
+
+            // Mutual extend: parent.extends == Some(gate_slug)
+            if parent.extends.as_deref() == Some(gate_slug) {
+                return Err(AssayError::CycleDetected {
+                    gate_slug: gate_slug.to_string(),
+                    parent_slug: extends_slug.clone(),
+                });
+            }
+
+            // Take parent's OWN criteria only (single-level: parent's extends/include ignored)
+            parent
+                .criteria
+                .into_iter()
+                .map(|c| {
+                    let source = CriterionSource::Parent {
+                        gate_slug: extends_slug.clone(),
+                    };
+                    (c, source)
+                })
+                .collect()
+        } else {
+            vec![]
+        };
+
+    // ── 3. Library criteria ───────────────────────────────────────────────────
+    let mut library_criteria: Vec<(assay_types::Criterion, CriterionSource)> = vec![];
+    for include_slug in &gate.include {
+        let lib = load_library(include_slug)?;
+        for c in lib.criteria {
+            library_criteria.push((
+                c,
+                CriterionSource::Library {
+                    slug: include_slug.clone(),
+                },
+            ));
+        }
+    }
+
+    // ── 4. Merge with own-wins semantics ──────────────────────────────────────
+    //
+    // Strategy: collect all criteria into a Vec in order (parent → libraries → own),
+    // then reverse-dedup by name (keeping the LAST occurrence, which is own if present,
+    // or latest library). Finally, reverse the result to restore original ordering.
+    //
+    // This naturally gives us:
+    //   - own-wins over parent and libraries
+    //   - later-library-wins over earlier libraries
+    //   - ordering within surviving entries follows insertion order
+    let own_criteria: Vec<(assay_types::Criterion, CriterionSource)> = gate
+        .criteria
+        .iter()
+        .map(|c| (c.clone(), CriterionSource::Own))
+        .collect();
+
+    let all_criteria: Vec<(assay_types::Criterion, CriterionSource)> = parent_criteria
+        .into_iter()
+        .chain(library_criteria)
+        .chain(own_criteria)
+        .collect();
+
+    // Reverse-dedup: iterate from back, track seen names, keep first-seen (= last in forward order)
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut deduped_rev: Vec<ResolvedCriterion> = all_criteria
+        .into_iter()
+        .rev()
+        .filter(|(c, _)| seen.insert(c.name.clone()))
+        .map(|(criterion, source)| ResolvedCriterion { criterion, source })
+        .collect();
+
+    // Restore forward order
+    deduped_rev.reverse();
+
+    Ok(ResolvedGate {
+        gate_slug: gate_slug.to_string(),
+        parent_slug: gate.extends.clone(),
+        included_libraries: gate.include.clone(),
+        criteria: deduped_rev,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ── resolve() tests ───────────────────────────────────────────────────────
+
+    use assay_types::criterion::When as CriterionWhen;
+    use assay_types::{CriterionSource, GatesSpec};
+
+    fn make_criterion(name: &str) -> assay_types::Criterion {
+        assay_types::Criterion {
+            name: name.to_string(),
+            description: format!("{name} desc"),
+            cmd: Some(format!("echo {name}")),
+            path: None,
+            timeout: None,
+            enforcement: None,
+            kind: None,
+            prompt: None,
+            requirements: vec![],
+            when: CriterionWhen::default(),
+        }
+    }
+
+    fn make_gate(name: &str, criteria_names: &[&str]) -> GatesSpec {
+        GatesSpec {
+            name: name.to_string(),
+            description: String::new(),
+            gate: None,
+            depends: vec![],
+            milestone: None,
+            order: None,
+            extends: None,
+            include: vec![],
+            preconditions: None,
+            criteria: criteria_names.iter().map(|n| make_criterion(n)).collect(),
+        }
+    }
+
+    fn no_gate(_slug: &str) -> Result<GatesSpec> {
+        Err(AssayError::ParentGateNotFound {
+            gate_slug: "self".to_string(),
+            parent_slug: _slug.to_string(),
+        })
+    }
+
+    fn no_library(_slug: &str) -> Result<CriteriaLibrary> {
+        Err(AssayError::LibraryNotFound {
+            slug: _slug.to_string(),
+            criteria_dir: std::path::PathBuf::from(".assay/criteria"),
+            suggestion: None,
+        })
+    }
+
+    // Happy path: no extends, no include → own criteria only
+
+    #[test]
+    fn resolve_no_extends_no_include_returns_own_criteria() {
+        let gate = make_gate("my-gate", &["compiles", "tests-pass"]);
+        let resolved =
+            resolve(&gate, "my-gate", no_gate, no_library).expect("resolve should succeed");
+
+        assert_eq!(resolved.gate_slug, "my-gate");
+        assert!(resolved.parent_slug.is_none());
+        assert!(resolved.included_libraries.is_empty());
+        assert_eq!(resolved.criteria.len(), 2);
+        assert_eq!(resolved.criteria[0].criterion.name, "compiles");
+        assert!(matches!(resolved.criteria[0].source, CriterionSource::Own));
+        assert_eq!(resolved.criteria[1].criterion.name, "tests-pass");
+        assert!(matches!(resolved.criteria[1].source, CriterionSource::Own));
+    }
+
+    // extends: parent criteria + own criteria with correct sources
+
+    #[test]
+    fn resolve_with_extends_includes_parent_criteria() {
+        let mut gate = make_gate("child", &["own-check"]);
+        gate.extends = Some("parent-gate".to_string());
+
+        let parent = make_gate("parent", &["build", "lint"]);
+
+        let resolved = resolve(
+            &gate,
+            "child",
+            |slug| {
+                assert_eq!(slug, "parent-gate");
+                Ok(parent.clone())
+            },
+            no_library,
+        )
+        .expect("resolve should succeed");
+
+        assert_eq!(resolved.gate_slug, "child");
+        assert_eq!(resolved.parent_slug, Some("parent-gate".to_string()));
+        assert_eq!(resolved.criteria.len(), 3); // build, lint (parent) + own-check (own)
+
+        let build = &resolved.criteria[0];
+        assert_eq!(build.criterion.name, "build");
+        assert!(
+            matches!(&build.source, CriterionSource::Parent { gate_slug } if gate_slug == "parent-gate"),
+            "build should be from parent"
+        );
+
+        let own = &resolved.criteria[2];
+        assert_eq!(own.criterion.name, "own-check");
+        assert!(matches!(&own.source, CriterionSource::Own));
+    }
+
+    // include: library criteria + own criteria with correct sources
+
+    #[test]
+    fn resolve_with_include_merges_library_criteria() {
+        let mut gate = make_gate("my-gate", &["own-check"]);
+        gate.include = vec!["rust-basics".to_string()];
+
+        let mut lib = make_library("rust-basics");
+        lib.criteria = vec![make_criterion("compiles"), make_criterion("tests-pass")];
+
+        let resolved = resolve(&gate, "my-gate", no_gate, |slug| {
+            assert_eq!(slug, "rust-basics");
+            Ok(lib.clone())
+        })
+        .expect("resolve should succeed");
+
+        assert_eq!(resolved.included_libraries, vec!["rust-basics"]);
+        assert_eq!(resolved.criteria.len(), 3); // compiles, tests-pass (lib) + own-check (own)
+
+        let compiles = &resolved.criteria[0];
+        assert_eq!(compiles.criterion.name, "compiles");
+        assert!(
+            matches!(&compiles.source, CriterionSource::Library { slug } if slug == "rust-basics")
+        );
+
+        let own = &resolved.criteria[2];
+        assert_eq!(own.criterion.name, "own-check");
+        assert!(matches!(&own.source, CriterionSource::Own));
+    }
+
+    // extends + include: all three sources merged in order
+
+    #[test]
+    fn resolve_with_extends_and_include_merges_all_sources() {
+        let mut gate = make_gate("child", &["own-check"]);
+        gate.extends = Some("parent-gate".to_string());
+        gate.include = vec!["lib-a".to_string()];
+
+        let parent = make_gate("parent", &["parent-crit"]);
+        let mut lib = make_library("lib-a");
+        lib.criteria = vec![make_criterion("lib-crit")];
+
+        let resolved = resolve(&gate, "child", |_| Ok(parent.clone()), |_| Ok(lib.clone()))
+            .expect("resolve should succeed");
+
+        assert_eq!(resolved.criteria.len(), 3);
+        assert_eq!(resolved.criteria[0].criterion.name, "parent-crit");
+        assert!(matches!(
+            &resolved.criteria[0].source,
+            CriterionSource::Parent { .. }
+        ));
+        assert_eq!(resolved.criteria[1].criterion.name, "lib-crit");
+        assert!(matches!(
+            &resolved.criteria[1].source,
+            CriterionSource::Library { .. }
+        ));
+        assert_eq!(resolved.criteria[2].criterion.name, "own-check");
+        assert!(matches!(&resolved.criteria[2].source, CriterionSource::Own));
+    }
+
+    // own-wins: own criterion overrides parent criterion with same name
+
+    #[test]
+    fn resolve_own_wins_over_parent() {
+        let mut gate = make_gate("child", &["compiles"]);
+        gate.extends = Some("parent-gate".to_string());
+
+        let parent = make_gate("parent", &["compiles", "lint"]);
+
+        let resolved = resolve(&gate, "child", |_| Ok(parent.clone()), no_library)
+            .expect("resolve should succeed");
+
+        // "compiles" appears from both parent and own, own should win
+        // "lint" is only from parent
+        let compiles_entries: Vec<_> = resolved
+            .criteria
+            .iter()
+            .filter(|c| c.criterion.name == "compiles")
+            .collect();
+        assert_eq!(
+            compiles_entries.len(),
+            1,
+            "compiles should appear only once"
+        );
+        assert!(
+            matches!(&compiles_entries[0].source, CriterionSource::Own),
+            "own wins: compiles should have Own source"
+        );
+
+        let lint_entries: Vec<_> = resolved
+            .criteria
+            .iter()
+            .filter(|c| c.criterion.name == "lint")
+            .collect();
+        assert_eq!(lint_entries.len(), 1);
+        assert!(matches!(
+            &lint_entries[0].source,
+            CriterionSource::Parent { .. }
+        ));
+    }
+
+    // own-wins: own criterion overrides library criterion with same name
+
+    #[test]
+    fn resolve_own_wins_over_library() {
+        let mut gate = make_gate("my-gate", &["tests-pass"]);
+        gate.include = vec!["lib-a".to_string()];
+
+        let mut lib = make_library("lib-a");
+        lib.criteria = vec![make_criterion("tests-pass"), make_criterion("lint")];
+
+        let resolved = resolve(&gate, "my-gate", no_gate, |_| Ok(lib.clone()))
+            .expect("resolve should succeed");
+
+        let tests_pass_entries: Vec<_> = resolved
+            .criteria
+            .iter()
+            .filter(|c| c.criterion.name == "tests-pass")
+            .collect();
+        assert_eq!(
+            tests_pass_entries.len(),
+            1,
+            "tests-pass should appear only once"
+        );
+        assert!(
+            matches!(&tests_pass_entries[0].source, CriterionSource::Own),
+            "own wins over library"
+        );
+    }
+
+    // later library wins when two libraries define the same criterion name
+
+    #[test]
+    fn resolve_later_library_wins_over_earlier_library() {
+        let mut gate = make_gate("my-gate", &["own-check"]);
+        gate.include = vec!["lib-a".to_string(), "lib-b".to_string()];
+
+        let mut lib_a = make_library("lib-a");
+        lib_a.criteria = vec![make_criterion("shared")];
+        let mut lib_b = make_library("lib-b");
+        lib_b.criteria = vec![make_criterion("shared")];
+
+        let resolved = resolve(&gate, "my-gate", no_gate, |slug| match slug {
+            "lib-a" => Ok(lib_a.clone()),
+            "lib-b" => Ok(lib_b.clone()),
+            _ => no_library(slug),
+        })
+        .expect("resolve should succeed");
+
+        let shared_entries: Vec<_> = resolved
+            .criteria
+            .iter()
+            .filter(|c| c.criterion.name == "shared")
+            .collect();
+        assert_eq!(shared_entries.len(), 1, "shared should appear only once");
+        assert!(
+            matches!(&shared_entries[0].source, CriterionSource::Library { slug } if slug == "lib-b"),
+            "later library (lib-b) should win"
+        );
+    }
+
+    // Cycle detection: self-extend
+
+    #[test]
+    fn resolve_self_extend_returns_cycle_detected() {
+        let mut gate = make_gate("my-gate", &["compiles"]);
+        gate.extends = Some("my-gate".to_string()); // self-extend
+
+        let err = resolve(&gate, "my-gate", no_gate, no_library).unwrap_err();
+        assert!(
+            matches!(&err, AssayError::CycleDetected { gate_slug, parent_slug }
+                if gate_slug == "my-gate" && parent_slug == "my-gate"),
+            "expected CycleDetected, got: {err:?}"
+        );
+    }
+
+    // Cycle detection: mutual extend (A extends B, B extends A)
+
+    #[test]
+    fn resolve_mutual_extend_returns_cycle_detected() {
+        let mut gate_a = make_gate("gate-a", &["compiles"]);
+        gate_a.extends = Some("gate-b".to_string());
+
+        let mut gate_b = make_gate("gate-b", &["lint"]);
+        gate_b.extends = Some("gate-a".to_string()); // closes the cycle
+
+        let err = resolve(
+            &gate_a,
+            "gate-a",
+            |slug| {
+                assert_eq!(slug, "gate-b");
+                Ok(gate_b.clone())
+            },
+            no_library,
+        )
+        .unwrap_err();
+
+        assert!(
+            matches!(&err, AssayError::CycleDetected { gate_slug, parent_slug }
+                if gate_slug == "gate-a" && parent_slug == "gate-b"),
+            "expected CycleDetected for mutual extend, got: {err:?}"
+        );
+    }
+
+    // Invalid slug in extends
+
+    #[test]
+    fn resolve_invalid_extends_slug_returns_invalid_slug() {
+        let mut gate = make_gate("my-gate", &["compiles"]);
+        gate.extends = Some("INVALID-SLUG!".to_string());
+
+        let err = resolve(&gate, "my-gate", no_gate, no_library).unwrap_err();
+        assert!(
+            matches!(&err, AssayError::InvalidSlug { .. }),
+            "expected InvalidSlug, got: {err:?}"
+        );
+    }
+
+    // Invalid slug in include
+
+    #[test]
+    fn resolve_invalid_include_slug_returns_invalid_slug() {
+        let mut gate = make_gate("my-gate", &["compiles"]);
+        gate.include = vec!["INVALID!".to_string()];
+
+        let err = resolve(&gate, "my-gate", no_gate, no_library).unwrap_err();
+        assert!(
+            matches!(&err, AssayError::InvalidSlug { .. }),
+            "expected InvalidSlug for invalid include slug, got: {err:?}"
+        );
+    }
+
+    // Missing parent gate → ParentGateNotFound
+
+    #[test]
+    fn resolve_missing_parent_returns_parent_gate_not_found() {
+        let mut gate = make_gate("child", &["compiles"]);
+        gate.extends = Some("nonexistent-parent".to_string());
+
+        let err = resolve(
+            &gate,
+            "child",
+            |_slug| {
+                Err(AssayError::ParentGateNotFound {
+                    gate_slug: "child".to_string(),
+                    parent_slug: "nonexistent-parent".to_string(),
+                })
+            },
+            no_library,
+        )
+        .unwrap_err();
+
+        assert!(
+            matches!(&err, AssayError::ParentGateNotFound { gate_slug, parent_slug }
+                if gate_slug == "child" && parent_slug == "nonexistent-parent"),
+            "expected ParentGateNotFound, got: {err:?}"
+        );
+    }
+
+    // Missing library → error propagated from load_library closure
+
+    #[test]
+    fn resolve_missing_library_propagates_error() {
+        let mut gate = make_gate("my-gate", &["compiles"]);
+        gate.include = vec!["missing-lib".to_string()];
+
+        let err = resolve(&gate, "my-gate", no_gate, |slug| {
+            Err(AssayError::LibraryNotFound {
+                slug: slug.to_string(),
+                criteria_dir: std::path::PathBuf::from(".assay/criteria"),
+                suggestion: None,
+            })
+        })
+        .unwrap_err();
+
+        assert!(
+            matches!(&err, AssayError::LibraryNotFound { slug, .. } if slug == "missing-lib"),
+            "expected LibraryNotFound, got: {err:?}"
+        );
+    }
+
+    // Edge: empty own criteria + extends with criteria → all parent criteria present
+
+    #[test]
+    fn resolve_empty_own_with_extends_has_all_parent_criteria() {
+        let mut gate = make_gate("child", &[]); // empty own criteria
+        gate.extends = Some("parent-gate".to_string());
+
+        let parent = make_gate("parent", &["build", "lint", "test"]);
+
+        let resolved = resolve(&gate, "child", |_| Ok(parent.clone()), no_library)
+            .expect("resolve should succeed");
+
+        assert_eq!(resolved.criteria.len(), 3);
+        assert!(
+            resolved
+                .criteria
+                .iter()
+                .all(|c| matches!(c.source, CriterionSource::Parent { .. }))
+        );
+    }
+
+    // Edge: gate with criteria + empty include → no library criteria
+
+    #[test]
+    fn resolve_empty_include_has_no_library_criteria() {
+        let gate = make_gate("my-gate", &["compiles"]); // no include
+
+        let resolved =
+            resolve(&gate, "my-gate", no_gate, no_library).expect("resolve should succeed");
+
+        assert!(resolved.included_libraries.is_empty());
+        assert_eq!(resolved.criteria.len(), 1);
+        assert!(matches!(&resolved.criteria[0].source, CriterionSource::Own));
+    }
+
+    // Ordering: parent first, then library, then own (each group in original order)
+
+    #[test]
+    fn resolve_ordering_parent_then_library_then_own() {
+        let mut gate = make_gate("child", &["own-a", "own-b"]);
+        gate.extends = Some("parent-gate".to_string());
+        gate.include = vec!["lib-one".to_string()];
+
+        let parent = make_gate("parent", &["parent-x", "parent-y"]);
+        let mut lib = make_library("lib-one");
+        lib.criteria = vec![make_criterion("lib-p"), make_criterion("lib-q")];
+
+        let resolved = resolve(&gate, "child", |_| Ok(parent.clone()), |_| Ok(lib.clone()))
+            .expect("resolve should succeed");
+
+        assert_eq!(resolved.criteria.len(), 6);
+        assert_eq!(resolved.criteria[0].criterion.name, "parent-x");
+        assert_eq!(resolved.criteria[1].criterion.name, "parent-y");
+        assert_eq!(resolved.criteria[2].criterion.name, "lib-p");
+        assert_eq!(resolved.criteria[3].criterion.name, "lib-q");
+        assert_eq!(resolved.criteria[4].criterion.name, "own-a");
+        assert_eq!(resolved.criteria[5].criterion.name, "own-b");
+    }
+
+    // Single-level only: parent's extends is ignored
+
+    #[test]
+    fn resolve_single_level_only_parent_extends_ignored() {
+        let mut gate = make_gate("child", &["own-check"]);
+        gate.extends = Some("parent-gate".to_string());
+
+        // parent also has extends — but this should NOT be followed (single-level decision)
+        let mut parent = make_gate("parent", &["parent-crit"]);
+        parent.extends = Some("grandparent".to_string());
+
+        // grandparent resolver should never be called
+        let resolved = resolve(
+            &gate,
+            "child",
+            |slug| {
+                assert_eq!(
+                    slug, "parent-gate",
+                    "only parent-gate should be loaded, not grandparent"
+                );
+                Ok(parent.clone())
+            },
+            no_library,
+        )
+        .expect("resolve should succeed");
+
+        // Only parent-crit and own-check; grandparent criteria absent
+        assert_eq!(resolved.criteria.len(), 2);
+        let names: Vec<_> = resolved
+            .criteria
+            .iter()
+            .map(|c| c.criterion.name.as_str())
+            .collect();
+        assert_eq!(names, vec!["parent-crit", "own-check"]);
+    }
 
     // ── validate_slug tests ────────────────────────────────────────────────────
 
