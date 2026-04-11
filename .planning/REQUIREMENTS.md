@@ -1,77 +1,105 @@
-# Requirements: v0.6.2 P0 Cleanup
+# Requirements: Assay v0.7.0 Gate Composability
 
-## Process Safety
+**Defined:** 2026-04-11
+**Core Value:** Dual-track quality gates (deterministic + agent-evaluated) for AI coding agents
 
-- [ ] **SAFE-01**: `kill_agent_subprocess` uses `killpg` (negative PID) for process group termination instead of single-process `kill` (WOL-464)
-- [ ] **SAFE-02**: Auto-promote path handles TOCTOU race between session status check and promotion (WOL-471)
-- [ ] **SAFE-03**: Pipeline crash error messages include stderr content after streaming migration (WOL-465)
-- [ ] **SAFE-04**: Relay thread panics are logged instead of silently swallowed (WOL-466)
-- [ ] **SAFE-05**: TUI strips ANSI/control characters from TextDelta/TextBlock to prevent terminal injection (WOL-348)
+## v0.7.0 Requirements
 
-## Type Correctness
+Requirements for gate composability milestone. Each maps to roadmap phases.
 
-- [ ] **TYPE-01**: `Criterion.when: Option<When>` representational ambiguity resolved — `None` vs `Some(SessionEnd)` disambiguated (WOL-453)
-- [ ] **TYPE-02**: `review::SessionPhase` renamed to `CheckpointPhase` to avoid name collision with `work_session::SessionPhase` (WOL-454)
-- [ ] **TYPE-03**: `When::AfterToolCalls { n: 0 }` rejected by validation (nonsensical value) (WOL-456)
-- [ ] **TYPE-04**: `evaluate_checkpoint` respects CLI/config timeout overrides instead of silently dropping them (WOL-457)
-- [ ] **TYPE-05**: `review::SessionPhase` includes `OnEvent` variant for event-triggered diagnostics (WOL-458)
-- [ ] **TYPE-06**: `CriterionKind` serde tagging made consistent with `When` enum (WOL-482)
-- [ ] **TYPE-07**: `evaluate_checkpoint` at `SessionEnd` phase documents no-op behavior with warning (WOL-455)
+### Gate Inheritance
 
-## Review Findings (S04)
+- [ ] **INHR-01**: User can define a gate that extends another gate via `gate.extends` field
+- [ ] **INHR-02**: Extended gate inherits parent criteria with own-wins merge semantics
+- [ ] **INHR-03**: Circular `extends` chains are detected and reported as validation errors
+- [ ] **INHR-04**: Gate run output shows per-criterion source annotation (parent vs own)
 
-- [ ] **S04-01**: `test_auto_promote_already_verified_is_noop` test name corrected to match actual behavior (WOL-473)
-- [ ] **S04-02**: Session lookup in spec review avoids iterating all sessions (WOL-472)
+### Criteria Libraries
 
-## Review Findings (S05)
+- [ ] **CLIB-01**: User can define shared criteria sets in `.assay/criteria/<slug>.toml`
+- [ ] **CLIB-02**: User can reference criteria libraries via `include` field in gate definitions
+- [ ] **CLIB-03**: Core API supports load, save, and scan operations for criteria libraries
+- [ ] **CLIB-04**: Agent can create criteria libraries programmatically via `criteria_create` MCP tool
 
-- [ ] **S05-01**: `close-the-loop` README inaccuracies fixed (WOL-479)
-- [ ] **S05-02**: `ManifestSession.prompt` renamed to clarify distinction from `prompt_layers` (WOL-478)
-- [ ] **S05-03**: Low-severity review findings batch addressed (WOL-477)
-- [ ] **S05-04**: `ManifestSession.prompt` supports file-path references (WOL-481)
-- [ ] **S05-05**: Parse test added for example `gates.toml` against `GatesSpec` (WOL-480)
+### Spec Preconditions
 
-## Test Coverage
+- [ ] **PREC-01**: User can define `[preconditions].requires` — gate skipped unless named spec's last gate run passed
+- [ ] **PREC-02**: User can define `[preconditions].commands` — shell commands that must succeed before gate evaluation
+- [ ] **PREC-03**: Precondition failures produce distinct `PreconditionFailed` result (blocked != failed)
 
-- [ ] **TEST-01**: `gate_sessions` directory has eviction/cleanup to prevent unbounded growth (WOL-117)
-- [ ] **TEST-02**: `find_context_for_spec` test covers corrupted/unreadable session file being skipped (WOL-118)
-- [ ] **TEST-03**: `gate_run` tracing field naming standardized (`spec_name` across handlers) (WOL-116)
-- [ ] **TEST-04**: 3 pipeline integration tests added with synthetic provider (WOL-463)
-- [ ] **TEST-05**: `claude_stream` test for non-`text_delta` `content_block_delta` (e.g. `input_json_delta`) (WOL-345)
-- [ ] **TEST-06**: `claude_stream` test for mixed stream with TextDelta + TextBlock for same content (WOL-346)
-- [ ] **TEST-07**: TextDelta text length cap to prevent unbounded per-token allocations (WOL-347)
-- [ ] **TEST-08**: `pipeline_checkpoint` tests: Windows portability + OnEvent driver coverage (WOL-467)
+### Wizard — CLI
 
----
+- [ ] **WIZC-01**: User can create new gate definitions via `assay gate wizard` interactive flow
+- [ ] **WIZC-02**: User can edit existing gate definitions via the wizard
+- [ ] **WIZC-03**: User can manage criteria libraries via `assay criteria list/new` commands
+
+### Wizard — MCP
+
+- [ ] **WIZM-01**: Agent can drive gate wizard via `gate_wizard` MCP tool
+- [ ] **WIZM-02**: Agent can discover criteria libraries via `criteria_list` and `criteria_get` MCP tools
+- [ ] **WIZM-03**: Agent can resolve a spec's effective criteria via `spec_resolve` MCP tool
+
+### Wizard — TUI
+
+- [ ] **WIZT-01**: User can create and edit gate definitions via TUI wizard screen
+- [ ] **WIZT-02**: TUI wizard delegates all validation to core (no surface-specific logic)
+
+### Validation & Safety
+
+- [ ] **SAFE-01**: `spec_validate` detects composability errors (missing parents, missing libraries, cycle detection)
+- [ ] **SAFE-02**: `extends` and `include` values are slug-validated to prevent path traversal
+- [ ] **SAFE-03**: All new `GatesSpec` fields are backward-compatible (existing TOML files parse without error)
+
+## Future Requirements
+
+### Gate Composability Extensions
+
+- **INHR-05**: Multi-level inheritance (> 2 levels) with configurable depth limit
+- **CLIB-05**: Parameterized/template criteria with variable substitution
+- **CLIB-06**: Cross-repo library references
+- **PREC-04**: Precondition staleness window (gate must have passed within N minutes)
+
+## Out of Scope
+
+| Feature | Reason |
+|---------|--------|
+| Runtime/dynamic composition | Load-time static resolution is simpler and sufficient for v0.7.0 |
+| GUI library browser | TUI wizard is sufficient; dedicated browser is over-scoped |
+| `toml_edit` for comment preservation | Wizard writes new files; comment preservation adds complexity with low value |
+| Multi-level inheritance > 2 | Adds transitive cycle complexity; depth 1 covers all practical cases |
 
 ## Traceability
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SAFE-01 | 60 | Planned |
-| SAFE-02 | 60 | Planned |
-| SAFE-03 | 60 | Planned |
-| SAFE-04 | 60 | Planned |
-| SAFE-05 | 60 | Planned |
-| TYPE-01 | 61 | Planned |
-| TYPE-02 | 61 | Planned |
-| TYPE-03 | 61 | Planned |
-| TYPE-04 | 61 | Planned |
-| TYPE-05 | 61 | Planned |
-| TYPE-06 | 61 | Planned |
-| TYPE-07 | 61 | Planned |
-| S04-01 | 62 | Planned |
-| S04-02 | 62 | Planned |
-| S05-01 | 62 | Planned |
-| S05-02 | 62 | Planned |
-| S05-03 | 62 | Planned |
-| S05-04 | 62 | Planned |
-| S05-05 | 62 | Planned |
-| TEST-01 | 63 | Planned |
-| TEST-02 | 63 | Planned |
-| TEST-03 | 63 | Planned |
-| TEST-04 | 63 | Planned |
-| TEST-05 | 63 | Planned |
-| TEST-06 | 63 | Planned |
-| TEST-07 | 63 | Planned |
-| TEST-08 | 63 | Planned |
+| INHR-01 | — | Pending |
+| INHR-02 | — | Pending |
+| INHR-03 | — | Pending |
+| INHR-04 | — | Pending |
+| CLIB-01 | — | Pending |
+| CLIB-02 | — | Pending |
+| CLIB-03 | — | Pending |
+| CLIB-04 | — | Pending |
+| PREC-01 | — | Pending |
+| PREC-02 | — | Pending |
+| PREC-03 | — | Pending |
+| WIZC-01 | — | Pending |
+| WIZC-02 | — | Pending |
+| WIZC-03 | — | Pending |
+| WIZM-01 | — | Pending |
+| WIZM-02 | — | Pending |
+| WIZM-03 | — | Pending |
+| WIZT-01 | — | Pending |
+| WIZT-02 | — | Pending |
+| SAFE-01 | — | Pending |
+| SAFE-02 | — | Pending |
+| SAFE-03 | — | Pending |
+
+**Coverage:**
+- v0.7.0 requirements: 22 total
+- Mapped to phases: 0
+- Unmapped: 22 ⚠️
+
+---
+*Requirements defined: 2026-04-11*
+*Last updated: 2026-04-11 after initial definition*
