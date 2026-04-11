@@ -159,7 +159,7 @@ Post-review fix: UTF-8 safe TextDelta truncation (floor_char_boundary) + correct
 
 ## Phases
 
-- [ ] **Phase 64: Type Foundation** - Add composability types and backward-compat fields to `assay-types`
+- [x] **Phase 64: Type Foundation** - Add composability types and backward-compat fields to `assay-types` (completed 2026-04-11)
 - [ ] **Phase 65: Resolution Core** - Criteria library I/O and `spec::compose::resolve()` with cycle detection
 - [ ] **Phase 66: Evaluation Integration + Validation** - Wire resolution into gate evaluation, precondition enforcement, and `spec_validate` composability diagnostics
 - [ ] **Phase 67: Wizard Core + CLI Surface** - Shared wizard logic in `assay-core` and interactive CLI commands
@@ -177,7 +177,7 @@ Post-review fix: UTF-8 safe TextDelta truncation (floor_char_boundary) + correct
   2. A gate TOML file with `include = ["lib-name"]` deserializes without error into `GatesSpec`
   3. An existing pre-v0.7.0 TOML file (no composability fields) parses cleanly — no unknown-field errors, no missing defaults
   4. JSON schema snapshots include all new fields and compile without drift
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 
 Plans:
 - [ ] 64-01-PLAN.md — New composability types (CriteriaLibrary, SpecPreconditions, PreconditionStatus) + GatesSpec fields + TDD tests
@@ -246,7 +246,7 @@ Phases execute in numeric order. Phases 68 and 69 are independent and can execut
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 64. Type Foundation | 1/2 | In Progress|  |
+| 64. Type Foundation | 2/2 | Complete   | 2026-04-11 |
 | 65. Resolution Core | 0/TBD | Not started | - |
 | 66. Evaluation Integration + Validation | 0/TBD | Not started | - |
 | 67. Wizard Core + CLI Surface | 0/TBD | Not started | - |
