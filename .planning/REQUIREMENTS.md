@@ -9,8 +9,8 @@ Requirements for gate composability milestone. Each maps to roadmap phases.
 
 ### Gate Inheritance
 
-- [ ] **INHR-01**: User can define a gate that extends another gate via `gate.extends` field
-- [ ] **INHR-02**: Extended gate inherits parent criteria with own-wins merge semantics
+- [x] **INHR-01**: User can define a gate that extends another gate via `gate.extends` field
+- [x] **INHR-02**: Extended gate inherits parent criteria with own-wins merge semantics
 - [ ] **INHR-03**: Circular `extends` chains are detected and reported as validation errors
 - [ ] **INHR-04**: Gate run output shows per-criterion source annotation (parent vs own)
 
@@ -48,7 +48,7 @@ Requirements for gate composability milestone. Each maps to roadmap phases.
 
 - [ ] **SAFE-01**: `spec_validate` detects composability errors (missing parents, missing libraries, cycle detection)
 - [ ] **SAFE-02**: `extends` and `include` values are slug-validated to prevent path traversal
-- [ ] **SAFE-03**: All new `GatesSpec` fields are backward-compatible (existing TOML files parse without error)
+- [x] **SAFE-03**: All new `GatesSpec` fields are backward-compatible (existing TOML files parse without error)
 
 ## Future Requirements
 
@@ -72,8 +72,8 @@ Requirements for gate composability milestone. Each maps to roadmap phases.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| INHR-01 | Phase 64 | Pending |
-| INHR-02 | Phase 64 | Pending |
+| INHR-01 | Phase 64 | Complete |
+| INHR-02 | Phase 64 | Complete |
 | INHR-03 | Phase 65 | Pending |
 | INHR-04 | Phase 65 | Pending |
 | CLIB-01 | Phase 65 | Pending |
@@ -93,7 +93,7 @@ Requirements for gate composability milestone. Each maps to roadmap phases.
 | WIZT-02 | Phase 69 | Pending |
 | SAFE-01 | Phase 66 | Pending |
 | SAFE-02 | Phase 66 | Pending |
-| SAFE-03 | Phase 64 | Pending |
+| SAFE-03 | Phase 64 | Complete |
 
 **Coverage:**
 - v0.7.0 requirements: 22 total
