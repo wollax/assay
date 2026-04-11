@@ -280,5 +280,170 @@ mod tests {
         );
     }
 
-    // ── library I/O tests (Task 2 — added below) ────────────────────────────
+    // ── library I/O tests ────────────────────────────────────────────────────
+
+    use assay_types::criterion::When;
+    use assay_types::{CriteriaLibrary, Criterion};
+
+    fn make_library(name: &str) -> CriteriaLibrary {
+        CriteriaLibrary {
+            name: name.to_string(),
+            description: "Test library".to_string(),
+            version: Some("1.0.0".to_string()),
+            tags: vec!["test".to_string()],
+            criteria: vec![Criterion {
+                name: "compiles".to_string(),
+                description: "Code compiles".to_string(),
+                cmd: Some("cargo build".to_string()),
+                path: None,
+                timeout: None,
+                enforcement: None,
+                kind: None,
+                prompt: None,
+                requirements: vec![],
+                when: When::default(),
+            }],
+        }
+    }
+
+    #[test]
+    fn load_library_valid_toml() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let lib = make_library("rust-basics");
+        let toml_str = toml::to_string_pretty(&lib).expect("serialize");
+        let path = tmp.path().join("rust-basics.toml");
+        std::fs::write(&path, &toml_str).expect("write");
+        let loaded = load_library(&path).expect("load_library");
+        assert_eq!(loaded, lib);
+    }
+
+    #[test]
+    fn load_library_invalid_toml_returns_library_parse_err() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let path = tmp.path().join("bad.toml");
+        std::fs::write(&path, "not valid toml = [[[").expect("write bad toml");
+        let err = load_library(&path).unwrap_err();
+        assert!(
+            matches!(err, AssayError::LibraryParse { .. }),
+            "expected LibraryParse, got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn load_library_nonexistent_returns_io_err() {
+        let path = std::path::Path::new("/tmp/nonexistent-assay-test-abc123.toml");
+        let err = load_library(path).unwrap_err();
+        assert!(
+            matches!(err, AssayError::Io { .. }),
+            "expected Io error, got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn save_library_valid_slug_writes_file() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let lib = make_library("rust-basics");
+        let path = save_library(tmp.path(), &lib).expect("save_library");
+        assert!(path.exists(), "file should exist after save");
+        assert_eq!(path, tmp.path().join("criteria/rust-basics.toml"));
+    }
+
+    #[test]
+    fn save_library_invalid_slug_returns_err_before_io() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let mut lib = make_library("rust-basics");
+        lib.name = "INVALID-SLUG".to_string();
+        let err = save_library(tmp.path(), &lib).unwrap_err();
+        assert!(
+            matches!(err, AssayError::InvalidSlug { .. }),
+            "expected InvalidSlug, got: {err:?}"
+        );
+        // No criteria directory should have been created
+        assert!(
+            !tmp.path().join("criteria").exists(),
+            "criteria dir should not be created on slug validation failure"
+        );
+    }
+
+    #[test]
+    fn save_and_load_library_roundtrip() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let lib = make_library("rust-basics");
+        let path = save_library(tmp.path(), &lib).expect("save_library");
+        let loaded = load_library(&path).expect("load_library");
+        assert_eq!(loaded, lib, "roundtrip should preserve all fields");
+    }
+
+    #[test]
+    fn scan_libraries_missing_dir_returns_empty() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let result = scan_libraries(tmp.path()).expect("scan_libraries");
+        assert!(
+            result.is_empty(),
+            "should return empty for missing criteria dir"
+        );
+    }
+
+    #[test]
+    fn scan_libraries_returns_all_toml_files_sorted() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let lib_a = make_library("aaa-lib");
+        let lib_b = make_library("bbb-lib");
+        save_library(tmp.path(), &lib_b).expect("save bbb");
+        save_library(tmp.path(), &lib_a).expect("save aaa");
+
+        let result = scan_libraries(tmp.path()).expect("scan_libraries");
+        assert_eq!(result.len(), 2, "should find 2 libraries");
+        assert_eq!(result[0].name, "aaa-lib", "should be sorted by name");
+        assert_eq!(result[1].name, "bbb-lib");
+    }
+
+    #[test]
+    fn scan_libraries_skips_non_toml_files() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let criteria_dir = tmp.path().join("criteria");
+        std::fs::create_dir_all(&criteria_dir).expect("create criteria dir");
+        std::fs::write(criteria_dir.join("ignored.json"), r#"{"name":"test"}"#)
+            .expect("write json");
+        std::fs::write(criteria_dir.join("ignored.txt"), "text file").expect("write txt");
+
+        let lib = make_library("valid-lib");
+        save_library(tmp.path(), &lib).expect("save valid-lib");
+
+        let result = scan_libraries(tmp.path()).expect("scan_libraries");
+        assert_eq!(result.len(), 1, "should only load .toml files");
+        assert_eq!(result[0].name, "valid-lib");
+    }
+
+    #[test]
+    fn load_library_by_slug_existing_returns_library() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let lib = make_library("rust-basics");
+        save_library(tmp.path(), &lib).expect("save");
+        let loaded = load_library_by_slug(tmp.path(), "rust-basics").expect("load by slug");
+        assert_eq!(loaded, lib);
+    }
+
+    #[test]
+    fn load_library_by_slug_missing_returns_library_not_found_with_suggestion() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let lib = make_library("rust-basics");
+        save_library(tmp.path(), &lib).expect("save");
+
+        // Slightly misspelled — should get fuzzy suggestion
+        let err = load_library_by_slug(tmp.path(), "rust-bascs").unwrap_err();
+        match err {
+            AssayError::LibraryNotFound {
+                slug, suggestion, ..
+            } => {
+                assert_eq!(slug, "rust-bascs");
+                assert_eq!(
+                    suggestion,
+                    Some("rust-basics".to_string()),
+                    "expected fuzzy suggestion"
+                );
+            }
+            other => panic!("expected LibraryNotFound, got: {other:?}"),
+        }
+    }
 }
