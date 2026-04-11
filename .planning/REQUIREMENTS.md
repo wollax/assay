@@ -16,9 +16,9 @@ Requirements for gate composability milestone. Each maps to roadmap phases.
 
 ### Criteria Libraries
 
-- [ ] **CLIB-01**: User can define shared criteria sets in `.assay/criteria/<slug>.toml`
+- [x] **CLIB-01**: User can define shared criteria sets in `.assay/criteria/<slug>.toml`
 - [ ] **CLIB-02**: User can reference criteria libraries via `include` field in gate definitions
-- [ ] **CLIB-03**: Core API supports load, save, and scan operations for criteria libraries
+- [x] **CLIB-03**: Core API supports load, save, and scan operations for criteria libraries
 - [ ] **CLIB-04**: Agent can create criteria libraries programmatically via `criteria_create` MCP tool
 
 ### Spec Preconditions
@@ -76,9 +76,9 @@ Requirements for gate composability milestone. Each maps to roadmap phases.
 | INHR-02 | Phase 64 | Complete |
 | INHR-03 | Phase 65 | Pending |
 | INHR-04 | Phase 65 | Pending |
-| CLIB-01 | Phase 65 | Pending |
+| CLIB-01 | Phase 65 | Complete |
 | CLIB-02 | Phase 65 | Pending |
-| CLIB-03 | Phase 65 | Pending |
+| CLIB-03 | Phase 65 | Complete |
 | CLIB-04 | Phase 68 | Pending |
 | PREC-01 | Phase 66 | Pending |
 | PREC-02 | Phase 66 | Pending |

@@ -3,14 +3,14 @@ kata_state_version: 1.0
 milestone: v0.7
 milestone_name: milestone
 status: planning
-stopped_at: Phase 65 planning complete
-last_updated: "2026-04-11T16:59:13.220Z"
+stopped_at: Completed 65-01-PLAN.md
+last_updated: "2026-04-11T17:05:34.920Z"
 last_activity: 2026-04-11 — v0.7.0 roadmap created (6 phases, 22 requirements)
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 4
-  completed_plans: 2
+  completed_plans: 3
   percent: 0
 ---
 
@@ -62,6 +62,9 @@ Recent decisions affecting current work:
 - [Phase 64-type-foundation]: version in CriteriaLibrary stored as Option<String> — semver validation deferred to assay-core
 - [Phase 64-type-foundation]: preconditions field uses Option<SpecPreconditions> sub-table, not inline fields, for natural TOML [preconditions] section syntax
 - [Phase 64-type-foundation]: No new GatesSpec snapshot added — existing duplicate pair already covers updated schema (tech debt pre-exists from prior phases)
+- [Phase 65-01]: ResolvedCriterion uses named field not flatten to avoid serde deny_unknown_fields pitfall
+- [Phase 65-01]: Runtime output types (ResolvedGate, ResolvedCriterion) do NOT use deny_unknown_fields for forward-compatibility
+- [Phase 65-01]: save_library validates slug before any I/O for fail-fast semantics
 
 ### Blockers
 
@@ -73,6 +76,6 @@ Plan Phase 65: Resolution Core (INHR-03, INHR-04, CLIB-01, CLIB-02, CLIB-03)
 
 ### Session Continuity
 
-Last session: 2026-04-11T16:59:13.219Z
-Stopped at: Phase 65 planning complete
-Resume file: none
+Last session: 2026-04-11T17:05:34.918Z
+Stopped at: Completed 65-01-PLAN.md
+Resume file: None
