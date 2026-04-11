@@ -11,6 +11,7 @@ pub mod agent_event;
 pub mod checkpoint;
 pub mod context;
 pub mod coverage;
+pub mod criteria_library;
 pub mod criterion;
 pub mod enforcement;
 pub mod evaluator;
@@ -23,6 +24,7 @@ pub mod harness;
 pub mod manifest;
 pub mod merge;
 pub mod milestone;
+pub mod precondition;
 pub mod provider;
 pub mod review;
 pub mod schema_registry;
@@ -45,6 +47,7 @@ pub use context::{
     UsageData,
 };
 pub use coverage::CoverageReport;
+pub use criteria_library::CriteriaLibrary;
 pub use criterion::{Criterion, CriterionKind};
 pub use enforcement::{Enforcement, EnforcementSummary, GateSection};
 pub use evaluator::{
@@ -65,6 +68,7 @@ pub use merge::{
     MergeConflict, MergeExecuteResult, MergeProposal, MergeProposeConfig,
 };
 pub use milestone::{ChunkRef, Milestone, MilestoneStatus};
+pub use precondition::{CommandStatus, PreconditionStatus, RequireStatus, SpecPreconditions};
 pub use provider::{HarnessError, HarnessProvider, NullProvider};
 pub use review::{
     FailedCriterionSummary, GateDiagnostic, ReviewCheck, ReviewCheckKind, ReviewReport,

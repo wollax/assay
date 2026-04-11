@@ -69,6 +69,7 @@ uuid = { version = "1", features = ["v4"] }
 assert_cmd = "2"
 predicates = "3"
 serde_yaml = "0.9"
+semver = { version = "1", features = ["serde"] }
 
 [workspace.lints.clippy]
 derive_partial_eq_without_eq = "deny"
