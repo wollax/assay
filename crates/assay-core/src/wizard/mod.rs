@@ -38,8 +38,8 @@ pub use milestone::{
 };
 
 // ── Re-export gate + criteria wizard entry points ─────────────────────────────
-// NOTE: criteria re-export added in Task 3 after apply_criteria_wizard is implemented.
 
+pub use criteria::apply_criteria_wizard;
 pub use gate::apply_gate_wizard;
 
 // ── Shared helper: atomic gate spec write ────────────────────────────────────
