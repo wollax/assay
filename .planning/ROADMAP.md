@@ -224,7 +224,7 @@ Plans:
   2. `assay gate wizard --edit <gate>` loads an existing gate definition and allows the user to modify its criteria and composability fields, writing the result back
   3. `assay criteria list` displays all criteria libraries found in `.assay/criteria/` with their slug and criterion count
   4. `assay criteria new` creates a new criteria library file via an interactive prompt, rejecting invalid slugs before writing
-**Plans:** 2/4 plans executed
+**Plans:** 3/4 plans executed
 
 Plans:
 - [ ] 67-01-PLAN.md — Wizard input/output types in assay-types (GateWizardInput, CriteriaWizardInput, re-home CriterionInput)
@@ -264,7 +264,7 @@ Phases execute in numeric order. Phases 68 and 69 are independent and can execut
 | 64. Type Foundation | 2/2 | Complete    | 2026-04-11 |
 | 65. Resolution Core | 2/2 | Complete    | 2026-04-11 |
 | 66. Evaluation Integration + Validation | 3/3 | Complete    | 2026-04-12 |
-| 67. Wizard Core + CLI Surface | 2/4 | In Progress|  |
+| 67. Wizard Core + CLI Surface | 3/4 | In Progress|  |
 | 68. MCP Surface | 0/TBD | Not started | - |
 | 69. TUI Surface | 0/TBD | Not started | - |
 
