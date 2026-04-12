@@ -217,6 +217,22 @@ pub fn load(assay_dir: &Path, spec_name: &str, run_id: &str) -> Result<GateRunRe
         .map_err(|e| AssayError::json("deserializing gate run record", path, e))
 }
 
+/// Return whether the most recent gate run for a spec passed all required criteria.
+///
+/// Returns `Some(true)` if the latest run had zero required failures,
+/// `Some(false)` if the latest run had one or more required failures,
+/// and `None` if there is no recorded history for the spec (spec dir missing
+/// or empty).
+///
+/// Callers checking a precondition should map `None` to `false` via
+/// `.unwrap_or(false)` — no history means the spec has never passed.
+pub fn last_gate_passed(assay_dir: &Path, spec_name: &str) -> Option<bool> {
+    let ids = list(assay_dir, spec_name).ok()?;
+    let latest_id = ids.last()?;
+    let record = load(assay_dir, spec_name, latest_id).ok()?;
+    Some(record.summary.enforcement.required_failed == 0)
+}
+
 /// List run IDs for a spec, sorted chronologically (oldest first).
 ///
 /// Returns an empty vec if the spec results directory does not exist
@@ -908,5 +924,82 @@ mod tests {
         assert_eq!(result.pruned, 3, "should prune 3 oldest files");
         let remaining = list(dir.path(), "save-run-prune").unwrap();
         assert_eq!(remaining.len(), 3);
+    }
+
+    // ── last_gate_passed tests ────────────────────────────────────────
+
+    /// Build a GateRunSummary with a specific required_failed count.
+    fn make_summary_with_failures(spec_name: &str, required_failed: usize) -> GateRunSummary {
+        GateRunSummary {
+            spec_name: spec_name.to_string(),
+            results: Vec::new(),
+            passed: if required_failed == 0 { 1 } else { 0 },
+            failed: required_failed,
+            skipped: 0,
+            total_duration_ms: 10,
+            enforcement: EnforcementSummary {
+                required_passed: if required_failed == 0 { 1 } else { 0 },
+                required_failed,
+                advisory_passed: 0,
+                advisory_failed: 0,
+            },
+        }
+    }
+
+    // Test 1: last_gate_passed returns Some(true) when latest run has required_failed == 0
+    #[test]
+    fn test_last_gate_passed_returns_some_true_when_passed() {
+        let dir = TempDir::new().unwrap();
+        let summary = make_summary_with_failures("spec-pass", 0);
+        save_run(dir.path(), summary, None, None).unwrap();
+
+        let result = last_gate_passed(dir.path(), "spec-pass");
+        assert_eq!(
+            result,
+            Some(true),
+            "should return Some(true) when required_failed == 0"
+        );
+    }
+
+    // Test 2: last_gate_passed returns Some(false) when latest run has required_failed > 0
+    #[test]
+    fn test_last_gate_passed_returns_some_false_when_failed() {
+        let dir = TempDir::new().unwrap();
+        let summary = make_summary_with_failures("spec-fail", 1);
+        save_run(dir.path(), summary, None, None).unwrap();
+
+        let result = last_gate_passed(dir.path(), "spec-fail");
+        assert_eq!(
+            result,
+            Some(false),
+            "should return Some(false) when required_failed > 0"
+        );
+    }
+
+    // Test 3: last_gate_passed returns None when spec has no history (empty results dir)
+    #[test]
+    fn test_last_gate_passed_returns_none_when_no_history() {
+        let dir = TempDir::new().unwrap();
+        // Create the results/spec-name dir but add no records
+        std::fs::create_dir_all(dir.path().join("results").join("empty-spec")).unwrap();
+
+        let result = last_gate_passed(dir.path(), "empty-spec");
+        assert_eq!(
+            result, None,
+            "should return None when spec has no saved runs"
+        );
+    }
+
+    // Test 4: last_gate_passed returns None when spec directory does not exist
+    #[test]
+    fn test_last_gate_passed_returns_none_when_spec_dir_absent() {
+        let dir = TempDir::new().unwrap();
+        // No results dir created at all
+
+        let result = last_gate_passed(dir.path(), "nonexistent-spec");
+        assert_eq!(
+            result, None,
+            "should return None when spec dir does not exist"
+        );
     }
 }
