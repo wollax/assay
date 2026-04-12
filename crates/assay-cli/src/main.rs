@@ -186,6 +186,24 @@ Examples:
         #[command(subcommand)]
         command: commands::milestone::MilestoneCommand,
     },
+    /// Manage criteria libraries (`.assay/criteria/`).
+    #[command(after_long_help = "\
+Examples:
+  List all criteria libraries:
+    assay criteria list
+
+  List with description, version, and tags:
+    assay criteria list --verbose
+
+  Emit as JSON:
+    assay criteria list --json
+
+  Interactively create a new criteria library:
+    assay criteria new")]
+    Criteria {
+        #[command(subcommand)]
+        command: commands::criteria::CriteriaCommand,
+    },
     /// Run the guided authoring wizard to create a milestone and chunk specs.
     #[command(name = "plan", about = "Run the guided authoring wizard")]
     Plan,
@@ -286,6 +304,7 @@ async fn run() -> anyhow::Result<i32> {
         Some(Command::Checkpoint { command }) => commands::checkpoint::handle(command),
         Some(Command::Manifest { command }) => commands::manifest::handle(command),
         Some(Command::Milestone { command }) => commands::milestone::handle(command),
+        Some(Command::Criteria { command }) => commands::criteria::handle(command),
         Some(Command::Plan) => commands::plan::handle(),
         Some(Command::History { command }) => commands::history::handle(command),
         Some(Command::Pr { command }) => commands::pr::handle(command),

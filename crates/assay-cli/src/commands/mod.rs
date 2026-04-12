@@ -1,5 +1,6 @@
 pub mod checkpoint;
 pub mod context;
+pub mod criteria;
 pub mod gate;
 pub mod harness;
 pub mod history;
