@@ -208,7 +208,7 @@ Plans:
   3. `spec_validate` returns a structured diagnostic when `extends` references a non-existent parent gate
   4. `spec_validate` returns a structured diagnostic when `include` references a non-existent criteria library
   5. An `extends` or `include` value containing path traversal characters (e.g., `../evil`) is rejected by slug validation before any file I/O occurs
-**Plans:** 1/3 plans executed
+**Plans:** 2/3 plans executed
 
 Plans:
 - [ ] 66-01-PLAN.md — GateEvalOutcome type, CriterionResult.source field, last_gate_passed() helper
@@ -257,7 +257,7 @@ Phases execute in numeric order. Phases 68 and 69 are independent and can execut
 |-------|----------------|--------|-----------|
 | 64. Type Foundation | 2/2 | Complete    | 2026-04-11 |
 | 65. Resolution Core | 2/2 | Complete    | 2026-04-11 |
-| 66. Evaluation Integration + Validation | 1/3 | In Progress|  |
+| 66. Evaluation Integration + Validation | 2/3 | In Progress|  |
 | 67. Wizard Core + CLI Surface | 0/TBD | Not started | - |
 | 68. MCP Surface | 0/TBD | Not started | - |
 | 69. TUI Surface | 0/TBD | Not started | - |

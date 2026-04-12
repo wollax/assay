@@ -3,14 +3,14 @@ kata_state_version: 1.0
 milestone: v0.7
 milestone_name: milestone
 status: planning
-stopped_at: Completed 66-01-PLAN.md
-last_updated: "2026-04-12T00:11:11.837Z"
+stopped_at: Completed 66-02-PLAN.md
+last_updated: "2026-04-12T00:22:02.054Z"
 last_activity: 2026-04-11 — v0.7.0 roadmap created (6 phases, 22 requirements)
 progress:
   total_phases: 6
   completed_phases: 2
   total_plans: 7
-  completed_plans: 5
+  completed_plans: 6
   percent: 0
 ---
 
@@ -69,6 +69,7 @@ Recent decisions affecting current work:
 - [Phase 65-02]: resolve() closures (not traits) consistent with zero-trait convention
 - [Phase 66-01]: GateEvalOutcome uses internally tagged serde (tag=outcome) producing evaluated and precondition_failed discriminators
 - [Phase 66-01]: last_gate_passed() returns None for missing/empty history, callers use .unwrap_or(false)
+- [Phase 66-evaluation-integration-validation]: evaluate_criteria extended to 3-tuple (Criterion, Enforcement, Option<CriterionSource>) — existing callers pass None, resolved path passes Some(source)
 
 ### Blockers
 
@@ -80,6 +81,6 @@ Plan Phase 65: Resolution Core (INHR-03, INHR-04, CLIB-01, CLIB-02, CLIB-03)
 
 ### Session Continuity
 
-Last session: 2026-04-12T00:11:11.835Z
-Stopped at: Completed 66-01-PLAN.md
+Last session: 2026-04-12T00:22:02.052Z
+Stopped at: Completed 66-02-PLAN.md
 Resume file: None
