@@ -375,10 +375,12 @@ fn handle_spec_validate(name: &str, json: bool, check_commands: bool) -> anyhow:
     let specs_dir = assay_dir(&root).join(&config.specs_dir);
 
     let entry = assay_core::spec::load_spec_entry_with_diagnostics(name, &specs_dir)?;
+    let ad = assay_dir(&root);
     let result = assay_core::spec::validate::validate_spec_with_dependencies(
         &entry,
         check_commands,
         &specs_dir,
+        Some(&ad),
     );
 
     if json {
@@ -797,6 +799,7 @@ fn validate_and_exit_code(
         &entry,
         check_commands,
         specs_dir,
+        None, // assay_dir not available in test helper; composability checks skipped
     );
     let exit_code = if result.valid { 0 } else { 1 };
 

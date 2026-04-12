@@ -1540,10 +1540,12 @@ impl AssayServer {
             };
 
         // Spec loaded successfully — run validation with additional checks
+        let assay_dir = cwd.join(".assay");
         let result = assay_core::spec::validate::validate_spec_with_dependencies(
             &entry,
             params.0.check_commands,
             &specs_dir,
+            Some(&assay_dir),
         );
 
         Ok(CallToolResult::success(vec![Content::json(result)?]))

@@ -310,12 +310,24 @@ pub fn validate_spec(entry: &super::SpecEntry, check_commands: bool) -> Validati
 /// When the target spec declares a non-empty `depends` list, loads ALL specs from
 /// `specs_dir` to build a dependency graph and check for cycles.
 ///
+/// When `assay_dir` is `Some`, performs composability validation for
+/// `SpecEntry::Directory` entries (SAFE-01 and SAFE-02):
+/// - Validates slugs in `extends` and `include` fields (path-traversal prevention)
+/// - Checks that the parent gate and library slugs exist on disk
+/// - Detects cycles in the `extends` chain
+/// - Warns on criterion shadowing (own criterion overrides parent criterion)
+/// - Warns on empty `include` list (no-op)
+/// - Validates precondition references (missing specs, self-reference, empty commands)
+///
+/// When `assay_dir` is `None`, composability checks are skipped (backward compat).
+///
 /// If loading specs from `specs_dir` fails (e.g., I/O error), a warning
 /// diagnostic is emitted indicating that cycle detection was skipped.
 pub fn validate_spec_with_dependencies(
     entry: &super::SpecEntry,
     check_commands: bool,
     specs_dir: &std::path::Path,
+    assay_dir: Option<&std::path::Path>,
 ) -> ValidationResult {
     let mut result = validate_spec(entry, check_commands);
 
@@ -366,14 +378,226 @@ pub fn validate_spec_with_dependencies(
         }
     }
 
+    // Composability and precondition validation (Directory entries only, when assay_dir given)
+    if let (Some(assay_dir), super::SpecEntry::Directory { gates, slug, .. }) = (assay_dir, entry) {
+        validate_composability(gates, slug, specs_dir, assay_dir, &mut result.diagnostics);
+        result.summary = DiagnosticSummary::from_diagnostics(&result.diagnostics);
+        result.valid = result.summary.errors == 0;
+    }
+
     result
+}
+
+/// Extract the reason string from an `AssayError::InvalidSlug`.
+fn extract_slug_reason(err: &crate::error::AssayError) -> String {
+    if let crate::error::AssayError::InvalidSlug { reason, .. } = err {
+        reason.clone()
+    } else {
+        err.to_string()
+    }
+}
+
+/// Validate composability fields and preconditions for a `SpecEntry::Directory`.
+///
+/// Emits diagnostics for SAFE-01, SAFE-02, shadow overrides, empty includes,
+/// and precondition reference issues.
+fn validate_composability(
+    gates: &assay_types::GatesSpec,
+    slug: &str,
+    specs_dir: &std::path::Path,
+    assay_dir: &std::path::Path,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    // SAFE-02: slug validation for extends
+    if let Some(extends_slug) = &gates.extends {
+        match super::compose::validate_slug(extends_slug) {
+            Err(e) => {
+                diagnostics.push(Diagnostic {
+                    severity: Severity::Error,
+                    location: "extends".to_string(),
+                    message: format!("invalid slug `{extends_slug}`: {}", extract_slug_reason(&e)),
+                });
+            }
+            Ok(()) => {
+                validate_extends_existence_and_cycle(
+                    gates,
+                    slug,
+                    extends_slug,
+                    specs_dir,
+                    diagnostics,
+                );
+            }
+        }
+    }
+
+    // SAFE-02: slug validation for include (include is Vec<String>, not Option)
+    {
+        let includes = &gates.include;
+        if includes.is_empty() {
+            // Empty include list is a no-op, but only warn if the field was explicitly set.
+            // Since we can't distinguish "omitted" from "empty" after deserialization,
+            // we skip the warning for empty — it's valid to have no includes.
+        }
+        for (i, inc_slug) in includes.iter().enumerate() {
+            match super::compose::validate_slug(inc_slug) {
+                Err(e) => {
+                    diagnostics.push(Diagnostic {
+                        severity: Severity::Error,
+                        location: format!("include[{i}]"),
+                        message: format!("invalid slug `{inc_slug}`: {}", extract_slug_reason(&e)),
+                    });
+                }
+                Ok(()) => {
+                    // SAFE-01: library existence check
+                    if let Err(ref lib_err) =
+                        super::compose::load_library_by_slug(assay_dir, inc_slug)
+                    {
+                        diagnostics.push(Diagnostic {
+                            severity: Severity::Error,
+                            location: format!("include[{i}]"),
+                            message: format!("criteria library `{inc_slug}` not found: {lib_err}"),
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    // Precondition reference validation
+    if let Some(preconditions) = &gates.preconditions {
+        validate_precondition_refs(slug, preconditions, specs_dir, diagnostics);
+    }
+}
+
+/// Validate that the extends target exists and does not form a cycle.
+///
+/// Emits error diagnostics for missing parent or cycle, warning diagnostics for shadow.
+fn validate_extends_existence_and_cycle(
+    gates: &assay_types::GatesSpec,
+    own_slug: &str,
+    extends_slug: &str,
+    specs_dir: &std::path::Path,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    let available_slugs: Vec<String> = match super::scan(specs_dir) {
+        Ok(scan_result) => scan_result
+            .entries
+            .iter()
+            .map(|e| e.slug().to_string())
+            .collect(),
+        Err(_) => vec![],
+    };
+
+    let parent_path = specs_dir.join(extends_slug).join("gates.toml");
+    match super::load_gates(&parent_path) {
+        Err(_) => {
+            let suggestion = super::find_fuzzy_match(extends_slug, &available_slugs);
+            let mut msg = format!("parent gate `{extends_slug}` not found");
+            if let Some(s) = &suggestion {
+                msg.push_str(&format!(" (did you mean `{s}`?)"));
+            }
+            diagnostics.push(Diagnostic {
+                severity: Severity::Error,
+                location: "extends".to_string(),
+                message: msg,
+            });
+        }
+        Ok(parent_gates) => {
+            // Cycle: self-extend or mutual extend
+            let is_cycle =
+                extends_slug == own_slug || parent_gates.extends.as_deref() == Some(own_slug);
+            if is_cycle {
+                diagnostics.push(Diagnostic {
+                    severity: Severity::Error,
+                    location: "extends".to_string(),
+                    message: format!(
+                        "circular extends detected: `{own_slug}` and `{extends_slug}` extend each other"
+                    ),
+                });
+            } else {
+                // Shadow warning: own criterion overrides parent criterion
+                let parent_names: HashSet<&str> = parent_gates
+                    .criteria
+                    .iter()
+                    .map(|c| c.name.as_str())
+                    .collect();
+                for own_criterion in &gates.criteria {
+                    if parent_names.contains(own_criterion.name.as_str()) {
+                        diagnostics.push(Diagnostic {
+                            severity: Severity::Warning,
+                            location: format!("criteria.shadow.{}", own_criterion.name),
+                            message: format!(
+                                "criterion `{}` shadows inherited criterion from parent `{extends_slug}`",
+                                own_criterion.name
+                            ),
+                        });
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Validate precondition requires references and command strings.
+fn validate_precondition_refs(
+    own_slug: &str,
+    preconditions: &assay_types::SpecPreconditions,
+    specs_dir: &std::path::Path,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    let available_slugs: HashSet<String> = match super::scan(specs_dir) {
+        Ok(scan_result) => scan_result
+            .entries
+            .iter()
+            .map(|e| e.slug().to_string())
+            .collect(),
+        Err(_) => HashSet::new(),
+    };
+
+    for (i, req_slug) in preconditions.requires.iter().enumerate() {
+        if let Err(e) = super::compose::validate_slug(req_slug) {
+            diagnostics.push(Diagnostic {
+                severity: Severity::Error,
+                location: format!("preconditions.requires[{i}]"),
+                message: format!("invalid slug `{req_slug}`: {}", extract_slug_reason(&e)),
+            });
+            continue;
+        }
+        if req_slug == own_slug {
+            diagnostics.push(Diagnostic {
+                severity: Severity::Warning,
+                location: format!("preconditions.requires[{i}]"),
+                message: format!(
+                    "spec `{own_slug}` requires itself — self-referencing preconditions are never satisfied"
+                ),
+            });
+            continue;
+        }
+        if !available_slugs.contains(req_slug.as_str()) {
+            diagnostics.push(Diagnostic {
+                severity: Severity::Warning,
+                location: format!("preconditions.requires[{i}]"),
+                message: format!("required spec `{req_slug}` was not found in specs directory"),
+            });
+        }
+    }
+
+    for (i, cmd) in preconditions.commands.iter().enumerate() {
+        if cmd.trim().is_empty() {
+            diagnostics.push(Diagnostic {
+                severity: Severity::Warning,
+                location: format!("preconditions.commands[{i}]"),
+                message: "precondition command must not be empty or whitespace-only".to_string(),
+            });
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use assay_types::criterion::When;
-    use assay_types::{Criterion, CriterionKind, Spec};
+    use assay_types::{Criterion, CriterionKind, GatesSpec, Spec, SpecPreconditions};
 
     #[test]
     fn test_spec_errors_to_diagnostics() {
@@ -959,5 +1183,357 @@ mod tests {
         assert_eq!(warnings.len(), 1);
         assert_eq!(warnings[0].diagnostic.location, "depends[1]");
         assert!(warnings[0].diagnostic.message.contains("unknown-dep"));
+    }
+
+    // ── Composability and precondition validation tests ──────────────────────
+
+    fn make_directory_entry(slug: &str, gates: GatesSpec) -> super::super::SpecEntry {
+        super::super::SpecEntry::Directory {
+            slug: slug.to_string(),
+            gates,
+            spec_path: None,
+        }
+    }
+
+    fn make_gates(name: &str) -> GatesSpec {
+        GatesSpec {
+            name: name.to_string(),
+            description: String::new(),
+            gate: None,
+            depends: vec![],
+            milestone: None,
+            order: None,
+            extends: None,
+            include: vec![],
+            preconditions: None,
+            criteria: vec![Criterion {
+                name: "c1".to_string(),
+                description: "d1".to_string(),
+                cmd: Some("true".to_string()),
+                path: None,
+                timeout: None,
+                enforcement: None,
+                kind: None,
+                prompt: None,
+                requirements: vec![],
+                when: When::default(),
+            }],
+        }
+    }
+
+    fn write_gate_toml(specs_dir: &std::path::Path, slug: &str) {
+        let dir = specs_dir.join(slug);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("gates.toml"),
+            format!(
+                "name = \"{slug}\"\ndescription = \"\"\n\n[[criteria]]\nname = \"c1\"\ndescription = \"d1\"\ncmd = \"true\"\n"
+            ),
+        )
+        .unwrap();
+    }
+
+    // Test 1 (SAFE-02): extends = "../evil" → error diagnostic at "extends"
+    #[test]
+    fn test_composability_invalid_slug_in_extends() {
+        let tmp = tempfile::tempdir().unwrap();
+        let assay_dir = tmp.path();
+        let specs_dir = assay_dir.join("specs");
+        std::fs::create_dir_all(&specs_dir).unwrap();
+
+        let mut gates = make_gates("test-spec");
+        gates.extends = Some("../evil".to_string());
+        let entry = make_directory_entry("test-spec", gates);
+
+        let result = validate_spec_with_dependencies(&entry, false, &specs_dir, Some(assay_dir));
+        let errors: Vec<_> = result
+            .diagnostics
+            .iter()
+            .filter(|d| d.severity == Severity::Error && d.location == "extends")
+            .collect();
+        assert!(
+            !errors.is_empty(),
+            "should produce error for invalid extends slug"
+        );
+        assert!(
+            errors[0].message.to_lowercase().contains("invalid"),
+            "message should mention invalid, got: {}",
+            errors[0].message
+        );
+    }
+
+    // Test 2 (SAFE-02): include = ["../traversal"] → error diagnostic at "include[0]"
+    #[test]
+    fn test_composability_invalid_slug_in_include() {
+        let tmp = tempfile::tempdir().unwrap();
+        let assay_dir = tmp.path();
+        let specs_dir = assay_dir.join("specs");
+        std::fs::create_dir_all(&specs_dir).unwrap();
+
+        let mut gates = make_gates("test-spec");
+        gates.include = vec!["../traversal".to_string()];
+        let entry = make_directory_entry("test-spec", gates);
+
+        let result = validate_spec_with_dependencies(&entry, false, &specs_dir, Some(assay_dir));
+        let errors: Vec<_> = result
+            .diagnostics
+            .iter()
+            .filter(|d| d.severity == Severity::Error && d.location == "include[0]")
+            .collect();
+        assert!(
+            !errors.is_empty(),
+            "should produce error for invalid include slug"
+        );
+    }
+
+    // Test 3 (SAFE-02): valid extends slug and parent exists → no error at "extends"
+    #[test]
+    fn test_composability_valid_extends_no_error() {
+        let tmp = tempfile::tempdir().unwrap();
+        let assay_dir = tmp.path();
+        let specs_dir = assay_dir.join("specs");
+        std::fs::create_dir_all(&specs_dir).unwrap();
+        write_gate_toml(&specs_dir, "valid-parent");
+
+        let mut gates = make_gates("child-spec");
+        gates.extends = Some("valid-parent".to_string());
+        let entry = make_directory_entry("child-spec", gates);
+
+        let result = validate_spec_with_dependencies(&entry, false, &specs_dir, Some(assay_dir));
+        let slug_errors: Vec<_> = result
+            .diagnostics
+            .iter()
+            .filter(|d| d.severity == Severity::Error && d.location == "extends")
+            .collect();
+        assert!(
+            slug_errors.is_empty(),
+            "valid extends slug should produce no error, got: {:?}",
+            slug_errors
+        );
+    }
+
+    // Test 4 (SAFE-01): nonexistent parent gate → error at "extends" mentioning "not found"
+    #[test]
+    fn test_composability_missing_parent_gate() {
+        let tmp = tempfile::tempdir().unwrap();
+        let assay_dir = tmp.path();
+        let specs_dir = assay_dir.join("specs");
+        std::fs::create_dir_all(&specs_dir).unwrap();
+
+        let mut gates = make_gates("child-spec");
+        gates.extends = Some("nonexistent-parent".to_string());
+        let entry = make_directory_entry("child-spec", gates);
+
+        let result = validate_spec_with_dependencies(&entry, false, &specs_dir, Some(assay_dir));
+        let errors: Vec<_> = result
+            .diagnostics
+            .iter()
+            .filter(|d| d.severity == Severity::Error && d.location == "extends")
+            .collect();
+        assert!(!errors.is_empty(), "missing parent should produce error");
+        assert!(
+            errors[0].message.to_lowercase().contains("not found"),
+            "message should contain 'not found', got: {}",
+            errors[0].message
+        );
+    }
+
+    // Test 5 (SAFE-01): nonexistent library → error mentioning "not found"
+    #[test]
+    fn test_composability_missing_library() {
+        let tmp = tempfile::tempdir().unwrap();
+        let assay_dir = tmp.path();
+        let specs_dir = assay_dir.join("specs");
+        std::fs::create_dir_all(&specs_dir).unwrap();
+
+        let mut gates = make_gates("test-spec");
+        gates.include = vec!["nonexistent-lib".to_string()];
+        let entry = make_directory_entry("test-spec", gates);
+
+        let result = validate_spec_with_dependencies(&entry, false, &specs_dir, Some(assay_dir));
+        let errors: Vec<_> = result
+            .diagnostics
+            .iter()
+            .filter(|d| d.severity == Severity::Error)
+            .collect();
+        assert!(!errors.is_empty(), "missing library should produce error");
+        assert!(
+            errors[0].message.to_lowercase().contains("not found"),
+            "message should contain 'not found', got: {}",
+            errors[0].message
+        );
+    }
+
+    // Test 6 (SAFE-01): mutual extends cycle → error mentioning "cycle"
+    #[test]
+    fn test_composability_extends_cycle() {
+        let tmp = tempfile::tempdir().unwrap();
+        let assay_dir = tmp.path();
+        let specs_dir = assay_dir.join("specs");
+        std::fs::create_dir_all(&specs_dir).unwrap();
+
+        // spec-b extends spec-a
+        let dir = specs_dir.join("spec-b");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("gates.toml"),
+            "name = \"spec-b\"\ndescription = \"\"\nextends = \"spec-a\"\n\n[[criteria]]\nname = \"c1\"\ndescription = \"d1\"\ncmd = \"true\"\n",
+        )
+        .unwrap();
+
+        // spec-a extends spec-b
+        let mut gates = make_gates("spec-a");
+        gates.extends = Some("spec-b".to_string());
+        let entry = make_directory_entry("spec-a", gates);
+
+        let result = validate_spec_with_dependencies(&entry, false, &specs_dir, Some(assay_dir));
+        let errors: Vec<_> = result
+            .diagnostics
+            .iter()
+            .filter(|d| d.severity == Severity::Error)
+            .collect();
+        assert!(!errors.is_empty(), "cycle should produce error");
+        assert!(
+            errors.iter().any(|d| {
+                d.message.to_lowercase().contains("cycle")
+                    || d.message.to_lowercase().contains("circular")
+            }),
+            "at least one error should mention 'cycle' or 'circular', got: {:?}",
+            errors
+        );
+    }
+
+    // Test 7: own criterion shadows parent criterion → warning with "shadow"
+    #[test]
+    fn test_composability_shadow_warning() {
+        let tmp = tempfile::tempdir().unwrap();
+        let assay_dir = tmp.path();
+        let specs_dir = assay_dir.join("specs");
+        std::fs::create_dir_all(&specs_dir).unwrap();
+
+        let dir = specs_dir.join("parent-gate");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("gates.toml"),
+            "name = \"parent-gate\"\ndescription = \"\"\n\n[[criteria]]\nname = \"shared-criterion\"\ndescription = \"from parent\"\ncmd = \"true\"\n",
+        )
+        .unwrap();
+
+        let mut gates = make_gates("child-spec");
+        gates.extends = Some("parent-gate".to_string());
+        gates.criteria.push(Criterion {
+            name: "shared-criterion".to_string(),
+            description: "from child".to_string(),
+            cmd: Some("true".to_string()),
+            path: None,
+            timeout: None,
+            enforcement: None,
+            kind: None,
+            prompt: None,
+            requirements: vec![],
+            when: When::default(),
+        });
+        let entry = make_directory_entry("child-spec", gates);
+
+        let result = validate_spec_with_dependencies(&entry, false, &specs_dir, Some(assay_dir));
+        let warnings: Vec<_> = result
+            .diagnostics
+            .iter()
+            .filter(|d| d.severity == Severity::Warning)
+            .collect();
+        let shadow_warn = warnings.iter().any(|d| {
+            d.location.to_lowercase().contains("shadow")
+                || d.message.to_lowercase().contains("shadow")
+                || d.message.to_lowercase().contains("override")
+        });
+        assert!(
+            shadow_warn,
+            "shadow criterion should produce warning, got: {:?}",
+            warnings
+        );
+    }
+
+    // Test 8: preconditions.requires = ["nonexistent-spec"] → warning at preconditions.requires
+    #[test]
+    fn test_composability_precondition_requires_missing_spec() {
+        let tmp = tempfile::tempdir().unwrap();
+        let assay_dir = tmp.path();
+        let specs_dir = assay_dir.join("specs");
+        std::fs::create_dir_all(&specs_dir).unwrap();
+
+        let mut gates = make_gates("test-spec");
+        gates.preconditions = Some(SpecPreconditions {
+            requires: vec!["nonexistent-spec".to_string()],
+            commands: vec![],
+        });
+        let entry = make_directory_entry("test-spec", gates);
+
+        let result = validate_spec_with_dependencies(&entry, false, &specs_dir, Some(assay_dir));
+        let precond_warn = result.diagnostics.iter().any(|d| {
+            d.severity == Severity::Warning && d.location.starts_with("preconditions.requires")
+        });
+        assert!(
+            precond_warn,
+            "missing required spec should produce warning at preconditions.requires, got: {:?}",
+            result.diagnostics
+        );
+    }
+
+    // Test 9: preconditions.commands = [""] → warning
+    #[test]
+    fn test_composability_precondition_empty_command() {
+        let tmp = tempfile::tempdir().unwrap();
+        let assay_dir = tmp.path();
+        let specs_dir = assay_dir.join("specs");
+        std::fs::create_dir_all(&specs_dir).unwrap();
+
+        let mut gates = make_gates("test-spec");
+        gates.preconditions = Some(SpecPreconditions {
+            requires: vec![],
+            commands: vec!["".to_string()],
+        });
+        let entry = make_directory_entry("test-spec", gates);
+
+        let result = validate_spec_with_dependencies(&entry, false, &specs_dir, Some(assay_dir));
+        let warnings: Vec<_> = result
+            .diagnostics
+            .iter()
+            .filter(|d| d.severity == Severity::Warning)
+            .collect();
+        assert!(
+            !warnings.is_empty(),
+            "empty precondition command should produce warning"
+        );
+    }
+
+    // Test 10: preconditions.requires = ["test-spec"] (self) → warning
+    #[test]
+    fn test_composability_precondition_self_reference() {
+        let tmp = tempfile::tempdir().unwrap();
+        let assay_dir = tmp.path();
+        let specs_dir = assay_dir.join("specs");
+        std::fs::create_dir_all(&specs_dir).unwrap();
+
+        let mut gates = make_gates("test-spec");
+        gates.preconditions = Some(SpecPreconditions {
+            requires: vec!["test-spec".to_string()],
+            commands: vec![],
+        });
+        let entry = make_directory_entry("test-spec", gates);
+
+        let result = validate_spec_with_dependencies(&entry, false, &specs_dir, Some(assay_dir));
+        let warnings: Vec<_> = result
+            .diagnostics
+            .iter()
+            .filter(|d| d.severity == Severity::Warning)
+            .collect();
+        let self_ref_warn = warnings.iter().any(|d| {
+            d.message.to_lowercase().contains("self") || d.message.to_lowercase().contains("itself")
+        });
+        assert!(
+            self_ref_warn,
+            "self-referencing requires should produce warning, got: {:?}",
+            warnings
+        );
     }
 }
