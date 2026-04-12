@@ -46,8 +46,8 @@ Requirements for gate composability milestone. Each maps to roadmap phases.
 
 ### Validation & Safety
 
-- [ ] **SAFE-01**: `spec_validate` detects composability errors (missing parents, missing libraries, cycle detection)
-- [ ] **SAFE-02**: `extends` and `include` values are slug-validated to prevent path traversal
+- [x] **SAFE-01**: `spec_validate` detects composability errors (missing parents, missing libraries, cycle detection)
+- [x] **SAFE-02**: `extends` and `include` values are slug-validated to prevent path traversal
 - [x] **SAFE-03**: All new `GatesSpec` fields are backward-compatible (existing TOML files parse without error)
 
 ## Future Requirements
@@ -91,8 +91,8 @@ Requirements for gate composability milestone. Each maps to roadmap phases.
 | WIZM-03 | Phase 68 | Pending |
 | WIZT-01 | Phase 69 | Pending |
 | WIZT-02 | Phase 69 | Pending |
-| SAFE-01 | Phase 66 | Pending |
-| SAFE-02 | Phase 66 | Pending |
+| SAFE-01 | Phase 66 | Complete |
+| SAFE-02 | Phase 66 | Complete |
 | SAFE-03 | Phase 64 | Complete |
 
 **Coverage:**
