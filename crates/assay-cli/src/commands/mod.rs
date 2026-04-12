@@ -12,6 +12,7 @@ pub mod pr;
 pub mod run;
 pub mod spec;
 pub mod traces;
+pub mod wizard_helpers;
 pub mod worktree;
 
 use anyhow::Context;

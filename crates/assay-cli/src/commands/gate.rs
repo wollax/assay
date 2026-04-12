@@ -52,6 +52,12 @@ Examples:
         #[arg(long)]
         json: bool,
     },
+    /// Interactively create or edit a gate definition
+    Wizard {
+        /// Edit an existing gate by slug rather than creating a new one.
+        #[arg(long)]
+        edit: Option<String>,
+    },
     /// View gate run history for a spec
     #[command(after_long_help = "\
 Examples:
@@ -89,6 +95,7 @@ Examples:
 /// Handle gate subcommands.
 pub(crate) fn handle(command: GateCommand) -> anyhow::Result<i32> {
     match command {
+        GateCommand::Wizard { edit } => handle_wizard(edit),
         GateCommand::Run {
             name: Some(name),
             timeout,
@@ -838,6 +845,242 @@ fn handle_gate_history_detail(name: &str, run_id: &str, json: bool) -> anyhow::R
     Ok(0)
 }
 
+// ── Gate wizard ───────────────────────────────────────────────────
+
+/// Handle `assay gate wizard [--edit <slug>]`.
+///
+/// Requires an interactive TTY. Returns `Ok(1)` immediately if stdin is not
+/// a terminal. All persistence and validation are delegated to
+/// `assay_core::wizard::apply_gate_wizard` — no validation logic lives here.
+pub(crate) fn handle_wizard(edit: Option<String>) -> anyhow::Result<i32> {
+    use std::io::IsTerminal as _;
+
+    if !std::io::stdin().is_terminal() {
+        tracing::error!(
+            "assay gate wizard requires an interactive terminal. \
+             For non-interactive authoring, use the gate wizard MCP tool."
+        );
+        return Ok(1);
+    }
+
+    // ── Resolve project paths ────────────────────────────────────────────────
+    let root = project_root()?;
+    let config = assay_core::config::load(&root)?;
+    let assay_dir = assay_dir(&root);
+    let specs_dir = assay_dir.join(&config.specs_dir);
+
+    // ── Edit mode: load existing GatesSpec to pre-fill defaults ─────────────
+    let existing: Option<assay_types::GatesSpec> = match &edit {
+        Some(slug) => Some(load_gate_for_edit(slug, &specs_dir)?),
+        None => None,
+    };
+
+    // ── Slug (fixed in edit mode) ────────────────────────────────────────────
+    let slug = match &edit {
+        Some(slug) => slug.clone(),
+        None => super::wizard_helpers::prompt_slug("Gate name (slug)", None)?,
+    };
+
+    // ── Description ─────────────────────────────────────────────────────────
+    let description: String = {
+        let existing_desc = existing.as_ref().map(|g| g.description.as_str());
+        let mut b = dialoguer::Input::<String>::new()
+            .with_prompt("Description")
+            .allow_empty(true);
+        if let Some(d) = existing_desc.filter(|d| !d.is_empty()) {
+            b = b.with_initial_text(d);
+        }
+        b.interact_text()?
+    };
+
+    // ── Extends: select from available gates, or "(none)" ───────────────────
+    let scan = assay_core::spec::scan(&specs_dir)?;
+    let mut gate_options: Vec<String> = scan
+        .entries
+        .iter()
+        .map(|e| e.slug().to_string())
+        .filter(|s| {
+            edit.as_ref()
+                .map(|edit_slug| s != edit_slug)
+                .unwrap_or(true)
+        })
+        .collect();
+    gate_options.insert(0, "(none)".to_string());
+
+    let default_extends_idx = existing
+        .as_ref()
+        .and_then(|g| g.extends.as_ref())
+        .and_then(|e| gate_options.iter().position(|o| o == e))
+        .unwrap_or(0);
+
+    let extends_idx = super::wizard_helpers::select_from_list(
+        "Extends (parent gate)",
+        &gate_options,
+        default_extends_idx,
+    )?;
+    let extends = if extends_idx == 0 {
+        None
+    } else {
+        Some(gate_options[extends_idx].clone())
+    };
+
+    // ── Include: multi-select criteria libraries ─────────────────────────────
+    let libs = assay_core::spec::compose::scan_libraries(&assay_dir)?;
+    let lib_names: Vec<String> = libs.iter().map(|l| l.name.clone()).collect();
+    let preselected: Vec<usize> = existing
+        .as_ref()
+        .map(|g| {
+            g.include
+                .iter()
+                .filter_map(|name| lib_names.iter().position(|n| n == name))
+                .collect()
+        })
+        .unwrap_or_default();
+    let include_indices = super::wizard_helpers::multi_select_from_list(
+        "Include criteria libraries",
+        &lib_names,
+        &preselected,
+    )?;
+    let include: Vec<String> = include_indices
+        .iter()
+        .map(|&i| lib_names[i].clone())
+        .collect();
+
+    // ── Criteria: inline add-another loop ───────────────────────────────────
+    let existing_criteria: Vec<assay_types::CriterionInput> = existing
+        .as_ref()
+        .map(|g| {
+            g.criteria
+                .iter()
+                .map(|c| assay_types::CriterionInput {
+                    name: c.name.clone(),
+                    description: c.description.clone(),
+                    cmd: c.cmd.clone(),
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let criteria = super::wizard_helpers::prompt_criteria_loop(&existing_criteria)?;
+
+    // ── Preconditions: opt-in section ────────────────────────────────────────
+    let has_existing_preconditions = existing
+        .as_ref()
+        .map(|g| g.preconditions.is_some())
+        .unwrap_or(false);
+    let add_preconditions = dialoguer::Confirm::new()
+        .with_prompt("Add preconditions?")
+        .default(has_existing_preconditions)
+        .interact()?;
+    let preconditions = if add_preconditions {
+        Some(prompt_preconditions(
+            &specs_dir,
+            existing.as_ref().and_then(|g| g.preconditions.as_ref()),
+        )?)
+    } else {
+        None
+    };
+
+    // ── Final confirmation ───────────────────────────────────────────────────
+    let write = dialoguer::Confirm::new()
+        .with_prompt("Write gate?")
+        .default(true)
+        .interact()?;
+    if !write {
+        println!("  aborted (no file written)");
+        return Ok(0);
+    }
+
+    // ── Build input and delegate all logic to core ───────────────────────────
+    let input = assay_types::GateWizardInput {
+        slug: slug.clone(),
+        description: if description.is_empty() {
+            None
+        } else {
+            Some(description)
+        },
+        extends,
+        include,
+        criteria,
+        preconditions,
+        overwrite: edit.is_some(),
+    };
+
+    let output = assay_core::wizard::apply_gate_wizard(&input, &assay_dir, &specs_dir)?;
+    println!(
+        "  {} gate '{slug}'",
+        if edit.is_some() { "Updated" } else { "Created" }
+    );
+    println!("    written {}", output.path.display());
+    Ok(0)
+}
+
+/// Load an existing `GatesSpec` for use in edit-mode pre-fill.
+///
+/// Returns a user-facing error for legacy flat-file specs and a fuzzy
+/// not-found diagnostic when the slug does not exist.
+fn load_gate_for_edit(
+    slug: &str,
+    specs_dir: &std::path::Path,
+) -> anyhow::Result<assay_types::GatesSpec> {
+    use assay_core::spec::SpecEntry;
+
+    let entry = assay_core::spec::load_spec_entry_with_diagnostics(slug, specs_dir)
+        .map_err(anyhow::Error::from)?;
+
+    match entry {
+        SpecEntry::Directory { gates, .. } => Ok(gates),
+        SpecEntry::Legacy { .. } => {
+            anyhow::bail!(
+                "gate '{}' uses the legacy flat-file format; \
+                 gate wizard only supports directory-based specs",
+                slug
+            )
+        }
+    }
+}
+
+/// Prompt for a `SpecPreconditions` block.
+///
+/// `existing` is used to pre-select the `requires` specs and pre-populate
+/// the commands list.
+fn prompt_preconditions(
+    specs_dir: &std::path::Path,
+    existing: Option<&assay_types::SpecPreconditions>,
+) -> anyhow::Result<assay_types::SpecPreconditions> {
+    let scan = assay_core::spec::scan(specs_dir)?;
+    let slugs: Vec<String> = scan.entries.iter().map(|e| e.slug().to_string()).collect();
+
+    let preselected: Vec<usize> = existing
+        .map(|p| {
+            p.requires
+                .iter()
+                .filter_map(|r| slugs.iter().position(|s| s == r))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let requires_indices =
+        super::wizard_helpers::multi_select_from_list("Requires specs", &slugs, &preselected)?;
+    let requires = requires_indices.iter().map(|&i| slugs[i].clone()).collect();
+
+    let mut commands: Vec<String> = existing.map(|p| p.commands.clone()).unwrap_or_default();
+    loop {
+        let add = dialoguer::Confirm::new()
+            .with_prompt("  Add a precondition command?")
+            .default(commands.is_empty())
+            .interact()?;
+        if !add {
+            break;
+        }
+        let cmd: String = dialoguer::Input::new()
+            .with_prompt("    Command")
+            .interact_text()?;
+        commands.push(cmd);
+    }
+
+    Ok(assay_types::SpecPreconditions { requires, commands })
+}
+
 /// Emit stdout/stderr evidence as `tracing::debug!` events.
 ///
 /// Multi-line content is passed as-is in the `output` field.
@@ -854,5 +1097,88 @@ fn print_evidence(stdout: &str, stderr: &str, truncated: bool) {
     }
     if truncated {
         tracing::debug!("Criterion output truncated");
+    }
+}
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// In a `cargo test` run stdin is not a TTY, so `handle_wizard(None)` must
+    /// return `Ok(1)` immediately without attempting any dialoguer prompts.
+    #[test]
+    fn handle_wizard_non_tty() {
+        let result = handle_wizard(None).expect("handle_wizard should not return Err in non-TTY");
+        assert_eq!(result, 1, "non-TTY handle_wizard must return exit code 1");
+    }
+
+    /// `handle_wizard(Some("..."))` in edit mode also exits early on non-TTY
+    /// — the TTY guard fires before spec loading.
+    #[test]
+    fn handle_wizard_edit_non_tty() {
+        let result = handle_wizard(Some("does-not-exist".into()))
+            .expect("handle_wizard should not Err on non-TTY even in edit mode");
+        assert_eq!(result, 1, "non-TTY edit mode must also return exit code 1");
+    }
+
+    /// `load_gate_for_edit` with a slug that does not exist returns an error
+    /// whose message contains the "not found" phrasing from the enriched
+    /// SpecNotFoundDiagnostic. When a fuzzy match is available ("my-gat" is
+    /// 1 edit away from "my-gate"), the message also contains "Did you mean".
+    #[test]
+    fn handle_wizard_edit_not_found() {
+        let tmp = tempfile::TempDir::new().expect("create tempdir");
+        let specs_dir = tmp.path();
+
+        // Create a valid directory-based gate named "my-gate" so the scanner
+        // can find it and produce a fuzzy suggestion.
+        let gate_dir = specs_dir.join("my-gate");
+        std::fs::create_dir_all(&gate_dir).unwrap();
+        std::fs::write(
+            gate_dir.join("gates.toml"),
+            "name = \"my-gate\"\ncriteria = []\n",
+        )
+        .unwrap();
+
+        // "my-gat" is 1 edit away from "my-gate" (distance 1 <= threshold 2).
+        let err =
+            load_gate_for_edit("my-gat", specs_dir).expect_err("should fail for missing slug");
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("Did you mean") || msg.contains("not found"),
+            "error should mention not found or a suggestion, got: {msg}"
+        );
+    }
+
+    /// `load_gate_for_edit` rejects legacy (flat-file) specs with a clear
+    /// user-facing message referencing "legacy flat-file format".
+    #[test]
+    fn load_gate_for_edit_rejects_legacy() {
+        let tmp = tempfile::TempDir::new().expect("create tempdir");
+        let specs_dir = tmp.path();
+
+        // Write a valid legacy flat-file spec: <slug>.toml in specs_dir.
+        // Spec requires at least one criterion with a cmd (required enforcement).
+        std::fs::write(
+            specs_dir.join("old-gate.toml"),
+            concat!(
+                "name = \"old-gate\"\n\n",
+                "[[criteria]]\n",
+                "name = \"check\"\n",
+                "description = \"A check\"\n",
+                "cmd = \"echo ok\"\n",
+            ),
+        )
+        .unwrap();
+
+        let err =
+            load_gate_for_edit("old-gate", specs_dir).expect_err("should fail for legacy spec");
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("legacy flat-file format"),
+            "error should mention legacy flat-file format, got: {msg}"
+        );
     }
 }
