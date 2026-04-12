@@ -3,14 +3,14 @@ kata_state_version: 1.0
 milestone: v0.7
 milestone_name: milestone
 status: planning
-stopped_at: Completed 67-03-PLAN.md
-last_updated: "2026-04-12T16:15:10.266Z"
+stopped_at: Completed 67-04-PLAN.md
+last_updated: "2026-04-12T16:20:01.255Z"
 last_activity: 2026-04-11 — v0.7.0 roadmap created (6 phases, 22 requirements)
 progress:
   total_phases: 6
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 11
-  completed_plans: 10
+  completed_plans: 11
   percent: 0
 ---
 
@@ -81,6 +81,8 @@ Recent decisions affecting current work:
 - [Phase 67]: save_library unconditionally overwrites — wizard layer (apply_criteria_wizard) owns the overwrite/collision check before delegating
 - [Phase 67]: apply_gate_wizard takes _assay_dir param (unused, reserved for future resolve dry-run per CONTEXT.md)
 - [Phase 67-wizard-core-cli-surface]: GateCommand::Wizard dispatches to handle_wizard which TTY-guards first; all persistence delegated to apply_gate_wizard; wizard_helpers is pub(crate) for Plan 04 reuse
+- [Phase 67-wizard-core-cli-surface]: config.assay_dir does not exist — use crate::commands::assay_dir(&root) consistent with all other CLI commands
+- [Phase 67-wizard-core-cli-surface]: CriteriaCommand::List uses render_list<W: Write> for testability; JSON mode uses serde_json::to_string_pretty (no ANSI)
 
 ### Blockers
 
@@ -92,6 +94,6 @@ Plan Phase 65: Resolution Core (INHR-03, INHR-04, CLIB-01, CLIB-02, CLIB-03)
 
 ### Session Continuity
 
-Last session: 2026-04-12T16:15:10.264Z
-Stopped at: Completed 67-03-PLAN.md
+Last session: 2026-04-12T16:20:01.252Z
+Stopped at: Completed 67-04-PLAN.md
 Resume file: None

@@ -162,7 +162,7 @@ Post-review fix: UTF-8 safe TextDelta truncation (floor_char_boundary) + correct
 - [x] **Phase 64: Type Foundation** - Add composability types and backward-compat fields to `assay-types` (completed 2026-04-11)
 - [x] **Phase 65: Resolution Core** - Criteria library I/O and `spec::compose::resolve()` with cycle detection (completed 2026-04-11)
 - [x] **Phase 66: Evaluation Integration + Validation** - Wire resolution into gate evaluation, precondition enforcement, and `spec_validate` composability diagnostics (completed 2026-04-12)
-- [ ] **Phase 67: Wizard Core + CLI Surface** - Shared wizard logic in `assay-core` and interactive CLI commands
+- [x] **Phase 67: Wizard Core + CLI Surface** - Shared wizard logic in `assay-core` and interactive CLI commands (completed 2026-04-12)
 - [ ] **Phase 68: MCP Surface** - Five new MCP tools for agent-driven gate composition
 - [ ] **Phase 69: TUI Surface** - TUI wizard state machine for human-facing gate editing
 
@@ -224,7 +224,7 @@ Plans:
   2. `assay gate wizard --edit <gate>` loads an existing gate definition and allows the user to modify its criteria and composability fields, writing the result back
   3. `assay criteria list` displays all criteria libraries found in `.assay/criteria/` with their slug and criterion count
   4. `assay criteria new` creates a new criteria library file via an interactive prompt, rejecting invalid slugs before writing
-**Plans:** 3/4 plans executed
+**Plans:** 4/4 plans complete
 
 Plans:
 - [ ] 67-01-PLAN.md — Wizard input/output types in assay-types (GateWizardInput, CriteriaWizardInput, re-home CriterionInput)
@@ -264,7 +264,7 @@ Phases execute in numeric order. Phases 68 and 69 are independent and can execut
 | 64. Type Foundation | 2/2 | Complete    | 2026-04-11 |
 | 65. Resolution Core | 2/2 | Complete    | 2026-04-11 |
 | 66. Evaluation Integration + Validation | 3/3 | Complete    | 2026-04-12 |
-| 67. Wizard Core + CLI Surface | 3/4 | In Progress|  |
+| 67. Wizard Core + CLI Surface | 4/4 | Complete   | 2026-04-12 |
 | 68. MCP Surface | 0/TBD | Not started | - |
 | 69. TUI Surface | 0/TBD | Not started | - |
 
