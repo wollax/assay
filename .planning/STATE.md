@@ -3,14 +3,14 @@ kata_state_version: 1.0
 milestone: v0.7
 milestone_name: milestone
 status: planning
-stopped_at: Phase 66 context gathered
-last_updated: "2026-04-11T23:47:17.832Z"
+stopped_at: Completed 66-01-PLAN.md
+last_updated: "2026-04-12T00:11:11.837Z"
 last_activity: 2026-04-11 — v0.7.0 roadmap created (6 phases, 22 requirements)
 progress:
   total_phases: 6
   completed_phases: 2
-  total_plans: 4
-  completed_plans: 4
+  total_plans: 7
+  completed_plans: 5
   percent: 0
 ---
 
@@ -67,6 +67,8 @@ Recent decisions affecting current work:
 - [Phase 65-01]: save_library validates slug before any I/O for fail-fast semantics
 - [Phase 65-02]: Reverse-dedup algorithm chosen for own-wins merge (avoid indexmap dependency)
 - [Phase 65-02]: resolve() closures (not traits) consistent with zero-trait convention
+- [Phase 66-01]: GateEvalOutcome uses internally tagged serde (tag=outcome) producing evaluated and precondition_failed discriminators
+- [Phase 66-01]: last_gate_passed() returns None for missing/empty history, callers use .unwrap_or(false)
 
 ### Blockers
 
@@ -78,6 +80,6 @@ Plan Phase 65: Resolution Core (INHR-03, INHR-04, CLIB-01, CLIB-02, CLIB-03)
 
 ### Session Continuity
 
-Last session: 2026-04-11T23:47:17.830Z
-Stopped at: Phase 66 context gathered
-Resume file: .planning/phases/66-evaluation-integration-validation/66-CONTEXT.md
+Last session: 2026-04-12T00:11:11.835Z
+Stopped at: Completed 66-01-PLAN.md
+Resume file: None

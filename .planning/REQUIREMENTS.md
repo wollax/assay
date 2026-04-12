@@ -25,7 +25,7 @@ Requirements for gate composability milestone. Each maps to roadmap phases.
 
 - [ ] **PREC-01**: User can define `[preconditions].requires` — gate skipped unless named spec's last gate run passed
 - [ ] **PREC-02**: User can define `[preconditions].commands` — shell commands that must succeed before gate evaluation
-- [ ] **PREC-03**: Precondition failures produce distinct `PreconditionFailed` result (blocked != failed)
+- [x] **PREC-03**: Precondition failures produce distinct `PreconditionFailed` result (blocked != failed)
 
 ### Wizard — CLI
 
@@ -82,7 +82,7 @@ Requirements for gate composability milestone. Each maps to roadmap phases.
 | CLIB-04 | Phase 68 | Pending |
 | PREC-01 | Phase 66 | Pending |
 | PREC-02 | Phase 66 | Pending |
-| PREC-03 | Phase 66 | Pending |
+| PREC-03 | Phase 66 | Complete |
 | WIZC-01 | Phase 67 | Pending |
 | WIZC-02 | Phase 67 | Pending |
 | WIZC-03 | Phase 67 | Pending |
