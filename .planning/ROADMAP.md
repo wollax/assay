@@ -224,7 +224,13 @@ Plans:
   2. `assay gate wizard --edit <gate>` loads an existing gate definition and allows the user to modify its criteria and composability fields, writing the result back
   3. `assay criteria list` displays all criteria libraries found in `.assay/criteria/` with their slug and criterion count
   4. `assay criteria new` creates a new criteria library file via an interactive prompt, rejecting invalid slugs before writing
-**Plans**: TBD
+**Plans:** 4 plans
+
+Plans:
+- [ ] 67-01-PLAN.md — Wizard input/output types in assay-types (GateWizardInput, CriteriaWizardInput, re-home CriterionInput)
+- [ ] 67-02-PLAN.md — Core apply_gate_wizard + apply_criteria_wizard in assay-core::wizard (module split + integration tests)
+- [ ] 67-03-PLAN.md — CLI `assay gate wizard` + `--edit` handler with shared wizard_helpers module
+- [ ] 67-04-PLAN.md — CLI `assay criteria list` + `assay criteria new` (top-level Criteria command)
 
 ### Phase 68: MCP Surface
 **Goal**: Five new MCP tools expose agent-driven gate composition — `gate_wizard`, `criteria_list`, `criteria_get`, `criteria_create`, and `spec_resolve` — each delegating validation to `assay-core::wizard`.
