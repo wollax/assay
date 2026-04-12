@@ -3,14 +3,14 @@ kata_state_version: 1.0
 milestone: v0.7
 milestone_name: milestone
 status: planning
-stopped_at: Phase 67 context gathered
-last_updated: "2026-04-12T12:56:43.479Z"
+stopped_at: Completed 67-01-PLAN.md
+last_updated: "2026-04-12T15:57:36.967Z"
 last_activity: 2026-04-11 — v0.7.0 roadmap created (6 phases, 22 requirements)
 progress:
   total_phases: 6
   completed_phases: 3
-  total_plans: 7
-  completed_plans: 7
+  total_plans: 11
+  completed_plans: 8
   percent: 0
 ---
 
@@ -74,6 +74,9 @@ Recent decisions affecting current work:
 - [Phase 66-03]: Composability checks only apply to SpecEntry::Directory (Legacy specs have no extends/include/preconditions)
 - [Phase 66-03]: Cycle detection in extends uses direct mutual-extend check (not full DFS) — consistent with compose::resolve() semantics
 - [Phase 66-03]: Precondition missing required spec is warning (not error) — spec might be created later
+- [Phase 67-01]: CriterionInput re-homed from assay-core::wizard into assay-types; Plan 02 must add pub use assay_types::CriterionInput re-export
+- [Phase 67-01]: deny_unknown_fields on wizard INPUT types only (not outputs) for forward-compat asymmetry
+- [Phase 67-01]: Wizard output types derive Serialize+JsonSchema only — no Deserialize needed for display-only types
 
 ### Blockers
 
@@ -85,6 +88,6 @@ Plan Phase 65: Resolution Core (INHR-03, INHR-04, CLIB-01, CLIB-02, CLIB-03)
 
 ### Session Continuity
 
-Last session: 2026-04-12T12:56:43.477Z
-Stopped at: Phase 67 context gathered
-Resume file: .planning/phases/67-wizard-core-cli-surface/67-CONTEXT.md
+Last session: 2026-04-12T15:57:36.966Z
+Stopped at: Completed 67-01-PLAN.md
+Resume file: None

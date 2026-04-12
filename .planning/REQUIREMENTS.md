@@ -29,9 +29,9 @@ Requirements for gate composability milestone. Each maps to roadmap phases.
 
 ### Wizard — CLI
 
-- [ ] **WIZC-01**: User can create new gate definitions via `assay gate wizard` interactive flow
-- [ ] **WIZC-02**: User can edit existing gate definitions via the wizard
-- [ ] **WIZC-03**: User can manage criteria libraries via `assay criteria list/new` commands
+- [x] **WIZC-01**: User can create new gate definitions via `assay gate wizard` interactive flow
+- [x] **WIZC-02**: User can edit existing gate definitions via the wizard
+- [x] **WIZC-03**: User can manage criteria libraries via `assay criteria list/new` commands
 
 ### Wizard — MCP
 
@@ -83,9 +83,9 @@ Requirements for gate composability milestone. Each maps to roadmap phases.
 | PREC-01 | Phase 66 | Complete |
 | PREC-02 | Phase 66 | Complete |
 | PREC-03 | Phase 66 | Complete |
-| WIZC-01 | Phase 67 | Pending |
-| WIZC-02 | Phase 67 | Pending |
-| WIZC-03 | Phase 67 | Pending |
+| WIZC-01 | Phase 67 | Complete |
+| WIZC-02 | Phase 67 | Complete |
+| WIZC-03 | Phase 67 | Complete |
 | WIZM-01 | Phase 68 | Pending |
 | WIZM-02 | Phase 68 | Pending |
 | WIZM-03 | Phase 68 | Pending |
