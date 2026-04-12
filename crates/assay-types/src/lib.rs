@@ -57,7 +57,9 @@ pub use evaluator::{
 pub use evidence::FormattedEvidence;
 pub use feature_spec::{FeatureSpec, SpecStatus};
 pub use gate::{GateKind, GateResult};
-pub use gate_run::{CriterionResult, DiffTruncation, GateRunRecord, GateRunSummary};
+pub use gate_run::{
+    CriterionResult, DiffTruncation, GateEvalOutcome, GateRunRecord, GateRunSummary,
+};
 pub use gates_spec::{GateCriterion, GatesSpec};
 pub use harness::{
     HarnessProfile, HookContract, HookEvent, PromptLayer, PromptLayerKind, ScopeViolation,

@@ -46,12 +46,77 @@ expression: schema.to_value()
             }
           ],
           "description": "The gate result, or `None` if skipped (no cmd)."
+        },
+        "source": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CriterionSource"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Where this criterion originated (own, parent, or library). Omitted when absent."
         }
       },
       "required": [
         "criterion_name"
       ],
       "type": "object"
+    },
+    "CriterionSource": {
+      "description": "Identifies where a criterion in a [`ResolvedGate`] originated.",
+      "oneOf": [
+        {
+          "const": "own",
+          "description": "Criterion is defined directly on this gate.",
+          "type": "string"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Criterion was inherited from a parent gate via `extends`.",
+          "properties": {
+            "parent": {
+              "properties": {
+                "gate_slug": {
+                  "description": "The slug of the parent gate.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "gate_slug"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "parent"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Criterion was merged in from a criteria library via `include`.",
+          "properties": {
+            "library": {
+              "properties": {
+                "slug": {
+                  "description": "The slug of the criteria library.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "slug"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "library"
+          ],
+          "type": "object"
+        }
+      ]
     },
     "DiffTruncation": {
       "description": "Truncation metadata when the diff was truncated to fit the evaluator's token budget.\n\nPresent only when truncation occurred (diff exceeded token budget).\nOmitted entirely when the diff fit within budget (clean passthrough).",

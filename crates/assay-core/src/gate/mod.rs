@@ -300,6 +300,7 @@ fn evaluate_criteria(
                 criterion_name: criterion.name.clone(),
                 result: None,
                 enforcement: *resolved_enforcement,
+                source: None,
             });
             continue;
         }
@@ -323,6 +324,7 @@ fn evaluate_criteria(
                     criterion_name: criterion.name.clone(),
                     result: None,
                     enforcement: *resolved_enforcement,
+                    source: None,
                 });
                 continue;
             }
@@ -357,6 +359,7 @@ fn evaluate_criteria(
                             evaluator_role: None,
                         }),
                         enforcement: *resolved_enforcement,
+                        source: None,
                     });
                     continue;
                 }
@@ -378,6 +381,7 @@ fn evaluate_criteria(
                 criterion_name: criterion.name.clone(),
                 result: Some(gate_result),
                 enforcement: *resolved_enforcement,
+                source: None,
             });
             continue;
         }
@@ -388,6 +392,7 @@ fn evaluate_criteria(
                 criterion_name: criterion.name.clone(),
                 result: None,
                 enforcement: *resolved_enforcement,
+                source: None,
             });
             continue;
         }
@@ -425,6 +430,7 @@ fn evaluate_criteria(
                     criterion_name: criterion.name.clone(),
                     result: Some(gate_result),
                     enforcement: *resolved_enforcement,
+                    source: None,
                 });
             }
             Err(err) => {
@@ -452,6 +458,7 @@ fn evaluate_criteria(
                         evaluator_role: None,
                     }),
                     enforcement: *resolved_enforcement,
+                    source: None,
                 });
             }
         }

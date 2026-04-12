@@ -24,6 +24,60 @@ expression: schema.to_value()
         }
       ]
     },
+    "CriterionSource": {
+      "description": "Identifies where a criterion in a [`ResolvedGate`] originated.",
+      "oneOf": [
+        {
+          "const": "own",
+          "description": "Criterion is defined directly on this gate.",
+          "type": "string"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Criterion was inherited from a parent gate via `extends`.",
+          "properties": {
+            "parent": {
+              "properties": {
+                "gate_slug": {
+                  "description": "The slug of the parent gate.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "gate_slug"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "parent"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Criterion was merged in from a criteria library via `include`.",
+          "properties": {
+            "library": {
+              "properties": {
+                "slug": {
+                  "description": "The slug of the criteria library.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "slug"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "library"
+          ],
+          "type": "object"
+        }
+      ]
+    },
     "Enforcement": {
       "description": "Enforcement level for a gate criterion.\n\nDetermines whether a criterion failure blocks the gate (required)\nor is informational only (advisory).",
       "oneOf": [
@@ -294,6 +348,17 @@ expression: schema.to_value()
         }
       ],
       "description": "The gate result, or `None` if skipped (no cmd)."
+    },
+    "source": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/CriterionSource"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Where this criterion originated (own, parent, or library). Omitted when absent."
     }
   },
   "required": [

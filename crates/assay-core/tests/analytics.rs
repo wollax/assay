@@ -66,6 +66,7 @@ fn create_synthetic_record(
                 evaluator_role: None,
             }),
             enforcement,
+            source: None,
         })
         .collect();
 

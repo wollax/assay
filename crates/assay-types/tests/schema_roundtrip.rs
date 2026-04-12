@@ -353,6 +353,7 @@ fn gate_run_summary_full_validates() {
                 evaluator_role: None,
             }),
             enforcement: Enforcement::Required,
+            source: None,
         }],
         passed: 1,
         failed: 0,
@@ -370,6 +371,7 @@ fn gate_run_summary_with_skipped_criterion_validates() {
             criterion_name: "descriptive-only".to_string(),
             result: None,
             enforcement: Enforcement::Required,
+            source: None,
         }],
         passed: 0,
         failed: 0,
@@ -399,6 +401,7 @@ fn criterion_result_with_result_validates() {
             evaluator_role: None,
         }),
         enforcement: Enforcement::Required,
+        source: None,
     });
 }
 
@@ -408,6 +411,7 @@ fn criterion_result_skipped_validates() {
         criterion_name: "manual-check".to_string(),
         result: None,
         enforcement: Enforcement::Required,
+        source: None,
     });
 }
 

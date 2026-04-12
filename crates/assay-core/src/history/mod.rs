@@ -531,6 +531,7 @@ mod tests {
                             evaluator_role: None,
                         }),
                         enforcement: Enforcement::Required,
+                        source: None,
                     },
                     CriterionResult {
                         criterion_name: "lint-check".to_string(),
@@ -552,11 +553,13 @@ mod tests {
                             evaluator_role: None,
                         }),
                         enforcement: Enforcement::Advisory,
+                        source: None,
                     },
                     CriterionResult {
                         criterion_name: "descriptive-only".to_string(),
                         result: None,
                         enforcement: Enforcement::Required,
+                        source: None,
                     },
                     CriterionResult {
                         criterion_name: "readme-exists".to_string(),
@@ -578,6 +581,7 @@ mod tests {
                             evaluator_role: None,
                         }),
                         enforcement: Enforcement::Required,
+                        source: None,
                     },
                 ],
                 passed: 2,
@@ -836,6 +840,7 @@ mod tests {
                         evaluator_role: None,
                     }),
                     enforcement: Enforcement::Required,
+                    source: None,
                 }],
                 passed: 1,
                 failed: 0,

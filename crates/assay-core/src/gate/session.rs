@@ -196,6 +196,7 @@ pub fn build_finalized_record(
                     criterion_name: criterion_name.clone(),
                     result: Some(gate_result),
                     enforcement,
+                    source: None,
                 });
             }
 
@@ -211,6 +212,7 @@ pub fn build_finalized_record(
                 criterion_name: criterion_name.clone(),
                 result: None,
                 enforcement,
+                source: None,
             });
         }
     }
@@ -297,6 +299,7 @@ pub fn finalize_as_timed_out(session: &GateEvalContext) -> GateRunRecord {
                         evaluator_role: Some(best.evaluator_role),
                     }),
                     enforcement,
+                    source: None,
                 });
             }
             _ => {
@@ -320,12 +323,14 @@ pub fn finalize_as_timed_out(session: &GateEvalContext) -> GateRunRecord {
                             evaluator_role: None,
                         }),
                         enforcement,
+                        source: None,
                     });
                 } else {
                     results.push(CriterionResult {
                         criterion_name: criterion_name.clone(),
                         result: None,
                         enforcement,
+                        source: None,
                     });
                 }
             }

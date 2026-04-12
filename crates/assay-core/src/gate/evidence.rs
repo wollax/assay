@@ -485,6 +485,7 @@ mod tests {
                 evaluator_role: None,
             }),
             enforcement: Enforcement::Required,
+            source: None,
         }
     }
 
@@ -509,6 +510,7 @@ mod tests {
                 evaluator_role: None,
             }),
             enforcement: Enforcement::Required,
+            source: None,
         }
     }
 
@@ -531,6 +533,7 @@ mod tests {
                 evaluator_role: Some(EvaluatorRole::Independent),
             }),
             enforcement: Enforcement::Required,
+            source: None,
         }
     }
 
@@ -553,6 +556,7 @@ mod tests {
                 evaluator_role: Some(EvaluatorRole::SelfEval),
             }),
             enforcement: Enforcement::Advisory,
+            source: None,
         }
     }
 
@@ -589,6 +593,7 @@ mod tests {
                 criterion_name: "skipped".to_string(),
                 result: None,
                 enforcement: Enforcement::Required,
+                source: None,
             },
         ];
         let record = make_record(results);
@@ -765,6 +770,7 @@ mod tests {
                 evaluator_role: None,
             }),
             enforcement: Enforcement::Required,
+            source: None,
         };
         let record = make_record(vec![cr]);
         let evidence = format_gate_evidence(&record, Path::new("report.md"), GITHUB_BODY_LIMIT);
@@ -856,6 +862,7 @@ mod tests {
                 evaluator_role: None,
             }),
             enforcement: Enforcement::Required,
+            source: None,
         }
     }
 
@@ -880,6 +887,7 @@ mod tests {
                 evaluator_role: None,
             }),
             enforcement: Enforcement::Required,
+            source: None,
         }
     }
 
@@ -888,6 +896,7 @@ mod tests {
             criterion_name: name.to_string(),
             result: None,
             enforcement: Enforcement::Required,
+            source: None,
         }
     }
 
@@ -1205,6 +1214,7 @@ mod tests {
                 evaluator_role: None,
             }),
             enforcement: Enforcement::Required,
+            source: None,
         };
         let record = make_record(vec![cr]);
         let evidence = format_gate_evidence(&record, Path::new("report.md"), GITHUB_BODY_LIMIT);
@@ -1232,6 +1242,7 @@ mod tests {
                 evaluator_role: None,
             }),
             enforcement: Enforcement::Required,
+            source: None,
         };
         let record = make_record(vec![cr]);
         let evidence = format_gate_evidence(&record, Path::new("report.md"), GITHUB_BODY_LIMIT);
@@ -1265,6 +1276,7 @@ mod tests {
                 evaluator_role: None,
             }),
             enforcement: Enforcement::Required,
+            source: None,
         };
         let record = make_record(vec![cr]);
         let evidence = format_gate_evidence(&record, Path::new("report.md"), GITHUB_BODY_LIMIT);
@@ -1301,6 +1313,7 @@ mod tests {
                 evaluator_role: None,
             }),
             enforcement: Enforcement::Required,
+            source: None,
         };
         let record = make_record(vec![cr]);
         let evidence = format_gate_evidence(&record, Path::new("report.md"), GITHUB_BODY_LIMIT);
@@ -1329,6 +1342,7 @@ mod tests {
                 evaluator_role: None,
             }),
             enforcement: Enforcement::Required,
+            source: None,
         };
         let record = make_record(vec![cr]);
         let evidence = format_gate_evidence(&record, Path::new("report.md"), GITHUB_BODY_LIMIT);

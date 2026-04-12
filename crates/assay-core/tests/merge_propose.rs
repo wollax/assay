@@ -85,6 +85,7 @@ fn make_record(spec_name: &str) -> GateRunRecord {
                     evaluator_role: None,
                 }),
                 enforcement: Enforcement::Required,
+                source: None,
             }],
             passed: 1,
             failed: 0,

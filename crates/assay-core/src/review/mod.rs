@@ -1388,6 +1388,7 @@ mod tests {
                 criterion_name: "check-build".to_string(),
                 result: Some(make_gate_result(true, "cargo build", Some(0), "")),
                 enforcement: Enforcement::Required,
+                source: None,
             },
             CriterionResult {
                 criterion_name: "check-lint".to_string(),
@@ -1398,6 +1399,7 @@ mod tests {
                     "warning: unused var",
                 )),
                 enforcement: Enforcement::Required,
+                source: None,
             },
         ];
         let summary = make_gate_run_summary(results);
@@ -1427,11 +1429,13 @@ mod tests {
                 criterion_name: "check-build".to_string(),
                 result: Some(make_gate_result(true, "cargo build", Some(0), "")),
                 enforcement: Enforcement::Required,
+                source: None,
             },
             CriterionResult {
                 criterion_name: "check-test".to_string(),
                 result: Some(make_gate_result(true, "cargo test", Some(0), "")),
                 enforcement: Enforcement::Required,
+                source: None,
             },
         ];
         let summary = make_gate_run_summary(results);
@@ -1467,6 +1471,7 @@ mod tests {
             criterion_name: "quality-check".to_string(),
             result: Some(gate_result),
             enforcement: Enforcement::Required,
+            source: None,
         }];
         let summary = make_gate_run_summary(results);
         let diag = build_gate_diagnostic("my-spec", "run-agent", &summary);
@@ -1509,6 +1514,7 @@ mod tests {
             criterion_name: "check-build".to_string(),
             result: Some(gate_result),
             enforcement: Enforcement::Required,
+            source: None,
         }];
         let summary = make_gate_run_summary(results);
         let diag = build_gate_diagnostic("my-spec", "run-unicode", &summary);

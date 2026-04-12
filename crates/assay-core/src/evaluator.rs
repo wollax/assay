@@ -298,6 +298,7 @@ pub fn map_evaluator_output(
                         criterion_name: criterion_result.name.clone(),
                         result: None,
                         enforcement,
+                        source: None,
                     });
                 }
                 CriterionOutcome::Warn => {
@@ -381,6 +382,7 @@ fn build_criterion_result(
             evaluator_role: Some(EvaluatorRole::Independent),
         }),
         enforcement,
+        source: None,
     }
 }
 

@@ -12,6 +12,8 @@ use chrono::{DateTime, Utc};
 
 use crate::GateResult;
 use crate::enforcement::{Enforcement, EnforcementSummary};
+use crate::precondition::PreconditionStatus;
+use crate::resolved_gate::CriterionSource;
 
 /// Summary of evaluating all criteria in a spec.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -45,6 +47,9 @@ pub struct CriterionResult {
     /// Resolved enforcement level for this criterion (Required or Advisory).
     #[serde(default)]
     pub enforcement: Enforcement,
+    /// Where this criterion originated (own, parent, or library). Omitted when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<CriterionSource>,
 }
 
 inventory::submit! {
@@ -114,5 +119,158 @@ inventory::submit! {
     crate::schema_registry::SchemaEntry {
         name: "gate-run-record",
         generate: || schemars::schema_for!(GateRunRecord),
+    }
+}
+
+/// Outcome of a gate evaluation, distinguishing normal evaluation from
+/// precondition failures.
+///
+/// `GateEvalOutcome` is an in-memory return type only. Callers that persist
+/// results save the inner `GateRunSummary` from `Evaluated` via
+/// [`crate::GateRunRecord`]. `PreconditionFailed` results are NOT stored in
+/// run history — they block evaluation before any criteria run.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "outcome", rename_all = "snake_case")]
+pub enum GateEvalOutcome {
+    /// All preconditions passed; the inner value is the full gate run summary.
+    Evaluated(GateRunSummary),
+    /// One or more preconditions failed; evaluation was not attempted.
+    PreconditionFailed(PreconditionStatus),
+}
+
+inventory::submit! {
+    crate::schema_registry::SchemaEntry {
+        name: "gate-eval-outcome",
+        generate: || schemars::schema_for!(GateEvalOutcome),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::enforcement::EnforcementSummary;
+    use crate::precondition::{CommandStatus, PreconditionStatus, RequireStatus};
+    use crate::resolved_gate::CriterionSource;
+
+    fn make_empty_summary(spec_name: &str) -> GateRunSummary {
+        GateRunSummary {
+            spec_name: spec_name.to_string(),
+            results: vec![],
+            passed: 0,
+            failed: 0,
+            skipped: 0,
+            total_duration_ms: 0,
+            enforcement: EnforcementSummary::default(),
+        }
+    }
+
+    fn make_precondition_status() -> PreconditionStatus {
+        PreconditionStatus {
+            requires: vec![RequireStatus {
+                spec_slug: "auth-flow".to_string(),
+                passed: false,
+            }],
+            commands: vec![CommandStatus {
+                command: "docker ps".to_string(),
+                passed: true,
+                output: None,
+            }],
+        }
+    }
+
+    // Test 1: GateEvalOutcome::Evaluated(summary) roundtrips JSON
+    #[test]
+    fn gate_eval_outcome_evaluated_roundtrip() {
+        let summary = make_empty_summary("my-spec");
+        let outcome = GateEvalOutcome::Evaluated(summary.clone());
+        let json = serde_json::to_string(&outcome).expect("serialize Evaluated");
+        let back: GateEvalOutcome = serde_json::from_str(&json).expect("deserialize Evaluated");
+        assert_eq!(back, outcome);
+    }
+
+    // Test 2: GateEvalOutcome::PreconditionFailed(status) roundtrips JSON
+    #[test]
+    fn gate_eval_outcome_precondition_failed_roundtrip() {
+        let status = make_precondition_status();
+        let outcome = GateEvalOutcome::PreconditionFailed(status.clone());
+        let json = serde_json::to_string(&outcome).expect("serialize PreconditionFailed");
+        let back: GateEvalOutcome =
+            serde_json::from_str(&json).expect("deserialize PreconditionFailed");
+        assert_eq!(back, outcome);
+    }
+
+    // Test 3: Evaluated and PreconditionFailed are distinguishable via "outcome" tag
+    #[test]
+    fn gate_eval_outcome_tag_distinguishable() {
+        let evaluated = GateEvalOutcome::Evaluated(make_empty_summary("spec-a"));
+        let failed = GateEvalOutcome::PreconditionFailed(make_precondition_status());
+
+        let eval_json = serde_json::to_string(&evaluated).expect("serialize Evaluated");
+        let fail_json = serde_json::to_string(&failed).expect("serialize PreconditionFailed");
+
+        let eval_val: serde_json::Value = serde_json::from_str(&eval_json).unwrap();
+        let fail_val: serde_json::Value = serde_json::from_str(&fail_json).unwrap();
+
+        assert_eq!(eval_val["outcome"], "evaluated");
+        assert_eq!(fail_val["outcome"], "precondition_failed");
+    }
+
+    // Test 4: CriterionResult with source: Some(CriterionSource::Own) roundtrips JSON
+    #[test]
+    fn criterion_result_source_own_roundtrip() {
+        let cr = CriterionResult {
+            criterion_name: "cargo-test".to_string(),
+            result: None,
+            enforcement: Enforcement::Required,
+            source: Some(CriterionSource::Own),
+        };
+        let json = serde_json::to_string(&cr).expect("serialize with source");
+        let back: CriterionResult = serde_json::from_str(&json).expect("deserialize with source");
+        assert_eq!(back, cr);
+        assert_eq!(back.source, Some(CriterionSource::Own));
+    }
+
+    // Test 5: CriterionResult with source: None roundtrips JSON and omits "source" key
+    #[test]
+    fn criterion_result_source_none_omitted() {
+        let cr = CriterionResult {
+            criterion_name: "cargo-test".to_string(),
+            result: None,
+            enforcement: Enforcement::Required,
+            source: None,
+        };
+        let json = serde_json::to_string(&cr).expect("serialize with source None");
+        assert!(
+            !json.contains("source"),
+            "source field should be omitted when None, got: {json}"
+        );
+        let back: CriterionResult =
+            serde_json::from_str(&json).expect("deserialize with source None");
+        assert_eq!(back, cr);
+        assert_eq!(back.source, None);
+    }
+
+    // Test 6: Old CriterionResult JSON (no source field) deserializes into source: None
+    #[test]
+    fn criterion_result_backward_compat_no_source_field() {
+        // JSON that would have been produced before source field existed
+        let old_json = r#"{"criterion_name":"cargo-test","enforcement":"required"}"#;
+        let cr: CriterionResult = serde_json::from_str(old_json).expect("deserialize old JSON");
+        assert_eq!(cr.criterion_name, "cargo-test");
+        assert_eq!(
+            cr.source, None,
+            "old JSON without source should produce source: None"
+        );
+    }
+
+    // Test 7: GateEvalOutcome schema registered via inventory (name "gate-eval-outcome")
+    #[test]
+    fn gate_eval_outcome_schema_registered() {
+        use crate::schema_registry;
+        let names: Vec<&str> = schema_registry::all_entries().map(|e| e.name).collect();
+        assert!(
+            names.contains(&"gate-eval-outcome"),
+            "gate-eval-outcome should be registered, found: {names:?}"
+        );
     }
 }

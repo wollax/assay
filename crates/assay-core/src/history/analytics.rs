@@ -341,11 +341,13 @@ mod tests {
                             evaluator_role: None,
                         }),
                         enforcement: Enforcement::Required,
+                        source: None,
                     },
                     assay_types::CriterionResult {
                         criterion_name: "skipped".to_string(),
                         result: None, // Skipped — should not be counted
                         enforcement: Enforcement::Advisory,
+                        source: None,
                     },
                 ],
                 passed: 1,
