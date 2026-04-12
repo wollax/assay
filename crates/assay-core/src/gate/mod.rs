@@ -25,8 +25,10 @@ use std::time::{Duration, Instant};
 use chrono::Utc;
 
 use assay_types::{
-    AgentEvent, Criterion, CriterionKind, CriterionResult, Enforcement, EnforcementSummary,
-    GateCriterion, GateKind, GateResult, GateRunSummary, GateSection, GatesSpec, Spec,
+    AgentEvent, CommandStatus, Criterion, CriterionKind, CriterionResult, CriterionSource,
+    Enforcement, EnforcementSummary, GateCriterion, GateKind, GateResult, GateRunSummary,
+    GateSection, GatesSpec, PreconditionStatus, RequireStatus, ResolvedCriterion, Spec,
+    SpecPreconditions,
 };
 
 use crate::error::{AssayError, Result};
@@ -154,12 +156,12 @@ pub fn evaluate_all(
     cli_timeout: Option<u64>,
     config_timeout: Option<u64>,
 ) -> GateRunSummary {
-    let criteria: Vec<(Criterion, Enforcement)> = spec
+    let criteria: Vec<(Criterion, Enforcement, Option<CriterionSource>)> = spec
         .criteria
         .iter()
         .map(|c| {
             let enforcement = resolve_enforcement(c.enforcement, spec.gate.as_ref());
-            (c.clone(), enforcement)
+            (c.clone(), enforcement, None)
         })
         .collect();
     evaluate_criteria(
@@ -193,12 +195,12 @@ pub fn evaluate_all_with_events(
     config_timeout: Option<u64>,
     events: &[AgentEvent],
 ) -> GateRunSummary {
-    let criteria: Vec<(Criterion, Enforcement)> = spec
+    let criteria: Vec<(Criterion, Enforcement, Option<CriterionSource>)> = spec
         .criteria
         .iter()
         .map(|c| {
             let enforcement = resolve_enforcement(c.enforcement, spec.gate.as_ref());
-            (c.clone(), enforcement)
+            (c.clone(), enforcement, None)
         })
         .collect();
     evaluate_criteria(
@@ -223,12 +225,12 @@ pub fn evaluate_all_gates_with_events(
     config_timeout: Option<u64>,
     events: &[AgentEvent],
 ) -> GateRunSummary {
-    let criteria: Vec<(Criterion, Enforcement)> = gates
+    let criteria: Vec<(Criterion, Enforcement, Option<CriterionSource>)> = gates
         .criteria
         .iter()
         .map(|gc| {
             let enforcement = resolve_enforcement(gc.enforcement, gates.gate.as_ref());
-            (to_criterion(gc), enforcement)
+            (to_criterion(gc), enforcement, None)
         })
         .collect();
     evaluate_criteria(
@@ -253,12 +255,12 @@ pub fn evaluate_all_gates(
     cli_timeout: Option<u64>,
     config_timeout: Option<u64>,
 ) -> GateRunSummary {
-    let criteria: Vec<(Criterion, Enforcement)> = gates
+    let criteria: Vec<(Criterion, Enforcement, Option<CriterionSource>)> = gates
         .criteria
         .iter()
         .map(|gc| {
             let enforcement = resolve_enforcement(gc.enforcement, gates.gate.as_ref());
-            (to_criterion(gc), enforcement)
+            (to_criterion(gc), enforcement, None)
         })
         .collect();
     evaluate_criteria(
@@ -271,14 +273,138 @@ pub fn evaluate_all_gates(
     )
 }
 
+/// Check all preconditions for a gate spec before evaluating criteria.
+///
+/// Evaluates ALL `requires` entries and ALL `commands` entries without short-circuiting —
+/// every entry is checked regardless of earlier failures so callers receive a complete
+/// picture of what is and isn't satisfied.
+///
+/// # Evaluation order
+///
+/// Requires (cheap history lookups) are evaluated first, then commands (expensive shell
+/// execution). This matches the locked decision from the research phase.
+///
+/// # Requires semantics
+///
+/// For each slug in `requires`, calls `last_gate_passed(slug)`:
+/// - `Some(true)` → passed
+/// - `Some(false)` → not passed
+/// - `None` (no history) → not passed (conservative: absence of evidence is not evidence of passing)
+///
+/// # Commands semantics
+///
+/// For each command in `commands`, spawns `sh -c <cmd>` and checks the exit code.
+/// Stdout+stderr are captured and concatenated as `output` (truncated by the normal
+/// head+tail budget). On spawn failure, the command is marked as not passed with
+/// `"spawn failed: {e}"` as the output.
+pub fn check_preconditions(
+    preconditions: &SpecPreconditions,
+    last_gate_passed: impl Fn(&str) -> Option<bool>,
+    working_dir: &Path,
+    cli_timeout: Option<u64>,
+    config_timeout: Option<u64>,
+) -> PreconditionStatus {
+    // Evaluate requires (cheap history lookups first)
+    let requires: Vec<RequireStatus> = preconditions
+        .requires
+        .iter()
+        .map(|slug| {
+            let passed = last_gate_passed(slug).unwrap_or(false);
+            RequireStatus {
+                spec_slug: slug.clone(),
+                passed,
+            }
+        })
+        .collect();
+
+    // Evaluate commands (expensive shell execution second)
+    let timeout = resolve_timeout(cli_timeout, None, config_timeout);
+    let commands: Vec<CommandStatus> = preconditions
+        .commands
+        .iter()
+        .map(|cmd| match evaluate_command(cmd, working_dir, timeout) {
+            Ok(gate_result) => {
+                let output = {
+                    let combined = if gate_result.stdout.is_empty() {
+                        gate_result.stderr.clone()
+                    } else if gate_result.stderr.is_empty() {
+                        gate_result.stdout.clone()
+                    } else {
+                        format!("{}\n{}", gate_result.stdout, gate_result.stderr)
+                    };
+                    if combined.is_empty() {
+                        None
+                    } else {
+                        Some(combined)
+                    }
+                };
+                CommandStatus {
+                    command: cmd.clone(),
+                    passed: gate_result.passed,
+                    output,
+                }
+            }
+            Err(e) => CommandStatus {
+                command: cmd.clone(),
+                passed: false,
+                output: Some(format!("spawn failed: {e}")),
+            },
+        })
+        .collect();
+
+    PreconditionStatus { requires, commands }
+}
+
+/// Evaluate a fully resolved gate's criteria with source annotations.
+///
+/// Accepts a slice of [`ResolvedCriterion`] (produced by the resolution phase) and
+/// feeds each criterion through the standard evaluation loop. The `source` field on
+/// each [`CriterionResult`] in the returned [`GateRunSummary`] will match the
+/// corresponding [`ResolvedCriterion::source`].
+///
+/// Pass `gate_section` when the gate spec has a `[gate]` section with a default
+/// enforcement level. Pass `None` to use the default (Required).
+///
+/// This function never consumes an event log — resolved criteria evaluation does
+/// not use event-based criteria. Event-based criteria that appear in a resolved
+/// gate (e.g. inherited from a parent) will be skipped, same as [`evaluate_all`].
+pub fn evaluate_all_resolved(
+    spec_name: &str,
+    resolved: &[ResolvedCriterion],
+    gate_section: Option<&GateSection>,
+    working_dir: &Path,
+    cli_timeout: Option<u64>,
+    config_timeout: Option<u64>,
+) -> GateRunSummary {
+    let criteria: Vec<(Criterion, Enforcement, Option<CriterionSource>)> = resolved
+        .iter()
+        .map(|rc| {
+            let enforcement = resolve_enforcement(rc.criterion.enforcement, gate_section);
+            (rc.criterion.clone(), enforcement, Some(rc.source.clone()))
+        })
+        .collect();
+    evaluate_criteria(
+        spec_name,
+        criteria,
+        working_dir,
+        cli_timeout,
+        config_timeout,
+        &[],
+    )
+}
+
 /// Shared evaluation loop for both legacy specs and gate specs.
 ///
-/// Each entry pairs a `Criterion` with its resolved `Enforcement` level.
+/// Each entry triples a `Criterion` with its resolved `Enforcement` level and an
+/// optional `CriterionSource` for source annotation. Pass `None` as the source for
+/// legacy/non-resolved evaluation paths — `CriterionResult.source` will be `None`.
+/// For resolved criteria evaluation, pass `Some(source)` to carry provenance.
+///
 /// Handles AgentReport skipping, no-cmd-no-path skipping, timeout resolution,
 /// evaluation dispatch, and result/enforcement summary accumulation.
 fn evaluate_criteria(
     spec_name: &str,
-    criteria: Vec<(Criterion, Enforcement)>,
+    criteria: Vec<(Criterion, Enforcement, Option<CriterionSource>)>,
     working_dir: &Path,
     cli_timeout: Option<u64>,
     config_timeout: Option<u64>,
@@ -291,7 +417,7 @@ fn evaluate_criteria(
     let mut skipped = 0usize;
     let mut enforcement_summary = EnforcementSummary::default();
 
-    for (criterion, resolved_enforcement) in &criteria {
+    for (criterion, resolved_enforcement, criterion_source) in &criteria {
         // AgentReport criteria are evaluated through the session lifecycle
         // (gate_report + gate_finalize). Mark as skipped (pending) here.
         if matches!(criterion.kind, Some(CriterionKind::AgentReport)) {
@@ -300,7 +426,7 @@ fn evaluate_criteria(
                 criterion_name: criterion.name.clone(),
                 result: None,
                 enforcement: *resolved_enforcement,
-                source: None,
+                source: criterion_source.clone(),
             });
             continue;
         }
@@ -324,7 +450,7 @@ fn evaluate_criteria(
                     criterion_name: criterion.name.clone(),
                     result: None,
                     enforcement: *resolved_enforcement,
-                    source: None,
+                    source: criterion_source.clone(),
                 });
                 continue;
             }
@@ -359,7 +485,7 @@ fn evaluate_criteria(
                             evaluator_role: None,
                         }),
                         enforcement: *resolved_enforcement,
-                        source: None,
+                        source: criterion_source.clone(),
                     });
                     continue;
                 }
@@ -381,7 +507,7 @@ fn evaluate_criteria(
                 criterion_name: criterion.name.clone(),
                 result: Some(gate_result),
                 enforcement: *resolved_enforcement,
-                source: None,
+                source: criterion_source.clone(),
             });
             continue;
         }
@@ -392,7 +518,7 @@ fn evaluate_criteria(
                 criterion_name: criterion.name.clone(),
                 result: None,
                 enforcement: *resolved_enforcement,
-                source: None,
+                source: criterion_source.clone(),
             });
             continue;
         }
@@ -430,7 +556,7 @@ fn evaluate_criteria(
                     criterion_name: criterion.name.clone(),
                     result: Some(gate_result),
                     enforcement: *resolved_enforcement,
-                    source: None,
+                    source: criterion_source.clone(),
                 });
             }
             Err(err) => {
@@ -458,7 +584,7 @@ fn evaluate_criteria(
                         evaluator_role: None,
                     }),
                     enforcement: *resolved_enforcement,
-                    source: None,
+                    source: criterion_source.clone(),
                 });
             }
         }
@@ -3423,5 +3549,206 @@ mod tests {
             &CheckpointPhase::SessionEnd,
             &[]
         ));
+    }
+
+    // ------------------------------------------------------------------
+    // check_preconditions (PREC-01, PREC-02)
+    // ------------------------------------------------------------------
+
+    /// PREC-01: requires entry where closure returns Some(false) → passed: false
+    #[test]
+    fn check_preconditions_requires_some_false_is_not_passed() {
+        let dir = tempfile::tempdir().unwrap();
+        let preconditions = assay_types::SpecPreconditions {
+            requires: vec!["auth-flow".to_string()],
+            commands: vec![],
+        };
+        let status = check_preconditions(&preconditions, |_| Some(false), dir.path(), None, None);
+        assert_eq!(status.requires.len(), 1);
+        assert_eq!(status.requires[0].spec_slug, "auth-flow");
+        assert!(!status.requires[0].passed);
+        assert!(status.commands.is_empty());
+    }
+
+    /// PREC-01: requires entry where closure returns None (no history) → passed: false (conservative)
+    #[test]
+    fn check_preconditions_requires_none_history_is_not_passed() {
+        let dir = tempfile::tempdir().unwrap();
+        let preconditions = assay_types::SpecPreconditions {
+            requires: vec!["db-schema".to_string()],
+            commands: vec![],
+        };
+        let status = check_preconditions(&preconditions, |_| None, dir.path(), None, None);
+        assert_eq!(status.requires.len(), 1);
+        assert_eq!(status.requires[0].spec_slug, "db-schema");
+        assert!(
+            !status.requires[0].passed,
+            "None history should be treated as not-passed"
+        );
+    }
+
+    /// PREC-01: requires entry where closure returns Some(true) → passed: true
+    #[test]
+    fn check_preconditions_requires_some_true_is_passed() {
+        let dir = tempfile::tempdir().unwrap();
+        let preconditions = assay_types::SpecPreconditions {
+            requires: vec!["auth-flow".to_string()],
+            commands: vec![],
+        };
+        let status = check_preconditions(&preconditions, |_| Some(true), dir.path(), None, None);
+        assert_eq!(status.requires.len(), 1);
+        assert!(status.requires[0].passed);
+    }
+
+    /// PREC-02: commands entry "true" → passed: true
+    #[test]
+    fn check_preconditions_command_true_is_passed() {
+        let dir = tempfile::tempdir().unwrap();
+        let preconditions = assay_types::SpecPreconditions {
+            requires: vec![],
+            commands: vec!["true".to_string()],
+        };
+        let status = check_preconditions(&preconditions, |_| None, dir.path(), None, None);
+        assert_eq!(status.commands.len(), 1);
+        assert_eq!(status.commands[0].command, "true");
+        assert!(status.commands[0].passed);
+        assert!(status.requires.is_empty());
+    }
+
+    /// PREC-02: commands entry "false" → passed: false
+    #[test]
+    fn check_preconditions_command_false_is_not_passed() {
+        let dir = tempfile::tempdir().unwrap();
+        let preconditions = assay_types::SpecPreconditions {
+            requires: vec![],
+            commands: vec!["false".to_string()],
+        };
+        let status = check_preconditions(&preconditions, |_| None, dir.path(), None, None);
+        assert_eq!(status.commands.len(), 1);
+        assert!(!status.commands[0].passed);
+    }
+
+    /// No short-circuit: both failing requires AND failing command appear in result
+    #[test]
+    fn check_preconditions_no_short_circuit() {
+        let dir = tempfile::tempdir().unwrap();
+        let preconditions = assay_types::SpecPreconditions {
+            requires: vec!["spec-a".to_string(), "spec-b".to_string()],
+            commands: vec!["false".to_string(), "true".to_string()],
+        };
+        let status = check_preconditions(&preconditions, |_| Some(false), dir.path(), None, None);
+        // All requires evaluated
+        assert_eq!(status.requires.len(), 2);
+        assert!(!status.requires[0].passed);
+        assert!(!status.requires[1].passed);
+        // All commands evaluated
+        assert_eq!(status.commands.len(), 2);
+        assert!(!status.commands[0].passed);
+        assert!(status.commands[1].passed);
+    }
+
+    /// Empty SpecPreconditions → empty vecs
+    #[test]
+    fn check_preconditions_empty_returns_empty_vecs() {
+        let dir = tempfile::tempdir().unwrap();
+        let preconditions = assay_types::SpecPreconditions {
+            requires: vec![],
+            commands: vec![],
+        };
+        let status = check_preconditions(&preconditions, |_| None, dir.path(), None, None);
+        assert!(status.requires.is_empty());
+        assert!(status.commands.is_empty());
+    }
+
+    // ------------------------------------------------------------------
+    // evaluate_all_resolved (source annotation threading)
+    // ------------------------------------------------------------------
+
+    fn make_resolved_criterion(
+        name: &str,
+        source: assay_types::CriterionSource,
+    ) -> assay_types::ResolvedCriterion {
+        assay_types::ResolvedCriterion {
+            criterion: Criterion {
+                name: name.to_string(),
+                description: format!("{name} description"),
+                cmd: Some("true".to_string()),
+                path: None,
+                timeout: None,
+                enforcement: None,
+                kind: None,
+                prompt: None,
+                requirements: vec![],
+                when: When::default(),
+            },
+            source,
+        }
+    }
+
+    /// Single criterion: CriterionResult has source annotation matching input
+    #[test]
+    fn evaluate_all_resolved_single_criterion_has_source() {
+        let dir = tempfile::tempdir().unwrap();
+        let resolved = vec![make_resolved_criterion(
+            "check-a",
+            assay_types::CriterionSource::Own,
+        )];
+        let summary = evaluate_all_resolved("my-spec", &resolved, None, dir.path(), None, None);
+        assert_eq!(summary.results.len(), 1);
+        assert_eq!(
+            summary.results[0].source,
+            Some(assay_types::CriterionSource::Own)
+        );
+        assert_eq!(summary.results[0].criterion_name, "check-a");
+    }
+
+    /// Criteria from different sources preserve their annotations in output
+    #[test]
+    fn evaluate_all_resolved_preserves_source_annotations() {
+        let dir = tempfile::tempdir().unwrap();
+        let resolved = vec![
+            make_resolved_criterion("own-crit", assay_types::CriterionSource::Own),
+            make_resolved_criterion(
+                "parent-crit",
+                assay_types::CriterionSource::Parent {
+                    gate_slug: "base-gate".to_string(),
+                },
+            ),
+            make_resolved_criterion(
+                "lib-crit",
+                assay_types::CriterionSource::Library {
+                    slug: "rust-basics".to_string(),
+                },
+            ),
+        ];
+        let summary = evaluate_all_resolved("my-spec", &resolved, None, dir.path(), None, None);
+        assert_eq!(summary.results.len(), 3);
+        assert_eq!(
+            summary.results[0].source,
+            Some(assay_types::CriterionSource::Own)
+        );
+        assert_eq!(
+            summary.results[1].source,
+            Some(assay_types::CriterionSource::Parent {
+                gate_slug: "base-gate".to_string()
+            })
+        );
+        assert_eq!(
+            summary.results[2].source,
+            Some(assay_types::CriterionSource::Library {
+                slug: "rust-basics".to_string()
+            })
+        );
+    }
+
+    /// Empty criteria list → summary with 0 passed/failed/skipped
+    #[test]
+    fn evaluate_all_resolved_empty_criteria_zero_counts() {
+        let dir = tempfile::tempdir().unwrap();
+        let summary = evaluate_all_resolved("my-spec", &[], None, dir.path(), None, None);
+        assert_eq!(summary.passed, 0);
+        assert_eq!(summary.failed, 0);
+        assert_eq!(summary.skipped, 0);
+        assert!(summary.results.is_empty());
     }
 }
