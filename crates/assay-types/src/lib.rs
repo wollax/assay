@@ -33,6 +33,7 @@ pub mod session;
 pub mod signal;
 pub mod state_backend;
 pub mod validation;
+pub mod wizard_input;
 pub mod work_session;
 pub mod worktree;
 
@@ -84,6 +85,9 @@ pub use signal::{
 };
 pub use state_backend::StateBackendConfig;
 pub use validation::{Diagnostic, DiagnosticSummary, Severity, ValidationResult};
+pub use wizard_input::{
+    CriteriaWizardInput, CriteriaWizardOutput, CriterionInput, GateWizardInput, GateWizardOutput,
+};
 pub use work_session::{AgentInvocation, PhaseTransition, SessionPhase, WorkSession};
 pub use worktree::{WorktreeConfig, WorktreeInfo, WorktreeMetadata, WorktreeStatus};
 
