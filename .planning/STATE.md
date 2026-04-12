@@ -3,14 +3,14 @@ kata_state_version: 1.0
 milestone: v0.7
 milestone_name: milestone
 status: planning
-stopped_at: Completed 67-01-PLAN.md
-last_updated: "2026-04-12T15:57:36.967Z"
+stopped_at: Completed 67-02-PLAN.md
+last_updated: "2026-04-12T16:07:25.342Z"
 last_activity: 2026-04-11 — v0.7.0 roadmap created (6 phases, 22 requirements)
 progress:
   total_phases: 6
   completed_phases: 3
   total_plans: 11
-  completed_plans: 8
+  completed_plans: 9
   percent: 0
 ---
 
@@ -77,6 +77,9 @@ Recent decisions affecting current work:
 - [Phase 67-01]: CriterionInput re-homed from assay-core::wizard into assay-types; Plan 02 must add pub use assay_types::CriterionInput re-export
 - [Phase 67-01]: deny_unknown_fields on wizard INPUT types only (not outputs) for forward-compat asymmetry
 - [Phase 67-01]: Wizard output types derive Serialize+JsonSchema only — no Deserialize needed for display-only types
+- [Phase 67]: write_gate_spec promoted to pub(crate) in wizard/mod.rs — shared by milestone.rs and gate.rs via super::write_gate_spec
+- [Phase 67]: save_library unconditionally overwrites — wizard layer (apply_criteria_wizard) owns the overwrite/collision check before delegating
+- [Phase 67]: apply_gate_wizard takes _assay_dir param (unused, reserved for future resolve dry-run per CONTEXT.md)
 
 ### Blockers
 
@@ -88,6 +91,6 @@ Plan Phase 65: Resolution Core (INHR-03, INHR-04, CLIB-01, CLIB-02, CLIB-03)
 
 ### Session Continuity
 
-Last session: 2026-04-12T15:57:36.966Z
-Stopped at: Completed 67-01-PLAN.md
+Last session: 2026-04-12T16:07:25.341Z
+Stopped at: Completed 67-02-PLAN.md
 Resume file: None
