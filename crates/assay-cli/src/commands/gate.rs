@@ -233,12 +233,53 @@ impl StreamConfig {
     }
 }
 
+/// Format a source annotation tag for CLI streaming output.
+///
+/// Returns an empty string for `Own` criteria (reduces signal-to-noise for the common case).
+/// Returns `" [Parent: <slug>]"` for parent-inherited criteria.
+/// Returns `" [Library: <slug>]"` for library-included criteria.
+fn source_tag(source: Option<&assay_types::CriterionSource>) -> String {
+    use assay_types::CriterionSource;
+    match source {
+        Some(CriterionSource::Parent { gate_slug }) => format!(" [Parent: {gate_slug}]"),
+        Some(CriterionSource::Library { slug }) => format!(" [Library: {slug}]"),
+        Some(CriterionSource::Own) | None => String::new(),
+    }
+}
+
+/// Save a precondition-blocked gate run to history.
+///
+/// Non-fatal: logs warnings on failure rather than propagating errors.
+fn save_precondition_blocked_record(
+    assay_dir: &std::path::Path,
+    spec_name: &str,
+    working_dir: &std::path::Path,
+    max_history: Option<usize>,
+) {
+    match assay_core::history::save_blocked_run(
+        assay_dir,
+        spec_name,
+        Some(working_dir.display().to_string()),
+        max_history,
+    ) {
+        Ok(result) => {
+            if result.pruned > 0 {
+                tracing::info!(pruned = result.pruned, spec_name = %spec_name, "Pruned old run(s)");
+            }
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, "Could not save precondition-blocked run history");
+        }
+    }
+}
+
 /// Stream a single criterion's evaluation with live "running" -> "PASS/FAIL/WARN" display.
 ///
 /// Enforcement is resolved per-criterion: advisory failures increment `warned` (not `failed`)
 /// and display as yellow WARN. Advisory criteria (pass or fail) are labeled `[advisory]`.
 fn stream_criterion(
     criterion: &assay_types::Criterion,
+    source: Option<&assay_types::CriterionSource>,
     working_dir: &std::path::Path,
     cfg: &StreamConfig,
     counters: &mut StreamCounters,
@@ -294,8 +335,9 @@ fn stream_criterion(
     let is_advisory = enforcement == assay_types::Enforcement::Advisory;
 
     let label = criterion_label(criterion);
+    let tag = source_tag(source);
     let cr = if cfg.color { "\r\x1b[K" } else { "\r" };
-    eprint!("{cr}  {label} {} ... running", criterion.name);
+    eprint!("{cr}  {label} {}{tag} ... running", criterion.name);
 
     let timeout =
         assay_core::gate::resolve_timeout(cfg.cli_timeout, criterion.timeout, cfg.config_timeout);
@@ -391,10 +433,14 @@ fn print_gate_summary(counters: &StreamCounters, color: bool, label: &str) {
 /// Handle `assay gate run --all [--timeout N] [--verbose] [--json]`.
 ///
 /// Scans all specs and runs gates for each, printing results per-spec.
-/// Returns 0 if all specs pass, 1 if any spec has required failures.
+/// Returns:
+/// - 0 if all specs pass and none are precondition-blocked
+/// - 1 if any required criterion failed
+/// - 2 if any spec is precondition-blocked and no spec had gate failures
 fn handle_gate_run_all(cli_timeout: Option<u64>, verbose: bool, json: bool) -> anyhow::Result<i32> {
     let (root, config, working_dir, config_timeout) = load_gate_context()?;
-    let specs_dir = assay_dir(&root).join(&config.specs_dir);
+    let assay_dir = assay_dir(&root);
+    let specs_dir = assay_dir.join(&config.specs_dir);
 
     let result = assay_core::spec::scan(&specs_dir)?;
 
@@ -411,53 +457,127 @@ fn handle_gate_run_all(cli_timeout: Option<u64>, verbose: bool, json: bool) -> a
         return Ok(0);
     }
 
-    let assay_dir = assay_dir(&root);
     let max_history = config.gates.as_ref().and_then(|g| g.max_history);
 
     if json {
-        let summaries: Vec<_> = result
-            .entries
-            .iter()
-            .map(|entry| {
-                let summary = match entry {
-                    SpecEntry::Legacy { spec, .. } => assay_core::gate::evaluate_all(
+        let mut outcomes: Vec<assay_types::GateEvalOutcome> = Vec::new();
+        let mut any_failed = false;
+        let mut any_blocked = false;
+
+        for entry in &result.entries {
+            match entry {
+                SpecEntry::Legacy { spec, .. } => {
+                    let summary = assay_core::gate::evaluate_all(
                         spec,
                         &working_dir,
                         cli_timeout,
                         config_timeout,
-                    ),
-                    SpecEntry::Directory { gates, .. } => assay_core::gate::evaluate_all_gates(
+                    );
+                    if summary.enforcement.required_failed > 0 {
+                        any_failed = true;
+                    }
+                    save_run_record(
+                        &assay_dir,
+                        &summary.spec_name,
+                        &working_dir,
+                        summary.clone(),
+                        max_history,
+                        true,
+                    );
+                    outcomes.push(assay_types::GateEvalOutcome::Evaluated(summary));
+                }
+                SpecEntry::Directory { gates, slug, .. } => {
+                    // Resolve extends + include
+                    let specs_dir_clone = specs_dir.clone();
+                    let assay_dir_clone = assay_dir.clone();
+                    let resolved = match assay_core::spec::compose::resolve(
                         gates,
+                        slug,
+                        |parent_slug| {
+                            let path = specs_dir_clone.join(parent_slug).join("gates.toml");
+                            assay_core::spec::load_gates(&path)
+                        },
+                        |lib_slug| {
+                            assay_core::spec::compose::load_library_by_slug(
+                                &assay_dir_clone,
+                                lib_slug,
+                            )
+                        },
+                    ) {
+                        Ok(r) => r,
+                        Err(e) => {
+                            tracing::warn!(spec = %slug, error = %e, "Could not resolve spec — skipping");
+                            continue;
+                        }
+                    };
+
+                    // Check preconditions
+                    if let Some(preconditions) = &gates.preconditions {
+                        let assay_dir_for_prec = assay_dir.clone();
+                        let status = assay_core::gate::check_preconditions(
+                            preconditions,
+                            |s| assay_core::history::last_gate_passed(&assay_dir_for_prec, s),
+                            &working_dir,
+                            cli_timeout,
+                            config_timeout,
+                        );
+                        if !status.all_passed() {
+                            tracing::warn!(spec = %slug, "Preconditions not met — skipping gate evaluation");
+                            save_precondition_blocked_record(
+                                &assay_dir,
+                                slug,
+                                &working_dir,
+                                max_history,
+                            );
+                            any_blocked = true;
+                            outcomes.push(assay_types::GateEvalOutcome::PreconditionFailed(status));
+                            continue;
+                        }
+                    }
+
+                    // Evaluate resolved criteria
+                    let summary = assay_core::gate::evaluate_all_resolved(
+                        slug,
+                        &resolved.criteria,
+                        gates.gate.as_ref(),
                         &working_dir,
                         cli_timeout,
                         config_timeout,
-                    ),
-                };
-                save_run_record(
-                    &assay_dir,
-                    &summary.spec_name,
-                    &working_dir,
-                    summary.clone(),
-                    max_history,
-                    true,
-                );
-                summary
-            })
-            .collect();
-
-        let any_failed = summaries.iter().any(|s| s.enforcement.required_failed > 0);
+                    );
+                    if summary.enforcement.required_failed > 0 {
+                        any_failed = true;
+                    }
+                    save_run_record(
+                        &assay_dir,
+                        &summary.spec_name,
+                        &working_dir,
+                        summary.clone(),
+                        max_history,
+                        true,
+                    );
+                    outcomes.push(assay_types::GateEvalOutcome::Evaluated(summary));
+                }
+            }
+        }
 
         let output =
-            serde_json::to_string_pretty(&summaries).context("failed to serialize gate results")?;
+            serde_json::to_string_pretty(&outcomes).context("failed to serialize gate results")?;
         println!("{output}");
 
-        return Ok(if any_failed { 1 } else { 0 });
+        return Ok(if any_failed {
+            1
+        } else if any_blocked {
+            2
+        } else {
+            0
+        });
     }
 
     let color = colors_enabled();
     let cfg = StreamConfig::new(cli_timeout, config_timeout, verbose, color);
     let mut counters = StreamCounters::default();
     let spec_count = result.entries.len();
+    let mut blocked_count: usize = 0;
 
     for (i, entry) in result.entries.iter().enumerate() {
         if i > 0 {
@@ -465,39 +585,138 @@ fn handle_gate_run_all(cli_timeout: Option<u64>, verbose: bool, json: bool) -> a
         }
         tracing::info!(spec = %entry.slug(), "Running gates for spec");
 
-        let (gate_section, criteria) = spec_entry_gate_info(entry);
+        match entry {
+            SpecEntry::Legacy { .. } => {
+                let (gate_section, criteria) = spec_entry_gate_info(entry);
+                let executable_count = criteria.iter().filter(|c| is_executable(c)).count();
+                if executable_count == 0 {
+                    tracing::info!(spec = %entry.slug(), "No executable criteria");
+                    counters.skipped += criteria.len();
+                    continue;
+                }
 
-        let executable_count = criteria.iter().filter(|c| is_executable(c)).count();
-        if executable_count == 0 {
-            tracing::info!(spec = %entry.slug(), "No executable criteria");
-            counters.skipped += criteria.len();
-            continue;
+                let before_passed = counters.passed;
+                let before_failed = counters.failed;
+                let before_skipped = counters.skipped;
+
+                for criterion in &criteria {
+                    stream_criterion(
+                        criterion,
+                        None,
+                        &working_dir,
+                        &cfg,
+                        &mut counters,
+                        gate_section,
+                    );
+                }
+
+                let spec_passed = counters.passed - before_passed;
+                let spec_failed = counters.failed - before_failed;
+                let spec_skipped = counters.skipped - before_skipped;
+                save_run_record(
+                    &assay_dir,
+                    entry.slug(),
+                    &working_dir,
+                    streaming_summary(entry.slug(), spec_passed, spec_failed, spec_skipped),
+                    max_history,
+                    false,
+                );
+            }
+            SpecEntry::Directory { gates, slug, .. } => {
+                // Resolve extends + include
+                let specs_dir_clone = specs_dir.clone();
+                let assay_dir_clone = assay_dir.clone();
+                let resolved = match assay_core::spec::compose::resolve(
+                    gates,
+                    slug,
+                    |parent_slug| {
+                        let path = specs_dir_clone.join(parent_slug).join("gates.toml");
+                        assay_core::spec::load_gates(&path)
+                    },
+                    |lib_slug| {
+                        assay_core::spec::compose::load_library_by_slug(&assay_dir_clone, lib_slug)
+                    },
+                ) {
+                    Ok(r) => r,
+                    Err(e) => {
+                        tracing::warn!(spec = %slug, error = %e, "Could not resolve spec — skipping");
+                        continue;
+                    }
+                };
+
+                // Check preconditions
+                if let Some(preconditions) = &gates.preconditions {
+                    let assay_dir_for_prec = assay_dir.clone();
+                    let status = assay_core::gate::check_preconditions(
+                        preconditions,
+                        |s| assay_core::history::last_gate_passed(&assay_dir_for_prec, s),
+                        &working_dir,
+                        cli_timeout,
+                        config_timeout,
+                    );
+                    if !status.all_passed() {
+                        tracing::warn!(spec = %slug, "Preconditions not met — skipping gate evaluation");
+                        save_precondition_blocked_record(
+                            &assay_dir,
+                            slug,
+                            &working_dir,
+                            max_history,
+                        );
+                        blocked_count += 1;
+                        continue;
+                    }
+                }
+
+                // Stream resolved criteria
+                let executable_count = resolved
+                    .criteria
+                    .iter()
+                    .filter(|rc| is_executable(&rc.criterion))
+                    .count();
+                if executable_count == 0 {
+                    tracing::info!(spec = %slug, "No executable criteria");
+                    counters.skipped += resolved.criteria.len();
+                    continue;
+                }
+
+                let before_passed = counters.passed;
+                let before_failed = counters.failed;
+                let before_skipped = counters.skipped;
+
+                for rc in &resolved.criteria {
+                    stream_criterion(
+                        &rc.criterion,
+                        Some(&rc.source),
+                        &working_dir,
+                        &cfg,
+                        &mut counters,
+                        gates.gate.as_ref(),
+                    );
+                }
+
+                let spec_passed = counters.passed - before_passed;
+                let spec_failed = counters.failed - before_failed;
+                let spec_skipped = counters.skipped - before_skipped;
+                save_run_record(
+                    &assay_dir,
+                    slug,
+                    &working_dir,
+                    streaming_summary(slug, spec_passed, spec_failed, spec_skipped),
+                    max_history,
+                    false,
+                );
+            }
         }
-
-        let before_passed = counters.passed;
-        let before_failed = counters.failed;
-        let before_skipped = counters.skipped;
-
-        for criterion in &criteria {
-            stream_criterion(criterion, &working_dir, &cfg, &mut counters, gate_section);
-        }
-
-        // Save per-spec history (streaming mode)
-        let spec_passed = counters.passed - before_passed;
-        let spec_failed = counters.failed - before_failed;
-        let spec_skipped = counters.skipped - before_skipped;
-        save_run_record(
-            &assay_dir,
-            entry.slug(),
-            &working_dir,
-            streaming_summary(entry.slug(), spec_passed, spec_failed, spec_skipped),
-            max_history,
-            false,
-        );
     }
 
     print_gate_summary(&counters, color, &format!("Results ({spec_count} specs)"));
-    Ok(gate_exit_code(&counters))
+    Ok(if counters.gate_blocked() {
+        1
+    } else if blocked_count > 0 {
+        2
+    } else {
+        0
+    })
 }
 
 /// Handle `assay gate run <name> [--timeout N] [--verbose] [--json]`.
@@ -516,52 +735,175 @@ fn handle_gate_run(
     let max_history = config.gates.as_ref().and_then(|g| g.max_history);
 
     if json {
-        let summary = match &entry {
+        match &entry {
             SpecEntry::Legacy { spec, .. } => {
-                assay_core::gate::evaluate_all(spec, &working_dir, cli_timeout, config_timeout)
+                let summary =
+                    assay_core::gate::evaluate_all(spec, &working_dir, cli_timeout, config_timeout);
+                save_run_record(
+                    &assay_dir,
+                    name,
+                    &working_dir,
+                    summary.clone(),
+                    max_history,
+                    true,
+                );
+                let output = serde_json::to_string_pretty(&summary)
+                    .context("failed to serialize gate results")?;
+                println!("{output}");
+                return Ok(if summary.enforcement.required_failed > 0 {
+                    1
+                } else {
+                    0
+                });
             }
-            SpecEntry::Directory { gates, .. } => assay_core::gate::evaluate_all_gates(
-                gates,
-                &working_dir,
-                cli_timeout,
-                config_timeout,
-            ),
-        };
+            SpecEntry::Directory { gates, slug, .. } => {
+                // Step 1: Resolve extends + include
+                let specs_dir_clone = specs_dir.clone();
+                let assay_dir_clone = assay_dir.clone();
+                let resolved = assay_core::spec::compose::resolve(
+                    gates,
+                    slug,
+                    |parent_slug| {
+                        let path = specs_dir_clone.join(parent_slug).join("gates.toml");
+                        assay_core::spec::load_gates(&path)
+                    },
+                    |lib_slug| {
+                        assay_core::spec::compose::load_library_by_slug(&assay_dir_clone, lib_slug)
+                    },
+                )?;
 
-        // Save history with full fidelity (includes per-criterion results)
-        save_run_record(
-            &assay_dir,
-            name,
-            &working_dir,
-            summary.clone(),
-            max_history,
-            true,
-        );
+                // Step 2: Check preconditions
+                if let Some(preconditions) = &gates.preconditions {
+                    let assay_dir_for_prec = assay_dir.clone();
+                    let status = assay_core::gate::check_preconditions(
+                        preconditions,
+                        |s| assay_core::history::last_gate_passed(&assay_dir_for_prec, s),
+                        &working_dir,
+                        cli_timeout,
+                        config_timeout,
+                    );
+                    if !status.all_passed() {
+                        let outcome = assay_types::GateEvalOutcome::PreconditionFailed(status);
+                        let output = serde_json::to_string_pretty(&outcome)
+                            .context("failed to serialize precondition status")?;
+                        println!("{output}");
+                        save_precondition_blocked_record(
+                            &assay_dir,
+                            name,
+                            &working_dir,
+                            max_history,
+                        );
+                        return Ok(2);
+                    }
+                }
 
-        let output =
-            serde_json::to_string_pretty(&summary).context("failed to serialize gate results")?;
-        println!("{output}");
-        return Ok(if summary.enforcement.required_failed > 0 {
-            1
-        } else {
-            0
-        });
+                // Step 3: Evaluate resolved criteria
+                let summary = assay_core::gate::evaluate_all_resolved(
+                    slug,
+                    &resolved.criteria,
+                    gates.gate.as_ref(),
+                    &working_dir,
+                    cli_timeout,
+                    config_timeout,
+                );
+                save_run_record(
+                    &assay_dir,
+                    name,
+                    &working_dir,
+                    summary.clone(),
+                    max_history,
+                    true,
+                );
+                let output = serde_json::to_string_pretty(&summary)
+                    .context("failed to serialize gate results")?;
+                println!("{output}");
+                return Ok(if summary.enforcement.required_failed > 0 {
+                    1
+                } else {
+                    0
+                });
+            }
+        }
     }
 
-    let (gate_section, criteria) = spec_entry_gate_info(&entry);
-
+    // Streaming mode
     let color = colors_enabled();
     let cfg = StreamConfig::new(cli_timeout, config_timeout, verbose, color);
     let mut counters = StreamCounters::default();
-    let executable_count = criteria.iter().filter(|c| is_executable(c)).count();
 
-    if executable_count == 0 {
-        println!("No executable criteria found");
-        return Ok(0);
-    }
+    match &entry {
+        SpecEntry::Legacy { .. } => {
+            let (gate_section, criteria) = spec_entry_gate_info(&entry);
+            let executable_count = criteria.iter().filter(|c| is_executable(c)).count();
+            if executable_count == 0 {
+                println!("No executable criteria found");
+                return Ok(0);
+            }
+            for criterion in &criteria {
+                stream_criterion(
+                    criterion,
+                    None,
+                    &working_dir,
+                    &cfg,
+                    &mut counters,
+                    gate_section,
+                );
+            }
+        }
+        SpecEntry::Directory { gates, slug, .. } => {
+            // Step 1: Resolve extends + include
+            let specs_dir_clone = specs_dir.clone();
+            let assay_dir_clone = assay_dir.clone();
+            let resolved = assay_core::spec::compose::resolve(
+                gates,
+                slug,
+                |parent_slug| {
+                    let path = specs_dir_clone.join(parent_slug).join("gates.toml");
+                    assay_core::spec::load_gates(&path)
+                },
+                |lib_slug| {
+                    assay_core::spec::compose::load_library_by_slug(&assay_dir_clone, lib_slug)
+                },
+            )?;
 
-    for criterion in &criteria {
-        stream_criterion(criterion, &working_dir, &cfg, &mut counters, gate_section);
+            // Step 2: Check preconditions
+            if let Some(preconditions) = &gates.preconditions {
+                let assay_dir_for_prec = assay_dir.clone();
+                let status = assay_core::gate::check_preconditions(
+                    preconditions,
+                    |s| assay_core::history::last_gate_passed(&assay_dir_for_prec, s),
+                    &working_dir,
+                    cli_timeout,
+                    config_timeout,
+                );
+                if !status.all_passed() {
+                    tracing::warn!(spec = %name, "Preconditions not met — skipping gate evaluation");
+                    save_precondition_blocked_record(&assay_dir, name, &working_dir, max_history);
+                    return Ok(2);
+                }
+            }
+
+            // Step 3: Stream resolved criteria
+            let executable_count = resolved
+                .criteria
+                .iter()
+                .filter(|rc| is_executable(&rc.criterion))
+                .count();
+            if executable_count == 0 {
+                println!("No executable criteria found");
+                return Ok(0);
+            }
+            for rc in &resolved.criteria {
+                stream_criterion(
+                    &rc.criterion,
+                    Some(&rc.source),
+                    &working_dir,
+                    &cfg,
+                    &mut counters,
+                    gates.gate.as_ref(),
+                );
+            }
+        }
     }
 
     // Save history (streaming mode has no per-criterion results)
@@ -1180,5 +1522,348 @@ mod tests {
             msg.contains("legacy flat-file format"),
             "error should mention legacy flat-file format, got: {msg}"
         );
+    }
+
+    // ── source_tag tests ──────────────────────────────────────────────────────
+
+    /// `source_tag` with `CriterionSource::Parent` formats the parent slug.
+    #[test]
+    fn source_tag_parent() {
+        let source = assay_types::CriterionSource::Parent {
+            gate_slug: "base-gate".to_string(),
+        };
+        assert_eq!(source_tag(Some(&source)), " [Parent: base-gate]");
+    }
+
+    /// `source_tag` with `CriterionSource::Library` formats the library slug.
+    #[test]
+    fn source_tag_library() {
+        let source = assay_types::CriterionSource::Library {
+            slug: "rust-basics".to_string(),
+        };
+        assert_eq!(source_tag(Some(&source)), " [Library: rust-basics]");
+    }
+
+    /// `source_tag` with `CriterionSource::Own` returns an empty string.
+    #[test]
+    fn source_tag_own() {
+        let source = assay_types::CriterionSource::Own;
+        assert_eq!(source_tag(Some(&source)), "");
+    }
+
+    /// `source_tag` with `None` returns an empty string.
+    #[test]
+    fn source_tag_none() {
+        assert_eq!(source_tag(None), "");
+    }
+
+    // ── handle_gate_run integration tests ────────────────────────────────────
+    //
+    // These tests temporarily change the process CWD (because `handle_gate_run`
+    // discovers the project root via `std::env::current_dir()`). Cargo runs tests
+    // in parallel by default, so CWD-mutating tests must hold a process-wide mutex.
+
+    static CWD_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// Helper: build a minimal assay project layout in a temp dir.
+    ///
+    /// Creates:
+    ///   <root>/
+    ///     .assay/
+    ///       config.toml        (project config, required by assay_core::config::load)
+    ///       specs/             (specs_dir, default "specs/" relative to .assay/)
+    ///
+    /// Returns `(TempDir, root_path)`.
+    fn setup_assay_project() -> (tempfile::TempDir, std::path::PathBuf) {
+        let tmp = tempfile::TempDir::new().expect("create tempdir");
+        let root = tmp.path().to_path_buf();
+        let assay_dir = root.join(".assay");
+        std::fs::create_dir_all(assay_dir.join("specs")).unwrap();
+        // Minimal config.toml at .assay/config.toml
+        // `project_name` is required; specs_dir defaults to "specs/"
+        std::fs::write(
+            assay_dir.join("config.toml"),
+            "project_name = \"test-project\"\n",
+        )
+        .unwrap();
+        (tmp, root)
+    }
+
+    /// Helper: write a directory-based gate spec.
+    fn write_directory_gate(specs_dir: &std::path::Path, slug: &str, toml_content: &str) {
+        let gate_dir = specs_dir.join(slug);
+        std::fs::create_dir_all(&gate_dir).unwrap();
+        std::fs::write(gate_dir.join("gates.toml"), toml_content).unwrap();
+        // Also write a minimal spec.toml required by the validator
+        if !gate_dir.join("spec.toml").exists() {
+            std::fs::write(
+                gate_dir.join("spec.toml"),
+                format!("name = \"{slug}\"\ndescription = \"test\"\nstatus = \"active\"\n",),
+            )
+            .unwrap();
+        }
+    }
+
+    /// `handle_gate_run` on a Directory spec with `extends` evaluates both parent and own criteria.
+    #[test]
+    fn handle_gate_run_extends_evaluates_merged_criteria() {
+        let (_tmp, root) = setup_assay_project();
+        let assay_dir = root.join(".assay");
+        let specs_dir = assay_dir.join("specs");
+
+        // Parent gate with one criterion
+        write_directory_gate(
+            &specs_dir,
+            "base-gate",
+            concat!(
+                "name = \"base-gate\"\n\n",
+                "[[criteria]]\n",
+                "name = \"parent-check\"\n",
+                "description = \"A parent criterion\"\n",
+                "cmd = \"echo parent\"\n",
+            ),
+        );
+
+        // Child gate that extends the parent and adds its own criterion
+        write_directory_gate(
+            &specs_dir,
+            "child-gate",
+            concat!(
+                "name = \"child-gate\"\n",
+                "extends = \"base-gate\"\n\n",
+                "[[criteria]]\n",
+                "name = \"child-check\"\n",
+                "description = \"A child criterion\"\n",
+                "cmd = \"echo child\"\n",
+            ),
+        );
+
+        // Run in JSON mode so we can inspect the summary
+        let result = run_handle_gate_run_in_dir(&root, "child-gate", None, false, true);
+        assert!(
+            result.is_ok(),
+            "handle_gate_run should succeed: {:?}",
+            result
+        );
+
+        // The JSON output should contain both criteria names
+        // We verify via history instead since we can't capture stdout here.
+        // Check that a history record was saved
+        let ids = assay_core::history::list(&assay_dir, "child-gate").unwrap();
+        assert!(!ids.is_empty(), "A history record should have been saved");
+
+        let record =
+            assay_core::history::load(&assay_dir, "child-gate", ids.last().unwrap()).unwrap();
+        assert_eq!(
+            record.precondition_blocked, None,
+            "Normal run should not be marked precondition_blocked"
+        );
+        // Both criteria ran (parent-check and child-check)
+        assert_eq!(
+            record.summary.passed, 2,
+            "Both parent + child criteria should pass"
+        );
+    }
+
+    /// `handle_gate_run` on a Directory spec with `include` evaluates library + own criteria.
+    #[test]
+    fn handle_gate_run_include_evaluates_library_criteria() {
+        let (_tmp, root) = setup_assay_project();
+        let assay_dir = root.join(".assay");
+        let specs_dir = assay_dir.join("specs");
+
+        // Create criteria library
+        let criteria_dir = assay_dir.join("criteria");
+        std::fs::create_dir_all(&criteria_dir).unwrap();
+        std::fs::write(
+            criteria_dir.join("my-lib.toml"),
+            concat!(
+                "name = \"my-lib\"\n\n",
+                "[[criteria]]\n",
+                "name = \"lib-check\"\n",
+                "description = \"Library criterion\"\n",
+                "cmd = \"echo lib\"\n",
+            ),
+        )
+        .unwrap();
+
+        // Gate that includes the library
+        write_directory_gate(
+            &specs_dir,
+            "uses-lib",
+            concat!(
+                "name = \"uses-lib\"\n",
+                "include = [\"my-lib\"]\n\n",
+                "[[criteria]]\n",
+                "name = \"own-check\"\n",
+                "description = \"Own criterion\"\n",
+                "cmd = \"echo own\"\n",
+            ),
+        );
+
+        let result = run_handle_gate_run_in_dir(&root, "uses-lib", None, false, true);
+        assert!(
+            result.is_ok(),
+            "handle_gate_run should succeed: {:?}",
+            result
+        );
+
+        let ids = assay_core::history::list(&assay_dir, "uses-lib").unwrap();
+        assert!(!ids.is_empty(), "A history record should have been saved");
+        let record =
+            assay_core::history::load(&assay_dir, "uses-lib", ids.last().unwrap()).unwrap();
+        assert_eq!(
+            record.summary.passed, 2,
+            "Both library + own criteria should pass"
+        );
+    }
+
+    /// `handle_gate_run` on a spec with failing `preconditions.requires` returns exit code 2
+    /// and records the run as precondition-blocked in history.
+    #[test]
+    fn handle_gate_run_precondition_requires_fails_returns_exit_2() {
+        let (_tmp, root) = setup_assay_project();
+        let assay_dir = root.join(".assay");
+        let specs_dir = assay_dir.join("specs");
+
+        // A spec that requires "other-spec" (which has no history)
+        write_directory_gate(
+            &specs_dir,
+            "blocked-spec",
+            concat!(
+                "name = \"blocked-spec\"\n\n",
+                "[preconditions]\n",
+                "requires = [\"other-spec\"]\n\n",
+                "[[criteria]]\n",
+                "name = \"would-run\"\n",
+                "description = \"This should not run\"\n",
+                "cmd = \"echo ok\"\n",
+            ),
+        );
+
+        let result = run_handle_gate_run_in_dir(&root, "blocked-spec", None, false, true);
+        assert!(
+            result.is_ok(),
+            "handle_gate_run should not error: {:?}",
+            result
+        );
+        assert_eq!(
+            result.unwrap(),
+            2,
+            "Precondition failure should return exit code 2"
+        );
+
+        // A history record should have been saved with precondition_blocked = true
+        let ids = assay_core::history::list(&assay_dir, "blocked-spec").unwrap();
+        assert!(!ids.is_empty(), "A history record should have been saved");
+        let record =
+            assay_core::history::load(&assay_dir, "blocked-spec", ids.last().unwrap()).unwrap();
+        assert_eq!(
+            record.precondition_blocked,
+            Some(true),
+            "Precondition-blocked run should have precondition_blocked = true"
+        );
+        assert_eq!(
+            record.summary.passed, 0,
+            "No criteria should have been evaluated"
+        );
+    }
+
+    /// `handle_gate_run` on a spec with failing `preconditions.commands` returns exit code 2.
+    #[test]
+    fn handle_gate_run_precondition_command_fails_returns_exit_2() {
+        let (_tmp, root) = setup_assay_project();
+        let assay_dir = root.join(".assay");
+        let specs_dir = assay_dir.join("specs");
+
+        // A spec with a failing precondition command ("false" always exits non-zero)
+        write_directory_gate(
+            &specs_dir,
+            "cmd-blocked",
+            concat!(
+                "name = \"cmd-blocked\"\n\n",
+                "[preconditions]\n",
+                "commands = [\"false\"]\n\n",
+                "[[criteria]]\n",
+                "name = \"would-run\"\n",
+                "description = \"This should not run\"\n",
+                "cmd = \"echo ok\"\n",
+            ),
+        );
+
+        let result = run_handle_gate_run_in_dir(&root, "cmd-blocked", None, false, true);
+        assert!(
+            result.is_ok(),
+            "handle_gate_run should not error: {:?}",
+            result
+        );
+        assert_eq!(
+            result.unwrap(),
+            2,
+            "Failing command precondition should return exit code 2"
+        );
+    }
+
+    /// `handle_gate_run` on a Legacy spec uses the original evaluation path (unchanged).
+    #[test]
+    fn handle_gate_run_legacy_spec_works_unchanged() {
+        let (_tmp, root) = setup_assay_project();
+        let assay_dir = root.join(".assay");
+        let specs_dir = assay_dir.join("specs");
+
+        // Write a legacy flat-file spec
+        std::fs::write(
+            specs_dir.join("legacy.toml"),
+            concat!(
+                "name = \"legacy\"\n\n",
+                "[[criteria]]\n",
+                "name = \"check\"\n",
+                "description = \"A check\"\n",
+                "cmd = \"echo ok\"\n",
+            ),
+        )
+        .unwrap();
+
+        let result = run_handle_gate_run_in_dir(&root, "legacy", None, false, true);
+        assert!(result.is_ok(), "Legacy spec should work: {:?}", result);
+        assert_eq!(result.unwrap(), 0, "Passing legacy spec should return 0");
+    }
+
+    /// `save_precondition_blocked_record` writes a history record with precondition_blocked=true.
+    #[test]
+    fn save_precondition_blocked_record_writes_history() {
+        let tmp = tempfile::TempDir::new().expect("create tempdir");
+        let assay_dir = tmp.path();
+        let working_dir = tmp.path();
+
+        save_precondition_blocked_record(assay_dir, "my-spec", working_dir, None);
+
+        let ids = assay_core::history::list(assay_dir, "my-spec").unwrap();
+        assert_eq!(ids.len(), 1, "One history record should be saved");
+        let record = assay_core::history::load(assay_dir, "my-spec", &ids[0]).unwrap();
+        assert_eq!(record.precondition_blocked, Some(true));
+        assert_eq!(record.summary.passed, 0);
+        assert_eq!(record.summary.failed, 0);
+    }
+
+    /// Run `handle_gate_run` with the process working directory changed to `root`.
+    ///
+    /// Acquires `CWD_LOCK` before changing the cwd to prevent data races with
+    /// other tests that also modify the process cwd. Restores the original cwd
+    /// after the call (best effort).
+    fn run_handle_gate_run_in_dir(
+        root: &std::path::Path,
+        name: &str,
+        cli_timeout: Option<u64>,
+        verbose: bool,
+        json: bool,
+    ) -> anyhow::Result<i32> {
+        let _lock = CWD_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let original_dir = std::env::current_dir().unwrap_or_else(|_| root.to_path_buf());
+        std::env::set_current_dir(root).expect("chdir to test root");
+        let result = handle_gate_run(name, cli_timeout, verbose, json);
+        // Restore cwd (best effort)
+        let _ = std::env::set_current_dir(&original_dir);
+        result
     }
 }

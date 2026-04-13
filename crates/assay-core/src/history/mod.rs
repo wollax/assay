@@ -64,6 +64,45 @@ pub(crate) fn generate_run_id(timestamp: &DateTime<Utc>) -> String {
     format!("{ts}-{suffix}")
 }
 
+/// Persist a precondition-blocked gate run with an empty summary and `precondition_blocked: Some(true)`.
+///
+/// Records the fact that a gate run was attempted but blocked by unsatisfied
+/// preconditions, without any criterion results. The saved record has zero
+/// passed/failed/skipped counts but is distinguishable from a passing run via
+/// the `precondition_blocked` flag.
+///
+/// This is needed so that `last_gate_passed()` correctly returns `Some(false)` for
+/// specs that were blocked, preventing downstream specs from treating absence-of-record
+/// as implicitly unblocked.
+pub fn save_blocked_run(
+    assay_dir: &Path,
+    spec_name: &str,
+    working_dir: Option<String>,
+    max_history: Option<usize>,
+) -> Result<SaveResult> {
+    let timestamp = chrono::Utc::now();
+    let run_id = generate_run_id(&timestamp);
+    let summary = GateRunSummary {
+        spec_name: spec_name.to_string(),
+        results: Vec::new(),
+        passed: 0,
+        failed: 0,
+        skipped: 0,
+        total_duration_ms: 0,
+        enforcement: assay_types::EnforcementSummary::default(),
+    };
+    let record = GateRunRecord {
+        run_id,
+        assay_version: env!("CARGO_PKG_VERSION").to_string(),
+        timestamp,
+        working_dir,
+        summary,
+        diff_truncation: None,
+        precondition_blocked: Some(true),
+    };
+    save(assay_dir, &record, max_history)
+}
+
 /// Persist a gate run as a [`GateRunRecord`] with auto-generated run ID.
 ///
 /// This is the primary public API for saving gate run history. It handles
