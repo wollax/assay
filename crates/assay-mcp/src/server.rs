@@ -889,6 +889,23 @@ struct GateRunResponse {
     warnings: Vec<String>,
 }
 
+/// Response returned by `gate_run` when preconditions are not met.
+///
+/// Returned as a successful MCP tool result (not an error) with `outcome = "precondition_failed"`,
+/// allowing agents to distinguish it from a normal evaluation result by inspecting the `outcome` field.
+#[derive(Serialize)]
+struct PreconditionFailedResponse {
+    /// Always `"precondition_failed"` — allows agents to distinguish from normal evaluation.
+    outcome: String,
+    /// Name of the spec that was blocked.
+    spec_name: String,
+    /// Detailed precondition evaluation results.
+    precondition_status: assay_types::PreconditionStatus,
+    /// Warnings about degraded operations.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    warnings: Vec<String>,
+}
+
 /// Response from the `gate_report` tool confirming an evaluation was recorded.
 #[derive(Serialize)]
 struct GateReportResponse {
@@ -1684,24 +1701,97 @@ impl AssayServer {
         }
 
         let config_timeout = config.gates.as_ref().map(|g| g.default_timeout);
+        let max_history = config.gates.as_ref().and_then(|g| g.max_history);
 
         // Extract agent criteria info before moving entry into spawn_blocking.
         let agent_info = extract_agent_criteria_info(&entry);
 
+        // Extract specs_dir before moving config into closure.
+        let config_specs_dir = config.specs_dir.clone();
+
         let eval_future = {
             let working_dir = working_dir.clone();
-            tokio::task::spawn_blocking(move || match entry {
-                SpecEntry::Legacy { spec, .. } => {
-                    assay_core::gate::evaluate_all(&spec, &working_dir, None, config_timeout)
-                }
-                SpecEntry::Directory { gates, .. } => {
-                    assay_core::gate::evaluate_all_gates(&gates, &working_dir, None, config_timeout)
-                }
-            })
+            let cwd_clone = cwd.clone();
+            tokio::task::spawn_blocking(
+                move || -> assay_core::error::Result<assay_types::GateEvalOutcome> {
+                    match entry {
+                        SpecEntry::Legacy { spec, .. } => {
+                            let summary = assay_core::gate::evaluate_all(
+                                &spec,
+                                &working_dir,
+                                None,
+                                config_timeout,
+                            );
+                            Ok(assay_types::GateEvalOutcome::Evaluated(summary))
+                        }
+                        SpecEntry::Directory { gates, slug, .. } => {
+                            let assay_dir = cwd_clone.join(".assay");
+                            let specs_dir = assay_dir.join(&config_specs_dir);
+
+                            // Step 1: Resolve extends + include
+                            let specs_dir_for_resolve = specs_dir.clone();
+                            let assay_dir_for_resolve = assay_dir.clone();
+                            let resolved = assay_core::spec::compose::resolve(
+                                &gates,
+                                &slug,
+                                |parent_slug| {
+                                    let path =
+                                        specs_dir_for_resolve.join(parent_slug).join("gates.toml");
+                                    assay_core::spec::load_gates(&path)
+                                },
+                                |lib_slug| {
+                                    assay_core::spec::compose::load_library_by_slug(
+                                        &assay_dir_for_resolve,
+                                        lib_slug,
+                                    )
+                                },
+                            )?;
+
+                            // Step 2: Check preconditions
+                            if let Some(preconditions) = &gates.preconditions {
+                                let assay_dir_for_prec = assay_dir.clone();
+                                let status = assay_core::gate::check_preconditions(
+                                    preconditions,
+                                    |s| {
+                                        assay_core::history::last_gate_passed(
+                                            &assay_dir_for_prec,
+                                            s,
+                                        )
+                                    },
+                                    &working_dir,
+                                    None,
+                                    config_timeout,
+                                );
+                                if !status.all_passed() {
+                                    return Ok(assay_types::GateEvalOutcome::PreconditionFailed(
+                                        status,
+                                    ));
+                                }
+                            }
+
+                            // Step 3: Evaluate resolved criteria
+                            let summary = assay_core::gate::evaluate_all_resolved(
+                                &slug,
+                                &resolved.criteria,
+                                gates.gate.as_ref(),
+                                &working_dir,
+                                None,
+                                config_timeout,
+                            );
+                            Ok(assay_types::GateEvalOutcome::Evaluated(summary))
+                        }
+                    }
+                },
+            )
         };
 
-        let summary = match tokio::time::timeout(gate_timeout, eval_future).await {
-            Ok(Ok(summary)) => summary,
+        let outcome = match tokio::time::timeout(gate_timeout, eval_future).await {
+            Ok(Ok(Ok(outcome))) => outcome,
+            Ok(Ok(Err(e))) => {
+                return Ok(CallToolResult::error(vec![Content::text(format!(
+                    "gate evaluation failed: {e}"
+                ))]));
+            }
             Ok(Err(e)) => {
                 return Err(McpError::internal_error(
                     format!("gate evaluation panicked: {e}"),
@@ -1714,6 +1804,45 @@ impl AssayServer {
                     gate_timeout.as_secs()
                 ))]));
             }
+        };
+
+        // Handle precondition failure: save blocked record and return structured response.
+        if let assay_types::GateEvalOutcome::PreconditionFailed(ref status) = outcome {
+            let spec_name = params.0.name.clone();
+            let assay_dir = cwd.join(".assay");
+            let working_dir_str = working_dir.to_string_lossy().to_string();
+            let status_clone = status.clone();
+
+            // Save blocked history record — non-fatal on failure.
+            let save_result = tokio::task::spawn_blocking(move || {
+                assay_core::history::save_blocked_run(
+                    &assay_dir,
+                    &spec_name,
+                    Some(working_dir_str),
+                    max_history,
+                )
+            })
+            .await;
+            if let Err(e) = save_result {
+                tracing::warn!(
+                    spec_name = %params.0.name,
+                    "gate_run: precondition-blocked history save panicked: {e}"
+                );
+            }
+
+            let response = PreconditionFailedResponse {
+                outcome: "precondition_failed".to_string(),
+                spec_name: params.0.name.clone(),
+                precondition_status: status_clone,
+                warnings: Vec::new(),
+            };
+            let json = serde_json::to_string_pretty(&response)
+                .map_err(|e| McpError::internal_error(format!("JSON error: {e}"), None))?;
+            return Ok(CallToolResult::success(vec![Content::text(json)]));
+        }
+
+        let assay_types::GateEvalOutcome::Evaluated(summary) = outcome else {
+            unreachable!("PreconditionFailed handled above")
         };
 
         let mut response = format_gate_response(&summary, include_evidence);
@@ -1907,7 +2036,6 @@ impl AssayServer {
             let sessions = Arc::clone(&self.sessions);
             let timed_out = Arc::clone(&self.timed_out_sessions);
             let assay_dir = cwd.join(".assay");
-            let max_history = config.gates.as_ref().and_then(|g| g.max_history);
             tokio::spawn(async move {
                 tokio::time::sleep(tokio::time::Duration::from_secs(SESSION_TIMEOUT_SECS)).await;
                 let session = {
@@ -1969,7 +2097,6 @@ impl AssayServer {
             // Extract spec_name for the tracing warn before moving summary into save_run.
             let spec_name_for_log = summary.spec_name.clone();
             let assay_dir = cwd.join(".assay");
-            let max_history = config.gates.as_ref().and_then(|g| g.max_history);
             if let Err(e) = assay_core::history::save_run(
                 &assay_dir,
                 summary,
@@ -11028,6 +11155,317 @@ cmd = "echo own"
         assert_eq!(
             response.outcome, "evaluated",
             "GateRunResponse.outcome should always be 'evaluated'"
+        );
+    }
+
+    // ── gate_run resolve + preconditions integration tests ───────────────────
+
+    /// Helper: create a directory-based spec (gates.toml) in a project.
+    fn create_dir_spec(project_dir: &std::path::Path, slug: &str, gates_toml: &str) {
+        let spec_dir = project_dir.join(".assay").join("specs").join(slug);
+        std::fs::create_dir_all(&spec_dir).unwrap();
+        std::fs::write(spec_dir.join("gates.toml"), gates_toml).unwrap();
+    }
+
+    /// Test: gate_run on Directory spec with extends returns resolved criteria with source annotations
+    #[tokio::test]
+    #[serial]
+    async fn gate_run_directory_spec_with_extends_returns_source_annotations() {
+        let dir = create_project(r#"project_name = "resolve-test""#);
+
+        // Parent spec
+        create_dir_spec(
+            dir.path(),
+            "base-spec",
+            r#"
+name = "base-spec"
+
+[[criteria]]
+name = "base-check"
+description = "Base check"
+cmd = "echo base"
+"#,
+        );
+
+        // Child spec that extends base-spec
+        create_dir_spec(
+            dir.path(),
+            "child-spec",
+            r#"
+name = "child-spec"
+extends = "base-spec"
+
+[[criteria]]
+name = "own-check"
+description = "Own check"
+cmd = "echo own"
+"#,
+        );
+
+        std::env::set_current_dir(dir.path()).unwrap();
+
+        let server = AssayServer::new();
+        let result = server
+            .gate_run(Parameters(GateRunParams {
+                name: "child-spec".to_string(),
+                include_evidence: false,
+                timeout: Some(30),
+            }))
+            .await
+            .unwrap();
+
+        assert!(
+            !result.is_error.unwrap_or(false),
+            "gate_run should succeed, got: {}",
+            extract_text(&result)
+        );
+        let text = extract_text(&result);
+        let json: serde_json::Value = serde_json::from_str(&text).unwrap();
+
+        assert_eq!(
+            json["outcome"], "evaluated",
+            "normal run should have outcome=evaluated"
+        );
+        assert_eq!(json["spec_name"], "child-spec");
+
+        // Find the inherited criterion
+        let criteria = json["criteria"].as_array().unwrap();
+        let base_crit = criteria.iter().find(|c| c["name"] == "base-check");
+        assert!(
+            base_crit.is_some(),
+            "inherited base-check criterion should be present"
+        );
+        let base_crit = base_crit.unwrap();
+        assert_eq!(
+            base_crit["source"], "parent",
+            "inherited criterion should have source='parent'"
+        );
+        assert_eq!(
+            base_crit["source_detail"], "base-spec",
+            "inherited criterion source_detail should be parent slug"
+        );
+
+        // Own criterion should have source="own"
+        let own_crit = criteria.iter().find(|c| c["name"] == "own-check");
+        assert!(own_crit.is_some(), "own-check should be present");
+        let own_crit = own_crit.unwrap();
+        assert_eq!(
+            own_crit["source"], "own",
+            "own criterion should have source='own'"
+        );
+    }
+
+    /// Test: gate_run on Directory spec with preconditions.requires failing returns outcome=precondition_failed
+    #[tokio::test]
+    #[serial]
+    async fn gate_run_directory_spec_precondition_requires_blocked() {
+        let dir = create_project(r#"project_name = "precond-test""#);
+
+        // Spec with precondition requiring a gate that has never run
+        create_dir_spec(
+            dir.path(),
+            "guarded-spec",
+            r#"
+name = "guarded-spec"
+
+[preconditions]
+requires = ["never-run-spec"]
+
+[[criteria]]
+name = "check"
+description = "Check"
+cmd = "echo ok"
+"#,
+        );
+
+        std::env::set_current_dir(dir.path()).unwrap();
+
+        let server = AssayServer::new();
+        let result = server
+            .gate_run(Parameters(GateRunParams {
+                name: "guarded-spec".to_string(),
+                include_evidence: false,
+                timeout: Some(30),
+            }))
+            .await
+            .unwrap();
+
+        assert!(
+            !result.is_error.unwrap_or(false),
+            "precondition_failed should be a success response, not MCP error"
+        );
+        let text = extract_text(&result);
+        let json: serde_json::Value = serde_json::from_str(&text).unwrap();
+
+        assert_eq!(
+            json["outcome"], "precondition_failed",
+            "blocked run should have outcome=precondition_failed, got: {json}"
+        );
+        assert_eq!(json["spec_name"], "guarded-spec");
+        assert!(
+            json["precondition_status"]["requires"].is_array(),
+            "precondition_status.requires should be present"
+        );
+        let requires = json["precondition_status"]["requires"].as_array().unwrap();
+        assert_eq!(requires.len(), 1);
+        assert_eq!(requires[0]["spec_slug"], "never-run-spec");
+        assert_eq!(requires[0]["passed"], false);
+    }
+
+    /// Test: gate_run on Directory spec with failing preconditions.commands returns outcome=precondition_failed
+    #[tokio::test]
+    #[serial]
+    async fn gate_run_directory_spec_precondition_command_blocked() {
+        let dir = create_project(r#"project_name = "precond-cmd-test""#);
+
+        create_dir_spec(
+            dir.path(),
+            "cmd-guarded-spec",
+            r#"
+name = "cmd-guarded-spec"
+
+[preconditions]
+commands = ["false"]
+
+[[criteria]]
+name = "check"
+description = "Check"
+cmd = "echo ok"
+"#,
+        );
+
+        std::env::set_current_dir(dir.path()).unwrap();
+
+        let server = AssayServer::new();
+        let result = server
+            .gate_run(Parameters(GateRunParams {
+                name: "cmd-guarded-spec".to_string(),
+                include_evidence: false,
+                timeout: Some(30),
+            }))
+            .await
+            .unwrap();
+
+        assert!(
+            !result.is_error.unwrap_or(false),
+            "precondition_failed should be a success response, not MCP error"
+        );
+        let text = extract_text(&result);
+        let json: serde_json::Value = serde_json::from_str(&text).unwrap();
+
+        assert_eq!(
+            json["outcome"], "precondition_failed",
+            "command-precondition failure should produce outcome=precondition_failed"
+        );
+        let commands = json["precondition_status"]["commands"].as_array().unwrap();
+        assert_eq!(commands.len(), 1);
+        assert_eq!(commands[0]["passed"], false);
+    }
+
+    /// Test: gate_run on Legacy spec works unchanged (no resolve, no preconditions)
+    #[tokio::test]
+    #[serial]
+    async fn gate_run_legacy_spec_unaffected() {
+        let dir = create_project(r#"project_name = "legacy-test""#);
+        create_spec(
+            dir.path(),
+            "specs",
+            "legacy.toml",
+            r#"
+name = "legacy"
+description = "Legacy spec"
+
+[[criteria]]
+name = "check"
+description = "Check"
+cmd = "echo ok"
+"#,
+        );
+
+        std::env::set_current_dir(dir.path()).unwrap();
+
+        let server = AssayServer::new();
+        let result = server
+            .gate_run(Parameters(GateRunParams {
+                name: "legacy".to_string(),
+                include_evidence: false,
+                timeout: Some(30),
+            }))
+            .await
+            .unwrap();
+
+        assert!(
+            !result.is_error.unwrap_or(false),
+            "legacy gate_run should succeed, got: {}",
+            extract_text(&result)
+        );
+        let text = extract_text(&result);
+        let json: serde_json::Value = serde_json::from_str(&text).unwrap();
+
+        assert_eq!(json["outcome"], "evaluated");
+        assert_eq!(json["spec_name"], "legacy");
+        assert_eq!(json["passed"], 1);
+        // Legacy specs: source fields should be absent (null or missing in JSON)
+        let criterion = &json["criteria"][0];
+        assert!(
+            criterion.get("source").is_none() || criterion["source"].is_null(),
+            "legacy spec criteria should not have source field, got: {criterion}"
+        );
+    }
+
+    /// Test: gate_run precondition-blocked run saves to history with precondition_blocked: true
+    #[tokio::test]
+    #[serial]
+    async fn gate_run_precondition_blocked_saved_to_history() {
+        let dir = create_project(r#"project_name = "history-test""#);
+
+        create_dir_spec(
+            dir.path(),
+            "blocked-spec",
+            r#"
+name = "blocked-spec"
+
+[preconditions]
+requires = ["never-run-gate"]
+
+[[criteria]]
+name = "check"
+description = "Check"
+cmd = "echo ok"
+"#,
+        );
+
+        std::env::set_current_dir(dir.path()).unwrap();
+
+        let server = AssayServer::new();
+        let result = server
+            .gate_run(Parameters(GateRunParams {
+                name: "blocked-spec".to_string(),
+                include_evidence: false,
+                timeout: Some(30),
+            }))
+            .await
+            .unwrap();
+
+        // Verify response is precondition_failed
+        let text = extract_text(&result);
+        let json: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(json["outcome"], "precondition_failed");
+
+        // Verify history was saved with precondition_blocked = true
+        let assay_dir = dir.path().join(".assay");
+        let history_ids = assay_core::history::list(&assay_dir, "blocked-spec").unwrap_or_default();
+        assert!(
+            !history_ids.is_empty(),
+            "precondition-blocked run should be saved to history"
+        );
+        let record =
+            assay_core::history::load(&assay_dir, "blocked-spec", history_ids.last().unwrap())
+                .unwrap();
+        assert_eq!(
+            record.precondition_blocked,
+            Some(true),
+            "saved record should have precondition_blocked=true"
         );
     }
 }
