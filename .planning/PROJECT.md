@@ -114,27 +114,13 @@ The `assay-mcp` crate provides MCP server functionality. Future crates may inclu
 - Binary crates are thin wrappers that delegate to `assay-core`
 - Run `just ready` before considering work complete
 
-## Current Milestone: v0.7.0 Gate Composability
-
-**Goal:** Make gate definitions reusable, modular, and user-friendly — composability primitives plus a guided wizard across all surfaces.
-
-**Target features:**
-
-- Gate inheritance via `gate.extends` — gates inherit criteria from parent gates
-- Criteria libraries with `include` field — shared criteria sets referenced by name
-- Spec preconditions — conditions that must hold before a spec's gates can run
-- Guided wizard for creating, editing, and applying gate definitions across specs
-- Wizard available on CLI (interactive), MCP (agent-driven), and TUI (human dashboard)
-
 ## Current State
 
-**Shipped:** v0.6.2 P0 Cleanup (2026-04-09)
+**Shipped:** v0.7.0 Gate Composability (2026-04-13)
 
-2324 tests across workspace. Full single-agent pipeline (manifest → worktree → harness → agent → gate → merge), multi-agent orchestration (DAG/mesh/gossip), streaming event pipeline, checkpoint gates, auto-promote, Smelt monorepo integration, Forgejo CI.
+2,505 tests across workspace. 129,826 lines of Rust. Full single-agent pipeline (manifest → worktree → harness → agent → gate → merge), multi-agent orchestration (DAG/mesh/gossip), streaming event pipeline, checkpoint gates, auto-promote, gate composition (extends/include/preconditions), guided wizard across CLI/MCP/TUI, Smelt monorepo integration, Forgejo CI.
 
-**In progress:** v0.7.0 Gate Composability — Phase 64 (type foundation) complete: CriteriaLibrary, SpecPreconditions, PreconditionStatus types + GatesSpec extends/include/preconditions fields. Next: Phase 65 (resolution core).
-
-**Previous:** v0.6.1 Conflict Resolution & Polish (2026-04-08), v0.4.1 Merge Tools (2026-04-08), v0.4.0 Headless Orchestration (2026-03-15), v0.3.0 (2026-03-10), v0.2.0 (2026-03-08), v0.1.0 (2026-03-02)
+**Previous:** v0.6.2 P0 Cleanup (2026-04-09), v0.6.1 Conflict Resolution & Polish (2026-04-08), v0.6.0 Multi-Agent Orchestration (2026-04-08), v0.5.0 Single-Agent Harness E2E (2026-04-08), v0.4.1 Merge Tools (2026-04-08), v0.4.0 Headless Orchestration (2026-03-15), v0.3.0 (2026-03-10), v0.2.0 (2026-03-08), v0.1.0 (2026-03-02)
 
 ## Requirements
 
@@ -177,37 +163,41 @@ The `assay-mcp` crate provides MCP server functionality. Future crates may inclu
 - ✓ MCP observability: warnings field, filtered history, resolved config, growth rate — v0.4.0
 - ✓ Correctness: worktree base branch status, session error messages, diff context — v0.4.0
 - ✓ Tech debt batch cleanup (120+ issues) — v0.4.0
+- ✓ `merge_check` MCP tool — read-only conflict detection via `git merge-tree` — v0.4.1
+- ✓ `merge_propose` MCP tool — PR creation with gate evidence, dry_run support — v0.4.1
+- ✓ Worktree fixes: canonical paths, default branch errors, prune failure surfacing — v0.4.1
+- ✓ `assay-harness` crate with HarnessProfile and Claude Code adapter — v0.5.0
+- ✓ Callback-based agent invocation (closures for control inversion) — v0.5.0
+- ✓ Worktree enhancements: orphan detection, collision prevention, session linkage — v0.5.0
+- ✓ `RunManifest` with `[[sessions]]` array format — v0.5.0
+- ✓ Session vocabulary cleanup (`AgentSession` → `GateEvalContext`) — v0.5.0
+- ✓ AgentSession write-through persistence — v0.5.0
+- ✓ End-to-end single-agent pipeline — v0.5.0
+- ✓ Multi-agent orchestration: `OrchestratorSession`, DAG executor, MergeRunner — v0.6.0
+- ✓ `orchestrate_*` MCP tools (additive, no changes to existing tools) — v0.6.0
+- ✓ Harness orchestration layer: scope enforcement, multi-agent prompts — v0.6.0
+- ✓ AI conflict resolution via evaluator subprocess — v0.6.1
+- ✓ Cupel integration for orchestrated sessions — v0.6.1
+- ✓ Codex/OpenCode adapter implementations — v0.6.1
+- ✓ Composable gate definitions (`gate.extends`) with own-wins merge — v0.7.0
+- ✓ Criteria libraries with `include` field and `.assay/criteria/` I/O — v0.7.0
+- ✓ Spec preconditions (`requires` + `commands`) with distinct PreconditionFailed result — v0.7.0
+- ✓ Guided gate wizard across CLI, MCP, and TUI surfaces — v0.7.0
+- ✓ Five new MCP tools for agent-driven composition — v0.7.0
+- ✓ Composability validation in `spec_validate` — v0.7.0
 
 ### Active
 
-- [ ] `merge_check` MCP tool — read-only conflict detection via `git merge-tree` — v0.4.1
-- [ ] `merge_propose` MCP tool — PR creation with gate evidence, dry_run support — v0.4.1
-- [ ] Worktree fixes: canonical paths, default branch errors, prune failure surfacing — v0.4.1
-- [ ] `assay-harness` crate with HarnessProfile and Claude Code adapter — v0.5.0
-- [ ] Callback-based agent invocation (closures for control inversion) — v0.5.0
-- [ ] Worktree enhancements: orphan detection, collision prevention, session linkage — v0.5.0
-- [ ] `RunManifest` with `[[sessions]]` array format — v0.5.0
-- [ ] Session vocabulary cleanup (`AgentSession` → `GateEvalContext`) — v0.5.0
-- [ ] AgentSession write-through persistence — v0.5.0
-- [ ] End-to-end single-agent pipeline — v0.5.0
+(Next milestone not yet defined — run `/kata:new-milestone`)
 
 ### Future
 
-- [ ] Multi-agent orchestration: `OrchestratorSession`, DAG executor, MergeRunner — v0.6.0
-- [ ] `orchestrate_*` MCP tools (additive, no changes to existing tools) — v0.6.0
-- [ ] Harness orchestration layer: scope enforcement, multi-agent prompts — v0.6.0
-- [ ] AI conflict resolution via evaluator subprocess — v0.6.1
-- [ ] Cupel integration for orchestrated sessions — v0.6.1
-- [ ] Codex/OpenCode adapter stubs — v0.6.1
-- [ ] `SessionCore` struct composition for type unification — v0.6.1
-- [ ] Minimal TUI gate results viewer
-- [ ] Composable gate definitions (`gate.extends`)
-- [ ] Criteria libraries with `include` field
-- [ ] Spec preconditions section
+- [ ] `SessionCore` struct composition for type unification
 - [ ] Gate history summary with pass/fail rates
 - [ ] Full TUI dashboard for multi-session supervision
 - [ ] Pluggable spec provider interface with built-in default implementation
 - [ ] Trust scores: quantified agent reliability from gate history
+- [ ] Wire `compose::resolve()` into `cycle_advance` and `pr_check_milestone_gates`
 
 ### Out of Scope
 
@@ -248,6 +238,12 @@ The `assay-mcp` crate provides MCP server functionality. Future crates may inclu
 | assay-harness as leaf crate | Adapter implementations depend on core, not vice versa; keeps dep graph clean | Decided — v0.5.0 |
 | OrchestratorSession composes WorkSessions | Linear state machine preserved; graph structure lives above it | Decided — v0.6.0 |
 | Additive orchestrate_* MCP tools, don't modify existing | Avoids interfield validation ambiguity from optional params on existing tools | Decided — v0.6.0 |
+| Static load-time resolution, not runtime/dynamic composition | Simpler, predictable, sufficient for all practical cases | ✓ Good — v0.7.0 |
+| Zero-trait convention preserved — `resolve()` takes closures | Consistent with 0-trait codebase; closures are Rust-idiomatic | ✓ Good — v0.7.0 |
+| "Own wins silently" merge semantics for criteria conflicts | Clear priority, no ambiguity; reverse-dedup avoids indexmap dep | ✓ Good — v0.7.0 |
+| Wizard in core, surfaces are thin wrappers | CLI/MCP/TUI all delegate to `apply_gate_wizard()` — no surface-specific validation | ✓ Good — v0.7.0 |
+| Precondition temporal: "last recorded gate run passed" | Simple, no staleness window; PREC-04 deferred to future | ✓ Good — v0.7.0 |
+| Exit code 2 for precondition-blocked (distinct from failure) | Agents and scripts disambiguate blocked vs failed; consistent with PreconditionFailed type | ✓ Good — v0.7.0 |
 
 ## Reference Material
 
@@ -260,4 +256,4 @@ The `assay-mcp` crate provides MCP server functionality. Future crates may inclu
 - [Cozempic](https://github.com/Ruya-AI/cozempic) — Reference for token-aware diagnostics and agent team context loss protection
 
 ---
-*Last updated: 2026-04-11 after Phase 64 (type-foundation)*
+*Last updated: 2026-04-13 after v0.7.0 milestone*

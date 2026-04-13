@@ -1,5 +1,38 @@
 # Project Milestones: Assay
 
+## v0.7.0 Gate Composability (Shipped: 2026-04-13)
+
+**Delivered:** Reusable, modular gate definitions with inheritance via `extends`, criteria libraries via `include`, spec preconditions, and a guided wizard across CLI, MCP, and TUI surfaces — making gate composition a first-class workflow.
+
+**Phases completed:** 64-71 (19 plans total)
+
+**Key accomplishments:**
+
+- Gate inheritance via `extends` field — gates inherit parent criteria with own-wins merge semantics and per-criterion source annotations (Own/Parent/Library)
+- Criteria libraries in `.assay/criteria/` — shared criteria sets with load/save/scan API, referenced via `include` field in gate definitions
+- Spec preconditions — `[preconditions].requires` (spec dependency) and `.commands` (shell checks) with distinct `PreconditionFailed` result type and exit code 2
+- Guided wizard across all surfaces — `assay gate wizard` CLI, `gate_wizard` MCP tool, and TUI state machine, all delegating validation to `assay-core::wizard`
+- Five new MCP tools for agent-driven composition — `gate_wizard`, `criteria_list`, `criteria_get`, `criteria_create`, `spec_resolve`
+- Composability validation — `spec_validate` detects missing parents/libraries, cycles, and path traversal in extends/include values
+
+**Stats:**
+
+- 135 files changed, 24,407 insertions, 313 deletions
+- 129,826 lines of Rust across workspace
+- 8 phases, 19 plans, 97 commits
+- 2,505 tests
+- 3 days from start to ship (2026-04-11 → 2026-04-13)
+
+**Git range:** `feat(64-01)` → `docs(phase-71)`
+
+**Known tech debt (pre-existing, not introduced by v0.7.0):**
+- `cycle_advance` and `pr_check_milestone_gates` bypass `compose::resolve()` — extends/include/preconditions silently ignored in milestone advance and PR check paths (from M005/M018)
+- `TODO(M024/S02): stream_criterion should accept events slice` in gate.rs
+
+**What's next:** Next milestone TBD
+
+---
+
 ## v0.4.0 Headless Orchestration (Shipped: 2026-03-15)
 
 **Delivered:** Headless agent evaluation with `gate_evaluate` capstone MCP tool, `WorkSession` persistence, `spec_validate` static health checking, `cupel` context engine integration for token-budgeted diff slicing, observability improvements, and 120+ tech debt fixes.

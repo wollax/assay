@@ -153,160 +153,23 @@ Post-review fix: UTF-8 safe TextDelta truncation (floor_char_boundary) + correct
 
 </details>
 
-### v0.7.0 Gate Composability (In Progress)
+<details>
+<summary>✅ v0.7.0 Gate Composability — SHIPPED 2026-04-13</summary>
 
-**Milestone Goal:** Make gate definitions reusable, modular, and user-friendly — gate inheritance via `extends`, criteria libraries via `include`, spec preconditions, and a guided wizard across CLI, MCP, and TUI surfaces.
+**Goal:** Make gate definitions reusable, modular, and user-friendly — gate inheritance via `extends`, criteria libraries via `include`, spec preconditions, and a guided wizard across CLI, MCP, and TUI surfaces.
 
-## Phases
+- [x] Phase 64: Type Foundation (2/2 plans) — 2026-04-11
+- [x] Phase 65: Resolution Core (2/2 plans) — 2026-04-11
+- [x] Phase 66: Evaluation Integration + Validation (3/3 plans) — 2026-04-12
+- [x] Phase 67: Wizard Core + CLI Surface (4/4 plans) — 2026-04-12
+- [x] Phase 68: MCP Surface (2/2 plans) — 2026-04-13
+- [x] Phase 69: TUI Surface (2/2 plans) — 2026-04-13
+- [x] Phase 70: Wire Resolution + Preconditions (3/3 plans) — 2026-04-13
+- [x] Phase 71: TUI Config Fix (1/1 plan) — 2026-04-13
 
-- [x] **Phase 64: Type Foundation** - Add composability types and backward-compat fields to `assay-types` (completed 2026-04-11)
-- [x] **Phase 65: Resolution Core** - Criteria library I/O and `spec::compose::resolve()` with cycle detection (completed 2026-04-11)
-- [x] **Phase 66: Evaluation Integration + Validation** - Wire resolution into gate evaluation, precondition enforcement, and `spec_validate` composability diagnostics (completed 2026-04-12)
-- [x] **Phase 67: Wizard Core + CLI Surface** - Shared wizard logic in `assay-core` and interactive CLI commands (completed 2026-04-12)
-- [x] **Phase 68: MCP Surface** - Five new MCP tools for agent-driven gate composition (completed 2026-04-13)
-- [x] **Phase 69: TUI Surface** - TUI wizard state machine for human-facing gate editing (completed 2026-04-13)
-- [x] **Phase 70: Wire Resolution + Preconditions into Gate Pipeline** - Wire compose::resolve() and check_preconditions() into evaluate_all_gates so extends/include/preconditions work at runtime (completed 2026-04-13)
-- [x] **Phase 71: TUI Config Fix** - Read config.specs_dir instead of hardcoding .assay/specs path (completed 2026-04-13)
+[Full archive](milestones/v0.7-ROADMAP.md)
 
-## Phase Details
-
-### Phase 64: Type Foundation
-**Goal**: The `assay-types` crate exposes all composability primitives — `CriteriaLibrary`, `SpecPreconditions`, `PreconditionStatus`, and three additive fields on `GatesSpec` — with schema snapshots updated and backward-compat roundtrip tests passing.
-**Depends on**: Phase 63
-**Requirements**: INHR-01, INHR-02, SAFE-03
-**Success Criteria** (what must be TRUE):
-  1. A gate TOML file with `extends = "parent-gate"` deserializes without error into `GatesSpec`
-  2. A gate TOML file with `include = ["lib-name"]` deserializes without error into `GatesSpec`
-  3. An existing pre-v0.7.0 TOML file (no composability fields) parses cleanly — no unknown-field errors, no missing defaults
-  4. JSON schema snapshots include all new fields and compile without drift
-**Plans:** 2/2 plans complete
-
-Plans:
-- [x] 64-01-PLAN.md — New composability types (CriteriaLibrary, SpecPreconditions, PreconditionStatus) + GatesSpec fields + TDD tests
-- [x] 64-02-PLAN.md — Schema snapshot tests, roundtrip validation, workspace-wide verification
-
-### Phase 65: Resolution Core
-**Goal**: The `assay-core` crate can load, save, and scan criteria libraries from `.assay/criteria/`, and `spec::compose::resolve()` merges parent criteria into child gates with own-wins semantics, cycle detection, and per-criterion source tracking.
-**Depends on**: Phase 64
-**Requirements**: INHR-03, INHR-04, CLIB-01, CLIB-02, CLIB-03
-**Success Criteria** (what must be TRUE):
-  1. A criteria library TOML saved to `.assay/criteria/<slug>.toml` is loadable by name and appears in scan results
-  2. Calling `resolve()` on a gate with `extends = "parent"` produces `effective_criteria` where parent criteria are present and own criteria override matching parent criteria by name
-  3. A circular `extends` chain (A extends B extends A) causes `resolve()` to return a cycle-detection error rather than hang or panic
-  4. Each criterion in resolved output carries a source annotation indicating whether it originated from the parent gate or the child gate
-**Plans:** 2/2 plans complete
-
-Plans:
-- [ ] 65-01-PLAN.md — Resolution types, error variants, slug validation, criteria library I/O
-- [ ] 65-02-PLAN.md — resolve() function with TDD: cycle detection, own-wins merge, source annotations
-
-### Phase 66: Evaluation Integration + Validation
-**Goal**: Gate evaluation runs resolved (flattened) criteria through the existing evaluator, precondition checks gate execution before criteria run, `PreconditionFailed` is a distinct non-failure result, and `spec_validate` reports composability errors.
-**Depends on**: Phase 65
-**Requirements**: PREC-01, PREC-02, PREC-03, SAFE-01, SAFE-02
-**Success Criteria** (what must be TRUE):
-  1. Running a gate on a spec whose `[preconditions].requires` references a spec with no passing gate run produces a `PreconditionFailed` result — gate criteria are not evaluated
-  2. Running a gate whose `[preconditions].commands` contains a failing shell command produces a `PreconditionFailed` result distinct from a gate criterion failure
-  3. `spec_validate` returns a structured diagnostic when `extends` references a non-existent parent gate
-  4. `spec_validate` returns a structured diagnostic when `include` references a non-existent criteria library
-  5. An `extends` or `include` value containing path traversal characters (e.g., `../evil`) is rejected by slug validation before any file I/O occurs
-**Plans:** 3/3 plans complete
-
-Plans:
-- [ ] 66-01-PLAN.md — GateEvalOutcome type, CriterionResult.source field, last_gate_passed() helper
-- [ ] 66-02-PLAN.md — check_preconditions() and evaluate_all_resolved() functions
-- [ ] 66-03-PLAN.md — Composability and precondition diagnostics in validate_spec_with_dependencies()
-
-### Phase 67: Wizard Core + CLI Surface
-**Goal**: `assay-core::wizard` exposes `apply_gate_wizard()` usable by any surface, and the CLI provides `assay gate wizard` (create/edit) and `assay criteria list/new` commands backed entirely by core validation logic.
-**Depends on**: Phase 66
-**Requirements**: WIZC-01, WIZC-02, WIZC-03
-**Success Criteria** (what must be TRUE):
-  1. `assay gate wizard` launches an interactive prompt flow that creates a new gate TOML file with user-supplied criteria, parent reference, and library includes
-  2. `assay gate wizard --edit <gate>` loads an existing gate definition and allows the user to modify its criteria and composability fields, writing the result back
-  3. `assay criteria list` displays all criteria libraries found in `.assay/criteria/` with their slug and criterion count
-  4. `assay criteria new` creates a new criteria library file via an interactive prompt, rejecting invalid slugs before writing
-**Plans:** 4/4 plans complete
-
-Plans:
-- [ ] 67-01-PLAN.md — Wizard input/output types in assay-types (GateWizardInput, CriteriaWizardInput, re-home CriterionInput)
-- [ ] 67-02-PLAN.md — Core apply_gate_wizard + apply_criteria_wizard in assay-core::wizard (module split + integration tests)
-- [ ] 67-03-PLAN.md — CLI `assay gate wizard` + `--edit` handler with shared wizard_helpers module
-- [ ] 67-04-PLAN.md — CLI `assay criteria list` + `assay criteria new` (top-level Criteria command)
-
-### Phase 68: MCP Surface
-**Goal**: Five new MCP tools expose agent-driven gate composition — `gate_wizard`, `criteria_list`, `criteria_get`, `criteria_create`, and `spec_resolve` — each delegating validation to `assay-core::wizard`.
-**Depends on**: Phase 67
-**Requirements**: WIZM-01, WIZM-02, WIZM-03, CLIB-04
-**Success Criteria** (what must be TRUE):
-  1. An agent calling `gate_wizard` with a gate name and criterion list receives a structured response and the gate TOML is written to disk
-  2. An agent calling `criteria_list` receives a list of all available library slugs with criterion counts
-  3. An agent calling `criteria_get` with a valid slug receives the full `CriteriaLibrary` payload; calling with an invalid slug returns a structured error
-  4. An agent calling `criteria_create` with a slug and criteria list creates a new library file and returns the saved content
-  5. An agent calling `spec_resolve` with a spec name receives the fully resolved `effective_criteria` list with source annotations for each criterion
-**Plans**: TBD
-
-### Phase 69: TUI Surface
-**Goal**: The TUI provides a `GateWizardState`/`GateWizardAction` state machine with `handle_gate_wizard_event()` and `draw_gate_wizard()`, delegating all field validation to `assay-core::wizard` with no surface-specific logic.
-**Depends on**: Phase 67
-**Requirements**: WIZT-01, WIZT-02
-**Success Criteria** (what must be TRUE):
-  1. From the TUI, the user can navigate to the gate wizard screen, fill in gate fields (name, criteria, parent, libraries), and confirm to write the gate TOML to disk
-  2. From the TUI, the user can select an existing gate and edit its composability fields, with the result written back to disk
-  3. Invalid inputs (bad slug, missing name) are rejected by core validation before the wizard attempts any file write — no validation logic lives in TUI code
-**Plans:** 2/2 plans complete
-
-Plans:
-- [ ] 69-01-PLAN.md — GateWizardState module + slash command variants
-- [ ] 69-02-PLAN.md — App.rs integration, keybindings, tests, human verification
-
-### Phase 70: Wire Resolution + Preconditions into Gate Pipeline
-**Goal**: `evaluate_all_gates()` calls `compose::resolve()` before evaluating criteria and `check_preconditions()` before evaluation, so gates with `extends`, `include`, and `[preconditions]` work correctly at runtime across all surfaces (CLI, MCP, TUI).
-**Depends on**: Phase 69
-**Requirements**: INHR-02, INHR-04, CLIB-02, PREC-01, PREC-02, PREC-03
-**Gap Closure**: Closes gaps from v0.7.0 milestone audit
-**Success Criteria** (what must be TRUE):
-  1. Running `assay gate run` on a spec with `extends` evaluates parent criteria merged with own-wins semantics
-  2. Running `assay gate run` on a spec with `include` evaluates library criteria alongside own criteria
-  3. Gate run output includes per-criterion source annotations (Own/Parent/Library)
-  4. Running `assay gate run` on a spec with `[preconditions].requires` referencing a spec with no passing run produces `PreconditionFailed`
-  5. Running `assay gate run` on a spec with `[preconditions].commands` containing a failing command produces `PreconditionFailed`
-  6. `gate_run` MCP tool exhibits the same behavior as CLI for extends/include/preconditions
-**Plans**: 3 plans
-
-Plans:
-- [ ] 70-01-PLAN.md — Types + history foundation (GateRunRecord.precondition_blocked, PreconditionStatus.all_passed(), last_gate_passed() update, schema snapshot)
-- [ ] 70-02-PLAN.md — CLI wiring (resolve + preconditions in handle_gate_run/handle_gate_run_all, source tags, exit code 2)
-- [ ] 70-03-PLAN.md — MCP wiring (resolve + preconditions in gate_run, CriterionSummary.source, PreconditionFailed response)
-
-### Phase 71: TUI Config Fix
-**Goal**: TUI reads `config.specs_dir` instead of hardcoding `root.join(".assay").join("specs")`, so projects with non-default specs directories work correctly.
-**Depends on**: Phase 69
-**Requirements**: —
-**Gap Closure**: Closes TUI specs_dir integration gap from v0.7.0 milestone audit
-**Success Criteria** (what must be TRUE):
-  1. TUI resolves specs directory from config rather than hardcoded path
-  2. A project with a custom `specs_dir` config value has gates written to the correct directory via TUI
-**Plans:** 1/1 plans complete
-
-Plans:
-- [ ] 71-01-PLAN.md — Add resolved_specs_dir() helper, replace 8 hardcoded sites, update execute_slash_cmd signature, integration test
-
-## Progress
-
-**Execution Order:**
-Phases execute in numeric order. Phases 68 and 69 are independent and can execute in parallel after Phase 67 completes. Phases 70 and 71 are independent gap closure phases and can execute in parallel.
-
-| Phase | Plans Complete | Status | Completed |
-|-------|----------------|--------|-----------|
-| 64. Type Foundation | 2/2 | Complete    | 2026-04-11 |
-| 65. Resolution Core | 2/2 | Complete    | 2026-04-11 |
-| 66. Evaluation Integration + Validation | 3/3 | Complete    | 2026-04-12 |
-| 67. Wizard Core + CLI Surface | 4/4 | Complete    | 2026-04-12 |
-| 68. MCP Surface | 2/2 | Complete    | 2026-04-13 |
-| 69. TUI Surface | 2/2 | Complete    | 2026-04-13 |
-| 70. Wire Resolution + Preconditions | 3/3 | Complete    | 2026-04-13 |
-| 71. TUI Config Fix | 1/1 | Complete    | 2026-04-13 |
+</details>
 
 ## Progress Summary
 
@@ -321,4 +184,4 @@ Phases execute in numeric order. Phases 68 and 69 are independent and can execut
 | v0.6.0 Multi-Agent Orchestration | ✅ Shipped | — | — | 100% |
 | v0.6.1 Conflict Resolution & Polish | ✅ Shipped | — | — | 100% |
 | v0.6.2 P0 Cleanup | ✅ Shipped | 4 | 27 | 100% |
-| v0.7.0 Gate Composability | 🚧 In progress | 8 | 22 | 0% |
+| v0.7.0 Gate Composability | ✅ Shipped | 8 | 22 | 100% |
