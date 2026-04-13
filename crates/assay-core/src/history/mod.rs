@@ -231,6 +231,10 @@ pub fn last_gate_passed(assay_dir: &Path, spec_name: &str) -> Option<bool> {
     let ids = list(assay_dir, spec_name).ok()?;
     let latest_id = ids.last()?;
     let record = load(assay_dir, spec_name, latest_id).ok()?;
+    // A precondition-blocked run is not a pass — the gate never ran.
+    if record.precondition_blocked == Some(true) {
+        return Some(false);
+    }
     Some(record.summary.enforcement.required_failed == 0)
 }
 
@@ -1005,6 +1009,57 @@ mod tests {
         assert_eq!(
             result, None,
             "should return None when spec dir does not exist"
+        );
+    }
+
+    // Test 5: last_gate_passed returns Some(false) when latest record has precondition_blocked == Some(true)
+    #[test]
+    fn test_last_gate_passed_returns_some_false_when_precondition_blocked() {
+        let dir = TempDir::new().unwrap();
+        let spec_name = "prec-blocked-spec";
+        let ts = Utc::now();
+        // Construct a blocked record manually (gate never ran — zeroed counters)
+        let zeroed_summary = GateRunSummary {
+            spec_name: spec_name.to_string(),
+            results: Vec::new(),
+            passed: 0,
+            failed: 0,
+            skipped: 0,
+            total_duration_ms: 0,
+            enforcement: EnforcementSummary::default(),
+        };
+        let record = GateRunRecord {
+            run_id: generate_run_id(&ts),
+            assay_version: env!("CARGO_PKG_VERSION").to_string(),
+            timestamp: ts,
+            working_dir: None,
+            summary: zeroed_summary,
+            diff_truncation: None,
+            precondition_blocked: Some(true),
+        };
+        save(dir.path(), &record, None).unwrap();
+
+        let result = last_gate_passed(dir.path(), spec_name);
+        assert_eq!(
+            result,
+            Some(false),
+            "should return Some(false) when latest run has precondition_blocked == Some(true)"
+        );
+    }
+
+    // Test 6: last_gate_passed returns Some(true) for normal passing run (precondition_blocked is None)
+    #[test]
+    fn test_last_gate_passed_returns_some_true_for_normal_passing_run() {
+        let dir = TempDir::new().unwrap();
+        let spec_name = "normal-pass-spec";
+        let summary = make_summary_with_failures(spec_name, 0);
+        save_run(dir.path(), summary, None, None).unwrap();
+
+        let result = last_gate_passed(dir.path(), spec_name);
+        assert_eq!(
+            result,
+            Some(true),
+            "normal run with required_failed == 0 and no precondition_blocked should return Some(true)"
         );
     }
 }
