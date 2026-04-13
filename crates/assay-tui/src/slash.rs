@@ -15,6 +15,8 @@ use ratatui::layout::Rect;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SlashCmd {
     GateCheck,
+    GateWizard,
+    GateEdit(String),
     Status,
     NextChunk,
     SpecShow,
@@ -22,8 +24,12 @@ pub enum SlashCmd {
 }
 
 /// Lookup table used for parsing and tab completion.
+///
+/// Note: `GateEdit(String)` carries data and cannot appear in this table.
+/// It is handled by the parameterized-command path in [`parse_slash_cmd`].
 pub const COMMANDS: &[(&str, SlashCmd)] = &[
     ("gate-check", SlashCmd::GateCheck),
+    ("gate-wizard", SlashCmd::GateWizard),
     ("next-chunk", SlashCmd::NextChunk),
     ("pr-create", SlashCmd::PrCreate),
     ("spec-show", SlashCmd::SpecShow),
@@ -64,9 +70,24 @@ pub enum SlashAction {
 ///
 /// Strips a leading `/` if present, trims whitespace, and matches
 /// case-insensitively against known command names.
+///
+/// Parameterized commands (e.g. `gate-edit <slug>`) are handled before the
+/// COMMANDS table lookup because they carry data in a tuple variant.
 pub fn parse_slash_cmd(input: &str) -> Option<SlashCmd> {
-    let trimmed = input.trim().strip_prefix('/').unwrap_or(input.trim());
-    let lower = trimmed.trim().to_lowercase();
+    let trimmed = input
+        .trim()
+        .strip_prefix('/')
+        .unwrap_or(input.trim())
+        .trim();
+
+    // Parameterized commands first (cannot use COMMANDS table due to carried data).
+    if let Some(rest) = trimmed.strip_prefix("gate-edit") {
+        let arg = rest.trim().to_string();
+        return Some(SlashCmd::GateEdit(arg));
+    }
+
+    // Exact-match lookup (case-insensitive for the COMMANDS table).
+    let lower = trimmed.to_lowercase();
     COMMANDS
         .iter()
         .find(|(name, _)| *name == lower)
@@ -80,18 +101,32 @@ pub fn parse_slash_cmd(input: &str) -> Option<SlashCmd> {
 /// The `input` should be the raw text *without* the leading `/`.
 /// Returns the full command name with `/` prefix if a unique or first
 /// alphabetical match is found; `None` if no commands match.
+///
+/// Parameterized commands not in COMMANDS (e.g. `gate-edit`) are checked first
+/// so that `/gate-e` completes to `/gate-edit ` (trailing space for argument).
 pub fn tab_complete(input: &str) -> Option<String> {
     let lower = input.trim().to_lowercase();
     if lower.is_empty() {
         return None;
     }
+
+    // COMMANDS table match takes priority (alphabetical, exact-match table commands).
     let matches: Vec<&str> = COMMANDS
         .iter()
         .filter(|(name, _)| name.starts_with(&lower))
         .map(|(name, _)| *name)
         .collect();
-    // COMMANDS is already sorted alphabetically, so first match = first alphabetical.
-    matches.first().map(|name| format!("/{name}"))
+    if let Some(name) = matches.first() {
+        return Some(format!("/{name}"));
+    }
+
+    // Parameterized command prefixes (not in COMMANDS table) — checked after COMMANDS
+    // so they only complete when no table command matches the prefix.
+    if "gate-edit".starts_with(&lower) {
+        return Some("/gate-edit ".to_string()); // trailing space ready for argument
+    }
+
+    None
 }
 
 // ── execute_slash_cmd ─────────────────────────────────────────────────────────
@@ -105,6 +140,15 @@ pub fn execute_slash_cmd(cmd: SlashCmd, project_root: &Path) -> String {
     let specs_dir = assay_dir.join("specs");
 
     match cmd {
+        SlashCmd::GateWizard => "Opening gate wizard...".to_string(),
+
+        SlashCmd::GateEdit(ref slug) => {
+            if slug.is_empty() {
+                return "Usage: /gate-edit <slug>".to_string();
+            }
+            format!("Opening gate editor for '{slug}'...")
+        }
+
         SlashCmd::Status => match assay_core::milestone::cycle_status(&assay_dir) {
             Ok(Some(cs)) => {
                 let chunk_info = cs
