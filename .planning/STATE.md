@@ -3,14 +3,14 @@ kata_state_version: 1.0
 milestone: v0.7
 milestone_name: milestone
 status: executing
-stopped_at: Phase 69 context gathered
-last_updated: "2026-04-13T03:00:58.704Z"
+stopped_at: Completed 69-tui-surface-01-PLAN.md
+last_updated: "2026-04-13T13:55:12.536Z"
 last_activity: 2026-04-13 — Phase 68 Plan 01 complete (gate_wizard + criteria_create MCP tools)
 progress:
   total_phases: 6
   completed_phases: 5
-  total_plans: 13
-  completed_plans: 13
+  total_plans: 15
+  completed_plans: 14
   percent: 0
 ---
 
@@ -87,6 +87,7 @@ Recent decisions affecting current work:
 - [Phase 68-02]: Tests and implementation committed together because pre-commit hook runs clippy which requires implementation to compile test code
 - [Phase 68-02]: Legacy spec format rejection uses CallToolResult::error directly — avoids adding AssayError::Other catch-all variant
 - [Phase 68-02]: spec_resolve shadow detection pre-loads inherited criterion names before resolve(), post-checks Own criteria — no compose::resolve signature change
+- [Phase 69-tui-surface]: COMMANDS table lookup has priority over gate-edit prefix check in tab_complete — preserves alphabetical table ordering
 
 ### Blockers
 
@@ -98,6 +99,6 @@ Plan Phase 65: Resolution Core (INHR-03, INHR-04, CLIB-01, CLIB-02, CLIB-03)
 
 ### Session Continuity
 
-Last session: 2026-04-13T03:00:58.702Z
-Stopped at: Phase 69 context gathered
-Resume file: .planning/phases/69-tui-surface/69-CONTEXT.md
+Last session: 2026-04-13T13:55:12.534Z
+Stopped at: Completed 69-tui-surface-01-PLAN.md
+Resume file: None

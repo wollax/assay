@@ -41,8 +41,8 @@ Requirements for gate composability milestone. Each maps to roadmap phases.
 
 ### Wizard — TUI
 
-- [ ] **WIZT-01**: User can create and edit gate definitions via TUI wizard screen
-- [ ] **WIZT-02**: TUI wizard delegates all validation to core (no surface-specific logic)
+- [x] **WIZT-01**: User can create and edit gate definitions via TUI wizard screen
+- [x] **WIZT-02**: TUI wizard delegates all validation to core (no surface-specific logic)
 
 ### Validation & Safety
 
@@ -89,8 +89,8 @@ Requirements for gate composability milestone. Each maps to roadmap phases.
 | WIZM-01 | Phase 68 | Complete |
 | WIZM-02 | Phase 68 | Complete |
 | WIZM-03 | Phase 68 | Complete |
-| WIZT-01 | Phase 69 | Pending |
-| WIZT-02 | Phase 69 | Pending |
+| WIZT-01 | Phase 69 | Complete |
+| WIZT-02 | Phase 69 | Complete |
 | SAFE-01 | Phase 66 | Complete |
 | SAFE-02 | Phase 66 | Complete |
 | SAFE-03 | Phase 64 | Complete |
