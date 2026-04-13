@@ -252,7 +252,11 @@ Plans:
   1. From the TUI, the user can navigate to the gate wizard screen, fill in gate fields (name, criteria, parent, libraries), and confirm to write the gate TOML to disk
   2. From the TUI, the user can select an existing gate and edit its composability fields, with the result written back to disk
   3. Invalid inputs (bad slug, missing name) are rejected by core validation before the wizard attempts any file write — no validation logic lives in TUI code
-**Plans**: TBD
+**Plans:** 2 plans
+
+Plans:
+- [ ] 69-01-PLAN.md — GateWizardState module + slash command variants
+- [ ] 69-02-PLAN.md — App.rs integration, keybindings, tests, human verification
 
 ## Progress
 
@@ -265,8 +269,8 @@ Phases execute in numeric order. Phases 68 and 69 are independent and can execut
 | 65. Resolution Core | 2/2 | Complete    | 2026-04-11 |
 | 66. Evaluation Integration + Validation | 3/3 | Complete    | 2026-04-12 |
 | 67. Wizard Core + CLI Surface | 4/4 | Complete    | 2026-04-12 |
-| 68. MCP Surface | 2/2 | Complete   | 2026-04-13 |
-| 69. TUI Surface | 0/TBD | Not started | - |
+| 68. MCP Surface | 2/2 | Complete    | 2026-04-13 |
+| 69. TUI Surface | 0/2 | Not started | - |
 
 ## Progress Summary
 
