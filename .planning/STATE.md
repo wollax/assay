@@ -2,15 +2,15 @@
 kata_state_version: 1.0
 milestone: v0.7
 milestone_name: milestone
-status: planning
-stopped_at: Phase 68 context gathered
-last_updated: "2026-04-13T01:52:25.732Z"
-last_activity: 2026-04-11 — v0.7.0 roadmap created (6 phases, 22 requirements)
+status: executing
+stopped_at: Completed 68-01-PLAN.md
+last_updated: "2026-04-13T02:14:24.558Z"
+last_activity: 2026-04-13 — Phase 68 Plan 01 complete (gate_wizard + criteria_create MCP tools)
 progress:
   total_phases: 6
   completed_phases: 4
-  total_plans: 11
-  completed_plans: 11
+  total_plans: 13
+  completed_plans: 12
   percent: 0
 ---
 
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-04-11)
 
 ## Current Position
 
-Phase: 64 of 69 (Type Foundation)
-Plan: 0 of TBD in current phase
-Status: Ready to plan
-Last activity: 2026-04-11 — v0.7.0 roadmap created (6 phases, 22 requirements)
+Phase: 68 of 69 (MCP Surface)
+Plan: 1 of TBD in current phase
+Status: In progress
+Last activity: 2026-04-13 — Phase 68 Plan 01 complete (gate_wizard + criteria_create MCP tools)
 
 Progress: [░░░░░░░░░░] 0% (v0.7.0)
 
@@ -83,6 +83,7 @@ Recent decisions affecting current work:
 - [Phase 67-wizard-core-cli-surface]: GateCommand::Wizard dispatches to handle_wizard which TTY-guards first; all persistence delegated to apply_gate_wizard; wizard_helpers is pub(crate) for Plan 04 reuse
 - [Phase 67-wizard-core-cli-surface]: config.assay_dir does not exist — use crate::commands::assay_dir(&root) consistent with all other CLI commands
 - [Phase 67-wizard-core-cli-surface]: CriteriaCommand::List uses render_list<W: Write> for testability; JSON mode uses serde_json::to_string_pretty (no ANSI)
+- [Phase 68-01]: Tests and implementation committed together because pre-commit hook runs clippy which requires the implementation to exist for test code to compile
 
 ### Blockers
 
@@ -94,6 +95,6 @@ Plan Phase 65: Resolution Core (INHR-03, INHR-04, CLIB-01, CLIB-02, CLIB-03)
 
 ### Session Continuity
 
-Last session: 2026-04-13T01:52:25.728Z
-Stopped at: Phase 68 context gathered
-Resume file: .planning/phases/68-mcp-surface/68-CONTEXT.md
+Last session: 2026-04-13T02:14:24.554Z
+Stopped at: Completed 68-01-PLAN.md
+Resume file: None

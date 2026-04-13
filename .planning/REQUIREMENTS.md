@@ -19,7 +19,7 @@ Requirements for gate composability milestone. Each maps to roadmap phases.
 - [x] **CLIB-01**: User can define shared criteria sets in `.assay/criteria/<slug>.toml`
 - [x] **CLIB-02**: User can reference criteria libraries via `include` field in gate definitions
 - [x] **CLIB-03**: Core API supports load, save, and scan operations for criteria libraries
-- [ ] **CLIB-04**: Agent can create criteria libraries programmatically via `criteria_create` MCP tool
+- [x] **CLIB-04**: Agent can create criteria libraries programmatically via `criteria_create` MCP tool
 
 ### Spec Preconditions
 
@@ -35,7 +35,7 @@ Requirements for gate composability milestone. Each maps to roadmap phases.
 
 ### Wizard — MCP
 
-- [ ] **WIZM-01**: Agent can drive gate wizard via `gate_wizard` MCP tool
+- [x] **WIZM-01**: Agent can drive gate wizard via `gate_wizard` MCP tool
 - [ ] **WIZM-02**: Agent can discover criteria libraries via `criteria_list` and `criteria_get` MCP tools
 - [ ] **WIZM-03**: Agent can resolve a spec's effective criteria via `spec_resolve` MCP tool
 
@@ -79,14 +79,14 @@ Requirements for gate composability milestone. Each maps to roadmap phases.
 | CLIB-01 | Phase 65 | Complete |
 | CLIB-02 | Phase 65 | Complete |
 | CLIB-03 | Phase 65 | Complete |
-| CLIB-04 | Phase 68 | Pending |
+| CLIB-04 | Phase 68 | Complete |
 | PREC-01 | Phase 66 | Complete |
 | PREC-02 | Phase 66 | Complete |
 | PREC-03 | Phase 66 | Complete |
 | WIZC-01 | Phase 67 | Complete |
 | WIZC-02 | Phase 67 | Complete |
 | WIZC-03 | Phase 67 | Complete |
-| WIZM-01 | Phase 68 | Pending |
+| WIZM-01 | Phase 68 | Complete |
 | WIZM-02 | Phase 68 | Pending |
 | WIZM-03 | Phase 68 | Pending |
 | WIZT-01 | Phase 69 | Pending |
