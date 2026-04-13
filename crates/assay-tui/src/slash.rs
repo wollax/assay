@@ -135,9 +135,8 @@ pub fn tab_complete(input: &str) -> Option<String> {
 ///
 /// All calls are synchronous. Errors are caught and returned as human-readable
 /// strings — this function never panics.
-pub fn execute_slash_cmd(cmd: SlashCmd, project_root: &Path) -> String {
+pub fn execute_slash_cmd(cmd: SlashCmd, project_root: &Path, specs_dir: &Path) -> String {
     let assay_dir = project_root.join(".assay");
-    let specs_dir = assay_dir.join("specs");
 
     match cmd {
         SlashCmd::GateWizard => "Opening gate wizard...".to_string(),
@@ -178,7 +177,7 @@ pub fn execute_slash_cmd(cmd: SlashCmd, project_root: &Path) -> String {
                 Some(slug) => slug.clone(),
                 None => return "All chunks complete — no next chunk.".to_string(),
             };
-            match assay_core::spec::load_spec_entry_with_diagnostics(&chunk_slug, &specs_dir) {
+            match assay_core::spec::load_spec_entry_with_diagnostics(&chunk_slug, specs_dir) {
                 Ok(entry) => {
                     let spec_name = match &entry {
                         assay_core::spec::SpecEntry::Directory { gates, .. } => gates.name.clone(),
@@ -205,7 +204,7 @@ pub fn execute_slash_cmd(cmd: SlashCmd, project_root: &Path) -> String {
             };
             match assay_core::pr::pr_check_milestone_gates(
                 &assay_dir,
-                &specs_dir,
+                specs_dir,
                 project_root,
                 &status.milestone_slug,
             ) {
@@ -236,7 +235,7 @@ pub fn execute_slash_cmd(cmd: SlashCmd, project_root: &Path) -> String {
                 Some(slug) => slug.clone(),
                 None => return "All chunks complete — no active spec to show.".to_string(),
             };
-            match assay_core::spec::load_spec_entry_with_diagnostics(&chunk_slug, &specs_dir) {
+            match assay_core::spec::load_spec_entry_with_diagnostics(&chunk_slug, specs_dir) {
                 Ok(assay_core::spec::SpecEntry::Directory { gates, .. }) => {
                     let mut out = format!("Spec: {}\nCriteria:\n", gates.name);
                     for c in &gates.criteria {
@@ -259,7 +258,7 @@ pub fn execute_slash_cmd(cmd: SlashCmd, project_root: &Path) -> String {
             };
             match assay_core::pr::pr_check_milestone_gates(
                 &assay_dir,
-                &specs_dir,
+                specs_dir,
                 project_root,
                 &status.milestone_slug,
             ) {

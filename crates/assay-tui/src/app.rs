@@ -399,6 +399,19 @@ impl App {
         }
     }
 
+    /// Resolve the specs directory from config, falling back to `"specs/"` when
+    /// no config is loaded.
+    ///
+    /// Mirrors the CLI pattern: `assay_dir.join(&config.specs_dir)`.
+    fn resolved_specs_dir(&self, assay_dir: &std::path::Path) -> std::path::PathBuf {
+        let rel = self
+            .config
+            .as_ref()
+            .map(|c| c.specs_dir.as_str())
+            .unwrap_or("specs/");
+        assay_dir.join(rel)
+    }
+
     /// Collect gate slugs (Directory-format only) from the specs directory.
     fn collect_gate_slugs(specs_dir: &std::path::Path) -> Vec<String> {
         assay_core::spec::scan(specs_dir)
@@ -433,7 +446,11 @@ impl App {
             }
             GateWizardAction::Submit(input) => {
                 let (assay_dir, specs_dir) = match &self.project_root {
-                    Some(root) => (root.join(".assay"), root.join(".assay").join("specs")),
+                    Some(root) => {
+                        let ad = root.join(".assay");
+                        let sd = self.resolved_specs_dir(&ad);
+                        (ad, sd)
+                    }
                     None => {
                         if let Screen::GateWizard(ref mut st) = self.screen {
                             st.error = Some(
@@ -921,7 +938,7 @@ impl App {
                         SlashCmd::GateWizard => {
                             if let Some(ref root) = self.project_root {
                                 let assay_dir = root.join(".assay");
-                                let specs_dir = assay_dir.join("specs");
+                                let specs_dir = self.resolved_specs_dir(&assay_dir);
                                 let available_gates = Self::collect_gate_slugs(&specs_dir);
                                 let available_libs = scan_libraries(&assay_dir).unwrap_or_default();
                                 self.screen = Screen::GateWizard(Box::new(GateWizardState::new(
@@ -941,7 +958,7 @@ impl App {
                             }
                             if let Some(ref root) = self.project_root {
                                 let assay_dir = root.join(".assay");
-                                let specs_dir = assay_dir.join("specs");
+                                let specs_dir = self.resolved_specs_dir(&assay_dir);
                                 let slug_owned = slug.clone();
                                 match load_spec_entry_with_diagnostics(&slug_owned, &specs_dir) {
                                     Ok(SpecEntry::Directory {
@@ -983,7 +1000,9 @@ impl App {
                     }
                     // Fall through to execute_slash_cmd for non-screen-transition commands.
                     if let Some(ref root) = self.project_root {
-                        let result = execute_slash_cmd(cmd, root);
+                        let assay_dir = root.join(".assay");
+                        let result =
+                            execute_slash_cmd(cmd, root, &self.resolved_specs_dir(&assay_dir));
                         if let Some(ref mut s) = self.slash_state {
                             s.result = Some(result);
                         }
@@ -1043,7 +1062,7 @@ impl App {
                     KeyCode::Char('g') => {
                         if let Some(ref root) = self.project_root {
                             let assay_dir = root.join(".assay");
-                            let specs_dir = assay_dir.join("specs");
+                            let specs_dir = self.resolved_specs_dir(&assay_dir);
                             let available_gates = Self::collect_gate_slugs(&specs_dir);
                             let available_libs = scan_libraries(&assay_dir).unwrap_or_default();
                             self.screen = Screen::GateWizard(Box::new(GateWizardState::new(
@@ -1284,7 +1303,7 @@ impl App {
                                         Some(root) => root.join(".assay"),
                                         None => return false,
                                     };
-                                    let specs_dir = assay_dir.join("specs");
+                                    let specs_dir = self.resolved_specs_dir(&assay_dir);
                                     // Load spec entry.
                                     match load_spec_entry_with_diagnostics(&chunk_slug, &specs_dir)
                                     {
@@ -1342,7 +1361,7 @@ impl App {
                     && let Some(ref root) = self.project_root
                 {
                     let assay_dir = root.join(".assay");
-                    let specs_dir = assay_dir.join("specs");
+                    let specs_dir = self.resolved_specs_dir(&assay_dir);
                     if let Screen::ChunkDetail { ref chunk_slug, .. } = self.screen {
                         let chunk = chunk_slug.clone();
                         // Use if let for the single-pattern match (clippy::single_match).
@@ -1392,7 +1411,7 @@ impl App {
                                 return false;
                             }
                         };
-                        let specs_dir = assay_dir.join("specs");
+                        let specs_dir = self.resolved_specs_dir(&assay_dir);
                         match create_from_inputs(&inputs, &assay_dir, &specs_dir) {
                             Ok(_) => {
                                 // Reload milestones; if reload fails, stay in wizard with
