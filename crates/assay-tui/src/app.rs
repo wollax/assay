@@ -10,13 +10,18 @@ use std::sync::mpsc;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 
+use crate::gate_wizard::{
+    GateWizardAction, GateWizardState, draw_gate_wizard, handle_gate_wizard_event,
+};
 use assay_core::config::save as config_save;
 use assay_core::history;
 use assay_core::history::analytics::{AnalyticsReport, compute_analytics};
 use assay_core::milestone::{cycle_status, milestone_load, milestone_scan};
 use assay_core::pipeline::launch_agent_streaming;
 use assay_core::pr::PrStatusInfo;
+use assay_core::spec::compose::scan_libraries;
 use assay_core::spec::{SpecEntry, load_spec_entry_with_diagnostics};
+use assay_core::wizard::apply_gate_wizard;
 use assay_core::wizard::create_from_inputs;
 use assay_types::{
     AgentEvent, Criterion, Enforcement, GateRunRecord, GatesSpec, HarnessProfile, Milestone,
@@ -85,6 +90,8 @@ pub enum Screen {
     Dashboard,
     /// The in-TUI authoring wizard.
     Wizard(WizardState),
+    /// Gate composition wizard — create or edit gate definitions.
+    GateWizard(Box<GateWizardState>),
     /// Milestone data failed to load at startup or after a wizard submit reload.
     /// Displays the error message; exits on `q` / `Esc`.
     LoadError(String),
@@ -390,6 +397,73 @@ impl App {
         if let Ok(mut guard) = self.poll_targets.lock() {
             *guard = targets;
         }
+    }
+
+    /// Collect gate slugs (Directory-format only) from the specs directory.
+    fn collect_gate_slugs(specs_dir: &std::path::Path) -> Vec<String> {
+        assay_core::spec::scan(specs_dir)
+            .map(|sr| {
+                sr.entries
+                    .iter()
+                    .filter_map(|e| match e {
+                        SpecEntry::Directory { slug, .. } => Some(slug.clone()),
+                        _ => None,
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// Handle key events when the gate wizard screen is active.
+    ///
+    /// Follows the same extracted-method pattern as `handle_mcp_panel_event`
+    /// to avoid borrow-splitting issues between `self.screen` and `self.project_root`.
+    /// Returns `true` if the app should exit (always `false` for the wizard).
+    fn handle_gate_wizard_app_event(&mut self, key: crossterm::event::KeyEvent) -> bool {
+        // Extract state from screen — borrow-split safe since we take &mut self.
+        let state = match self.screen {
+            Screen::GateWizard(ref mut s) => s,
+            _ => return false,
+        };
+
+        match handle_gate_wizard_event(state, key) {
+            GateWizardAction::Continue => {} // state already mutated
+            GateWizardAction::Cancel => {
+                self.screen = Screen::Dashboard;
+            }
+            GateWizardAction::Submit(input) => {
+                let (assay_dir, specs_dir) = match &self.project_root {
+                    Some(root) => (root.join(".assay"), root.join(".assay").join("specs")),
+                    None => {
+                        if let Screen::GateWizard(ref mut st) = self.screen {
+                            st.error = Some(
+                                "Cannot write gate: no project root found. This is a bug."
+                                    .to_string(),
+                            );
+                        }
+                        return false;
+                    }
+                };
+                match apply_gate_wizard(&input, &assay_dir, &specs_dir) {
+                    Ok(_output) => {
+                        // Success — reload milestones to pick up new/modified gate,
+                        // then return to Dashboard.
+                        if let Ok(loaded) = milestone_scan(&assay_dir) {
+                            self.milestones = loaded;
+                            self.refresh_poll_targets();
+                        }
+                        self.screen = Screen::Dashboard;
+                    }
+                    Err(e) => {
+                        // Stay in wizard; show error inline.
+                        if let Screen::GateWizard(ref mut st) = self.screen {
+                            st.error = Some(e.to_string());
+                        }
+                    }
+                }
+            }
+        }
+        false
     }
 
     /// Handle agent subprocess exit.
@@ -705,6 +779,12 @@ impl App {
                 &self.pr_statuses,
             ),
             Screen::Wizard(state) => draw_wizard(frame, content_area, state),
+            Screen::GateWizard(_) => {
+                // Re-borrow mutably for ListState fields inside GateWizardState.
+                if let Screen::GateWizard(ref mut state) = self.screen {
+                    draw_gate_wizard(frame, content_area, state);
+                }
+            }
             Screen::LoadError(msg) => draw_load_error(frame, content_area, msg),
             Screen::MilestoneDetail { .. } => {
                 draw_milestone_detail(
@@ -836,6 +916,72 @@ impl App {
                     self.slash_state = None;
                 }
                 SlashAction::Execute(cmd) => {
+                    use crate::slash::SlashCmd;
+                    match &cmd {
+                        SlashCmd::GateWizard => {
+                            if let Some(ref root) = self.project_root {
+                                let assay_dir = root.join(".assay");
+                                let specs_dir = assay_dir.join("specs");
+                                let available_gates = Self::collect_gate_slugs(&specs_dir);
+                                let available_libs = scan_libraries(&assay_dir).unwrap_or_default();
+                                self.screen = Screen::GateWizard(Box::new(GateWizardState::new(
+                                    available_gates,
+                                    available_libs,
+                                )));
+                                self.slash_state = None;
+                            }
+                            return false;
+                        }
+                        SlashCmd::GateEdit(slug) => {
+                            if slug.is_empty() {
+                                if let Some(ref mut s) = self.slash_state {
+                                    s.error = Some("Usage: /gate-edit <slug>".to_string());
+                                }
+                                return false;
+                            }
+                            if let Some(ref root) = self.project_root {
+                                let assay_dir = root.join(".assay");
+                                let specs_dir = assay_dir.join("specs");
+                                let slug_owned = slug.clone();
+                                match load_spec_entry_with_diagnostics(&slug_owned, &specs_dir) {
+                                    Ok(SpecEntry::Directory {
+                                        gates,
+                                        slug: entry_slug,
+                                        ..
+                                    }) => {
+                                        let available_gates = Self::collect_gate_slugs(&specs_dir);
+                                        let available_libs =
+                                            scan_libraries(&assay_dir).unwrap_or_default();
+                                        self.screen = Screen::GateWizard(Box::new(
+                                            GateWizardState::from_existing(
+                                                &gates,
+                                                entry_slug,
+                                                available_gates,
+                                                available_libs,
+                                            ),
+                                        ));
+                                        self.slash_state = None;
+                                    }
+                                    Ok(SpecEntry::Legacy { .. }) => {
+                                        if let Some(ref mut s) = self.slash_state {
+                                            s.error =
+                                                Some("Cannot edit legacy spec format".to_string());
+                                        }
+                                    }
+                                    Err(e) => {
+                                        if let Some(ref mut s) = self.slash_state {
+                                            s.error = Some(format!(
+                                                "Failed to load gate '{slug_owned}': {e}"
+                                            ));
+                                        }
+                                    }
+                                }
+                            }
+                            return false;
+                        }
+                        _ => {}
+                    }
+                    // Fall through to execute_slash_cmd for non-screen-transition commands.
                     if let Some(ref root) = self.project_root {
                         let result = execute_slash_cmd(cmd, root);
                         if let Some(ref mut s) = self.slash_state {
@@ -850,7 +996,9 @@ impl App {
         }
 
         // Global ? key opens help from any non-wizard screen.
-        if key.code == KeyCode::Char('?') && !matches!(self.screen, Screen::Wizard(_)) {
+        if key.code == KeyCode::Char('?')
+            && !matches!(self.screen, Screen::Wizard(_) | Screen::GateWizard(_))
+        {
             self.show_help = true;
             return false;
         }
@@ -890,6 +1038,18 @@ impl App {
                         // check in case a future refactor reuses the Dashboard arm.
                         if self.project_root.is_some() {
                             self.screen = Screen::Wizard(WizardState::new());
+                        }
+                    }
+                    KeyCode::Char('g') => {
+                        if let Some(ref root) = self.project_root {
+                            let assay_dir = root.join(".assay");
+                            let specs_dir = assay_dir.join("specs");
+                            let available_gates = Self::collect_gate_slugs(&specs_dir);
+                            let available_libs = scan_libraries(&assay_dir).unwrap_or_default();
+                            self.screen = Screen::GateWizard(Box::new(GateWizardState::new(
+                                available_gates,
+                                available_libs,
+                            )));
                         }
                     }
                     KeyCode::Char('r') => {
@@ -1178,6 +1338,29 @@ impl App {
                     self.screen = Screen::MilestoneDetail { slug };
                 } else if key.code == KeyCode::Char('q') {
                     return true;
+                } else if key.code == KeyCode::Char('e')
+                    && let Some(ref root) = self.project_root
+                {
+                    let assay_dir = root.join(".assay");
+                    let specs_dir = assay_dir.join("specs");
+                    if let Screen::ChunkDetail { ref chunk_slug, .. } = self.screen {
+                        let chunk = chunk_slug.clone();
+                        // Use if let for the single-pattern match (clippy::single_match).
+                        if let Ok(SpecEntry::Directory { gates, slug, .. }) =
+                            load_spec_entry_with_diagnostics(&chunk, &specs_dir)
+                        {
+                            let available_gates = Self::collect_gate_slugs(&specs_dir);
+                            let available_libs = scan_libraries(&assay_dir).unwrap_or_default();
+                            self.screen =
+                                Screen::GateWizard(Box::new(GateWizardState::from_existing(
+                                    &gates,
+                                    slug,
+                                    available_gates,
+                                    available_libs,
+                                )));
+                        }
+                        // Legacy or load error — no-op
+                    }
                 }
                 false
             }
@@ -1259,6 +1442,8 @@ impl App {
                 }
                 false
             }
+
+            Screen::GateWizard { .. } => self.handle_gate_wizard_app_event(key),
 
             Screen::AgentRun {
                 ref mut scroll_offset,

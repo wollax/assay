@@ -181,5 +181,6 @@ fn screen_name(screen: &Screen) -> &'static str {
         Screen::McpPanel { .. } => "McpPanel",
         Screen::Analytics => "Analytics",
         Screen::TraceViewer { .. } => "TraceViewer",
+        Screen::GateWizard(_) => "GateWizard",
     }
 }

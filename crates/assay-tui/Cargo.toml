@@ -20,6 +20,7 @@ tracing.workspace = true
 regex-lite.workspace = true
 
 [dev-dependencies]
+toml.workspace = true
 
 [lints]
 workspace = true

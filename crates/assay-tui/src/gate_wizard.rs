@@ -43,9 +43,9 @@ pub enum PreconditionSubStep {
 #[allow(dead_code)] // criteria_edit_idx used in Plan 02 integration
 pub struct GateWizardState {
     /// Current wizard step (0–6).
-    pub(crate) step: usize,
+    pub step: usize,
     /// Per-step text input buffers (steps 0 and 1 use fields[0] and fields[1]).
-    pub(crate) fields: Vec<Vec<String>>,
+    pub fields: Vec<Vec<String>>,
     /// Cursor position in active text input.
     pub(crate) cursor: usize,
     /// Gate slugs loaded at wizard open time (for the extends single-select, step 2).
@@ -59,7 +59,7 @@ pub struct GateWizardState {
     /// Indices into `available_libs` that are toggled on.
     pub(crate) selected_includes: HashSet<usize>,
     /// Collected criteria so far.
-    pub(crate) criteria: Vec<CriterionInput>,
+    pub criteria: Vec<CriterionInput>,
     /// Active sub-step within the criteria loop.
     pub(crate) criteria_sub_step: CriteriaSubStep,
     /// Scratch fields for in-progress criterion: [name, description, cmd].
@@ -77,7 +77,7 @@ pub struct GateWizardState {
     /// Scratch buffer for precondition input loop.
     pub(crate) precondition_scratch: String,
     /// None = create mode, Some(slug) = edit mode.
-    pub(crate) edit_slug: Option<String>,
+    pub edit_slug: Option<String>,
     /// Inline error display.
     pub error: Option<String>,
     /// Transient message when a list step is auto-skipped.
@@ -196,7 +196,10 @@ pub enum GateWizardAction {
 // ── assemble_gate_input ───────────────────────────────────────────────────────
 
 /// Assemble a [`GateWizardInput`] from the completed wizard state.
-pub(crate) fn assemble_gate_input(state: &GateWizardState) -> GateWizardInput {
+///
+/// Public for testing; production callers use this indirectly via
+/// `handle_gate_wizard_event` returning `GateWizardAction::Submit`.
+pub fn assemble_gate_input(state: &GateWizardState) -> GateWizardInput {
     let slug = state.fields[0]
         .last()
         .cloned()
