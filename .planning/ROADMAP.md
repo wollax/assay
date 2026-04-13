@@ -165,6 +165,8 @@ Post-review fix: UTF-8 safe TextDelta truncation (floor_char_boundary) + correct
 - [x] **Phase 67: Wizard Core + CLI Surface** - Shared wizard logic in `assay-core` and interactive CLI commands (completed 2026-04-12)
 - [x] **Phase 68: MCP Surface** - Five new MCP tools for agent-driven gate composition (completed 2026-04-13)
 - [x] **Phase 69: TUI Surface** - TUI wizard state machine for human-facing gate editing (completed 2026-04-13)
+- [ ] **Phase 70: Wire Resolution + Preconditions into Gate Pipeline** - Wire compose::resolve() and check_preconditions() into evaluate_all_gates so extends/include/preconditions work at runtime
+- [ ] **Phase 71: TUI Config Fix** - Read config.specs_dir instead of hardcoding .assay/specs path
 
 ## Phase Details
 
@@ -258,10 +260,34 @@ Plans:
 - [ ] 69-01-PLAN.md — GateWizardState module + slash command variants
 - [ ] 69-02-PLAN.md — App.rs integration, keybindings, tests, human verification
 
+### Phase 70: Wire Resolution + Preconditions into Gate Pipeline
+**Goal**: `evaluate_all_gates()` calls `compose::resolve()` before evaluating criteria and `check_preconditions()` before evaluation, so gates with `extends`, `include`, and `[preconditions]` work correctly at runtime across all surfaces (CLI, MCP, TUI).
+**Depends on**: Phase 69
+**Requirements**: INHR-02, INHR-04, CLIB-02, PREC-01, PREC-02, PREC-03
+**Gap Closure**: Closes gaps from v0.7.0 milestone audit
+**Success Criteria** (what must be TRUE):
+  1. Running `assay gate run` on a spec with `extends` evaluates parent criteria merged with own-wins semantics
+  2. Running `assay gate run` on a spec with `include` evaluates library criteria alongside own criteria
+  3. Gate run output includes per-criterion source annotations (Own/Parent/Library)
+  4. Running `assay gate run` on a spec with `[preconditions].requires` referencing a spec with no passing run produces `PreconditionFailed`
+  5. Running `assay gate run` on a spec with `[preconditions].commands` containing a failing command produces `PreconditionFailed`
+  6. `gate_run` MCP tool exhibits the same behavior as CLI for extends/include/preconditions
+**Plans**: TBD
+
+### Phase 71: TUI Config Fix
+**Goal**: TUI reads `config.specs_dir` instead of hardcoding `root.join(".assay").join("specs")`, so projects with non-default specs directories work correctly.
+**Depends on**: Phase 69
+**Requirements**: —
+**Gap Closure**: Closes TUI specs_dir integration gap from v0.7.0 milestone audit
+**Success Criteria** (what must be TRUE):
+  1. TUI resolves specs directory from config rather than hardcoded path
+  2. A project with a custom `specs_dir` config value has gates written to the correct directory via TUI
+**Plans**: TBD
+
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order. Phases 68 and 69 are independent and can execute in parallel after Phase 67 completes.
+Phases execute in numeric order. Phases 68 and 69 are independent and can execute in parallel after Phase 67 completes. Phases 70 and 71 are independent gap closure phases and can execute in parallel.
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
@@ -271,6 +297,8 @@ Phases execute in numeric order. Phases 68 and 69 are independent and can execut
 | 67. Wizard Core + CLI Surface | 4/4 | Complete    | 2026-04-12 |
 | 68. MCP Surface | 2/2 | Complete    | 2026-04-13 |
 | 69. TUI Surface | 2/2 | Complete    | 2026-04-13 |
+| 70. Wire Resolution + Preconditions | TBD | Pending    | — |
+| 71. TUI Config Fix | TBD | Pending    | — |
 
 ## Progress Summary
 
@@ -285,4 +313,4 @@ Phases execute in numeric order. Phases 68 and 69 are independent and can execut
 | v0.6.0 Multi-Agent Orchestration | ✅ Shipped | — | — | 100% |
 | v0.6.1 Conflict Resolution & Polish | ✅ Shipped | — | — | 100% |
 | v0.6.2 P0 Cleanup | ✅ Shipped | 4 | 27 | 100% |
-| v0.7.0 Gate Composability | 🚧 In progress | 6 | 22 | 0% |
+| v0.7.0 Gate Composability | 🚧 In progress | 8 | 22 | 0% |

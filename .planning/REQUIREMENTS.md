@@ -10,22 +10,22 @@ Requirements for gate composability milestone. Each maps to roadmap phases.
 ### Gate Inheritance
 
 - [x] **INHR-01**: User can define a gate that extends another gate via `gate.extends` field
-- [x] **INHR-02**: Extended gate inherits parent criteria with own-wins merge semantics
+- [ ] **INHR-02**: Extended gate inherits parent criteria with own-wins merge semantics
 - [x] **INHR-03**: Circular `extends` chains are detected and reported as validation errors
-- [x] **INHR-04**: Gate run output shows per-criterion source annotation (parent vs own)
+- [ ] **INHR-04**: Gate run output shows per-criterion source annotation (parent vs own)
 
 ### Criteria Libraries
 
 - [x] **CLIB-01**: User can define shared criteria sets in `.assay/criteria/<slug>.toml`
-- [x] **CLIB-02**: User can reference criteria libraries via `include` field in gate definitions
+- [ ] **CLIB-02**: User can reference criteria libraries via `include` field in gate definitions
 - [x] **CLIB-03**: Core API supports load, save, and scan operations for criteria libraries
 - [x] **CLIB-04**: Agent can create criteria libraries programmatically via `criteria_create` MCP tool
 
 ### Spec Preconditions
 
-- [x] **PREC-01**: User can define `[preconditions].requires` — gate skipped unless named spec's last gate run passed
-- [x] **PREC-02**: User can define `[preconditions].commands` — shell commands that must succeed before gate evaluation
-- [x] **PREC-03**: Precondition failures produce distinct `PreconditionFailed` result (blocked != failed)
+- [ ] **PREC-01**: User can define `[preconditions].requires` — gate skipped unless named spec's last gate run passed
+- [ ] **PREC-02**: User can define `[preconditions].commands` — shell commands that must succeed before gate evaluation
+- [ ] **PREC-03**: Precondition failures produce distinct `PreconditionFailed` result (blocked != failed)
 
 ### Wizard — CLI
 
@@ -73,16 +73,16 @@ Requirements for gate composability milestone. Each maps to roadmap phases.
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | INHR-01 | Phase 64 | Complete |
-| INHR-02 | Phase 64 | Complete |
+| INHR-02 | Phase 70 | Pending |
 | INHR-03 | Phase 65 | Complete |
-| INHR-04 | Phase 65 | Complete |
+| INHR-04 | Phase 70 | Pending |
 | CLIB-01 | Phase 65 | Complete |
-| CLIB-02 | Phase 65 | Complete |
+| CLIB-02 | Phase 70 | Pending |
 | CLIB-03 | Phase 65 | Complete |
 | CLIB-04 | Phase 68 | Complete |
-| PREC-01 | Phase 66 | Complete |
-| PREC-02 | Phase 66 | Complete |
-| PREC-03 | Phase 66 | Complete |
+| PREC-01 | Phase 70 | Pending |
+| PREC-02 | Phase 70 | Pending |
+| PREC-03 | Phase 70 | Pending |
 | WIZC-01 | Phase 67 | Complete |
 | WIZC-02 | Phase 67 | Complete |
 | WIZC-03 | Phase 67 | Complete |
@@ -97,6 +97,8 @@ Requirements for gate composability milestone. Each maps to roadmap phases.
 
 **Coverage:**
 - v0.7.0 requirements: 22 total
+- Satisfied: 16
+- Pending (gap closure Phase 70): 6
 - Mapped to phases: 22
 - Unmapped: 0 ✓
 
