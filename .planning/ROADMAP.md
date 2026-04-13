@@ -302,7 +302,7 @@ Phases execute in numeric order. Phases 68 and 69 are independent and can execut
 | 67. Wizard Core + CLI Surface | 4/4 | Complete    | 2026-04-12 |
 | 68. MCP Surface | 2/2 | Complete    | 2026-04-13 |
 | 69. TUI Surface | 2/2 | Complete    | 2026-04-13 |
-| 70. Wire Resolution + Preconditions | 1/3 | In Progress|  |
+| 70. Wire Resolution + Preconditions | 2/3 | In Progress|  |
 | 71. TUI Config Fix | TBD | Pending    | — |
 
 ## Progress Summary

@@ -3,14 +3,14 @@ kata_state_version: 1.0
 milestone: v0.7
 milestone_name: milestone
 status: completed
-stopped_at: Completed 70-wire-resolution-preconditions 70-01-PLAN.md
-last_updated: "2026-04-13T16:26:25.163Z"
+stopped_at: Completed 70-wire-resolution-preconditions 70-03-PLAN.md
+last_updated: "2026-04-13T16:38:57.811Z"
 last_activity: 2026-04-13 — Phase 69 Plan 02 complete (gate wizard app integration, 16 tests)
 progress:
   total_phases: 8
   completed_phases: 6
   total_plans: 18
-  completed_plans: 16
+  completed_plans: 17
   percent: 100
 ---
 
@@ -94,6 +94,9 @@ Recent decisions affecting current work:
 - [Phase 69-tui-surface]: e-key test uses milestone wizard ('n') to create milestone+spec atomically — Milestone struct has required created_at/updated_at chrono fields
 - [Phase 70-wire-resolution-preconditions]: precondition_blocked uses Option<bool> for backward-compat with old history records (None = normal run)
 - [Phase 70-wire-resolution-preconditions]: last_gate_passed() checks precondition_blocked before enforcement counters — blocked run is not a pass even with zeroed counters
+- [Phase 70-wire-resolution-preconditions]: gate_run PreconditionFailedResponse returned as success (not error) with outcome=precondition_failed — agents disambiguate by field
+- [Phase 70-wire-resolution-preconditions]: outcome field added to GateRunResponse (always 'evaluated') for symmetric agent disambiguation
+- [Phase 70-wire-resolution-preconditions]: CriterionSource::None maps to source=None in MCP response (legacy specs produce no source annotation)
 
 ### Blockers
 
@@ -105,6 +108,6 @@ Plan Phase 65: Resolution Core (INHR-03, INHR-04, CLIB-01, CLIB-02, CLIB-03)
 
 ### Session Continuity
 
-Last session: 2026-04-13T16:26:25.161Z
-Stopped at: Completed 70-wire-resolution-preconditions 70-01-PLAN.md
+Last session: 2026-04-13T16:38:57.807Z
+Stopped at: Completed 70-wire-resolution-preconditions 70-03-PLAN.md
 Resume file: None
