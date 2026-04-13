@@ -287,7 +287,10 @@ Plans:
 **Success Criteria** (what must be TRUE):
   1. TUI resolves specs directory from config rather than hardcoded path
   2. A project with a custom `specs_dir` config value has gates written to the correct directory via TUI
-**Plans**: TBD
+**Plans:** 1 plan
+
+Plans:
+- [ ] 71-01-PLAN.md — Add resolved_specs_dir() helper, replace 8 hardcoded sites, update execute_slash_cmd signature, integration test
 
 ## Progress
 
@@ -303,7 +306,7 @@ Phases execute in numeric order. Phases 68 and 69 are independent and can execut
 | 68. MCP Surface | 2/2 | Complete    | 2026-04-13 |
 | 69. TUI Surface | 2/2 | Complete    | 2026-04-13 |
 | 70. Wire Resolution + Preconditions | 3/3 | Complete    | 2026-04-13 |
-| 71. TUI Config Fix | TBD | Pending    | — |
+| 71. TUI Config Fix | 0/1 | Pending    | — |
 
 ## Progress Summary
 
