@@ -24,6 +24,8 @@
 //! - `milestone_get` — get full details of a milestone by slug
 //! - `milestone_create` — create a milestone TOML from structured parameters
 //! - `spec_create` — create a chunk spec (gates.toml) from structured parameters
+//! - `gate_wizard` — create or edit a gate spec with composability support
+//! - `criteria_create` — create a criteria library from structured parameters
 //! - `pr_create` — create a GitHub PR for a milestone after all chunk gates pass
 //!
 //! All domain errors are returned as `CallToolResult` with `isError: true`
@@ -1223,6 +1225,30 @@ struct WorktreeListResponse {
     entries: Vec<assay_types::WorktreeInfo>,
     /// Non-fatal warnings (e.g., prune failures). Omitted from JSON when empty.
     #[serde(skip_serializing_if = "Vec::is_empty")]
+    warnings: Vec<String>,
+}
+
+/// Response from the `gate_wizard` tool.
+#[derive(Serialize)]
+struct GateWizardResponse {
+    /// Absolute path to the written `gates.toml` file.
+    path: String,
+    /// The full `GatesSpec` that was written to disk.
+    spec: assay_types::GatesSpec,
+    /// Non-fatal warnings (e.g., shadowed criteria). Omitted from JSON when empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    warnings: Vec<String>,
+}
+
+/// Response from the `criteria_create` tool.
+#[derive(Serialize)]
+struct CriteriaCreateResponse {
+    /// Absolute path to the written library TOML file.
+    path: String,
+    /// The full `CriteriaLibrary` that was written to disk.
+    library: assay_types::CriteriaLibrary,
+    /// Non-fatal warnings. Omitted from JSON when empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     warnings: Vec<String>,
 }
 
@@ -4344,6 +4370,85 @@ impl AssayServer {
         match result {
             Ok(path) => {
                 let json = serde_json::to_string(&path.display().to_string()).map_err(|e| {
+                    McpError::internal_error(format!("serialization failed: {e}"), None)
+                })?;
+                Ok(CallToolResult::success(vec![Content::text(json)]))
+            }
+            Err(e) => Ok(domain_error(&e)),
+        }
+    }
+
+    #[tool(
+        description = "Create or edit a gate spec (gates.toml) from structured parameters. \
+        Supersedes spec_create with composability support (extends, include, preconditions). \
+        Pass overwrite=true to edit an existing gate. Returns the written file path and full GatesSpec."
+    )]
+    pub async fn gate_wizard(
+        &self,
+        params: Parameters<assay_types::GateWizardInput>,
+    ) -> Result<CallToolResult, McpError> {
+        let cwd = resolve_cwd()?;
+        let config = match load_config(&cwd) {
+            Ok(c) => c,
+            Err(err_result) => return Ok(err_result),
+        };
+        let assay_dir = cwd.join(".assay");
+        let specs_dir = cwd.join(".assay").join(&config.specs_dir);
+        let input = params.0;
+
+        let result = tokio::task::spawn_blocking(move || {
+            assay_core::wizard::apply_gate_wizard(&input, &assay_dir, &specs_dir)
+        })
+        .await
+        .map_err(|e| McpError::internal_error(format!("gate_wizard panicked: {e}"), None))?;
+
+        match result {
+            Ok(output) => {
+                let response = GateWizardResponse {
+                    path: output.path.display().to_string(),
+                    spec: output.spec,
+                    warnings: vec![],
+                };
+                let json = serde_json::to_string(&response).map_err(|e| {
+                    McpError::internal_error(format!("serialization failed: {e}"), None)
+                })?;
+                Ok(CallToolResult::success(vec![Content::text(json)]))
+            }
+            Err(e) => Ok(domain_error(&e)),
+        }
+    }
+
+    #[tool(
+        description = "Create a new criteria library from structured parameters. \
+        Creates a TOML file in .assay/criteria/<slug>.toml. \
+        Pass overwrite=true to replace an existing library. Returns the written file path and full CriteriaLibrary."
+    )]
+    pub async fn criteria_create(
+        &self,
+        params: Parameters<assay_types::CriteriaWizardInput>,
+    ) -> Result<CallToolResult, McpError> {
+        let cwd = resolve_cwd()?;
+        let _config = match load_config(&cwd) {
+            Ok(c) => c,
+            Err(err_result) => return Ok(err_result),
+        };
+        let assay_dir = cwd.join(".assay");
+        let input = params.0;
+
+        let result = tokio::task::spawn_blocking(move || {
+            assay_core::wizard::apply_criteria_wizard(&input, &assay_dir)
+        })
+        .await
+        .map_err(|e| McpError::internal_error(format!("criteria_create panicked: {e}"), None))?;
+
+        match result {
+            Ok(output) => {
+                let response = CriteriaCreateResponse {
+                    path: output.path.display().to_string(),
+                    library: output.library,
+                    warnings: vec![],
+                };
+                let json = serde_json::to_string(&response).map_err(|e| {
                     McpError::internal_error(format!("serialization failed: {e}"), None)
                 })?;
                 Ok(CallToolResult::success(vec![Content::text(json)]))
@@ -9895,6 +10000,228 @@ depends_on = ["chunk-a"]
             result_text.contains("\"sessions\":2") || result_text.contains("\"sessions\": 2"),
             "result should contain session count, got: {}",
             result_text
+        );
+    }
+
+    // ── gate_wizard tests ────────────────────────────────────────────
+
+    #[tokio::test]
+    #[serial]
+    async fn gate_wizard_tool_in_router() {
+        let server = AssayServer::new();
+        let tools = server.tool_router.list_all();
+        let tool_names: Vec<&str> = tools.iter().map(|t| t.name.as_ref()).collect();
+        assert!(
+            tool_names.contains(&"gate_wizard"),
+            "gate_wizard should be in tool list, got: {tool_names:?}"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn gate_wizard_writes_gates_toml() {
+        let dir = create_project(r#"project_name = "wizard-test""#);
+        std::env::set_current_dir(dir.path()).unwrap();
+
+        let server = AssayServer::new();
+        let result = server
+            .gate_wizard(Parameters(assay_types::GateWizardInput {
+                slug: "my-gate".to_string(),
+                description: Some("Test gate".to_string()),
+                extends: None,
+                include: vec![],
+                criteria: vec![assay_types::CriterionInput {
+                    name: "tests-pass".to_string(),
+                    description: "All tests pass".to_string(),
+                    cmd: Some("cargo test".to_string()),
+                }],
+                preconditions: None,
+                overwrite: false,
+            }))
+            .await
+            .unwrap();
+
+        assert!(
+            !result.is_error.unwrap_or(false),
+            "gate_wizard should succeed, got: {:?}",
+            extract_text(&result)
+        );
+
+        let text = extract_text(&result);
+        assert!(
+            text.contains("my-gate"),
+            "response should mention the gate slug, got: {text}"
+        );
+
+        // gates.toml must exist on disk.
+        let gates_path = dir
+            .path()
+            .join(".assay")
+            .join("specs")
+            .join("my-gate")
+            .join("gates.toml");
+        assert!(
+            gates_path.exists(),
+            ".assay/specs/my-gate/gates.toml should exist on disk"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn gate_wizard_rejects_duplicate() {
+        let dir = create_project(r#"project_name = "wizard-test""#);
+        std::env::set_current_dir(dir.path()).unwrap();
+
+        let server = AssayServer::new();
+
+        // First call: must succeed.
+        server
+            .gate_wizard(Parameters(assay_types::GateWizardInput {
+                slug: "dup-gate".to_string(),
+                description: None,
+                extends: None,
+                include: vec![],
+                criteria: vec![assay_types::CriterionInput {
+                    name: "criterion-1".to_string(),
+                    description: "First criterion".to_string(),
+                    cmd: None,
+                }],
+                preconditions: None,
+                overwrite: false,
+            }))
+            .await
+            .unwrap();
+
+        // Second call with same slug and overwrite=false: must return isError: true.
+        let result = server
+            .gate_wizard(Parameters(assay_types::GateWizardInput {
+                slug: "dup-gate".to_string(),
+                description: None,
+                extends: None,
+                include: vec![],
+                criteria: vec![assay_types::CriterionInput {
+                    name: "criterion-1".to_string(),
+                    description: "First criterion".to_string(),
+                    cmd: None,
+                }],
+                preconditions: None,
+                overwrite: false,
+            }))
+            .await
+            .unwrap();
+
+        assert!(
+            result.is_error.unwrap_or(false),
+            "duplicate gate_wizard with overwrite=false should return isError: true"
+        );
+    }
+
+    // ── criteria_create tests ────────────────────────────────────────
+
+    #[tokio::test]
+    #[serial]
+    async fn criteria_create_tool_in_router() {
+        let server = AssayServer::new();
+        let tools = server.tool_router.list_all();
+        let tool_names: Vec<&str> = tools.iter().map(|t| t.name.as_ref()).collect();
+        assert!(
+            tool_names.contains(&"criteria_create"),
+            "criteria_create should be in tool list, got: {tool_names:?}"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn criteria_create_writes_library() {
+        let dir = create_project(r#"project_name = "wizard-test""#);
+        std::env::set_current_dir(dir.path()).unwrap();
+
+        let server = AssayServer::new();
+        let result = server
+            .criteria_create(Parameters(assay_types::CriteriaWizardInput {
+                name: "rust-ci".to_string(),
+                description: "Standard Rust CI criteria".to_string(),
+                version: None,
+                tags: vec![],
+                criteria: vec![assay_types::CriterionInput {
+                    name: "compiles".to_string(),
+                    description: "Code compiles without errors".to_string(),
+                    cmd: Some("cargo build".to_string()),
+                }],
+                overwrite: false,
+            }))
+            .await
+            .unwrap();
+
+        assert!(
+            !result.is_error.unwrap_or(false),
+            "criteria_create should succeed, got: {:?}",
+            extract_text(&result)
+        );
+
+        let text = extract_text(&result);
+        assert!(
+            text.contains("rust-ci"),
+            "response should mention the library name, got: {text}"
+        );
+
+        // Library TOML must exist on disk.
+        let lib_path = dir
+            .path()
+            .join(".assay")
+            .join("criteria")
+            .join("rust-ci.toml");
+        assert!(
+            lib_path.exists(),
+            ".assay/criteria/rust-ci.toml should exist on disk"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn criteria_create_rejects_duplicate() {
+        let dir = create_project(r#"project_name = "wizard-test""#);
+        std::env::set_current_dir(dir.path()).unwrap();
+
+        let server = AssayServer::new();
+
+        // First call: must succeed.
+        server
+            .criteria_create(Parameters(assay_types::CriteriaWizardInput {
+                name: "dup-lib".to_string(),
+                description: "Duplicate library".to_string(),
+                version: None,
+                tags: vec![],
+                criteria: vec![assay_types::CriterionInput {
+                    name: "criterion-1".to_string(),
+                    description: "First criterion".to_string(),
+                    cmd: None,
+                }],
+                overwrite: false,
+            }))
+            .await
+            .unwrap();
+
+        // Second call with same name and overwrite=false: must return isError: true.
+        let result = server
+            .criteria_create(Parameters(assay_types::CriteriaWizardInput {
+                name: "dup-lib".to_string(),
+                description: "Duplicate library".to_string(),
+                version: None,
+                tags: vec![],
+                criteria: vec![assay_types::CriterionInput {
+                    name: "criterion-1".to_string(),
+                    description: "First criterion".to_string(),
+                    cmd: None,
+                }],
+                overwrite: false,
+            }))
+            .await
+            .unwrap();
+
+        assert!(
+            result.is_error.unwrap_or(false),
+            "duplicate criteria_create with overwrite=false should return isError: true"
         );
     }
 
