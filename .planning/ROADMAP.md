@@ -306,7 +306,7 @@ Phases execute in numeric order. Phases 68 and 69 are independent and can execut
 | 68. MCP Surface | 2/2 | Complete    | 2026-04-13 |
 | 69. TUI Surface | 2/2 | Complete    | 2026-04-13 |
 | 70. Wire Resolution + Preconditions | 3/3 | Complete    | 2026-04-13 |
-| 71. TUI Config Fix | 1/1 | Complete   | 2026-04-13 |
+| 71. TUI Config Fix | 1/1 | Complete    | 2026-04-13 |
 
 ## Progress Summary
 
