@@ -254,6 +254,64 @@ fn test_slash_gate_edit_empty_slug_shows_error() {
     }
 }
 
+/// Gate wizard submit with custom specs_dir config must write gate to the configured path.
+///
+/// Verifies that App::resolved_specs_dir() is honored: when config.toml specifies
+/// `specs_dir = "custom-specs/"`, the gate TOML is written to `.assay/custom-specs/<name>/`
+/// and NOT to the default `.assay/specs/<name>/` location.
+#[test]
+fn test_gate_wizard_submit_honors_custom_specs_dir() {
+    let tmp = TempDir::new().unwrap();
+    let root = tmp.path().to_path_buf();
+    let assay_dir = root.join(".assay");
+
+    // Minimum structure: milestones dir + custom specs dir (not default "specs/").
+    std::fs::create_dir_all(assay_dir.join("milestones")).unwrap();
+    std::fs::create_dir_all(assay_dir.join("custom-specs")).unwrap();
+
+    // Write config.toml pointing at the custom specs directory.
+    // project_name is required by the config validator.
+    std::fs::write(
+        assay_dir.join("config.toml"),
+        "project_name = \"test-project\"\nspecs_dir = \"custom-specs/\"\n",
+    )
+    .unwrap();
+
+    let mut app = App::with_project_root(Some(root)).unwrap();
+
+    // Open gate wizard via 'g' key.
+    app.handle_event(key(KeyCode::Char('g')));
+    assert!(
+        matches!(app.screen, Screen::GateWizard(_)),
+        "pressing 'g' must open Screen::GateWizard"
+    );
+
+    // Fill in and submit the wizard.
+    drive_wizard_create(&mut app, "test-gate");
+
+    // Submit must succeed and return to Dashboard.
+    assert!(
+        matches!(app.screen, Screen::Dashboard),
+        "submit must return to Dashboard"
+    );
+
+    // Gate must be written to the custom specs path.
+    assert!(
+        assay_dir
+            .join("custom-specs")
+            .join("test-gate")
+            .join("gates.toml")
+            .exists(),
+        "gates.toml must be written to custom-specs/test-gate/"
+    );
+
+    // Gate must NOT be written to the default specs path.
+    assert!(
+        !assay_dir.join("specs").join("test-gate").exists(),
+        "gate must NOT be written to the default specs/ path"
+    );
+}
+
 /// 'e' key on ChunkDetail must open gate wizard in edit mode.
 ///
 /// Uses the milestone wizard ('n' key) to create a milestone with a chunk spec.
