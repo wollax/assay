@@ -852,6 +852,8 @@ struct SpecListError {
 /// Aggregate gate run response returned by the `gate_run` tool.
 #[derive(Serialize)]
 struct GateRunResponse {
+    /// Always `"evaluated"` for normal runs — allows agents to distinguish from precondition failures.
+    outcome: String,
     /// Name of the spec that was evaluated.
     spec_name: String,
     /// Total number of criteria that passed.
@@ -1031,6 +1033,12 @@ struct CriterionSummary {
     /// Absent when output was not truncated or criterion was skipped.
     #[serde(skip_serializing_if = "Option::is_none")]
     original_bytes: Option<u64>,
+    /// Criterion origin: `"own"`, `"parent"`, or `"library"`. Omitted for legacy/non-resolved specs.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    source: Option<String>,
+    /// Additional source detail (parent gate slug or library slug). Omitted when source is `"own"` or absent.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    source_detail: Option<String>,
 }
 
 /// Returns `true` when the value is `None` or `Some(false)`.
@@ -5139,57 +5147,48 @@ fn format_gate_response(
         }
     };
 
+    let source_fields = |cr: &assay_types::CriterionResult| -> (Option<String>, Option<String>) {
+        match &cr.source {
+            Some(assay_types::CriterionSource::Parent { gate_slug }) => {
+                (Some("parent".to_string()), Some(gate_slug.clone()))
+            }
+            Some(assay_types::CriterionSource::Library { slug }) => {
+                (Some("library".to_string()), Some(slug.clone()))
+            }
+            Some(assay_types::CriterionSource::Own) => (Some("own".to_string()), None),
+            None => (None, None),
+        }
+    };
+
     let criteria = summary
         .results
         .iter()
-        .map(|cr| match &cr.result {
-            None => CriterionSummary {
-                name: cr.criterion_name.clone(),
-                status: "skipped".to_string(),
-                enforcement: enforcement_label(cr.enforcement),
-                kind_label: None,
-                exit_code: None,
-                duration_ms: None,
-                reason: None,
-                stdout: None,
-                stderr: None,
-                truncated: None,
-                original_bytes: None,
-            },
-            Some(gate_result) if gate_result.passed => CriterionSummary {
-                name: cr.criterion_name.clone(),
-                status: "passed".to_string(),
-                enforcement: enforcement_label(cr.enforcement),
-                kind_label: kind_label(&gate_result.kind),
-                exit_code: gate_result.exit_code,
-                duration_ms: Some(gate_result.duration_ms),
-                reason: None,
-                stdout: if include_evidence {
-                    Some(gate_result.stdout.clone())
-                } else {
-                    None
-                },
-                stderr: if include_evidence {
-                    Some(gate_result.stderr.clone())
-                } else {
-                    None
-                },
-                truncated: Some(gate_result.truncated),
-                original_bytes: gate_result.original_bytes,
-            },
-            Some(gate_result) => {
-                let reason = first_nonempty_line(&gate_result.stderr)
-                    .or_else(|| first_nonempty_line(&gate_result.stdout))
-                    .unwrap_or("unknown")
-                    .to_string();
-                CriterionSummary {
+        .map(|cr| {
+            let (source, source_detail) = source_fields(cr);
+            match &cr.result {
+                None => CriterionSummary {
                     name: cr.criterion_name.clone(),
-                    status: "failed".to_string(),
+                    status: "skipped".to_string(),
+                    enforcement: enforcement_label(cr.enforcement),
+                    kind_label: None,
+                    exit_code: None,
+                    duration_ms: None,
+                    reason: None,
+                    stdout: None,
+                    stderr: None,
+                    truncated: None,
+                    original_bytes: None,
+                    source,
+                    source_detail,
+                },
+                Some(gate_result) if gate_result.passed => CriterionSummary {
+                    name: cr.criterion_name.clone(),
+                    status: "passed".to_string(),
                     enforcement: enforcement_label(cr.enforcement),
                     kind_label: kind_label(&gate_result.kind),
                     exit_code: gate_result.exit_code,
                     duration_ms: Some(gate_result.duration_ms),
-                    reason: Some(reason),
+                    reason: None,
                     stdout: if include_evidence {
                         Some(gate_result.stdout.clone())
                     } else {
@@ -5202,12 +5201,44 @@ fn format_gate_response(
                     },
                     truncated: Some(gate_result.truncated),
                     original_bytes: gate_result.original_bytes,
+                    source,
+                    source_detail,
+                },
+                Some(gate_result) => {
+                    let reason = first_nonempty_line(&gate_result.stderr)
+                        .or_else(|| first_nonempty_line(&gate_result.stdout))
+                        .unwrap_or("unknown")
+                        .to_string();
+                    CriterionSummary {
+                        name: cr.criterion_name.clone(),
+                        status: "failed".to_string(),
+                        enforcement: enforcement_label(cr.enforcement),
+                        kind_label: kind_label(&gate_result.kind),
+                        exit_code: gate_result.exit_code,
+                        duration_ms: Some(gate_result.duration_ms),
+                        reason: Some(reason),
+                        stdout: if include_evidence {
+                            Some(gate_result.stdout.clone())
+                        } else {
+                            None
+                        },
+                        stderr: if include_evidence {
+                            Some(gate_result.stderr.clone())
+                        } else {
+                            None
+                        },
+                        truncated: Some(gate_result.truncated),
+                        original_bytes: gate_result.original_bytes,
+                        source,
+                        source_detail,
+                    }
                 }
             }
         })
         .collect();
 
     GateRunResponse {
+        outcome: "evaluated".to_string(),
         spec_name: summary.spec_name.clone(),
         passed: summary.passed,
         failed: summary.failed,
@@ -6181,6 +6212,7 @@ cmd = "echo ok"
     #[test]
     fn test_gate_run_response_serialization() {
         let response = GateRunResponse {
+            outcome: "evaluated".to_string(),
             spec_name: "auth-flow".to_string(),
             passed: 2,
             failed: 1,
@@ -6204,6 +6236,8 @@ cmd = "echo ok"
                     stderr: None,
                     truncated: Some(false),
                     original_bytes: None,
+                    source: None,
+                    source_detail: None,
                 },
                 CriterionSummary {
                     name: "lint".to_string(),
@@ -6217,6 +6251,8 @@ cmd = "echo ok"
                     stderr: None,
                     truncated: Some(false),
                     original_bytes: None,
+                    source: None,
+                    source_detail: None,
                 },
                 CriterionSummary {
                     name: "review".to_string(),
@@ -6230,6 +6266,8 @@ cmd = "echo ok"
                     stderr: None,
                     truncated: None,
                     original_bytes: None,
+                    source: None,
+                    source_detail: None,
                 },
             ],
             session_id: None,
@@ -6314,6 +6352,7 @@ cmd = "echo ok"
     #[test]
     fn test_gate_run_response_with_evidence() {
         let response = GateRunResponse {
+            outcome: "evaluated".to_string(),
             spec_name: "test".to_string(),
             passed: 1,
             failed: 0,
@@ -6336,6 +6375,8 @@ cmd = "echo ok"
                 stderr: Some(String::new()),
                 truncated: Some(false),
                 original_bytes: None,
+                source: None,
+                source_detail: None,
             }],
             session_id: None,
             pending_criteria: None,
@@ -6376,6 +6417,7 @@ cmd = "echo ok"
     #[test]
     fn test_gate_run_response_with_session() {
         let response = GateRunResponse {
+            outcome: "evaluated".to_string(),
             spec_name: "mixed-spec".to_string(),
             passed: 1,
             failed: 0,
@@ -7416,6 +7458,7 @@ cmd = "echo ok"
     #[test]
     fn test_criterion_summary_truncation_fields_all_states() {
         let response = GateRunResponse {
+            outcome: "evaluated".to_string(),
             spec_name: "trunc-test".to_string(),
             passed: 1,
             failed: 1,
@@ -7440,6 +7483,8 @@ cmd = "echo ok"
                     stderr: None,
                     truncated: Some(true),
                     original_bytes: Some(524_288),
+                    source: None,
+                    source_detail: None,
                 },
                 // Failed + not truncated
                 CriterionSummary {
@@ -7454,6 +7499,8 @@ cmd = "echo ok"
                     stderr: None,
                     truncated: Some(false),
                     original_bytes: None,
+                    source: None,
+                    source_detail: None,
                 },
                 // Skipped
                 CriterionSummary {
@@ -7468,6 +7515,8 @@ cmd = "echo ok"
                     stderr: None,
                     truncated: None,
                     original_bytes: None,
+                    source: None,
+                    source_detail: None,
                 },
             ],
             session_id: None,
@@ -10842,5 +10891,143 @@ cmd = "echo own"
         let parsed: serde_json::Value = serde_json::from_str(text.unwrap()).unwrap();
         assert_eq!(parsed["removed"], 0, "no worktrees to remove");
         assert_eq!(parsed["orphans_only"], true);
+    }
+
+    // ── criterion_summary_source tests ──────────────────────────────────────
+
+    fn make_criterion_result_with_source(
+        source: Option<assay_types::CriterionSource>,
+    ) -> CriterionResult {
+        CriterionResult {
+            criterion_name: "my-criterion".to_string(),
+            result: Some(GateResult {
+                passed: true,
+                kind: GateKind::Command {
+                    cmd: "echo ok".to_string(),
+                },
+                stdout: "ok\n".to_string(),
+                stderr: String::new(),
+                exit_code: Some(0),
+                duration_ms: 10,
+                timestamp: Utc::now(),
+                truncated: false,
+                original_bytes: None,
+                evidence: None,
+                reasoning: None,
+                confidence: None,
+                evaluator_role: None,
+            }),
+            enforcement: Enforcement::Required,
+            source,
+        }
+    }
+
+    fn make_summary_with_result(cr: CriterionResult) -> GateRunSummary {
+        GateRunSummary {
+            spec_name: "source-spec".to_string(),
+            results: vec![cr],
+            passed: 1,
+            failed: 0,
+            skipped: 0,
+            total_duration_ms: 10,
+            enforcement: EnforcementSummary {
+                required_passed: 1,
+                required_failed: 0,
+                advisory_passed: 0,
+                advisory_failed: 0,
+            },
+        }
+    }
+
+    /// Test: format_gate_response with source=Parent produces source="parent" and source_detail=gate_slug
+    #[test]
+    fn criterion_summary_source_parent_field() {
+        let cr = make_criterion_result_with_source(Some(assay_types::CriterionSource::Parent {
+            gate_slug: "base-gate".to_string(),
+        }));
+        let summary = make_summary_with_result(cr);
+        let response = format_gate_response(&summary, false);
+
+        let cs = &response.criteria[0];
+        assert_eq!(
+            cs.source.as_deref(),
+            Some("parent"),
+            "source should be 'parent' for CriterionSource::Parent"
+        );
+        assert_eq!(
+            cs.source_detail.as_deref(),
+            Some("base-gate"),
+            "source_detail should contain the parent gate_slug"
+        );
+    }
+
+    /// Test: format_gate_response with source=Library produces source="library" and source_detail=slug
+    #[test]
+    fn criterion_summary_source_library_field() {
+        let cr = make_criterion_result_with_source(Some(assay_types::CriterionSource::Library {
+            slug: "shared-checks".to_string(),
+        }));
+        let summary = make_summary_with_result(cr);
+        let response = format_gate_response(&summary, false);
+
+        let cs = &response.criteria[0];
+        assert_eq!(
+            cs.source.as_deref(),
+            Some("library"),
+            "source should be 'library' for CriterionSource::Library"
+        );
+        assert_eq!(
+            cs.source_detail.as_deref(),
+            Some("shared-checks"),
+            "source_detail should contain the library slug"
+        );
+    }
+
+    /// Test: format_gate_response with source=None produces source=None and source_detail=None
+    #[test]
+    fn criterion_summary_source_none_omitted() {
+        let cr = make_criterion_result_with_source(None);
+        let summary = make_summary_with_result(cr);
+        let response = format_gate_response(&summary, false);
+
+        let cs = &response.criteria[0];
+        assert!(
+            cs.source.is_none(),
+            "source should be None when CriterionResult.source is None (legacy path)"
+        );
+        assert!(
+            cs.source_detail.is_none(),
+            "source_detail should be None when source is None"
+        );
+    }
+
+    /// Test: format_gate_response with source=Own produces source="own" and source_detail=None
+    #[test]
+    fn criterion_summary_source_own_field() {
+        let cr = make_criterion_result_with_source(Some(assay_types::CriterionSource::Own));
+        let summary = make_summary_with_result(cr);
+        let response = format_gate_response(&summary, false);
+
+        let cs = &response.criteria[0];
+        assert_eq!(
+            cs.source.as_deref(),
+            Some("own"),
+            "source should be 'own' for CriterionSource::Own"
+        );
+        assert!(
+            cs.source_detail.is_none(),
+            "source_detail should be None for source='own'"
+        );
+    }
+
+    /// Test: format_gate_response response includes outcome="evaluated"
+    #[test]
+    fn gate_run_response_outcome_evaluated() {
+        let summary = sample_summary();
+        let response = format_gate_response(&summary, false);
+        assert_eq!(
+            response.outcome, "evaluated",
+            "GateRunResponse.outcome should always be 'evaluated'"
+        );
     }
 }
