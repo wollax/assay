@@ -3,14 +3,14 @@ kata_state_version: 1.0
 milestone: v0.7
 milestone_name: milestone
 status: completed
-stopped_at: Phase 70 context gathered
-last_updated: "2026-04-13T15:30:35.123Z"
+stopped_at: Completed 70-wire-resolution-preconditions 70-01-PLAN.md
+last_updated: "2026-04-13T16:26:25.163Z"
 last_activity: 2026-04-13 — Phase 69 Plan 02 complete (gate wizard app integration, 16 tests)
 progress:
   total_phases: 8
   completed_phases: 6
-  total_plans: 15
-  completed_plans: 15
+  total_plans: 18
+  completed_plans: 16
   percent: 100
 ---
 
@@ -92,6 +92,8 @@ Recent decisions affecting current work:
 - [Phase 69-tui-surface]: criterion cmd='echo ok' required in drive_wizard_create test helper — validate_gates_spec rejects specs with no executable criterion on read path
 - [Phase 69-tui-surface]: GateWizardState fields (step, fields, criteria, edit_slug) and assemble_gate_input promoted to pub for test accessibility
 - [Phase 69-tui-surface]: e-key test uses milestone wizard ('n') to create milestone+spec atomically — Milestone struct has required created_at/updated_at chrono fields
+- [Phase 70-wire-resolution-preconditions]: precondition_blocked uses Option<bool> for backward-compat with old history records (None = normal run)
+- [Phase 70-wire-resolution-preconditions]: last_gate_passed() checks precondition_blocked before enforcement counters — blocked run is not a pass even with zeroed counters
 
 ### Blockers
 
@@ -103,6 +105,6 @@ Plan Phase 65: Resolution Core (INHR-03, INHR-04, CLIB-01, CLIB-02, CLIB-03)
 
 ### Session Continuity
 
-Last session: 2026-04-13T15:30:35.120Z
-Stopped at: Phase 70 context gathered
-Resume file: .planning/phases/70-wire-resolution-preconditions/70-CONTEXT.md
+Last session: 2026-04-13T16:26:25.161Z
+Stopped at: Completed 70-wire-resolution-preconditions 70-01-PLAN.md
+Resume file: None
