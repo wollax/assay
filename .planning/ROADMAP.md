@@ -165,7 +165,7 @@ Post-review fix: UTF-8 safe TextDelta truncation (floor_char_boundary) + correct
 - [x] **Phase 67: Wizard Core + CLI Surface** - Shared wizard logic in `assay-core` and interactive CLI commands (completed 2026-04-12)
 - [x] **Phase 68: MCP Surface** - Five new MCP tools for agent-driven gate composition (completed 2026-04-13)
 - [x] **Phase 69: TUI Surface** - TUI wizard state machine for human-facing gate editing (completed 2026-04-13)
-- [ ] **Phase 70: Wire Resolution + Preconditions into Gate Pipeline** - Wire compose::resolve() and check_preconditions() into evaluate_all_gates so extends/include/preconditions work at runtime
+- [x] **Phase 70: Wire Resolution + Preconditions into Gate Pipeline** - Wire compose::resolve() and check_preconditions() into evaluate_all_gates so extends/include/preconditions work at runtime (completed 2026-04-13)
 - [ ] **Phase 71: TUI Config Fix** - Read config.specs_dir instead of hardcoding .assay/specs path
 
 ## Phase Details
@@ -302,7 +302,7 @@ Phases execute in numeric order. Phases 68 and 69 are independent and can execut
 | 67. Wizard Core + CLI Surface | 4/4 | Complete    | 2026-04-12 |
 | 68. MCP Surface | 2/2 | Complete    | 2026-04-13 |
 | 69. TUI Surface | 2/2 | Complete    | 2026-04-13 |
-| 70. Wire Resolution + Preconditions | 2/3 | In Progress|  |
+| 70. Wire Resolution + Preconditions | 3/3 | Complete   | 2026-04-13 |
 | 71. TUI Config Fix | TBD | Pending    | — |
 
 ## Progress Summary

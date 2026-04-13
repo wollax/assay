@@ -3,14 +3,14 @@ kata_state_version: 1.0
 milestone: v0.7
 milestone_name: milestone
 status: completed
-stopped_at: Completed 70-wire-resolution-preconditions 70-03-PLAN.md
-last_updated: "2026-04-13T16:38:57.811Z"
-last_activity: 2026-04-13 — Phase 69 Plan 02 complete (gate wizard app integration, 16 tests)
+stopped_at: Completed 70-wire-resolution-preconditions 70-02-PLAN.md
+last_updated: "2026-04-13T16:40:02.825Z"
+last_activity: 2026-04-13 — Phase 70 Plan 02 complete (CLI gate run wired with resolve+preconditions+evaluate pipeline, 9 tests)
 progress:
   total_phases: 8
-  completed_phases: 6
+  completed_phases: 7
   total_plans: 18
-  completed_plans: 17
+  completed_plans: 18
   percent: 100
 ---
 
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-04-11)
 
 ## Current Position
 
-Phase: 69 of 69 (TUI Surface)
+Phase: 70 of 70 (Wire Resolution Preconditions)
 Plan: 2 of 2 in current phase
-Status: Complete — all v0.7.0 phases done
-Last activity: 2026-04-13 — Phase 69 Plan 02 complete (gate wizard app integration, 16 tests)
+Status: Complete — Phase 70 done, all gap-closure phases complete
+Last activity: 2026-04-13 — Phase 70 Plan 02 complete (CLI gate run wired with resolve+preconditions+evaluate pipeline, 9 tests)
 
 Progress: [██████████] 100% (v0.7.0)
 
@@ -97,6 +97,10 @@ Recent decisions affecting current work:
 - [Phase 70-wire-resolution-preconditions]: gate_run PreconditionFailedResponse returned as success (not error) with outcome=precondition_failed — agents disambiguate by field
 - [Phase 70-wire-resolution-preconditions]: outcome field added to GateRunResponse (always 'evaluated') for symmetric agent disambiguation
 - [Phase 70-wire-resolution-preconditions]: CriterionSource::None maps to source=None in MCP response (legacy specs produce no source annotation)
+- [Phase 70-02]: CWD_LOCK static Mutex used in tests to serialize set_current_dir calls — prevents parallel test data races
+- [Phase 70-02]: save_blocked_run() added to assay-core/history as public API — CLI and MCP both use it directly
+- [Phase 70-02]: source_tag() returns empty string for Own/None (signal-to-noise tradeoff per CONTEXT.md)
+- [Phase 70-02]: exit code 2 for precondition-blocked; blocked_count tracked separately from gate failures in --all mode
 
 ### Blockers
 
@@ -104,10 +108,10 @@ None.
 
 ### Next Actions
 
-Plan Phase 65: Resolution Core (INHR-03, INHR-04, CLIB-01, CLIB-02, CLIB-03)
+Phase 70 complete. All v0.7.0 gap-closure phases done.
 
 ### Session Continuity
 
-Last session: 2026-04-13T16:38:57.807Z
-Stopped at: Completed 70-wire-resolution-preconditions 70-03-PLAN.md
+Last session: 2026-04-13T16:40:02.823Z
+Stopped at: Completed 70-wire-resolution-preconditions 70-02-PLAN.md
 Resume file: None
