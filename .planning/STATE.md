@@ -2,15 +2,15 @@
 kata_state_version: 1.0
 milestone: v0.7
 milestone_name: milestone
-status: executing
-stopped_at: Completed 69-tui-surface-01-PLAN.md
-last_updated: "2026-04-13T13:55:12.536Z"
-last_activity: 2026-04-13 — Phase 68 Plan 01 complete (gate_wizard + criteria_create MCP tools)
+status: complete
+stopped_at: Completed 69-tui-surface-02-PLAN.md
+last_updated: "2026-04-13T14:14:51.110Z"
+last_activity: 2026-04-13 — Phase 69 Plan 02 complete (gate wizard app integration, 16 tests)
 progress:
   total_phases: 6
-  completed_phases: 5
+  completed_phases: 6
   total_plans: 15
-  completed_plans: 14
+  completed_plans: 15
   percent: 0
 ---
 
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-04-11)
 
 ## Current Position
 
-Phase: 68 of 69 (MCP Surface)
-Plan: 1 of TBD in current phase
-Status: In progress
-Last activity: 2026-04-13 — Phase 68 Plan 01 complete (gate_wizard + criteria_create MCP tools)
+Phase: 69 of 69 (TUI Surface)
+Plan: 2 of 2 in current phase
+Status: Complete — all v0.7.0 phases done
+Last activity: 2026-04-13 — Phase 69 Plan 02 complete (gate wizard app integration, 16 tests)
 
-Progress: [░░░░░░░░░░] 0% (v0.7.0)
+Progress: [██████████] 100% (v0.7.0)
 
 ## Milestone Progress
 
@@ -45,7 +45,7 @@ Progress: [░░░░░░░░░░] 0% (v0.7.0)
 | v0.6.0 | — | — | 100% (shipped) |
 | v0.6.1 | — | — | 100% (shipped) |
 | v0.6.2 | 4 (60-63) | 27 | 100% (shipped) |
-| v0.7.0 | 6 (64-69) | 22 | 0% (in progress) |
+| v0.7.0 | 6 (64-69) | 22 | 100% (complete) |
 
 ## Accumulated Context
 
@@ -88,6 +88,10 @@ Recent decisions affecting current work:
 - [Phase 68-02]: Legacy spec format rejection uses CallToolResult::error directly — avoids adding AssayError::Other catch-all variant
 - [Phase 68-02]: spec_resolve shadow detection pre-loads inherited criterion names before resolve(), post-checks Own criteria — no compose::resolve signature change
 - [Phase 69-tui-surface]: COMMANDS table lookup has priority over gate-edit prefix check in tab_complete — preserves alphabetical table ordering
+- [Phase 69-tui-surface]: Box<GateWizardState> in Screen::GateWizard — GateWizardState is ~440 bytes vs next-largest variant ~120 bytes; boxing satisfies clippy::large_enum_variant
+- [Phase 69-tui-surface]: criterion cmd='echo ok' required in drive_wizard_create test helper — validate_gates_spec rejects specs with no executable criterion on read path
+- [Phase 69-tui-surface]: GateWizardState fields (step, fields, criteria, edit_slug) and assemble_gate_input promoted to pub for test accessibility
+- [Phase 69-tui-surface]: e-key test uses milestone wizard ('n') to create milestone+spec atomically — Milestone struct has required created_at/updated_at chrono fields
 
 ### Blockers
 
@@ -99,6 +103,6 @@ Plan Phase 65: Resolution Core (INHR-03, INHR-04, CLIB-01, CLIB-02, CLIB-03)
 
 ### Session Continuity
 
-Last session: 2026-04-13T13:55:12.534Z
-Stopped at: Completed 69-tui-surface-01-PLAN.md
+Last session: 2026-04-13T14:14:51.107Z
+Stopped at: Completed 69-tui-surface-02-PLAN.md
 Resume file: None

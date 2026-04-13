@@ -164,7 +164,7 @@ Post-review fix: UTF-8 safe TextDelta truncation (floor_char_boundary) + correct
 - [x] **Phase 66: Evaluation Integration + Validation** - Wire resolution into gate evaluation, precondition enforcement, and `spec_validate` composability diagnostics (completed 2026-04-12)
 - [x] **Phase 67: Wizard Core + CLI Surface** - Shared wizard logic in `assay-core` and interactive CLI commands (completed 2026-04-12)
 - [x] **Phase 68: MCP Surface** - Five new MCP tools for agent-driven gate composition (completed 2026-04-13)
-- [ ] **Phase 69: TUI Surface** - TUI wizard state machine for human-facing gate editing
+- [x] **Phase 69: TUI Surface** - TUI wizard state machine for human-facing gate editing (completed 2026-04-13)
 
 ## Phase Details
 
@@ -252,7 +252,7 @@ Plans:
   1. From the TUI, the user can navigate to the gate wizard screen, fill in gate fields (name, criteria, parent, libraries), and confirm to write the gate TOML to disk
   2. From the TUI, the user can select an existing gate and edit its composability fields, with the result written back to disk
   3. Invalid inputs (bad slug, missing name) are rejected by core validation before the wizard attempts any file write — no validation logic lives in TUI code
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 
 Plans:
 - [ ] 69-01-PLAN.md — GateWizardState module + slash command variants
@@ -270,7 +270,7 @@ Phases execute in numeric order. Phases 68 and 69 are independent and can execut
 | 66. Evaluation Integration + Validation | 3/3 | Complete    | 2026-04-12 |
 | 67. Wizard Core + CLI Surface | 4/4 | Complete    | 2026-04-12 |
 | 68. MCP Surface | 2/2 | Complete    | 2026-04-13 |
-| 69. TUI Surface | 1/2 | In Progress|  |
+| 69. TUI Surface | 2/2 | Complete   | 2026-04-13 |
 
 ## Progress Summary
 
