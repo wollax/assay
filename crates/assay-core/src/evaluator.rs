@@ -352,6 +352,7 @@ pub fn map_evaluator_output(
             enforcement: enforcement_summary,
         },
         diff_truncation: None,
+        precondition_blocked: None,
     };
 
     (record, warnings)

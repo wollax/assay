@@ -9736,6 +9736,7 @@ cmd = "echo ok"
             working_dir: None,
             summary: sample_summary(),
             diff_truncation: None,
+            precondition_blocked: None,
         };
         let json = serde_json::to_string_pretty(&record).unwrap();
         std::fs::write(results_dir.join(format!("{run_id}.json")), json).unwrap();

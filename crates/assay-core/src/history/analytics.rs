@@ -318,6 +318,7 @@ mod tests {
             timestamp: ts,
             working_dir: None,
             diff_truncation: None,
+            precondition_blocked: None,
             summary: assay_types::GateRunSummary {
                 spec_name: "spec-skip".to_string(),
                 results: vec![

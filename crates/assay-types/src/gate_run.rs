@@ -113,6 +113,12 @@ pub struct GateRunRecord {
     /// Present only when truncation occurred; omitted when diff fit within budget.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub diff_truncation: Option<DiffTruncation>,
+    /// Whether this run was blocked by a precondition failure. When `Some(true)`,
+    /// the gate was never evaluated — the summary contains zeroed counters.
+    /// Absent (`None`) for normal evaluation runs. Backward-compatible: old
+    /// records without this field deserialize to `None`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub precondition_blocked: Option<bool>,
 }
 
 inventory::submit! {
@@ -262,6 +268,77 @@ mod tests {
             "old JSON without source should produce source: None"
         );
     }
+
+    // --- GateRunRecord::precondition_blocked tests ---
+
+    // Test: GateRunRecord with precondition_blocked: Some(true) roundtrips JSON
+    #[test]
+    fn gate_run_record_precondition_blocked_some_true_roundtrip() {
+        use chrono::TimeZone;
+        let ts = Utc.timestamp_opt(1_700_000_000, 0).unwrap();
+        let record = GateRunRecord {
+            run_id: "20231114T221320Z-a1b2c3".to_string(),
+            assay_version: "0.7.0-test".to_string(),
+            timestamp: ts,
+            working_dir: None,
+            summary: make_empty_summary("prec-blocked-spec"),
+            diff_truncation: None,
+            precondition_blocked: Some(true),
+        };
+        let json = serde_json::to_string(&record).expect("serialize with precondition_blocked");
+        let back: GateRunRecord =
+            serde_json::from_str(&json).expect("deserialize with precondition_blocked");
+        assert_eq!(back.precondition_blocked, Some(true));
+        assert_eq!(back.run_id, record.run_id);
+    }
+
+    // Test: GateRunRecord without precondition_blocked field (old JSON) deserializes to None
+    #[test]
+    fn gate_run_record_precondition_blocked_backward_compat() {
+        // Old record JSON that doesn't have precondition_blocked field
+        let old_json = r#"{
+            "run_id": "20231114T221320Z-a1b2c3",
+            "assay_version": "0.6.0",
+            "timestamp": "2023-11-14T22:13:20Z",
+            "summary": {
+                "spec_name": "old-spec",
+                "passed": 1,
+                "failed": 0,
+                "skipped": 0,
+                "total_duration_ms": 100
+            }
+        }"#;
+        let record: GateRunRecord = serde_json::from_str(old_json)
+            .expect("deserialize old record without precondition_blocked");
+        assert_eq!(
+            record.precondition_blocked, None,
+            "old record without precondition_blocked should deserialize to None"
+        );
+    }
+
+    // Test: GateRunRecord with precondition_blocked: None omits the field from serialized JSON
+    #[test]
+    fn gate_run_record_precondition_blocked_none_omitted() {
+        use chrono::TimeZone;
+        let ts = Utc.timestamp_opt(1_700_000_000, 0).unwrap();
+        let record = GateRunRecord {
+            run_id: "20231114T221320Z-a1b2c3".to_string(),
+            assay_version: "0.7.0-test".to_string(),
+            timestamp: ts,
+            working_dir: None,
+            summary: make_empty_summary("prec-none-spec"),
+            diff_truncation: None,
+            precondition_blocked: None,
+        };
+        let json =
+            serde_json::to_string(&record).expect("serialize with precondition_blocked None");
+        assert!(
+            !json.contains("precondition_blocked"),
+            "precondition_blocked should be omitted when None, got: {json}"
+        );
+    }
+
+    // --- end GateRunRecord::precondition_blocked tests ---
 
     // Test 7: GateEvalOutcome schema registered via inventory (name "gate-eval-outcome")
     #[test]

@@ -48,6 +48,16 @@ pub struct PreconditionStatus {
     pub commands: Vec<CommandStatus>,
 }
 
+impl PreconditionStatus {
+    /// Returns `true` if all requires and all commands passed.
+    ///
+    /// An empty `PreconditionStatus` (no requires, no commands) is considered
+    /// all-passed, consistent with the vacuous-truth convention: nothing failed.
+    pub fn all_passed(&self) -> bool {
+        self.requires.iter().all(|r| r.passed) && self.commands.iter().all(|c| c.passed)
+    }
+}
+
 inventory::submit! {
     crate::schema_registry::SchemaEntry {
         name: "precondition-status",
@@ -96,6 +106,79 @@ inventory::submit! {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // --- PreconditionStatus::all_passed() tests ---
+
+    #[test]
+    fn precondition_status_all_passed_when_both_empty() {
+        let status = PreconditionStatus {
+            requires: vec![],
+            commands: vec![],
+        };
+        assert!(
+            status.all_passed(),
+            "empty requires and commands should return all_passed() == true"
+        );
+    }
+
+    #[test]
+    fn precondition_status_all_passed_when_all_pass() {
+        let status = PreconditionStatus {
+            requires: vec![RequireStatus {
+                spec_slug: "auth-flow".to_string(),
+                passed: true,
+            }],
+            commands: vec![CommandStatus {
+                command: "docker ps".to_string(),
+                passed: true,
+                output: None,
+            }],
+        };
+        assert!(
+            status.all_passed(),
+            "all requires and commands passed should return all_passed() == true"
+        );
+    }
+
+    #[test]
+    fn precondition_status_all_passed_false_when_require_fails() {
+        let status = PreconditionStatus {
+            requires: vec![RequireStatus {
+                spec_slug: "auth-flow".to_string(),
+                passed: false,
+            }],
+            commands: vec![CommandStatus {
+                command: "docker ps".to_string(),
+                passed: true,
+                output: None,
+            }],
+        };
+        assert!(
+            !status.all_passed(),
+            "failed require should return all_passed() == false"
+        );
+    }
+
+    #[test]
+    fn precondition_status_all_passed_false_when_command_fails() {
+        let status = PreconditionStatus {
+            requires: vec![RequireStatus {
+                spec_slug: "auth-flow".to_string(),
+                passed: true,
+            }],
+            commands: vec![CommandStatus {
+                command: "docker ps".to_string(),
+                passed: false,
+                output: None,
+            }],
+        };
+        assert!(
+            !status.all_passed(),
+            "failed command should return all_passed() == false"
+        );
+    }
+
+    // --- end PreconditionStatus::all_passed() tests ---
 
     #[test]
     fn spec_preconditions_full_roundtrip() {

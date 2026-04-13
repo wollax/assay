@@ -235,6 +235,7 @@ pub fn build_finalized_record(
             enforcement: enforcement_summary,
         },
         diff_truncation: None,
+        precondition_blocked: None,
     }
 }
 
@@ -354,6 +355,7 @@ pub fn finalize_as_timed_out(session: &GateEvalContext) -> GateRunRecord {
             enforcement: enforcement_summary,
         },
         diff_truncation: None,
+        precondition_blocked: None,
     }
 }
 

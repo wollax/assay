@@ -517,6 +517,13 @@ expression: schema.to_value()
       ],
       "description": "Truncation metadata for the diff passed to the evaluator.\nPresent only when truncation occurred; omitted when diff fit within budget."
     },
+    "precondition_blocked": {
+      "description": "Whether this run was blocked by a precondition failure. When `Some(true)`,\nthe gate was never evaluated — the summary contains zeroed counters.\nAbsent (`None`) for normal evaluation runs. Backward-compatible: old\nrecords without this field deserialize to `None`.",
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
     "run_id": {
       "description": "Unique run identifier: `<timestamp>-<6-char-hex>` (e.g., `20260304T223015Z-a3f1b2`).",
       "type": "string"

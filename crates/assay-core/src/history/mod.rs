@@ -84,6 +84,7 @@ pub fn save_run(
         working_dir,
         summary,
         diff_truncation: None,
+        precondition_blocked: None,
     };
     save(assay_dir, &record, max_history)
 }
@@ -304,6 +305,7 @@ mod tests {
             working_dir: None,
             summary: make_test_summary(spec_name),
             diff_truncation: None,
+            precondition_blocked: None,
         }
     }
 
@@ -524,6 +526,7 @@ mod tests {
             timestamp,
             working_dir: Some("/tmp/test-project".into()),
             diff_truncation: None,
+            precondition_blocked: None,
             summary: GateRunSummary {
                 spec_name: "fidelity-spec".to_string(),
                 results: vec![
@@ -663,6 +666,7 @@ mod tests {
             working_dir: None,
             summary: make_test_summary(spec_name),
             diff_truncation: None,
+            precondition_blocked: None,
         }
     }
 
@@ -834,6 +838,7 @@ mod tests {
             timestamp: ts,
             working_dir: Some("/tmp/test".to_string()),
             diff_truncation: None,
+            precondition_blocked: None,
             summary: GateRunSummary {
                 spec_name: "results-test".to_string(),
                 results: vec![CriterionResult {

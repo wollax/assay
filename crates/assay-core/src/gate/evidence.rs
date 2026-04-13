@@ -461,6 +461,7 @@ mod tests {
                 enforcement: EnforcementSummary::default(),
             },
             diff_truncation: None,
+            precondition_blocked: None,
         }
     }
 

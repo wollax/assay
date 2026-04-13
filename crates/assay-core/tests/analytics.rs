@@ -82,6 +82,7 @@ fn create_synthetic_record(
         timestamp: ts,
         working_dir: None,
         diff_truncation: None,
+        precondition_blocked: None,
         summary: GateRunSummary {
             spec_name: spec_name.to_string(),
             results,

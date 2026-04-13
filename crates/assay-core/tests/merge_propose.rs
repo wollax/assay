@@ -94,6 +94,7 @@ fn make_record(spec_name: &str) -> GateRunRecord {
             enforcement: EnforcementSummary::default(),
         },
         diff_truncation: None,
+        precondition_blocked: None,
     }
 }
 
