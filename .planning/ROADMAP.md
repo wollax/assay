@@ -166,7 +166,7 @@ Post-review fix: UTF-8 safe TextDelta truncation (floor_char_boundary) + correct
 - [x] **Phase 68: MCP Surface** - Five new MCP tools for agent-driven gate composition (completed 2026-04-13)
 - [x] **Phase 69: TUI Surface** - TUI wizard state machine for human-facing gate editing (completed 2026-04-13)
 - [x] **Phase 70: Wire Resolution + Preconditions into Gate Pipeline** - Wire compose::resolve() and check_preconditions() into evaluate_all_gates so extends/include/preconditions work at runtime (completed 2026-04-13)
-- [ ] **Phase 71: TUI Config Fix** - Read config.specs_dir instead of hardcoding .assay/specs path
+- [x] **Phase 71: TUI Config Fix** - Read config.specs_dir instead of hardcoding .assay/specs path (completed 2026-04-13)
 
 ## Phase Details
 
@@ -287,7 +287,7 @@ Plans:
 **Success Criteria** (what must be TRUE):
   1. TUI resolves specs directory from config rather than hardcoded path
   2. A project with a custom `specs_dir` config value has gates written to the correct directory via TUI
-**Plans:** 1 plan
+**Plans:** 1/1 plans complete
 
 Plans:
 - [ ] 71-01-PLAN.md — Add resolved_specs_dir() helper, replace 8 hardcoded sites, update execute_slash_cmd signature, integration test
@@ -306,7 +306,7 @@ Phases execute in numeric order. Phases 68 and 69 are independent and can execut
 | 68. MCP Surface | 2/2 | Complete    | 2026-04-13 |
 | 69. TUI Surface | 2/2 | Complete    | 2026-04-13 |
 | 70. Wire Resolution + Preconditions | 3/3 | Complete    | 2026-04-13 |
-| 71. TUI Config Fix | 0/1 | Pending    | — |
+| 71. TUI Config Fix | 1/1 | Complete   | 2026-04-13 |
 
 ## Progress Summary
 

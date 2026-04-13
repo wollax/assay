@@ -3,14 +3,14 @@ kata_state_version: 1.0
 milestone: v0.7
 milestone_name: milestone
 status: completed
-stopped_at: Phase 71 context gathered
-last_updated: "2026-04-13T16:56:52.217Z"
+stopped_at: Completed 71-01-PLAN.md
+last_updated: "2026-04-13T17:14:58.215Z"
 last_activity: 2026-04-13 — Phase 70 Plan 02 complete (CLI gate run wired with resolve+preconditions+evaluate pipeline, 9 tests)
 progress:
   total_phases: 8
-  completed_phases: 7
-  total_plans: 18
-  completed_plans: 18
+  completed_phases: 8
+  total_plans: 19
+  completed_plans: 19
   percent: 100
 ---
 
@@ -101,6 +101,7 @@ Recent decisions affecting current work:
 - [Phase 70-02]: save_blocked_run() added to assay-core/history as public API — CLI and MCP both use it directly
 - [Phase 70-02]: source_tag() returns empty string for Own/None (signal-to-noise tradeoff per CONTEXT.md)
 - [Phase 70-02]: exit code 2 for precondition-blocked; blocked_count tracked separately from gate failures in --all mode
+- [Phase 71-01]: resolved_specs_dir() falls back to 'specs/' when config is None; execute_slash_cmd receives specs_dir: &Path from App
 
 ### Blockers
 
@@ -112,6 +113,6 @@ Phase 70 complete. All v0.7.0 gap-closure phases done.
 
 ### Session Continuity
 
-Last session: 2026-04-13T16:56:52.215Z
-Stopped at: Phase 71 context gathered
-Resume file: .planning/phases/71-tui-config-fix/71-CONTEXT.md
+Last session: 2026-04-13T17:14:58.213Z
+Stopped at: Completed 71-01-PLAN.md
+Resume file: None
