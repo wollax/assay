@@ -26,6 +26,9 @@
 //! - `spec_create` — create a chunk spec (gates.toml) from structured parameters
 //! - `gate_wizard` — create or edit a gate spec with composability support
 //! - `criteria_create` — create a criteria library from structured parameters
+//! - `criteria_list` — list all available criteria libraries
+//! - `criteria_get` — get a criteria library by slug
+//! - `spec_resolve` — resolve a spec's effective criteria with source annotations
 //! - `pr_create` — create a GitHub PR for a milestone after all chunk gates pass
 //!
 //! All domain errors are returned as `CallToolResult` with `isError: true`
@@ -792,6 +795,24 @@ pub struct ManifestGenerateParams {
     pub output: Option<String>,
 }
 
+/// Parameters for the `criteria_get` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct CriteriaGetParams {
+    /// Slug of the criteria library to retrieve.
+    #[schemars(description = "Slug of the criteria library (e.g. 'rust-basics')")]
+    pub slug: String,
+}
+
+/// Parameters for the `spec_resolve` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SpecResolveParams {
+    /// Name of the spec to resolve.
+    #[schemars(
+        description = "Name of the spec to resolve (must be a directory-format spec with composability fields)"
+    )]
+    pub name: String,
+}
+
 // ── Response structs ─────────────────────────────────────────────────
 
 /// A single entry in the `spec_list` response.
@@ -1248,6 +1269,48 @@ struct CriteriaCreateResponse {
     /// The full `CriteriaLibrary` that was written to disk.
     library: assay_types::CriteriaLibrary,
     /// Non-fatal warnings. Omitted from JSON when empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    warnings: Vec<String>,
+}
+
+/// A single entry in the `criteria_list` response.
+#[derive(Serialize)]
+struct CriteriaListEntry {
+    /// Library slug (filename stem without `.toml`).
+    slug: String,
+    /// Number of criteria in the library.
+    criterion_count: usize,
+    /// Human-readable description. Omitted from JSON when None.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    description: Option<String>,
+}
+
+/// Response from the `criteria_list` tool.
+#[derive(Serialize)]
+struct CriteriaListResponse {
+    /// Available criteria libraries.
+    entries: Vec<CriteriaListEntry>,
+    /// Non-fatal warnings. Omitted from JSON when empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    warnings: Vec<String>,
+}
+
+/// Response from the `criteria_get` tool.
+#[derive(Serialize)]
+struct CriteriaGetResponse {
+    /// The full criteria library.
+    library: assay_types::CriteriaLibrary,
+    /// Non-fatal warnings. Omitted from JSON when empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    warnings: Vec<String>,
+}
+
+/// Response from the `spec_resolve` tool.
+#[derive(Serialize)]
+struct SpecResolveResponse {
+    /// The fully resolved gate with per-criterion source annotations.
+    resolved: assay_types::ResolvedGate,
+    /// Shadow warnings (own criteria overriding inherited ones). Omitted when empty.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     warnings: Vec<String>,
 }
@@ -4448,6 +4511,196 @@ impl AssayServer {
                     library: output.library,
                     warnings: vec![],
                 };
+                let json = serde_json::to_string(&response).map_err(|e| {
+                    McpError::internal_error(format!("serialization failed: {e}"), None)
+                })?;
+                Ok(CallToolResult::success(vec![Content::text(json)]))
+            }
+            Err(e) => Ok(domain_error(&e)),
+        }
+    }
+
+    #[tool(
+        description = "List all available criteria libraries. Returns slug, criterion count, and \
+        description for each library found in .assay/criteria/. Use criteria_get to retrieve full \
+        library details."
+    )]
+    pub async fn criteria_list(&self) -> Result<CallToolResult, McpError> {
+        let cwd = resolve_cwd()?;
+        let _config = match load_config(&cwd) {
+            Ok(c) => c,
+            Err(err_result) => return Ok(err_result),
+        };
+        let assay_dir = cwd.join(".assay");
+
+        let result = tokio::task::spawn_blocking(move || {
+            assay_core::spec::compose::scan_libraries(&assay_dir)
+        })
+        .await
+        .map_err(|e| McpError::internal_error(format!("criteria_list panicked: {e}"), None))?;
+
+        match result {
+            Ok(libs) => {
+                let entries: Vec<CriteriaListEntry> = libs
+                    .iter()
+                    .map(|lib| CriteriaListEntry {
+                        slug: lib.name.clone(),
+                        criterion_count: lib.criteria.len(),
+                        description: if lib.description.is_empty() {
+                            None
+                        } else {
+                            Some(lib.description.clone())
+                        },
+                    })
+                    .collect();
+                let response = CriteriaListResponse {
+                    entries,
+                    warnings: vec![],
+                };
+                let json = serde_json::to_string(&response).map_err(|e| {
+                    McpError::internal_error(format!("serialization failed: {e}"), None)
+                })?;
+                Ok(CallToolResult::success(vec![Content::text(json)]))
+            }
+            Err(e) => Ok(domain_error(&e)),
+        }
+    }
+
+    #[tool(
+        description = "Get a criteria library by slug. Returns the full CriteriaLibrary (name, \
+        description, version, tags, criteria). Use criteria_list first to discover available slugs. \
+        Returns a fuzzy-match suggestion if the slug is not found."
+    )]
+    pub async fn criteria_get(
+        &self,
+        params: Parameters<CriteriaGetParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let cwd = resolve_cwd()?;
+        let _config = match load_config(&cwd) {
+            Ok(c) => c,
+            Err(err_result) => return Ok(err_result),
+        };
+        let assay_dir = cwd.join(".assay");
+        let slug = params.0.slug;
+
+        let result = tokio::task::spawn_blocking(move || {
+            assay_core::spec::compose::load_library_by_slug(&assay_dir, &slug)
+        })
+        .await
+        .map_err(|e| McpError::internal_error(format!("criteria_get panicked: {e}"), None))?;
+
+        match result {
+            Ok(library) => {
+                let response = CriteriaGetResponse {
+                    library,
+                    warnings: vec![],
+                };
+                let json = serde_json::to_string(&response).map_err(|e| {
+                    McpError::internal_error(format!("serialization failed: {e}"), None)
+                })?;
+                Ok(CallToolResult::success(vec![Content::text(json)]))
+            }
+            Err(e) => Ok(domain_error(&e)),
+        }
+    }
+
+    #[tool(
+        description = "Resolve a spec's effective criteria by flattening extends and include \
+        references. Returns the full ResolvedGate with per-criterion source annotations \
+        (own/parent/library) and shadow warnings when own criteria override inherited ones. \
+        Only works with directory-format specs. Use spec_get for legacy specs."
+    )]
+    pub async fn spec_resolve(
+        &self,
+        params: Parameters<SpecResolveParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let cwd = resolve_cwd()?;
+        let config = match load_config(&cwd) {
+            Ok(c) => c,
+            Err(err_result) => return Ok(err_result),
+        };
+        let entry = match load_spec_entry_mcp(&cwd, &config, &params.0.name) {
+            Ok(e) => e,
+            Err(err_result) => return Ok(err_result),
+        };
+
+        // Only directory-format specs support composability resolution.
+        let (slug, gates) = match entry {
+            SpecEntry::Directory { slug, gates, .. } => (slug, gates),
+            SpecEntry::Legacy { .. } => {
+                return Ok(CallToolResult::error(vec![Content::text(
+                    "spec_resolve is only available for directory-format specs with composability \
+                     fields. Use spec_get for legacy specs.",
+                )]));
+            }
+        };
+
+        let assay_dir = cwd.join(".assay");
+        let specs_dir = cwd.join(".assay").join(&config.specs_dir);
+
+        let result = tokio::task::spawn_blocking(move || {
+            // -- Shadow detection: pre-collect parent + library criterion names --
+            let mut inherited_names: std::collections::HashSet<String> =
+                std::collections::HashSet::new();
+
+            if let Some(ref parent_slug) = gates.extends {
+                let parent_path = specs_dir.join(parent_slug).join("gates.toml");
+                if let Ok(parent_gates) = assay_core::spec::load_gates(&parent_path) {
+                    for c in &parent_gates.criteria {
+                        inherited_names.insert(c.name.clone());
+                    }
+                }
+            }
+
+            for lib_slug in &gates.include {
+                if let Ok(lib) =
+                    assay_core::spec::compose::load_library_by_slug(&assay_dir, lib_slug)
+                {
+                    for c in &lib.criteria {
+                        inherited_names.insert(c.name.clone());
+                    }
+                }
+            }
+
+            // -- Resolve --
+            let specs_dir_for_closure = specs_dir.clone();
+            let assay_dir_for_closure = assay_dir.clone();
+            let resolved = assay_core::spec::compose::resolve(
+                &gates,
+                &slug,
+                |parent_slug| {
+                    let path = specs_dir_for_closure.join(parent_slug).join("gates.toml");
+                    assay_core::spec::load_gates(&path)
+                },
+                |lib_slug| {
+                    assay_core::spec::compose::load_library_by_slug(
+                        &assay_dir_for_closure,
+                        lib_slug,
+                    )
+                },
+            )?;
+
+            // -- Derive shadow warnings --
+            let mut warnings = Vec::new();
+            for rc in &resolved.criteria {
+                if matches!(rc.source, assay_types::CriterionSource::Own)
+                    && inherited_names.contains(&rc.criterion.name)
+                {
+                    warnings.push(format!(
+                        "Own criterion '{}' shadows an inherited criterion with the same name",
+                        rc.criterion.name
+                    ));
+                }
+            }
+
+            Ok::<_, assay_core::AssayError>((resolved, warnings))
+        })
+        .await
+        .map_err(|e| McpError::internal_error(format!("spec_resolve panicked: {e}"), None))?;
+
+        match result {
+            Ok((resolved, warnings)) => {
+                let response = SpecResolveResponse { resolved, warnings };
                 let json = serde_json::to_string(&response).map_err(|e| {
                     McpError::internal_error(format!("serialization failed: {e}"), None)
                 })?;
@@ -10222,6 +10475,279 @@ depends_on = ["chunk-a"]
         assert!(
             result.is_error.unwrap_or(false),
             "duplicate criteria_create with overwrite=false should return isError: true"
+        );
+    }
+
+    // ── criteria_list tests ───────────────────────────────────────────
+
+    #[tokio::test]
+    #[serial]
+    async fn criteria_list_tool_in_router() {
+        let server = AssayServer::new();
+        let tools = server.tool_router.list_all();
+        let tool_names: Vec<&str> = tools.iter().map(|t| t.name.as_ref()).collect();
+        assert!(
+            tool_names.contains(&"criteria_list"),
+            "criteria_list should be in tool list, got: {tool_names:?}"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn criteria_list_empty_project() {
+        let dir = create_project(r#"project_name = "list-test""#);
+        std::env::set_current_dir(dir.path()).unwrap();
+
+        let server = AssayServer::new();
+        let result = server.criteria_list().await.unwrap();
+
+        assert!(
+            !result.is_error.unwrap_or(false),
+            "criteria_list on empty project should succeed, got: {:?}",
+            extract_text(&result)
+        );
+
+        let text = extract_text(&result);
+        let json: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(
+            json["entries"],
+            serde_json::json!([]),
+            "empty project should return empty entries array"
+        );
+    }
+
+    // ── criteria_get tests ────────────────────────────────────────────
+
+    #[tokio::test]
+    #[serial]
+    async fn criteria_get_tool_in_router() {
+        let server = AssayServer::new();
+        let tools = server.tool_router.list_all();
+        let tool_names: Vec<&str> = tools.iter().map(|t| t.name.as_ref()).collect();
+        assert!(
+            tool_names.contains(&"criteria_get"),
+            "criteria_get should be in tool list, got: {tool_names:?}"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn criteria_get_returns_library() {
+        let dir = create_project(r#"project_name = "get-test""#);
+        std::env::set_current_dir(dir.path()).unwrap();
+
+        // Write a library TOML directly.
+        let criteria_dir = dir.path().join(".assay").join("criteria");
+        std::fs::create_dir_all(&criteria_dir).unwrap();
+        std::fs::write(
+            criteria_dir.join("test-lib.toml"),
+            r#"name = "test-lib"
+description = "Test library"
+
+[[criteria]]
+name = "compiles"
+description = "Code compiles"
+cmd = "echo ok"
+"#,
+        )
+        .unwrap();
+
+        let server = AssayServer::new();
+        let result = server
+            .criteria_get(Parameters(CriteriaGetParams {
+                slug: "test-lib".to_string(),
+            }))
+            .await
+            .unwrap();
+
+        assert!(
+            !result.is_error.unwrap_or(false),
+            "criteria_get should succeed for valid slug, got: {:?}",
+            extract_text(&result)
+        );
+
+        let text = extract_text(&result);
+        let json: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(
+            json["library"]["name"], "test-lib",
+            "response should contain library name"
+        );
+        assert_eq!(
+            json["library"]["criteria"].as_array().unwrap().len(),
+            1,
+            "response should contain one criterion"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn criteria_get_not_found() {
+        let dir = create_project(r#"project_name = "get-test""#);
+        std::env::set_current_dir(dir.path()).unwrap();
+
+        let server = AssayServer::new();
+        let result = server
+            .criteria_get(Parameters(CriteriaGetParams {
+                slug: "nonexistent".to_string(),
+            }))
+            .await
+            .unwrap();
+
+        assert!(
+            result.is_error.unwrap_or(false),
+            "criteria_get with nonexistent slug should return isError: true"
+        );
+    }
+
+    // ── spec_resolve tests ────────────────────────────────────────────
+
+    #[tokio::test]
+    #[serial]
+    async fn spec_resolve_tool_in_router() {
+        let server = AssayServer::new();
+        let tools = server.tool_router.list_all();
+        let tool_names: Vec<&str> = tools.iter().map(|t| t.name.as_ref()).collect();
+        assert!(
+            tool_names.contains(&"spec_resolve"),
+            "spec_resolve should be in tool list, got: {tool_names:?}"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn spec_resolve_returns_resolved_gate() {
+        let dir = create_project(r#"project_name = "resolve-test""#);
+        std::env::set_current_dir(dir.path()).unwrap();
+
+        // Create a directory-format spec with two own criteria.
+        let spec_dir = dir.path().join(".assay").join("specs").join("my-spec");
+        std::fs::create_dir_all(&spec_dir).unwrap();
+        std::fs::write(
+            spec_dir.join("gates.toml"),
+            r#"name = "my-spec"
+description = "test spec"
+
+[[criteria]]
+name = "compiles"
+description = "builds ok"
+cmd = "echo ok"
+
+[[criteria]]
+name = "tests-pass"
+description = "tests pass"
+cmd = "echo pass"
+"#,
+        )
+        .unwrap();
+
+        let server = AssayServer::new();
+        let result = server
+            .spec_resolve(Parameters(SpecResolveParams {
+                name: "my-spec".to_string(),
+            }))
+            .await
+            .unwrap();
+
+        assert!(
+            !result.is_error.unwrap_or(false),
+            "spec_resolve should succeed, got: {:?}",
+            extract_text(&result)
+        );
+
+        let text = extract_text(&result);
+        let json: serde_json::Value = serde_json::from_str(&text).unwrap();
+        let criteria = json["resolved"]["criteria"].as_array().unwrap();
+        assert_eq!(criteria.len(), 2, "should have 2 criteria");
+        assert_eq!(
+            criteria[0]["source"], "own",
+            "own criteria should have source=own"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn spec_resolve_not_found() {
+        let dir = create_project(r#"project_name = "resolve-test""#);
+        std::env::set_current_dir(dir.path()).unwrap();
+
+        let server = AssayServer::new();
+        let result = server
+            .spec_resolve(Parameters(SpecResolveParams {
+                name: "nonexistent".to_string(),
+            }))
+            .await
+            .unwrap();
+
+        assert!(
+            result.is_error.unwrap_or(false),
+            "spec_resolve with nonexistent spec should return isError: true"
+        );
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn spec_resolve_shadow_warnings() {
+        let dir = create_project(r#"project_name = "shadow-test""#);
+        std::env::set_current_dir(dir.path()).unwrap();
+
+        // Create parent gate with criterion "compiles".
+        let parent_dir = dir.path().join(".assay").join("specs").join("parent-gate");
+        std::fs::create_dir_all(&parent_dir).unwrap();
+        std::fs::write(
+            parent_dir.join("gates.toml"),
+            r#"name = "parent-gate"
+description = "parent gate"
+
+[[criteria]]
+name = "compiles"
+description = "builds ok"
+cmd = "echo ok"
+"#,
+        )
+        .unwrap();
+
+        // Create child gate that extends parent and also has own "compiles" criterion.
+        let child_dir = dir.path().join(".assay").join("specs").join("child-gate");
+        std::fs::create_dir_all(&child_dir).unwrap();
+        std::fs::write(
+            child_dir.join("gates.toml"),
+            r#"name = "child-gate"
+description = "child gate"
+extends = "parent-gate"
+
+[[criteria]]
+name = "compiles"
+description = "own compiles"
+cmd = "echo own"
+"#,
+        )
+        .unwrap();
+
+        let server = AssayServer::new();
+        let result = server
+            .spec_resolve(Parameters(SpecResolveParams {
+                name: "child-gate".to_string(),
+            }))
+            .await
+            .unwrap();
+
+        assert!(
+            !result.is_error.unwrap_or(false),
+            "spec_resolve should succeed even with shadows, got: {:?}",
+            extract_text(&result)
+        );
+
+        let text = extract_text(&result);
+        let json: serde_json::Value = serde_json::from_str(&text).unwrap();
+        let warnings = json["warnings"].as_array().unwrap();
+        assert!(
+            !warnings.is_empty(),
+            "should have shadow warnings for 'compiles', got: {json}"
+        );
+        let warning_text = warnings[0].as_str().unwrap();
+        assert!(
+            warning_text.contains("compiles"),
+            "warning should mention 'compiles', got: {warning_text}"
         );
     }
 
