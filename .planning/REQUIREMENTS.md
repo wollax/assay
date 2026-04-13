@@ -36,8 +36,8 @@ Requirements for gate composability milestone. Each maps to roadmap phases.
 ### Wizard — MCP
 
 - [x] **WIZM-01**: Agent can drive gate wizard via `gate_wizard` MCP tool
-- [ ] **WIZM-02**: Agent can discover criteria libraries via `criteria_list` and `criteria_get` MCP tools
-- [ ] **WIZM-03**: Agent can resolve a spec's effective criteria via `spec_resolve` MCP tool
+- [x] **WIZM-02**: Agent can discover criteria libraries via `criteria_list` and `criteria_get` MCP tools
+- [x] **WIZM-03**: Agent can resolve a spec's effective criteria via `spec_resolve` MCP tool
 
 ### Wizard — TUI
 
@@ -87,8 +87,8 @@ Requirements for gate composability milestone. Each maps to roadmap phases.
 | WIZC-02 | Phase 67 | Complete |
 | WIZC-03 | Phase 67 | Complete |
 | WIZM-01 | Phase 68 | Complete |
-| WIZM-02 | Phase 68 | Pending |
-| WIZM-03 | Phase 68 | Pending |
+| WIZM-02 | Phase 68 | Complete |
+| WIZM-03 | Phase 68 | Complete |
 | WIZT-01 | Phase 69 | Pending |
 | WIZT-02 | Phase 69 | Pending |
 | SAFE-01 | Phase 66 | Complete |

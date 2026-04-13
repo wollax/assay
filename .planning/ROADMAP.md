@@ -163,7 +163,7 @@ Post-review fix: UTF-8 safe TextDelta truncation (floor_char_boundary) + correct
 - [x] **Phase 65: Resolution Core** - Criteria library I/O and `spec::compose::resolve()` with cycle detection (completed 2026-04-11)
 - [x] **Phase 66: Evaluation Integration + Validation** - Wire resolution into gate evaluation, precondition enforcement, and `spec_validate` composability diagnostics (completed 2026-04-12)
 - [x] **Phase 67: Wizard Core + CLI Surface** - Shared wizard logic in `assay-core` and interactive CLI commands (completed 2026-04-12)
-- [ ] **Phase 68: MCP Surface** - Five new MCP tools for agent-driven gate composition
+- [x] **Phase 68: MCP Surface** - Five new MCP tools for agent-driven gate composition (completed 2026-04-13)
 - [ ] **Phase 69: TUI Surface** - TUI wizard state machine for human-facing gate editing
 
 ## Phase Details
@@ -265,7 +265,7 @@ Phases execute in numeric order. Phases 68 and 69 are independent and can execut
 | 65. Resolution Core | 2/2 | Complete    | 2026-04-11 |
 | 66. Evaluation Integration + Validation | 3/3 | Complete    | 2026-04-12 |
 | 67. Wizard Core + CLI Surface | 4/4 | Complete    | 2026-04-12 |
-| 68. MCP Surface | 1/2 | In Progress|  |
+| 68. MCP Surface | 2/2 | Complete   | 2026-04-13 |
 | 69. TUI Surface | 0/TBD | Not started | - |
 
 ## Progress Summary

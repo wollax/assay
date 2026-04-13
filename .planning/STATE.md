@@ -3,14 +3,14 @@ kata_state_version: 1.0
 milestone: v0.7
 milestone_name: milestone
 status: executing
-stopped_at: Completed 68-01-PLAN.md
-last_updated: "2026-04-13T02:14:24.558Z"
+stopped_at: Completed 68-02-PLAN.md
+last_updated: "2026-04-13T02:24:19.132Z"
 last_activity: 2026-04-13 — Phase 68 Plan 01 complete (gate_wizard + criteria_create MCP tools)
 progress:
   total_phases: 6
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 13
-  completed_plans: 12
+  completed_plans: 13
   percent: 0
 ---
 
@@ -84,6 +84,9 @@ Recent decisions affecting current work:
 - [Phase 67-wizard-core-cli-surface]: config.assay_dir does not exist — use crate::commands::assay_dir(&root) consistent with all other CLI commands
 - [Phase 67-wizard-core-cli-surface]: CriteriaCommand::List uses render_list<W: Write> for testability; JSON mode uses serde_json::to_string_pretty (no ANSI)
 - [Phase 68-01]: Tests and implementation committed together because pre-commit hook runs clippy which requires the implementation to exist for test code to compile
+- [Phase 68-02]: Tests and implementation committed together because pre-commit hook runs clippy which requires implementation to compile test code
+- [Phase 68-02]: Legacy spec format rejection uses CallToolResult::error directly — avoids adding AssayError::Other catch-all variant
+- [Phase 68-02]: spec_resolve shadow detection pre-loads inherited criterion names before resolve(), post-checks Own criteria — no compose::resolve signature change
 
 ### Blockers
 
@@ -95,6 +98,6 @@ Plan Phase 65: Resolution Core (INHR-03, INHR-04, CLIB-01, CLIB-02, CLIB-03)
 
 ### Session Continuity
 
-Last session: 2026-04-13T02:14:24.554Z
-Stopped at: Completed 68-01-PLAN.md
+Last session: 2026-04-13T02:24:19.130Z
+Stopped at: Completed 68-02-PLAN.md
 Resume file: None
