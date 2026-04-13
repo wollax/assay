@@ -272,7 +272,12 @@ Plans:
   4. Running `assay gate run` on a spec with `[preconditions].requires` referencing a spec with no passing run produces `PreconditionFailed`
   5. Running `assay gate run` on a spec with `[preconditions].commands` containing a failing command produces `PreconditionFailed`
   6. `gate_run` MCP tool exhibits the same behavior as CLI for extends/include/preconditions
-**Plans**: TBD
+**Plans**: 3 plans
+
+Plans:
+- [ ] 70-01-PLAN.md — Types + history foundation (GateRunRecord.precondition_blocked, PreconditionStatus.all_passed(), last_gate_passed() update, schema snapshot)
+- [ ] 70-02-PLAN.md — CLI wiring (resolve + preconditions in handle_gate_run/handle_gate_run_all, source tags, exit code 2)
+- [ ] 70-03-PLAN.md — MCP wiring (resolve + preconditions in gate_run, CriterionSummary.source, PreconditionFailed response)
 
 ### Phase 71: TUI Config Fix
 **Goal**: TUI reads `config.specs_dir` instead of hardcoding `root.join(".assay").join("specs")`, so projects with non-default specs directories work correctly.
@@ -297,7 +302,7 @@ Phases execute in numeric order. Phases 68 and 69 are independent and can execut
 | 67. Wizard Core + CLI Surface | 4/4 | Complete    | 2026-04-12 |
 | 68. MCP Surface | 2/2 | Complete    | 2026-04-13 |
 | 69. TUI Surface | 2/2 | Complete    | 2026-04-13 |
-| 70. Wire Resolution + Preconditions | TBD | Pending    | — |
+| 70. Wire Resolution + Preconditions | 0/3 | Planned    | — |
 | 71. TUI Config Fix | TBD | Pending    | — |
 
 ## Progress Summary
