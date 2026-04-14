@@ -420,6 +420,81 @@ pub fn load_gates(path: &Path) -> Result<GatesSpec> {
     Ok(gates)
 }
 
+/// Save a `GatesSpec` to a `gates.toml` file atomically.
+///
+/// Uses a temporary file + rename pattern for crash safety.
+pub fn save_gates(path: &Path, gates: &GatesSpec) -> Result<()> {
+    use std::io::Write;
+    use tempfile::NamedTempFile;
+
+    let parent = path.parent().ok_or_else(|| AssayError::Io {
+        operation: "resolving parent directory".into(),
+        path: path.to_path_buf(),
+        source: std::io::Error::new(std::io::ErrorKind::NotFound, "no parent directory"),
+    })?;
+
+    let content = toml::to_string_pretty(gates).map_err(|e| AssayError::Io {
+        operation: "serializing gates spec TOML".into(),
+        path: path.to_path_buf(),
+        source: std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()),
+    })?;
+
+    let mut tmpfile = NamedTempFile::new_in(parent)
+        .map_err(|e| AssayError::io("creating temp file for gates.toml", path, e))?;
+    tmpfile
+        .write_all(content.as_bytes())
+        .map_err(|e| AssayError::io("writing gates.toml", path, e))?;
+    tmpfile
+        .as_file()
+        .sync_all()
+        .map_err(|e| AssayError::io("syncing gates.toml", path, e))?;
+    tmpfile
+        .persist(path)
+        .map_err(|e| AssayError::io("persisting gates.toml", path, e.error))?;
+
+    Ok(())
+}
+
+/// Set the workflow lifecycle status of a gate spec on disk.
+///
+/// Loads the spec from `gates_path`, updates the status field, and saves atomically.
+/// All transitions are allowed (forward skips and backward transitions for rework).
+pub fn spec_set_status(
+    gates_path: &Path,
+    status: assay_types::GateSpecStatus,
+) -> Result<GatesSpec> {
+    let mut gates = load_gates(gates_path)?;
+    gates.status = Some(status);
+    save_gates(gates_path, &gates)?;
+    Ok(gates)
+}
+
+/// Auto-promote a gate spec to `Verified` if a gate run passed all required criteria.
+///
+/// Returns `true` if the spec was promoted, `false` if already verified or if
+/// the gate run had required failures.
+pub fn auto_promote_on_pass(
+    gates_path: &Path,
+    summary: &assay_types::GateRunSummary,
+) -> Result<bool> {
+    if summary.enforcement.required_failed > 0 {
+        return Ok(false);
+    }
+    let gates = load_gates(gates_path)?;
+    if gates.status == Some(assay_types::GateSpecStatus::Verified) {
+        return Ok(false);
+    }
+    spec_set_status(gates_path, assay_types::GateSpecStatus::Verified)?;
+    Ok(true)
+}
+
+/// Return the effective status for a gate spec.
+///
+/// Returns the explicit status if set, otherwise defaults to `Draft`.
+pub fn effective_status(gates: &GatesSpec) -> assay_types::GateSpecStatus {
+    gates.status.unwrap_or_default()
+}
+
 /// Load and validate a feature spec from a `spec.toml` file path.
 pub fn load_feature_spec(path: &Path) -> Result<FeatureSpec> {
     let content = std::fs::read_to_string(path).map_err(|source| AssayError::Io {
@@ -1850,6 +1925,8 @@ cmd = "true"
         let spec = GatesSpec {
             name: "test".into(),
             description: String::new(),
+            status: None,
+            uat: None,
             gate: None,
             depends: vec![],
             milestone: None,
@@ -1878,6 +1955,8 @@ cmd = "true"
         let spec = GatesSpec {
             name: "test".into(),
             description: String::new(),
+            status: None,
+            uat: None,
             gate: None,
             depends: vec![],
             milestone: None,
@@ -1896,6 +1975,8 @@ cmd = "true"
         let spec = GatesSpec {
             name: "test".into(),
             description: String::new(),
+            status: None,
+            uat: None,
             gate: None,
             depends: vec![],
             milestone: None,
@@ -2026,6 +2107,8 @@ cmd = "true"
         let spec = GatesSpec {
             name: "test".into(),
             description: String::new(),
+            status: None,
+            uat: None,
             gate: Some(GateSection {
                 enforcement: Enforcement::Advisory,
             }),

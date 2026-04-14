@@ -1,33 +1,38 @@
 ---
 name: status
 description: >
-  Show the current development cycle status — active milestone, phase, chunk, and progress.
-  Use when the user asks "what am I working on?", "where are we?", or wants a progress overview.
+  Show what you're currently working on — active chunk, criteria, and gate status.
+  Use when the user asks "what am I working on?", "what's next?", or wants to see current progress.
+  Replaces /assay:status and /assay:next-chunk.
 ---
 
-# Status
+> **Deprecated:** This skill has been replaced by `/assay:focus` (for status/next-chunk) or `/assay:check` (for gate-check). The old name still works but will be removed in the next version.
 
-Show active milestone and chunk state from the development cycle.
+# Focus
+
+Show active work context: milestone, chunk, criteria, and gate status.
 
 ## Steps
 
-1. **Call `cycle_status`** (no parameters required)
+1. **Call `cycle_status`** to get the active milestone and chunk
 
-2. **Handle the response:**
-   - If `{ "active": false }`: tell the user no milestone is currently in progress.
-     Suggest: *"Start a new milestone with `/assay:plan`, or list existing ones with `assay milestone list`."*
-   - If an active milestone exists, display:
-     - Milestone name and slug
-     - Current phase
-     - Active chunk slug (the chunk currently being worked on)
-     - Progress: `completed_count / total_count` chunks done
+2. **Handle no active milestone:**
+   - Tell the user: *"No active milestone. Start with `/assay:plan` or `/assay:explore`."*
+
+3. **Call `chunk_status`** with the active chunk slug to get gate pass/fail per criterion
+
+4. **Call `spec_get`** with the active chunk slug to load full criteria
+
+5. **For quick milestones** (single chunk matching milestone slug):
+   - Hide milestone/chunk terminology
+   - Show as: "Working on: [spec name]" with criteria and gate status
+
+6. **Display:**
+   - Spec name and status (draft/ready/approved/verified)
+   - Criteria list with pass/fail indicators
+   - Progress: chunks completed / total
+   - Suggested next action based on state
 
 ## Output Format
 
-Keep output concise — one short block is enough. Example:
-
-```
-Milestone: my-feature (my-feature)
-Phase:     in_progress
-Chunk:     auth-layer  (1 of 3 complete)
-```
+Compact view — criteria table with pass/fail status. One-line progress summary. Suggest the logical next step.

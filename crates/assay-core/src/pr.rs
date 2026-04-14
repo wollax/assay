@@ -591,6 +591,7 @@ mod tests {
             name: "Test Milestone".to_string(),
             description: None,
             status: MilestoneStatus::Draft,
+            quick: false,
             chunks: vec![
                 ChunkRef {
                     slug: "chunk-a".to_string(),

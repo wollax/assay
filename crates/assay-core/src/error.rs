@@ -511,6 +511,13 @@ pub enum AssayError {
         /// Human-readable description of why it is invalid.
         reason: String,
     },
+
+    /// A workflow rule was violated (e.g., strict_status check).
+    #[error("workflow violation: {message}")]
+    WorkflowViolation {
+        /// Actionable description of the violation.
+        message: String,
+    },
 }
 
 fn format_library_not_found(

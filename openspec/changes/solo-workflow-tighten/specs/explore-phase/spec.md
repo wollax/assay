@@ -25,3 +25,22 @@ The explore skill SHALL operate as a thinking partner with no mandatory steps, n
 #### Scenario: Transition to planning
 - **WHEN** the user indicates requirements have crystallized (e.g., "ready to plan", "let's build this")
 - **THEN** the agent offers to invoke `/assay:plan` with the gathered context
+
+### Requirement: Explore loads tiered context within a ~2K token budget
+The explore skill SHALL load a structured summary of project state, not raw file contents, keeping the initial context load under approximately 2000 tokens.
+
+#### Scenario: Context loading with active project
+- **WHEN** user invokes `/assay:explore` in a project with specs and milestones
+- **THEN** the skill loads: config summary (project name, key settings), milestone list (names + status), spec index (names + criteria count + last gate result), and active milestone detail (chunk order, progress)
+
+#### Scenario: Context loading for fresh project
+- **WHEN** user invokes `/assay:explore` in a project with no specs or milestones
+- **THEN** the skill loads only config summary and prompts "No specs defined yet. What are you building?"
+
+#### Scenario: Full criteria loaded on demand
+- **WHEN** user asks about a specific spec's criteria during exploration (e.g., "show me the auth-flow criteria")
+- **THEN** the agent loads full criteria text for that spec on demand, not preemptively for all specs
+
+#### Scenario: Context presentation is structured summary
+- **WHEN** explore context is loaded
+- **THEN** it is presented as a structured summary (e.g., "Project: assay | 3 specs | 1 active milestone (InProgress, chunk 2/4)"), not raw TOML file contents

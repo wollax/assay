@@ -65,6 +65,8 @@ fn build_gates_spec(input: &GateWizardInput) -> GatesSpec {
     GatesSpec {
         name: input.slug.clone(),
         description: input.description.clone().unwrap_or_default(),
+        status: None,
+        uat: None,
         gate: None,
         depends: vec![],
         milestone: None,

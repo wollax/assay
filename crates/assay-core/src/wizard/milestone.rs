@@ -159,6 +159,7 @@ pub fn create_from_inputs(
         name: inputs.name.clone(),
         description: inputs.description.clone(),
         status: MilestoneStatus::Draft,
+        quick: false,
         chunks: chunk_refs,
         completed_chunks: vec![],
         depends_on: vec![],
@@ -234,6 +235,7 @@ pub fn create_milestone_from_params(
         name: name.to_string(),
         description: description.map(str::to_string),
         status: MilestoneStatus::Draft,
+        quick: false,
         chunks: chunk_refs,
         completed_chunks: vec![],
         depends_on: vec![],
@@ -345,6 +347,8 @@ fn build_milestone_gate_spec(
     GatesSpec {
         name: slug.to_string(),
         description: String::new(),
+        status: None,
+        uat: None,
         gate: None,
         depends: vec![],
         milestone: if milestone_slug.is_empty() {

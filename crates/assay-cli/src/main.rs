@@ -206,7 +206,10 @@ Examples:
     },
     /// Run the guided authoring wizard to create a milestone and chunk specs.
     #[command(name = "plan", about = "Run the guided authoring wizard")]
-    Plan,
+    Plan {
+        #[command(subcommand)]
+        command: Option<commands::plan::PlanCommand>,
+    },
     /// Analyse gate run history and milestone velocity
     #[command(after_long_help = "\
 Examples:
@@ -305,7 +308,7 @@ async fn run() -> anyhow::Result<i32> {
         Some(Command::Manifest { command }) => commands::manifest::handle(command),
         Some(Command::Milestone { command }) => commands::milestone::handle(command),
         Some(Command::Criteria { command }) => commands::criteria::handle(command),
-        Some(Command::Plan) => commands::plan::handle(),
+        Some(Command::Plan { command }) => commands::plan::handle(command),
         Some(Command::History { command }) => commands::history::handle(command),
         Some(Command::Pr { command }) => commands::pr::handle(command),
         Some(Command::Traces { command }) => commands::traces::handle(command),

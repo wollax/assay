@@ -674,6 +674,7 @@ detached
             }),
             sessions: None,
             provider: None,
+            workflow: None,
         }
     }
 
@@ -1124,6 +1125,7 @@ cmd = "echo ok"
             }),
             sessions: None,
             provider: None,
+            workflow: None,
         }
     }
 

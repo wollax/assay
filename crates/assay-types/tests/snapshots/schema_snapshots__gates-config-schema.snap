@@ -7,6 +7,11 @@ expression: schema.to_value()
   "additionalProperties": false,
   "description": "Gate execution configuration.",
   "properties": {
+    "agent_eval_mode": {
+      "default": "auto",
+      "description": "How to handle `AgentReport` criteria: `\"auto\"` (evaluator subprocess)\nor `\"manual\"` (gate_report flow). Defaults to `\"auto\"`.",
+      "type": "string"
+    },
     "default_timeout": {
       "default": 300,
       "description": "Default timeout for gate commands in seconds. Defaults to 300.",

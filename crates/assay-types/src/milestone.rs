@@ -87,6 +87,11 @@ pub struct Milestone {
     #[serde(default)]
     pub status: MilestoneStatus,
 
+    /// Whether this milestone was created via `plan quick` (transparent 1-chunk milestone).
+    /// Quick milestones hide the milestone/chunk abstraction from the user.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub quick: bool,
+
     /// Ordered list of chunk references included in this milestone.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub chunks: Vec<ChunkRef>,
@@ -164,6 +169,7 @@ mod tests {
             name: "My Feature".to_string(),
             description: Some("Delivers the my-feature capability".to_string()),
             status: MilestoneStatus::InProgress,
+            quick: false,
             chunks: vec![
                 ChunkRef {
                     slug: "auth-flow".to_string(),
@@ -213,6 +219,7 @@ mod tests {
             name: "Simple Milestone".to_string(),
             description: None,
             status: MilestoneStatus::Draft,
+            quick: false,
             chunks: vec![],
             completed_chunks: vec![],
             depends_on: vec![],
@@ -264,6 +271,7 @@ mod tests {
             name: "With PR Config".to_string(),
             description: None,
             status: MilestoneStatus::InProgress,
+            quick: false,
             chunks: vec![ChunkRef {
                 slug: "chunk-a".to_string(),
                 order: 1,

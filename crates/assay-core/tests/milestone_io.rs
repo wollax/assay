@@ -13,6 +13,7 @@ fn make_milestone(slug: &str) -> Milestone {
         name: format!("Milestone {slug}"),
         description: Some(format!("Description for {slug}")),
         status: MilestoneStatus::InProgress,
+        quick: false,
         chunks: vec![ChunkRef {
             slug: "auth-flow".to_string(),
             order: 1,

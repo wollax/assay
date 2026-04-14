@@ -130,6 +130,7 @@ fn create_synthetic_milestone(
         name: name.to_string(),
         description: None,
         status,
+        quick: false,
         chunks: chunk_refs,
         completed_chunks: completed,
         depends_on: vec![],

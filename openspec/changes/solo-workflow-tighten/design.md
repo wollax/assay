@@ -97,23 +97,30 @@ pub enum NextAction {
 
 **Rationale:** The milestone/chunk model already works. Creating a 1:1:1 mapping (milestone:chunk:spec) gives full cycle mechanics for free. The complexity is hidden in presentation, not data model.
 
-### D5: Branch isolation uses config + heuristic
+### D5: Branch isolation uses config + heuristic + dynamic detection
 
 **Choice:** New config section:
 
 ```toml
 [workflow]
 auto_isolate = "ask"  # "always" | "never" | "ask"
+# protected_branches = ["main", "staging", "release"]  # optional override
 ```
 
-When `"ask"`: detect current branch. If it matches a protected pattern (main, master, develop, or user-configured list), prompt to create a worktree/branch. If already on a feature branch, proceed silently.
+When `"ask"`: detect current branch. If it matches a protected pattern, prompt to create a worktree/branch. If already on a feature branch, proceed silently.
+
+**Protected branch detection (3 layers):**
+1. **Hardcoded defaults:** `["main", "master", "develop"]`
+2. **Dynamic detection:** Call existing `detect_default_branch()` (from `worktree.rs`, uses `git symbolic-ref refs/remotes/origin/HEAD`). If the result isn't already in the list, add it. This catches non-standard defaults like `trunk` or `production`.
+3. **Config override:** `[workflow] protected_branches` replaces the entire list when set (hardcoded + dynamic are ignored).
 
 **Alternatives considered:**
 - Always create worktree (too aggressive for solo on feature branch)
 - Never isolate (unsafe when on main)
-- Branch-only without worktree (sufficient for solo, but worktree is the existing primitive)
+- `git config init.defaultBranch` (only affects new repos, not the current repo)
+- Forge-level branch protection rules (no local representation)
 
-**Rationale:** Config-driven with smart default covers 90% of cases. Solo default is `"ask"`, full/smelt default is `"always"`.
+**Rationale:** Config-driven with smart default covers 90% of cases. Dynamic detection catches monorepos and non-standard setups. Solo default is `"ask"`, full/smelt default is `"always"`.
 
 ### D6: Gate evidence is one data structure, multiple renderers
 
@@ -136,18 +143,88 @@ When `"ask"`: detect current branch. If it matches a protected pattern (main, ma
 
 - **[`next_action()` reads across multiple files]** The function needs to load milestones, specs, and gate history to determine state. On large projects this could be slow. → **Mitigation:** Early return on common cases (no active milestone → `Idle`). Cache milestone/spec index in memory for TUI. CLI pays the cost once per invocation.
 
-- **[Skill deprecation]** Renaming `/assay:gate-check` → `/assay:check` and merging `/assay:status` + `/assay:next-chunk` → `/assay:focus` breaks muscle memory. → **Mitigation:** Keep old skill names as aliases for one version cycle. Log deprecation notice when used.
+- **[Skill deprecation]** Renaming `/assay:gate-check` → `/assay:check` and merging `/assay:status` + `/assay:next-chunk` → `/assay:focus` breaks muscle memory. → **Mitigation:** Create separate SKILL.md files for old names (D10). Each contains the replacement skill's content with a deprecation notice prepended. Remove after one version cycle.
 
 - **[Transparent milestone confusion]** A `plan quick` user who later runs `assay milestone list` will see their "flat spec" as a milestone. → **Mitigation:** Mark transparent milestones with a `quick: true` flag. `milestone list` can filter or annotate them.
 
 - **[Config section growth]** Adding `[workflow]` and `[sessions]` sections grows the config surface. → **Mitigation:** Both sections are optional with sensible defaults. `assay init` doesn't generate them — they appear only when the user explicitly configures.
 
-## Open Implementation Questions
+### D7: Spec status and cycle_advance — permissive by default
 
-These should be resolved during task planning, not design:
+**Choice:** `cycle_advance` runs gates regardless of spec status and auto-promotes to `verified` on all-pass. `next_action()` returns `ReviewSpec` as guidance, not enforcement. A config option enables strict mode for teams.
 
-1. **Backward compatibility** — Existing specs without `status` field: default to `draft` (safe) or infer `verified` from gate history (smart but complex)?
-2. **Skill alias mechanism** — Do plugin skills support aliases natively, or do we need separate SKILL.md files that redirect?
-3. **Protected branch detection** — Hardcoded list (main/master/develop) or read from git config (`init.defaultBranch`, branch protection rules)?
-4. **`quick: true` flag on milestones** — New field on `Milestone` struct, or inferred from 1-chunk + matching slugs?
-5. **UAT configuration** — Where does "UAT enabled" live? Per-spec? Per-project config? Both?
+```toml
+[workflow]
+strict_status = false  # default: permissive
+```
+
+When `strict_status = true`: `cycle_advance` requires spec status >= `approved` before running gates. Returns an error with guidance if the spec is still `draft` or `ready`.
+
+**Rationale:** Solo devs shouldn't hit a wall when they skip the formal review step — gates are the enforcement point, not status. Teams using smelt can opt into strict mode to enforce the explore → plan → review → execute pipeline.
+
+### D8: UAT configuration — project default + per-spec override
+
+**Choice:** Two-level configuration:
+
+```toml
+# config.toml
+[workflow]
+uat_enabled = false  # default: off for solo
+```
+
+```toml
+# gates.toml (per-spec override)
+uat = true  # overrides project default for this spec
+```
+
+Resolution order: per-spec `uat` field wins if set; otherwise falls back to project `uat_enabled`.
+
+**Rationale:** Solo devs default to no UAT (less ceremony). Critical specs can opt in individually. Full/smelt mode can enable globally. The UAT experience itself (skill invocation loading spec + gate_run_id + diff) is designed when we build the UAT skill, not now — the handoff contract is sufficient.
+
+### D9: Explore context loading — tiered with ~2K token budget
+
+**Choice:** The `/assay:explore` skill loads a structured summary, not raw files:
+
+**Always load (~500 tokens):**
+- Config summary: project name, key workflow settings
+- Milestone list: names + status (Draft/InProgress/Verify/Complete)
+- Spec index: names + criteria count + last gate result (pass/fail/never-run)
+
+**Conditionally load (~500 more if active):**
+- Active milestone detail: chunk order, completion progress
+- Recent git activity: `git log --oneline -20`
+
+**On demand only (user asks):**
+- Full spec criteria text
+- Full gate run details / evidence
+- Session data, codebase files
+
+**Fresh project (no specs):** Config only + "No specs defined yet. What are you building?"
+
+**Rationale:** Context window is a scarce resource for solo devs who are mid-conversation. A lean initial load lets the agent be useful immediately without blowing the budget. Full details are one question away.
+
+### D10: Skill aliases — separate SKILL.md files with deprecation notice
+
+**Choice:** Create separate SKILL.md files for each deprecated skill name. Each file contains the same content as the replacement skill, with a deprecation notice prepended to the prompt.
+
+| Old Name | New Name | Alias File |
+|----------|----------|------------|
+| `/assay:status` | `/assay:focus` | `skills/status/SKILL.md` |
+| `/assay:next-chunk` | `/assay:focus` | `skills/next-chunk/SKILL.md` |
+| `/assay:gate-check` | `/assay:check` | `skills/gate-check/SKILL.md` |
+
+Remove alias files after one version cycle (next minor release).
+
+**Rationale:** No harness (Claude Code, Codex, OpenCode) supports a native alias mechanism in skill frontmatter. Separate files are the only option. 3 extra files per harness is trivial maintenance for a single version cycle.
+
+## Resolved Implementation Questions
+
+| # | Question | Decision |
+|---|----------|----------|
+| 1 | Backward compatibility for spec status | Safe — default to `draft`. `status: None` treated as `draft`. No inference from gate history. |
+| 2 | Skill alias mechanism | Separate SKILL.md files per deprecated name. Same content + deprecation notice. Remove after 1 version. |
+| 3 | Protected branch detection | Hardcoded `["main", "master", "develop"]` + `detect_default_branch()` dynamic supplement + config override. |
+| 4 | `quick: true` flag on milestones | Explicit `quick: bool` field on `Milestone` struct with `#[serde(default)]`. |
+| 5 | UAT configuration | Both — `[workflow] uat_enabled = false` default + per-spec `uat = true` override in gates.toml. |
+| 6 | Explore context loading | Tiered ~2K token budget. Config + milestones + spec index always. Full criteria on demand. |
+| 7 | Spec status + cycle_advance | Permissive default (gates run regardless). `[workflow] strict_status = false`. Strict requires status >= approved. |

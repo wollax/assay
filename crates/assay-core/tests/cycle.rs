@@ -32,6 +32,7 @@ fn make_milestone_with_status(
         name: format!("Milestone {slug}"),
         description: None,
         status,
+        quick: false,
         chunks,
         completed_chunks: vec![],
         depends_on: vec![],
@@ -355,6 +356,7 @@ fn test_milestone_phase_transition_valid() {
         name: "Trans Test".to_string(),
         description: None,
         status: MilestoneStatus::Draft,
+        quick: false,
         chunks: vec![ChunkRef {
             slug: "chunk-a".to_string(),
             order: 1,
@@ -401,6 +403,7 @@ fn test_milestone_phase_transition_invalid() {
             name: "Inv Test".to_string(),
             description: None,
             status,
+            quick: false,
             chunks: vec![],
             completed_chunks: vec![],
             depends_on: vec![],

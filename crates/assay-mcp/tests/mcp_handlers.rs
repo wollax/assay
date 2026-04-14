@@ -9,7 +9,7 @@ use std::path::Path;
 
 use assay_mcp::{
     AssayServer, GateFinalizeParams, GateHistoryParams, GateReportParams, GateRunParams,
-    MergeCheckParams, Parameters, SpecValidateParams,
+    MergeCheckParams, Parameters, SpecListParams, SpecValidateParams,
 };
 use assay_types::{Confidence, EvaluatorRole};
 use rmcp::model::RawContent;
@@ -339,7 +339,10 @@ cmd = "echo ok"
     std::env::set_current_dir(dir.path()).unwrap();
 
     let server = AssayServer::new();
-    let result = server.spec_list().await.unwrap();
+    let result = server
+        .spec_list(Parameters(SpecListParams { status: None }))
+        .await
+        .unwrap();
 
     assert!(
         !result.is_error.unwrap_or(false),

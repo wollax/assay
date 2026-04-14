@@ -42,6 +42,92 @@ pub use milestone::{
 pub use criteria::apply_criteria_wizard;
 pub use gate::apply_gate_wizard;
 
+// ── plan_quick: transparent 1-chunk milestone ────────────────────────────────
+
+/// Result of a `plan_quick` operation.
+pub struct PlanQuickResult {
+    /// Path to the created milestone TOML.
+    pub milestone_path: PathBuf,
+    /// Path to the created gates.toml spec.
+    pub spec_path: PathBuf,
+    /// The slug used for milestone, chunk, and spec.
+    pub slug: String,
+}
+
+/// Create a transparent 1-chunk milestone for a flat spec.
+///
+/// Creates:
+/// - A milestone at `.assay/milestones/<slug>.toml` with `quick: true`
+/// - A single chunk referencing the spec
+/// - A gates.toml spec at `.assay/specs/<slug>/gates.toml`
+///
+/// The milestone, chunk, and spec all share the same slug, hiding the
+/// milestone/chunk abstraction from the solo developer.
+pub fn plan_quick(
+    assay_dir: &Path,
+    name: &str,
+    criteria: Vec<assay_types::Criterion>,
+) -> Result<PlanQuickResult> {
+    let slug = slugify(name);
+
+    let specs_dir = assay_dir.join("specs");
+    let milestones_dir = assay_dir.join("milestones");
+    std::fs::create_dir_all(&milestones_dir)
+        .map_err(|e| AssayError::io("creating milestones directory", &milestones_dir, e))?;
+
+    // Create the gate spec
+    let gates = GatesSpec {
+        name: slug.clone(),
+        description: String::new(),
+        status: None,
+        uat: None,
+        gate: None,
+        depends: vec![],
+        milestone: Some(slug.clone()),
+        order: Some(1),
+        extends: None,
+        include: vec![],
+        preconditions: None,
+        criteria,
+    };
+    let spec_path = write_gate_spec(&gates, &specs_dir)?;
+
+    // Create the quick milestone
+    let now = chrono::Utc::now();
+    let milestone = assay_types::Milestone {
+        slug: slug.clone(),
+        name: name.to_string(),
+        description: None,
+        status: assay_types::MilestoneStatus::InProgress,
+        quick: true,
+        chunks: vec![assay_types::ChunkRef {
+            slug: slug.clone(),
+            order: 1,
+            depends_on: vec![],
+        }],
+        completed_chunks: vec![],
+        depends_on: vec![],
+        pr_branch: None,
+        pr_base: None,
+        pr_number: None,
+        pr_url: None,
+        pr_labels: None,
+        pr_reviewers: None,
+        pr_body_template: None,
+        created_at: now,
+        updated_at: now,
+    };
+
+    crate::milestone::milestone_save(assay_dir, &milestone)?;
+    let milestone_path = milestones_dir.join(format!("{slug}.toml"));
+
+    Ok(PlanQuickResult {
+        milestone_path,
+        spec_path,
+        slug,
+    })
+}
+
 // ── Shared helper: atomic gate spec write ────────────────────────────────────
 
 /// Write a `GatesSpec` to `<specs_dir>/<spec.name>/gates.toml` atomically.

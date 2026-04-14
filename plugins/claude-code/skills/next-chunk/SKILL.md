@@ -1,30 +1,38 @@
 ---
 name: next-chunk
 description: >
-  Show the active chunk's spec criteria and gate status. Use before starting work on a chunk,
-  to understand what needs to pass, or to check current gate results.
+  Show what you're currently working on — active chunk, criteria, and gate status.
+  Use when the user asks "what am I working on?", "what's next?", or wants to see current progress.
+  Replaces /assay:status and /assay:next-chunk.
 ---
 
-# Next Chunk
+> **Deprecated:** This skill has been replaced by `/assay:focus` (for status/next-chunk) or `/assay:check` (for gate-check). The old name still works but will be removed in the next version.
 
-Load context for the active chunk: cycle state, gate status, and spec criteria.
+# Focus
+
+Show active work context: milestone, chunk, criteria, and gate status.
 
 ## Steps
 
-1. **Call `cycle_status`** (no parameters):
-   - If `{ "active": false }`: stop and tell the user no milestone is active. Suggest `/assay:plan` to create one.
-   - If `active_chunk_slug` is `null`: all chunks are complete and the milestone is in the Verify phase. Tell the user: *"All chunks are complete. Create a PR with `assay pr create <milestone-slug>` or use the `pr_create` tool."*
-   - Otherwise proceed with `active_chunk_slug`
+1. **Call `cycle_status`** to get the active milestone and chunk
 
-2. **Call `chunk_status`** with `{ "chunk_slug": "<active_chunk_slug>" }`:
-   - Display a gate summary: `passed`, `failed`, `required_failed` counts
-   - If `has_history: false`: note that no gate runs exist yet for this chunk
+2. **Handle no active milestone:**
+   - Tell the user: *"No active milestone. Start with `/assay:plan` or `/assay:explore`."*
 
-3. **Call `spec_get`** with `{ "name": "<active_chunk_slug>" }`:
-   - Display the full criteria list for the chunk: criterion name, description, whether executable, and `cmd` if present
+3. **Call `chunk_status`** with the active chunk slug to get gate pass/fail per criterion
 
-4. **Summarise:** State the active chunk name, gate pass/fail status, and what criteria must pass before calling `cycle_advance`.
+4. **Call `spec_get`** with the active chunk slug to load full criteria
+
+5. **For quick milestones** (single chunk matching milestone slug):
+   - Hide milestone/chunk terminology
+   - Show as: "Working on: [spec name]" with criteria and gate status
+
+6. **Display:**
+   - Spec name and status (draft/ready/approved/verified)
+   - Criteria list with pass/fail indicators
+   - Progress: chunks completed / total
+   - Suggested next action based on state
 
 ## Output Format
 
-Show gate status first (pass/fail counts), then criteria list. Keep it scannable — one line per criterion is enough for passing criteria. Flag failing or unrun criteria clearly so the user knows what to focus on.
+Compact view — criteria table with pass/fail status. One-line progress summary. Suggest the logical next step.

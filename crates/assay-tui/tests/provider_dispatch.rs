@@ -15,6 +15,7 @@ fn config_with_provider(kind: ProviderKind) -> Config {
             execution_model: None,
             review_model: None,
         }),
+        workflow: None,
     }
 }
 

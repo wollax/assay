@@ -19,6 +19,7 @@ fn make_milestone(slug: &str) -> Milestone {
         name: format!("Test {slug}"),
         description: None,
         status: MilestoneStatus::Draft,
+        quick: false,
         chunks: vec![],
         completed_chunks: vec![],
         depends_on: vec![],

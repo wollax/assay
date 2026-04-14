@@ -6,11 +6,12 @@ This project uses Assay for milestone-driven spec development. Use the skills an
 
 | Skill | Description |
 | --- | --- |
-| `/assay:plan` | Interview user → create milestone + specs per chunk |
-| `/assay:status` | Show active milestone phase, chunk, and progress |
-| `/assay:next-chunk` | Load active chunk criteria and gate pass/fail status |
+| `/assay:explore` | Load project context for brainstorming and requirements discovery |
+| `/assay:plan` | Interview user → create milestone + specs (supports `quick` for flat specs) |
+| `/assay:focus` | Show active work: chunk criteria, gate status, progress |
+| `/assay:check [name]` | Run quality gates with smart routing, suggest next step |
+| `/assay:ship` | Verify gates pass → create PR with evidence |
 | `/assay:spec-show [name]` | Display a spec's criteria and details |
-| `/assay:gate-check [name]` | Run quality gates and report results |
 
 ## CLI Commands
 

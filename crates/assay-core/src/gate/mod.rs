@@ -34,6 +34,7 @@ use assay_types::{
 use crate::error::{AssayError, Result};
 
 pub mod evidence;
+pub mod render;
 pub mod session;
 
 /// Classification of command execution errors based on shell exit codes.
@@ -271,6 +272,112 @@ pub fn evaluate_all_gates(
         config_timeout,
         &[],
     )
+}
+
+/// Smart gate routing: evaluate criteria by type, dispatching each to the
+/// appropriate evaluation path.
+///
+/// - `Command` / `FileExists` / `AlwaysPass` → Path 1 (shell subprocess)
+/// - `AgentReport` → Path 3 (evaluator subprocess) when `agent_eval_mode` is `"auto"`,
+///   or skipped with informational note when `"manual"`
+/// - `EventCount` / `NoToolErrors` → Skipped (pipeline-only, require agent event log)
+///
+/// Mixed specs are supported: Path 1 criteria are evaluated inline while
+/// Path 3 criteria (AgentReport) are skipped with `result: None` — they are
+/// evaluated separately via the MCP `gate_evaluate` flow. Callers must
+/// check `skipped > 0` to detect unevaluated agent criteria.
+pub fn evaluate_routed(
+    gates: &GatesSpec,
+    working_dir: &Path,
+    cli_timeout: Option<u64>,
+    config_timeout: Option<u64>,
+    _agent_eval_mode: &str,
+) -> GateRunSummary {
+    let start = Instant::now();
+    let mut results: Vec<CriterionResult> = Vec::new();
+    let mut passed = 0usize;
+    let mut failed = 0usize;
+    let mut skipped = 0usize;
+    let mut enforcement_summary = EnforcementSummary::default();
+
+    for gc in &gates.criteria {
+        let enforcement = resolve_enforcement(gc.enforcement, gates.gate.as_ref());
+
+        match &gc.kind {
+            // Pipeline-only criteria: skip with informational note
+            Some(CriterionKind::EventCount { .. }) | Some(CriterionKind::NoToolErrors) => {
+                skipped += 1;
+                results.push(CriterionResult {
+                    criterion_name: gc.name.clone(),
+                    result: None,
+                    enforcement,
+                    source: None,
+                });
+            }
+            // Agent report: always skipped here — evaluated via MCP gate_evaluate
+            // flow (auto mode) or user-driven gate_report flow (manual mode).
+            Some(CriterionKind::AgentReport) => {
+                skipped += 1;
+                results.push(CriterionResult {
+                    criterion_name: gc.name.clone(),
+                    result: None,
+                    enforcement,
+                    source: None,
+                });
+            }
+            // Command, FileExists, AlwaysPass, or no kind (default = Command)
+            _ => {
+                let criterion = to_criterion(gc);
+                let timeout = resolve_timeout(gc.timeout, config_timeout, cli_timeout);
+                match evaluate(&criterion, working_dir, timeout) {
+                    Ok(gate_result) => {
+                        if gate_result.passed {
+                            passed += 1;
+                            match enforcement {
+                                Enforcement::Required => enforcement_summary.required_passed += 1,
+                                Enforcement::Advisory => enforcement_summary.advisory_passed += 1,
+                            }
+                        } else {
+                            failed += 1;
+                            match enforcement {
+                                Enforcement::Required => enforcement_summary.required_failed += 1,
+                                Enforcement::Advisory => enforcement_summary.advisory_failed += 1,
+                            }
+                        }
+                        results.push(CriterionResult {
+                            criterion_name: gc.name.clone(),
+                            result: Some(gate_result),
+                            enforcement,
+                            source: None,
+                        });
+                    }
+                    Err(_) => {
+                        failed += 1;
+                        match enforcement {
+                            Enforcement::Required => enforcement_summary.required_failed += 1,
+                            Enforcement::Advisory => enforcement_summary.advisory_failed += 1,
+                        }
+                        results.push(CriterionResult {
+                            criterion_name: gc.name.clone(),
+                            result: None,
+                            enforcement,
+                            source: None,
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    GateRunSummary {
+        spec_name: gates.name.clone(),
+        passed,
+        failed,
+        skipped,
+        results,
+        total_duration_ms: start.elapsed().as_millis() as u64,
+        enforcement: enforcement_summary,
+    }
 }
 
 /// Check all preconditions for a gate spec before evaluating criteria.
@@ -1666,6 +1773,8 @@ mod tests {
         let gates = GatesSpec {
             name: "mixed".to_string(),
             description: String::new(),
+            status: None,
+            uat: None,
             gate: None,
             depends: vec![],
             milestone: None,
@@ -1750,6 +1859,8 @@ mod tests {
         let gates_spec = GatesSpec {
             name: "test".to_string(),
             description: String::new(),
+            status: None,
+            uat: None,
             gate: None,
             depends: vec![],
             milestone: None,
@@ -1960,6 +2071,8 @@ mod tests {
         let gates = GatesSpec {
             name: "file-gates".to_string(),
             description: String::new(),
+            status: None,
+            uat: None,
             gate: None,
             depends: vec![],
             milestone: None,
@@ -2159,6 +2272,8 @@ mod tests {
         let gates = GatesSpec {
             name: "enforcement-gates".to_string(),
             description: String::new(),
+            status: None,
+            uat: None,
             gate: Some(GateSection {
                 enforcement: Enforcement::Advisory,
             }),
@@ -2446,6 +2561,8 @@ mod tests {
         let gates = GatesSpec {
             name: "gates-events-test".to_string(),
             description: String::new(),
+            status: None,
+            uat: None,
             gate: None,
             depends: vec![],
             milestone: None,
@@ -2483,6 +2600,8 @@ mod tests {
         let gates = GatesSpec {
             name: "bad-gates-cmd".to_string(),
             description: String::new(),
+            status: None,
+            uat: None,
             gate: None,
             depends: vec![],
             milestone: None,
@@ -3144,6 +3263,8 @@ mod tests {
         let gates = GatesSpec {
             name: "no-errors-routed".to_string(),
             description: String::new(),
+            status: None,
+            uat: None,
             gate: None,
             depends: vec![],
             milestone: None,

@@ -66,6 +66,7 @@ fn config_save_creates_file() {
         worktree: None,
         sessions: None,
         provider: None,
+        workflow: None,
     };
 
     save(tmp.path(), &cfg).expect("save should succeed");
@@ -87,6 +88,7 @@ fn config_save_overwrites_existing() {
         worktree: None,
         sessions: None,
         provider: None,
+        workflow: None,
     };
 
     save(tmp.path(), &cfg).expect("save should succeed");
@@ -113,6 +115,7 @@ fn config_save_with_provider_persists() {
             execution_model: None,
             review_model: None,
         }),
+        workflow: None,
     };
 
     save(tmp.path(), &cfg).expect("save with provider should succeed");

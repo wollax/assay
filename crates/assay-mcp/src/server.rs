@@ -203,6 +203,17 @@ pub struct GateHistoryParams {
     pub outcome: Option<String>,
 }
 
+/// Parameters for the `spec_list` tool.
+#[derive(Deserialize, JsonSchema)]
+pub struct SpecListParams {
+    /// Filter by workflow lifecycle status (draft, ready, approved, verified).
+    #[schemars(
+        description = "Filter by workflow status: 'draft', 'ready', 'approved', 'verified'. Omit to list all specs."
+    )]
+    #[serde(default)]
+    pub status: Option<String>,
+}
+
 /// Parameters for the `context_diagnose` tool.
 #[derive(Deserialize, JsonSchema)]
 pub struct ContextDiagnoseParams {
@@ -830,6 +841,9 @@ struct SpecListEntry {
     /// Whether a companion `spec.toml` (feature spec) exists. Omitted from JSON when `false`.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     has_feature_spec: bool,
+    /// Workflow lifecycle status (draft/ready/approved/verified). Absent for legacy specs.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    status: Option<String>,
 }
 
 /// Response envelope for `spec_list`, including scan errors.
@@ -1431,9 +1445,12 @@ impl AssayServer {
 
     /// List all specs in the current Assay project.
     #[tool(
-        description = "List all specs in the current Assay project. Returns {specs, errors?} where specs is an array of {name, description?, criteria_count, format, has_feature_spec?} objects and errors lists any spec files that failed to parse. Use this to discover available specs before calling spec_get or gate_run."
+        description = "List all specs in the current Assay project. Returns {specs, errors?} where specs is an array of {name, description?, criteria_count, format, has_feature_spec?, status?} objects and errors lists any spec files that failed to parse. Use this to discover available specs before calling spec_get or gate_run. Pass status to filter by workflow lifecycle status (draft, ready, approved, verified)."
     )]
-    pub async fn spec_list(&self) -> Result<CallToolResult, McpError> {
+    pub async fn spec_list(
+        &self,
+        params: Parameters<SpecListParams>,
+    ) -> Result<CallToolResult, McpError> {
         let cwd = resolve_cwd()?;
         let config = match load_config(&cwd) {
             Ok(c) => c,
@@ -1446,28 +1463,44 @@ impl AssayServer {
             Err(e) => return Ok(domain_error(&e)),
         };
 
+        let status_filter = params.0.status.as_deref();
+
         let specs: Vec<SpecListEntry> = scan_result
             .entries
             .iter()
-            .map(|entry| match entry {
-                SpecEntry::Legacy { slug, spec } => SpecListEntry {
-                    name: slug.clone(),
-                    description: spec.description.clone(),
-                    criteria_count: spec.criteria.len(),
-                    format: "legacy".to_string(),
-                    has_feature_spec: false,
-                },
-                SpecEntry::Directory {
-                    slug,
-                    gates,
-                    spec_path,
-                } => SpecListEntry {
-                    name: slug.clone(),
-                    description: gates.description.clone(),
-                    criteria_count: gates.criteria.len(),
-                    format: "directory".to_string(),
-                    has_feature_spec: spec_path.is_some(),
-                },
+            .filter_map(|entry| {
+                let list_entry = match entry {
+                    SpecEntry::Legacy { slug, spec } => SpecListEntry {
+                        name: slug.clone(),
+                        description: spec.description.clone(),
+                        criteria_count: spec.criteria.len(),
+                        format: "legacy".to_string(),
+                        has_feature_spec: false,
+                        status: None,
+                    },
+                    SpecEntry::Directory {
+                        slug,
+                        gates,
+                        spec_path,
+                    } => SpecListEntry {
+                        name: slug.clone(),
+                        description: gates.description.clone(),
+                        criteria_count: gates.criteria.len(),
+                        format: "directory".to_string(),
+                        has_feature_spec: spec_path.is_some(),
+                        status: Some(assay_core::spec::effective_status(gates).to_string()),
+                    },
+                };
+
+                // Apply status filter if provided
+                if let Some(filter) = status_filter {
+                    let entry_status = list_entry.status.as_deref().unwrap_or("draft");
+                    if !entry_status.eq_ignore_ascii_case(filter) {
+                        return None;
+                    }
+                }
+
+                Some(list_entry)
             })
             .collect();
 
@@ -6217,6 +6250,7 @@ cmd = "echo ok"
             worktree: None,
             sessions: None,
             provider: None,
+            workflow: None,
         };
 
         let result = resolve_working_dir(&cwd, &config);
@@ -6236,11 +6270,13 @@ cmd = "echo ok"
                 evaluator_model: "sonnet".to_string(),
                 evaluator_retries: 1,
                 evaluator_timeout: 120,
+                agent_eval_mode: "auto".to_string(),
             }),
             guard: None,
             worktree: None,
             sessions: None,
             provider: None,
+            workflow: None,
         };
 
         let result = resolve_working_dir(&cwd, &config);
@@ -6264,11 +6300,13 @@ cmd = "echo ok"
                 evaluator_model: "sonnet".to_string(),
                 evaluator_retries: 1,
                 evaluator_timeout: 120,
+                agent_eval_mode: "auto".to_string(),
             }),
             guard: None,
             worktree: None,
             sessions: None,
             provider: None,
+            workflow: None,
         };
 
         let result = resolve_working_dir(&cwd, &config);
@@ -6289,6 +6327,7 @@ cmd = "echo ok"
             criteria_count: 3,
             format: "legacy".to_string(),
             has_feature_spec: false,
+            status: None,
         };
 
         let json = serde_json::to_value(&entry).unwrap();
@@ -6300,6 +6339,10 @@ cmd = "echo ok"
             json.get("has_feature_spec").is_none(),
             "false has_feature_spec should be omitted"
         );
+        assert!(
+            json.get("status").is_none(),
+            "legacy spec should not have status"
+        );
     }
 
     #[test]
@@ -6310,6 +6353,7 @@ cmd = "echo ok"
             criteria_count: 1,
             format: "legacy".to_string(),
             has_feature_spec: false,
+            status: None,
         };
 
         let json = serde_json::to_value(&entry).unwrap();
@@ -6329,11 +6373,13 @@ cmd = "echo ok"
             criteria_count: 2,
             format: "directory".to_string(),
             has_feature_spec: true,
+            status: Some("draft".to_string()),
         };
 
         let json = serde_json::to_value(&entry).unwrap();
         assert_eq!(json["format"], "directory");
         assert_eq!(json["has_feature_spec"], true);
+        assert_eq!(json["status"], "draft");
     }
 
     #[test]
@@ -6722,6 +6768,7 @@ cmd = "echo ok"
                 criteria_count: 2,
                 format: "legacy".to_string(),
                 has_feature_spec: false,
+                status: None,
             }],
             errors: vec![SpecListError {
                 message: "failed to parse broken.toml: invalid key".to_string(),
@@ -6745,6 +6792,7 @@ cmd = "echo ok"
                 criteria_count: 1,
                 format: "legacy".to_string(),
                 has_feature_spec: false,
+                status: None,
             }],
             errors: vec![],
         };
@@ -7095,7 +7143,10 @@ cmd = "echo lint-ok"
         std::env::set_current_dir(dir.path()).unwrap();
 
         let server = AssayServer::new();
-        let result = server.spec_list().await.unwrap();
+        let result = server
+            .spec_list(Parameters(SpecListParams { status: None }))
+            .await
+            .unwrap();
 
         assert!(
             !result.is_error.unwrap_or(false),

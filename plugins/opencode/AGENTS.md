@@ -6,11 +6,12 @@ This project uses Assay for spec-driven development with quality gates. Each fea
 
 | Command | Description |
 | --- | --- |
-| `/assay:gate-check [spec]` | Run quality gates and report pass/fail results |
-| `/assay:spec-show [spec]` | Display a spec's criteria before implementing |
-| `/assay:cycle-status` | Overview of the active milestone and chunk progress |
-| `/assay:next-chunk` | Detail view of the active chunk with full criteria list |
-| `/assay:plan` | Interview-guided creation of a new milestone and specs |
+| `/assay:explore` | Load project context for brainstorming and requirements discovery |
+| `/assay:plan` | Interview user → create milestone + specs (supports `quick` for flat specs) |
+| `/assay:focus` | Show active work: chunk criteria, gate status, progress |
+| `/assay:check [name]` | Run quality gates with smart routing, suggest next step |
+| `/assay:ship` | Verify gates pass → create PR with evidence |
+| `/assay:spec-show [name]` | Display a spec's criteria and details |
 
 ## MCP Tools
 

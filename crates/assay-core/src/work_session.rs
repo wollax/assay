@@ -148,6 +148,13 @@ pub fn load_session(assay_dir: &Path, session_id: &str) -> Result<WorkSession> {
 ///
 /// Returns an empty vec if the sessions directory does not exist.
 pub fn list_sessions(assay_dir: &Path) -> Result<Vec<String>> {
+    lazy_evict(assay_dir);
+    list_sessions_raw(assay_dir)
+}
+
+/// List session IDs without triggering eviction.
+/// Used internally by `evict_sessions` to avoid recursion.
+fn list_sessions_raw(assay_dir: &Path) -> Result<Vec<String>> {
     let sessions_dir = assay_dir.join("sessions");
     if !sessions_dir.is_dir() {
         return Ok(Vec::new());
@@ -206,6 +213,9 @@ pub fn start_session(
     agent_command: &str,
     agent_model: Option<&str>,
 ) -> Result<WorkSession> {
+    // Lazy eviction: run on session creation to keep session count bounded.
+    lazy_evict(assay_dir);
+
     let mut session = create_work_session(spec_name, worktree_path, agent_command, agent_model);
     transition_session(
         &mut session,
@@ -215,6 +225,26 @@ pub fn start_session(
     )?;
     save_session(assay_dir, &session)?;
     Ok(session)
+}
+
+/// Run session eviction using project config, if available.
+///
+/// Best-effort: failures are silently ignored. Called lazily from
+/// `start_session` and `list_sessions` to keep session count bounded.
+fn lazy_evict(assay_dir: &Path) {
+    // config::load expects a project root and appends .assay/config.toml,
+    // so derive the root from the assay_dir (.assay/) by going up one level.
+    let project_root = assay_dir.parent().unwrap_or(assay_dir);
+    let sessions_config = if let Ok(config) = crate::config::load(project_root) {
+        config.sessions.unwrap_or_default()
+    } else {
+        assay_types::SessionsConfig::default()
+    };
+    evict_sessions(
+        assay_dir,
+        sessions_config.max_count,
+        sessions_config.max_age_days,
+    );
 }
 
 /// Transition a session to GateEvaluated and link a gate run ID.
@@ -321,7 +351,7 @@ fn build_recovery_note(
 pub fn recover_stale_sessions(assay_dir: &Path, stale_threshold_secs: u64) -> RecoverySummary {
     let mut summary = RecoverySummary::default();
 
-    let ids = match list_sessions(assay_dir) {
+    let ids = match list_sessions_raw(assay_dir) {
         Ok(ids) => ids,
         Err(e) => {
             tracing::warn!("recovery scan: cannot list sessions: {e}");
@@ -438,6 +468,110 @@ pub fn compute_tool_call_summary(events: &[AgentEvent]) -> ToolCallSummary {
             _ => {}
         }
     }
+    summary
+}
+
+/// Summary of session eviction results.
+#[derive(Debug, Default)]
+pub struct EvictionSummary {
+    /// Number of sessions deleted by count limit.
+    pub evicted_by_count: usize,
+    /// Number of sessions deleted by age limit.
+    pub evicted_by_age: usize,
+    /// Number of sessions skipped (linked to InProgress milestones).
+    pub protected: usize,
+}
+
+/// Evict sessions that exceed count or age limits.
+///
+/// Protected sessions (linked to InProgress milestones) are never evicted.
+/// Sessions are sorted chronologically by ULID (lexicographic order = time order).
+///
+/// - `max_count`: maximum number of sessions to keep (0 = no count limit)
+/// - `max_age_days`: maximum age in days (0 = no age limit)
+pub fn evict_sessions(assay_dir: &Path, max_count: usize, max_age_days: u64) -> EvictionSummary {
+    let mut summary = EvictionSummary::default();
+
+    if max_count == 0 && max_age_days == 0 {
+        return summary;
+    }
+
+    let mut ids = match list_sessions_raw(assay_dir) {
+        Ok(ids) => ids,
+        Err(_) => return summary,
+    };
+
+    if ids.is_empty() {
+        return summary;
+    }
+
+    // ULIDs are lexicographically sorted by time — sort ascending
+    ids.sort();
+
+    // Build set of protected spec names (specs in InProgress milestones)
+    let protected_specs: std::collections::HashSet<String> =
+        crate::milestone::milestone_scan(assay_dir)
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|m| m.status == assay_types::MilestoneStatus::InProgress)
+            .flat_map(|m| m.chunks.into_iter().map(|c| c.slug))
+            .collect();
+
+    let age_cutoff = if max_age_days > 0 {
+        Some(Utc::now() - chrono::Duration::days(max_age_days as i64))
+    } else {
+        None
+    };
+
+    // Identify sessions to evict
+    let mut to_delete: Vec<String> = Vec::new();
+
+    for id in &ids {
+        if let Ok(session) = load_session(assay_dir, id) {
+            // Never evict sessions linked to active milestones
+            if protected_specs.contains(&session.spec_name) {
+                summary.protected += 1;
+                continue;
+            }
+
+            // Age-based eviction
+            if let Some(cutoff) = age_cutoff
+                && session.created_at < cutoff
+            {
+                to_delete.push(id.clone());
+                summary.evicted_by_age += 1;
+            }
+        }
+    }
+
+    // Count-based eviction (from oldest, skip already-marked and protected)
+    if max_count > 0 {
+        let remaining: Vec<&String> = ids
+            .iter()
+            .filter(|id| !to_delete.contains(id))
+            .filter(|id| {
+                load_session(assay_dir, id)
+                    .map(|s| !protected_specs.contains(&s.spec_name))
+                    .unwrap_or(false)
+            })
+            .collect();
+
+        if remaining.len() > max_count {
+            let excess = remaining.len() - max_count;
+            for id in remaining.iter().take(excess) {
+                to_delete.push((*id).clone());
+                summary.evicted_by_count += 1;
+            }
+        }
+    }
+
+    // Delete evicted sessions
+    let sessions_dir = assay_dir.join("sessions");
+    for id in &to_delete {
+        let path = sessions_dir.join(format!("{id}.json"));
+        let _ = std::fs::remove_file(path);
+    }
+
     summary
 }
 

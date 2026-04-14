@@ -109,11 +109,13 @@ fn config_validates() {
             evaluator_model: "sonnet".to_string(),
             evaluator_retries: 1,
             evaluator_timeout: 120,
+            agent_eval_mode: "auto".to_string(),
         }),
         guard: None,
         worktree: None,
         sessions: None,
         provider: None,
+        workflow: None,
     });
 }
 
@@ -126,6 +128,7 @@ fn gates_config_validates() {
         evaluator_model: "sonnet".to_string(),
         evaluator_retries: 1,
         evaluator_timeout: 120,
+        agent_eval_mode: "auto".to_string(),
     });
 }
 
@@ -291,6 +294,8 @@ fn gates_spec_validates() {
     validate(&GatesSpec {
         name: "auth-flow".to_string(),
         description: String::new(),
+        status: None,
+        uat: None,
         gate: None,
         depends: vec![],
         milestone: None,

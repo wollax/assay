@@ -18,6 +18,49 @@ use crate::precondition::SpecPreconditions;
 /// compatibility for existing consumers.
 pub type GateCriterion = crate::Criterion;
 
+/// Workflow lifecycle status for a gate spec.
+///
+/// Tracks a gate spec through the solo workflow loop:
+/// `Draft` → `Ready` → `Approved` → `Verified`.
+///
+/// Forward skips (e.g., `Draft` → `Approved`) and backward transitions
+/// (e.g., `Verified` → `Draft` for rework) are both allowed.
+/// Auto-promoted to `Verified` when a gate run passes all required criteria.
+///
+/// Distinct from [`crate::feature_spec::SpecStatus`], which tracks the
+/// IEEE 830/29148 feature specification lifecycle.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum GateSpecStatus {
+    /// Initial authoring state; spec is being drafted.
+    #[default]
+    Draft,
+    /// Spec is ready for review.
+    Ready,
+    /// Spec has been reviewed and approved for implementation.
+    Approved,
+    /// Implementation verified — all required gate criteria pass.
+    Verified,
+}
+
+impl std::fmt::Display for GateSpecStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Draft => write!(f, "draft"),
+            Self::Ready => write!(f, "ready"),
+            Self::Approved => write!(f, "approved"),
+            Self::Verified => write!(f, "verified"),
+        }
+    }
+}
+
+inventory::submit! {
+    crate::schema_registry::SchemaEntry {
+        name: "gate-spec-status",
+        generate: || schemars::schema_for!(GateSpecStatus),
+    }
+}
+
 /// A gate specification loaded from `gates.toml` in a directory-based spec.
 ///
 /// Parallel to [`crate::Spec`] but designed for the directory layout where
@@ -31,6 +74,15 @@ pub struct GatesSpec {
     /// Human-readable description. Defaults to empty string.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub description: String,
+
+    /// Workflow lifecycle status. Absent for legacy specs (treated as `Draft`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<GateSpecStatus>,
+
+    /// Per-spec UAT override. When set, overrides the project-level
+    /// `[workflow] uat_enabled` setting for this spec.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub uat: Option<bool>,
 
     /// Gate configuration section (enforcement defaults).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -104,6 +156,8 @@ mod tests {
         let spec = GatesSpec {
             name: "auth-flow".to_string(),
             description: String::new(),
+            status: None,
+            uat: None,
             gate: None,
             depends: vec![],
             milestone: None,
@@ -294,6 +348,8 @@ unknown_crit_key = true
         let spec = GatesSpec {
             name: "mixed-gates".to_string(),
             description: "Both command and agent criteria".to_string(),
+            status: None,
+            uat: None,
             gate: None,
             depends: vec![],
             milestone: None,
@@ -388,6 +444,8 @@ description = "A check"
         let spec = GatesSpec {
             name: "gated-spec".to_string(),
             description: "Spec with gate section".to_string(),
+            status: None,
+            uat: None,
             gate: Some(GateSection {
                 enforcement: Enforcement::Advisory,
             }),
@@ -564,6 +622,8 @@ requirements = ["REQ-FUNC-001"]
         let spec = GatesSpec {
             name: "minimal".to_string(),
             description: String::new(),
+            status: None,
+            uat: None,
             gate: None,
             depends: vec![],
             milestone: None,
@@ -598,5 +658,162 @@ requirements = ["REQ-FUNC-001"]
             !toml_str.contains("preconditions"),
             "TOML should omit absent preconditions, got:\n{toml_str}"
         );
+        assert!(
+            !toml_str.contains("status"),
+            "TOML should omit absent status, got:\n{toml_str}"
+        );
+        assert!(
+            !toml_str.contains("uat"),
+            "TOML should omit absent uat, got:\n{toml_str}"
+        );
+    }
+
+    // ── Spec status and UAT fields ───────────────────────────────────
+
+    #[test]
+    fn gate_spec_status_default_is_draft() {
+        assert_eq!(GateSpecStatus::default(), GateSpecStatus::Draft);
+    }
+
+    #[test]
+    fn gate_spec_status_serde_roundtrip() {
+        let statuses = [
+            GateSpecStatus::Draft,
+            GateSpecStatus::Ready,
+            GateSpecStatus::Approved,
+            GateSpecStatus::Verified,
+        ];
+        for &status in &statuses {
+            let json = serde_json::to_string(&status).expect("serialize status");
+            let back: GateSpecStatus = serde_json::from_str(&json).expect("deserialize status");
+            assert_eq!(back, status);
+        }
+        // Verify kebab-case serialization
+        assert_eq!(
+            serde_json::to_string(&GateSpecStatus::Draft).unwrap(),
+            r#""draft""#
+        );
+        assert_eq!(
+            serde_json::to_string(&GateSpecStatus::Ready).unwrap(),
+            r#""ready""#
+        );
+        assert_eq!(
+            serde_json::to_string(&GateSpecStatus::Approved).unwrap(),
+            r#""approved""#
+        );
+        assert_eq!(
+            serde_json::to_string(&GateSpecStatus::Verified).unwrap(),
+            r#""verified""#
+        );
+    }
+
+    #[test]
+    fn gate_spec_status_display() {
+        assert_eq!(GateSpecStatus::Draft.to_string(), "draft");
+        assert_eq!(GateSpecStatus::Ready.to_string(), "ready");
+        assert_eq!(GateSpecStatus::Approved.to_string(), "approved");
+        assert_eq!(GateSpecStatus::Verified.to_string(), "verified");
+    }
+
+    #[test]
+    fn gates_spec_with_status_toml_roundtrip() {
+        let toml_str = r#"
+name = "auth-flow"
+status = "approved"
+
+[[criteria]]
+name = "compiles"
+description = "Code compiles"
+"#;
+        let spec: GatesSpec = toml::from_str(toml_str).expect("parse gates spec with status");
+        assert_eq!(spec.status, Some(GateSpecStatus::Approved));
+
+        let re_serialized = toml::to_string(&spec).expect("re-serialize");
+        let roundtripped: GatesSpec =
+            toml::from_str(&re_serialized).expect("roundtrip deserialize");
+        assert_eq!(spec, roundtripped);
+        assert_eq!(roundtripped.status, Some(GateSpecStatus::Approved));
+    }
+
+    #[test]
+    fn gates_spec_without_status_defaults_to_none() {
+        let toml_str = r#"
+name = "legacy-spec"
+
+[[criteria]]
+name = "check"
+description = "A check"
+"#;
+        let spec: GatesSpec = toml::from_str(toml_str).expect("parse legacy TOML without status");
+        assert!(spec.status.is_none(), "status should be None when absent");
+    }
+
+    #[test]
+    fn gates_spec_with_uat_toml_roundtrip() {
+        let toml_str = r#"
+name = "critical-flow"
+uat = true
+
+[[criteria]]
+name = "check"
+description = "A check"
+"#;
+        let spec: GatesSpec = toml::from_str(toml_str).expect("parse gates spec with uat");
+        assert_eq!(spec.uat, Some(true));
+
+        let re_serialized = toml::to_string(&spec).expect("re-serialize");
+        let roundtripped: GatesSpec =
+            toml::from_str(&re_serialized).expect("roundtrip deserialize");
+        assert_eq!(spec, roundtripped);
+        assert_eq!(roundtripped.uat, Some(true));
+    }
+
+    #[test]
+    fn gates_spec_uat_false_roundtrip() {
+        let toml_str = r#"
+name = "skip-uat"
+uat = false
+
+[[criteria]]
+name = "check"
+description = "A check"
+"#;
+        let spec: GatesSpec = toml::from_str(toml_str).expect("parse gates spec with uat=false");
+        assert_eq!(spec.uat, Some(false));
+    }
+
+    #[test]
+    fn gates_spec_without_uat_defaults_to_none() {
+        let toml_str = r#"
+name = "no-uat"
+
+[[criteria]]
+name = "check"
+description = "A check"
+"#;
+        let spec: GatesSpec = toml::from_str(toml_str).expect("parse without uat field");
+        assert!(spec.uat.is_none(), "uat should be None when absent");
+    }
+
+    #[test]
+    fn gates_spec_with_status_and_uat_combined() {
+        let toml_str = r#"
+name = "full-spec"
+status = "verified"
+uat = true
+
+[[criteria]]
+name = "check"
+description = "A check"
+cmd = "echo ok"
+"#;
+        let spec: GatesSpec = toml::from_str(toml_str).expect("parse combined status+uat");
+        assert_eq!(spec.status, Some(GateSpecStatus::Verified));
+        assert_eq!(spec.uat, Some(true));
+
+        let re_serialized = toml::to_string(&spec).expect("re-serialize");
+        let roundtripped: GatesSpec =
+            toml::from_str(&re_serialized).expect("roundtrip deserialize");
+        assert_eq!(spec, roundtripped);
     }
 }

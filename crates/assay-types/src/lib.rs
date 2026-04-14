@@ -61,7 +61,7 @@ pub use gate::{GateKind, GateResult};
 pub use gate_run::{
     CriterionResult, DiffTruncation, GateEvalOutcome, GateRunRecord, GateRunSummary,
 };
-pub use gates_spec::{GateCriterion, GatesSpec};
+pub use gates_spec::{GateCriterion, GateSpecStatus, GatesSpec};
 pub use harness::{
     HarnessProfile, HookContract, HookEvent, PromptLayer, PromptLayerKind, ScopeViolation,
     ScopeViolationType, SettingsOverride,
@@ -228,6 +228,10 @@ pub struct Config {
     /// Omit to use the default provider (Anthropic).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider: Option<ProviderConfig>,
+
+    /// Workflow behavior configuration (solo developer settings).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workflow: Option<WorkflowConfig>,
 }
 
 inventory::submit! {
@@ -316,6 +320,11 @@ pub struct GatesConfig {
     /// Evaluator subprocess timeout in seconds. Defaults to 120.
     #[serde(default = "default_evaluator_timeout")]
     pub evaluator_timeout: u64,
+
+    /// How to handle `AgentReport` criteria: `"auto"` (evaluator subprocess)
+    /// or `"manual"` (gate_report flow). Defaults to `"auto"`.
+    #[serde(default = "default_agent_eval_mode")]
+    pub agent_eval_mode: String,
 }
 
 inventory::submit! {
@@ -378,12 +387,26 @@ pub struct SessionsConfig {
     /// Default: 3600 (1 hour). Must be greater than zero.
     #[serde(default = "default_stale_threshold", alias = "stale_threshold")]
     pub stale_threshold_secs: u64,
+
+    /// Maximum number of sessions to retain. Oldest sessions beyond this limit
+    /// are evicted (unless linked to an InProgress milestone).
+    /// Default: 100. Set to 0 to disable count-based eviction.
+    #[serde(default = "default_max_session_count")]
+    pub max_count: usize,
+
+    /// Maximum age of sessions in days. Sessions older than this are evicted
+    /// (unless linked to an InProgress milestone).
+    /// Default: 90. Set to 0 to disable age-based eviction.
+    #[serde(default = "default_max_session_age_days")]
+    pub max_age_days: u64,
 }
 
 impl Default for SessionsConfig {
     fn default() -> Self {
         Self {
             stale_threshold_secs: default_stale_threshold(),
+            max_count: default_max_session_count(),
+            max_age_days: default_max_session_age_days(),
         }
     }
 }
@@ -395,8 +418,68 @@ inventory::submit! {
     }
 }
 
+/// Branch isolation strategy.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum AutoIsolate {
+    /// Always create a worktree/branch before starting work.
+    Always,
+    /// Never auto-isolate; the user manages branches.
+    Never,
+    /// Prompt if on a protected branch; proceed silently on a feature branch.
+    #[default]
+    Ask,
+}
+
+impl std::fmt::Display for AutoIsolate {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Always => write!(f, "always"),
+            Self::Never => write!(f, "never"),
+            Self::Ask => write!(f, "ask"),
+        }
+    }
+}
+
+/// Workflow behavior configuration for the solo developer loop.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct WorkflowConfig {
+    /// Branch isolation strategy. Default: `ask`.
+    #[serde(default)]
+    pub auto_isolate: AutoIsolate,
+
+    /// Protected branch names. When set, overrides the built-in list
+    /// (`["main", "master", "develop"]` + dynamic detection).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub protected_branches: Option<Vec<String>>,
+
+    /// Whether UAT is required after gate pass. Default: `false`.
+    #[serde(default)]
+    pub uat_enabled: bool,
+
+    /// Whether spec status must be >= `approved` before running gates. Default: `false`.
+    #[serde(default)]
+    pub strict_status: bool,
+}
+
+inventory::submit! {
+    schema_registry::SchemaEntry {
+        name: "workflow-config",
+        generate: || schemars::schema_for!(WorkflowConfig),
+    }
+}
+
 fn default_stale_threshold() -> u64 {
     3600
+}
+
+fn default_max_session_count() -> usize {
+    100
+}
+
+fn default_max_session_age_days() -> u64 {
+    90
 }
 
 fn default_soft_threshold() -> f64 {
@@ -425,6 +508,10 @@ fn default_evaluator_retries() -> u32 {
 
 fn default_evaluator_timeout() -> u64 {
     120
+}
+
+fn default_agent_eval_mode() -> String {
+    "auto".to_string()
 }
 
 fn default_specs_dir() -> String {

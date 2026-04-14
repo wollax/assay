@@ -29,8 +29,15 @@ Examples:
     #[command(after_long_help = "\
 Examples:
   List all specs in the project:
-    assay spec list")]
-    List,
+    assay spec list
+
+  List only draft specs:
+    assay spec list --status draft")]
+    List {
+        /// Filter by workflow status (draft, ready, approved, verified)
+        #[arg(long)]
+        status: Option<String>,
+    },
     /// Create a new directory-based spec with template files
     #[command(after_long_help = "\
 Examples:
@@ -126,7 +133,7 @@ Examples:
 pub(crate) fn handle(command: SpecCommand) -> anyhow::Result<i32> {
     match command {
         SpecCommand::Show { name, json } => handle_spec_show(&name, json),
-        SpecCommand::List => handle_spec_list(),
+        SpecCommand::List { status } => handle_spec_list(status.as_deref()),
         SpecCommand::New { name } => handle_spec_new(&name),
         SpecCommand::Validate {
             name,
@@ -314,7 +321,7 @@ fn print_spec_table(name: &str, description: &str, criteria: &[assay_types::Crit
 }
 
 /// Handle `assay spec list`.
-fn handle_spec_list() -> anyhow::Result<i32> {
+fn handle_spec_list(status_filter: Option<&str>) -> anyhow::Result<i32> {
     let root = project_root()?;
     let config = assay_core::config::load(&root)?;
     let specs_dir = assay_dir(&root).join(&config.specs_dir);
@@ -330,15 +337,43 @@ fn handle_spec_list() -> anyhow::Result<i32> {
         return Ok(0);
     }
 
-    let name_width = result
+    // Apply status filter if provided
+    let entries: Vec<&SpecEntry> = result
         .entries
         .iter()
-        .map(|e| e.slug().len())
-        .max()
-        .unwrap_or(0);
+        .filter(|entry| {
+            if let Some(filter) = status_filter {
+                let status_str = match entry {
+                    SpecEntry::Legacy { .. } => "draft",
+                    SpecEntry::Directory { gates, .. } => {
+                        match assay_core::spec::effective_status(gates) {
+                            assay_types::GateSpecStatus::Draft => "draft",
+                            assay_types::GateSpecStatus::Ready => "ready",
+                            assay_types::GateSpecStatus::Approved => "approved",
+                            assay_types::GateSpecStatus::Verified => "verified",
+                        }
+                    }
+                };
+                status_str.eq_ignore_ascii_case(filter)
+            } else {
+                true
+            }
+        })
+        .collect();
+
+    if entries.is_empty() {
+        if let Some(filter) = status_filter {
+            println!("No specs with status '{filter}' found.");
+        } else {
+            println!("No specs found in {}", config.specs_dir);
+        }
+        return Ok(0);
+    }
+
+    let name_width = entries.iter().map(|e| e.slug().len()).max().unwrap_or(0);
 
     println!("Specs:");
-    for entry in &result.entries {
+    for entry in &entries {
         match entry {
             SpecEntry::Legacy { slug, spec } => {
                 if spec.description.is_empty() {
@@ -356,8 +391,9 @@ fn handle_spec_list() -> anyhow::Result<i32> {
             SpecEntry::Directory { slug, gates, .. } => {
                 let indicator = assay_types::DIRECTORY_SPEC_INDICATOR;
                 let criteria_count = gates.criteria.len();
+                let status = assay_core::spec::effective_status(gates);
                 println!(
-                    "  {:<width$}{gap}{indicator} {criteria_count} criteria",
+                    "  {:<width$}{gap}{indicator} {criteria_count} criteria [{status}]",
                     slug,
                     width = name_width,
                     gap = COLUMN_GAP,
@@ -629,6 +665,8 @@ fn handle_spec_review(name: &str, json: bool, list: bool) -> anyhow::Result<i32>
             let gates_spec = assay_types::GatesSpec {
                 name: spec.name.clone(),
                 description: spec.description.clone(),
+                status: None,
+                uat: None,
                 gate: None,
                 depends: vec![],
                 milestone: None,
@@ -1337,6 +1375,8 @@ cmd = "echo ok"
                 let gates_spec = assay_types::GatesSpec {
                     name: spec.name.clone(),
                     description: spec.description.clone(),
+                    status: None,
+                    uat: None,
                     gate: None,
                     depends: vec![],
                     milestone: None,

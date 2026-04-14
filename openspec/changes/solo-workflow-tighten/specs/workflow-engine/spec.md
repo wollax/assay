@@ -33,3 +33,18 @@ The `next_action()` function SHALL only read state from disk (milestones, specs,
 #### Scenario: Function does not mutate state
 - **WHEN** `next_action()` is called multiple times with the same project state
 - **THEN** it returns the same result each time and no files are modified
+
+### Requirement: Strict status mode gates cycle_advance on spec status
+When `[workflow] strict_status = true`, `cycle_advance` SHALL require the active chunk's spec status to be at least `approved` before running gates.
+
+#### Scenario: Strict mode rejects draft spec
+- **WHEN** `strict_status = true` and the active chunk's spec has status `draft`
+- **THEN** `cycle_advance` returns an error: "Spec 'auth-flow' is still in draft status. Review and approve the spec before running gates."
+
+#### Scenario: Strict mode allows approved spec
+- **WHEN** `strict_status = true` and the active chunk's spec has status `approved` or `verified`
+- **THEN** `cycle_advance` proceeds normally (evaluates gates, advances if passing)
+
+#### Scenario: Permissive mode (default) ignores status
+- **WHEN** `strict_status = false` (default) and the active chunk's spec has any status
+- **THEN** `cycle_advance` runs gates regardless of spec status

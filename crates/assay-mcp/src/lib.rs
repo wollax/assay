@@ -31,7 +31,8 @@ pub use server::{
     AssayServer, ContextDiagnoseParams, EstimateTokensParams, GateFinalizeParams,
     GateHistoryParams, GateReportParams, GateRunParams, MergeCheckParams, OrchestrateRunParams,
     OrchestrateStatusParams, PollSignalsParams, SendSignalParams, SessionCreateParams,
-    SessionGetParams, SessionListParams, SessionUpdateParams, SpecGetParams, SpecValidateParams,
+    SessionGetParams, SessionListParams, SessionUpdateParams, SpecGetParams, SpecListParams,
+    SpecValidateParams,
 };
 
 #[cfg(any(test, feature = "testing"))]

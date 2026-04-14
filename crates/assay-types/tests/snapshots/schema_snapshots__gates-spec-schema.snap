@@ -180,6 +180,31 @@ expression: schema.to_value()
       },
       "type": "object"
     },
+    "GateSpecStatus": {
+      "description": "Workflow lifecycle status for a gate spec.\n\nTracks a gate spec through the solo workflow loop:\n`Draft` → `Ready` → `Approved` → `Verified`.\n\nForward skips (e.g., `Draft` → `Approved`) and backward transitions\n(e.g., `Verified` → `Draft` for rework) are both allowed.\nAuto-promoted to `Verified` when a gate run passes all required criteria.\n\nDistinct from [`crate::feature_spec::SpecStatus`], which tracks the\nIEEE 830/29148 feature specification lifecycle.",
+      "oneOf": [
+        {
+          "const": "draft",
+          "description": "Initial authoring state; spec is being drafted.",
+          "type": "string"
+        },
+        {
+          "const": "ready",
+          "description": "Spec is ready for review.",
+          "type": "string"
+        },
+        {
+          "const": "approved",
+          "description": "Spec has been reviewed and approved for implementation.",
+          "type": "string"
+        },
+        {
+          "const": "verified",
+          "description": "Implementation verified — all required gate criteria pass.",
+          "type": "string"
+        }
+      ]
+    },
     "SpecPreconditions": {
       "additionalProperties": false,
       "description": "Preconditions declared in a `gates.toml` `[preconditions]` section.\n\nWhen present, the gate runner checks all `requires` slugs (other gate specs\nwhose last run must have passed) and runs all `commands` before evaluating\nany criteria.",
@@ -335,6 +360,24 @@ expression: schema.to_value()
         }
       ],
       "description": "Preconditions that must be met before gate evaluation proceeds.\n\nOmitted from serialized output when absent."
+    },
+    "status": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/GateSpecStatus"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Workflow lifecycle status. Absent for legacy specs (treated as `Draft`)."
+    },
+    "uat": {
+      "description": "Per-spec UAT override. When set, overrides the project-level\n`[workflow] uat_enabled` setting for this spec.",
+      "type": [
+        "boolean",
+        "null"
+      ]
     }
   },
   "required": [

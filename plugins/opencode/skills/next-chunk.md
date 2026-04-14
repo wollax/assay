@@ -1,49 +1,30 @@
----
-name: next-chunk
-description: >
-  Show the active chunk's full criteria list so you know exactly what to implement.
-  Use before starting implementation on a new chunk, or when you need to know
-  what success looks like for the current unit of work.
----
+> **Deprecated:** This skill has been replaced by `/assay:focus` (for status/next-chunk) or `/assay:check` (for gate-check). The old name still works but will be removed in the next version.
 
-# Next Chunk
+# Focus
 
-Load the active chunk and display its complete criteria so implementation can begin.
+Show active work context: milestone, chunk, criteria, and gate status.
 
 ## Steps
 
-1. **Call `cycle_status`:**
-   - If the response is `{"active":false}`, print:
-     "No active milestone — run `/assay:plan` to create one."
-     Then stop.
+1. **Call `cycle_status`** to get the active milestone and chunk
 
-2. **Call `chunk_status` with the `active_chunk_slug`:**
-   - If `active_chunk_slug` is `null`, all chunks are complete — print:
-     "All chunks complete. Call `cycle_advance` to advance the milestone to Verify."
-     Then stop.
-   - If `has_history` is `false`, note: "No gate runs yet for this chunk."
-   - If `has_history` is `true`, show the latest pass/fail/required_failed counts.
+2. **Handle no active milestone:**
+   - Tell the user: *"No active milestone. Start with `/assay:plan` or `/assay:explore`."*
 
-3. **Call `spec_get` with the `active_chunk_slug`:**
-   - Load all criteria for the active chunk
+3. **Call `chunk_status`** with the active chunk slug to get gate pass/fail per criterion
 
-4. **Display the chunk detail:**
-   - Chunk slug and name
-   - Gate status (from step 2)
-   - Full criteria list (from step 3), grouped by executable vs descriptive
+4. **Call `spec_get`** with the active chunk slug to load full criteria
+
+5. **For quick milestones** (single chunk matching milestone slug):
+   - Hide milestone/chunk terminology
+   - Show as: "Working on: [spec name]" with criteria and gate status
+
+6. **Display:**
+   - Spec name and status (draft/ready/approved/verified)
+   - Criteria list with pass/fail indicators
+   - Progress: chunks completed / total
+   - Suggested next action based on state
 
 ## Output Format
 
-Show the chunk summary first, then the full criteria list. Example:
-
-```
-Active chunk: login
-Gate status:  No gate runs yet
-
-Criteria:
-  [executable] build passes — cargo build --release
-  [executable] tests pass  — cargo test auth::login
-  [descriptive] login endpoint returns 401 on bad credentials
-```
-
-This gives you the full implementation target. After implementing, run `/assay:gate-check login` to verify.
+Compact view — criteria table with pass/fail status. One-line progress summary. Suggest the logical next step.

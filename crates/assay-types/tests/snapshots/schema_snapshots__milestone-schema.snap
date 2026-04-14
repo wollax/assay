@@ -156,6 +156,10 @@ expression: schema.to_value()
         "null"
       ]
     },
+    "quick": {
+      "description": "Whether this milestone was created via `plan quick` (transparent 1-chunk milestone).\nQuick milestones hide the milestone/chunk abstraction from the user.",
+      "type": "boolean"
+    },
     "slug": {
       "description": "Unique identifier for this milestone; must match the TOML filename without extension.",
       "type": "string"

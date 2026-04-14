@@ -40,3 +40,18 @@ The system SHALL automatically set a spec's status to `verified` when a gate run
 #### Scenario: Advisory failures do not block promotion
 - **WHEN** `gate_run` completes with `required_failed == 0` but `advisory_failed > 0`
 - **THEN** the spec's status is promoted to `verified` (advisory failures are informational)
+
+### Requirement: Specs support per-spec UAT override
+The `GatesSpec` struct SHALL include an optional `uat` field that overrides the project-level `[workflow] uat_enabled` setting.
+
+#### Scenario: Per-spec UAT enabled
+- **WHEN** a spec has `uat = true` in gates.toml and project config has `uat_enabled = false`
+- **THEN** UAT is required for this spec (per-spec wins over project default)
+
+#### Scenario: Per-spec UAT disabled
+- **WHEN** a spec has `uat = false` in gates.toml and project config has `uat_enabled = true`
+- **THEN** UAT is skipped for this spec
+
+#### Scenario: No per-spec UAT field
+- **WHEN** a spec has no `uat` field and project config has `uat_enabled = true`
+- **THEN** UAT is required (project default applies)

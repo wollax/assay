@@ -4,10 +4,35 @@ expression: schema.to_value()
 ---
 {
   "$defs": {
+    "AutoIsolate": {
+      "description": "Branch isolation strategy.",
+      "oneOf": [
+        {
+          "const": "always",
+          "description": "Always create a worktree/branch before starting work.",
+          "type": "string"
+        },
+        {
+          "const": "never",
+          "description": "Never auto-isolate; the user manages branches.",
+          "type": "string"
+        },
+        {
+          "const": "ask",
+          "description": "Prompt if on a protected branch; proceed silently on a feature branch.",
+          "type": "string"
+        }
+      ]
+    },
     "GatesConfig": {
       "additionalProperties": false,
       "description": "Gate execution configuration.",
       "properties": {
+        "agent_eval_mode": {
+          "default": "auto",
+          "description": "How to handle `AgentReport` criteria: `\"auto\"` (evaluator subprocess)\nor `\"manual\"` (gate_report flow). Defaults to `\"auto\"`.",
+          "type": "string"
+        },
         "default_timeout": {
           "default": 300,
           "description": "Default timeout for gate commands in seconds. Defaults to 300.",
@@ -168,12 +193,58 @@ expression: schema.to_value()
       "additionalProperties": false,
       "description": "Session management configuration.",
       "properties": {
+        "max_age_days": {
+          "default": 90,
+          "description": "Maximum age of sessions in days. Sessions older than this are evicted\n(unless linked to an InProgress milestone).\nDefault: 90. Set to 0 to disable age-based eviction.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "max_count": {
+          "default": 100,
+          "description": "Maximum number of sessions to retain. Oldest sessions beyond this limit\nare evicted (unless linked to an InProgress milestone).\nDefault: 100. Set to 0 to disable count-based eviction.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
         "stale_threshold_secs": {
           "default": 3600,
           "description": "Staleness threshold in seconds for recovery sweep.\nSessions in the `AgentRunning` phase older than this are marked abandoned on startup.\nDefault: 3600 (1 hour). Must be greater than zero.",
           "format": "uint64",
           "minimum": 0,
           "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "WorkflowConfig": {
+      "additionalProperties": false,
+      "description": "Workflow behavior configuration for the solo developer loop.",
+      "properties": {
+        "auto_isolate": {
+          "$ref": "#/$defs/AutoIsolate",
+          "default": "ask",
+          "description": "Branch isolation strategy. Default: `ask`."
+        },
+        "protected_branches": {
+          "description": "Protected branch names. When set, overrides the built-in list\n(`[\"main\", \"master\", \"develop\"]` + dynamic detection).",
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "strict_status": {
+          "default": false,
+          "description": "Whether spec status must be >= `approved` before running gates. Default: `false`.",
+          "type": "boolean"
+        },
+        "uat_enabled": {
+          "default": false,
+          "description": "Whether UAT is required after gate pass. Default: `false`.",
+          "type": "boolean"
         }
       },
       "type": "object"
@@ -247,6 +318,17 @@ expression: schema.to_value()
       "default": "specs/",
       "description": "Directory containing spec files, relative to `.assay/`.\nDefaults to `\"specs/\"`.",
       "type": "string"
+    },
+    "workflow": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/WorkflowConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Workflow behavior configuration (solo developer settings)."
     },
     "worktree": {
       "anyOf": [

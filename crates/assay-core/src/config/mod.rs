@@ -433,6 +433,7 @@ default_timeout = 600
             evaluator_model: "sonnet".to_string(),
             evaluator_retries: 1,
             evaluator_timeout: 120,
+            agent_eval_mode: "auto".to_string(),
         });
 
         let errors = super::validate(&config).unwrap_err();
@@ -599,11 +600,13 @@ default_timeout = 600
                 evaluator_model: "sonnet".to_string(),
                 evaluator_retries: 1,
                 evaluator_timeout: 120,
+                agent_eval_mode: "auto".to_string(),
             }),
             guard: None,
             worktree: None,
             sessions: None,
             provider: None,
+            workflow: None,
         };
 
         let errors = super::validate(&config).unwrap_err();
@@ -753,6 +756,7 @@ unknown_option = true
         let mut config = valid_config();
         config.sessions = Some(assay_types::SessionsConfig {
             stale_threshold_secs: 0,
+            ..Default::default()
         });
 
         let errors = super::validate(&config).unwrap_err();

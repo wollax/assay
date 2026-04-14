@@ -741,6 +741,8 @@ mod tests {
         GatesSpec {
             name: "test".to_string(),
             description: String::new(),
+            status: None,
+            uat: None,
             gate: None,
             depends: vec![],
             milestone: None,

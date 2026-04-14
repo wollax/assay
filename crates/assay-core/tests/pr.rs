@@ -33,6 +33,7 @@ fn make_milestone_with_status(
         name: format!("Milestone {slug}"),
         description: None,
         status,
+        quick: false,
         chunks,
         completed_chunks: vec![],
         depends_on: vec![],
