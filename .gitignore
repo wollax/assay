@@ -17,6 +17,15 @@ dist/
 # Agent runtime state
 .bg-shell/
 
+# BMad Method (installed module artifacts)
+_bmad/
+_bmad-output/
+.agents/
+.claude/skills/bmad-*/
+.github/skills/bmad-*/
+.opencode/skills/bmad-*/
+.pi/
+
 # OS
 .DS_Store
 Thumbs.db
